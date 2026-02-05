@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/roomkit)](https://pypi.org/project/roomkit/)
 [![Python](https://img.shields.io/pypi/pyversions/roomkit)](https://pypi.org/project/roomkit/)
-[![License](https://img.shields.io/github/license/sboily/roomkit)](LICENSE)
+[![License](https://img.shields.io/github/license/roomkit-live/roomkit)](LICENSE)
 
 Pure async Python 3.12+ library for multi-channel conversations.
 
