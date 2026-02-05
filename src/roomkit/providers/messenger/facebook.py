@@ -1,0 +1,95 @@
+"""Facebook Messenger provider — sends messages via the Messenger Platform Send API."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+from roomkit.models.delivery import ProviderResult
+from roomkit.models.event import RoomEvent, TextContent
+from roomkit.providers.messenger.base import MessengerProvider
+from roomkit.providers.messenger.config import MessengerConfig
+
+if TYPE_CHECKING:
+    import httpx
+
+
+class FacebookMessengerProvider(MessengerProvider):
+    """Send messages via the Facebook Messenger Platform Send API."""
+
+    def __init__(self, config: MessengerConfig) -> None:
+        try:
+            import httpx as _httpx
+        except ImportError as exc:
+            raise ImportError(
+                "httpx is required for FacebookMessengerProvider. "
+                "Install it with: pip install roomkit[httpx]"
+            ) from exc
+        self._config = config
+        self._httpx = _httpx
+        self._client: httpx.AsyncClient = _httpx.AsyncClient(
+            timeout=config.timeout,
+        )
+
+    async def send(self, event: RoomEvent, to: str) -> ProviderResult:
+        text = self._extract_text(event)
+        if not text:
+            return ProviderResult(success=False, error="empty_message")
+
+        payload: dict[str, Any] = {
+            "recipient": {"id": to},
+            "messaging_type": "RESPONSE",
+            "message": {"text": text},
+        }
+
+        try:
+            resp = await self._client.post(
+                self._config.base_url,
+                json=payload,
+                params={
+                    "access_token": self._config.page_access_token.get_secret_value(),
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except self._httpx.TimeoutException:
+            return ProviderResult(success=False, error="timeout")
+        except self._httpx.HTTPStatusError as exc:
+            return self._parse_error(exc)
+        except self._httpx.HTTPError as exc:
+            return ProviderResult(success=False, error=str(exc))
+
+        return ProviderResult(
+            success=True,
+            provider_message_id=data.get("message_id"),
+        )
+
+    @staticmethod
+    def _parse_error(exc: Any) -> ProviderResult:
+        """Extract a Facebook Graph API error message when available."""
+        try:
+            body = exc.response.json()
+            error = body.get("error", {})
+            code = error.get("code", exc.response.status_code)
+            message = error.get("message", "")
+            return ProviderResult(
+                success=False,
+                error=f"graph_{code}",
+                metadata={"message": message},
+            )
+        except Exception:
+            return ProviderResult(
+                success=False,
+                error=f"http_{exc.response.status_code}",
+            )
+
+    @staticmethod
+    def _extract_text(event: RoomEvent) -> str:
+        content = event.content
+        if isinstance(content, TextContent):
+            return content.body
+        if hasattr(content, "body"):
+            return str(content.body)
+        return ""
+
+    async def close(self) -> None:
+        await self._client.aclose()
