@@ -122,7 +122,10 @@ async def main() -> None:
                 elif isinstance(part, MediaContent):
                     print(f"    Part {j} [media]: {part.mime_type} - {part.caption}")
                 elif isinstance(part, LocationContent):
-                    print(f"    Part {j} [location]: {part.label} ({part.latitude}, {part.longitude})")
+                    print(
+                        f"    Part {j} [location]: {part.label}"
+                        f" ({part.latitude}, {part.longitude})"
+                    )
 
 
 if __name__ == "__main__":

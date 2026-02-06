@@ -95,7 +95,7 @@ async def main() -> None:
 
     # Verify rate limit is stored on the binding
     binding = await kit.get_binding("rate-room", "ws-sms-sim")
-    print(f"SMS channel rate limit:")
+    print("SMS channel rate limit:")
     print(f"  max_per_second: {binding.rate_limit.max_per_second}")  # type: ignore[union-attr]
     print(f"  max_per_minute: {binding.rate_limit.max_per_minute}")  # type: ignore[union-attr]
 
@@ -120,7 +120,9 @@ async def main() -> None:
         ("High throughput", RateLimit(max_per_second=100.0)),
         ("Standard SMS", RateLimit(max_per_second=1.0, max_per_minute=30.0)),
         ("Hourly newsletter", RateLimit(max_per_hour=100.0)),
-        ("Burst control", RateLimit(max_per_second=10.0, max_per_minute=200.0, max_per_hour=5000.0)),
+        ("Burst control", RateLimit(
+            max_per_second=10.0, max_per_minute=200.0, max_per_hour=5000.0,
+        )),
     ]
 
     for name, config in configs:

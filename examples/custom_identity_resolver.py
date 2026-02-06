@@ -18,13 +18,12 @@ import asyncio
 
 from roomkit import (
     HookTrigger,
-    Identity,
     IdentificationStatus,
+    Identity,
     IdentityHookResult,
     IdentityResolver,
     IdentityResult,
     InboundMessage,
-    MockIdentityResolver,
     RoomContext,
     RoomEvent,
     RoomKit,
@@ -97,7 +96,7 @@ async def main() -> None:
     async def handle_unknown(
         event: RoomEvent, ctx: RoomContext, id_result: IdentityResult
     ) -> IdentityHookResult | None:
-        print(f"  [hook] Unknown sender detected — creating pending participant")
+        print("  [hook] Unknown sender detected — creating pending participant")
         return IdentityHookResult.pending(display_name="Unknown User")
 
     # --- Hook: Handle ambiguous senders ---

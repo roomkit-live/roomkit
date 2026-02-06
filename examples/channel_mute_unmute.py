@@ -133,7 +133,7 @@ async def main() -> None:
 
     # --- Show mute log ---
     await asyncio.sleep(0.1)
-    print(f"\nMute/unmute log:")
+    print("\nMute/unmute log:")
     for entry in mute_log:
         print(f"  {entry}")
 

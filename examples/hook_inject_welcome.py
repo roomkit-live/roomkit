@@ -16,13 +16,9 @@ from __future__ import annotations
 import asyncio
 
 from roomkit import (
-    ChannelType,
-    EventSource,
-    EventType,
     HookExecution,
     HookTrigger,
     InboundMessage,
-    InjectedEvent,
     RoomContext,
     RoomEvent,
     RoomKit,

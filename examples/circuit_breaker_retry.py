@@ -53,7 +53,7 @@ async def main() -> None:
     print(f"Can we send a request? {allowed}")
 
     # Wait for recovery timeout
-    print(f"\nWaiting 2 seconds for recovery timeout...")
+    print("\nWaiting 2 seconds for recovery timeout...")
     await asyncio.sleep(2.1)
 
     # Breaker is now half-open — allows one probe request
@@ -136,7 +136,7 @@ async def main() -> None:
         result = await send_with_resilience(f"Message {i + 1}")
         print(f"  Message {i + 1}: {result}")
 
-    print(f"\nAttempt log:")
+    print("\nAttempt log:")
     for entry in attempt_log:
         print(f"  {entry}")
     print(f"\nFinal circuit state: closed={cb2.is_closed}, open={cb2.is_open}")

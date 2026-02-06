@@ -65,7 +65,7 @@ async def main() -> None:
 
     # --- Track messages per channel ---
     ws_inbox: list[RoomEvent] = []
-    sms_inbox: list[RoomEvent] = []
+    sms_inbox: list[RoomEvent] = []  # noqa: F841
 
     async def ws_recv(_conn: str, event: RoomEvent) -> None:
         ws_inbox.append(event)
@@ -148,8 +148,12 @@ async def main() -> None:
     bindings = await kit.store.list_bindings("bridge-room")
     print(f"\n--- Channel Bindings ({len(bindings)}) ---")
     for b in bindings:
-        meta_summary = ", ".join(f"{k}={v}" for k, v in b.metadata.items()) if b.metadata else "none"
-        print(f"  {b.channel_id:>15}: type={b.channel_type}, category={b.category}, meta=[{meta_summary}]")
+        meta_parts = (f"{k}={v}" for k, v in b.metadata.items()) if b.metadata else []
+        meta_summary = ", ".join(meta_parts) or "none"
+        print(
+            f"  {b.channel_id:>15}: type={b.channel_type},"
+            f" category={b.category}, meta=[{meta_summary}]"
+        )
 
     await kit.close()
     print("\nDone! All channels bridged in a single room.")

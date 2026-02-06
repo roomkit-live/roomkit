@@ -27,6 +27,7 @@ from roomkit import (
     WebSocketChannel,
 )
 
+
 async def main() -> None:
     kit = RoomKit()
 
@@ -59,7 +60,7 @@ async def main() -> None:
     print(f"1. Alice sent: \"Hello Bbo!\" (id={original_id[:8]}...)")
 
     # --- Alice edits the message to fix the typo ---
-    edit_result = await kit.process_inbound(
+    await kit.process_inbound(
         InboundMessage(
             channel_id="ws-alice",
             sender_id="alice",
@@ -71,7 +72,7 @@ async def main() -> None:
             ),
         )
     )
-    print(f"2. Alice edited message -> \"Hello Bob!\"")
+    print("2. Alice edited message -> \"Hello Bob!\"")
 
     # --- Alice sends another message ---
     result2 = await kit.process_inbound(
@@ -105,10 +106,14 @@ async def main() -> None:
         if isinstance(ev.content, TextContent):
             print(f"  [{ev.type.value:>8}] {ev.content.body}")
         elif isinstance(ev.content, EditContent):
-            new_body = ev.content.new_content.body if isinstance(ev.content.new_content, TextContent) else "..."
-            print(f"  [{ev.type.value:>8}] Edit -> \"{new_body}\" (target={ev.content.target_event_id[:8]}...)")
+            new_content = ev.content.new_content
+            new_body = new_content.body if isinstance(new_content, TextContent) else "..."
+            target = ev.content.target_event_id[:8]
+            print(f"  [{ev.type.value:>8}] Edit -> \"{new_body}\" (target={target}...)")
         elif isinstance(ev.content, DeleteContent):
-            print(f"  [{ev.type.value:>8}] Delete target={ev.content.target_event_id[:8]}... ({ev.content.delete_type})")
+            target = ev.content.target_event_id[:8]
+            dtype = ev.content.delete_type
+            print(f"  [{ev.type.value:>8}] Delete target={target}... ({dtype})")
 
     # --- Show full conversation history ---
     events = await kit.store.list_events("edit-room")

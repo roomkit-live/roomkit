@@ -60,7 +60,10 @@ async def main() -> None:
         category=ChannelCategory.INTELLIGENCE,
         metadata={
             # Per-room AI configuration
-            "system_prompt": "You are a weather assistant. Use the get_weather tool to check conditions.",
+            "system_prompt": (
+                "You are a weather assistant. "
+                "Use the get_weather tool to check conditions."
+            ),
             "temperature": 0.3,
             "tools": [
                 {
@@ -94,7 +97,7 @@ async def main() -> None:
         )
     )
 
-    print(f"  User asked about weather")
+    print("  User asked about weather")
     for ev in inbox:
         if ev.source.channel_id == "ai-assistant":
             print(f"  AI replied: {ev.content.body}")  # type: ignore[union-attr]
@@ -104,7 +107,7 @@ async def main() -> None:
     mock_provider: MockAIProvider = ai._provider  # type: ignore[assignment]
     if mock_provider.calls:
         last_call = mock_provider.calls[-1]
-        print(f"\n  AI Context:")
+        print("\n  AI Context:")
         print(f"    System prompt: {last_call.system_prompt[:60]}...")
         print(f"    Temperature: {last_call.temperature}")
         print(f"    Tools: {[t.name for t in last_call.tools]}")
@@ -124,7 +127,10 @@ async def main() -> None:
         "ai-assistant",
         category=ChannelCategory.INTELLIGENCE,
         metadata={
-            "system_prompt": "You are a restaurant finder. Help users discover great places to eat.",
+            "system_prompt": (
+                "You are a restaurant finder. "
+                "Help users discover great places to eat."
+            ),
             "temperature": 0.9,
             "tools": [
                 {
@@ -163,14 +169,14 @@ async def main() -> None:
         )
     )
 
-    print(f"  User asked about restaurants")
+    print("  User asked about restaurants")
     for ev in inbox:
         if ev.source.channel_id == "ai-assistant":
             print(f"  AI replied: {ev.content.body}")  # type: ignore[union-attr]
 
     if len(mock_provider.calls) > 1:
         last_call = mock_provider.calls[-1]
-        print(f"\n  AI Context:")
+        print("\n  AI Context:")
         print(f"    System prompt: {last_call.system_prompt[:60]}...")
         print(f"    Temperature: {last_call.temperature}")
         print(f"    Tools: {[t.name for t in last_call.tools]}")
