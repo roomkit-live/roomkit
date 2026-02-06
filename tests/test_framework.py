@@ -640,10 +640,10 @@ class TestTimeouts:
         original = kit._process_locked
 
         async def slow_process(
-            event: RoomEvent, room_id: str, context: RoomContext
+            event: RoomEvent, room_id: str, context: RoomContext, **kwargs: object
         ) -> InboundResult:
             await asyncio.sleep(5.0)
-            return await original(event, room_id, context)
+            return await original(event, room_id, context, **kwargs)
 
         kit._process_locked = slow_process  # type: ignore[assignment]
 

@@ -12,6 +12,7 @@ from roomkit.core._helpers import HelpersMixin
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, InboundResult
 from roomkit.models.enums import (
+    ChannelCategory,
     ChannelType,
     DeleteType,
     EventStatus,
@@ -21,7 +22,7 @@ from roomkit.models.enums import (
 )
 from roomkit.models.event import DeleteContent, EditContent, RoomEvent
 from roomkit.models.hook import InjectedEvent
-from roomkit.models.identity import IdentityResult
+from roomkit.models.identity import Identity, IdentityResult
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -117,8 +118,13 @@ class InboundMixin(HelpersMixin):
             if updates:
                 id_result = id_result.model_copy(update=updates)
 
+            # Deferred participant creation — capture intent only; persist
+            # inside _process_locked to avoid race on event index (Fix #1).
+            resolved_identity: Identity | None = None
+            pending_id_result: IdentityResult | None = None
+
             if id_result.status == IdentificationStatus.IDENTIFIED and id_result.identity:
-                # Known identity — stamp participant_id and ensure participant record
+                # Known identity — stamp participant_id; persist later
                 event = event.model_copy(
                     update={
                         "source": event.source.model_copy(
@@ -126,7 +132,7 @@ class InboundMixin(HelpersMixin):
                         )
                     }
                 )
-                await self._ensure_identified_participant(room_id, event, id_result.identity)
+                resolved_identity = id_result.identity
 
             elif id_result.status in (
                 IdentificationStatus.AMBIGUOUS,
@@ -152,7 +158,7 @@ class InboundMixin(HelpersMixin):
                             )
                         }
                     )
-                    await self._ensure_identified_participant(room_id, event, hook_result.identity)
+                    resolved_identity = hook_result.identity
                 elif hook_result and hook_result.status == IdentificationStatus.CHALLENGE_SENT:
                     if hook_result.inject:
                         await self._deliver_injected_events([hook_result.inject], room_id, context)
@@ -163,8 +169,8 @@ class InboundMixin(HelpersMixin):
                         reason=hook_result.reason or "identity_rejected",
                     )
                 else:
-                    # No hook resolved it — create participant with pending status
-                    await self._create_pending_participant(room_id, event, id_result)
+                    # No hook resolved it — mark for pending creation
+                    pending_id_result = id_result
 
             elif id_result.status in (
                 IdentificationStatus.UNKNOWN,
@@ -195,13 +201,21 @@ class InboundMixin(HelpersMixin):
                             )
                         }
                     )
-                    await self._ensure_identified_participant(room_id, event, hook_result.identity)
+                    resolved_identity = hook_result.identity
+
+        if not should_resolve or resolver is None:
+            resolved_identity = None
+            pending_id_result = None
 
         # Process under room lock
         async with self._lock_manager.locked(room_id):
             try:
                 return await asyncio.wait_for(
-                    self._process_locked(event, room_id, context),
+                    self._process_locked(
+                        event, room_id, context,
+                        resolved_identity=resolved_identity,
+                        pending_id_result=pending_id_result,
+                    ),
                     timeout=self._process_timeout,
                 )
             except TimeoutError:
@@ -219,11 +233,23 @@ class InboundMixin(HelpersMixin):
                 return InboundResult(blocked=True, reason="process_timeout")
 
     async def _process_locked(
-        self, event: RoomEvent, room_id: str, context: RoomContext
+        self,
+        event: RoomEvent,
+        room_id: str,
+        context: RoomContext,
+        *,
+        resolved_identity: Identity | None = None,
+        pending_id_result: IdentityResult | None = None,
     ) -> InboundResult:
         """Process an event under the room lock."""
         # Rebuild context under lock to prevent stale reads
         context = await self._build_context(room_id)
+
+        # Persist deferred participant creation inside the lock (Fix #1)
+        if resolved_identity is not None:
+            await self._ensure_identified_participant(room_id, event, resolved_identity)
+        elif pending_id_result is not None:
+            await self._create_pending_participant(room_id, event, pending_id_result)
 
         # Idempotency check (inside lock to prevent TOCTOU race)
         if event.idempotency_key and await self._store.check_idempotency(
@@ -364,8 +390,10 @@ class InboundMixin(HelpersMixin):
         if source_binding is None:
             return InboundResult(event=event)
 
-        # Refresh context with the new event
-        context = await self._build_context(room_id)
+        # Refresh context locally by appending the new event (avoids 4 store queries)
+        context = context.model_copy(update={
+            "recent_events": [*context.recent_events[-49:], event]
+        })
 
         # Broadcast to other channels
         router = self._get_router()  # type: ignore[attr-defined]
@@ -428,12 +456,34 @@ class InboundMixin(HelpersMixin):
 
         # Store reentry events and re-broadcast them (drain loop)
         pending_reentries = deque(broadcast_result.reentry_events)
+        max_reentries = self._max_chain_depth * 10
+        reentry_count = 0
         while pending_reentries:
+            if reentry_count >= max_reentries:
+                logger.warning(
+                    "Reentry drain loop hit cap (%d iterations), storing %d remaining as BLOCKED",
+                    max_reentries,
+                    len(pending_reentries),
+                    extra={"room_id": room_id},
+                )
+                for remaining in pending_reentries:
+                    blocked_remaining = remaining.model_copy(
+                        update={
+                            "status": EventStatus.BLOCKED,
+                            "blocked_by": "reentry_loop_cap",
+                        }
+                    )
+                    await self._store.add_event(blocked_remaining)
+                break
+            reentry_count += 1
             reentry = pending_reentries.popleft()
             await self._store.add_event(reentry)
             reentry_binding = await self._store.get_binding(room_id, reentry.source.channel_id)
             if reentry_binding:
-                reentry_ctx = await self._build_context(room_id)
+                # Append reentry event to context locally instead of full rebuild
+                reentry_ctx = context.model_copy(update={
+                    "recent_events": [*context.recent_events[-49:], reentry]
+                })
                 reentry_result = await router.broadcast(reentry, reentry_binding, reentry_ctx)
                 # Store reentry's blocked events
                 for blocked in reentry_result.blocked_events:
@@ -502,6 +552,8 @@ class InboundMixin(HelpersMixin):
                 if channel is not None and binding is not None:
                     try:
                         await channel.on_event(injected.event, binding, context)
+                        if binding.category == ChannelCategory.TRANSPORT:
+                            await channel.deliver(injected.event, binding, context)
                     except Exception:
                         logger.exception(
                             "Failed to deliver injected event to %s",

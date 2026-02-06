@@ -14,8 +14,20 @@ from roomkit.core.retry import retry_with_backoff
 from roomkit.core.transcoder import DefaultContentTranscoder
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import Access, ChannelCategory, ChannelDirection, EventStatus
-from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.enums import Access, ChannelCategory, ChannelDirection, ChannelMediaType, EventStatus
+from roomkit.models.event import (
+    AudioContent,
+    CompositeContent,
+    DeleteContent,
+    EditContent,
+    LocationContent,
+    MediaContent,
+    RichContent,
+    RoomEvent,
+    TemplateContent,
+    TextContent,
+    VideoContent,
+)
 from roomkit.models.task import Observation, Task
 
 logger = logging.getLogger("roomkit.event_router")
@@ -363,6 +375,26 @@ class EventRouter:
         # Single channel ID
         return target_binding.channel_id == vis
 
+    @staticmethod
+    def _content_media_type(content: Any) -> ChannelMediaType | None:
+        """Map event content to its primary media type."""
+        if isinstance(content, TextContent):
+            return ChannelMediaType.TEXT
+        if isinstance(content, RichContent):
+            return ChannelMediaType.RICH
+        if isinstance(content, MediaContent):
+            return ChannelMediaType.MEDIA
+        if isinstance(content, AudioContent):
+            return ChannelMediaType.AUDIO
+        if isinstance(content, VideoContent):
+            return ChannelMediaType.VIDEO
+        if isinstance(content, LocationContent):
+            return ChannelMediaType.LOCATION
+        if isinstance(content, TemplateContent):
+            return ChannelMediaType.TEMPLATE
+        # Composite, Edit, Delete, System — no single media type
+        return None
+
     async def _maybe_transcode(
         self,
         event: RoomEvent,
@@ -373,10 +405,17 @@ class EventRouter:
 
         Returns ``None`` if the content cannot be transcoded for the target.
         """
-        source_types = set(source_binding.capabilities.media_types)
         target_types = set(target_binding.capabilities.media_types)
 
-        if source_types <= target_types:
+        # Check if the specific content type is already supported
+        content_media = self._content_media_type(event.content)
+        if content_media is not None and content_media in target_types:
+            return event
+
+        # Edit/Delete: check capability flags directly
+        if isinstance(event.content, EditContent) and target_binding.capabilities.supports_edit:
+            return event
+        if isinstance(event.content, DeleteContent) and target_binding.capabilities.supports_delete:
             return event
 
         transcoded_content = await self._transcoder.transcode(

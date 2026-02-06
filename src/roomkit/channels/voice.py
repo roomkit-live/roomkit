@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -127,6 +128,14 @@ class VoiceChannel(Channel):
             if VoiceCapability.BARGE_IN in backend.capabilities:
                 backend.on_barge_in(self._on_backend_barge_in)
 
+    def _schedule(self, coro: Coroutine[Any, Any, Any], *, name: str) -> None:
+        """Schedule *coro* as a fire-and-forget task if an event loop is running."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(coro, name=name)
+
     def set_framework(self, framework: RoomKit) -> None:
         """Set the framework reference for inbound routing.
 
@@ -182,12 +191,6 @@ class VoiceChannel(Channel):
 
         room_id, _ = binding_info
 
-        # Fire hook asynchronously (don't block VAD processing)
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-
         # Check for barge-in (user speaking while TTS is playing)
         playback = self._playing_sessions.get(session.id)
         if (
@@ -195,12 +198,12 @@ class VoiceChannel(Channel):
             and playback
             and playback.position_ms >= self._barge_in_threshold_ms
         ):
-            loop.create_task(
+            self._schedule(
                 self._handle_barge_in(session, playback, room_id),
                 name=f"barge_in:{session.id}",
             )
 
-        loop.create_task(
+        self._schedule(
             self._fire_speech_start_hooks(session, room_id),
             name=f"speech_start:{session.id}",
         )
@@ -316,12 +319,7 @@ class VoiceChannel(Channel):
 
         room_id, _ = binding_info
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-
-        loop.create_task(
+        self._schedule(
             self._fire_partial_transcription_hook(session, text, confidence, is_stable, room_id),
             name=f"partial_transcription:{session.id}",
         )
@@ -366,12 +364,7 @@ class VoiceChannel(Channel):
 
         room_id, _ = binding_info
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-
-        loop.create_task(
+        self._schedule(
             self._fire_vad_silence_hook(session, silence_duration_ms, room_id),
             name=f"vad_silence:{session.id}",
         )
@@ -409,12 +402,7 @@ class VoiceChannel(Channel):
 
         room_id, _ = binding_info
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-
-        loop.create_task(
+        self._schedule(
             self._fire_vad_audio_level_hook(session, level_db, is_speech, room_id),
             name=f"vad_audio_level:{session.id}",
         )
@@ -457,12 +445,7 @@ class VoiceChannel(Channel):
         if not playback:
             return
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-
-        loop.create_task(
+        self._schedule(
             self._handle_barge_in(session, playback, room_id),
             name=f"backend_barge_in:{session.id}",
         )
@@ -478,13 +461,7 @@ class VoiceChannel(Channel):
 
         room_id, _ = binding_info
 
-        # Process asynchronously
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-
-        loop.create_task(
+        self._schedule(
             self._process_speech_end(session, audio, room_id),
             name=f"speech_end:{session.id}",
         )

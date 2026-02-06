@@ -439,6 +439,7 @@ __all__ = [
     # Store
     "ConversationStore",
     "InMemoryStore",
+    "PostgresStore",
     # Realtime
     "EphemeralCallback",
     "EphemeralEvent",
@@ -480,3 +481,11 @@ __all__ = [
     "get_ai_context",
     "get_llms_txt",
 ]
+
+
+def __getattr__(name: str) -> object:
+    if name == "PostgresStore":
+        from roomkit.store.postgres import PostgresStore
+
+        return PostgresStore
+    raise AttributeError(f"module 'roomkit' has no attribute {name}")

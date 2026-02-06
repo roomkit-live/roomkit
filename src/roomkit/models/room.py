@@ -29,5 +29,4 @@ class Room(BaseModel):
     closed_at: datetime | None = None
     timers: RoomTimers = Field(default_factory=RoomTimers)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    event_count: int = Field(default=0, ge=0)
     latest_index: int = Field(default=0, ge=0)

@@ -288,7 +288,7 @@ class TestRoom:
     def test_defaults(self) -> None:
         r = Room(id="r1")
         assert r.status == RoomStatus.ACTIVE
-        assert r.event_count == 0
+        assert r.latest_index == 0
         assert r.closed_at is None
 
     def test_custom(self) -> None:
@@ -431,10 +431,6 @@ class TestFrameworkEvent:
 
 
 class TestRoomFieldConstraints:
-    def test_negative_event_count(self) -> None:
-        with pytest.raises(ValidationError):
-            Room(id="r1", event_count=-1)
-
     def test_negative_latest_index(self) -> None:
         with pytest.raises(ValidationError):
             Room(id="r1", latest_index=-1)

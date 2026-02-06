@@ -175,13 +175,21 @@ class AIChannel(Channel):
             messages.append(AIMessage(role="user", content=content))
 
         # Determine target channel capabilities for capability-aware generation
+        # Use intersection of all transport bindings' media types (weakest common)
         transport_bindings = [
             b
             for b in context.bindings
             if b.category == ChannelCategory.TRANSPORT and b.channel_id != self.channel_id
         ]
-        target_caps = transport_bindings[0].capabilities if transport_bindings else None
-        target_media = target_caps.media_types if target_caps else []
+        if transport_bindings:
+            common_types = set(transport_bindings[0].capabilities.media_types)
+            for b in transport_bindings[1:]:
+                common_types &= set(b.capabilities.media_types)
+            target_media = list(common_types)
+            target_caps = transport_bindings[0].capabilities
+        else:
+            target_media = []
+            target_caps = None
 
         return AIContext(
             messages=messages,

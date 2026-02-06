@@ -47,11 +47,16 @@ class InMemoryLockManager(RoomLockManager):
         return lock
 
     def _evict(self) -> None:
-        while len(self._locks) > self._max_locks:
-            oldest_key, oldest_lock = next(iter(self._locks.items()))
-            if oldest_lock.locked():
+        if len(self._locks) <= self._max_locks:
+            return
+        to_remove: list[str] = []
+        for key, lock in self._locks.items():
+            if len(self._locks) - len(to_remove) <= self._max_locks:
                 break
-            self._locks.pop(oldest_key)
+            if not lock.locked():
+                to_remove.append(key)
+        for key in to_remove:
+            self._locks.pop(key)
 
     @asynccontextmanager
     async def locked(self, room_id: str) -> AsyncIterator[None]:

@@ -248,7 +248,8 @@ class InMemoryStore(ConversationStore):
         identity_id = self._address_index.get((channel_type, address))
         if identity_id is None:
             return None
-        return self._identities.get(identity_id)
+        identity = self._identities.get(identity_id)
+        return identity.model_copy() if identity is not None else None
 
     async def link_address(self, identity_id: str, channel_type: str, address: str) -> None:
         identity = self._identities.get(identity_id)
@@ -270,7 +271,8 @@ class InMemoryStore(ConversationStore):
         return task
 
     async def get_task(self, task_id: str) -> Task | None:
-        return self._tasks.get(task_id)
+        task = self._tasks.get(task_id)
+        return task.model_copy() if task is not None else None
 
     async def list_tasks(self, room_id: str, status: str | None = None) -> list[Task]:
         task_ids = self._room_tasks.get(room_id, [])

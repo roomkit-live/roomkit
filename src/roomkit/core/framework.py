@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import inspect
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -814,6 +813,8 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 await source.start(emit)
                 # Clean exit - source stopped normally
                 logger.info("Source %s stopped cleanly", source.name)
+                self._sources.pop(channel_id, None)
+                self._source_tasks.pop(channel_id, None)
                 break
             except asyncio.CancelledError:
                 logger.debug("Source %s cancelled", source.name)
@@ -981,7 +982,17 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 elif status.status == "failed":
                     logger.error("Message %s failed: %s", status.message_id, status.error_message)
         """
-        self._delivery_status_handlers.append(fn)
+        # Wrap sync handlers so process_delivery_status can always await
+        if not asyncio.iscoroutinefunction(fn):
+            orig = fn
+
+            async def wrapper(status: DeliveryStatus) -> Any:
+                return orig(status)
+
+            wrapper.__name__ = getattr(orig, "__name__", "unknown")
+            self._delivery_status_handlers.append(wrapper)
+        else:
+            self._delivery_status_handlers.append(fn)
         return fn
 
     async def process_webhook(
@@ -1024,9 +1035,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         logger = logging.getLogger("roomkit.framework")
         for handler in self._delivery_status_handlers:
             try:
-                result = handler(status)
-                if inspect.iscoroutine(result):
-                    await result
+                await handler(status)
             except Exception:
                 logger.exception(
                     "Delivery status handler %s failed for message %s",

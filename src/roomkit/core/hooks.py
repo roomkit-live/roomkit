@@ -195,6 +195,18 @@ class HookEngine:
                 result.hook_errors.append({"hook": hook.name, "error": str(exc)})
                 continue
 
+            if not isinstance(hook_result, HookResult):
+                logger.error(
+                    "Sync hook %s returned %s instead of HookResult — skipping",
+                    hook.name,
+                    type(hook_result).__name__,
+                    extra={"room_id": room_id},
+                )
+                result.hook_errors.append(
+                    {"hook": hook.name, "error": f"expected HookResult, got {type(hook_result).__name__}"}
+                )
+                continue
+
             result.injected_events.extend(hook_result.injected_events)
             result.tasks.extend(hook_result.tasks)
             result.observations.extend(hook_result.observations)

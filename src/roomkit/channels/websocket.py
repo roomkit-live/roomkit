@@ -23,9 +23,12 @@ class WebSocketChannel(Channel):
 
     channel_type = ChannelType.WEBSOCKET
 
+    _MAX_CONSECUTIVE_ERRORS = 3
+
     def __init__(self, channel_id: str) -> None:
         super().__init__(channel_id)
         self._connections: dict[str, SendFn] = {}
+        self._error_counts: dict[str, int] = {}
 
     @property
     def info(self) -> dict[str, Any]:
@@ -56,10 +59,12 @@ class WebSocketChannel(Channel):
     def register_connection(self, connection_id: str, send_fn: SendFn) -> None:
         """Register a WebSocket connection."""
         self._connections[connection_id] = send_fn
+        self._error_counts.pop(connection_id, None)
 
     def unregister_connection(self, connection_id: str) -> None:
         """Unregister a WebSocket connection."""
         self._connections.pop(connection_id, None)
+        self._error_counts.pop(connection_id, None)
 
     @property
     def connection_count(self) -> int:
@@ -85,7 +90,23 @@ class WebSocketChannel(Channel):
         for conn_id, send_fn in list(self._connections.items()):
             try:
                 await send_fn(conn_id, event)
+                self._error_counts.pop(conn_id, None)
             except Exception:
-                logger.exception("WebSocket send failed for connection %s", conn_id)
-                self._connections.pop(conn_id, None)
+                consecutive = self._error_counts.get(conn_id, 0) + 1
+                self._error_counts[conn_id] = consecutive
+                if consecutive >= self._MAX_CONSECUTIVE_ERRORS:
+                    logger.warning(
+                        "WebSocket connection %s removed after %d consecutive failures",
+                        conn_id,
+                        consecutive,
+                    )
+                    self._connections.pop(conn_id, None)
+                    self._error_counts.pop(conn_id, None)
+                else:
+                    logger.warning(
+                        "WebSocket send failed for connection %s (attempt %d/%d)",
+                        conn_id,
+                        consecutive,
+                        self._MAX_CONSECUTIVE_ERRORS,
+                    )
         return ChannelOutput.empty()

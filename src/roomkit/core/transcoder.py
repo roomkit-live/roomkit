@@ -14,6 +14,7 @@ from roomkit.models.event import (
     LocationContent,
     MediaContent,
     RichContent,
+    TemplateContent,
     TextContent,
     VideoContent,
 )
@@ -99,5 +100,10 @@ class DefaultContentTranscoder(ContentTranscoder):
             if target_binding.capabilities.supports_delete:
                 return content
             return TextContent(body="[Message deleted]")
+
+        if isinstance(content, TemplateContent):
+            if ChannelMediaType.TEMPLATE in target_types:
+                return content
+            return TextContent(body=content.body or f"[Template: {content.template_id}]")
 
         return content

@@ -91,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_rooms_metadata ON rooms USING GIN (data jsonb_pat
 
 
 def _dump(model: Any) -> str:
-    return str(model.model_dump_json())
+    return model.model_dump_json()
 
 
 class PostgresStore(ConversationStore):
@@ -114,6 +114,12 @@ class PostgresStore(ConversationStore):
         self._pool = pool
         self._owns_pool = pool is None
 
+    def _ensure_pool(self) -> Any:
+        """Return the pool or raise if not initialized."""
+        if self._pool is None:
+            raise RuntimeError("PostgresStore.init() must be called before use")
+        return self._pool
+
     async def init(self, min_size: int = 2, max_size: int = 10) -> None:
         """Create the connection pool (if needed) and ensure schema exists."""
         if self._pool is None:
@@ -122,7 +128,7 @@ class PostgresStore(ConversationStore):
                 min_size=min_size,
                 max_size=max_size,
             )
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(_SCHEMA)
 
     async def close(self) -> None:
@@ -141,7 +147,7 @@ class PostgresStore(ConversationStore):
     # ── Room operations ──────────────────────────────────────────
 
     async def create_room(self, room: Room) -> Room:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "INSERT INTO rooms (id, organization_id, status, created_at, data) "
                 "VALUES ($1, $2, $3, $4, $5)",
@@ -154,14 +160,14 @@ class PostgresStore(ConversationStore):
         return room
 
     async def get_room(self, room_id: str) -> Room | None:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow("SELECT data FROM rooms WHERE id = $1", room_id)
         if row is None:
             return None
         return Room.model_validate_json(row["data"])
 
     async def update_room(self, room: Room) -> Room:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "UPDATE rooms SET organization_id = $2, status = $3, data = $4 WHERE id = $1",
                 room.id,
@@ -172,12 +178,12 @@ class PostgresStore(ConversationStore):
         return room
 
     async def delete_room(self, room_id: str) -> bool:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             tag = await conn.execute("DELETE FROM rooms WHERE id = $1", room_id)
         return bool(tag == "DELETE 1")
 
     async def list_rooms(self, offset: int = 0, limit: int = 50) -> list[Room]:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             rows = await conn.fetch(
                 "SELECT data FROM rooms ORDER BY created_at LIMIT $1 OFFSET $2",
                 limit,
@@ -210,7 +216,7 @@ class PostgresStore(ConversationStore):
             idx += 1
 
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             rows = await conn.fetch(f"SELECT data FROM rooms {where}", *params)
         return [Room.model_validate_json(r["data"]) for r in rows]
 
@@ -244,7 +250,7 @@ class PostgresStore(ConversationStore):
 
         base += " ORDER BY r.created_at DESC LIMIT 1"
 
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow(base, *params)
         if row is None:
             return None
@@ -262,10 +268,10 @@ class PostgresStore(ConversationStore):
                 "JOIN rooms r ON r.id = b.room_id "
                 "WHERE b.channel_id = $1 AND r.status = $2 LIMIT 1"
             )
-            async with self._pool.acquire() as conn:
+            async with self._ensure_pool().acquire() as conn:
                 row = await conn.fetchrow(query, channel_id, status_val)
         else:
-            async with self._pool.acquire() as conn:
+            async with self._ensure_pool().acquire() as conn:
                 row = await conn.fetchrow(
                     "SELECT room_id FROM bindings WHERE channel_id = $1 LIMIT 1",
                     channel_id,
@@ -275,7 +281,7 @@ class PostgresStore(ConversationStore):
     # ── Event operations ─────────────────────────────────────────
 
     async def add_event(self, event: RoomEvent) -> RoomEvent:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "INSERT INTO events (id, room_id, idempotency_key, visibility, created_at, data) "
                 "VALUES ($1, $2, $3, $4, $5, $6)",
@@ -289,14 +295,14 @@ class PostgresStore(ConversationStore):
         return event
 
     async def get_event(self, event_id: str) -> RoomEvent | None:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow("SELECT data FROM events WHERE id = $1", event_id)
         if row is None:
             return None
         return RoomEvent.model_validate_json(row["data"])
 
     async def update_event(self, event: RoomEvent) -> RoomEvent:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "UPDATE events SET data = $2 WHERE id = $1",
                 event.id,
@@ -316,10 +322,10 @@ class PostgresStore(ConversationStore):
                 "SELECT data FROM events WHERE room_id = $1 AND visibility = $2 "
                 "ORDER BY created_at LIMIT $3 OFFSET $4"
             )
-            async with self._pool.acquire() as conn:
+            async with self._ensure_pool().acquire() as conn:
                 rows = await conn.fetch(query, room_id, visibility_filter, limit, offset)
         else:
-            async with self._pool.acquire() as conn:
+            async with self._ensure_pool().acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT data FROM events WHERE room_id = $1 "
                     "ORDER BY created_at LIMIT $2 OFFSET $3",
@@ -330,7 +336,7 @@ class PostgresStore(ConversationStore):
         return [RoomEvent.model_validate_json(r["data"]) for r in rows]
 
     async def check_idempotency(self, room_id: str, key: str) -> bool:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT 1 FROM events WHERE room_id = $1 AND idempotency_key = $2",
                 room_id,
@@ -339,7 +345,7 @@ class PostgresStore(ConversationStore):
         return row is not None
 
     async def get_event_count(self, room_id: str) -> int:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT count(*) AS cnt FROM events WHERE room_id = $1",
                 room_id,
@@ -349,7 +355,7 @@ class PostgresStore(ConversationStore):
     # ── Binding operations ───────────────────────────────────────
 
     async def add_binding(self, binding: ChannelBinding) -> ChannelBinding:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "INSERT INTO bindings (channel_id, room_id, channel_type, participant_id, data) "
                 "VALUES ($1, $2, $3, $4, $5) "
@@ -364,7 +370,7 @@ class PostgresStore(ConversationStore):
         return binding
 
     async def get_binding(self, room_id: str, channel_id: str) -> ChannelBinding | None:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT data FROM bindings WHERE room_id = $1 AND channel_id = $2",
                 room_id,
@@ -375,7 +381,7 @@ class PostgresStore(ConversationStore):
         return ChannelBinding.model_validate_json(row["data"])
 
     async def update_binding(self, binding: ChannelBinding) -> ChannelBinding:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "UPDATE bindings SET channel_type = $3, participant_id = $4, data = $5 "
                 "WHERE room_id = $1 AND channel_id = $2",
@@ -388,7 +394,7 @@ class PostgresStore(ConversationStore):
         return binding
 
     async def remove_binding(self, room_id: str, channel_id: str) -> bool:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             tag = await conn.execute(
                 "DELETE FROM bindings WHERE room_id = $1 AND channel_id = $2",
                 room_id,
@@ -397,7 +403,7 @@ class PostgresStore(ConversationStore):
         return bool(tag == "DELETE 1")
 
     async def list_bindings(self, room_id: str) -> list[ChannelBinding]:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             rows = await conn.fetch(
                 "SELECT data FROM bindings WHERE room_id = $1",
                 room_id,
@@ -407,7 +413,7 @@ class PostgresStore(ConversationStore):
     # ── Participant operations ───────────────────────────────────
 
     async def add_participant(self, participant: Participant) -> Participant:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "INSERT INTO participants (id, room_id, data) VALUES ($1, $2, $3) "
                 "ON CONFLICT (room_id, id) DO UPDATE SET data = $3",
@@ -418,7 +424,7 @@ class PostgresStore(ConversationStore):
         return participant
 
     async def get_participant(self, room_id: str, participant_id: str) -> Participant | None:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT data FROM participants WHERE room_id = $1 AND id = $2",
                 room_id,
@@ -429,7 +435,7 @@ class PostgresStore(ConversationStore):
         return Participant.model_validate_json(row["data"])
 
     async def update_participant(self, participant: Participant) -> Participant:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "UPDATE participants SET data = $3 WHERE room_id = $1 AND id = $2",
                 participant.room_id,
@@ -439,7 +445,7 @@ class PostgresStore(ConversationStore):
         return participant
 
     async def list_participants(self, room_id: str) -> list[Participant]:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             rows = await conn.fetch(
                 "SELECT data FROM participants WHERE room_id = $1",
                 room_id,
@@ -449,7 +455,7 @@ class PostgresStore(ConversationStore):
     # ── Read tracking ────────────────────────────────────────────
 
     async def mark_read(self, room_id: str, channel_id: str, event_id: str) -> None:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "INSERT INTO read_markers (room_id, channel_id, event_id) "
                 "VALUES ($1, $2, $3) "
@@ -460,7 +466,7 @@ class PostgresStore(ConversationStore):
             )
 
     async def mark_all_read(self, room_id: str, channel_id: str) -> None:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT id FROM events WHERE room_id = $1 ORDER BY created_at DESC LIMIT 1",
                 room_id,
@@ -469,7 +475,7 @@ class PostgresStore(ConversationStore):
             await self.mark_read(room_id, channel_id, row["id"])
 
     async def get_unread_count(self, room_id: str, channel_id: str) -> int:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             marker = await conn.fetchrow(
                 "SELECT event_id FROM read_markers WHERE room_id = $1 AND channel_id = $2",
                 room_id,
@@ -482,11 +488,12 @@ class PostgresStore(ConversationStore):
                 )
                 return row["cnt"] if row else 0
 
+            # Use event index from JSONB data for ordering (avoids created_at ties)
             last_read_event = await conn.fetchrow(
-                "SELECT created_at FROM events WHERE id = $1",
+                "SELECT (data->>'index')::int AS idx FROM events WHERE id = $1",
                 marker["event_id"],
             )
-            if last_read_event is None:
+            if last_read_event is None or last_read_event["idx"] is None:
                 row = await conn.fetchrow(
                     "SELECT count(*) AS cnt FROM events WHERE room_id = $1",
                     room_id,
@@ -494,16 +501,17 @@ class PostgresStore(ConversationStore):
                 return row["cnt"] if row else 0
 
             row = await conn.fetchrow(
-                "SELECT count(*) AS cnt FROM events WHERE room_id = $1 AND created_at > $2",
+                "SELECT count(*) AS cnt FROM events WHERE room_id = $1 "
+                "AND (data->>'index')::int > $2",
                 room_id,
-                last_read_event["created_at"],
+                last_read_event["idx"],
             )
             return row["cnt"] if row else 0
 
     # ── Identity operations ──────────────────────────────────────
 
     async def create_identity(self, identity: Identity) -> Identity:
-        async with self._pool.acquire() as conn, conn.transaction():
+        async with self._ensure_pool().acquire() as conn, conn.transaction():
             await conn.execute(
                 "INSERT INTO identities (id, data) VALUES ($1, $2)",
                 identity.id,
@@ -522,7 +530,7 @@ class PostgresStore(ConversationStore):
         return identity
 
     async def get_identity(self, identity_id: str) -> Identity | None:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT data FROM identities WHERE id = $1",
                 identity_id,
@@ -532,7 +540,7 @@ class PostgresStore(ConversationStore):
         return Identity.model_validate_json(row["data"])
 
     async def resolve_identity(self, channel_type: str, address: str) -> Identity | None:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT i.data FROM identity_addresses ia "
                 "JOIN identities i ON i.id = ia.identity_id "
@@ -545,7 +553,7 @@ class PostgresStore(ConversationStore):
         return Identity.model_validate_json(row["data"])
 
     async def link_address(self, identity_id: str, channel_type: str, address: str) -> None:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT data FROM identities WHERE id = $1",
                 identity_id,
@@ -587,7 +595,7 @@ class PostgresStore(ConversationStore):
     # ── Task operations ──────────────────────────────────────────
 
     async def add_task(self, task: Task) -> Task:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "INSERT INTO tasks (id, room_id, status, data) VALUES ($1, $2, $3, $4)",
                 task.id,
@@ -598,7 +606,7 @@ class PostgresStore(ConversationStore):
         return task
 
     async def get_task(self, task_id: str) -> Task | None:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             row = await conn.fetchrow("SELECT data FROM tasks WHERE id = $1", task_id)
         if row is None:
             return None
@@ -606,14 +614,14 @@ class PostgresStore(ConversationStore):
 
     async def list_tasks(self, room_id: str, status: str | None = None) -> list[Task]:
         if status is not None:
-            async with self._pool.acquire() as conn:
+            async with self._ensure_pool().acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT data FROM tasks WHERE room_id = $1 AND status = $2",
                     room_id,
                     status,
                 )
         else:
-            async with self._pool.acquire() as conn:
+            async with self._ensure_pool().acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT data FROM tasks WHERE room_id = $1",
                     room_id,
@@ -621,7 +629,7 @@ class PostgresStore(ConversationStore):
         return [Task.model_validate_json(r["data"]) for r in rows]
 
     async def update_task(self, task: Task) -> Task:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "UPDATE tasks SET status = $2, data = $3 WHERE id = $1",
                 task.id,
@@ -633,7 +641,7 @@ class PostgresStore(ConversationStore):
     # ── Observation operations ───────────────────────────────────
 
     async def add_observation(self, observation: Observation) -> Observation:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             await conn.execute(
                 "INSERT INTO observations (id, room_id, data) VALUES ($1, $2, $3)",
                 observation.id,
@@ -643,7 +651,7 @@ class PostgresStore(ConversationStore):
         return observation
 
     async def list_observations(self, room_id: str) -> list[Observation]:
-        async with self._pool.acquire() as conn:
+        async with self._ensure_pool().acquire() as conn:
             rows = await conn.fetch(
                 "SELECT data FROM observations WHERE room_id = $1",
                 room_id,

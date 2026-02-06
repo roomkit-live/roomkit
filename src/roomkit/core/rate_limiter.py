@@ -22,9 +22,10 @@ class TokenBucketRateLimiter:
     bucket state after yielding control.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, burst_seconds: float = 1.0) -> None:
         # channel_id -> (tokens, last_refill_time)
         self._buckets: dict[str, tuple[float, float]] = {}
+        self._burst_seconds = burst_seconds
 
     def _rate_per_second(self, rate_limit: RateLimit) -> float:
         if rate_limit.max_per_second is not None:
@@ -38,9 +39,10 @@ class TokenBucketRateLimiter:
     def _refill(self, channel_id: str, rate: float) -> float:
         """Refill tokens and return current count."""
         now = time.monotonic()
-        tokens, last_refill = self._buckets.get(channel_id, (rate, now))
+        max_tokens = rate * self._burst_seconds
+        tokens, last_refill = self._buckets.get(channel_id, (max_tokens, now))
         elapsed = now - last_refill
-        tokens = min(tokens + elapsed * rate, rate)  # cap at rate (burst = 1s)
+        tokens = min(tokens + elapsed * rate, max_tokens)
         self._buckets[channel_id] = (tokens, now)
         return tokens
 
