@@ -511,18 +511,18 @@ class InboundMixin(HelpersMixin):
             room_id, HookTrigger.AFTER_BROADCAST, event, context
         )
 
-        # Update room latest_index and activity timestamp
+        # Update room state per RFC §3.5 step 15
         room = await self._store.get_room(room_id)
         if room is not None:
+            updates: dict[str, object] = {
+                "latest_index": event.index,
+                "event_count": room.event_count + 1,
+            }
             if room.timers:
-                updated_timers = room.timers.model_copy(
+                updates["timers"] = room.timers.model_copy(
                     update={"last_activity_at": datetime.now(UTC)}
                 )
-                room = room.model_copy(
-                    update={"latest_index": event.index, "timers": updated_timers}
-                )
-            else:
-                room = room.model_copy(update={"latest_index": event.index})
+            room = room.model_copy(update=updates)
             await self._store.update_room(room)
 
         await self._emit_framework_event("event_processed", room_id=room_id, event_id=event.id)
