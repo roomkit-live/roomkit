@@ -6,104 +6,129 @@
 
 ```bash
 # Install dependencies
-uv sync
+uv sync --extra dev
 
-# Run all tests
-pytest tests/ -q
+# Run all checks (lint + typecheck + security + test)
+make all
 
-# Run specific test file
-pytest tests/test_framework.py -v
+# Run specific checks
+uv run ruff check src/roomkit/         # Lint check
+uv run ruff check src/roomkit/ --fix   # Lint fix
+uv run ruff format src/ tests/         # Format code
+uv run mypy src/roomkit/               # Type check (enforced in CI)
+uv run bandit -r src/ -c pyproject.toml # Security scan (enforced in CI)
 
-# Lint check
-ruff check src/roomkit/
-
-# Lint fix
-ruff check src/roomkit/ --fix
-
-# Type check (optional, not enforced in CI)
-mypy src/roomkit/
+# Run tests
+uv run pytest tests/ -q                # All tests
+uv run pytest tests/test_framework.py -v  # Specific test file
+uv run pytest --cov=roomkit --cov-report=term-missing  # With coverage
 ```
 
 ## Project Structure
 
 ```
 src/roomkit/
-├── __init__.py          # Public API exports - ALL public classes exported here
-├── _version.py          # Version string (auto-managed)
+├── __init__.py              # Public API exports — ALL public classes exported here
+├── _version.py              # Version string (auto-managed)
+├── ai_docs.py               # AI documentation helpers (llms.txt, AGENTS.md)
 ├── core/
-│   ├── framework.py     # RoomKit class - central orchestrator
-│   ├── _inbound.py      # Inbound message processing pipeline
-│   ├── _room_lifecycle.py  # Room CRUD operations
-│   ├── _channel_ops.py  # Channel attach/detach/mute operations
-│   ├── _helpers.py      # Shared helper methods
-│   ├── hooks.py         # HookEngine, HookRegistration
-│   ├── locks.py         # RoomLockManager ABC, InMemoryLockManager
-│   ├── event_router.py  # Broadcast routing to channels
-│   └── inbound_router.py # InboundRoomRouter ABC
+│   ├── framework.py         # RoomKit class — central orchestrator
+│   ├── _inbound.py          # Inbound message processing pipeline
+│   ├── _room_lifecycle.py   # Room CRUD, timers, participant resolution
+│   ├── _channel_ops.py      # Channel attach/detach/mute/access/visibility
+│   ├── _helpers.py          # Shared helper methods
+│   ├── hooks.py             # HookEngine, HookRegistration
+│   ├── event_router.py      # Broadcast routing to channels
+│   ├── inbound_router.py    # InboundRoomRouter ABC, DefaultInboundRoomRouter
+│   ├── locks.py             # RoomLockManager ABC, InMemoryLockManager
+│   ├── circuit_breaker.py   # CircuitBreaker (closed/open/half-open)
+│   ├── rate_limiter.py      # TokenBucketRateLimiter
+│   ├── retry.py             # retry_with_backoff() with RetryPolicy
+│   ├── transcoder.py        # DefaultContentTranscoder
+│   └── router.py            # ContentTranscoder ABC
 ├── channels/
-│   ├── base.py          # Channel ABC
-│   ├── transport.py     # TransportChannel (SMS, Email, etc.)
-│   ├── ai.py            # AIChannel (intelligence layer)
-│   ├── voice.py         # VoiceChannel (real-time audio)
-│   ├── realtime_voice.py # RealtimeVoiceChannel (speech-to-speech AI)
-│   └── websocket.py     # WebSocketChannel
+│   ├── __init__.py          # Factory functions: SMSChannel(), EmailChannel(), etc.
+│   ├── base.py              # Channel ABC
+│   ├── transport.py         # TransportChannel (generic transport wrapper)
+│   ├── ai.py                # AIChannel (intelligence layer)
+│   ├── voice.py             # VoiceChannel (real-time audio with STT/TTS)
+│   ├── realtime_voice.py    # RealtimeVoiceChannel (speech-to-speech AI)
+│   └── websocket.py         # WebSocketChannel (bidirectional real-time)
 ├── providers/
-│   ├── ai/base.py       # AIProvider ABC, AIContext, AIResponse
-│   ├── sms/base.py      # SMSProvider ABC
-│   ├── twilio/sms.py    # TwilioSMSProvider
-│   ├── telnyx/sms.py    # TelnyxSMSProvider
-│   ├── vllm/            # VLLMConfig + create_vllm_provider
-│   └── ...              # Other provider implementations
+│   ├── ai/                  # AIProvider ABC, AIContext, AIResponse, MockAIProvider
+│   ├── anthropic/           # AnthropicAIProvider, AnthropicConfig
+│   ├── openai/              # OpenAIAIProvider, OpenAIConfig
+│   ├── gemini/              # GeminiAIProvider, GeminiConfig
+│   ├── vllm/                # VLLMConfig, create_vllm_provider (local AI)
+│   ├── pydantic_ai/         # PydanticAI integration
+│   ├── sms/                 # SMSProvider ABC, MockSMSProvider, phone utils
+│   ├── twilio/              # TwilioSMSProvider, TwilioRCSProvider
+│   ├── telnyx/              # TelnyxSMSProvider, TelnyxRCSProvider
+│   ├── sinch/               # SinchSMSProvider
+│   ├── voicemeup/           # VoiceMeUpSMSProvider
+│   ├── rcs/                 # RCSProvider ABC, MockRCSProvider
+│   ├── email/               # EmailProvider ABC, MockEmailProvider
+│   ├── elasticemail/        # ElasticEmailProvider
+│   ├── sendgrid/            # SendGridEmailProvider
+│   ├── messenger/           # FacebookMessengerProvider, MockMessengerProvider
+│   ├── teams/               # BotFrameworkTeamsProvider, MockTeamsProvider
+│   ├── whatsapp/            # WhatsAppProvider ABC, WhatsAppPersonalProvider
+│   └── http/                # WebhookHTTPProvider, MockHTTPProvider
 ├── models/
-│   ├── room.py          # Room, RoomTimers
-│   ├── event.py         # RoomEvent, content types
-│   ├── participant.py   # Participant
-│   ├── identity.py      # Identity, IdentityResult, IdentityHookResult
-│   ├── delivery.py      # InboundMessage, InboundResult, DeliveryResult
-│   ├── channel.py       # ChannelBinding, ChannelCapabilities
-│   ├── hook.py          # HookResult, InjectedEvent
-│   └── enums.py         # All enumerations
+│   ├── enums.py             # All enumerations (ChannelType, EventType, HookTrigger, etc.)
+│   ├── event.py             # RoomEvent, content types (Text, Rich, Media, Audio, etc.)
+│   ├── room.py              # Room, RoomTimers
+│   ├── participant.py       # Participant
+│   ├── identity.py          # Identity, IdentityResult, IdentityHookResult
+│   ├── delivery.py          # InboundMessage, InboundResult, DeliveryStatus
+│   ├── channel.py           # ChannelBinding, ChannelCapabilities, RateLimit, RetryPolicy
+│   ├── hook.py              # HookResult, InjectedEvent
+│   ├── context.py           # RoomContext (room, bindings, participants, recent_events)
+│   ├── task.py              # Task, Observation
+│   └── framework_event.py   # FrameworkEvent (observability)
 ├── store/
-│   ├── base.py          # ConversationStore ABC
-│   └── memory.py        # InMemoryStore
+│   ├── base.py              # ConversationStore ABC
+│   ├── memory.py            # InMemoryStore (default)
+│   └── postgres.py          # PostgresStore (asyncpg, production)
 ├── realtime/
-│   ├── base.py          # RealtimeBackend ABC, EphemeralEvent
-│   └── memory.py        # InMemoryRealtime
+│   ├── base.py              # RealtimeBackend ABC, EphemeralEvent, EphemeralEventType
+│   └── memory.py            # InMemoryRealtime (default)
+├── sources/
+│   ├── base.py              # SourceProvider ABC, SourceStatus, SourceHealth
+│   ├── websocket.py         # WebSocketSource
+│   ├── sse.py               # SSESource (Server-Sent Events)
+│   └── neonize.py           # WhatsAppPersonalSourceProvider
 ├── voice/
-│   ├── __init__.py      # Voice subsystem exports
-│   ├── base.py          # Shared types (AudioChunk, VoiceSession, callbacks)
-│   ├── events.py        # Voice-specific events
-│   ├── stt/             # Speech-to-text providers
-│   │   ├── base.py      # STTProvider ABC
-│   │   ├── mock.py      # MockSTTProvider
-│   │   ├── deepgram.py  # DeepgramSTTProvider
-│   │   └── sherpa_onnx.py # SherpaOnnxSTTProvider
-│   ├── tts/             # Text-to-speech providers
-│   │   ├── base.py      # TTSProvider ABC
-│   │   ├── mock.py      # MockTTSProvider
-│   │   ├── elevenlabs.py # ElevenLabsTTSProvider
-│   │   └── sherpa_onnx.py # SherpaOnnxTTSProvider
-│   ├── realtime/        # Realtime voice (speech-to-speech)
-│   │   ├── base.py      # RealtimeSession, RealtimeSessionState
-│   │   ├── provider.py  # RealtimeVoiceProvider ABC
-│   │   ├── transport.py # RealtimeAudioTransport ABC
-│   │   ├── events.py    # Transcription, speech, tool call events
-│   │   ├── ws_transport.py # WebSocketRealtimeTransport
-│   │   └── mock.py      # MockRealtimeProvider, MockRealtimeTransport
-│   └── backends/        # Voice transport backends
-│       ├── base.py      # VoiceBackend ABC
-│       ├── mock.py      # MockVoiceBackend, MockVoiceCall
-│       └── fastrtc.py   # FastRTCVoiceBackend (WebRTC)
+│   ├── __init__.py          # Voice subsystem exports
+│   ├── base.py              # AudioChunk, VoiceSession, VoiceCapability, callbacks
+│   ├── events.py            # BargeInEvent, VADSilenceEvent, TTSCancelledEvent
+│   ├── stt/                 # Speech-to-text: DeepgramSTT, SherpaOnnxSTT, MockSTT
+│   ├── tts/                 # Text-to-speech: ElevenLabsTTS, SherpaOnnxTTS, MockTTS
+│   ├── realtime/            # Speech-to-speech: GeminiLive, OpenAIRealtime, Mock
+│   └── backends/            # Audio transport: FastRTCVoiceBackend, MockVoiceBackend
 └── identity/
-    ├── base.py          # IdentityResolver ABC
-    └── mock.py          # MockIdentityResolver
+    ├── base.py              # IdentityResolver ABC
+    └── mock.py              # MockIdentityResolver
 
 tests/
-├── conftest.py          # Shared fixtures
-├── test_framework.py    # Core RoomKit tests, SimpleChannel fixture
-├── test_hooks.py        # Hook system tests
-├── test_identity_pipeline.py  # Identity resolution tests
-└── ...
+├── conftest.py              # Shared fixtures
+├── test_framework.py        # Core RoomKit tests, SimpleChannel fixture
+├── test_framework_events.py # Framework event observability
+├── test_framework_queries.py # Timeline/query tests
+├── test_hooks.py            # Hook system tests
+├── test_identity_pipeline.py # Identity resolution tests
+├── test_realtime.py         # Ephemeral events (typing, presence, reactions)
+├── test_router.py           # Event routing and transcoding
+├── test_circuit_breaker.py  # Circuit breaker tests
+├── test_resilience.py       # Retry and rate limiting tests
+├── test_observability.py    # Task/observation tests
+├── test_sources_*.py        # Source provider tests
+├── test_voice*.py           # Voice subsystem tests
+├── test_channels/           # Channel-specific tests
+├── test_integration/        # Integration tests
+└── test_providers/          # Provider-specific tests
+
+examples/                    # 32 runnable examples (uv run python examples/<name>.py)
 ```
 
 ## Architecture Patterns
@@ -133,20 +158,31 @@ This pattern applies to: `ConversationStore`, `RoomLockManager`, `RealtimeBacken
 
 ### Channel Implementation
 
-```python
-from roomkit.channels.transport import TransportChannel
-from roomkit.models.enums import ChannelType
+Channels are created via factory functions in `roomkit.channels`:
 
-class SMSChannel(TransportChannel):
-    channel_type = ChannelType.SMS
+```python
+from roomkit.channels import SMSChannel
+from roomkit.providers.twilio.sms import TwilioSMSProvider
+from roomkit.providers.twilio.config import TwilioConfig
+
+# Factory function creates a TransportChannel with the right provider
+sms = SMSChannel("sms-main", provider=TwilioSMSProvider(TwilioConfig(...)))
+kit.register_channel(sms)
+```
+
+For custom channels, extend `Channel` or `TransportChannel`:
+
+```python
+from roomkit.channels.base import Channel
+
+class CustomChannel(Channel):
+    channel_type = ChannelType.WEBHOOK
 
     async def deliver(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
-        phone = binding.metadata.get("phone_number")
-        text = self.extract_text(event)
-        result = await self._provider.send(to=phone, body=text)
-        return ChannelOutput(provider_result=result)
+        # Send to external system
+        return ChannelOutput.empty()
 ```
 
 ### Provider Implementation
@@ -157,11 +193,12 @@ from roomkit.providers.sms.base import SMSProvider
 class TwilioSMSProvider(SMSProvider):
     def __init__(self, config: TwilioConfig) -> None:
         self._config = config
-        self._client = httpx.AsyncClient(...)
 
-    async def send(self, to: str, body: str, media_urls: list[str] | None = None) -> ProviderResult:
-        response = await self._client.post(...)
-        return ProviderResult(message_id=response["sid"], raw=response)
+    async def send(
+        self, event: RoomEvent, to: str, from_: str | None = None
+    ) -> ProviderResult:
+        # Extract content from event and send via API
+        return ProviderResult(success=True, provider_message_id="SM123")
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -174,17 +211,149 @@ from roomkit import RoomKit, HookTrigger, HookExecution, HookResult
 
 kit = RoomKit()
 
-# Sync hook - can block/modify events
+# Sync hook — can block/modify events (BEFORE_BROADCAST)
 @kit.hook(HookTrigger.BEFORE_BROADCAST)
 async def content_filter(event: RoomEvent, ctx: RoomContext) -> HookResult:
     if "spam" in event.content.body.lower():
         return HookResult.block("Spam detected")
     return HookResult.allow()
 
-# Async hook - fire-and-forget side effects
+# Async hook — fire-and-forget side effects (AFTER_BROADCAST)
 @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC)
 async def log_event(event: RoomEvent, ctx: RoomContext) -> None:
     await analytics.track("message", {"room": event.room_id})
+
+# Hook with filters — only run for specific channels/directions
+@kit.hook(
+    HookTrigger.AFTER_BROADCAST,
+    execution=HookExecution.ASYNC,
+    channel_types={ChannelType.SMS},
+    directions={ChannelDirection.INBOUND},
+    priority=10,  # Lower runs first
+)
+async def sms_audit(event: RoomEvent, ctx: RoomContext) -> None:
+    ...
+```
+
+### Realtime Ephemeral Events
+
+Typing, presence, and reactions are ephemeral — not stored in history:
+
+```python
+# Publish typing indicator
+await kit.publish_typing("room-1", "alice", is_typing=True)
+
+# Publish presence
+await kit.publish_presence("room-1", "alice", "online")  # online/away/offline
+
+# Publish reaction
+await kit.publish_reaction("room-1", "alice", target_event_id="evt-123", emoji="thumbsup")
+
+# Publish read receipt
+await kit.publish_read_receipt("room-1", "alice", event_id="evt-123")
+
+# Subscribe to ephemeral events for a room
+sub_id = await kit.subscribe_room("room-1", my_callback)
+await kit.unsubscribe_room(sub_id)
+```
+
+### Sources (Event-Driven Providers)
+
+Sources maintain persistent connections and push events into the framework:
+
+```python
+from roomkit.sources.neonize import NeonizeSource
+
+source = NeonizeSource(session_path="~/.roomkit/wa.db")
+await kit.attach_source(
+    "whatsapp-personal", source,
+    auto_restart=True,            # Auto-restart on failure
+    max_restart_attempts=5,       # Give up after 5 failures
+    max_concurrent_emits=20,      # Backpressure control
+)
+
+# Check health
+health = await kit.source_health("whatsapp-personal")
+sources = kit.list_sources()  # {channel_id: SourceStatus}
+
+# Detach
+await kit.detach_source("whatsapp-personal")
+```
+
+### Resilience Patterns
+
+```python
+from roomkit import RateLimit, RetryPolicy
+from roomkit.core.circuit_breaker import CircuitBreaker
+from roomkit.core.retry import retry_with_backoff
+
+# Rate limit on channel binding
+await kit.attach_channel("room-1", "sms-out",
+    rate_limit=RateLimit(max_per_second=1.0, max_per_minute=30.0),
+    retry_policy=RetryPolicy(max_retries=3, base_delay_seconds=1.0),
+)
+
+# Circuit breaker for provider fault isolation
+cb = CircuitBreaker(failure_threshold=5, recovery_timeout=60.0)
+if cb.allow_request():
+    try:
+        result = await provider.send(...)
+        cb.record_success()
+    except Exception:
+        cb.record_failure()  # Opens after 5 consecutive failures
+
+# Retry with exponential backoff
+policy = RetryPolicy(max_retries=3, base_delay_seconds=1.0, max_delay_seconds=60.0)
+result = await retry_with_backoff(flaky_function, policy)
+```
+
+### Room Timers
+
+```python
+from roomkit import RoomTimers
+
+# Create room with auto-pause after 5 min, auto-close after 1 hour
+room = await kit.create_room(room_id="support-123")
+# Set timers on the room model (timers are evaluated via check_room_timers)
+
+# Check timers for one room
+room = await kit.check_room_timers("support-123")
+
+# Batch check all rooms (call periodically, e.g. every 60s)
+transitioned = await kit.check_all_timers()
+```
+
+### Delivery Status Tracking
+
+```python
+from roomkit import DeliveryStatus
+
+@kit.on_delivery_status
+async def track_delivery(status: DeliveryStatus) -> None:
+    if status.status == "failed":
+        logger.error("Message %s failed: %s", status.message_id, status.error_message)
+
+# Process status webhooks from providers
+await kit.process_delivery_status(status)
+```
+
+### Framework Events (Observability)
+
+```python
+# Listen for framework-level events (not message events)
+@kit.on("room_created")
+async def on_room_created(event):
+    logger.info("Room created: %s", event.data["room_id"])
+
+@kit.on("source_error")
+async def on_source_error(event):
+    logger.error("Source failed: %s", event.data["error"])
+
+# Event types: room_created, room_closed, room_paused,
+# room_channel_attached, room_channel_detached,
+# channel_connected, channel_disconnected,
+# voice_connected, voice_disconnected,
+# source_attached, source_detached, source_error, source_exhausted
 ```
 
 ## Code Style
@@ -212,12 +381,12 @@ All I/O operations must be async:
 
 ```python
 # Correct
-async def send(self, to: str, body: str) -> ProviderResult:
+async def send(self, event: RoomEvent, to: str) -> ProviderResult:
     response = await self._client.post(...)
-    return ProviderResult(...)
+    return ProviderResult(success=True, provider_message_id=response["id"])
 
-# Wrong - blocks event loop
-def send(self, to: str, body: str) -> ProviderResult:
+# Wrong — blocks event loop
+def send(self, event: RoomEvent, to: str) -> ProviderResult:
     response = requests.post(...)  # Never use sync HTTP
 ```
 
@@ -228,7 +397,7 @@ def send(self, to: str, body: str) -> ProviderResult:
 async def process_inbound(self, message: InboundMessage) -> InboundResult:
     ...
 
-# Use | for unions (Python 3.10+)
+# Use | for unions (Python 3.12+)
 def get_room(self, room_id: str) -> Room | None:
     ...
 ```
@@ -244,7 +413,7 @@ from typing import TYPE_CHECKING, Any
 # Third party (if needed)
 import httpx
 
-# Local imports - absolute from roomkit
+# Local imports — absolute from roomkit
 from roomkit.models.room import Room
 from roomkit.models.enums import RoomStatus
 
@@ -289,11 +458,6 @@ async def test_create_room(self) -> None:
     kit = RoomKit()
     room = await kit.create_room()
     assert room.status == RoomStatus.ACTIVE
-
-# Wrong - won't work
-def test_create_room(self) -> None:
-    kit = RoomKit()
-    room = await kit.create_room()  # SyntaxError
 ```
 
 ## Common Tasks
@@ -324,7 +488,7 @@ def test_create_room(self) -> None:
 
 ### Always Do
 
-- Run `ruff check src/roomkit/` before committing
+- Run `make all` before committing (lint + typecheck + security + test)
 - Add tests for new features
 - Export new public classes from `roomkit/__init__.py`
 - Follow existing ABC patterns for new pluggable backends
@@ -341,7 +505,7 @@ def test_create_room(self) -> None:
 
 - Modify `_version.py` manually
 - Use synchronous I/O (requests, open()) in async methods
-- Add `print()` statements - use `logging.getLogger("roomkit.xxx")`
+- Add `print()` statements — use `logging.getLogger("roomkit.xxx")`
 - Break backward compatibility of public API
 - Commit without running tests
 - Add secrets or credentials to code
@@ -356,20 +520,37 @@ ACTIVE → PAUSED → CLOSED → ARCHIVED
          └──────────┘ (can close from paused)
 ```
 
+Timers: `inactive_after_seconds` (ACTIVE→PAUSED), `closed_after_seconds` (→CLOSED).
+
+### Channel Access
+
+```
+READ_WRITE  — receives and sends messages (default)
+READ_ONLY   — receives messages only
+WRITE_ONLY  — sends messages only
+NONE        — temporarily disabled
+```
+
+Channels can also be muted/unmuted per binding: `kit.mute("room", "channel")`.
+
 ### Event Flow
 
 ```
 Inbound Message
-    → InboundRoomRouter.route()
-    → Channel.handle_inbound()
-    → IdentityResolver.resolve()
-    → Identity hooks (ON_IDENTITY_AMBIGUOUS/UNKNOWN)
+    → InboundRoomRouter.route()           # Find target room
+    → Channel.handle_inbound()            # Parse external → RoomEvent
+    → IdentityResolver.resolve()          # Identify sender
+    → Identity hooks                      # ON_IDENTITY_AMBIGUOUS/UNKNOWN
     → Room lock acquired
     → Idempotency check
-    → BEFORE_BROADCAST hooks (sync, can block/modify)
-    → Store event
-    → EventRouter.broadcast() to all channels
-    → AFTER_BROADCAST hooks (async, fire-and-forget)
+    → BEFORE_BROADCAST hooks              # Sync: can block/modify
+    → Store event + update room counters
+    → EventRouter.broadcast()             # Deliver to all channels
+        → Content transcoding             # Adapt content per channel capabilities
+        → Rate limiting                   # TokenBucketRateLimiter
+        → Retry with backoff              # RetryPolicy per binding
+    → AFTER_BROADCAST hooks               # Async: logging, analytics, side effects
+    → Framework event emitted             # Observability
 ```
 
 ### Identity Resolution
@@ -387,4 +568,34 @@ IdentityHookResult.resolved(identity)  # Identity found
 IdentityHookResult.pending(candidates) # Wait for manual resolution
 IdentityHookResult.challenge(inject)   # Ask sender to identify
 IdentityHookResult.reject(reason)      # Block the message
+```
+
+### Content Types
+
+```python
+TextContent         # Plain text with optional language
+RichContent         # HTML/Markdown with buttons, cards, quick replies
+MediaContent        # Image/video/document with MIME type
+AudioContent        # Audio file with optional transcript
+VideoContent        # Video with optional thumbnail
+LocationContent     # Latitude/longitude with label/address
+CompositeContent    # Multi-part (text + media + location in one event)
+TemplateContent     # Pre-approved templates (WhatsApp Business)
+EditContent         # Edit a previously sent message
+DeleteContent       # Delete a previously sent message
+SystemContent       # System notifications with code & data
+```
+
+### Hook Triggers
+
+```
+Event Pipeline:      BEFORE_BROADCAST, AFTER_BROADCAST
+Channel Lifecycle:   ON_CHANNEL_ATTACHED, ON_CHANNEL_DETACHED, ON_CHANNEL_MUTED, ON_CHANNEL_UNMUTED
+Room Lifecycle:      ON_ROOM_CREATED, ON_ROOM_PAUSED, ON_ROOM_CLOSED
+Identity:            ON_IDENTITY_AMBIGUOUS, ON_IDENTITY_UNKNOWN, ON_PARTICIPANT_IDENTIFIED
+Delivery:            ON_DELIVERY_STATUS
+Side Effects:        ON_TASK_CREATED, ON_ERROR
+Voice:               ON_SPEECH_START, ON_SPEECH_END, ON_TRANSCRIPTION, BEFORE_TTS, AFTER_TTS
+Voice Enhanced:      ON_BARGE_IN, ON_TTS_CANCELLED, ON_PARTIAL_TRANSCRIPTION, ON_VAD_SILENCE
+Realtime Voice:      ON_REALTIME_TOOL_CALL, ON_REALTIME_TEXT_INJECTED
 ```
