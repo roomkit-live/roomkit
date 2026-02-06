@@ -49,7 +49,9 @@ async def main() -> None:
     await kit.create_room(room_id="analytics-room")
     await kit.attach_channel("analytics-room", "ws-user")
     await kit.attach_channel(
-        "analytics-room", "ai-bot", category="intelligence"  # type: ignore[arg-type]
+        "analytics-room",
+        "ai-bot",
+        category="intelligence",  # type: ignore[arg-type]
     )
 
     # --- Hook 1: Log all events (no filter) ---

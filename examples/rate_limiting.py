@@ -120,9 +120,14 @@ async def main() -> None:
         ("High throughput", RateLimit(max_per_second=100.0)),
         ("Standard SMS", RateLimit(max_per_second=1.0, max_per_minute=30.0)),
         ("Hourly newsletter", RateLimit(max_per_hour=100.0)),
-        ("Burst control", RateLimit(
-            max_per_second=10.0, max_per_minute=200.0, max_per_hour=5000.0,
-        )),
+        (
+            "Burst control",
+            RateLimit(
+                max_per_second=10.0,
+                max_per_minute=200.0,
+                max_per_hour=5000.0,
+            ),
+        ),
     ]
 
     for name, config in configs:

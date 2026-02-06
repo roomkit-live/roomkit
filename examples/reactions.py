@@ -102,7 +102,7 @@ async def main() -> None:
 
     for ev in message_events:
         body = ev.content.body if isinstance(ev.content, TextContent) else "..."
-        print(f"\n  Message: \"{body}\" (by {ev.source.participant_id})")
+        print(f'\n  Message: "{body}" (by {ev.source.participant_id})')
         msg_reactions = reaction_tracker.get(ev.id, {})
         if msg_reactions:
             for emoji, users in msg_reactions.items():

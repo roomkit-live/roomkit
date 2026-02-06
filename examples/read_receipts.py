@@ -76,7 +76,7 @@ async def main() -> None:
         )
         if result.event:
             msg_ids.append(result.event.id)
-            print(f"  Sent: \"{text}\" (id={result.event.id[:8]}...)")
+            print(f'  Sent: "{text}" (id={result.event.id[:8]}...)')
 
     # --- Bob reads messages one by one ---
     print("\nBob reads messages...")

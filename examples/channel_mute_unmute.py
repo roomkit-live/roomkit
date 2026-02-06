@@ -40,11 +40,13 @@ async def main() -> None:
     ws_agent = WebSocketChannel("ws-agent")
     ai = AIChannel(
         "ai-bot",
-        provider=MockAIProvider(responses=[
-            "I'm the AI assistant. How can I help?",
-            "Let me check that for you.",
-            "I'm back! How can I help?",
-        ]),
+        provider=MockAIProvider(
+            responses=[
+                "I'm the AI assistant. How can I help?",
+                "Let me check that for you.",
+                "I'm back! How can I help?",
+            ]
+        ),
     )
     kit.register_channel(ws_customer)
     kit.register_channel(ws_agent)

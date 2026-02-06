@@ -105,9 +105,11 @@ async def main() -> None:
 
     # Summary
     statuses = [e["status"] for e in delivery_log]
-    print(f"\nSummary: {statuses.count('sent')} sent, "
-          f"{statuses.count('delivered')} delivered, "
-          f"{statuses.count('failed')} failed")
+    print(
+        f"\nSummary: {statuses.count('sent')} sent, "
+        f"{statuses.count('delivered')} delivered, "
+        f"{statuses.count('failed')} failed"
+    )
 
     await kit.close()
 

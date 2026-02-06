@@ -57,7 +57,7 @@ async def main() -> None:
         )
     )
     original_id = result.event.id if result.event else ""
-    print(f"1. Alice sent: \"Hello Bbo!\" (id={original_id[:8]}...)")
+    print(f'1. Alice sent: "Hello Bbo!" (id={original_id[:8]}...)')
 
     # --- Alice edits the message to fix the typo ---
     await kit.process_inbound(
@@ -72,7 +72,7 @@ async def main() -> None:
             ),
         )
     )
-    print("2. Alice edited message -> \"Hello Bob!\"")
+    print('2. Alice edited message -> "Hello Bob!"')
 
     # --- Alice sends another message ---
     result2 = await kit.process_inbound(
@@ -83,7 +83,7 @@ async def main() -> None:
         )
     )
     msg2_id = result2.event.id if result2.event else ""
-    print(f"3. Alice sent: \"Actually, never mind about that.\" (id={msg2_id[:8]}...)")
+    print(f'3. Alice sent: "Actually, never mind about that." (id={msg2_id[:8]}...)')
 
     # --- Alice deletes the second message ---
     await kit.process_inbound(
@@ -98,7 +98,7 @@ async def main() -> None:
             ),
         )
     )
-    print(f"4. Alice deleted message: \"{msg2_id[:8]}...\" (reason: Changed my mind)")
+    print(f'4. Alice deleted message: "{msg2_id[:8]}..." (reason: Changed my mind)')
 
     # --- Show what Bob received ---
     print(f"\nBob's inbox ({len(bob_inbox)} events):")
@@ -109,7 +109,7 @@ async def main() -> None:
             new_content = ev.content.new_content
             new_body = new_content.body if isinstance(new_content, TextContent) else "..."
             target = ev.content.target_event_id[:8]
-            print(f"  [{ev.type.value:>8}] Edit -> \"{new_body}\" (target={target}...)")
+            print(f'  [{ev.type.value:>8}] Edit -> "{new_body}" (target={target}...)')
         elif isinstance(ev.content, DeleteContent):
             target = ev.content.target_event_id[:8]
             dtype = ev.content.delete_type

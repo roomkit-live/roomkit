@@ -65,9 +65,7 @@ async def main() -> None:
         if isinstance(event.content, TextContent):
             redacted = re.sub(r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b", "[REDACTED]", event.content.body)
             if redacted != event.content.body:
-                modified_event = event.model_copy(
-                    update={"content": TextContent(body=redacted)}
-                )
+                modified_event = event.model_copy(update={"content": TextContent(body=redacted)})
                 return HookResult.modify(modified_event)
         return HookResult.allow()
 

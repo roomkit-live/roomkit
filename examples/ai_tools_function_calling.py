@@ -33,10 +33,12 @@ async def main() -> None:
     ws = WebSocketChannel("ws-user")
     ai = AIChannel(
         "ai-assistant",
-        provider=MockAIProvider(responses=[
-            "The weather in Montreal is -5C and snowy.",
-            "I found 3 nearby restaurants. The top pick is Le Bouillon.",
-        ]),
+        provider=MockAIProvider(
+            responses=[
+                "The weather in Montreal is -5C and snowy.",
+                "I found 3 nearby restaurants. The top pick is Le Bouillon.",
+            ]
+        ),
         system_prompt="You are a helpful assistant.",
         temperature=0.7,
     )
@@ -61,8 +63,7 @@ async def main() -> None:
         metadata={
             # Per-room AI configuration
             "system_prompt": (
-                "You are a weather assistant. "
-                "Use the get_weather tool to check conditions."
+                "You are a weather assistant. Use the get_weather tool to check conditions."
             ),
             "temperature": 0.3,
             "tools": [
@@ -128,8 +129,7 @@ async def main() -> None:
         category=ChannelCategory.INTELLIGENCE,
         metadata={
             "system_prompt": (
-                "You are a restaurant finder. "
-                "Help users discover great places to eat."
+                "You are a restaurant finder. Help users discover great places to eat."
             ),
             "temperature": 0.9,
             "tools": [

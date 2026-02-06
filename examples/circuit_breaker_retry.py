@@ -82,9 +82,9 @@ async def main() -> None:
     # Define a retry policy
     policy = RetryPolicy(
         max_retries=5,
-        base_delay_seconds=0.1,   # Start with 100ms delay
-        max_delay_seconds=2.0,    # Cap at 2s
-        exponential_base=2.0,     # Double each retry
+        base_delay_seconds=0.1,  # Start with 100ms delay
+        max_delay_seconds=2.0,  # Cap at 2s
+        exponential_base=2.0,  # Double each retry
     )
 
     # Retry with exponential backoff

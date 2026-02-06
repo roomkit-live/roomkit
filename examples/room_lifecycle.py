@@ -93,8 +93,8 @@ async def main() -> None:
     room2_updated = room2.model_copy(
         update={
             "timers": RoomTimers(
-                inactive_after_seconds=5,   # Pause after 5s inactivity
-                closed_after_seconds=10,    # Close after 10s inactivity
+                inactive_after_seconds=5,  # Pause after 5s inactivity
+                closed_after_seconds=10,  # Close after 10s inactivity
                 last_activity_at=datetime.now(UTC) - timedelta(seconds=6),  # 6s ago
             )
         }

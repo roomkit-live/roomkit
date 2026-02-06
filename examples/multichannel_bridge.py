@@ -52,11 +52,13 @@ async def main() -> None:
     # AI: intelligent assistant
     ai = AIChannel(
         "ai-assistant",
-        provider=MockAIProvider(responses=[
-            "Thanks for reaching out! I'm looking into your request.",
-            "I've found the information you need.",
-            "Is there anything else I can help with?",
-        ]),
+        provider=MockAIProvider(
+            responses=[
+                "Thanks for reaching out! I'm looking into your request.",
+                "I've found the information you need.",
+                "Is there anything else I can help with?",
+            ]
+        ),
         system_prompt="You are a helpful support assistant.",
     )
 
@@ -80,19 +82,23 @@ async def main() -> None:
 
     await kit.attach_channel("bridge-room", "ws-webapp")
     await kit.attach_channel(
-        "bridge-room", "sms-mobile",
+        "bridge-room",
+        "sms-mobile",
         metadata={"recipient_phone": "+15551234567"},
     )
     await kit.attach_channel(
-        "bridge-room", "email-user",
+        "bridge-room",
+        "email-user",
         metadata={"recipient_email": "user@example.com"},
     )
     await kit.attach_channel(
-        "bridge-room", "http-crm",
+        "bridge-room",
+        "http-crm",
         metadata={"webhook_url": "https://crm.example.com/api/messages"},
     )
     await kit.attach_channel(
-        "bridge-room", "ai-assistant",
+        "bridge-room",
+        "ai-assistant",
         category=ChannelCategory.INTELLIGENCE,
     )
 
