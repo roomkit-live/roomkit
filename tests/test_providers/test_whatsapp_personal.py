@@ -42,6 +42,10 @@ def _make_source(*, connected: bool = True) -> MagicMock:
     client.send_audio = AsyncMock(return_value=resp)
     client.send_video = AsyncMock(return_value=resp)
     client.send_location = AsyncMock(return_value=resp)
+    # build_audio_message returns a Message-like object with audioMessage.mimetype
+    audio_msg = MagicMock()
+    audio_msg.audioMessage.mimetype = "audio/ogg"
+    client.build_audio_message = AsyncMock(return_value=audio_msg)
     source.client = client
     return source
 
@@ -157,10 +161,14 @@ class TestWhatsAppPersonalProvider:
         result = await provider.send(event, "1234567890")
 
         assert result.success is True
-        source.client.send_audio.assert_called_once_with(
-            "1234567890@s.whatsapp.net",
-            "https://example.com/voice.ogg",
-            ptt=True,
+        source.client.build_audio_message.assert_called_once_with(
+            "https://example.com/voice.ogg", ptt=True,
+        )
+        # Mimetype should be patched from "audio/ogg" to "audio/ogg; codecs=opus"
+        audio_msg = source.client.build_audio_message.return_value
+        assert audio_msg.audioMessage.mimetype == "audio/ogg; codecs=opus"
+        source.client.send_message.assert_called_once_with(
+            "1234567890@s.whatsapp.net", audio_msg,
         )
 
     async def test_send_video_content(self, _mock_jid: MagicMock) -> None:

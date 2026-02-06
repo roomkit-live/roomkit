@@ -50,6 +50,20 @@ def _build_jid(phone: str) -> Any:
     return WhatsAppPersonalSourceProvider._parse_jid(_build_jid_str(phone))
 
 
+async def _send_audio(client: Any, jid: Any, url: str, *, ptt: bool = True) -> Any:
+    """Send audio with the correct mimetype for WhatsApp.
+
+    Neonize's ``build_audio_message`` uses ``python-magic`` to detect the
+    mimetype, which returns ``"audio/ogg"`` for OGG Opus files.  WhatsApp
+    requires the full ``"audio/ogg; codecs=opus"`` to accept voice messages,
+    so we build the message normally then patch the mimetype before sending.
+    """
+    msg = await client.build_audio_message(url, ptt=ptt)
+    if msg.audioMessage.mimetype == "audio/ogg":
+        msg.audioMessage.mimetype = "audio/ogg; codecs=opus"
+    return await client.send_message(jid, msg)
+
+
 class WhatsAppPersonalProvider(WhatsAppProvider):
     """Outbound WhatsApp delivery via a shared neonize source.
 
@@ -88,8 +102,8 @@ class WhatsAppPersonalProvider(WhatsAppProvider):
             elif isinstance(content, MediaContent):
                 resp = await self._send_media(client, jid, content)
             elif isinstance(content, AudioContent):
-                ptt = content.mime_type == "audio/ogg"
-                resp = await client.send_audio(jid, content.url, ptt=ptt)
+                ptt = "ogg" in (content.mime_type or "") or "opus" in (content.mime_type or "")
+                resp = await _send_audio(client, jid, content.url, ptt=ptt)
             elif isinstance(content, VideoContent):
                 resp = await client.send_video(jid, content.url)
             elif isinstance(content, LocationContent):
@@ -129,8 +143,8 @@ class WhatsAppPersonalProvider(WhatsAppProvider):
         elif mime.startswith("video/"):
             return await client.send_video(jid, content.url, caption=content.caption or "")
         elif mime.startswith("audio/"):
-            ptt = mime == "audio/ogg"
-            return await client.send_audio(jid, content.url, ptt=ptt)
+            ptt = "ogg" in mime or "opus" in mime
+            return await _send_audio(client, jid, content.url, ptt=ptt)
         else:
             return await client.send_document(
                 jid,
