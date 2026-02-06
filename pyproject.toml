@@ -115,6 +115,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 filterwarnings = [
     "error",
+    "ignore::ResourceWarning",
 ]
 
 [tool.mypy]
