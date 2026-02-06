@@ -295,6 +295,15 @@ class PostgresStore(ConversationStore):
             return None
         return RoomEvent.model_validate_json(row["data"])
 
+    async def update_event(self, event: RoomEvent) -> RoomEvent:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE events SET data = $2 WHERE id = $1",
+                event.id,
+                _dump(event),
+            )
+        return event
+
     async def list_events(
         self,
         room_id: str,

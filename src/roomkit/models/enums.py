@@ -75,6 +75,13 @@ class EventType(StrEnum):
 
 
 @unique
+class DeleteType(StrEnum):
+    SENDER = "sender"
+    SYSTEM = "system"
+    ADMIN = "admin"
+
+
+@unique
 class EventStatus(StrEnum):
     PENDING = "pending"
     DELIVERED = "delivered"

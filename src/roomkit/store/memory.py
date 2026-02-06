@@ -146,6 +146,10 @@ class InMemoryStore(ConversationStore):
         event = self._events.get(event_id)
         return event.model_copy() if event is not None else None
 
+    async def update_event(self, event: RoomEvent) -> RoomEvent:
+        self._events[event.id] = event
+        return event
+
     async def list_events(
         self,
         room_id: str,

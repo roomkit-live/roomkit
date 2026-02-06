@@ -8,6 +8,8 @@ from roomkit.models.enums import ChannelMediaType
 from roomkit.models.event import (
     AudioContent,
     CompositeContent,
+    DeleteContent,
+    EditContent,
     EventContent,
     LocationContent,
     MediaContent,
@@ -81,5 +83,21 @@ class DefaultContentTranscoder(ContentTranscoder):
             if len(text_parts) == len(parts):
                 return TextContent(body="\n".join(p.body for p in text_parts))
             return CompositeContent(parts=parts)
+
+        if isinstance(content, EditContent):
+            if target_binding.capabilities.supports_edit:
+                return content
+            # Fallback: transcode the new_content and prefix with "Correction:"
+            new = await self.transcode(content.new_content, source_binding, target_binding)
+            if new is None:
+                return TextContent(body="[Correction]")
+            if isinstance(new, TextContent):
+                return TextContent(body=f"Correction: {new.body}")
+            return new
+
+        if isinstance(content, DeleteContent):
+            if target_binding.capabilities.supports_delete:
+                return content
+            return TextContent(body="[Message deleted]")
 
         return content

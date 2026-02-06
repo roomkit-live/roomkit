@@ -44,6 +44,8 @@ class WebSocketChannel(Channel):
             supports_typing=True,
             supports_read_receipts=True,
             supports_reactions=True,
+            supports_edit=True,
+            supports_delete=True,
             supports_rich_text=True,
             supports_media=True,
             supports_buttons=True,
@@ -66,6 +68,7 @@ class WebSocketChannel(Channel):
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         return RoomEvent(
             room_id=context.room.id,
+            type=message.event_type,
             source=EventSource(
                 channel_id=self.channel_id,
                 channel_type=self.channel_type,

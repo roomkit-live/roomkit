@@ -13,11 +13,13 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, InboundResult
 from roomkit.models.enums import (
     ChannelType,
+    DeleteType,
     EventStatus,
+    EventType,
     HookTrigger,
     IdentificationStatus,
 )
-from roomkit.models.event import RoomEvent
+from roomkit.models.event import DeleteContent, EditContent, RoomEvent
 from roomkit.models.hook import InjectedEvent
 from roomkit.models.identity import IdentityResult
 
@@ -237,6 +239,67 @@ class InboundMixin(HelpersMixin):
         # Assign index
         count = await self._store.get_event_count(room_id)
         event = event.model_copy(update={"index": count})
+
+        # Edit/Delete validation and state updates (RFC §10.3)
+        if event.type in (EventType.EDIT, EventType.DELETE) and isinstance(
+            event.content, (EditContent, DeleteContent)
+        ):
+            target_id = event.content.target_event_id
+            target_event = await self._store.get_event(target_id)
+
+            if target_event is None or target_event.room_id != room_id:
+                logger.warning(
+                    "Edit/Delete target %s not found in room %s",
+                    target_id,
+                    room_id,
+                    extra={"room_id": room_id, "target_event_id": target_id},
+                )
+                return InboundResult(
+                    blocked=True, reason="target_event_not_found"
+                )
+
+            # Authorization check
+            if isinstance(event.content, EditContent):
+                if (
+                    event.content.edit_source in (None, "sender")
+                    and event.source.participant_id != target_event.source.participant_id
+                ):
+                    logger.warning(
+                        "Edit rejected: sender %s is not author %s",
+                        event.source.participant_id,
+                        target_event.source.participant_id,
+                        extra={"room_id": room_id},
+                    )
+                    return InboundResult(blocked=True, reason="not_original_author")
+            elif isinstance(event.content, DeleteContent):
+                if (
+                    event.content.delete_type == DeleteType.SENDER
+                    and event.source.participant_id != target_event.source.participant_id
+                ):
+                    logger.warning(
+                        "Delete rejected: sender %s is not author %s",
+                        event.source.participant_id,
+                        target_event.source.participant_id,
+                        extra={"room_id": room_id},
+                    )
+                    return InboundResult(blocked=True, reason="not_original_author")
+
+            # Apply state updates to the target event
+            if isinstance(event.content, EditContent):
+                updated_target = target_event.model_copy(
+                    update={
+                        "content": event.content.new_content,
+                        "metadata": {**target_event.metadata, "edited": True},
+                    }
+                )
+                await self._store.update_event(updated_target)
+            elif isinstance(event.content, DeleteContent):
+                updated_target = target_event.model_copy(
+                    update={
+                        "metadata": {**target_event.metadata, "deleted": True},
+                    }
+                )
+                await self._store.update_event(updated_target)
 
         # Run sync hooks (before_broadcast)
         sync_result = await self._hook_engine.run_sync_hooks(

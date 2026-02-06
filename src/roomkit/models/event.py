@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from roomkit.models.enums import (
     ChannelDirection,
     ChannelType,
+    DeleteType,
     EventStatus,
     EventType,
 )
@@ -145,6 +146,24 @@ class TemplateContent(BaseModel):
     body: str | None = None
 
 
+class EditContent(BaseModel):
+    """Edit of a previously sent message."""
+
+    type: Literal["edit"] = "edit"
+    target_event_id: str
+    new_content: EventContent
+    edit_source: str | None = None
+
+
+class DeleteContent(BaseModel):
+    """Deletion of a previously sent message."""
+
+    type: Literal["delete"] = "delete"
+    target_event_id: str
+    delete_type: DeleteType = DeleteType.SENDER
+    reason: str | None = None
+
+
 EventContent = Annotated[
     TextContent
     | RichContent
@@ -154,7 +173,9 @@ EventContent = Annotated[
     | VideoContent
     | CompositeContent
     | SystemContent
-    | TemplateContent,
+    | TemplateContent
+    | EditContent
+    | DeleteContent,
     Field(discriminator="type"),
 ]
 

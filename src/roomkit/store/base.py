@@ -87,6 +87,11 @@ class ConversationStore(ABC):
         ...
 
     @abstractmethod
+    async def update_event(self, event: RoomEvent) -> RoomEvent:
+        """Update an existing event (e.g., mark as edited or deleted)."""
+        ...
+
+    @abstractmethod
     async def list_events(
         self,
         room_id: str,

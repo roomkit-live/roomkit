@@ -43,6 +43,8 @@ class ChannelCapabilities(BaseModel):
     max_length: int | None = Field(default=None, gt=0)
     supports_threading: bool = False
     supports_reactions: bool = False
+    supports_edit: bool = False
+    supports_delete: bool = False
     supports_read_receipts: bool = False
     supports_typing: bool = False
     supports_templates: bool = False

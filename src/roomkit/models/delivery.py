@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from roomkit.models.enums import EventType
 from roomkit.models.event import EventContent, RoomEvent
 
 
@@ -24,6 +25,7 @@ class InboundMessage(BaseModel):
     channel_id: str
     sender_id: str
     content: EventContent
+    event_type: EventType = EventType.MESSAGE
     external_id: str | None = None
     thread_id: str | None = None
     idempotency_key: str | None = None

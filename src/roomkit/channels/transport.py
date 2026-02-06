@@ -75,6 +75,7 @@ class TransportChannel(Channel):
 
         return RoomEvent(
             room_id=context.room.id,
+            type=message.event_type,
             source=EventSource(
                 channel_id=self.channel_id,
                 channel_type=channel_type,
