@@ -21,9 +21,10 @@ def parse_teams_activity(payload: dict[str, Any]) -> dict[str, Any]:
     (``conversationUpdate``) alongside message parsing.
     """
     conversation = payload.get("conversation", {})
-    is_group = conversation.get("isGroup", False) or conversation.get(
-        "conversationType"
-    ) in ("groupChat", "channel")
+    is_group = conversation.get("isGroup", False) or conversation.get("conversationType") in (
+        "groupChat",
+        "channel",
+    )
     sender = payload.get("from", {})
     recipient = payload.get("recipient", {})
 
@@ -81,9 +82,10 @@ def parse_teams_webhook(
 
     # Strip <at>BotName</at> mentions from group chats
     conversation = payload.get("conversation", {})
-    is_group = conversation.get("isGroup", False) or conversation.get(
-        "conversationType"
-    ) in ("groupChat", "channel")
+    is_group = conversation.get("isGroup", False) or conversation.get("conversationType") in (
+        "groupChat",
+        "channel",
+    )
     if is_group:
         text = _AT_MENTION_RE.sub("", text).strip()
         if not text:
@@ -95,10 +97,14 @@ def parse_teams_webhook(
 
     # Check if the bot was @mentioned
     bot_id = payload.get("recipient", {}).get("id", "")
-    bot_mentioned = any(
-        e.get("type") == "mention" and e.get("mentioned", {}).get("id") == bot_id
-        for e in payload.get("entities", [])
-    ) if bot_id else False
+    bot_mentioned = (
+        any(
+            e.get("type") == "mention" and e.get("mentioned", {}).get("id") == bot_id
+            for e in payload.get("entities", [])
+        )
+        if bot_id
+        else False
+    )
     # In personal chats the bot is always implicitly addressed
     if not is_group:
         bot_mentioned = True
@@ -117,9 +123,7 @@ def parse_teams_webhook(
                 "is_group": is_group,
                 "bot_mentioned": bot_mentioned,
                 "service_url": payload.get("serviceUrl", ""),
-                "tenant_id": payload.get("channelData", {}).get("tenant", {}).get(
-                    "id", ""
-                ),
+                "tenant_id": payload.get("channelData", {}).get("tenant", {}).get("id", ""),
             },
         )
     ]

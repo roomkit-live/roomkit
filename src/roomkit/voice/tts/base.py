@@ -25,9 +25,7 @@ class TTSProvider(ABC):
         return None
 
     @abstractmethod
-    async def synthesize(
-        self, text: str, *, voice: str | None = None
-    ) -> AudioContent:
+    async def synthesize(self, text: str, *, voice: str | None = None) -> AudioContent:
         """Synthesize text to audio.
 
         Args:
@@ -48,8 +46,7 @@ class TTSProvider(ABC):
         Default: synthesizes full audio and yields single chunk.
         """
         raise NotImplementedError(
-            f"{self.name} does not support streaming synthesis. "
-            "Use synthesize() instead."
+            f"{self.name} does not support streaming synthesis. Use synthesize() instead."
         )
         # Make this an async generator (unreachable, but required for type)
         yield  # pragma: no cover

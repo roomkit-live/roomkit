@@ -13,8 +13,9 @@ from roomkit.channels import (
 )
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.base import Channel
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+from roomkit.channels.realtime_voice import ToolHandler as ToolHandler
 from roomkit.channels.transport import TransportChannel
-from roomkit.channels.realtime_voice import RealtimeVoiceChannel, ToolHandler
 from roomkit.channels.voice import VoiceChannel
 from roomkit.channels.websocket import WebSocketChannel
 from roomkit.core.framework import (
@@ -119,7 +120,6 @@ from roomkit.providers.messenger.mock import MockMessengerProvider
 from roomkit.providers.messenger.webhook import parse_messenger_webhook
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
-from roomkit.providers.vllm import VLLMConfig, create_vllm_provider
 from roomkit.providers.rcs.base import RCSDeliveryResult, RCSProvider
 from roomkit.providers.rcs.mock import MockRCSProvider
 from roomkit.providers.sinch.config import SinchConfig
@@ -158,6 +158,7 @@ from roomkit.providers.twilio.rcs import (
     parse_twilio_rcs_webhook,
 )
 from roomkit.providers.twilio.sms import TwilioSMSProvider, parse_twilio_webhook
+from roomkit.providers.vllm import VLLMConfig, create_vllm_provider
 from roomkit.providers.voicemeup.config import VoiceMeUpConfig
 from roomkit.providers.voicemeup.sms import (
     VoiceMeUpSMSProvider,

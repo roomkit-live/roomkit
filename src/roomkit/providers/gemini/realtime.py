@@ -182,23 +182,23 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if no_interruption:
             realtime_input_kwargs["activity_handling"] = "NO_INTERRUPTION"
         if realtime_input_kwargs:
-            config["realtime_input_config"] = types.RealtimeInputConfig(
-                **realtime_input_kwargs
-            )
+            config["realtime_input_config"] = types.RealtimeInputConfig(**realtime_input_kwargs)
 
         # --- Tools ---
         if tools:
             genai_tools = []
             for tool in tools:
-                genai_tools.append(types.Tool(
-                    function_declarations=[
-                        types.FunctionDeclaration(
-                            name=tool.get("name", ""),
-                            description=tool.get("description", ""),
-                            parameters=tool.get("parameters"),
-                        )
-                    ]
-                ))
+                genai_tools.append(
+                    types.Tool(
+                        function_declarations=[
+                            types.FunctionDeclaration(
+                                name=tool.get("name", ""),
+                                description=tool.get("description", ""),
+                                parameters=tool.get("parameters"),
+                            )
+                        ]
+                    )
+                )
             config["tools"] = genai_tools
 
         live_config = types.LiveConnectConfig(**config)
@@ -207,7 +207,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self._live_configs[session.id] = live_config
 
         ctxmgr = self._client.aio.live.connect(
-            model=self._model, config=live_config,
+            model=self._model,
+            config=live_config,
         )
         live_session = await ctxmgr.__aenter__()
 
@@ -395,8 +396,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 reconnect_count += 1
                 if reconnect_count > self._MAX_RECONNECTS:
                     logger.error(
-                        "Gemini Live session %s: connection lost, "
-                        "max reconnects (%d) reached",
+                        "Gemini Live session %s: connection lost, max reconnects (%d) reached",
                         session.id,
                         self._MAX_RECONNECTS,
                     )
@@ -418,9 +418,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 try:
                     await self._reconnect(session)
                 except Exception:
-                    logger.exception(
-                        "Reconnect failed for session %s", session.id
-                    )
+                    logger.exception("Reconnect failed for session %s", session.id)
                     session.state = RealtimeSessionState.ENDED
                     return
 
@@ -448,7 +446,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             raise RuntimeError("No stored config for reconnection")
 
         ctxmgr = self._client.aio.live.connect(
-            model=self._model, config=live_config,
+            model=self._model,
+            config=live_config,
         )
         live_session = await ctxmgr.__aenter__()
 
@@ -459,9 +458,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         logger.info("Gemini Live session %s reconnected", session.id)
 
-    async def _handle_server_response(
-        self, session: RealtimeSession, response: Any
-    ) -> None:
+    async def _handle_server_response(self, session: RealtimeSession, response: Any) -> None:
         """Map Gemini Live responses to callbacks."""
         # Handle audio data
         if hasattr(response, "data") and response.data:
@@ -509,13 +506,16 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     )
 
             # Model started generating (has model_turn with parts)
-            if hasattr(content, "model_turn") and content.model_turn:
-                if not hasattr(session, "_response_started") or not session._response_started:
-                    # Flush user transcription — model responding means user
-                    # speech is done and transcription should be complete.
-                    await self._flush_transcription_buffer(session, "user")
-                    session._response_started = True  # type: ignore[attr-defined]
-                    await self._fire_callbacks(self._response_start_callbacks, session)
+            if (
+                hasattr(content, "model_turn")
+                and content.model_turn
+                and (not hasattr(session, "_response_started") or not session._response_started)
+            ):
+                # Flush user transcription — model responding means user
+                # speech is done and transcription should be complete.
+                await self._flush_transcription_buffer(session, "user")
+                session._response_started = True  # type: ignore[attr-defined]
+                await self._fire_callbacks(self._response_start_callbacks, session)
 
             # Interrupted — user barged in while model was speaking
             if hasattr(content, "interrupted") and content.interrupted:
@@ -551,18 +551,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if finished:
             full_text = "".join(self._transcription_buffers.pop(key, []))
             if full_text.strip():
-                await self._fire_transcription_callbacks(
-                    session, full_text, role, True
-                )
+                await self._fire_transcription_callbacks(session, full_text, role, True)
         else:
             # Send non-final for real-time display in the voice modal
-            await self._fire_transcription_callbacks(
-                session, text, role, False
-            )
+            await self._fire_transcription_callbacks(session, text, role, False)
 
-    async def _flush_transcription_buffer(
-        self, session: RealtimeSession, role: str
-    ) -> None:
+    async def _flush_transcription_buffer(self, session: RealtimeSession, role: str) -> None:
         """Flush accumulated transcription buffer as a final transcription.
 
         Called at lifecycle boundaries (turn_complete, speech end) to ensure
@@ -575,17 +569,15 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             if full_text.strip():
                 logger.debug(
                     "Flushing %s transcription buffer (%d chars) for session %s",
-                    role, len(full_text), session.id,
+                    role,
+                    len(full_text),
+                    session.id,
                 )
-                await self._fire_transcription_callbacks(
-                    session, full_text, role, True
-                )
+                await self._fire_transcription_callbacks(session, full_text, role, True)
 
     # -- Callback helpers --
 
-    async def _fire_callbacks(
-        self, callbacks: list[Any], session: RealtimeSession
-    ) -> None:
+    async def _fire_callbacks(self, callbacks: list[Any], session: RealtimeSession) -> None:
         for cb in callbacks:
             try:
                 result = cb(session)
@@ -594,9 +586,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             except Exception:
                 logger.exception("Error in callback for session %s", session.id)
 
-    async def _fire_audio_callbacks(
-        self, session: RealtimeSession, audio: bytes
-    ) -> None:
+    async def _fire_audio_callbacks(self, session: RealtimeSession, audio: bytes) -> None:
         for cb in self._audio_callbacks:
             try:
                 result = cb(session, audio)

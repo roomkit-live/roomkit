@@ -127,9 +127,7 @@ class MockVoiceBackend(VoiceBackend):
                 created_at=session.created_at,
                 metadata=session.metadata,
             )
-        self.calls.append(
-            MockVoiceCall(method="disconnect", args={"session_id": session.id})
-        )
+        self.calls.append(MockVoiceCall(method="disconnect", args={"session_id": session.id}))
 
     def on_speech_start(self, callback: SpeechStartCallback) -> None:
         self._speech_start_callbacks.append(callback)
@@ -154,9 +152,7 @@ class MockVoiceBackend(VoiceBackend):
             combined = b"".join(chunks)
             self.sent_audio.append((session.id, combined))
 
-        self.calls.append(
-            MockVoiceCall(method="send_audio", args={"session_id": session.id})
-        )
+        self.calls.append(MockVoiceCall(method="send_audio", args={"session_id": session.id}))
 
     def get_session(self, session_id: str) -> VoiceSession | None:
         return self._sessions.get(session_id)
@@ -184,9 +180,7 @@ class MockVoiceBackend(VoiceBackend):
     # Enhanced voice capabilities (RFC §19)
     # -------------------------------------------------------------------------
 
-    def on_partial_transcription(
-        self, callback: PartialTranscriptionCallback
-    ) -> None:
+    def on_partial_transcription(self, callback: PartialTranscriptionCallback) -> None:
         self._partial_transcription_callbacks.append(callback)
         self.calls.append(MockVoiceCall(method="on_partial_transcription"))
 
@@ -256,9 +250,7 @@ class MockVoiceBackend(VoiceBackend):
             if hasattr(result, "__await__"):
                 await result
 
-    async def simulate_vad_silence(
-        self, session: VoiceSession, silence_duration_ms: int
-    ) -> None:
+    async def simulate_vad_silence(self, session: VoiceSession, silence_duration_ms: int) -> None:
         """Simulate VAD detecting silence.
 
         Fires all registered on_vad_silence callbacks.

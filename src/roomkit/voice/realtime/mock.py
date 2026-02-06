@@ -132,16 +132,12 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
         )
 
     async def interrupt(self, session: RealtimeSession) -> None:
-        self.calls.append(
-            MockCall(method="interrupt", args={"session_id": session.id})
-        )
+        self.calls.append(MockCall(method="interrupt", args={"session_id": session.id}))
 
     async def disconnect(self, session: RealtimeSession) -> None:
         session.state = RealtimeSessionState.ENDED
         self._sessions.pop(session.id, None)
-        self.calls.append(
-            MockCall(method="disconnect", args={"session_id": session.id})
-        )
+        self.calls.append(MockCall(method="disconnect", args={"session_id": session.id}))
 
     async def close(self) -> None:
         self._sessions.clear()
@@ -237,9 +233,7 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
             if hasattr(result, "__await__"):
                 await result
 
-    async def simulate_error(
-        self, session: RealtimeSession, code: str, message: str
-    ) -> None:
+    async def simulate_error(self, session: RealtimeSession, code: str, message: str) -> None:
         """Simulate a provider error."""
         for cb in self._error_callbacks:
             result = cb(session, code, message)
@@ -278,9 +272,7 @@ class MockRealtimeTransport(RealtimeAudioTransport):
 
     async def accept(self, session: RealtimeSession, connection: Any) -> None:
         self._connections[session.id] = connection
-        self.calls.append(
-            MockCall(method="accept", args={"session_id": session.id})
-        )
+        self.calls.append(MockCall(method="accept", args={"session_id": session.id}))
 
     async def send_audio(self, session: RealtimeSession, audio: bytes) -> None:
         self.sent_audio.append((session.id, audio))
@@ -299,9 +291,7 @@ class MockRealtimeTransport(RealtimeAudioTransport):
 
     async def disconnect(self, session: RealtimeSession) -> None:
         self._connections.pop(session.id, None)
-        self.calls.append(
-            MockCall(method="disconnect", args={"session_id": session.id})
-        )
+        self.calls.append(MockCall(method="disconnect", args={"session_id": session.id}))
 
     async def close(self) -> None:
         self._connections.clear()

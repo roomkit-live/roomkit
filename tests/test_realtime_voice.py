@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
 import pytest
 
 from roomkit import (
-    ChannelOutput,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -19,7 +17,7 @@ from roomkit import (
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent
-from roomkit.voice.realtime.base import RealtimeSession, RealtimeSessionState
+from roomkit.voice.realtime.base import RealtimeSessionState
 from roomkit.voice.realtime.events import RealtimeTranscriptionEvent
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 
@@ -70,9 +68,7 @@ class TestSessionLifecycle:
         transport: MockRealtimeTransport,
         room_id: str,
     ) -> None:
-        session = await channel.start_session(
-            room_id, "user-1", "fake-ws-connection"
-        )
+        session = await channel.start_session(room_id, "user-1", "fake-ws-connection")
 
         assert session.state == RealtimeSessionState.ACTIVE
         assert session.room_id == room_id
@@ -98,9 +94,7 @@ class TestSessionLifecycle:
         transport: MockRealtimeTransport,
         room_id: str,
     ) -> None:
-        session = await channel.start_session(
-            room_id, "user-1", "fake-ws"
-        )
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
 
         await channel.end_session(session)
 
@@ -168,7 +162,8 @@ class TestTranscriptions:
         # Verify a RoomEvent was emitted
         events = await kit.get_timeline(room_id)
         text_events = [
-            e for e in events
+            e
+            for e in events
             if isinstance(e.content, TextContent) and e.content.body == "Hello world"
         ]
         assert len(text_events) == 1
@@ -192,15 +187,13 @@ class TestTranscriptions:
         # No RoomEvent should be stored (only sent to client UI)
         events = await kit.get_timeline(room_id)
         text_events = [
-            e for e in events
-            if isinstance(e.content, TextContent) and e.content.body == "Hel"
+            e for e in events if isinstance(e.content, TextContent) and e.content.body == "Hel"
         ]
         assert len(text_events) == 0
 
         # But the client should have received the transcription UI message
         transcription_msgs = [
-            m for _, m in transport.sent_messages
-            if m.get("type") == "transcription"
+            m for _, m in transport.sent_messages if m.get("type") == "transcription"
         ]
         assert len(transcription_msgs) == 1
 
@@ -213,7 +206,7 @@ class TestTextInjection:
         provider: MockRealtimeProvider,
         room_id: str,
     ) -> None:
-        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        _session = await channel.start_session(room_id, "user-1", "fake-ws")
 
         # Simulate event from another channel
         event = RoomEvent(
@@ -233,7 +226,7 @@ class TestTextInjection:
         )
         context = await kit._build_context(room_id)
 
-        output = await channel.on_event(event, binding, context)
+        _output = await channel.on_event(event, binding, context)
 
         # Verify text was injected into provider
         assert len(provider.injected_texts) == 1
@@ -247,7 +240,7 @@ class TestTextInjection:
         provider: MockRealtimeProvider,
         room_id: str,
     ) -> None:
-        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        _session = await channel.start_session(room_id, "user-1", "fake-ws")
 
         event = RoomEvent(
             room_id=room_id,
@@ -292,9 +285,7 @@ class TestToolCalls:
             return HookResult.allow()
 
         # Simulate tool call from provider
-        await provider.simulate_tool_call(
-            session, "call-123", "get_weather", {"city": "NYC"}
-        )
+        await provider.simulate_tool_call(session, "call-123", "get_weather", {"city": "NYC"})
         await asyncio.sleep(0.1)
 
         # Verify tool result was submitted back to provider
@@ -317,7 +308,8 @@ class TestSpeakingIndicators:
         await asyncio.sleep(0.05)
 
         speaking_msgs = [
-            m for _, m in transport.sent_messages
+            m
+            for _, m in transport.sent_messages
             if m.get("type") == "speaking" and m.get("who") == "assistant"
         ]
         assert len(speaking_msgs) >= 1
@@ -337,7 +329,8 @@ class TestSpeakingIndicators:
         await asyncio.sleep(0.05)
 
         speaking_msgs = [
-            m for _, m in transport.sent_messages
+            m
+            for _, m in transport.sent_messages
             if m.get("type") == "speaking" and m.get("who") == "assistant"
         ]
         assert len(speaking_msgs) >= 1
@@ -377,10 +370,7 @@ class TestTranscriptionHooks:
         await asyncio.sleep(0.1)
 
         events = await kit.get_timeline(room_id)
-        text_events = [
-            e for e in events
-            if isinstance(e.content, TextContent)
-        ]
+        text_events = [e for e in events if isinstance(e.content, TextContent)]
         assert len(text_events) == 1
         assert text_events[0].content.body == "allowed text"
 
@@ -407,9 +397,9 @@ class TestTranscriptionHooks:
 
         events = await kit.get_timeline(room_id)
         text_events = [
-            e for e in events
-            if isinstance(e.content, TextContent)
-            and e.content.body == "Should be blocked"
+            e
+            for e in events
+            if isinstance(e.content, TextContent) and e.content.body == "Should be blocked"
         ]
         assert len(text_events) == 0
 
@@ -456,7 +446,7 @@ class TestPerRoomConfig:
         provider: MockRealtimeProvider,
         room_id: str,
     ) -> None:
-        session = await channel.start_session(
+        _session = await channel.start_session(
             room_id,
             "user-1",
             "fake-ws",

@@ -140,9 +140,7 @@ class TestFastRTCRealtimeTransport:
         assert received[0][0] == session.id
         assert received[0][1] == audio_array.tobytes()
 
-    async def test_receive_before_session_bound_is_noop(
-        self, transport, handler
-    ) -> None:
+    async def test_receive_before_session_bound_is_noop(self, transport, handler) -> None:
         """receive() before a session is accepted should be a no-op."""
         import numpy as np
 
@@ -257,9 +255,7 @@ class TestFastRTCRealtimeTransport:
         assert len(transport._sessions) == 0
         assert len(transport._session_handlers) == 0
 
-    async def test_unregister_handler_fires_disconnect_callbacks(
-        self, transport
-    ) -> None:
+    async def test_unregister_handler_fires_disconnect_callbacks(self, transport) -> None:
         session = _make_session()
         webrtc_id = "webrtc-123"
 

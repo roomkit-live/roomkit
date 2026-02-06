@@ -16,8 +16,6 @@ from roomkit.models.enums import (
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
-    from roomkit.channels.realtime_voice import RealtimeVoiceChannel
-    from roomkit.channels.voice import VoiceChannel
     from roomkit.core.event_router import EventRouter
     from roomkit.core.locks import RoomLockManager
     from roomkit.store.base import ConversationStore

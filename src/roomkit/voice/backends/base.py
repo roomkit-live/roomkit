@@ -170,9 +170,7 @@ class VoiceBackend(ABC):
         """
         return VoiceCapability.NONE
 
-    def on_partial_transcription(
-        self, callback: PartialTranscriptionCallback
-    ) -> None:
+    def on_partial_transcription(self, callback: PartialTranscriptionCallback) -> None:
         """Register callback for partial transcription results.
 
         Only called if capabilities includes PARTIAL_STT.

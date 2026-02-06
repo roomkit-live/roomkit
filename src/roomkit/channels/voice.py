@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from roomkit.models.delivery import InboundMessage
     from roomkit.models.event import RoomEvent
     from roomkit.voice.backends.base import VoiceBackend
-    from roomkit.voice.base import AudioChunk, VoiceSession
+    from roomkit.voice.base import VoiceSession
     from roomkit.voice.stt.base import STTProvider
     from roomkit.voice.tts.base import TTSProvider
 
@@ -134,9 +134,7 @@ class VoiceChannel(Channel):
         """
         self._framework = framework
 
-    def bind_session(
-        self, session: VoiceSession, room_id: str, binding: ChannelBinding
-    ) -> None:
+    def bind_session(self, session: VoiceSession, room_id: str, binding: ChannelBinding) -> None:
         """Bind a voice session to a room for message routing.
 
         Args:
@@ -207,9 +205,7 @@ class VoiceChannel(Channel):
             name=f"speech_start:{session.id}",
         )
 
-    async def _fire_speech_start_hooks(
-        self, session: VoiceSession, room_id: str
-    ) -> None:
+    async def _fire_speech_start_hooks(self, session: VoiceSession, room_id: str) -> None:
         """Fire ON_SPEECH_START hooks."""
         if not self._framework:
             return
@@ -220,7 +216,7 @@ class VoiceChannel(Channel):
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
                 HookTrigger.ON_SPEECH_START,
-                session,  # type: ignore[arg-type]
+                session,
                 context,
                 skip_event_filter=True,
             )
@@ -248,7 +244,7 @@ class VoiceChannel(Channel):
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
                 HookTrigger.ON_BARGE_IN,
-                event,  # type: ignore[arg-type]
+                event,
                 context,
                 skip_event_filter=True,
             )
@@ -259,9 +255,7 @@ class VoiceChannel(Channel):
         except Exception:
             logger.exception("Error handling barge-in for session %s", session.id)
 
-    async def interrupt(
-        self, session: VoiceSession, *, reason: str = "explicit"
-    ) -> bool:
+    async def interrupt(self, session: VoiceSession, *, reason: str = "explicit") -> bool:
         """Interrupt ongoing TTS playback for a session.
 
         Args:
@@ -297,7 +291,7 @@ class VoiceChannel(Channel):
                     await self._framework.hook_engine.run_async_hooks(
                         room_id,
                         HookTrigger.ON_TTS_CANCELLED,
-                        event,  # type: ignore[arg-type]
+                        event,
                         context,
                         skip_event_filter=True,
                     )
@@ -328,9 +322,7 @@ class VoiceChannel(Channel):
             return
 
         loop.create_task(
-            self._fire_partial_transcription_hook(
-                session, text, confidence, is_stable, room_id
-            ),
+            self._fire_partial_transcription_hook(session, text, confidence, is_stable, room_id),
             name=f"partial_transcription:{session.id}",
         )
 
@@ -359,7 +351,7 @@ class VoiceChannel(Channel):
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
                 HookTrigger.ON_PARTIAL_TRANSCRIPTION,
-                event,  # type: ignore[arg-type]
+                event,
                 context,
                 skip_event_filter=True,
             )
@@ -402,16 +394,14 @@ class VoiceChannel(Channel):
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
                 HookTrigger.ON_VAD_SILENCE,
-                event,  # type: ignore[arg-type]
+                event,
                 context,
                 skip_event_filter=True,
             )
         except Exception:
             logger.exception("Error firing ON_VAD_SILENCE hook")
 
-    def _on_vad_audio_level(
-        self, session: VoiceSession, level_db: float, is_speech: bool
-    ) -> None:
+    def _on_vad_audio_level(self, session: VoiceSession, level_db: float, is_speech: bool) -> None:
         """Handle VAD audio level update."""
         binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
@@ -448,7 +438,7 @@ class VoiceChannel(Channel):
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
                 HookTrigger.ON_VAD_AUDIO_LEVEL,
-                event,  # type: ignore[arg-type]
+                event,
                 context,
                 skip_event_filter=True,
             )
@@ -499,9 +489,7 @@ class VoiceChannel(Channel):
             name=f"speech_end:{session.id}",
         )
 
-    async def _process_speech_end(
-        self, session: VoiceSession, audio: bytes, room_id: str
-    ) -> None:
+    async def _process_speech_end(self, session: VoiceSession, audio: bytes, room_id: str) -> None:
         """Process speech end: fire hooks, transcribe, route inbound."""
         if not self._framework:
             return
@@ -513,7 +501,7 @@ class VoiceChannel(Channel):
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
                 HookTrigger.ON_SPEECH_END,
-                session,  # type: ignore[arg-type]
+                session,
                 context,
                 skip_event_filter=True,
             )
@@ -549,22 +537,18 @@ class VoiceChannel(Channel):
             transcription_result = await self._framework.hook_engine.run_sync_hooks(
                 room_id,
                 HookTrigger.ON_TRANSCRIPTION,
-                text,  # type: ignore[arg-type]
+                text,
                 context,
                 skip_event_filter=True,
             )
 
             if not transcription_result.allowed:
-                logger.info(
-                    "Transcription blocked by hook: %s", transcription_result.reason
-                )
+                logger.info("Transcription blocked by hook: %s", transcription_result.reason)
                 return
 
             # Use potentially modified text
             final_text = (
-                transcription_result.event
-                if isinstance(transcription_result.event, str)
-                else text
+                transcription_result.event if isinstance(transcription_result.event, str) else text
             )
 
             # Route through inbound pipeline
@@ -583,9 +567,7 @@ class VoiceChannel(Channel):
         except Exception:
             logger.exception("Error processing speech end")
 
-    async def handle_inbound(
-        self, message: InboundMessage, context: RoomContext
-    ) -> RoomEvent:
+    async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         from roomkit.models.event import EventSource
         from roomkit.models.event import RoomEvent as RoomEventModel
 
@@ -647,7 +629,7 @@ class VoiceChannel(Channel):
             before_result = await self._framework.hook_engine.run_sync_hooks(
                 room_id,
                 HookTrigger.BEFORE_TTS,
-                text,  # type: ignore[arg-type]
+                text,
                 context,
                 skip_event_filter=True,
             )
@@ -657,11 +639,7 @@ class VoiceChannel(Channel):
                 return
 
             # Use potentially modified text
-            final_text = (
-                before_result.event
-                if isinstance(before_result.event, str)
-                else text
-            )
+            final_text = before_result.event if isinstance(before_result.event, str) else text
 
             logger.info("AI response: %s", final_text)
 
@@ -695,12 +673,10 @@ class VoiceChannel(Channel):
                     await self._backend.send_audio(session, audio_stream)
                 except NotImplementedError:
                     # Fallback to non-streaming
-                    audio_content = await self._tts.synthesize(final_text)
+                    await self._tts.synthesize(final_text)
                     # For non-streaming, we'd need to fetch the audio from URL
                     # This is a limitation - mock backends handle it
-                    logger.warning(
-                        "TTS provider %s doesn't support streaming", self._tts.name
-                    )
+                    logger.warning("TTS provider %s doesn't support streaming", self._tts.name)
                 finally:
                     # Clear playback state (TTS finished or failed)
                     self._playing_sessions.pop(session.id, None)
@@ -709,7 +685,7 @@ class VoiceChannel(Channel):
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
                 HookTrigger.AFTER_TTS,
-                final_text,  # type: ignore[arg-type]
+                final_text,
                 context,
                 skip_event_filter=True,
             )

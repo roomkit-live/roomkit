@@ -3,24 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
-
-import pytest
 
 from roomkit import (
-    Access,
     Channel,
     ChannelBinding,
-    ChannelCapabilities,
     ChannelOutput,
     RoomContext,
     RoomKit,
     TextContent,
 )
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
-from roomkit.channels.websocket import WebSocketChannel
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelMediaType, ChannelType
+from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 
@@ -35,9 +29,7 @@ class ObserverChannel(Channel):
         self.seen_events: list[RoomEvent] = []
         self.delivered_events: list[RoomEvent] = []
 
-    async def handle_inbound(
-        self, message: InboundMessage, context: RoomContext
-    ) -> RoomEvent:
+    async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         return RoomEvent(
             room_id=context.room.id,
             source=EventSource(
@@ -85,7 +77,7 @@ class TestSupervisorTextInjection:
         await kit.attach_channel(room.id, "supervisor")
 
         # Start realtime voice session
-        session = await rt_channel.start_session(room.id, "user-1", "fake-ws")
+        _session = await rt_channel.start_session(room.id, "user-1", "fake-ws")
 
         # Supervisor sends a message through the framework
         await kit.send_event(
@@ -136,9 +128,7 @@ class TestTranscriptionsVisibleToAllChannels:
         # Observer should have received the transcription event
         assert len(observer.delivered_events) > 0
         texts = [
-            e.content.body
-            for e in observer.delivered_events
-            if isinstance(e.content, TextContent)
+            e.content.body for e in observer.delivered_events if isinstance(e.content, TextContent)
         ]
         assert "I can help you with that." in texts
 
@@ -167,7 +157,7 @@ class TestMutedChannelStillReceivesEvents:
         await kit.attach_channel(room.id, "rt-voice")
         await kit.attach_channel(room.id, "supervisor")
 
-        session = await rt_channel.start_session(room.id, "user-1", "fake-ws")
+        _session = await rt_channel.start_session(room.id, "user-1", "fake-ws")
 
         # Mute the realtime voice channel
         await kit.mute(room.id, "rt-voice")

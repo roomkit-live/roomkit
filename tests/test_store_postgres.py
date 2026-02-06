@@ -2,7 +2,8 @@
 
 These tests require a running PostgreSQL instance. Set POSTGRES_DSN to run them:
 
-    POSTGRES_DSN=postgresql://user:pass@localhost/roomkit_test pytest tests/test_store_postgres.py -v
+    POSTGRES_DSN=postgresql://user:pass@localhost/roomkit_test \
+    pytest tests/test_store_postgres.py -v
 """
 
 from __future__ import annotations
@@ -191,9 +192,7 @@ class TestParticipantOperations:
     async def test_list_participants(self, store) -> None:
         await store.create_room(Room(id="r1"))
         for i in range(3):
-            await store.add_participant(
-                Participant(id=f"p{i}", room_id="r1", channel_id=f"ch{i}")
-            )
+            await store.add_participant(Participant(id=f"p{i}", room_id="r1", channel_id=f"ch{i}"))
         participants = await store.list_participants("r1")
         assert len(participants) == 3
 

@@ -142,7 +142,7 @@ class SherpaOnnxSTTProvider(STTProvider):
             stream = recognizer.create_stream()
             stream.accept_waveform(sample_rate, samples)
             recognizer.decode(stream)
-            return stream.result.text.strip()
+            return str(stream.result.text.strip())
 
         return await asyncio.to_thread(_run)
 

@@ -7,12 +7,6 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
-
-# Tool handler: async callable (session, name, arguments) -> result dict or str
-ToolHandler = Callable[
-    ["RealtimeSession", str, dict[str, Any]],
-    Awaitable[dict[str, Any] | str],
-]
 from uuid import uuid4
 
 from roomkit.channels.base import Channel
@@ -33,6 +27,12 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
     from roomkit.voice.realtime.transport import RealtimeAudioTransport
+
+# Tool handler: async callable (session, name, arguments) -> result dict or str
+ToolHandler = Callable[
+    ["RealtimeSession", str, dict[str, Any]],
+    Awaitable[dict[str, Any] | str],
+]
 
 logger = logging.getLogger("roomkit.channels.realtime_voice")
 
@@ -377,9 +377,7 @@ class RealtimeVoiceChannel(Channel):
             name=f"rt_client_audio:{session.id}",
         )
 
-    async def _forward_client_audio(
-        self, session: RealtimeSession, audio: bytes
-    ) -> None:
+    async def _forward_client_audio(self, session: RealtimeSession, audio: bytes) -> None:
         if session.state != RealtimeSessionState.ACTIVE:
             return
         try:
@@ -400,9 +398,7 @@ class RealtimeVoiceChannel(Channel):
             name=f"rt_provider_audio:{session.id}",
         )
 
-    async def _forward_provider_audio(
-        self, session: RealtimeSession, audio: bytes
-    ) -> None:
+    async def _forward_provider_audio(self, session: RealtimeSession, audio: bytes) -> None:
         try:
             await self._transport.send_audio(session, audio)
         except Exception:
@@ -454,37 +450,36 @@ class RealtimeVoiceChannel(Channel):
             )
 
             if not hook_result.allowed:
-                logger.info(
-                    "Transcription blocked by hook: %s", hook_result.reason
-                )
+                logger.info("Transcription blocked by hook: %s", hook_result.reason)
                 return
 
             # Use potentially modified text
             final_text = text
-            if (
-                hook_result.event is not None
-                and isinstance(hook_result.event, RealtimeTranscriptionEvent)
+            if hook_result.event is not None and isinstance(
+                hook_result.event, RealtimeTranscriptionEvent
             ):
                 final_text = hook_result.event.text
             elif isinstance(hook_result.event, str):
                 final_text = hook_result.event
 
             # Send transcription to client UI
-            await self._transport.send_message(session, {
-                "type": "transcription",
-                "text": final_text,
-                "role": role,
-                "is_final": is_final,
-            })
+            await self._transport.send_message(
+                session,
+                {
+                    "type": "transcription",
+                    "text": final_text,
+                    "role": role,
+                    "is_final": is_final,
+                },
+            )
 
             # Emit final transcriptions as RoomEvents
             if is_final and self._emit_transcription_events and final_text.strip():
-                participant_id = (
-                    session.participant_id if role == "user" else None
-                )
+                participant_id = session.participant_id if role == "user" else None
                 logger.info(
                     "Emitting transcription as RoomEvent: role=%s, text=%.80s",
-                    role, final_text,
+                    role,
+                    final_text,
                 )
                 await self._framework.send_event(
                     room_id,
@@ -501,7 +496,9 @@ class RealtimeVoiceChannel(Channel):
         except Exception:
             logger.exception(
                 "Error processing transcription for session %s (room=%s, is_final=%s)",
-                session.id, room_id, is_final,
+                session.id,
+                room_id,
+                is_final,
             )
 
     def _on_provider_speech_start(self, session: RealtimeSession) -> Any:
@@ -526,9 +523,7 @@ class RealtimeVoiceChannel(Channel):
             name=f"rt_speech_end:{session.id}",
         )
 
-    async def _handle_speech_event(
-        self, session: RealtimeSession, event_type: str
-    ) -> None:
+    async def _handle_speech_event(self, session: RealtimeSession, event_type: str) -> None:
         """Fire speech hooks and publish ephemeral indicator."""
         if not self._framework:
             return
@@ -540,36 +535,38 @@ class RealtimeVoiceChannel(Channel):
         try:
             context = await self._framework._build_context(room_id)
             trigger = (
-                HookTrigger.ON_SPEECH_START
-                if event_type == "start"
-                else HookTrigger.ON_SPEECH_END
+                HookTrigger.ON_SPEECH_START if event_type == "start" else HookTrigger.ON_SPEECH_END
             )
 
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
                 trigger,
-                session,  # type: ignore[arg-type]
+                session,
                 context,
                 skip_event_filter=True,
             )
 
             # Send speaking indicator to client
-            await self._transport.send_message(session, {
-                "type": "speaking",
-                "speaking": event_type == "start",
-                "who": "user",
-            })
+            await self._transport.send_message(
+                session,
+                {
+                    "type": "speaking",
+                    "speaking": event_type == "start",
+                    "who": "user",
+                },
+            )
 
             # On speech start, tell client to flush audio queue (barge-in)
             if event_type == "start":
-                await self._transport.send_message(session, {
-                    "type": "clear_audio",
-                })
+                await self._transport.send_message(
+                    session,
+                    {
+                        "type": "clear_audio",
+                    },
+                )
 
         except Exception:
-            logger.exception(
-                "Error handling speech %s for session %s", event_type, session.id
-            )
+            logger.exception("Error handling speech %s for session %s", event_type, session.id)
 
     def _on_provider_tool_call(
         self,
@@ -609,13 +606,12 @@ class RealtimeVoiceChannel(Channel):
                 # Use the tool handler callback
                 logger.info(
                     "Executing tool %s(%s) via handler for session %s",
-                    name, call_id, session.id,
+                    name,
+                    call_id,
+                    session.id,
                 )
                 raw = await self._tool_handler(session, name, arguments)
-                if isinstance(raw, str):
-                    result_str = raw
-                else:
-                    result_str = json.dumps(raw)
+                result_str = raw if isinstance(raw, str) else json.dumps(raw)
             elif self._framework and room_id:
                 # Fall back to hooks
                 context = await self._framework._build_context(room_id)
@@ -632,7 +628,7 @@ class RealtimeVoiceChannel(Channel):
                 hook_result = await self._framework.hook_engine.run_sync_hooks(
                     room_id,
                     HookTrigger.ON_REALTIME_TOOL_CALL,
-                    tool_event,  # type: ignore[arg-type]
+                    tool_event,
                     context,
                     skip_event_filter=True,
                 )
@@ -640,14 +636,13 @@ class RealtimeVoiceChannel(Channel):
                 if hook_result.allowed:
                     result_str = json.dumps(
                         hook_result.event.metadata.get("result", {"status": "ok"})
-                        if hasattr(hook_result.event, "metadata")
-                        and hook_result.event is not None
+                        if hasattr(hook_result.event, "metadata") and hook_result.event is not None
                         else {"status": "ok"}
                     )
                 else:
-                    result_str = json.dumps({
-                        "error": hook_result.reason or "Tool call blocked by hook"
-                    })
+                    result_str = json.dumps(
+                        {"error": hook_result.reason or "Tool call blocked by hook"}
+                    )
             else:
                 result_str = json.dumps({"error": f"No handler for tool {name}"})
 
@@ -655,13 +650,13 @@ class RealtimeVoiceChannel(Channel):
 
             logger.info(
                 "Tool call %s(%s) handled for session %s",
-                name, call_id, session.id,
+                name,
+                call_id,
+                session.id,
             )
 
         except Exception:
-            logger.exception(
-                "Error handling tool call %s for session %s", call_id, session.id
-            )
+            logger.exception("Error handling tool call %s for session %s", call_id, session.id)
             try:
                 await self._provider.submit_tool_result(
                     session,
@@ -698,11 +693,14 @@ class RealtimeVoiceChannel(Channel):
     ) -> None:
         """Publish ephemeral speaking indicator for the AI."""
         try:
-            await self._transport.send_message(session, {
-                "type": "speaking",
-                "speaking": is_speaking,
-                "who": "assistant",
-            })
+            await self._transport.send_message(
+                session,
+                {
+                    "type": "speaking",
+                    "speaking": is_speaking,
+                    "who": "assistant",
+                },
+            )
 
             # Publish to realtime backend for dashboard subscribers
             if self._framework:
@@ -716,13 +714,9 @@ class RealtimeVoiceChannel(Channel):
                     )
 
         except Exception:
-            logger.exception(
-                "Error publishing response indicator for session %s", session.id
-            )
+            logger.exception("Error publishing response indicator for session %s", session.id)
 
-    def _on_provider_error(
-        self, session: RealtimeSession, code: str, message: str
-    ) -> Any:
+    def _on_provider_error(self, session: RealtimeSession, code: str, message: str) -> Any:
         """Handle provider error."""
         logger.error(
             "Realtime provider error for session %s: [%s] %s",
@@ -751,8 +745,4 @@ class RealtimeVoiceChannel(Channel):
 
     def _get_room_sessions(self, room_id: str) -> list[RealtimeSession]:
         """Get all active sessions for a room."""
-        return [
-            s
-            for s in self._sessions.values()
-            if self._session_rooms.get(s.id) == room_id
-        ]
+        return [s for s in self._sessions.values() if self._session_rooms.get(s.id) == room_id]

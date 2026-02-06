@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from roomkit import InboundMessage, RoomKit, TextContent
+from roomkit import InboundMessage, TextContent
 from roomkit.models.delivery import InboundResult
-from roomkit.models.event import AudioContent, LocationContent, MediaContent, VideoContent
+from roomkit.models.event import AudioContent, LocationContent, MediaContent
 from roomkit.sources.base import SourceStatus
-
 
 # =============================================================================
 # Helpers
@@ -47,7 +46,8 @@ def _make_message_event(
     event.Info = info
 
     msg = MagicMock()
-    msg.conversation = conversation if not (image or audio or video or document or location or sticker or extended_text) else None
+    has_media = image or audio or video or document or location or sticker or extended_text
+    msg.conversation = conversation if not has_media else None
 
     # Extended text
     if extended_text:
@@ -421,6 +421,7 @@ class TestReceiveLoop:
         nz_module.HAS_NEONIZE = False
 
         try:
+
             async def emit(msg: InboundMessage) -> InboundResult:
                 return InboundResult()
 
@@ -456,14 +457,13 @@ class TestReceiveLoop:
             def decorator(fn: object) -> object:
                 handlers[event_cls] = fn
                 return fn
+
             return decorator
 
         mock_client.event = mock_event
         nz_module.NewAClient = MagicMock(return_value=mock_client)  # type: ignore[assignment]
 
         # Create fake event classes that the local import will resolve to
-        fake_events = MagicMock()
-
         class FakeQREv:
             pass
 
@@ -559,6 +559,7 @@ class TestReceiveLoop:
         sys.modules["neonize.aioze.events"] = fake_events
 
         try:
+
             async def emit(msg: InboundMessage) -> InboundResult:
                 return InboundResult()
 
@@ -634,6 +635,7 @@ class TestErrorHandling:
         sys.modules["neonize.aioze.events"] = fake_events
 
         try:
+
             async def emit(msg: InboundMessage) -> InboundResult:
                 return InboundResult()
 

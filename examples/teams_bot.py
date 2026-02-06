@@ -57,8 +57,8 @@ async def main() -> None:
 
         # Echo back only when the bot is mentioned
         if mentioned and body:
-            from roomkit.models.event import EventSource, RoomEvent, TextContent
             from roomkit.models.enums import ChannelType
+            from roomkit.models.event import EventSource, RoomEvent, TextContent
 
             conv_id = (event.metadata or {}).get("conversation_id", "")
             if conv_id:

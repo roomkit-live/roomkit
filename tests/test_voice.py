@@ -3,8 +3,6 @@
 import pytest
 
 from roomkit import (
-    HookExecution,
-    HookTrigger,
     MockSTTProvider,
     MockTTSProvider,
     MockVoiceBackend,
@@ -446,7 +444,9 @@ class TestVoiceChannelPipeline:
 
         # Create session with custom sample rate in metadata
         session = await backend.connect(
-            room.id, "user-1", "voice-1",
+            room.id,
+            "user-1",
+            "voice-1",
             metadata={"input_sample_rate": 48000, "output_sample_rate": 24000},
         )
         channel.bind_session(session, room.id, binding)
@@ -484,22 +484,16 @@ class TestVoiceChannelPipeline:
 
         # Backend should have received a user transcription
         user_transcriptions = [
-            (sid, text, role) for sid, text, role in backend.sent_transcriptions
-            if role == "user"
+            (sid, text, role) for sid, text, role in backend.sent_transcriptions if role == "user"
         ]
         assert len(user_transcriptions) == 1
         assert user_transcriptions[0][1] == "Bonjour"
 
     async def test_deliver_sends_assistant_transcription(self) -> None:
         """When delivering voice, VoiceChannel should send assistant text to client."""
-        import asyncio
-        from unittest.mock import AsyncMock, MagicMock
 
-        from roomkit.models.channel import ChannelBinding
-        from roomkit.models.context import RoomContext
         from roomkit.models.enums import ChannelType
         from roomkit.models.event import EventSource, RoomEvent, TextContent
-        from roomkit.models.room import Room
 
         stt = MockSTTProvider()
         tts = MockTTSProvider()
@@ -525,7 +519,8 @@ class TestVoiceChannelPipeline:
 
         # Backend should have received assistant transcription
         assistant_transcriptions = [
-            (sid, text, role) for sid, text, role in backend.sent_transcriptions
+            (sid, text, role)
+            for sid, text, role in backend.sent_transcriptions
             if role == "assistant"
         ]
         assert len(assistant_transcriptions) == 1

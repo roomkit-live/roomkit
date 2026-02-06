@@ -24,9 +24,7 @@ class MockTTSProvider(TTSProvider):
     def default_voice(self) -> str:
         return self._default_voice
 
-    async def synthesize(
-        self, text: str, *, voice: str | None = None
-    ) -> AudioContent:
+    async def synthesize(self, text: str, *, voice: str | None = None) -> AudioContent:
         from roomkit.models.event import AudioContent as AudioContentModel
 
         self.calls.append({"text": text, "voice": voice or self._default_voice})

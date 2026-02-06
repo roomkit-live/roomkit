@@ -169,7 +169,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
         )
         await self._conversation_store.save(conv_id, ref.serialize())
 
-        return conv_id
+        return str(conv_id)
 
     @staticmethod
     def _extract_text(event: RoomEvent) -> str:

@@ -29,13 +29,15 @@ Usage::
 
 from __future__ import annotations
 
-import audioop
 import asyncio
+import audioop
 import base64
 import json
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
+
+from fastrtc import AsyncStreamHandler
 
 from roomkit.voice.realtime.base import RealtimeSession
 from roomkit.voice.realtime.transport import (
@@ -43,8 +45,6 @@ from roomkit.voice.realtime.transport import (
     TransportAudioCallback,
     TransportDisconnectCallback,
 )
-
-from fastrtc import AsyncStreamHandler
 
 if TYPE_CHECKING:
     import numpy as np
@@ -57,7 +57,7 @@ logger = logging.getLogger("roomkit.voice.realtime.fastrtc_transport")
 EmitType = tuple[int, "np.ndarray"] | None
 
 
-class _PassthroughHandler(AsyncStreamHandler):
+class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
     """No-VAD passthrough handler for speech-to-speech.
 
     Inherits from FastRTC's AsyncStreamHandler to relay audio bidirectionally
@@ -149,10 +149,14 @@ class _PassthroughHandler(AsyncStreamHandler):
 
         mulaw = audioop.lin2ulaw(audio, 2)
         payload = base64.b64encode(mulaw).decode("utf-8")
-        self.channel.send(json.dumps({
-            "event": "media",
-            "media": {"payload": payload},
-        }))
+        self.channel.send(
+            json.dumps(
+                {
+                    "event": "media",
+                    "media": {"payload": payload},
+                }
+            )
+        )
 
 
 class FastRTCRealtimeTransport(RealtimeAudioTransport):
@@ -236,9 +240,7 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
         if handler is not None:
             handler.send_audio_direct(audio)
 
-    async def send_message(
-        self, session: RealtimeSession, message: dict[str, Any]
-    ) -> None:
+    async def send_message(self, session: RealtimeSession, message: dict[str, Any]) -> None:
         """Send a JSON message via the WebRTC DataChannel.
 
         Args:
@@ -314,9 +316,7 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
                 if hasattr(result, "__await__"):
                     asyncio.ensure_future(result)
             except Exception:
-                logger.exception(
-                    "Error in connected callback for webrtc_id=%s", webrtc_id
-                )
+                logger.exception("Error in connected callback for webrtc_id=%s", webrtc_id)
 
     def _unregister_handler(self, webrtc_id: str) -> None:
         """Unregister a handler and fire disconnect callbacks."""
@@ -333,9 +333,7 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
             return None
         return self._webrtc_sessions.get(webrtc_id)
 
-    async def _fire_audio_callbacks(
-        self, session: RealtimeSession, audio: bytes
-    ) -> None:
+    async def _fire_audio_callbacks(self, session: RealtimeSession, audio: bytes) -> None:
         """Fire all registered audio callbacks."""
         for cb in self._audio_callbacks:
             try:
@@ -343,9 +341,7 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
                 if hasattr(result, "__await__"):
                     await result
             except Exception:
-                logger.exception(
-                    "Error in audio callback for session %s", session.id
-                )
+                logger.exception("Error in audio callback for session %s", session.id)
 
     async def _fire_disconnect_callbacks(self, session: RealtimeSession) -> None:
         """Fire all registered disconnect callbacks."""
@@ -355,9 +351,7 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
                 if hasattr(result, "__await__"):
                     await result
             except Exception:
-                logger.exception(
-                    "Error in disconnect callback for session %s", session.id
-                )
+                logger.exception("Error in disconnect callback for session %s", session.id)
 
 
 def mount_fastrtc_realtime(

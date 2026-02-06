@@ -103,9 +103,7 @@ class ElevenLabsTTSProvider(TTSProvider):
 
         return list(self._voices_cache.values())
 
-    async def synthesize(
-        self, text: str, *, voice: str | None = None
-    ) -> AudioContent:
+    async def synthesize(self, text: str, *, voice: str | None = None) -> AudioContent:
         """Synthesize text to audio.
 
         Args:

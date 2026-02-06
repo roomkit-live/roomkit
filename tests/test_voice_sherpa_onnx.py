@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import importlib
 import struct
-import sys
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -14,10 +13,10 @@ import pytest
 
 from roomkit.voice.base import AudioChunk, TranscriptionResult
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_pcm_s16le(samples: list[float]) -> bytes:
     """Encode float32 samples as PCM S16LE bytes (test helper)."""
@@ -285,7 +284,12 @@ class TestSherpaOnnxTTSProvider:
         sherpa = _mock_sherpa_module()
         tts_mock = MagicMock()
 
-        def fake_generate(text: str, sid: int = 0, speed: float = 1.0, callback: Any = None) -> None:
+        def fake_generate(
+            text: str,
+            sid: int = 0,
+            speed: float = 1.0,
+            callback: Any = None,
+        ) -> None:
             if callback:
                 callback([0.1, 0.2], 0.5)
                 callback([0.3, 0.4], 1.0)

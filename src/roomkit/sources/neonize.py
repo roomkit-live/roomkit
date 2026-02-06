@@ -14,20 +14,20 @@ from typing import Any
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import (
     AudioContent,
+    EventContent,
     LocationContent,
     MediaContent,
     TextContent,
-    VideoContent,
 )
 from roomkit.sources.base import BaseSourceProvider, EmitCallback, SourceStatus
 
 # Optional dependency --------------------------------------------------------
 try:
-    from neonize.aioze.client import NewAClient  # type: ignore[import-untyped]
+    from neonize.aioze.client import NewAClient
 
     HAS_NEONIZE = True
 except ImportError:
-    NewAClient = None  # type: ignore[assignment, misc]
+    NewAClient = None
     HAS_NEONIZE = False
 
 logger = logging.getLogger("roomkit.sources.neonize")
@@ -100,7 +100,7 @@ def default_message_parser(
                 "push_name": getattr(info, "Pushname", None),
             }
 
-            content = None
+            content: EventContent | None = None
 
             # --- Text ---
             # Note: protobuf3 sub-messages are always truthy even when unset,
@@ -137,7 +137,8 @@ def default_message_parser(
 
                     b64 = base64.b64encode(data).decode()
                     ptt = getattr(msg.audioMessage, "ptt", False)
-                    mime = "audio/ogg" if ptt else getattr(msg.audioMessage, "mimetype", "audio/mp4")
+                    default_mime = getattr(msg.audioMessage, "mimetype", "audio/mp4")
+                    mime = "audio/ogg" if ptt else default_mime
                     url = f"data:{mime};base64,{b64}"
                     duration = getattr(msg.audioMessage, "seconds", None)
                     dur_float = float(duration) if duration else None
@@ -337,8 +338,15 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
         self._set_status(SourceStatus.CONNECTING)
 
         # Import event types locally (only reachable when HAS_NEONIZE is True)
-        import neonize.aioze.events as _neonize_events  # type: ignore[import-untyped]
-        from neonize.aioze.events import (  # type: ignore[import-untyped]
+        # neonize creates its own event loop (event_global_loop) but never
+        # starts it, so events dispatched via run_coroutine_threadsafe are
+        # queued but never executed.  Patch it to the current running loop
+        # BEFORE creating the client so all callbacks fire correctly.
+        # Both modules must be patched because `from .events import
+        # event_global_loop` in client.py creates a separate binding.
+        import neonize.aioze.client as _neonize_client
+        import neonize.aioze.events as _neonize_events
+        from neonize.aioze.events import (
             ChatPresenceEv,
             ConnectedEv,
             DisconnectedEv,
@@ -348,19 +356,11 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
             ReceiptEv,
         )
 
-        # neonize creates its own event loop (event_global_loop) but never
-        # starts it, so events dispatched via run_coroutine_threadsafe are
-        # queued but never executed.  Patch it to the current running loop
-        # BEFORE creating the client so all callbacks fire correctly.
-        # Both modules must be patched because `from .events import
-        # event_global_loop` in client.py creates a separate binding.
-        import neonize.aioze.client as _neonize_client  # type: ignore[import-untyped]
-
         _running_loop = asyncio.get_running_loop()
         _neonize_events.event_global_loop = _running_loop
         _neonize_client.event_global_loop = _running_loop
 
-        from neonize.proto.waCompanionReg.WAWebProtobufsCompanionReg_pb2 import (  # type: ignore[import-untyped]
+        from neonize.proto.waCompanionReg.WAWebProtobufsCompanionReg_pb2 import (
             DeviceProps,
         )
 
@@ -378,16 +378,19 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
             await self._fire_event("qr", {"codes": codes})
 
         @client.event(PairStatusEv)
-        async def _on_paired(_, event: Any) -> None:
+        async def _on_paired(_: Any, event: Any) -> None:
             jid_obj = getattr(event, "ID", None)
             user = getattr(jid_obj, "User", "") if jid_obj else ""
             device = getattr(jid_obj, "Device", "") if jid_obj else ""
             raw = str(jid_obj) if jid_obj else ""
-            await self._fire_event("authenticated", {
-                "jid": raw,
-                "user": user,
-                "device": str(device),
-            })
+            await self._fire_event(
+                "authenticated",
+                {
+                    "jid": raw,
+                    "user": user,
+                    "device": str(device),
+                },
+            )
 
         @client.event(ConnectedEv)
         async def _on_connected(c: Any, __: Any) -> None:
@@ -395,7 +398,7 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
             # Mark ourselves as "available" so WhatsApp relays presence
             # events (typing indicators) from other users.
             try:
-                from neonize.utils.enum import Presence  # type: ignore[import-untyped]
+                from neonize.utils.enum import Presence
 
                 await c.send_presence(Presence.AVAILABLE)
                 logger.debug("Presence set to AVAILABLE")
@@ -404,12 +407,12 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
             await self._fire_event("connected", {})
 
         @client.event(LoggedOutEv)
-        async def _on_logged_out(_, __: Any) -> None:
+        async def _on_logged_out(_: Any, __: Any) -> None:
             self._set_status(SourceStatus.ERROR, "logged_out")
             await self._fire_event("logged_out", {})
 
         @client.event(DisconnectedEv)
-        async def _on_disconnected(_, __: Any) -> None:
+        async def _on_disconnected(_: Any, __: Any) -> None:
             self._set_status(SourceStatus.RECONNECTING)
             await self._fire_event("disconnected", {})
 
@@ -440,15 +443,18 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
                     key = getattr(react, "key", None)
                     target_msg_id = getattr(key, "ID", "") if key else ""
                     emoji = getattr(react, "text", "") or ""
-                    await self._fire_event("reaction", {
-                        "chat_id": chat_user,
-                        "chat_jid": f"{chat_user}@{chat_server}" if chat_user else "",
-                        "sender_id": sender_user,
-                        "is_from_me": bool(src.IsFromMe),
-                        "target_message_id": target_msg_id,
-                        "emoji": emoji,
-                        "push_name": push_name,
-                    })
+                    await self._fire_event(
+                        "reaction",
+                        {
+                            "chat_id": chat_user,
+                            "chat_jid": f"{chat_user}@{chat_server}" if chat_user else "",
+                            "sender_id": sender_user,
+                            "is_from_me": bool(src.IsFromMe),
+                            "target_message_id": target_msg_id,
+                            "emoji": emoji,
+                            "push_name": push_name,
+                        },
+                    )
                     return
 
                 result = self._parser(c, event)
@@ -463,7 +469,7 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
                 logger.warning("Error processing message", exc_info=True)
 
         @client.event(ReceiptEv)
-        async def _on_receipt(_, event: Any) -> None:
+        async def _on_receipt(_: Any, event: Any) -> None:
             try:
                 src = getattr(event, "MessageSource", None)
                 raw_type = getattr(event, "Type", 0)
@@ -471,20 +477,23 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
                 message_ids = list(getattr(event, "MessageIDs", []))
                 sender_jid = self._format_jid(getattr(src, "Sender", None)) if src else ""
                 sender_name = self._lid_names.get(sender_jid, "")
-                await self._fire_event("receipt", {
-                    "type": receipt_type,
-                    "raw_type": raw_type,
-                    "chat": self._format_jid(getattr(src, "Chat", None)) if src else "",
-                    "sender": sender_jid,
-                    "sender_name": sender_name,
-                    "message_ids": message_ids,
-                    "timestamp": getattr(event, "Timestamp", 0),
-                })
+                await self._fire_event(
+                    "receipt",
+                    {
+                        "type": receipt_type,
+                        "raw_type": raw_type,
+                        "chat": self._format_jid(getattr(src, "Chat", None)) if src else "",
+                        "sender": sender_jid,
+                        "sender_name": sender_name,
+                        "message_ids": message_ids,
+                        "timestamp": getattr(event, "Timestamp", 0),
+                    },
+                )
             except Exception:
                 logger.warning("Error processing receipt event", exc_info=True)
 
         @client.event(ChatPresenceEv)
-        async def _on_presence(_, event: Any) -> None:
+        async def _on_presence(_: Any, event: Any) -> None:
             try:
                 src = getattr(event, "MessageSource", None)
                 # State: 1=composing, 2=paused; Media: 1=text, 2=audio
@@ -495,13 +504,16 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
                 sender_jid = self._format_jid(getattr(src, "Sender", None)) if src else ""
                 # Resolve LID to push_name if known from previous messages
                 sender_name = self._lid_names.get(sender_jid, "")
-                await self._fire_event("presence", {
-                    "chat": self._format_jid(getattr(src, "Chat", None)) if src else "",
-                    "sender": sender_jid,
-                    "sender_name": sender_name,
-                    "state": state,
-                    "media": media,
-                })
+                await self._fire_event(
+                    "presence",
+                    {
+                        "chat": self._format_jid(getattr(src, "Chat", None)) if src else "",
+                        "sender": sender_jid,
+                        "sender_name": sender_name,
+                        "state": state,
+                        "media": media,
+                    },
+                )
             except Exception:
                 logger.warning("Error processing presence event", exc_info=True)
 
@@ -572,7 +584,7 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
     ) -> None:
         if self._client is None or self._status != SourceStatus.CONNECTED:
             raise RuntimeError("WhatsApp personal source not connected")
-        from neonize.utils.enum import ChatPresence, ChatPresenceMedia  # type: ignore[import-untyped]
+        from neonize.utils.enum import ChatPresence, ChatPresenceMedia
 
         state = (
             ChatPresence.CHAT_PRESENCE_COMPOSING
@@ -605,8 +617,7 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
         """
         if self._client is None or self._status != SourceStatus.CONNECTED:
             raise RuntimeError("WhatsApp personal source not connected")
-        from neonize.utils.enum import ReceiptType  # type: ignore[import-untyped]
-        from neonize.utils.jid import build_jid  # type: ignore[import-untyped]
+        from neonize.utils.enum import ReceiptType
 
         chat_jid = self._parse_jid(chat)
         sender_jid = self._parse_jid(sender)
@@ -638,14 +649,17 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
         chat_jid = self._parse_jid(chat)
         sender_jid = self._parse_jid(sender)
         reaction_msg = await self._client.build_reaction(
-            chat_jid, sender_jid, message_id, emoji,
+            chat_jid,
+            sender_jid,
+            message_id,
+            emoji,
         )
         await self._client.send_message(chat_jid, reaction_msg)
 
     @staticmethod
     def _parse_jid(jid: str) -> Any:
         """Parse a ``user@server`` string into a neonize JID protobuf."""
-        from neonize.utils.jid import build_jid  # type: ignore[import-untyped]
+        from neonize.utils.jid import build_jid
 
         if "@" in jid:
             user, server = jid.split("@", 1)

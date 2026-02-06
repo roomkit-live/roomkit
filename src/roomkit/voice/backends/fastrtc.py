@@ -32,7 +32,7 @@ import base64
 import logging
 import struct
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.backends.base import VoiceBackend
@@ -275,10 +275,12 @@ class FastRTCVoiceBackend(VoiceBackend):
 
         # Send as base64 JSON
         payload = base64.b64encode(mulaw_data).decode("utf-8")
-        await websocket.send_json({
-            "event": "media",
-            "media": {"payload": payload},
-        })
+        await websocket.send_json(
+            {
+                "event": "media",
+                "media": {"payload": payload},
+            }
+        )
 
     async def send_transcription(
         self, session: VoiceSession, text: str, role: str = "user"
@@ -294,10 +296,12 @@ class FastRTCVoiceBackend(VoiceBackend):
         )
         if websocket:
             try:
-                await websocket.send_json({
-                    "type": "transcription",
-                    "data": {"text": text, "role": role},
-                })
+                await websocket.send_json(
+                    {
+                        "type": "transcription",
+                        "data": {"text": text, "role": role},
+                    }
+                )
                 logger.info("Transcription sent to client")
             except Exception:
                 logger.exception("Error sending transcription")
@@ -347,9 +351,7 @@ class FastRTCVoiceBackend(VoiceBackend):
             audio_bytes = audio_data.tobytes()
             self._speech_end_callback(session, audio_bytes)
 
-    def _register_websocket(
-        self, websocket_id: str, session_id: str, websocket: Any
-    ) -> None:
+    def _register_websocket(self, websocket_id: str, session_id: str, websocket: Any) -> None:
         """Register a WebSocket connection for a session."""
         self._websockets[session_id] = websocket
         # Store websocket_id -> session_id mapping in session metadata
@@ -393,7 +395,7 @@ def mount_fastrtc_voice(
 
     backend._session_factory = session_factory  # type: ignore[attr-defined]
 
-    async def voice_handler(audio: tuple[int, np.ndarray]):
+    async def voice_handler(audio: tuple[int, Any]) -> AsyncGenerator[Any, None]:
         """FastRTC handler that bridges to VoiceBackend callbacks.
 
         This is called by ReplyOnPause when speech is detected and pause occurs.

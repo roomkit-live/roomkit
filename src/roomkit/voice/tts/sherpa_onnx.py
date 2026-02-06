@@ -121,9 +121,7 @@ class SherpaOnnxTTSProvider(TTSProvider):
             self._tts = self._sherpa.OfflineTts(tts_config)
         return self._tts
 
-    async def synthesize(
-        self, text: str, *, voice: str | None = None
-    ) -> AudioContent:
+    async def synthesize(self, text: str, *, voice: str | None = None) -> AudioContent:
         """Synthesize text to audio.
 
         Args:

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from roomkit.models.delivery import ProviderResult
 from roomkit.models.event import (
@@ -45,6 +46,7 @@ def _build_jid_str(phone: str) -> str:
 def _build_jid(phone: str) -> Any:
     """Convert a phone number to a neonize JID protobuf."""
     from roomkit.sources.neonize import WhatsAppPersonalSourceProvider
+
     return WhatsAppPersonalSourceProvider._parse_jid(_build_jid_str(phone))
 
 
@@ -131,7 +133,9 @@ class WhatsAppPersonalProvider(WhatsAppProvider):
             return await client.send_audio(jid, content.url, ptt=ptt)
         else:
             return await client.send_document(
-                jid, content.url, filename=content.filename or "file",
+                jid,
+                content.url,
+                filename=content.filename or "file",
             )
 
     async def _send_composite(self, client: Any, jid: Any, content: CompositeContent) -> Any:

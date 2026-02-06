@@ -17,7 +17,6 @@ import asyncio
 import os
 
 from roomkit import (
-    ChannelCategory,
     RealtimeVoiceChannel,
     RoomKit,
     WebSocketChannel,

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -11,7 +10,6 @@ import pytest
 
 from roomkit import InboundMessage, RoomKit, TextContent
 from roomkit.sources.base import SourceStatus
-
 
 # =============================================================================
 # Test default_json_parser
@@ -183,9 +181,7 @@ class TestSSESourceInit:
     def test_custom_parser(self) -> None:
         from roomkit.sources.sse import SSESource
 
-        def custom_parser(
-            event: str, data: str, event_id: str | None
-        ) -> InboundMessage | None:
+        def custom_parser(event: str, data: str, event_id: str | None) -> InboundMessage | None:
             return InboundMessage(
                 channel_id="custom",
                 sender_id="custom-sender",
@@ -259,12 +255,8 @@ class TestSSESourceReceiveLoop:
         )
 
         events = [
-            MockSSEEvent(
-                "message", json.dumps({"sender_id": "user1", "text": "Hello"}), "1"
-            ),
-            MockSSEEvent(
-                "message", json.dumps({"sender_id": "user2", "text": "World"}), "2"
-            ),
+            MockSSEEvent("message", json.dumps({"sender_id": "user1", "text": "Hello"}), "1"),
+            MockSSEEvent("message", json.dumps({"sender_id": "user2", "text": "World"}), "2"),
         ]
 
         received: list[InboundMessage] = []
@@ -305,9 +297,7 @@ class TestSSESourceReceiveLoop:
             MockSSEEvent("message", "not json"),  # Unparseable
             MockSSEEvent("message", json.dumps({"no_sender": True})),  # Missing sender
             MockSSEEvent("ping", json.dumps({"sender_id": "x"})),  # Wrong event type
-            MockSSEEvent(
-                "message", json.dumps({"sender_id": "user1", "text": "Valid"})
-            ),  # Valid
+            MockSSEEvent("message", json.dumps({"sender_id": "user1", "text": "Valid"})),  # Valid
         ]
 
         received: list[InboundMessage] = []
@@ -419,8 +409,8 @@ class TestSSESourceErrorHandling:
     """Test error handling scenarios."""
 
     async def test_status_changes_to_error_on_exception(self) -> None:
-        from roomkit.sources.sse import SSESource
         import roomkit.sources.sse as sse_module
+        from roomkit.sources.sse import SSESource
 
         source = SSESource(
             url="https://example.com/events",

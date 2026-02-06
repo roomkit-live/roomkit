@@ -64,10 +64,12 @@ class WebSocketRealtimeTransport(RealtimeAudioTransport):
         ws = self._websockets.get(session.id)
         if ws is None:
             return
-        message = json.dumps({
-            "type": "audio",
-            "data": base64.b64encode(audio).decode("ascii"),
-        })
+        message = json.dumps(
+            {
+                "type": "audio",
+                "data": base64.b64encode(audio).decode("ascii"),
+            }
+        )
         try:
             await ws.send(message)
         except Exception:
@@ -135,13 +137,9 @@ class WebSocketRealtimeTransport(RealtimeAudioTransport):
                         await self._fire_audio_callbacks(session, audio_bytes)
 
                 except (json.JSONDecodeError, KeyError, ValueError):
-                    logger.warning(
-                        "Invalid message from session %s", session.id
-                    )
+                    logger.warning("Invalid message from session %s", session.id)
                 except Exception:
-                    logger.exception(
-                        "Error processing message from session %s", session.id
-                    )
+                    logger.exception("Error processing message from session %s", session.id)
 
         except asyncio.CancelledError:
             raise
@@ -157,9 +155,7 @@ class WebSocketRealtimeTransport(RealtimeAudioTransport):
                 except Exception:
                     logger.exception("Error in disconnect callback for session %s", session.id)
 
-    async def _fire_audio_callbacks(
-        self, session: RealtimeSession, audio: bytes
-    ) -> None:
+    async def _fire_audio_callbacks(self, session: RealtimeSession, audio: bytes) -> None:
         """Fire all registered audio callbacks."""
         for cb in self._audio_callbacks:
             try:

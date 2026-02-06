@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-from roomkit.models.delivery import ProviderResult
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import (
     AudioContent,
@@ -20,7 +17,6 @@ from roomkit.models.event import (
 )
 from roomkit.providers.whatsapp.personal import WhatsAppPersonalProvider, _build_jid
 from roomkit.sources.base import SourceStatus
-
 
 # =============================================================================
 # Helpers
@@ -158,9 +154,7 @@ class TestWhatsAppPersonalProvider:
     async def test_send_video_content(self) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
-        event = _make_event(
-            VideoContent(url="https://example.com/video.mp4")
-        )
+        event = _make_event(VideoContent(url="https://example.com/video.mp4"))
 
         result = await provider.send(event, "1234567890")
 
@@ -173,9 +167,7 @@ class TestWhatsAppPersonalProvider:
     async def test_send_location_content(self) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
-        event = _make_event(
-            LocationContent(latitude=45.5, longitude=-73.5, label="Montreal")
-        )
+        event = _make_event(LocationContent(latitude=45.5, longitude=-73.5, label="Montreal"))
 
         result = await provider.send(event, "1234567890")
 

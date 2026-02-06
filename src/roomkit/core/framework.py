@@ -261,9 +261,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             raise ChannelNotFoundError(f"Channel {channel_id} not attached to room {room_id}")
 
         # Create the session
-        session = await self._voice.connect(
-            room_id, participant_id, channel_id, metadata=metadata
-        )
+        session = await self._voice.connect(room_id, participant_id, channel_id, metadata=metadata)
 
         # Bind session to channel for routing
         channel.bind_session(session, room_id, binding)
@@ -354,13 +352,9 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         # Verify binding exists
         binding = await self._store.get_binding(room_id, channel_id)
         if binding is None:
-            raise ChannelNotFoundError(
-                f"Channel {channel_id} not attached to room {room_id}"
-            )
+            raise ChannelNotFoundError(f"Channel {channel_id} not attached to room {room_id}")
 
-        return await channel.start_session(
-            room_id, participant_id, connection, metadata=metadata
-        )
+        return await channel.start_session(room_id, participant_id, connection, metadata=metadata)
 
     async def disconnect_realtime_voice(self, session: Any) -> None:
         """Disconnect a realtime voice session.

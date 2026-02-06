@@ -128,10 +128,14 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         else:
             session_config["turn_detection"] = None
 
-        await ws.send(json.dumps({
-            "type": "session.update",
-            "session": session_config,
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "session.update",
+                    "session": session_config,
+                }
+            )
+        )
 
         session.state = RealtimeSessionState.ACTIVE
         session.provider_session_id = session.id
@@ -148,10 +152,14 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         ws = self._connections.get(session.id)
         if ws is None:
             return
-        await ws.send(json.dumps({
-            "type": "input_audio_buffer.append",
-            "audio": base64.b64encode(audio).decode("ascii"),
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "input_audio_buffer.append",
+                    "audio": base64.b64encode(audio).decode("ascii"),
+                }
+            )
+        )
 
     async def inject_text(
         self, session: RealtimeSession, text: str, *, role: str = "user"
@@ -161,14 +169,18 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             return
 
         # Create a conversation item with the injected text
-        await ws.send(json.dumps({
-            "type": "conversation.item.create",
-            "item": {
-                "type": "message",
-                "role": role if role in ("user", "system") else "user",
-                "content": [{"type": "input_text", "text": text}],
-            },
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "message",
+                        "role": role if role in ("user", "system") else "user",
+                        "content": [{"type": "input_text", "text": text}],
+                    },
+                }
+            )
+        )
 
         # Trigger a response
         await ws.send(json.dumps({"type": "response.create"}))
@@ -180,14 +192,18 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         if ws is None:
             return
 
-        await ws.send(json.dumps({
-            "type": "conversation.item.create",
-            "item": {
-                "type": "function_call_output",
-                "call_id": call_id,
-                "output": result,
-            },
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": result,
+                    },
+                }
+            )
+        )
 
         # Trigger a response after tool result
         await ws.send(json.dumps({"type": "response.create"}))
@@ -265,17 +281,13 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
                 except json.JSONDecodeError:
                     logger.warning("Invalid JSON from OpenAI for session %s", session.id)
                 except Exception:
-                    logger.exception(
-                        "Error handling OpenAI event for session %s", session.id
-                    )
+                    logger.exception("Error handling OpenAI event for session %s", session.id)
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.debug("OpenAI WebSocket closed for session %s", session.id)
 
-    async def _handle_server_event(
-        self, session: RealtimeSession, event: dict[str, Any]
-    ) -> None:
+    async def _handle_server_event(self, session: RealtimeSession, event: dict[str, Any]) -> None:
         """Map OpenAI server events to callbacks."""
         event_type = event.get("type", "")
 
@@ -294,16 +306,12 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         elif event_type == "conversation.item.input_audio_transcription.completed":
             text = event.get("transcript", "")
             if text:
-                await self._fire_transcription_callbacks(
-                    session, text, "user", True
-                )
+                await self._fire_transcription_callbacks(session, text, "user", True)
 
         elif event_type == "response.audio_transcript.done":
             text = event.get("transcript", "")
             if text:
-                await self._fire_transcription_callbacks(
-                    session, text, "assistant", True
-                )
+                await self._fire_transcription_callbacks(session, text, "assistant", True)
 
         elif event_type == "response.function_call_arguments.done":
             call_id = event.get("call_id", "")
@@ -342,9 +350,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             except Exception:
                 logger.exception("Error in callback for session %s", session.id)
 
-    async def _fire_audio_callbacks(
-        self, session: RealtimeSession, audio: bytes
-    ) -> None:
+    async def _fire_audio_callbacks(self, session: RealtimeSession, audio: bytes) -> None:
         for cb in self._audio_callbacks:
             try:
                 result = cb(session, audio)

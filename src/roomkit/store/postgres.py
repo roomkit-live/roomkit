@@ -91,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_rooms_metadata ON rooms USING GIN (data jsonb_pat
 
 
 def _dump(model: Any) -> str:
-    return model.model_dump_json()
+    return str(model.model_dump_json())
 
 
 class PostgresStore(ConversationStore):
@@ -118,7 +118,9 @@ class PostgresStore(ConversationStore):
         """Create the connection pool (if needed) and ensure schema exists."""
         if self._pool is None:
             self._pool = await self._asyncpg.create_pool(
-                self._dsn, min_size=min_size, max_size=max_size,
+                self._dsn,
+                min_size=min_size,
+                max_size=max_size,
             )
         async with self._pool.acquire() as conn:
             await conn.execute(_SCHEMA)
@@ -143,8 +145,11 @@ class PostgresStore(ConversationStore):
             await conn.execute(
                 "INSERT INTO rooms (id, organization_id, status, created_at, data) "
                 "VALUES ($1, $2, $3, $4, $5)",
-                room.id, room.organization_id, room.status.value,
-                room.created_at, _dump(room),
+                room.id,
+                room.organization_id,
+                room.status.value,
+                room.created_at,
+                _dump(room),
             )
         return room
 
@@ -159,20 +164,24 @@ class PostgresStore(ConversationStore):
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "UPDATE rooms SET organization_id = $2, status = $3, data = $4 WHERE id = $1",
-                room.id, room.organization_id, room.status.value, _dump(room),
+                room.id,
+                room.organization_id,
+                room.status.value,
+                _dump(room),
             )
         return room
 
     async def delete_room(self, room_id: str) -> bool:
         async with self._pool.acquire() as conn:
             tag = await conn.execute("DELETE FROM rooms WHERE id = $1", room_id)
-        return tag == "DELETE 1"
+        return bool(tag == "DELETE 1")
 
     async def list_rooms(self, offset: int = 0, limit: int = 50) -> list[Room]:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT data FROM rooms ORDER BY created_at LIMIT $1 OFFSET $2",
-                limit, offset,
+                limit,
+                offset,
             )
         return [Room.model_validate_json(r["data"]) for r in rows]
 
@@ -242,7 +251,9 @@ class PostgresStore(ConversationStore):
         return Room.model_validate_json(row["data"])
 
     async def find_room_id_by_channel(
-        self, channel_id: str, status: str | None = None,
+        self,
+        channel_id: str,
+        status: str | None = None,
     ) -> str | None:
         if status is not None:
             status_val = status.value if hasattr(status, "value") else status
@@ -268,8 +279,12 @@ class PostgresStore(ConversationStore):
             await conn.execute(
                 "INSERT INTO events (id, room_id, idempotency_key, visibility, created_at, data) "
                 "VALUES ($1, $2, $3, $4, $5, $6)",
-                event.id, event.room_id, event.idempotency_key,
-                event.visibility, event.created_at, _dump(event),
+                event.id,
+                event.room_id,
+                event.idempotency_key,
+                event.visibility,
+                event.created_at,
+                _dump(event),
             )
         return event
 
@@ -299,7 +314,9 @@ class PostgresStore(ConversationStore):
                 rows = await conn.fetch(
                     "SELECT data FROM events WHERE room_id = $1 "
                     "ORDER BY created_at LIMIT $2 OFFSET $3",
-                    room_id, limit, offset,
+                    room_id,
+                    limit,
+                    offset,
                 )
         return [RoomEvent.model_validate_json(r["data"]) for r in rows]
 
@@ -307,14 +324,16 @@ class PostgresStore(ConversationStore):
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT 1 FROM events WHERE room_id = $1 AND idempotency_key = $2",
-                room_id, key,
+                room_id,
+                key,
             )
         return row is not None
 
     async def get_event_count(self, room_id: str) -> int:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT count(*) AS cnt FROM events WHERE room_id = $1", room_id,
+                "SELECT count(*) AS cnt FROM events WHERE room_id = $1",
+                room_id,
             )
         return row["cnt"] if row else 0
 
@@ -327,8 +346,11 @@ class PostgresStore(ConversationStore):
                 "VALUES ($1, $2, $3, $4, $5) "
                 "ON CONFLICT (room_id, channel_id) DO UPDATE SET data = $5, "
                 "channel_type = $3, participant_id = $4",
-                binding.channel_id, binding.room_id, binding.channel_type.value,
-                binding.participant_id, _dump(binding),
+                binding.channel_id,
+                binding.room_id,
+                binding.channel_type.value,
+                binding.participant_id,
+                _dump(binding),
             )
         return binding
 
@@ -336,7 +358,8 @@ class PostgresStore(ConversationStore):
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT data FROM bindings WHERE room_id = $1 AND channel_id = $2",
-                room_id, channel_id,
+                room_id,
+                channel_id,
             )
         if row is None:
             return None
@@ -347,8 +370,11 @@ class PostgresStore(ConversationStore):
             await conn.execute(
                 "UPDATE bindings SET channel_type = $3, participant_id = $4, data = $5 "
                 "WHERE room_id = $1 AND channel_id = $2",
-                binding.room_id, binding.channel_id, binding.channel_type.value,
-                binding.participant_id, _dump(binding),
+                binding.room_id,
+                binding.channel_id,
+                binding.channel_type.value,
+                binding.participant_id,
+                _dump(binding),
             )
         return binding
 
@@ -356,14 +382,16 @@ class PostgresStore(ConversationStore):
         async with self._pool.acquire() as conn:
             tag = await conn.execute(
                 "DELETE FROM bindings WHERE room_id = $1 AND channel_id = $2",
-                room_id, channel_id,
+                room_id,
+                channel_id,
             )
-        return tag == "DELETE 1"
+        return bool(tag == "DELETE 1")
 
     async def list_bindings(self, room_id: str) -> list[ChannelBinding]:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT data FROM bindings WHERE room_id = $1", room_id,
+                "SELECT data FROM bindings WHERE room_id = $1",
+                room_id,
             )
         return [ChannelBinding.model_validate_json(r["data"]) for r in rows]
 
@@ -374,7 +402,9 @@ class PostgresStore(ConversationStore):
             await conn.execute(
                 "INSERT INTO participants (id, room_id, data) VALUES ($1, $2, $3) "
                 "ON CONFLICT (room_id, id) DO UPDATE SET data = $3",
-                participant.id, participant.room_id, _dump(participant),
+                participant.id,
+                participant.room_id,
+                _dump(participant),
             )
         return participant
 
@@ -382,7 +412,8 @@ class PostgresStore(ConversationStore):
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT data FROM participants WHERE room_id = $1 AND id = $2",
-                room_id, participant_id,
+                room_id,
+                participant_id,
             )
         if row is None:
             return None
@@ -392,14 +423,17 @@ class PostgresStore(ConversationStore):
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "UPDATE participants SET data = $3 WHERE room_id = $1 AND id = $2",
-                participant.room_id, participant.id, _dump(participant),
+                participant.room_id,
+                participant.id,
+                _dump(participant),
             )
         return participant
 
     async def list_participants(self, room_id: str) -> list[Participant]:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT data FROM participants WHERE room_id = $1", room_id,
+                "SELECT data FROM participants WHERE room_id = $1",
+                room_id,
             )
         return [Participant.model_validate_json(r["data"]) for r in rows]
 
@@ -411,7 +445,9 @@ class PostgresStore(ConversationStore):
                 "INSERT INTO read_markers (room_id, channel_id, event_id) "
                 "VALUES ($1, $2, $3) "
                 "ON CONFLICT (room_id, channel_id) DO UPDATE SET event_id = $3",
-                room_id, channel_id, event_id,
+                room_id,
+                channel_id,
+                event_id,
             )
 
     async def mark_all_read(self, room_id: str, channel_id: str) -> None:
@@ -427,27 +463,31 @@ class PostgresStore(ConversationStore):
         async with self._pool.acquire() as conn:
             marker = await conn.fetchrow(
                 "SELECT event_id FROM read_markers WHERE room_id = $1 AND channel_id = $2",
-                room_id, channel_id,
+                room_id,
+                channel_id,
             )
             if marker is None:
                 row = await conn.fetchrow(
-                    "SELECT count(*) AS cnt FROM events WHERE room_id = $1", room_id,
+                    "SELECT count(*) AS cnt FROM events WHERE room_id = $1",
+                    room_id,
                 )
                 return row["cnt"] if row else 0
 
             last_read_event = await conn.fetchrow(
-                "SELECT created_at FROM events WHERE id = $1", marker["event_id"],
+                "SELECT created_at FROM events WHERE id = $1",
+                marker["event_id"],
             )
             if last_read_event is None:
                 row = await conn.fetchrow(
-                    "SELECT count(*) AS cnt FROM events WHERE room_id = $1", room_id,
+                    "SELECT count(*) AS cnt FROM events WHERE room_id = $1",
+                    room_id,
                 )
                 return row["cnt"] if row else 0
 
             row = await conn.fetchrow(
-                "SELECT count(*) AS cnt FROM events "
-                "WHERE room_id = $1 AND created_at > $2",
-                room_id, last_read_event["created_at"],
+                "SELECT count(*) AS cnt FROM events WHERE room_id = $1 AND created_at > $2",
+                room_id,
+                last_read_event["created_at"],
             )
             return row["cnt"] if row else 0
 
@@ -455,24 +495,28 @@ class PostgresStore(ConversationStore):
 
     async def create_identity(self, identity: Identity) -> Identity:
         async with self._pool.acquire() as conn, conn.transaction():
-                await conn.execute(
-                    "INSERT INTO identities (id, data) VALUES ($1, $2)",
-                    identity.id, _dump(identity),
-                )
-                for ch_type, addresses in identity.channel_addresses.items():
-                    for addr in addresses:
-                        await conn.execute(
-                            "INSERT INTO identity_addresses (channel_type, address, identity_id) "
-                            "VALUES ($1, $2, $3) "
-                            "ON CONFLICT (channel_type, address) DO UPDATE SET identity_id = $3",
-                            ch_type, addr, identity.id,
-                        )
+            await conn.execute(
+                "INSERT INTO identities (id, data) VALUES ($1, $2)",
+                identity.id,
+                _dump(identity),
+            )
+            for ch_type, addresses in identity.channel_addresses.items():
+                for addr in addresses:
+                    await conn.execute(
+                        "INSERT INTO identity_addresses (channel_type, address, identity_id) "
+                        "VALUES ($1, $2, $3) "
+                        "ON CONFLICT (channel_type, address) DO UPDATE SET identity_id = $3",
+                        ch_type,
+                        addr,
+                        identity.id,
+                    )
         return identity
 
     async def get_identity(self, identity_id: str) -> Identity | None:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT data FROM identities WHERE id = $1", identity_id,
+                "SELECT data FROM identities WHERE id = $1",
+                identity_id,
             )
         if row is None:
             return None
@@ -484,7 +528,8 @@ class PostgresStore(ConversationStore):
                 "SELECT i.data FROM identity_addresses ia "
                 "JOIN identities i ON i.id = ia.identity_id "
                 "WHERE ia.channel_type = $1 AND ia.address = $2",
-                channel_type, address,
+                channel_type,
+                address,
             )
         if row is None:
             return None
@@ -493,7 +538,8 @@ class PostgresStore(ConversationStore):
     async def link_address(self, identity_id: str, channel_type: str, address: str) -> None:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT data FROM identities WHERE id = $1", identity_id,
+                "SELECT data FROM identities WHERE id = $1",
+                identity_id,
             )
             if row is None:
                 return
@@ -508,20 +554,25 @@ class PostgresStore(ConversationStore):
                 async with conn.transaction():
                     await conn.execute(
                         "UPDATE identities SET data = $2 WHERE id = $1",
-                        identity_id, _dump(updated),
+                        identity_id,
+                        _dump(updated),
                     )
                     await conn.execute(
                         "INSERT INTO identity_addresses (channel_type, address, identity_id) "
                         "VALUES ($1, $2, $3) "
                         "ON CONFLICT (channel_type, address) DO UPDATE SET identity_id = $3",
-                        channel_type, address, identity_id,
+                        channel_type,
+                        address,
+                        identity_id,
                     )
             else:
                 await conn.execute(
                     "INSERT INTO identity_addresses (channel_type, address, identity_id) "
                     "VALUES ($1, $2, $3) "
                     "ON CONFLICT (channel_type, address) DO UPDATE SET identity_id = $3",
-                    channel_type, address, identity_id,
+                    channel_type,
+                    address,
+                    identity_id,
                 )
 
     # ── Task operations ──────────────────────────────────────────
@@ -530,7 +581,10 @@ class PostgresStore(ConversationStore):
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "INSERT INTO tasks (id, room_id, status, data) VALUES ($1, $2, $3, $4)",
-                task.id, task.room_id, task.status, _dump(task),
+                task.id,
+                task.room_id,
+                task.status,
+                _dump(task),
             )
         return task
 
@@ -546,12 +600,14 @@ class PostgresStore(ConversationStore):
             async with self._pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT data FROM tasks WHERE room_id = $1 AND status = $2",
-                    room_id, status,
+                    room_id,
+                    status,
                 )
         else:
             async with self._pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT data FROM tasks WHERE room_id = $1", room_id,
+                    "SELECT data FROM tasks WHERE room_id = $1",
+                    room_id,
                 )
         return [Task.model_validate_json(r["data"]) for r in rows]
 
@@ -559,7 +615,9 @@ class PostgresStore(ConversationStore):
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "UPDATE tasks SET status = $2, data = $3 WHERE id = $1",
-                task.id, task.status, _dump(task),
+                task.id,
+                task.status,
+                _dump(task),
             )
         return task
 
@@ -569,13 +627,16 @@ class PostgresStore(ConversationStore):
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "INSERT INTO observations (id, room_id, data) VALUES ($1, $2, $3)",
-                observation.id, observation.room_id, _dump(observation),
+                observation.id,
+                observation.room_id,
+                _dump(observation),
             )
         return observation
 
     async def list_observations(self, room_id: str) -> list[Observation]:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT data FROM observations WHERE room_id = $1", room_id,
+                "SELECT data FROM observations WHERE room_id = $1",
+                room_id,
             )
         return [Observation.model_validate_json(r["data"]) for r in rows]

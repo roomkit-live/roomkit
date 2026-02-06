@@ -2,8 +2,6 @@
 
 import asyncio
 
-import pytest
-
 from roomkit import (
     HookExecution,
     HookTrigger,
@@ -166,9 +164,11 @@ class TestVoicePipelineIntegration:
 
         @kit.hook(HookTrigger.BEFORE_BROADCAST, HookExecution.SYNC)
         async def capture_message(event, context):
+            from roomkit.models.hook import HookResult as HR
+
             if isinstance(event.content, TextContent):
                 received_messages.append(event.content.body)
-            return HookResult.allow()
+            return HR.allow()
 
         session = await kit.connect_voice(room.id, "user-1", "voice-1")
         await backend.simulate_speech_end(session, b"audio")
@@ -377,8 +377,7 @@ class TestVoicePipelineIntegration:
         await kit.attach_channel(room.id, "voice-1")
 
         session = await kit.connect_voice(
-            room.id, "user-1", "voice-1",
-            metadata={"language": "en", "device": "mobile"}
+            room.id, "user-1", "voice-1", metadata={"language": "en", "device": "mobile"}
         )
 
         assert session.metadata["language"] == "en"
@@ -869,7 +868,7 @@ class TestVoiceCapabilitiesIntegration:
 
         # Backend with no capabilities
         backend_minimal = MockVoiceBackend(capabilities=VoiceCapability.NONE)
-        channel_minimal = VoiceChannel("voice-1", backend=backend_minimal)
+        _channel_minimal = VoiceChannel("voice-1", backend=backend_minimal)
 
         # Should have basic callbacks registered
         assert len(backend_minimal._speech_start_callbacks) == 1
@@ -885,7 +884,7 @@ class TestVoiceCapabilitiesIntegration:
             | VoiceCapability.BARGE_IN
         )
         backend_full = MockVoiceBackend(capabilities=all_caps)
-        channel_full = VoiceChannel("voice-2", backend=backend_full)
+        _channel_full = VoiceChannel("voice-2", backend=backend_full)
 
         # Should have all callbacks registered
         assert len(backend_full._speech_start_callbacks) == 1

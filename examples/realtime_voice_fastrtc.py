@@ -60,9 +60,7 @@ async def on_client_connected(webrtc_id: str) -> None:
     """Called when a browser connects via WebRTC."""
     room = await kit.create_room()
     await kit.attach_channel(room.id, "realtime-voice")
-    session = await channel.start_session(
-        room.id, "user-1", connection=webrtc_id
-    )
+    session = await channel.start_session(room.id, "user-1", connection=webrtc_id)
     logging.info(
         "Session started: session=%s, room=%s, webrtc_id=%s",
         session.id,

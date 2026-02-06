@@ -7,9 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from roomkit.voice.base import AudioChunk, VoiceCapability, VoiceSession, VoiceSessionState
 from roomkit.voice.backends.fastrtc import FastRTCVoiceBackend, _pcm16_to_mulaw
-
+from roomkit.voice.base import AudioChunk, VoiceCapability, VoiceSession, VoiceSessionState
 
 # ---------------------------------------------------------------------------
 # mu-law encoder tests
@@ -367,7 +366,9 @@ class TestFastRTCResolveWebSocket:
         """When no explicit registration, falls back to Stream.connections."""
         backend = FastRTCVoiceBackend()
         session = await backend.connect(
-            "room-1", "user-1", "voice-1",
+            "room-1",
+            "user-1",
+            "voice-1",
             metadata={"websocket_id": "ws-test-123"},
         )
 
@@ -391,7 +392,9 @@ class TestFastRTCResolveWebSocket:
         """Returns None when no websocket exists anywhere."""
         backend = FastRTCVoiceBackend()
         session = await backend.connect(
-            "room-1", "user-1", "voice-1",
+            "room-1",
+            "user-1",
+            "voice-1",
             metadata={"websocket_id": "ws-missing"},
         )
 
@@ -406,7 +409,9 @@ class TestFastRTCResolveWebSocket:
         """send_audio should work via Stream.connections fallback."""
         backend = FastRTCVoiceBackend()
         session = await backend.connect(
-            "room-1", "user-1", "voice-1",
+            "room-1",
+            "user-1",
+            "voice-1",
             metadata={"websocket_id": "ws-fallback"},
         )
 
@@ -425,7 +430,9 @@ class TestFastRTCResolveWebSocket:
         """send_transcription should work via Stream.connections fallback."""
         backend = FastRTCVoiceBackend()
         session = await backend.connect(
-            "room-1", "user-1", "voice-1",
+            "room-1",
+            "user-1",
+            "voice-1",
             metadata={"websocket_id": "ws-fallback"},
         )
 
