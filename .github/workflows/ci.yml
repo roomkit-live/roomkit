@@ -64,6 +64,27 @@ jobs:
       - name: Mypy
         run: uv run mypy src/
 
+  smoke:
+    name: Smoke test (quickstart)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install base package only
+        run: uv pip install . --system
+
+      - name: Install pytest
+        run: uv pip install pytest pytest-asyncio --system
+
+      - name: Run smoke test
+        run: python -m pytest tests/test_smoke_quickstart.py -v
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest

@@ -47,8 +47,8 @@ async def main():
     await kit.attach_channel("room-1", "ws-user")
     await kit.attach_channel("room-1", "ai-bot", category=ChannelCategory.INTELLIGENCE)
 
-    # Add a pre-inbound hook
-    @kit.hook(HookTrigger.PRE_INBOUND, name="filter")
+    # Add a broadcast hook
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="filter")
     async def block_spam(event: RoomEvent, ctx: RoomContext) -> HookResult:
         if isinstance(event.content, TextContent) and "spam" in event.content.body:
             return HookResult.block("spam detected")
@@ -196,19 +196,19 @@ Each HTTP-based provider lazy-imports `httpx` so the core library stays lightwei
 Hooks intercept events at specific points in the pipeline. Sync hooks can block or modify events; async hooks run after the fact for logging or side effects.
 
 ```python
-@kit.hook(HookTrigger.PRE_INBOUND, name="compliance_check")
+@kit.hook(HookTrigger.BEFORE_BROADCAST, name="compliance_check")
 async def check(event: RoomEvent, ctx: RoomContext) -> HookResult:
     # Block, allow, or modify the event
     return HookResult.allow()
 ```
 
-**Triggers:** `PRE_INBOUND`, `POST_INBOUND`, `PRE_DELIVERY`, `POST_DELIVERY`, `BEFORE_BROADCAST`, `AFTER_BROADCAST`, `ON_ROOM_CREATED`, `ON_ROOM_PAUSED`, `ON_ROOM_CLOSED`, `ON_CHANNEL_ATTACHED`, `ON_CHANNEL_DETACHED`, `ON_IDENTITY_AMBIGUOUS`, `ON_IDENTITY_UNKNOWN`, `ON_DELIVERY_STATUS`, `ON_ERROR`.
+**Triggers:** `BEFORE_BROADCAST`, `AFTER_BROADCAST`, `ON_ROOM_CREATED`, `ON_ROOM_PAUSED`, `ON_ROOM_CLOSED`, `ON_CHANNEL_ATTACHED`, `ON_CHANNEL_DETACHED`, `ON_CHANNEL_MUTED`, `ON_CHANNEL_UNMUTED`, `ON_IDENTITY_AMBIGUOUS`, `ON_IDENTITY_UNKNOWN`, `ON_PARTICIPANT_IDENTIFIED`, `ON_TASK_CREATED`, `ON_DELIVERY_STATUS`, `ON_ERROR`, `ON_SPEECH_START`, `ON_SPEECH_END`, `ON_TRANSCRIPTION`, `BEFORE_TTS`, `AFTER_TTS`.
 
 Hooks support **filtering** by channel type, channel ID, and direction:
 
 ```python
 @kit.hook(
-    HookTrigger.PRE_INBOUND,
+    HookTrigger.BEFORE_BROADCAST,
     channel_types={ChannelType.SMS},
     directions={ChannelDirection.INBOUND},
 )
