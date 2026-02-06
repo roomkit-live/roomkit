@@ -66,6 +66,7 @@ dev = [
     "pytest-cov>=5.0",
     "mypy>=1.11",
     "ruff>=0.6",
+    "bandit>=1.7",
     "pre-commit>=3.8",
     "roomkit[providers]",
     "roomkit[phonenumbers]",
@@ -175,6 +176,10 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM"]
 "src/roomkit/voice/realtime/transport.py" = ["B027"]  # Optional callback hooks with default no-ops
 "examples/*.py" = ["E402"]  # Logging config before imports is intentional
 "tests/*.py" = ["N817"]  # Allow short aliases in tests
+
+[tool.bandit]
+exclude_dirs = ["tests", "examples"]
+skips = ["B101"]  # Allow assert in non-test code (used in type narrowing)
 
 [tool.coverage.run]
 source = ["roomkit"]

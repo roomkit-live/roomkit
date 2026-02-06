@@ -217,7 +217,7 @@ class PostgresStore(ConversationStore):
 
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
         async with self._ensure_pool().acquire() as conn:
-            rows = await conn.fetch(f"SELECT data FROM rooms {where}", *params)
+            rows = await conn.fetch(f"SELECT data FROM rooms {where}", *params)  # nosec B608 — parameterized query
         return [Room.model_validate_json(r["data"]) for r in rows]
 
     async def find_latest_room(

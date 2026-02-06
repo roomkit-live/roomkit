@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test coverage all clean docs publish deploy release
+.PHONY: install lint format typecheck security test coverage all clean docs publish deploy release
 
 install:
 	uv sync --extra dev
@@ -12,13 +12,16 @@ format:
 typecheck:
 	uv run mypy src/roomkit/
 
+security:
+	uv run bandit -r src/ -c pyproject.toml
+
 test:
 	uv run pytest
 
 coverage:
 	uv run pytest --cov=roomkit --cov-report=term-missing
 
-all: lint typecheck test
+all: lint typecheck security test
 
 clean:
 	rm -rf dist/ build/ .mypy_cache/ .pytest_cache/ .ruff_cache/ htmlcov/ .coverage

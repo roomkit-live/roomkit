@@ -82,7 +82,7 @@ class SendGridProvider(EmailProvider):
                 errors = body.get("errors", [])
                 if errors:
                     error_msg = errors[0].get("message", error_msg)
-            except Exception:
+            except Exception:  # nosec B110 — best-effort error body parsing
                 pass
             return ProviderResult(success=False, error=error_msg)
         except self._httpx.HTTPError as exc:
