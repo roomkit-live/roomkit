@@ -14,6 +14,7 @@ from roomkit.voice.stt.base import STTProvider
 
 if TYPE_CHECKING:
     from roomkit.models.event import AudioContent
+    from roomkit.voice.audio_frame import AudioFrame
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ class SherpaOnnxSTTProvider(STTProvider):
                 )
         return self._offline_recognizer
 
-    async def transcribe(self, audio: AudioContent | AudioChunk) -> str:
+    async def transcribe(self, audio: AudioContent | AudioChunk | AudioFrame) -> str:
         """Transcribe complete audio using the offline recognizer.
 
         Args:

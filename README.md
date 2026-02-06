@@ -114,7 +114,7 @@ Each channel is a thin adapter between the room and an external transport. All c
 | **Teams** | `teams` | text, rich | Bot Framework SDK, proactive messaging, 28K chars |
 | **WhatsApp** | `whatsapp` | text, rich, media, location, template | Buttons, templates |
 | **WhatsApp Personal** | `whatsapp_personal` | text, media, audio, location | Typing indicators, read receipts, neonize |
-| **Voice** | `voice` | audio, text | STT/TTS, barge-in, FastRTC streaming |
+| **Voice** | `voice` | audio, text | STT/TTS, audio pipeline, barge-in, FastRTC streaming |
 | **Realtime Voice** | `realtime_voice` | audio, text | Speech-to-speech AI (Gemini Live, OpenAI Realtime) |
 | **HTTP** | `webhook` | text, rich | Generic webhook for any system |
 | **AI** | `ai` | text, rich | Intelligence layer (not transport) |
@@ -160,6 +160,42 @@ Providers handle the actual API calls. Every provider has a mock counterpart for
 | `SherpaOnnxTTSProvider` | Local TTS (VITS/Piper) | `roomkit[sherpa-onnx]` |
 | `FastRTCVoiceBackend` | WebRTC audio transport | `roomkit[fastrtc]` |
 
+### Audio Pipeline
+
+The audio pipeline sits between the voice backend (transport) and STT. It processes raw audio frames through pluggable stages:
+
+```
+Backend -> [Denoiser] -> VAD -> [Diarization] -> STT
+```
+
+| Component | Role | Required |
+|-----------|------|----------|
+| `VADProvider` | Voice activity detection (speech start/end) | No |
+| `DenoiserProvider` | Noise reduction before VAD | No |
+| `DiarizationProvider` | Speaker identification | No |
+| `AudioPostProcessor` | Custom frame transforms (deferred) | No |
+
+All stages are optional — configure what you need:
+
+```python
+from roomkit import VoiceChannel
+from roomkit.voice.pipeline import AudioPipelineConfig, VADConfig
+
+# Traditional voice: VAD drives STT transcription
+pipeline = AudioPipelineConfig(
+    vad=my_vad_provider,
+    denoiser=my_denoiser,
+    diarization=my_diarizer,
+    vad_config=VADConfig(silence_threshold_ms=500),
+)
+voice = VoiceChannel("voice", stt=stt, tts=tts, backend=backend, pipeline=pipeline)
+
+# Realtime voice: denoiser + diarization only (AI provider handles VAD)
+preprocess = AudioPipelineConfig(denoiser=my_denoiser, diarization=my_diarizer)
+```
+
+The pipeline fires events that the hook system can intercept: `ON_SPEECH_START`, `ON_SPEECH_END`, `ON_VAD_SILENCE`, `ON_VAD_AUDIO_LEVEL`, `ON_SPEAKER_CHANGE`. See [`examples/voice_pipeline.py`](examples/voice_pipeline.py) for a complete example.
+
 ### Realtime Voice (Speech-to-Speech)
 
 | Component | Role | Dependency |
@@ -202,7 +238,7 @@ async def check(event: RoomEvent, ctx: RoomContext) -> HookResult:
     return HookResult.allow()
 ```
 
-**Triggers:** `BEFORE_BROADCAST`, `AFTER_BROADCAST`, `ON_ROOM_CREATED`, `ON_ROOM_PAUSED`, `ON_ROOM_CLOSED`, `ON_CHANNEL_ATTACHED`, `ON_CHANNEL_DETACHED`, `ON_CHANNEL_MUTED`, `ON_CHANNEL_UNMUTED`, `ON_IDENTITY_AMBIGUOUS`, `ON_IDENTITY_UNKNOWN`, `ON_PARTICIPANT_IDENTIFIED`, `ON_TASK_CREATED`, `ON_DELIVERY_STATUS`, `ON_ERROR`, `ON_SPEECH_START`, `ON_SPEECH_END`, `ON_TRANSCRIPTION`, `BEFORE_TTS`, `AFTER_TTS`.
+**Triggers:** `BEFORE_BROADCAST`, `AFTER_BROADCAST`, `ON_ROOM_CREATED`, `ON_ROOM_PAUSED`, `ON_ROOM_CLOSED`, `ON_CHANNEL_ATTACHED`, `ON_CHANNEL_DETACHED`, `ON_CHANNEL_MUTED`, `ON_CHANNEL_UNMUTED`, `ON_IDENTITY_AMBIGUOUS`, `ON_IDENTITY_UNKNOWN`, `ON_PARTICIPANT_IDENTIFIED`, `ON_TASK_CREATED`, `ON_DELIVERY_STATUS`, `ON_ERROR`, `ON_SPEECH_START`, `ON_SPEECH_END`, `ON_TRANSCRIPTION`, `BEFORE_TTS`, `AFTER_TTS`, `ON_TTS_CANCELLED`, `ON_BARGE_IN`, `ON_VAD_SILENCE`, `ON_VAD_AUDIO_LEVEL`, `ON_SPEAKER_CHANGE`, `ON_REALTIME_TOOL_CALL`, `ON_REALTIME_TEXT_INJECTED`, `ON_OBSERVATION`.
 
 Hooks support **filtering** by channel type, channel ID, and direction:
 
@@ -506,7 +542,7 @@ src/roomkit/
   realtime/        Ephemeral events (typing, presence, read receipts)
   sources/         Event-driven sources (WebSocket, neonize, custom)
   store/           Storage abstraction and in-memory implementation
-  voice/           Voice subsystem (stt/, tts/, backends/, realtime/)
+  voice/           Voice subsystem (stt/, tts/, backends/, pipeline/, realtime/)
 ```
 
 ## Documentation

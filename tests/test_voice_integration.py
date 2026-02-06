@@ -14,7 +14,18 @@ from roomkit import (
 )
 from roomkit.channels.ai import AIChannel
 from roomkit.models.event import TextContent
+from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceSessionState
+from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
+from roomkit.voice.pipeline.vad_provider import VADEvent, VADEventType
+
+
+def _speech_events(audio: bytes = b"fake-audio-data") -> list[VADEvent | None]:
+    """Create a standard speech start + speech end VAD event sequence."""
+    return [
+        VADEvent(type=VADEventType.SPEECH_START),
+        VADEvent(type=VADEventType.SPEECH_END, audio_bytes=audio),
+    ]
 
 
 class TestVoicePipelineIntegration:
@@ -22,36 +33,37 @@ class TestVoicePipelineIntegration:
 
     async def test_full_voice_pipeline(self) -> None:
         """Test: speech -> transcription -> AI response -> TTS -> audio output."""
-        # Setup providers
         stt = MockSTTProvider(transcripts=["Hello, how are you?"])
         tts = MockTTSProvider()
         backend = MockVoiceBackend()
         ai = MockAIProvider(responses=["I'm doing great, thanks for asking!"])
 
-        # Create RoomKit with voice support
+        vad = MockVADProvider(events=_speech_events())
+        pipeline = AudioPipelineConfig(vad=vad)
+
         kit = RoomKit(stt=stt, tts=tts, voice=backend)
 
-        # Register channels
-        voice_channel = VoiceChannel("voice-1", stt=stt, tts=tts, backend=backend)
+        voice_channel = VoiceChannel(
+            "voice-1", stt=stt, tts=tts, backend=backend, pipeline=pipeline
+        )
         ai_channel = AIChannel("ai-1", provider=ai, system_prompt="Be helpful")
 
         kit.register_channel(voice_channel)
         kit.register_channel(ai_channel)
 
-        # Create room and attach channels
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
         await kit.attach_channel(room.id, "ai-1")
 
-        # Connect voice session
         session = await kit.connect_voice(room.id, "user-1", "voice-1")
         assert session.state == VoiceSessionState.ACTIVE
 
-        # Simulate speech end (VAD detected silence after speech)
-        await backend.simulate_speech_end(session, b"fake-audio-data")
+        # Simulate two audio frames -> VAD fires SPEECH_START then SPEECH_END
+        await backend.simulate_audio_received(session, AudioFrame(data=b"frame-1"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"frame-2"))
 
         # Give the async pipeline time to process
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.15)
 
         # Verify STT was called
         assert len(stt.calls) == 1
@@ -74,16 +86,25 @@ class TestVoicePipelineIntegration:
         tts = MockTTSProvider()
         backend = MockVoiceBackend()
 
+        # Three frames: SPEECH_START, then nothing, then SPEECH_END with audio
+        vad = MockVADProvider(events=[
+            VADEvent(type=VADEventType.SPEECH_START),
+            None,
+            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
+        ])
+        pipeline = AudioPipelineConfig(vad=vad)
+
         kit = RoomKit(stt=stt, tts=tts, voice=backend)
 
-        voice_channel = VoiceChannel("voice-1", stt=stt, tts=tts, backend=backend)
+        voice_channel = VoiceChannel(
+            "voice-1", stt=stt, tts=tts, backend=backend, pipeline=pipeline
+        )
         kit.register_channel(voice_channel)
 
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
 
-        # Track hook execution order
-        hook_order = []
+        hook_order: list[str] = []
 
         @kit.hook(HookTrigger.ON_SPEECH_START, HookExecution.ASYNC)
         async def on_speech_start(event, context):
@@ -109,14 +130,12 @@ class TestVoicePipelineIntegration:
 
         session = await kit.connect_voice(room.id, "user-1", "voice-1")
 
-        # Simulate speech
-        await backend.simulate_speech_start(session)
-        await asyncio.sleep(0.05)
+        # Simulate 3 audio frames (matching the 3 VAD events)
+        for i in range(3):
+            await backend.simulate_audio_received(session, AudioFrame(data=f"frame-{i}".encode()))
 
-        await backend.simulate_speech_end(session, b"audio")
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.15)
 
-        # Verify hook order
         assert "ON_SPEECH_START" in hook_order
         assert "ON_SPEECH_END" in hook_order
         assert "ON_TRANSCRIPTION" in hook_order
@@ -132,34 +151,27 @@ class TestVoicePipelineIntegration:
         await kit.close()
 
     async def test_on_transcription_hook_can_modify_text(self) -> None:
-        """Test that ON_TRANSCRIPTION hook can modify the transcribed text.
-
-        Note: Voice hooks (ON_TRANSCRIPTION, BEFORE_TTS, AFTER_TTS) pass the text
-        string as the 'event' parameter, not a RoomEvent. To modify the text,
-        return a HookResult with action="modify" and the event field set to the
-        modified text string (cast appropriately).
-        """
+        """Test that ON_TRANSCRIPTION hook can observe the transcribed text."""
         stt = MockSTTProvider(transcripts=["hello world"])
         backend = MockVoiceBackend()
 
+        vad = MockVADProvider(events=_speech_events(b"audio"))
+        pipeline = AudioPipelineConfig(vad=vad)
+
         kit = RoomKit(stt=stt, voice=backend)
 
-        voice_channel = VoiceChannel("voice-1", stt=stt, backend=backend)
+        voice_channel = VoiceChannel("voice-1", stt=stt, backend=backend, pipeline=pipeline)
         kit.register_channel(voice_channel)
 
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
 
-        received_messages = []
+        received_messages: list[str] = []
 
         @kit.hook(HookTrigger.ON_TRANSCRIPTION, HookExecution.SYNC)
         async def modify_transcription(event, context):
-            # For voice hooks, event is the transcription text (str)
-            # Return HookResult.allow() to let it proceed, or modify via action
             from roomkit.models.hook import HookResult
 
-            # Voice hooks don't support modify action since event must be RoomEvent
-            # Instead, we can block and let the test verify blocking works
             return HookResult.allow()
 
         @kit.hook(HookTrigger.BEFORE_BROADCAST, HookExecution.SYNC)
@@ -171,10 +183,12 @@ class TestVoicePipelineIntegration:
             return HR.allow()
 
         session = await kit.connect_voice(room.id, "user-1", "voice-1")
-        await backend.simulate_speech_end(session, b"audio")
-        await asyncio.sleep(0.1)
 
-        # Verify the original text went through (voice hooks can't modify text currently)
+        # Two frames for SPEECH_START + SPEECH_END
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f1"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f2"))
+        await asyncio.sleep(0.15)
+
         assert len(received_messages) == 1
         assert received_messages[0] == "hello world"
 
@@ -185,15 +199,18 @@ class TestVoicePipelineIntegration:
         stt = MockSTTProvider(transcripts=["blocked message"])
         backend = MockVoiceBackend()
 
+        vad = MockVADProvider(events=_speech_events(b"audio"))
+        pipeline = AudioPipelineConfig(vad=vad)
+
         kit = RoomKit(stt=stt, voice=backend)
 
-        voice_channel = VoiceChannel("voice-1", stt=stt, backend=backend)
+        voice_channel = VoiceChannel("voice-1", stt=stt, backend=backend, pipeline=pipeline)
         kit.register_channel(voice_channel)
 
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
 
-        broadcast_called = []
+        broadcast_called: list[bool] = []
 
         @kit.hook(HookTrigger.ON_TRANSCRIPTION, HookExecution.SYNC)
         async def block_transcription(event, context):
@@ -209,8 +226,10 @@ class TestVoicePipelineIntegration:
             return HookResult.allow()
 
         session = await kit.connect_voice(room.id, "user-1", "voice-1")
-        await backend.simulate_speech_end(session, b"audio")
-        await asyncio.sleep(0.1)
+
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f1"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f2"))
+        await asyncio.sleep(0.15)
 
         # Broadcast should not be called because transcription was blocked
         assert len(broadcast_called) == 0
@@ -218,20 +237,20 @@ class TestVoicePipelineIntegration:
         await kit.close()
 
     async def test_before_tts_hook_fires(self) -> None:
-        """Test that BEFORE_TTS hook fires before synthesis.
-
-        Note: Voice hooks pass the text string as the event parameter.
-        Currently, voice hooks can observe or block, but not modify the text
-        due to HookResult expecting RoomEvent for modification.
-        """
+        """Test that BEFORE_TTS hook fires before synthesis."""
         stt = MockSTTProvider(transcripts=["hello"])
         tts = MockTTSProvider()
         backend = MockVoiceBackend()
         ai = MockAIProvider(responses=["Original response"])
 
+        vad = MockVADProvider(events=_speech_events(b"audio"))
+        pipeline = AudioPipelineConfig(vad=vad)
+
         kit = RoomKit(stt=stt, tts=tts, voice=backend)
 
-        voice_channel = VoiceChannel("voice-1", stt=stt, tts=tts, backend=backend)
+        voice_channel = VoiceChannel(
+            "voice-1", stt=stt, tts=tts, backend=backend, pipeline=pipeline
+        )
         ai_channel = AIChannel("ai-1", provider=ai)
         kit.register_channel(voice_channel)
         kit.register_channel(ai_channel)
@@ -240,21 +259,21 @@ class TestVoicePipelineIntegration:
         await kit.attach_channel(room.id, "voice-1")
         await kit.attach_channel(room.id, "ai-1")
 
-        before_tts_texts = []
+        before_tts_texts: list[str] = []
 
         @kit.hook(HookTrigger.BEFORE_TTS, HookExecution.SYNC)
         async def observe_tts(event, context):
             from roomkit.models.hook import HookResult
 
-            # event is the text string for BEFORE_TTS
             before_tts_texts.append(event)
             return HookResult.allow()
 
         session = await kit.connect_voice(room.id, "user-1", "voice-1")
-        await backend.simulate_speech_end(session, b"audio")
-        await asyncio.sleep(0.15)
 
-        # BEFORE_TTS hook should have observed the AI response
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f1"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f2"))
+        await asyncio.sleep(0.2)
+
         assert len(before_tts_texts) >= 1
         assert "Original response" in before_tts_texts[0]
 
@@ -267,9 +286,14 @@ class TestVoicePipelineIntegration:
         backend = MockVoiceBackend()
         ai = MockAIProvider(responses=["This should not be spoken"])
 
+        vad = MockVADProvider(events=_speech_events(b"audio"))
+        pipeline = AudioPipelineConfig(vad=vad)
+
         kit = RoomKit(stt=stt, tts=tts, voice=backend)
 
-        voice_channel = VoiceChannel("voice-1", stt=stt, tts=tts, backend=backend)
+        voice_channel = VoiceChannel(
+            "voice-1", stt=stt, tts=tts, backend=backend, pipeline=pipeline
+        )
         ai_channel = AIChannel("ai-1", provider=ai)
         kit.register_channel(voice_channel)
         kit.register_channel(ai_channel)
@@ -285,8 +309,10 @@ class TestVoicePipelineIntegration:
             return HookResult.block(reason="silent_mode")
 
         session = await kit.connect_voice(room.id, "user-1", "voice-1")
-        await backend.simulate_speech_end(session, b"audio")
-        await asyncio.sleep(0.15)
+
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f1"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f2"))
+        await asyncio.sleep(0.2)
 
         # No audio should be sent
         assert len(backend.sent_audio) == 0
@@ -300,9 +326,14 @@ class TestVoicePipelineIntegration:
         backend = MockVoiceBackend()
         ai = MockAIProvider(responses=["Response"])
 
+        vad = MockVADProvider(events=_speech_events(b"audio"))
+        pipeline = AudioPipelineConfig(vad=vad)
+
         kit = RoomKit(stt=stt, tts=tts, voice=backend)
 
-        voice_channel = VoiceChannel("voice-1", stt=stt, tts=tts, backend=backend)
+        voice_channel = VoiceChannel(
+            "voice-1", stt=stt, tts=tts, backend=backend, pipeline=pipeline
+        )
         ai_channel = AIChannel("ai-1", provider=ai)
         kit.register_channel(voice_channel)
         kit.register_channel(ai_channel)
@@ -311,17 +342,18 @@ class TestVoicePipelineIntegration:
         await kit.attach_channel(room.id, "voice-1")
         await kit.attach_channel(room.id, "ai-1")
 
-        after_tts_events = []
+        after_tts_events: list[object] = []
 
         @kit.hook(HookTrigger.AFTER_TTS, HookExecution.ASYNC)
         async def after_tts(event, context):
             after_tts_events.append(event)
 
         session = await kit.connect_voice(room.id, "user-1", "voice-1")
-        await backend.simulate_speech_end(session, b"audio")
-        await asyncio.sleep(0.15)
 
-        # AFTER_TTS should have fired
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f1"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f2"))
+        await asyncio.sleep(0.2)
+
         assert len(after_tts_events) >= 1
 
         await kit.close()
@@ -331,15 +363,24 @@ class TestVoicePipelineIntegration:
         stt = MockSTTProvider(transcripts=["From user 1", "From user 2"])
         backend = MockVoiceBackend()
 
+        # 4 events: 2 per session (SPEECH_START + SPEECH_END)
+        vad = MockVADProvider(events=[
+            VADEvent(type=VADEventType.SPEECH_START),
+            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio1"),
+            VADEvent(type=VADEventType.SPEECH_START),
+            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio2"),
+        ])
+        pipeline = AudioPipelineConfig(vad=vad)
+
         kit = RoomKit(stt=stt, voice=backend)
 
-        voice_channel = VoiceChannel("voice-1", stt=stt, backend=backend)
+        voice_channel = VoiceChannel("voice-1", stt=stt, backend=backend, pipeline=pipeline)
         kit.register_channel(voice_channel)
 
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
 
-        messages = []
+        messages: list[tuple[str, str]] = []
 
         @kit.hook(HookTrigger.BEFORE_BROADCAST, HookExecution.SYNC)
         async def capture(event, context):
@@ -352,10 +393,15 @@ class TestVoicePipelineIntegration:
         session1 = await kit.connect_voice(room.id, "user-1", "voice-1")
         session2 = await kit.connect_voice(room.id, "user-2", "voice-1")
 
-        await backend.simulate_speech_end(session1, b"audio1")
-        await asyncio.sleep(0.1)
-        await backend.simulate_speech_end(session2, b"audio2")
-        await asyncio.sleep(0.1)
+        # Session 1 speaks (2 frames -> SPEECH_START + SPEECH_END)
+        await backend.simulate_audio_received(session1, AudioFrame(data=b"f1"))
+        await backend.simulate_audio_received(session1, AudioFrame(data=b"f2"))
+        await asyncio.sleep(0.15)
+
+        # Session 2 speaks (2 frames -> SPEECH_START + SPEECH_END)
+        await backend.simulate_audio_received(session2, AudioFrame(data=b"f3"))
+        await backend.simulate_audio_received(session2, AudioFrame(data=b"f4"))
+        await asyncio.sleep(0.15)
 
         # Both messages should be captured with correct participant IDs
         assert len(messages) == 2
@@ -391,9 +437,13 @@ class TestVoicePipelineIntegration:
         tts = MockTTSProvider()
         backend = MockVoiceBackend()
 
-        voice_channel = VoiceChannel("voice-1", stt=stt, tts=tts, backend=backend)
+        vad = MockVADProvider()
+        pipeline = AudioPipelineConfig(vad=vad)
 
-        # Manually add a session binding
+        voice_channel = VoiceChannel(
+            "voice-1", stt=stt, tts=tts, backend=backend, pipeline=pipeline
+        )
+
         from roomkit.models.channel import ChannelBinding
         from roomkit.models.enums import ChannelType
         from roomkit.voice.base import VoiceSession
@@ -411,11 +461,10 @@ class TestVoicePipelineIntegration:
         )
         voice_channel.bind_session(session, "room-1", binding)
 
-        # Close should clean up
         await voice_channel.close()
 
-        # Session bindings should be cleared
         assert len(voice_channel._session_bindings) == 0
+        assert vad.closed
 
 
 class TestVoiceHookTriggers:
@@ -430,72 +479,31 @@ class TestVoiceHookTriggers:
         assert HookTrigger.AFTER_TTS == "after_tts"
 
     def test_enhanced_voice_hooks_in_enum(self) -> None:
-        """Verify enhanced voice hooks (RFC §19) are defined."""
+        """Verify enhanced voice hooks are defined."""
         assert HookTrigger.ON_BARGE_IN == "on_barge_in"
         assert HookTrigger.ON_TTS_CANCELLED == "on_tts_cancelled"
         assert HookTrigger.ON_PARTIAL_TRANSCRIPTION == "on_partial_transcription"
         assert HookTrigger.ON_VAD_SILENCE == "on_vad_silence"
         assert HookTrigger.ON_VAD_AUDIO_LEVEL == "on_vad_audio_level"
+        assert HookTrigger.ON_SPEAKER_CHANGE == "on_speaker_change"
 
 
-class TestEnhancedVoicePipelineIntegration:
-    """Integration tests for enhanced voice features (RFC §19)."""
-
-    async def test_partial_transcription_hook_fires(self) -> None:
-        """ON_PARTIAL_TRANSCRIPTION hook fires during streaming STT."""
-        from roomkit.models.channel import ChannelBinding
-        from roomkit.models.enums import ChannelType
-        from roomkit.voice.base import VoiceCapability
-        from roomkit.voice.events import PartialTranscriptionEvent
-
-        caps = VoiceCapability.PARTIAL_STT
-        stt = MockSTTProvider(transcripts=["Final transcription"])
-        backend = MockVoiceBackend(capabilities=caps)
-        channel = VoiceChannel("voice-1", stt=stt, backend=backend)
-
-        kit = RoomKit(stt=stt, voice=backend)
-        kit.register_channel(channel)
-
-        room = await kit.create_room()
-        await kit.attach_channel(room.id, "voice-1")
-
-        session = await kit.connect_voice(room.id, "user-1", "voice-1")
-        binding = ChannelBinding(
-            room_id=room.id, channel_id="voice-1", channel_type=ChannelType.VOICE
-        )
-        channel.bind_session(session, room.id, binding)
-
-        partials = []
-
-        @kit.hook(HookTrigger.ON_PARTIAL_TRANSCRIPTION, HookExecution.ASYNC)
-        async def on_partial(event, context):
-            partials.append(event)
-
-        # Simulate partial transcriptions
-        await backend.simulate_partial_transcription(session, "Hello", 0.6, False)
-        await backend.simulate_partial_transcription(session, "Hello wor", 0.75, False)
-        await backend.simulate_partial_transcription(session, "Hello world", 0.9, True)
-        await asyncio.sleep(0.1)
-
-        assert len(partials) == 3
-        assert all(isinstance(p, PartialTranscriptionEvent) for p in partials)
-        assert partials[0].text == "Hello"
-        assert partials[1].text == "Hello wor"
-        assert partials[2].text == "Hello world"
-        assert partials[2].is_stable is True
-
-        await kit.close()
+class TestPipelineVADHooksIntegration:
+    """Integration tests for VAD events flowing through the pipeline to hooks."""
 
     async def test_vad_silence_hook_fires(self) -> None:
-        """ON_VAD_SILENCE hook fires when silence is detected."""
+        """ON_VAD_SILENCE hook fires when pipeline detects silence."""
         from roomkit.models.channel import ChannelBinding
         from roomkit.models.enums import ChannelType
-        from roomkit.voice.base import VoiceCapability
         from roomkit.voice.events import VADSilenceEvent
 
-        caps = VoiceCapability.VAD_SILENCE
-        backend = MockVoiceBackend(capabilities=caps)
-        channel = VoiceChannel("voice-1", backend=backend)
+        vad = MockVADProvider(events=[
+            VADEvent(type=VADEventType.SILENCE, duration_ms=500),
+            VADEvent(type=VADEventType.SILENCE, duration_ms=1000),
+        ])
+        pipeline = AudioPipelineConfig(vad=vad)
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend, pipeline=pipeline)
 
         kit = RoomKit(voice=backend)
         kit.register_channel(channel)
@@ -509,14 +517,15 @@ class TestEnhancedVoicePipelineIntegration:
         )
         channel.bind_session(session, room.id, binding)
 
-        silence_events = []
+        silence_events: list[object] = []
 
         @kit.hook(HookTrigger.ON_VAD_SILENCE, HookExecution.ASYNC)
         async def on_silence(event, context):
             silence_events.append(event)
 
-        await backend.simulate_vad_silence(session, 500)
-        await backend.simulate_vad_silence(session, 1000)
+        # Two frames -> two SILENCE events
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f1"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f2"))
         await asyncio.sleep(0.1)
 
         assert len(silence_events) == 2
@@ -530,12 +539,15 @@ class TestEnhancedVoicePipelineIntegration:
         """ON_VAD_AUDIO_LEVEL hook fires with audio level updates."""
         from roomkit.models.channel import ChannelBinding
         from roomkit.models.enums import ChannelType
-        from roomkit.voice.base import VoiceCapability
         from roomkit.voice.events import VADAudioLevelEvent
 
-        caps = VoiceCapability.VAD_AUDIO_LEVEL
-        backend = MockVoiceBackend(capabilities=caps)
-        channel = VoiceChannel("voice-1", backend=backend)
+        vad = MockVADProvider(events=[
+            VADEvent(type=VADEventType.AUDIO_LEVEL, level_db=-30.0, confidence=0.2),
+            VADEvent(type=VADEventType.AUDIO_LEVEL, level_db=-15.0, confidence=0.8),
+        ])
+        pipeline = AudioPipelineConfig(vad=vad)
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend, pipeline=pipeline)
 
         kit = RoomKit(voice=backend)
         kit.register_channel(channel)
@@ -549,14 +561,14 @@ class TestEnhancedVoicePipelineIntegration:
         )
         channel.bind_session(session, room.id, binding)
 
-        levels = []
+        levels: list[object] = []
 
         @kit.hook(HookTrigger.ON_VAD_AUDIO_LEVEL, HookExecution.ASYNC)
         async def on_level(event, context):
             levels.append(event)
 
-        await backend.simulate_vad_audio_level(session, -30.0, False)
-        await backend.simulate_vad_audio_level(session, -15.0, True)
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f1"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f2"))
         await asyncio.sleep(0.1)
 
         assert len(levels) == 2
@@ -568,12 +580,58 @@ class TestEnhancedVoicePipelineIntegration:
 
         await kit.close()
 
+    async def test_speaker_change_hook_fires(self) -> None:
+        """ON_SPEAKER_CHANGE hook fires when diarization detects a new speaker."""
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelType
+        from roomkit.voice.events import SpeakerChangeEvent
+        from roomkit.voice.pipeline.diarization_provider import DiarizationResult
+        from roomkit.voice.pipeline.mock import MockDiarizationProvider
+
+        diarizer = MockDiarizationProvider(results=[
+            DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),
+            DiarizationResult(speaker_id="speaker_1", confidence=0.85, is_new_speaker=True),
+        ])
+        vad = MockVADProvider()
+        pipeline = AudioPipelineConfig(vad=vad, diarization=diarizer)
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend, pipeline=pipeline)
+
+        kit = RoomKit(voice=backend)
+        kit.register_channel(channel)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+
+        session = await kit.connect_voice(room.id, "user-1", "voice-1")
+        binding = ChannelBinding(
+            room_id=room.id, channel_id="voice-1", channel_type=ChannelType.VOICE
+        )
+        channel.bind_session(session, room.id, binding)
+
+        speaker_events: list[object] = []
+
+        @kit.hook(HookTrigger.ON_SPEAKER_CHANGE, HookExecution.ASYNC)
+        async def on_speaker(event, context):
+            speaker_events.append(event)
+
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f1"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f2"))
+        await asyncio.sleep(0.1)
+
+        assert len(speaker_events) == 2
+        assert all(isinstance(e, SpeakerChangeEvent) for e in speaker_events)
+        assert speaker_events[0].speaker_id == "speaker_0"
+        assert speaker_events[1].speaker_id == "speaker_1"
+
+        await kit.close()
+
 
 class TestBargeInIntegration:
     """Integration tests for barge-in detection and handling."""
 
     async def test_barge_in_detected_during_tts(self) -> None:
-        """Barge-in is detected when user speaks during TTS playback."""
+        """Barge-in is detected when pipeline fires SPEECH_START during TTS playback."""
         from roomkit.channels.voice import TTSPlaybackState
         from roomkit.models.channel import ChannelBinding
         from roomkit.models.enums import ChannelType
@@ -584,11 +642,19 @@ class TestBargeInIntegration:
         stt = MockSTTProvider(transcripts=["Interrupt!"])
         tts = MockTTSProvider()
         backend = MockVoiceBackend(capabilities=caps)
+
+        # VAD will fire SPEECH_START (which triggers barge-in check)
+        vad = MockVADProvider(events=[
+            VADEvent(type=VADEventType.SPEECH_START),
+        ])
+        pipeline = AudioPipelineConfig(vad=vad)
+
         channel = VoiceChannel(
             "voice-1",
             stt=stt,
             tts=tts,
             backend=backend,
+            pipeline=pipeline,
             enable_barge_in=True,
             barge_in_threshold_ms=50,
         )
@@ -605,8 +671,8 @@ class TestBargeInIntegration:
         )
         channel.bind_session(session, room.id, binding)
 
-        barge_in_events = []
-        cancelled_events = []
+        barge_in_events: list[object] = []
+        cancelled_events: list[object] = []
 
         @kit.hook(HookTrigger.ON_BARGE_IN, HookExecution.ASYNC)
         async def on_barge_in(event, context):
@@ -625,8 +691,8 @@ class TestBargeInIntegration:
         # Wait for threshold
         await asyncio.sleep(0.1)
 
-        # User starts speaking (triggers barge-in)
-        await backend.simulate_speech_start(session)
+        # Pipeline fires SPEECH_START -> triggers barge-in
+        await backend.simulate_audio_received(session, AudioFrame(data=b"speech"))
         await asyncio.sleep(0.1)
 
         assert len(barge_in_events) == 1
@@ -651,9 +717,16 @@ class TestBargeInIntegration:
 
         caps = VoiceCapability.INTERRUPTION
         backend = MockVoiceBackend(capabilities=caps)
+
+        vad = MockVADProvider(events=[
+            VADEvent(type=VADEventType.SPEECH_START),
+        ])
+        pipeline = AudioPipelineConfig(vad=vad)
+
         channel = VoiceChannel(
             "voice-1",
             backend=backend,
+            pipeline=pipeline,
             enable_barge_in=True,
             barge_in_threshold_ms=500,  # High threshold
         )
@@ -670,13 +743,13 @@ class TestBargeInIntegration:
         )
         channel.bind_session(session, room.id, binding)
 
-        barge_in_events = []
+        barge_in_events: list[object] = []
 
         @kit.hook(HookTrigger.ON_BARGE_IN, HookExecution.ASYNC)
         async def on_barge_in(event, context):
             barge_in_events.append(event)
 
-        # Set TTS as just started
+        # Set TTS as just started (below threshold)
         channel._playing_sessions[session.id] = TTSPlaybackState(
             session_id=session.id,
             text="Quick message",
@@ -684,7 +757,7 @@ class TestBargeInIntegration:
         )
 
         # User speaks immediately (below 500ms threshold)
-        await backend.simulate_speech_start(session)
+        await backend.simulate_audio_received(session, AudioFrame(data=b"speech"))
         await asyncio.sleep(0.1)
 
         assert len(barge_in_events) == 0
@@ -700,9 +773,16 @@ class TestBargeInIntegration:
 
         caps = VoiceCapability.INTERRUPTION
         backend = MockVoiceBackend(capabilities=caps)
+
+        vad = MockVADProvider(events=[
+            VADEvent(type=VADEventType.SPEECH_START),
+        ])
+        pipeline = AudioPipelineConfig(vad=vad)
+
         channel = VoiceChannel(
             "voice-1",
             backend=backend,
+            pipeline=pipeline,
             enable_barge_in=False,  # Disabled
         )
 
@@ -718,13 +798,12 @@ class TestBargeInIntegration:
         )
         channel.bind_session(session, room.id, binding)
 
-        barge_in_events = []
+        barge_in_events: list[object] = []
 
         @kit.hook(HookTrigger.ON_BARGE_IN, HookExecution.ASYNC)
         async def on_barge_in(event, context):
             barge_in_events.append(event)
 
-        # Set TTS as playing
         channel._playing_sessions[session.id] = TTSPlaybackState(
             session_id=session.id,
             text="Playing audio",
@@ -732,8 +811,8 @@ class TestBargeInIntegration:
 
         await asyncio.sleep(0.1)
 
-        # Simulate speech (should NOT trigger barge-in)
-        await backend.simulate_speech_start(session)
+        # Pipeline fires SPEECH_START but barge-in is disabled
+        await backend.simulate_audio_received(session, AudioFrame(data=b"speech"))
         await asyncio.sleep(0.1)
 
         assert len(barge_in_events) == 0
@@ -764,19 +843,17 @@ class TestBargeInIntegration:
         )
         channel.bind_session(session, room.id, binding)
 
-        cancelled_events = []
+        cancelled_events: list[object] = []
 
         @kit.hook(HookTrigger.ON_TTS_CANCELLED, HookExecution.ASYNC)
         async def on_cancelled(event, context):
             cancelled_events.append(event)
 
-        # Set TTS as playing
         channel._playing_sessions[session.id] = TTSPlaybackState(
             session_id=session.id,
             text="Message being played",
         )
 
-        # Explicit interrupt
         result = await channel.interrupt(session, reason="explicit")
 
         assert result is True
@@ -837,19 +914,17 @@ class TestBargeInIntegration:
         )
         channel.bind_session(session, room.id, binding)
 
-        barge_in_events = []
+        barge_in_events: list[object] = []
 
         @kit.hook(HookTrigger.ON_BARGE_IN, HookExecution.ASYNC)
         async def on_barge_in(event, context):
             barge_in_events.append(event)
 
-        # Set TTS as playing
         channel._playing_sessions[session.id] = TTSPlaybackState(
             session_id=session.id,
             text="Long response text",
         )
 
-        # Backend detects barge-in directly
         await backend.simulate_barge_in(session)
         await asyncio.sleep(0.1)
 
@@ -861,38 +936,6 @@ class TestBargeInIntegration:
 
 class TestVoiceCapabilitiesIntegration:
     """Test VoiceCapability-based feature detection."""
-
-    async def test_capabilities_determine_callbacks(self) -> None:
-        """VoiceChannel only registers for callbacks based on backend capabilities."""
-        from roomkit.voice.base import VoiceCapability
-
-        # Backend with no capabilities
-        backend_minimal = MockVoiceBackend(capabilities=VoiceCapability.NONE)
-        _channel_minimal = VoiceChannel("voice-1", backend=backend_minimal)
-
-        # Should have basic callbacks registered
-        assert len(backend_minimal._speech_start_callbacks) == 1
-        assert len(backend_minimal._speech_end_callbacks) == 1
-        # Should NOT have enhanced callbacks
-        assert len(backend_minimal._partial_transcription_callbacks) == 0
-
-        # Backend with all capabilities
-        all_caps = (
-            VoiceCapability.PARTIAL_STT
-            | VoiceCapability.VAD_SILENCE
-            | VoiceCapability.VAD_AUDIO_LEVEL
-            | VoiceCapability.BARGE_IN
-        )
-        backend_full = MockVoiceBackend(capabilities=all_caps)
-        _channel_full = VoiceChannel("voice-2", backend=backend_full)
-
-        # Should have all callbacks registered
-        assert len(backend_full._speech_start_callbacks) == 1
-        assert len(backend_full._speech_end_callbacks) == 1
-        assert len(backend_full._partial_transcription_callbacks) == 1
-        assert len(backend_full._vad_silence_callbacks) == 1
-        assert len(backend_full._vad_audio_level_callbacks) == 1
-        assert len(backend_full._barge_in_callbacks) == 1
 
     async def test_channel_checks_interruption_capability(self) -> None:
         """VoiceChannel only calls cancel_audio() when backend has INTERRUPTION capability."""
@@ -917,14 +960,12 @@ class TestVoiceCapabilitiesIntegration:
         )
         channel_no_int.bind_session(session, room.id, binding)
 
-        # Set TTS as playing
         channel_no_int._playing_sessions[session.id] = TTSPlaybackState(
             session_id=session.id,
             text="Test",
         )
 
-        # Track cancel_audio calls
-        cancel_called = []
+        cancel_called: list[bool] = []
         original_cancel = backend_no_int.cancel_audio
 
         async def track_cancel(s):
@@ -933,7 +974,6 @@ class TestVoiceCapabilitiesIntegration:
 
         backend_no_int.cancel_audio = track_cancel
 
-        # Interrupt should work (clears playback state) but NOT call backend.cancel_audio
         result = await channel_no_int.interrupt(session)
         assert result is True  # Playback was cleared
         assert len(cancel_called) == 0  # But backend.cancel_audio NOT called
@@ -961,7 +1001,7 @@ class TestVoiceCapabilitiesIntegration:
             text="Test",
         )
 
-        cancel_called2 = []
+        cancel_called2: list[bool] = []
         original_cancel2 = backend_with_int.cancel_audio
 
         async def track_cancel2(s):
@@ -970,7 +1010,6 @@ class TestVoiceCapabilitiesIntegration:
 
         backend_with_int.cancel_audio = track_cancel2
 
-        # Interrupt should call backend.cancel_audio
         result2 = await channel_with_int.interrupt(session2)
         assert result2 is True
         assert len(cancel_called2) == 1  # backend.cancel_audio WAS called

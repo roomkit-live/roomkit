@@ -101,9 +101,18 @@ src/roomkit/
 ├── voice/
 │   ├── __init__.py          # Voice subsystem exports
 │   ├── base.py              # AudioChunk, VoiceSession, VoiceCapability, callbacks
-│   ├── events.py            # BargeInEvent, VADSilenceEvent, TTSCancelledEvent
+│   ├── audio_frame.py       # AudioFrame dataclass (inbound audio)
+│   ├── events.py            # BargeInEvent, VADSilenceEvent, SpeakerChangeEvent, etc.
 │   ├── stt/                 # Speech-to-text: DeepgramSTT, SherpaOnnxSTT, MockSTT
 │   ├── tts/                 # Text-to-speech: ElevenLabsTTS, SherpaOnnxTTS, MockTTS
+│   ├── pipeline/            # Audio processing pipeline (VAD, denoiser, diarization)
+│   │   ├── engine.py        # AudioPipeline orchestrator
+│   │   ├── config.py        # AudioPipelineConfig
+│   │   ├── vad_provider.py  # VADProvider ABC, VADEvent, VADConfig
+│   │   ├── denoiser_provider.py  # DenoiserProvider ABC
+│   │   ├── diarization_provider.py  # DiarizationProvider ABC, DiarizationResult
+│   │   ├── postprocessor.py # AudioPostProcessor ABC (deferred)
+│   │   └── mock.py          # MockVADProvider, MockDenoiserProvider, MockDiarizationProvider
 │   ├── realtime/            # Speech-to-speech: GeminiLive, OpenAIRealtime, Mock
 │   └── backends/            # Audio transport: FastRTCVoiceBackend, MockVoiceBackend
 └── identity/
@@ -233,6 +242,63 @@ async def log_event(event: RoomEvent, ctx: RoomContext) -> None:
 )
 async def sms_audit(event: RoomEvent, ctx: RoomContext) -> None:
     ...
+```
+
+### Audio Pipeline (Voice)
+
+The audio pipeline sits between the voice backend and STT, processing raw audio frames through pluggable stages: **denoiser -> VAD -> diarization**.
+
+```python
+from roomkit import VoiceChannel
+from roomkit.voice.pipeline import AudioPipelineConfig, VADConfig
+
+# All stages are optional — configure what you need
+# Traditional voice: VAD drives speech detection + STT
+pipeline = AudioPipelineConfig(
+    vad=my_vad_provider,
+    denoiser=my_denoiser,
+    diarization=my_diarizer,
+    vad_config=VADConfig(silence_threshold_ms=500),
+)
+
+# Realtime voice: denoiser + diarization only (provider handles VAD)
+# preprocess = AudioPipelineConfig(denoiser=my_denoiser, diarization=my_diarizer)
+
+voice = VoiceChannel("voice", stt=stt, tts=tts, backend=backend, pipeline=pipeline)
+```
+
+**Provider ABCs** (implement these to add a new provider):
+
+- `VADProvider` — `process(frame: AudioFrame) -> VADEvent | None`, `reset()`, `close()`
+- `DenoiserProvider` — `process(frame: AudioFrame) -> AudioFrame`, `close()`
+- `DiarizationProvider` — `process(frame: AudioFrame) -> DiarizationResult | None`, `reset()`, `close()`
+- `AudioPostProcessor` — `process(frame: AudioFrame) -> AudioFrame`, `close()` (deferred)
+
+**AudioFrame** (`voice/audio_frame.py`) replaces `AudioChunk` for inbound audio:
+
+```python
+@dataclass
+class AudioFrame:
+    data: bytes
+    sample_rate: int = 16000
+    channels: int = 1
+    sample_width: int = 2        # bytes per sample (2 = 16-bit PCM)
+    timestamp_ms: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+```
+
+Pipeline stages annotate `frame.metadata` as they process (e.g., `denoiser`, `vad`, `diarization` keys).
+
+**Mock providers** (`voice/pipeline/mock.py`) accept pre-configured event sequences for testing:
+
+```python
+from roomkit.voice.pipeline import MockVADProvider, VADEvent, VADEventType
+
+vad = MockVADProvider(events=[
+    VADEvent(type=VADEventType.SPEECH_START),
+    None,  # no event for this frame
+    VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"speech"),
+])
 ```
 
 ### Realtime Ephemeral Events
@@ -478,6 +544,13 @@ async def test_create_room(self) -> None:
 3. Export from `channels/__init__.py`
 4. Add to main `roomkit/__init__.py` exports
 
+### Adding a New Pipeline Provider
+
+1. Create provider in `voice/pipeline/<name>.py` implementing the ABC (`VADProvider`, `DenoiserProvider`, or `DiarizationProvider`)
+2. Implement `name` property, `process()` method, and optionally `reset()` / `close()`
+3. Export from `voice/pipeline/__init__.py`
+4. Add tests in `tests/test_audio_pipeline.py`
+
 ### Adding a New Hook Trigger
 
 1. Add enum value to `HookTrigger` in `models/enums.py`
@@ -596,6 +669,7 @@ Identity:            ON_IDENTITY_AMBIGUOUS, ON_IDENTITY_UNKNOWN, ON_PARTICIPANT_
 Delivery:            ON_DELIVERY_STATUS
 Side Effects:        ON_TASK_CREATED, ON_ERROR
 Voice:               ON_SPEECH_START, ON_SPEECH_END, ON_TRANSCRIPTION, BEFORE_TTS, AFTER_TTS
-Voice Enhanced:      ON_BARGE_IN, ON_TTS_CANCELLED, ON_PARTIAL_TRANSCRIPTION, ON_VAD_SILENCE
+Voice Pipeline:      ON_VAD_SILENCE, ON_VAD_AUDIO_LEVEL, ON_SPEAKER_CHANGE, ON_BARGE_IN, ON_TTS_CANCELLED
 Realtime Voice:      ON_REALTIME_TOOL_CALL, ON_REALTIME_TEXT_INJECTED
+Observability:       ON_OBSERVATION
 ```

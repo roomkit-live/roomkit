@@ -15,6 +15,7 @@ from roomkit.voice.stt.base import STTProvider
 
 if TYPE_CHECKING:
     from roomkit.models.event import AudioContent
+    from roomkit.voice.audio_frame import AudioFrame
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +72,11 @@ class DeepgramSTTProvider(STTProvider):
         }
         return {k: str(v).lower() if isinstance(v, bool) else v for k, v in params.items()}
 
-    async def transcribe(self, audio: AudioContent | AudioChunk) -> str:
+    async def transcribe(self, audio: AudioContent | AudioChunk | AudioFrame) -> str:
         """Transcribe complete audio to text.
 
         Args:
-            audio: Audio content (URL) or raw audio chunk.
+            audio: Audio content (URL), raw audio chunk, or audio frame.
 
         Returns:
             Transcribed text.
@@ -92,11 +93,11 @@ class DeepgramSTTProvider(STTProvider):
                 audio_data = resp.content
                 content_type = resp.headers.get("content-type", "audio/wav")
         else:
-            # Handle AudioChunk (raw bytes)
+            # Handle AudioChunk or AudioFrame (raw bytes)
             audio_data = audio.data
-            audio_format = getattr(audio, "format", "wav")
+            audio_format = getattr(audio, "format", "raw")
 
-            # For raw PCM formats, set encoding params for Deepgram
+            # For raw PCM formats (including AudioFrame), set encoding params for Deepgram
             if audio_format in ("pcm_s16le", "linear16", "raw"):
                 content_type = "audio/raw"
                 params["encoding"] = "linear16"

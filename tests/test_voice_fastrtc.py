@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.fastrtc import FastRTCVoiceBackend, _pcm16_to_mulaw
 from roomkit.voice.base import AudioChunk, VoiceCapability, VoiceSession, VoiceSessionState
 
@@ -160,90 +161,94 @@ class TestFastRTCSessionManagement:
         assert backend.get_session(s2.id) is None
 
 
-class TestFastRTCCallbacks:
-    async def test_on_speech_start_callback(self) -> None:
+class TestFastRTCOnAudioReceived:
+    """Tests for on_audio_received and _handle_audio_frame."""
+
+    async def test_on_audio_received_registers_callback(self) -> None:
         backend = FastRTCVoiceBackend()
-        events: list[str] = []
+        callback = MagicMock()
+        backend.on_audio_received(callback)
+        assert backend._audio_received_callback is callback
 
-        def callback(session: VoiceSession) -> None:
-            events.append(session.id)
-
-        backend.on_speech_start(callback)
-        session = await backend.connect("room-1", "user-1", "voice-1")
-        # Register websocket mapping so _find_session_by_websocket_id works
-        backend._register_websocket("ws-1", session.id, MagicMock())
-
-        backend._handle_speech_start("ws-1")
-        assert len(events) == 1
-        assert events[0] == session.id
-
-    async def test_on_speech_start_no_callback(self) -> None:
-        """No crash if speech_start fires without a registered callback."""
-        backend = FastRTCVoiceBackend()
-        session = await backend.connect("room-1", "user-1", "voice-1")
-        backend._register_websocket("ws-1", session.id, MagicMock())
-        # Should not raise
-        backend._handle_speech_start("ws-1")
-
-    async def test_on_speech_end_callback(self) -> None:
+    async def test_handle_audio_frame_fires_callback(self) -> None:
         numpy = pytest.importorskip("numpy")
         backend = FastRTCVoiceBackend()
-        events: list[tuple[str, bytes]] = []
+        frames: list[tuple[str, AudioFrame]] = []
 
-        def callback(session: VoiceSession, audio: bytes) -> None:
-            events.append((session.id, audio))
+        def callback(session: VoiceSession, frame: AudioFrame) -> None:
+            frames.append((session.id, frame))
 
-        backend.on_speech_end(callback)
+        backend.on_audio_received(callback)
         session = await backend.connect("room-1", "user-1", "voice-1")
         backend._register_websocket("ws-1", session.id, MagicMock())
 
         audio_data = numpy.array([100, 200, 300], dtype=numpy.int16)
-        backend._handle_speech_end("ws-1", audio_data, 16000)
+        backend._handle_audio_frame("ws-1", audio_data, 16000)
 
-        assert len(events) == 1
-        assert events[0][0] == session.id
-        assert events[0][1] == audio_data.tobytes()
+        assert len(frames) == 1
+        assert frames[0][0] == session.id
+        assert frames[0][1].data == audio_data.tobytes()
+        assert frames[0][1].sample_rate == 16000
+        assert frames[0][1].channels == 1
 
-    async def test_on_speech_end_converts_float_to_int16(self) -> None:
+    async def test_handle_audio_frame_converts_float_to_int16(self) -> None:
         numpy = pytest.importorskip("numpy")
         backend = FastRTCVoiceBackend()
-        events: list[tuple[str, bytes]] = []
+        frames: list[tuple[str, AudioFrame]] = []
 
-        def callback(session: VoiceSession, audio: bytes) -> None:
-            events.append((session.id, audio))
+        def callback(session: VoiceSession, frame: AudioFrame) -> None:
+            frames.append((session.id, frame))
 
-        backend.on_speech_end(callback)
+        backend.on_audio_received(callback)
         session = await backend.connect("room-1", "user-1", "voice-1")
         backend._register_websocket("ws-1", session.id, MagicMock())
 
-        # Float audio should be converted to int16
         float_audio = numpy.array([0.5, -0.5], dtype=numpy.float32)
-        backend._handle_speech_end("ws-1", float_audio, 16000)
+        backend._handle_audio_frame("ws-1", float_audio, 16000)
 
-        assert len(events) == 1
-        # Verify conversion: 0.5 * 32767 = 16383
+        assert len(frames) == 1
         expected = numpy.array([16383, -16383], dtype=numpy.int16).tobytes()
-        assert events[0][1] == expected
+        assert frames[0][1].data == expected
 
-    async def test_on_speech_end_flattens_multichannel(self) -> None:
+    async def test_handle_audio_frame_flattens_multichannel(self) -> None:
         numpy = pytest.importorskip("numpy")
         backend = FastRTCVoiceBackend()
-        events: list[tuple[str, bytes]] = []
+        frames: list[tuple[str, AudioFrame]] = []
 
-        def callback(session: VoiceSession, audio: bytes) -> None:
-            events.append((session.id, audio))
+        def callback(session: VoiceSession, frame: AudioFrame) -> None:
+            frames.append((session.id, frame))
 
-        backend.on_speech_end(callback)
+        backend.on_audio_received(callback)
         session = await backend.connect("room-1", "user-1", "voice-1")
         backend._register_websocket("ws-1", session.id, MagicMock())
 
-        # Multi-channel audio should be flattened
         multichannel = numpy.array([[100, 200], [300, 400]], dtype=numpy.int16)
-        backend._handle_speech_end("ws-1", multichannel, 16000)
+        backend._handle_audio_frame("ws-1", multichannel, 16000)
 
-        assert len(events) == 1
+        assert len(frames) == 1
         expected = numpy.array([100, 200, 300, 400], dtype=numpy.int16).tobytes()
-        assert events[0][1] == expected
+        assert frames[0][1].data == expected
+
+    async def test_handle_audio_frame_no_callback(self) -> None:
+        """No crash if _handle_audio_frame fires without a registered callback."""
+        numpy = pytest.importorskip("numpy")
+        backend = FastRTCVoiceBackend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        backend._register_websocket("ws-1", session.id, MagicMock())
+        # Should not raise
+        audio_data = numpy.array([100], dtype=numpy.int16)
+        backend._handle_audio_frame("ws-1", audio_data, 16000)
+
+    async def test_handle_audio_frame_unknown_websocket(self) -> None:
+        """No crash when websocket ID is not mapped to a session."""
+        numpy = pytest.importorskip("numpy")
+        backend = FastRTCVoiceBackend()
+        callback = MagicMock()
+        backend.on_audio_received(callback)
+        # No session registered for "ws-unknown"
+        audio_data = numpy.array([100], dtype=numpy.int16)
+        backend._handle_audio_frame("ws-unknown", audio_data, 16000)
+        callback.assert_not_called()
 
 
 class TestFastRTCWebSocketRegistration:
@@ -372,10 +377,8 @@ class TestFastRTCResolveWebSocket:
             metadata={"websocket_id": "ws-test-123"},
         )
 
-        # No explicit registration
         assert session.id not in backend._websockets
 
-        # Simulate FastRTC Stream with connections
         mock_ws = AsyncMock()
         mock_handler = MagicMock()
         mock_handler.websocket = mock_ws
@@ -385,7 +388,6 @@ class TestFastRTCResolveWebSocket:
 
         resolved = backend._resolve_websocket(session)
         assert resolved is mock_ws
-        # Should auto-register for O(1) future lookups
         assert backend._websockets[session.id] is mock_ws
 
     async def test_resolve_returns_none_when_no_connection(self) -> None:

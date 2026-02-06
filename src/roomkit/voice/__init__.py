@@ -1,19 +1,15 @@
-"""Voice support for RoomKit (STT, TTS, streaming audio)."""
+"""Voice support for RoomKit (STT, TTS, streaming audio, audio pipeline)."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from roomkit.voice.backends.base import VoiceBackend
+from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends.base import AudioReceivedCallback, VoiceBackend
 from roomkit.voice.base import (
     AudioChunk,
     BargeInCallback,
-    PartialTranscriptionCallback,
-    SpeechEndCallback,
-    SpeechStartCallback,
     TranscriptionResult,
-    VADAudioLevelCallback,
-    VADSilenceCallback,
     VoiceCapability,
     VoiceSession,
     VoiceSessionState,
@@ -21,9 +17,25 @@ from roomkit.voice.base import (
 from roomkit.voice.events import (
     BargeInEvent,
     PartialTranscriptionEvent,
+    SpeakerChangeEvent,
     TTSCancelledEvent,
     VADAudioLevelEvent,
     VADSilenceEvent,
+)
+from roomkit.voice.pipeline import (
+    AudioPipeline,
+    AudioPipelineConfig,
+    AudioPostProcessor,
+    DenoiserProvider,
+    DiarizationProvider,
+    DiarizationResult,
+    MockDenoiserProvider,
+    MockDiarizationProvider,
+    MockVADProvider,
+    VADConfig,
+    VADEvent,
+    VADEventType,
+    VADProvider,
 )
 from roomkit.voice.stt.base import STTProvider
 from roomkit.voice.tts.base import TTSProvider
@@ -31,24 +43,37 @@ from roomkit.voice.tts.base import TTSProvider
 __all__ = [
     # Base types
     "AudioChunk",
+    "AudioFrame",
     "TranscriptionResult",
     "VoiceBackend",
     "VoiceCapability",
     "VoiceSession",
     "VoiceSessionState",
     # Callback types
+    "AudioReceivedCallback",
     "BargeInCallback",
-    "PartialTranscriptionCallback",
-    "SpeechEndCallback",
-    "SpeechStartCallback",
-    "VADAudioLevelCallback",
-    "VADSilenceCallback",
-    # Event types (RFC §19)
+    # Event types
     "BargeInEvent",
     "PartialTranscriptionEvent",
+    "SpeakerChangeEvent",
     "TTSCancelledEvent",
     "VADAudioLevelEvent",
     "VADSilenceEvent",
+    # Pipeline types
+    "AudioPipeline",
+    "AudioPipelineConfig",
+    "AudioPostProcessor",
+    "DenoiserProvider",
+    "DiarizationProvider",
+    "DiarizationResult",
+    "VADConfig",
+    "VADEvent",
+    "VADEventType",
+    "VADProvider",
+    # Pipeline mocks
+    "MockDenoiserProvider",
+    "MockDiarizationProvider",
+    "MockVADProvider",
     # Providers
     "STTProvider",
     "TTSProvider",

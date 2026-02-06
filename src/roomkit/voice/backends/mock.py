@@ -7,15 +7,11 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
-from roomkit.voice.backends.base import VoiceBackend
+from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends.base import AudioReceivedCallback, VoiceBackend
 from roomkit.voice.base import (
     AudioChunk,
     BargeInCallback,
-    PartialTranscriptionCallback,
-    SpeechEndCallback,
-    SpeechStartCallback,
-    VADAudioLevelCallback,
-    VADSilenceCallback,
     VoiceCapability,
     VoiceSession,
     VoiceSessionState,
@@ -33,7 +29,8 @@ class MockVoiceCall:
 class MockVoiceBackend(VoiceBackend):
     """Mock voice backend for testing.
 
-    Tracks all method calls and provides helpers to simulate VAD events.
+    Tracks all method calls and provides helpers to simulate events.
+    The backend is a pure transport — no VAD or audio intelligence.
 
     Example:
         backend = MockVoiceBackend()
@@ -42,13 +39,11 @@ class MockVoiceBackend(VoiceBackend):
         session = await backend.connect("room-1", "user-1", "voice-1")
         assert backend.calls[-1].method == "connect"
 
-        # Simulate speech events
-        await backend.simulate_speech_start(session)
-        await backend.simulate_speech_end(session, b"audio-data")
+        # Simulate raw audio received
+        frame = AudioFrame(data=b"audio-data")
+        await backend.simulate_audio_received(session, frame)
 
-        # Simulate enhanced events (RFC §19)
-        await backend.simulate_partial_transcription(session, "Hello", 0.8, False)
-        await backend.simulate_vad_silence(session, 500)
+        # Simulate barge-in
         await backend.simulate_barge_in(session)
     """
 
@@ -57,25 +52,14 @@ class MockVoiceBackend(VoiceBackend):
         *,
         capabilities: VoiceCapability = VoiceCapability.NONE,
     ) -> None:
-        """Initialize MockVoiceBackend.
-
-        Args:
-            capabilities: Optional capabilities to enable for testing.
-                Defaults to NONE. Set to test capability-dependent behavior.
-        """
         self._sessions: dict[str, VoiceSession] = {}
-        self._speech_start_callbacks: list[SpeechStartCallback] = []
-        self._speech_end_callbacks: list[SpeechEndCallback] = []
-        # Enhanced callbacks (RFC §19)
-        self._partial_transcription_callbacks: list[PartialTranscriptionCallback] = []
-        self._vad_silence_callbacks: list[VADSilenceCallback] = []
-        self._vad_audio_level_callbacks: list[VADAudioLevelCallback] = []
+        self._audio_received_callbacks: list[AudioReceivedCallback] = []
         self._barge_in_callbacks: list[BargeInCallback] = []
         # Tracking
         self.calls: list[MockVoiceCall] = []
         self.sent_audio: list[tuple[str, bytes]] = []  # (session_id, audio)
         self.sent_transcriptions: list[tuple[str, str, str]] = []  # (session_id, text, role)
-        self._playing_sessions: set[str] = set()  # Sessions currently receiving audio
+        self._playing_sessions: set[str] = set()
         self._capabilities = capabilities
 
     @property
@@ -129,14 +113,6 @@ class MockVoiceBackend(VoiceBackend):
             )
         self.calls.append(MockVoiceCall(method="disconnect", args={"session_id": session.id}))
 
-    def on_speech_start(self, callback: SpeechStartCallback) -> None:
-        self._speech_start_callbacks.append(callback)
-        self.calls.append(MockVoiceCall(method="on_speech_start"))
-
-    def on_speech_end(self, callback: SpeechEndCallback) -> None:
-        self._speech_end_callbacks.append(callback)
-        self.calls.append(MockVoiceCall(method="on_speech_end"))
-
     async def send_audio(
         self,
         session: VoiceSession,
@@ -145,7 +121,6 @@ class MockVoiceBackend(VoiceBackend):
         if isinstance(audio, bytes):
             self.sent_audio.append((session.id, audio))
         else:
-            # Collect chunks from async iterator
             chunks: list[bytes] = []
             async for chunk in audio:
                 chunks.append(chunk.data)
@@ -177,20 +152,16 @@ class MockVoiceBackend(VoiceBackend):
         )
 
     # -------------------------------------------------------------------------
-    # Enhanced voice capabilities (RFC §19)
+    # Raw audio delivery
     # -------------------------------------------------------------------------
 
-    def on_partial_transcription(self, callback: PartialTranscriptionCallback) -> None:
-        self._partial_transcription_callbacks.append(callback)
-        self.calls.append(MockVoiceCall(method="on_partial_transcription"))
+    def on_audio_received(self, callback: AudioReceivedCallback) -> None:
+        self._audio_received_callbacks.append(callback)
+        self.calls.append(MockVoiceCall(method="on_audio_received"))
 
-    def on_vad_silence(self, callback: VADSilenceCallback) -> None:
-        self._vad_silence_callbacks.append(callback)
-        self.calls.append(MockVoiceCall(method="on_vad_silence"))
-
-    def on_vad_audio_level(self, callback: VADAudioLevelCallback) -> None:
-        self._vad_audio_level_callbacks.append(callback)
-        self.calls.append(MockVoiceCall(method="on_vad_audio_level"))
+    # -------------------------------------------------------------------------
+    # Barge-in support
+    # -------------------------------------------------------------------------
 
     def on_barge_in(self, callback: BargeInCallback) -> None:
         self._barge_in_callbacks.append(callback)
@@ -214,64 +185,13 @@ class MockVoiceBackend(VoiceBackend):
     # Test helpers
     # -------------------------------------------------------------------------
 
-    async def simulate_speech_start(self, session: VoiceSession) -> None:
-        """Simulate VAD detecting speech start.
+    async def simulate_audio_received(self, session: VoiceSession, frame: AudioFrame) -> None:
+        """Simulate the backend receiving a raw audio frame.
 
-        Fires all registered on_speech_start callbacks.
+        Fires all registered on_audio_received callbacks.
         """
-        for callback in self._speech_start_callbacks:
-            result = callback(session)
-            if hasattr(result, "__await__"):
-                await result
-
-    async def simulate_speech_end(self, session: VoiceSession, audio: bytes) -> None:
-        """Simulate VAD detecting speech end.
-
-        Fires all registered on_speech_end callbacks with the audio data.
-        """
-        for callback in self._speech_end_callbacks:
-            result = callback(session, audio)
-            if hasattr(result, "__await__"):
-                await result
-
-    async def simulate_partial_transcription(
-        self,
-        session: VoiceSession,
-        text: str,
-        confidence: float = 0.8,
-        is_stable: bool = False,
-    ) -> None:
-        """Simulate streaming STT partial result.
-
-        Fires all registered on_partial_transcription callbacks.
-        """
-        for callback in self._partial_transcription_callbacks:
-            result = callback(session, text, confidence, is_stable)
-            if hasattr(result, "__await__"):
-                await result
-
-    async def simulate_vad_silence(self, session: VoiceSession, silence_duration_ms: int) -> None:
-        """Simulate VAD detecting silence.
-
-        Fires all registered on_vad_silence callbacks.
-        """
-        for callback in self._vad_silence_callbacks:
-            result = callback(session, silence_duration_ms)
-            if hasattr(result, "__await__"):
-                await result
-
-    async def simulate_vad_audio_level(
-        self,
-        session: VoiceSession,
-        level_db: float,
-        is_speech: bool = True,
-    ) -> None:
-        """Simulate audio level update.
-
-        Fires all registered on_vad_audio_level callbacks.
-        """
-        for callback in self._vad_audio_level_callbacks:
-            result = callback(session, level_db, is_speech)
+        for callback in self._audio_received_callbacks:
+            result = callback(session, frame)
             if hasattr(result, "__await__"):
                 await result
 

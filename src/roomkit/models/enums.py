@@ -184,6 +184,7 @@ class HookTrigger(StrEnum):
     ON_PARTIAL_TRANSCRIPTION = "on_partial_transcription"
     ON_VAD_SILENCE = "on_vad_silence"
     ON_VAD_AUDIO_LEVEL = "on_vad_audio_level"
+    ON_SPEAKER_CHANGE = "on_speaker_change"
     # Realtime Voice (RFC §20)
     ON_REALTIME_TOOL_CALL = "on_realtime_tool_call"
     ON_REALTIME_TEXT_INJECTED = "on_realtime_text_injected"

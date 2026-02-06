@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Callable
+from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.base import (
     AudioChunk,
     BargeInCallback,
-    PartialTranscriptionCallback,
-    SpeechEndCallback,
-    SpeechStartCallback,
-    VADAudioLevelCallback,
-    VADSilenceCallback,
     VoiceCapability,
     VoiceSession,
 )
+
+if TYPE_CHECKING:
+    from roomkit.voice.audio_frame import AudioFrame
+
+# Callback type for raw audio frames from the transport
+AudioReceivedCallback = Callable[["VoiceSession", "AudioFrame"], Any]
 
 
 class VoiceBackend(ABC):
@@ -24,18 +25,18 @@ class VoiceBackend(ABC):
 
     VoiceBackend handles the transport layer for real-time audio:
     - Managing voice session connections
-    - Voice Activity Detection (VAD) callbacks
     - Streaming audio to/from clients
+    - Delivering raw inbound audio frames via on_audio_received
 
-    The backend is framework-agnostic. Web framework integration (FastAPI routes,
-    WebSocket endpoints) is the responsibility of the application layer.
+    The backend is framework-agnostic and a pure transport — all audio
+    intelligence (VAD, denoising, diarization) is handled by the
+    AudioPipeline.
 
-    Example usage with a hypothetical WebRTC backend:
+    Example usage:
         backend = WebRTCVoiceBackend()
 
-        # Register VAD callbacks
-        backend.on_speech_start(handle_speech_start)
-        backend.on_speech_end(handle_speech_end)
+        # Register raw audio callback
+        backend.on_audio_received(handle_audio_frame)
 
         # Connect a participant
         session = await backend.connect("room-1", "user-1", "voice-channel")
@@ -81,29 +82,6 @@ class VoiceBackend(ABC):
 
         Args:
             session: The session to disconnect.
-        """
-        ...
-
-    @abstractmethod
-    def on_speech_start(self, callback: SpeechStartCallback) -> None:
-        """Register a callback for when VAD detects speech starting.
-
-        The callback receives the VoiceSession where speech was detected.
-
-        Args:
-            callback: Function called when speech starts.
-        """
-        ...
-
-    @abstractmethod
-    def on_speech_end(self, callback: SpeechEndCallback) -> None:
-        """Register a callback for when VAD detects speech ending.
-
-        The callback receives the VoiceSession and the audio bytes
-        captured during the speech segment.
-
-        Args:
-            callback: Function called when speech ends with audio data.
         """
         ...
 
@@ -155,14 +133,14 @@ class VoiceBackend(ABC):
         """
 
     # -------------------------------------------------------------------------
-    # Enhanced voice capabilities (RFC §19)
+    # Capabilities
     # -------------------------------------------------------------------------
 
     @property
     def capabilities(self) -> VoiceCapability:
         """Declare supported capabilities.
 
-        Override to enable features like interruption, partial STT, etc.
+        Override to enable features like interruption, barge-in, etc.
         By default, no optional capabilities are supported.
 
         Returns:
@@ -170,41 +148,24 @@ class VoiceBackend(ABC):
         """
         return VoiceCapability.NONE
 
-    def on_partial_transcription(self, callback: PartialTranscriptionCallback) -> None:
-        """Register callback for partial transcription results.
+    # -------------------------------------------------------------------------
+    # Raw audio delivery (pipeline integration)
+    # -------------------------------------------------------------------------
 
-        Only called if capabilities includes PARTIAL_STT.
-        Backends that support streaming STT should call this callback
-        with interim results as they become available.
+    def on_audio_received(self, callback: AudioReceivedCallback) -> None:
+        """Register a callback for raw inbound audio frames.
+
+        The pipeline or channel calls this to receive every audio frame
+        produced by the transport.
 
         Args:
-            callback: Function called with (session, text, confidence, is_stable).
+            callback: Function called with (session, audio_frame).
         """
         pass  # Default no-op, override if supported
 
-    def on_vad_silence(self, callback: VADSilenceCallback) -> None:
-        """Register callback for silence detection.
-
-        Only called if capabilities includes VAD_SILENCE.
-        Backends should call this when silence is detected after speech,
-        potentially before the full speech_end event.
-
-        Args:
-            callback: Function called with (session, silence_duration_ms).
-        """
-        pass  # Default no-op, override if supported
-
-    def on_vad_audio_level(self, callback: VADAudioLevelCallback) -> None:
-        """Register callback for audio level updates.
-
-        Only called if capabilities includes VAD_AUDIO_LEVEL.
-        Backends should call this periodically (e.g., 10Hz) with
-        current audio level for UI feedback.
-
-        Args:
-            callback: Function called with (session, level_db, is_speech).
-        """
-        pass  # Default no-op, override if supported
+    # -------------------------------------------------------------------------
+    # Barge-in support
+    # -------------------------------------------------------------------------
 
     def on_barge_in(self, callback: BargeInCallback) -> None:
         """Register callback for barge-in detection.
@@ -251,8 +212,6 @@ class VoiceBackend(ABC):
         """Send transcription text to the client for UI display.
 
         Optional method for backends that support sending text updates.
-        Called by VoiceChannel after STT transcription to show the user
-        what they said, and after AI response to show what the assistant said.
 
         Args:
             session: The voice session to send to.

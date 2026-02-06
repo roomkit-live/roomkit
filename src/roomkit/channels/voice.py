@@ -26,8 +26,12 @@ if TYPE_CHECKING:
     from roomkit.models.context import RoomContext
     from roomkit.models.delivery import InboundMessage
     from roomkit.models.event import RoomEvent
+    from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import VoiceSession
+    from roomkit.voice.pipeline.config import AudioPipelineConfig
+    from roomkit.voice.pipeline.diarization_provider import DiarizationResult
+    from roomkit.voice.pipeline.vad_provider import VADEvent
     from roomkit.voice.stt.base import STTProvider
     from roomkit.voice.tts.base import TTSProvider
 
@@ -64,11 +68,15 @@ class VoiceChannel(Channel):
     - **Store-and-forward mode**: Audio is synthesized and stored for later retrieval.
       Requires a MediaStore for URL generation (not yet implemented).
 
-    When a VoiceBackend is configured, the channel automatically:
-    - Registers for VAD (Voice Activity Detection) callbacks
+    When a VoiceBackend and AudioPipelineConfig are configured, the channel:
+    - Registers for raw audio frames from the backend via on_audio_received
+    - Routes frames through the AudioPipeline (denoiser -> VAD -> diarization)
+    - Fires hooks based on pipeline events (speech start/end, silence, speaker change)
     - Transcribes speech using the STT provider
-    - Routes transcriptions through the standard inbound pipeline
     - Synthesizes AI responses using TTS and streams to the client
+
+    When no pipeline is configured, the channel operates without VAD — the backend
+    must handle speech detection externally.
     """
 
     channel_type = ChannelType.VOICE
@@ -82,28 +90,16 @@ class VoiceChannel(Channel):
         stt: STTProvider | None = None,
         tts: TTSProvider | None = None,
         backend: VoiceBackend | None = None,
+        pipeline: AudioPipelineConfig | None = None,
         streaming: bool = True,
         enable_barge_in: bool = True,
         barge_in_threshold_ms: int = 200,
     ) -> None:
-        """Initialize voice channel.
-
-        Args:
-            channel_id: Unique channel identifier.
-            stt: Speech-to-text provider for transcription.
-            tts: Text-to-speech provider for synthesis.
-            backend: Voice transport backend for real-time audio.
-            streaming: If True (default), deliver() streams audio via backend.
-                If False, deliver() requires MediaStore support (not implemented).
-            enable_barge_in: If True (default), detect when user speaks during TTS
-                and fire ON_BARGE_IN hook. Requires backend with INTERRUPTION capability.
-            barge_in_threshold_ms: Minimum TTS playback time before barge-in is
-                detected. Helps avoid false triggers from very short interruptions.
-        """
         super().__init__(channel_id)
         self._stt = stt
         self._tts = tts
         self._backend = backend
+        self._pipeline_config = pipeline
         self._streaming = streaming
         self._enable_barge_in = enable_barge_in
         self._barge_in_threshold_ms = barge_in_threshold_ms
@@ -112,21 +108,116 @@ class VoiceChannel(Channel):
         self._session_bindings: dict[str, tuple[str, ChannelBinding]] = {}
         # Track TTS playback for barge-in detection
         self._playing_sessions: dict[str, TTSPlaybackState] = {}
+        # The instantiated pipeline engine (if config provided)
+        self._pipeline: Any = None  # AudioPipeline | None
 
-        # Register VAD callbacks if backend is provided
-        if backend:
-            backend.on_speech_start(self._on_speech_start)
-            backend.on_speech_end(self._on_speech_end)
+        # Wire up pipeline if both backend and pipeline config are provided
+        if backend and pipeline:
+            self._setup_pipeline(backend, pipeline)
+        elif backend and VoiceCapability.BARGE_IN in backend.capabilities:
+            backend.on_barge_in(self._on_backend_barge_in)
 
-            # Register for enhanced callbacks based on capabilities
-            if VoiceCapability.PARTIAL_STT in backend.capabilities:
-                backend.on_partial_transcription(self._on_partial_transcription)
-            if VoiceCapability.VAD_SILENCE in backend.capabilities:
-                backend.on_vad_silence(self._on_vad_silence)
-            if VoiceCapability.VAD_AUDIO_LEVEL in backend.capabilities:
-                backend.on_vad_audio_level(self._on_vad_audio_level)
-            if VoiceCapability.BARGE_IN in backend.capabilities:
-                backend.on_barge_in(self._on_backend_barge_in)
+    def _setup_pipeline(self, backend: VoiceBackend, config: AudioPipelineConfig) -> None:
+        """Create AudioPipeline and wire backend -> pipeline -> callbacks."""
+        from roomkit.voice.pipeline.engine import AudioPipeline
+
+        self._pipeline = AudioPipeline(config)
+
+        # Backend delivers raw audio -> pipeline processes it
+        backend.on_audio_received(self._on_audio_received)
+
+        # Pipeline events -> VoiceChannel hooks
+        self._pipeline.on_speech_end(self._on_pipeline_speech_end)
+        self._pipeline.on_vad_event(self._on_pipeline_vad_event)
+        if config.diarization is not None:
+            self._pipeline.on_speaker_change(self._on_pipeline_speaker_change)
+
+        # Barge-in from backend (transport-level)
+        if VoiceCapability.BARGE_IN in backend.capabilities:
+            backend.on_barge_in(self._on_backend_barge_in)
+
+    def _on_audio_received(self, session: VoiceSession, frame: AudioFrame) -> None:
+        """Handle raw audio frame from backend — feed into pipeline."""
+        if self._pipeline is not None:
+            self._pipeline.process_frame(session, frame)
+
+    def _on_pipeline_speech_end(self, session: VoiceSession, audio: bytes) -> None:
+        """Handle speech end from pipeline — fire hooks and transcribe."""
+        binding_info = self._session_bindings.get(session.id)
+        if not binding_info or not self._framework:
+            return
+
+        room_id, _ = binding_info
+
+        self._schedule(
+            self._process_speech_end(session, audio, room_id),
+            name=f"speech_end:{session.id}",
+        )
+
+    def _on_pipeline_vad_event(self, session: VoiceSession, vad_event: VADEvent) -> None:
+        """Handle VAD events from pipeline — fire corresponding hooks."""
+        from roomkit.voice.pipeline.vad_provider import VADEventType
+
+        binding_info = self._session_bindings.get(session.id)
+        if not binding_info or not self._framework:
+            return
+
+        room_id, _ = binding_info
+
+        if vad_event.type == VADEventType.SPEECH_START:
+            # Check for barge-in
+            playback = self._playing_sessions.get(session.id)
+            if (
+                self._enable_barge_in
+                and playback
+                and playback.position_ms >= self._barge_in_threshold_ms
+            ):
+                self._schedule(
+                    self._handle_barge_in(session, playback, room_id),
+                    name=f"barge_in:{session.id}",
+                )
+
+            self._schedule(
+                self._fire_speech_start_hooks(session, room_id),
+                name=f"speech_start:{session.id}",
+            )
+        elif vad_event.type == VADEventType.SPEECH_END:
+            self._schedule(
+                self._fire_speech_end_hooks(session, room_id),
+                name=f"speech_end_hook:{session.id}",
+            )
+        elif vad_event.type == VADEventType.SILENCE:
+            self._schedule(
+                self._fire_vad_silence_hook(
+                    session, int(vad_event.duration_ms or 0), room_id
+                ),
+                name=f"vad_silence:{session.id}",
+            )
+        elif vad_event.type == VADEventType.AUDIO_LEVEL:
+            self._schedule(
+                self._fire_vad_audio_level_hook(
+                    session,
+                    vad_event.level_db or 0.0,
+                    vad_event.confidence is not None and vad_event.confidence > 0.5,
+                    room_id,
+                ),
+                name=f"vad_audio_level:{session.id}",
+            )
+
+    def _on_pipeline_speaker_change(
+        self, session: VoiceSession, result: DiarizationResult
+    ) -> None:
+        """Handle speaker change from pipeline — fire ON_SPEAKER_CHANGE hook."""
+        binding_info = self._session_bindings.get(session.id)
+        if not binding_info or not self._framework:
+            return
+
+        room_id, _ = binding_info
+
+        self._schedule(
+            self._fire_speaker_change_hook(session, result, room_id),
+            name=f"speaker_change:{session.id}",
+        )
 
     def _schedule(self, coro: Coroutine[Any, Any, Any], *, name: str) -> None:
         """Schedule *coro* as a fire-and-forget task if an event loop is running."""
@@ -144,13 +235,7 @@ class VoiceChannel(Channel):
         self._framework = framework
 
     def bind_session(self, session: VoiceSession, room_id: str, binding: ChannelBinding) -> None:
-        """Bind a voice session to a room for message routing.
-
-        Args:
-            session: The voice session to bind.
-            room_id: The room to route messages to.
-            binding: The channel binding for delivery.
-        """
+        """Bind a voice session to a room for message routing."""
         self._session_bindings[session.id] = (room_id, binding)
 
     def unbind_session(self, session: VoiceSession) -> None:
@@ -169,6 +254,7 @@ class VoiceChannel(Channel):
             "tts": self._tts.name if self._tts else None,
             "backend": self._backend.name if self._backend else None,
             "streaming": self._streaming,
+            "pipeline": self._pipeline_config is not None,
         }
 
     def capabilities(self) -> ChannelCapabilities:
@@ -179,43 +265,15 @@ class VoiceChannel(Channel):
             max_audio_duration_seconds=3600,
         )
 
-    def _on_speech_start(self, session: VoiceSession) -> None:
-        """Handle VAD speech start event.
-
-        Fires ON_SPEECH_START hooks for the bound room.
-        Also checks for barge-in if TTS is playing.
-        """
-        binding_info = self._session_bindings.get(session.id)
-        if not binding_info or not self._framework:
-            return
-
-        room_id, _ = binding_info
-
-        # Check for barge-in (user speaking while TTS is playing)
-        playback = self._playing_sessions.get(session.id)
-        if (
-            self._enable_barge_in
-            and playback
-            and playback.position_ms >= self._barge_in_threshold_ms
-        ):
-            self._schedule(
-                self._handle_barge_in(session, playback, room_id),
-                name=f"barge_in:{session.id}",
-            )
-
-        self._schedule(
-            self._fire_speech_start_hooks(session, room_id),
-            name=f"speech_start:{session.id}",
-        )
+    # -------------------------------------------------------------------------
+    # Hook firing helpers
+    # -------------------------------------------------------------------------
 
     async def _fire_speech_start_hooks(self, session: VoiceSession, room_id: str) -> None:
-        """Fire ON_SPEECH_START hooks."""
         if not self._framework:
             return
-
         try:
             context = await self._framework._build_context(room_id)
-            # Skip event filtering for voice hooks - they receive VoiceSession instead of RoomEvent
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
                 HookTrigger.ON_SPEECH_START,
@@ -226,19 +284,106 @@ class VoiceChannel(Channel):
         except Exception:
             logger.exception("Error firing ON_SPEECH_START hooks")
 
+    async def _fire_speech_end_hooks(self, session: VoiceSession, room_id: str) -> None:
+        if not self._framework:
+            return
+        try:
+            context = await self._framework._build_context(room_id)
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_SPEECH_END,
+                session,
+                context,
+                skip_event_filter=True,
+            )
+        except Exception:
+            logger.exception("Error firing ON_SPEECH_END hooks")
+
+    async def _fire_vad_silence_hook(
+        self, session: VoiceSession, silence_duration_ms: int, room_id: str
+    ) -> None:
+        if not self._framework:
+            return
+        try:
+            from roomkit.voice.events import VADSilenceEvent
+
+            context = await self._framework._build_context(room_id)
+            event = VADSilenceEvent(
+                session=session,
+                silence_duration_ms=silence_duration_ms,
+            )
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_VAD_SILENCE,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+        except Exception:
+            logger.exception("Error firing ON_VAD_SILENCE hook")
+
+    async def _fire_vad_audio_level_hook(
+        self, session: VoiceSession, level_db: float, is_speech: bool, room_id: str
+    ) -> None:
+        if not self._framework:
+            return
+        try:
+            from roomkit.voice.events import VADAudioLevelEvent
+
+            context = await self._framework._build_context(room_id)
+            event = VADAudioLevelEvent(
+                session=session,
+                level_db=level_db,
+                is_speech=is_speech,
+            )
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_VAD_AUDIO_LEVEL,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+        except Exception:
+            logger.exception("Error firing ON_VAD_AUDIO_LEVEL hook")
+
+    async def _fire_speaker_change_hook(
+        self, session: VoiceSession, result: DiarizationResult, room_id: str
+    ) -> None:
+        if not self._framework:
+            return
+        try:
+            from roomkit.voice.events import SpeakerChangeEvent
+
+            context = await self._framework._build_context(room_id)
+            event = SpeakerChangeEvent(
+                session=session,
+                speaker_id=result.speaker_id,
+                confidence=result.confidence,
+                is_new_speaker=result.is_new_speaker,
+            )
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_SPEAKER_CHANGE,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+        except Exception:
+            logger.exception("Error firing ON_SPEAKER_CHANGE hook")
+
+    # -------------------------------------------------------------------------
+    # Barge-in handling
+    # -------------------------------------------------------------------------
+
     async def _handle_barge_in(
         self, session: VoiceSession, playback: TTSPlaybackState, room_id: str
     ) -> None:
-        """Handle barge-in: fire hook and interrupt TTS."""
         if not self._framework:
             return
-
         try:
             from roomkit.voice.events import BargeInEvent
 
             context = await self._framework._build_context(room_id)
-
-            # Fire ON_BARGE_IN hook
             event = BargeInEvent(
                 session=session,
                 interrupted_text=playback.text,
@@ -251,32 +396,19 @@ class VoiceChannel(Channel):
                 context,
                 skip_event_filter=True,
             )
-
-            # Interrupt TTS playback
             await self.interrupt(session, reason="barge_in")
-
         except Exception:
             logger.exception("Error handling barge-in for session %s", session.id)
 
     async def interrupt(self, session: VoiceSession, *, reason: str = "explicit") -> bool:
-        """Interrupt ongoing TTS playback for a session.
-
-        Args:
-            session: The voice session to interrupt.
-            reason: Why the TTS was cancelled ('barge_in', 'explicit', etc.)
-
-        Returns:
-            True if TTS was cancelled, False if nothing was playing.
-        """
+        """Interrupt ongoing TTS playback for a session."""
         playback = self._playing_sessions.pop(session.id, None)
         if not playback:
             return False
 
-        # Cancel audio in backend if supported
         if self._backend and VoiceCapability.INTERRUPTION in self._backend.capabilities:
             await self._backend.cancel_audio(session)
 
-        # Fire ON_TTS_CANCELLED hook
         if self._framework:
             binding_info = self._session_bindings.get(session.id)
             if binding_info:
@@ -309,130 +441,6 @@ class VoiceChannel(Channel):
         )
         return True
 
-    def _on_partial_transcription(
-        self, session: VoiceSession, text: str, confidence: float, is_stable: bool
-    ) -> None:
-        """Handle partial transcription from streaming STT."""
-        binding_info = self._session_bindings.get(session.id)
-        if not binding_info or not self._framework:
-            return
-
-        room_id, _ = binding_info
-
-        self._schedule(
-            self._fire_partial_transcription_hook(session, text, confidence, is_stable, room_id),
-            name=f"partial_transcription:{session.id}",
-        )
-
-    async def _fire_partial_transcription_hook(
-        self,
-        session: VoiceSession,
-        text: str,
-        confidence: float,
-        is_stable: bool,
-        room_id: str,
-    ) -> None:
-        """Fire ON_PARTIAL_TRANSCRIPTION hook."""
-        if not self._framework:
-            return
-
-        try:
-            from roomkit.voice.events import PartialTranscriptionEvent
-
-            context = await self._framework._build_context(room_id)
-            event = PartialTranscriptionEvent(
-                session=session,
-                text=text,
-                confidence=confidence,
-                is_stable=is_stable,
-            )
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_PARTIAL_TRANSCRIPTION,
-                event,
-                context,
-                skip_event_filter=True,
-            )
-        except Exception:
-            logger.exception("Error firing ON_PARTIAL_TRANSCRIPTION hook")
-
-    def _on_vad_silence(self, session: VoiceSession, silence_duration_ms: int) -> None:
-        """Handle VAD silence detection."""
-        binding_info = self._session_bindings.get(session.id)
-        if not binding_info or not self._framework:
-            return
-
-        room_id, _ = binding_info
-
-        self._schedule(
-            self._fire_vad_silence_hook(session, silence_duration_ms, room_id),
-            name=f"vad_silence:{session.id}",
-        )
-
-    async def _fire_vad_silence_hook(
-        self, session: VoiceSession, silence_duration_ms: int, room_id: str
-    ) -> None:
-        """Fire ON_VAD_SILENCE hook."""
-        if not self._framework:
-            return
-
-        try:
-            from roomkit.voice.events import VADSilenceEvent
-
-            context = await self._framework._build_context(room_id)
-            event = VADSilenceEvent(
-                session=session,
-                silence_duration_ms=silence_duration_ms,
-            )
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_VAD_SILENCE,
-                event,
-                context,
-                skip_event_filter=True,
-            )
-        except Exception:
-            logger.exception("Error firing ON_VAD_SILENCE hook")
-
-    def _on_vad_audio_level(self, session: VoiceSession, level_db: float, is_speech: bool) -> None:
-        """Handle VAD audio level update."""
-        binding_info = self._session_bindings.get(session.id)
-        if not binding_info or not self._framework:
-            return
-
-        room_id, _ = binding_info
-
-        self._schedule(
-            self._fire_vad_audio_level_hook(session, level_db, is_speech, room_id),
-            name=f"vad_audio_level:{session.id}",
-        )
-
-    async def _fire_vad_audio_level_hook(
-        self, session: VoiceSession, level_db: float, is_speech: bool, room_id: str
-    ) -> None:
-        """Fire ON_VAD_AUDIO_LEVEL hook."""
-        if not self._framework:
-            return
-
-        try:
-            from roomkit.voice.events import VADAudioLevelEvent
-
-            context = await self._framework._build_context(room_id)
-            event = VADAudioLevelEvent(
-                session=session,
-                level_db=level_db,
-                is_speech=is_speech,
-            )
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_VAD_AUDIO_LEVEL,
-                event,
-                context,
-                skip_event_filter=True,
-            )
-        except Exception:
-            logger.exception("Error firing ON_VAD_AUDIO_LEVEL hook")
-
     def _on_backend_barge_in(self, session: VoiceSession) -> None:
         """Handle barge-in detected by backend."""
         binding_info = self._session_bindings.get(session.id)
@@ -441,7 +449,6 @@ class VoiceChannel(Channel):
 
         room_id, _ = binding_info
         playback = self._playing_sessions.get(session.id)
-
         if not playback:
             return
 
@@ -450,21 +457,9 @@ class VoiceChannel(Channel):
             name=f"backend_barge_in:{session.id}",
         )
 
-    def _on_speech_end(self, session: VoiceSession, audio: bytes) -> None:
-        """Handle VAD speech end event.
-
-        Fires ON_SPEECH_END hooks, transcribes audio, and routes to framework.
-        """
-        binding_info = self._session_bindings.get(session.id)
-        if not binding_info or not self._framework:
-            return
-
-        room_id, _ = binding_info
-
-        self._schedule(
-            self._process_speech_end(session, audio, room_id),
-            name=f"speech_end:{session.id}",
-        )
+    # -------------------------------------------------------------------------
+    # Speech processing pipeline
+    # -------------------------------------------------------------------------
 
     async def _process_speech_end(self, session: VoiceSession, audio: bytes, room_id: str) -> None:
         """Process speech end: fire hooks, transcribe, route inbound."""
@@ -488,17 +483,17 @@ class VoiceChannel(Channel):
                 logger.warning("Speech ended but no STT provider configured")
                 return
 
-            from roomkit.voice.base import AudioChunk
+            from roomkit.voice.audio_frame import AudioFrame
 
             # Get audio parameters from session metadata (set by backend)
             sample_rate = session.metadata.get("input_sample_rate", 16000)
-            audio_chunk = AudioChunk(
+            audio_frame = AudioFrame(
                 data=audio,
                 sample_rate=sample_rate,
                 channels=1,
-                format="pcm_s16le",
+                sample_width=2,
             )
-            text = await self._stt.transcribe(audio_chunk)
+            text = await self._stt.transcribe(audio_frame)
 
             if not text.strip():
                 logger.debug("Empty transcription, skipping")
@@ -544,6 +539,10 @@ class VoiceChannel(Channel):
         except Exception:
             logger.exception("Error processing speech end")
 
+    # -------------------------------------------------------------------------
+    # Channel interface
+    # -------------------------------------------------------------------------
+
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         from roomkit.models.event import EventSource
         from roomkit.models.event import RoomEvent as RoomEventModel
@@ -567,16 +566,13 @@ class VoiceChannel(Channel):
         from roomkit.models.channel import ChannelOutput as ChannelOutputModel
         from roomkit.models.event import TextContent
 
-        # In streaming mode without backend, delivery is handled externally
         if self._streaming and not self._backend:
             return ChannelOutputModel.empty()
 
-        # In streaming mode with backend, stream TTS audio to the session
         if self._streaming and self._backend and isinstance(event.content, TextContent):
             await self._deliver_voice(event, binding, context)
             return ChannelOutputModel.empty()
 
-        # Store-and-forward mode: synthesize audio for later retrieval.
         if not self._streaming and isinstance(event.content, TextContent) and self._tts:
             raise NotImplementedError(
                 "VoiceChannel store-and-forward mode requires MediaStore support. "
@@ -589,7 +585,6 @@ class VoiceChannel(Channel):
     async def _deliver_voice(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> None:
-        """Deliver text event as voice audio via the backend."""
         if not self._tts or not self._backend or not self._framework:
             return
 
@@ -602,7 +597,6 @@ class VoiceChannel(Channel):
         room_id = event.room_id
 
         try:
-            # Fire BEFORE_TTS hooks (sync, can modify)
             before_result = await self._framework.hook_engine.run_sync_hooks(
                 room_id,
                 HookTrigger.BEFORE_TTS,
@@ -615,13 +609,10 @@ class VoiceChannel(Channel):
                 logger.info("TTS blocked by hook: %s", before_result.reason)
                 return
 
-            # Use potentially modified text
             final_text = before_result.event if isinstance(before_result.event, str) else text
 
             logger.info("AI response: %s", final_text)
 
-            # Find the session(s) to send audio to
-            # Look for sessions bound to this room
             target_sessions: list[VoiceSession] = []
             for session_id, (bound_room_id, bound_binding) in self._session_bindings.items():
                 if bound_room_id == room_id and bound_binding.channel_id == binding.channel_id:
@@ -630,35 +621,25 @@ class VoiceChannel(Channel):
                         target_sessions.append(session)
 
             if not target_sessions:
-                # Fallback: get all sessions in the room from backend
                 target_sessions = self._backend.list_sessions(room_id)
 
-            # Stream TTS audio to each session
             for session in target_sessions:
-                # Send AI response text to client UI
                 await self._backend.send_transcription(session, final_text, "assistant")
 
-                # Track playback state for barge-in detection
                 self._playing_sessions[session.id] = TTSPlaybackState(
                     session_id=session.id,
                     text=final_text,
                 )
 
                 try:
-                    # Use streaming if available
                     audio_stream = self._tts.synthesize_stream(final_text)
                     await self._backend.send_audio(session, audio_stream)
                 except NotImplementedError:
-                    # Fallback to non-streaming
                     await self._tts.synthesize(final_text)
-                    # For non-streaming, we'd need to fetch the audio from URL
-                    # This is a limitation - mock backends handle it
                     logger.warning("TTS provider %s doesn't support streaming", self._tts.name)
                 finally:
-                    # Clear playback state (TTS finished or failed)
                     self._playing_sessions.pop(session.id, None)
 
-            # Fire AFTER_TTS hooks (async)
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
                 HookTrigger.AFTER_TTS,
@@ -675,6 +656,8 @@ class VoiceChannel(Channel):
             await self._stt.close()
         if self._tts:
             await self._tts.close()
+        if self._pipeline is not None:
+            self._pipeline.close()
         if self._backend:
             await self._backend.close()
         self._session_bindings.clear()

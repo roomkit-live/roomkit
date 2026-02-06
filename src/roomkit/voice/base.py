@@ -20,7 +20,7 @@ class VoiceSessionState(StrEnum):
 
 
 class VoiceCapability(Flag):
-    """Capabilities a VoiceBackend can support (RFC §19).
+    """Capabilities a VoiceBackend can support.
 
     Backends declare their capabilities via the `capabilities` property.
     This allows RoomKit to know which features are available and
@@ -32,7 +32,6 @@ class VoiceCapability(Flag):
             def capabilities(self) -> VoiceCapability:
                 return (
                     VoiceCapability.INTERRUPTION |
-                    VoiceCapability.PARTIAL_STT |
                     VoiceCapability.BARGE_IN
                 )
     """
@@ -43,22 +42,13 @@ class VoiceCapability(Flag):
     INTERRUPTION = auto()
     """Backend can cancel ongoing audio playback (cancel_audio)."""
 
-    PARTIAL_STT = auto()
-    """Backend provides partial/streaming transcription results."""
-
-    VAD_SILENCE = auto()
-    """Backend emits silence detection events."""
-
-    VAD_AUDIO_LEVEL = auto()
-    """Backend emits periodic audio level events."""
-
     BARGE_IN = auto()
     """Backend detects and handles barge-in (user interrupts TTS)."""
 
 
 @dataclass
 class AudioChunk:
-    """A chunk of audio data for streaming."""
+    """A chunk of audio data for streaming (used for outbound TTS)."""
 
     data: bytes
     sample_rate: int = 16000
@@ -98,18 +88,5 @@ class TranscriptionResult:
 
 
 # Type aliases for voice callbacks
-SpeechStartCallback = Callable[[VoiceSession], Any]
-SpeechEndCallback = Callable[[VoiceSession, bytes], Any]
-
-# Enhanced voice callbacks (RFC §19)
-PartialTranscriptionCallback = Callable[[VoiceSession, str, float, bool], Any]
-"""Callback for partial transcription: (session, text, confidence, is_stable)."""
-
-VADSilenceCallback = Callable[[VoiceSession, int], Any]
-"""Callback for silence detection: (session, silence_duration_ms)."""
-
-VADAudioLevelCallback = Callable[[VoiceSession, float, bool], Any]
-"""Callback for audio level: (session, level_db, is_speech)."""
-
 BargeInCallback = Callable[[VoiceSession], Any]
 """Callback for barge-in detection: (session)."""

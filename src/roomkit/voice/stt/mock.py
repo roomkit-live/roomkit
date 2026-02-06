@@ -10,6 +10,7 @@ from roomkit.voice.stt.base import STTProvider
 
 if TYPE_CHECKING:
     from roomkit.models.event import AudioContent
+    from roomkit.voice.audio_frame import AudioFrame
 
 
 class MockSTTProvider(STTProvider):
@@ -17,10 +18,10 @@ class MockSTTProvider(STTProvider):
 
     def __init__(self, transcripts: list[str] | None = None) -> None:
         self.transcripts = transcripts or ["Hello", "How can I help you?"]
-        self.calls: list[AudioContent | AudioChunk] = []
+        self.calls: list[AudioContent | AudioChunk | AudioFrame] = []
         self._index = 0
 
-    async def transcribe(self, audio: AudioContent | AudioChunk) -> str:
+    async def transcribe(self, audio: AudioContent | AudioChunk | AudioFrame) -> str:
         self.calls.append(audio)
         result = self.transcripts[self._index % len(self.transcripts)]
         self._index += 1

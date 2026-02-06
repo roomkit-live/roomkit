@@ -138,3 +138,27 @@ class VADAudioLevelEvent:
 
     timestamp: datetime = field(default_factory=_utcnow)
     """When this measurement was taken."""
+
+
+@dataclass(frozen=True)
+class SpeakerChangeEvent:
+    """Speaker change detected by diarization.
+
+    This event is fired when the audio pipeline's diarization
+    stage detects a different speaker than the previous frame.
+    """
+
+    session: VoiceSession
+    """The voice session where the change was detected."""
+
+    speaker_id: str
+    """The new speaker's identifier."""
+
+    confidence: float
+    """Confidence score for the speaker identification (0.0 to 1.0)."""
+
+    is_new_speaker: bool
+    """True if this speaker has not been seen before in this session."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the speaker change was detected."""

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from roomkit.models.event import AudioContent
+    from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.base import AudioChunk, TranscriptionResult
 
 
@@ -20,11 +21,11 @@ class STTProvider(ABC):
         return self.__class__.__name__
 
     @abstractmethod
-    async def transcribe(self, audio: AudioContent | AudioChunk) -> str:
+    async def transcribe(self, audio: AudioContent | AudioChunk | AudioFrame) -> str:
         """Transcribe complete audio to text.
 
         Args:
-            audio: Audio content (URL) or raw audio chunk.
+            audio: Audio content (URL), raw audio chunk, or audio frame.
 
         Returns:
             Transcribed text.

@@ -1,4 +1,4 @@
-"""Tests for voice support (STT/TTS/VoiceBackend)."""
+"""Tests for voice support (STT/TTS/VoiceBackend/AudioFrame/Pipeline)."""
 
 import pytest
 
@@ -12,7 +12,8 @@ from roomkit import (
     VoiceNotConfiguredError,
 )
 from roomkit.models.event import AudioContent
-from roomkit.voice.base import AudioChunk, TranscriptionResult, VoiceSessionState
+from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.base import AudioChunk, TranscriptionResult, VoiceCapability, VoiceSessionState
 
 
 class TestMockSTT:
@@ -21,6 +22,13 @@ class TestMockSTT:
         chunk = AudioChunk(data=b"fake-audio")
         result = await stt.transcribe(chunk)
         assert result == "Hello world"
+        assert len(stt.calls) == 1
+
+    async def test_transcribe_accepts_audio_frame(self) -> None:
+        stt = MockSTTProvider(transcripts=["From frame"])
+        frame = AudioFrame(data=b"fake-audio", sample_rate=48000)
+        result = await stt.transcribe(frame)
+        assert result == "From frame"
         assert len(stt.calls) == 1
 
     async def test_transcribe_cycles_through_transcripts(self) -> None:
@@ -128,33 +136,20 @@ class TestMockVoiceBackend:
         room2_sessions = backend.list_sessions("room-2")
         assert len(room2_sessions) == 1
 
-    async def test_on_speech_start_callback(self) -> None:
+    async def test_on_audio_received_callback(self) -> None:
         backend = MockVoiceBackend()
         events = []
 
-        def callback(session):
-            events.append(("start", session.id))
+        def callback(session, frame):
+            events.append(("audio", session.id, frame.data))
 
-        backend.on_speech_start(callback)
+        backend.on_audio_received(callback)
         session = await backend.connect("room-1", "user-1", "voice-1")
-        await backend.simulate_speech_start(session)
+        frame = AudioFrame(data=b"test-audio")
+        await backend.simulate_audio_received(session, frame)
 
         assert len(events) == 1
-        assert events[0] == ("start", session.id)
-
-    async def test_on_speech_end_callback(self) -> None:
-        backend = MockVoiceBackend()
-        events = []
-
-        def callback(session, audio):
-            events.append(("end", session.id, audio))
-
-        backend.on_speech_end(callback)
-        session = await backend.connect("room-1", "user-1", "voice-1")
-        await backend.simulate_speech_end(session, b"test-audio")
-
-        assert len(events) == 1
-        assert events[0] == ("end", session.id, b"test-audio")
+        assert events[0] == ("audio", session.id, b"test-audio")
 
     async def test_send_audio_bytes(self) -> None:
         backend = MockVoiceBackend()
@@ -206,6 +201,36 @@ class TestMockVoiceBackend:
         assert backend.sent_transcriptions[0] == (session.id, "Hello world", "user")
         assert backend.sent_transcriptions[1] == (session.id, "Hi there!", "assistant")
 
+    async def test_barge_in_callback(self) -> None:
+        backend = MockVoiceBackend(capabilities=VoiceCapability.BARGE_IN)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        received = []
+
+        def callback(sess):
+            received.append(sess.id)
+
+        backend.on_barge_in(callback)
+        await backend.simulate_barge_in(session)
+
+        assert len(received) == 1
+        assert received[0] == session.id
+
+    async def test_cancel_audio(self) -> None:
+        backend = MockVoiceBackend(capabilities=VoiceCapability.INTERRUPTION)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        assert backend.is_playing(session) is False
+        result = await backend.cancel_audio(session)
+        assert result is False
+
+        backend.start_playing(session)
+        assert backend.is_playing(session) is True
+
+        result = await backend.cancel_audio(session)
+        assert result is True
+        assert backend.is_playing(session) is False
+
 
 class TestVoiceChannel:
     async def test_capabilities_include_audio(self) -> None:
@@ -233,6 +258,18 @@ class TestVoiceChannel:
         channel = VoiceChannel("voice-1", backend=backend)
         assert channel.info["backend"] == "MockVoiceBackend"
 
+    async def test_info_shows_pipeline(self) -> None:
+        from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
+
+        backend = MockVoiceBackend()
+        config = AudioPipelineConfig(vad=MockVADProvider())
+        channel = VoiceChannel("voice-1", backend=backend, pipeline=config)
+        assert channel.info["pipeline"] is True
+
+    async def test_info_no_pipeline(self) -> None:
+        channel = VoiceChannel("voice-1")
+        assert channel.info["pipeline"] is False
+
     async def test_backend_property(self) -> None:
         backend = MockVoiceBackend()
         channel = VoiceChannel("voice-1", backend=backend)
@@ -247,7 +284,16 @@ class TestVoiceChannel:
         tts = MockTTSProvider()
         channel = VoiceChannel("voice-1", stt=stt, tts=tts)
         await channel.close()
-        # No exception = success (mock providers have no-op close)
+
+    async def test_close_closes_pipeline(self) -> None:
+        from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
+
+        vad = MockVADProvider()
+        backend = MockVoiceBackend()
+        config = AudioPipelineConfig(vad=vad)
+        channel = VoiceChannel("voice-1", backend=backend, pipeline=config)
+        await channel.close()
+        assert vad.closed
 
     async def test_streaming_mode_default_true(self) -> None:
         channel = VoiceChannel("voice-1")
@@ -282,10 +328,8 @@ class TestVoiceChannel:
         )
 
         output = await channel.deliver(event, binding, context)
-        # Should return empty output (no-op in streaming mode)
         assert output.responded is False
         assert output.response_events == []
-        # TTS should NOT be called in streaming mode
         assert len(tts.calls) == 0
 
     async def test_non_streaming_mode_raises_not_implemented(self) -> None:
@@ -375,7 +419,6 @@ class TestRoomKitVoiceIntegration:
         backend = MockVoiceBackend()
         kit = RoomKit(voice=backend)
 
-        # Create room and attach voice channel
         channel = VoiceChannel("voice-1", backend=backend)
         kit.register_channel(channel)
         room = await kit.create_room()
@@ -425,112 +468,35 @@ class TestRoomKitVoiceIntegration:
             await kit.disconnect_voice(session)
 
 
-class TestVoiceChannelPipeline:
-    """Tests for the full VoiceChannel speech pipeline."""
+class TestAudioFrame:
+    def test_default_values(self) -> None:
+        frame = AudioFrame(data=b"audio")
+        assert frame.sample_rate == 16000
+        assert frame.channels == 1
+        assert frame.sample_width == 2
+        assert frame.timestamp_ms is None
+        assert frame.metadata == {}
 
-    async def test_speech_end_passes_sample_rate_to_stt(self) -> None:
-        """When speech ends, VoiceChannel should pass sample_rate from session metadata to STT."""
-        import asyncio
-
-        stt = MockSTTProvider(transcripts=["Hello world"])
-        tts = MockTTSProvider()
-        backend = MockVoiceBackend()
-        channel = VoiceChannel("voice-1", stt=stt, tts=tts, backend=backend)
-
-        kit = RoomKit(stt=stt, tts=tts, voice=backend)
-        kit.register_channel(channel)
-        room = await kit.create_room()
-        binding = await kit.attach_channel(room.id, "voice-1")
-
-        # Create session with custom sample rate in metadata
-        session = await backend.connect(
-            room.id,
-            "user-1",
-            "voice-1",
-            metadata={"input_sample_rate": 48000, "output_sample_rate": 24000},
+    def test_custom_values(self) -> None:
+        frame = AudioFrame(
+            data=b"audio",
+            sample_rate=48000,
+            channels=2,
+            sample_width=4,
+            timestamp_ms=1000.5,
+            metadata={"stage": "denoised"},
         )
-        channel.bind_session(session, room.id, binding)
+        assert frame.sample_rate == 48000
+        assert frame.channels == 2
+        assert frame.sample_width == 4
+        assert frame.timestamp_ms == 1000.5
+        assert frame.metadata == {"stage": "denoised"}
 
-        # Simulate speech end
-        await backend.simulate_speech_end(session, b"fake-pcm-audio")
-
-        # Give async tasks time to complete
-        await asyncio.sleep(0.1)
-
-        # STT should have been called with the audio
-        assert len(stt.calls) == 1
-        audio_chunk = stt.calls[0]
-        assert audio_chunk.data == b"fake-pcm-audio"
-        assert audio_chunk.sample_rate == 48000
-
-    async def test_speech_end_sends_user_transcription(self) -> None:
-        """After STT, VoiceChannel should send transcription to client via backend."""
-        import asyncio
-
-        stt = MockSTTProvider(transcripts=["Bonjour"])
-        backend = MockVoiceBackend()
-        channel = VoiceChannel("voice-1", stt=stt, backend=backend)
-
-        kit = RoomKit(stt=stt, voice=backend)
-        kit.register_channel(channel)
-        room = await kit.create_room()
-        binding = await kit.attach_channel(room.id, "voice-1")
-
-        session = await backend.connect(room.id, "user-1", "voice-1")
-        channel.bind_session(session, room.id, binding)
-
-        await backend.simulate_speech_end(session, b"audio-data")
-        await asyncio.sleep(0.1)
-
-        # Backend should have received a user transcription
-        user_transcriptions = [
-            (sid, text, role) for sid, text, role in backend.sent_transcriptions if role == "user"
-        ]
-        assert len(user_transcriptions) == 1
-        assert user_transcriptions[0][1] == "Bonjour"
-
-    async def test_deliver_sends_assistant_transcription(self) -> None:
-        """When delivering voice, VoiceChannel should send assistant text to client."""
-
-        from roomkit.models.enums import ChannelType
-        from roomkit.models.event import EventSource, RoomEvent, TextContent
-
-        stt = MockSTTProvider()
-        tts = MockTTSProvider()
-        backend = MockVoiceBackend()
-        channel = VoiceChannel("voice-1", stt=stt, tts=tts, backend=backend)
-
-        kit = RoomKit(stt=stt, tts=tts, voice=backend)
-        kit.register_channel(channel)
-        room = await kit.create_room()
-        binding = await kit.attach_channel(room.id, "voice-1")
-
-        session = await backend.connect(room.id, "user-1", "voice-1")
-        channel.bind_session(session, room.id, binding)
-
-        event = RoomEvent(
-            room_id=room.id,
-            content=TextContent(body="How can I help?"),
-            source=EventSource(channel_id="voice-1", channel_type=ChannelType.VOICE),
-        )
-
-        context = await kit._build_context(room.id)
-        await channel.deliver(event, binding, context)
-
-        # Backend should have received assistant transcription
-        assistant_transcriptions = [
-            (sid, text, role)
-            for sid, text, role in backend.sent_transcriptions
-            if role == "assistant"
-        ]
-        assert len(assistant_transcriptions) == 1
-        assert assistant_transcriptions[0][1] == "How can I help?"
-
-        # TTS should have been called
-        assert len(tts.calls) == 1
-
-        # Audio should have been sent to backend
-        assert len(backend.sent_audio) == 1
+    def test_metadata_accumulation(self) -> None:
+        frame = AudioFrame(data=b"audio")
+        frame.metadata["denoiser"] = "MockDenoiserProvider"
+        frame.metadata["vad"] = {"type": "speech_start"}
+        assert len(frame.metadata) == 2
 
 
 class TestAudioChunk:
@@ -582,150 +548,34 @@ class TestTranscriptionResult:
 
 
 class TestVoiceCapability:
-    """Tests for VoiceCapability flags (RFC §19)."""
+    """Tests for VoiceCapability flags."""
 
     def test_default_is_none(self) -> None:
-        from roomkit.voice.base import VoiceCapability
-
         assert VoiceCapability.NONE.value == 0
         assert not VoiceCapability.NONE  # Falsy when no flags set
 
     def test_individual_flags(self) -> None:
-        from roomkit.voice.base import VoiceCapability
-
         assert VoiceCapability.INTERRUPTION
-        assert VoiceCapability.PARTIAL_STT
-        assert VoiceCapability.VAD_SILENCE
-        assert VoiceCapability.VAD_AUDIO_LEVEL
         assert VoiceCapability.BARGE_IN
 
     def test_combine_flags(self) -> None:
-        from roomkit.voice.base import VoiceCapability
-
         caps = VoiceCapability.INTERRUPTION | VoiceCapability.BARGE_IN
         assert VoiceCapability.INTERRUPTION in caps
         assert VoiceCapability.BARGE_IN in caps
-        assert VoiceCapability.PARTIAL_STT not in caps
 
     def test_mock_backend_default_none(self) -> None:
-        from roomkit.voice.base import VoiceCapability
-
         backend = MockVoiceBackend()
         assert backend.capabilities == VoiceCapability.NONE
 
     def test_mock_backend_custom_capabilities(self) -> None:
-        from roomkit.voice.base import VoiceCapability
-
-        caps = VoiceCapability.INTERRUPTION | VoiceCapability.PARTIAL_STT
+        caps = VoiceCapability.INTERRUPTION | VoiceCapability.BARGE_IN
         backend = MockVoiceBackend(capabilities=caps)
         assert backend.capabilities == caps
         assert VoiceCapability.INTERRUPTION in backend.capabilities
 
 
-class TestEnhancedVoiceCallbacks:
-    """Tests for enhanced voice callbacks (RFC §19)."""
-
-    async def test_partial_transcription_callback(self) -> None:
-        from roomkit.voice.base import VoiceCapability
-
-        backend = MockVoiceBackend(capabilities=VoiceCapability.PARTIAL_STT)
-        session = await backend.connect("room-1", "user-1", "voice-1")
-
-        received = []
-
-        def callback(sess, text, confidence, is_stable):
-            received.append((sess.id, text, confidence, is_stable))
-
-        backend.on_partial_transcription(callback)
-        await backend.simulate_partial_transcription(session, "Hello", 0.8, False)
-
-        assert len(received) == 1
-        assert received[0] == (session.id, "Hello", 0.8, False)
-
-    async def test_vad_silence_callback(self) -> None:
-        from roomkit.voice.base import VoiceCapability
-
-        backend = MockVoiceBackend(capabilities=VoiceCapability.VAD_SILENCE)
-        session = await backend.connect("room-1", "user-1", "voice-1")
-
-        received = []
-
-        def callback(sess, silence_ms):
-            received.append((sess.id, silence_ms))
-
-        backend.on_vad_silence(callback)
-        await backend.simulate_vad_silence(session, 500)
-
-        assert len(received) == 1
-        assert received[0] == (session.id, 500)
-
-    async def test_vad_audio_level_callback(self) -> None:
-        from roomkit.voice.base import VoiceCapability
-
-        backend = MockVoiceBackend(capabilities=VoiceCapability.VAD_AUDIO_LEVEL)
-        session = await backend.connect("room-1", "user-1", "voice-1")
-
-        received = []
-
-        def callback(sess, level_db, is_speech):
-            received.append((sess.id, level_db, is_speech))
-
-        backend.on_vad_audio_level(callback)
-        await backend.simulate_vad_audio_level(session, -20.5, True)
-
-        assert len(received) == 1
-        assert received[0] == (session.id, -20.5, True)
-
-    async def test_barge_in_callback(self) -> None:
-        from roomkit.voice.base import VoiceCapability
-
-        backend = MockVoiceBackend(capabilities=VoiceCapability.BARGE_IN)
-        session = await backend.connect("room-1", "user-1", "voice-1")
-
-        received = []
-
-        def callback(sess):
-            received.append(sess.id)
-
-        backend.on_barge_in(callback)
-        await backend.simulate_barge_in(session)
-
-        assert len(received) == 1
-        assert received[0] == session.id
-
-    async def test_cancel_audio(self) -> None:
-        from roomkit.voice.base import VoiceCapability
-
-        backend = MockVoiceBackend(capabilities=VoiceCapability.INTERRUPTION)
-        session = await backend.connect("room-1", "user-1", "voice-1")
-
-        # Not playing initially
-        assert backend.is_playing(session) is False
-        result = await backend.cancel_audio(session)
-        assert result is False
-
-        # Start playing
-        backend.start_playing(session)
-        assert backend.is_playing(session) is True
-
-        # Cancel
-        result = await backend.cancel_audio(session)
-        assert result is True
-        assert backend.is_playing(session) is False
-
-    async def test_is_playing(self) -> None:
-        backend = MockVoiceBackend()
-        session = await backend.connect("room-1", "user-1", "voice-1")
-
-        assert backend.is_playing(session) is False
-        backend.start_playing(session)
-        assert backend.is_playing(session) is True
-        backend.stop_playing(session)
-        assert backend.is_playing(session) is False
-
-
 class TestVoiceEvents:
-    """Tests for voice event dataclasses (RFC §19)."""
+    """Tests for voice event dataclasses."""
 
     def test_barge_in_event(self) -> None:
         from roomkit.voice.base import VoiceSession
@@ -760,6 +610,23 @@ class TestVoiceEvents:
         assert event.reason == "barge_in"
         assert event.text == "Hello, how can I help?"
         assert event.audio_position_ms == 1200
+
+    def test_speaker_change_event(self) -> None:
+        from roomkit.voice.base import VoiceSession
+        from roomkit.voice.events import SpeakerChangeEvent
+
+        session = VoiceSession(
+            id="sess-1", room_id="room-1", participant_id="user-1", channel_id="voice-1"
+        )
+        event = SpeakerChangeEvent(
+            session=session,
+            speaker_id="speaker_0",
+            confidence=0.95,
+            is_new_speaker=True,
+        )
+        assert event.speaker_id == "speaker_0"
+        assert event.confidence == 0.95
+        assert event.is_new_speaker is True
 
     def test_partial_transcription_event(self) -> None:
         from roomkit.voice.base import VoiceSession
