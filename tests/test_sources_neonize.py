@@ -18,6 +18,18 @@ from roomkit.sources.base import SourceStatus
 # =============================================================================
 
 
+def _make_jid(jid_str: str) -> MagicMock:
+    """Build a fake neonize JID object from a ``user@server`` string."""
+    jid = MagicMock()
+    if "@" in jid_str:
+        user, server = jid_str.split("@", 1)
+    else:
+        user, server = jid_str, ""
+    jid.User = user
+    jid.Server = server
+    return jid
+
+
 def _make_message_event(
     *,
     sender: str = "1234567890@s.whatsapp.net",
@@ -37,11 +49,17 @@ def _make_message_event(
     """Build a fake neonize MessageEv."""
     event = MagicMock()
     info = MagicMock()
-    info.IsFromMe = is_from_me
-    info.Sender = sender
-    info.Chat = chat
+
+    # The parser accesses info.MessageSource for IsFromMe, Sender, Chat
+    src = MagicMock()
+    src.IsFromMe = is_from_me
+    src.Sender = _make_jid(sender)
+    src.Chat = _make_jid(chat)
+    info.MessageSource = src
+
     info.Timestamp = 1700000000
-    info.PushName = push_name
+    # The parser reads info.Pushname (lowercase 'n')
+    info.Pushname = push_name
     info.ID = msg_id
     event.Info = info
 
@@ -49,8 +67,12 @@ def _make_message_event(
     has_media = image or audio or video or document or location or sticker or extended_text
     msg.conversation = conversation if not has_media else None
 
+    # Track which protobuf fields are "set" for HasField() calls
+    _set_fields: set[str] = set()
+
     # Extended text
     if extended_text:
+        _set_fields.add("extendedTextMessage")
         msg.extendedTextMessage = MagicMock()
         msg.extendedTextMessage.text = extended_text
     else:
@@ -58,6 +80,7 @@ def _make_message_event(
 
     # Image
     if image:
+        _set_fields.add("imageMessage")
         msg.imageMessage = MagicMock()
         msg.imageMessage.mimetype = "image/jpeg"
         msg.imageMessage.caption = "nice pic"
@@ -66,6 +89,7 @@ def _make_message_event(
 
     # Audio
     if audio:
+        _set_fields.add("audioMessage")
         msg.audioMessage = MagicMock()
         msg.audioMessage.mimetype = "audio/ogg"
         msg.audioMessage.ptt = True
@@ -75,6 +99,7 @@ def _make_message_event(
 
     # Video
     if video:
+        _set_fields.add("videoMessage")
         msg.videoMessage = MagicMock()
         msg.videoMessage.mimetype = "video/mp4"
         msg.videoMessage.seconds = 10
@@ -83,6 +108,7 @@ def _make_message_event(
 
     # Document
     if document:
+        _set_fields.add("documentMessage")
         msg.documentMessage = MagicMock()
         msg.documentMessage.mimetype = "application/pdf"
         msg.documentMessage.fileName = "report.pdf"
@@ -91,6 +117,7 @@ def _make_message_event(
 
     # Location
     if location:
+        _set_fields.add("locationMessage")
         msg.locationMessage = MagicMock()
         msg.locationMessage.degreesLatitude = 45.5
         msg.locationMessage.degreesLongitude = -73.5
@@ -101,9 +128,13 @@ def _make_message_event(
 
     # Sticker
     if sticker:
+        _set_fields.add("stickerMessage")
         msg.stickerMessage = MagicMock()
     else:
         msg.stickerMessage = None
+
+    # Make HasField() behave like a real protobuf message
+    msg.HasField = lambda field: field in _set_fields
 
     event.Message = msg
     return event
@@ -629,10 +660,14 @@ class TestErrorHandling:
 
         # Mock the neonize events module so the local import succeeds
         fake_events = MagicMock()
+        fake_proto_mod = MagicMock()
         sys.modules["neonize"] = MagicMock()
         sys.modules["neonize.aioze"] = MagicMock()
         sys.modules["neonize.aioze.client"] = MagicMock(NewAClient=nz_module.NewAClient)
         sys.modules["neonize.aioze.events"] = fake_events
+        sys.modules["neonize.proto"] = MagicMock()
+        sys.modules["neonize.proto.waCompanionReg"] = MagicMock()
+        sys.modules["neonize.proto.waCompanionReg.WAWebProtobufsCompanionReg_pb2"] = fake_proto_mod
 
         try:
 

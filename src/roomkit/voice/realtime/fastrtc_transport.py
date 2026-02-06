@@ -30,7 +30,6 @@ Usage::
 from __future__ import annotations
 
 import asyncio
-import audioop
 import base64
 import json
 import logging
@@ -147,7 +146,9 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
         if not self.channel:
             return
 
-        mulaw = audioop.lin2ulaw(audio, 2)
+        from roomkit.voice.backends.fastrtc import _pcm16_to_mulaw
+
+        mulaw = _pcm16_to_mulaw(audio)
         payload = base64.b64encode(mulaw).decode("utf-8")
         self.channel.send(
             json.dumps(

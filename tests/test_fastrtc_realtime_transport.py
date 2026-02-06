@@ -7,6 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip("fastrtc", reason="fastrtc not installed")
+
 from roomkit.voice.realtime.base import RealtimeSession
 
 

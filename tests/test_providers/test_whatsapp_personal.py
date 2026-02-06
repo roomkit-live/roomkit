@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import (
@@ -15,7 +15,7 @@ from roomkit.models.event import (
     TextContent,
     VideoContent,
 )
-from roomkit.providers.whatsapp.personal import WhatsAppPersonalProvider, _build_jid
+from roomkit.providers.whatsapp.personal import WhatsAppPersonalProvider, _build_jid_str
 from roomkit.sources.base import SourceStatus
 
 # =============================================================================
@@ -23,17 +23,25 @@ from roomkit.sources.base import SourceStatus
 # =============================================================================
 
 
+def _make_resp() -> MagicMock:
+    """Build a mock send response with a string ID."""
+    resp = MagicMock()
+    resp.ID = "msg-001"
+    return resp
+
+
 def _make_source(*, connected: bool = True) -> MagicMock:
     """Build a mock WhatsAppPersonalSourceProvider."""
     source = MagicMock()
     source.status = SourceStatus.CONNECTED if connected else SourceStatus.STOPPED
     client = AsyncMock()
-    client.send_message = AsyncMock()
-    client.send_image = AsyncMock()
-    client.send_document = AsyncMock()
-    client.send_audio = AsyncMock()
-    client.send_video = AsyncMock()
-    client.send_location = AsyncMock()
+    resp = _make_resp()
+    client.send_message = AsyncMock(return_value=resp)
+    client.send_image = AsyncMock(return_value=resp)
+    client.send_document = AsyncMock(return_value=resp)
+    client.send_audio = AsyncMock(return_value=resp)
+    client.send_video = AsyncMock(return_value=resp)
+    client.send_location = AsyncMock(return_value=resp)
     source.client = client
     return source
 
@@ -56,13 +64,13 @@ def _make_event(content: object) -> RoomEvent:
 
 class TestBuildJid:
     def test_plain_phone(self) -> None:
-        assert _build_jid("1234567890") == "1234567890@s.whatsapp.net"
+        assert _build_jid_str("1234567890") == "1234567890@s.whatsapp.net"
 
     def test_phone_with_plus(self) -> None:
-        assert _build_jid("+1234567890") == "1234567890@s.whatsapp.net"
+        assert _build_jid_str("+1234567890") == "1234567890@s.whatsapp.net"
 
     def test_already_jid(self) -> None:
-        assert _build_jid("1234567890@s.whatsapp.net") == "1234567890@s.whatsapp.net"
+        assert _build_jid_str("1234567890@s.whatsapp.net") == "1234567890@s.whatsapp.net"
 
 
 # =============================================================================
@@ -70,18 +78,22 @@ class TestBuildJid:
 # =============================================================================
 
 
+@patch(
+    "roomkit.providers.whatsapp.personal._build_jid",
+    side_effect=_build_jid_str,
+)
 class TestWhatsAppPersonalProvider:
-    def test_constructor_stores_source(self) -> None:
+    def test_constructor_stores_source(self, _mock_jid: MagicMock) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
         assert provider._source is source
 
-    def test_name_property(self) -> None:
+    def test_name_property(self, _mock_jid: MagicMock) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
         assert provider.name == "whatsapp-personal"
 
-    async def test_send_text_content(self) -> None:
+    async def test_send_text_content(self, _mock_jid: MagicMock) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
         event = _make_event(TextContent(body="Hello"))
@@ -95,7 +107,7 @@ class TestWhatsAppPersonalProvider:
             "Hello",
         )
 
-    async def test_send_media_content_image(self) -> None:
+    async def test_send_media_content_image(self, _mock_jid: MagicMock) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
         event = _make_event(
@@ -115,7 +127,7 @@ class TestWhatsAppPersonalProvider:
             caption="A photo",
         )
 
-    async def test_send_media_content_document(self) -> None:
+    async def test_send_media_content_document(self, _mock_jid: MagicMock) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
         event = _make_event(
@@ -135,7 +147,7 @@ class TestWhatsAppPersonalProvider:
             filename="report.pdf",
         )
 
-    async def test_send_audio_content(self) -> None:
+    async def test_send_audio_content(self, _mock_jid: MagicMock) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
         event = _make_event(
@@ -151,7 +163,7 @@ class TestWhatsAppPersonalProvider:
             ptt=True,
         )
 
-    async def test_send_video_content(self) -> None:
+    async def test_send_video_content(self, _mock_jid: MagicMock) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
         event = _make_event(VideoContent(url="https://example.com/video.mp4"))
@@ -164,7 +176,7 @@ class TestWhatsAppPersonalProvider:
             "https://example.com/video.mp4",
         )
 
-    async def test_send_location_content(self) -> None:
+    async def test_send_location_content(self, _mock_jid: MagicMock) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
         event = _make_event(LocationContent(latitude=45.5, longitude=-73.5, label="Montreal"))
@@ -179,7 +191,7 @@ class TestWhatsAppPersonalProvider:
             name="Montreal",
         )
 
-    async def test_send_when_disconnected(self) -> None:
+    async def test_send_when_disconnected(self, _mock_jid: MagicMock) -> None:
         source = _make_source(connected=False)
         provider = WhatsAppPersonalProvider(source)
         event = _make_event(TextContent(body="Hello"))
@@ -189,7 +201,7 @@ class TestWhatsAppPersonalProvider:
         assert result.success is False
         assert "not connected" in (result.error or "")
 
-    async def test_send_unsupported_content(self) -> None:
+    async def test_send_unsupported_content(self, _mock_jid: MagicMock) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
         event = _make_event(SystemContent(body="system message"))
@@ -199,7 +211,7 @@ class TestWhatsAppPersonalProvider:
         assert result.success is False
         assert "Unsupported" in (result.error or "")
 
-    async def test_send_handles_exception(self) -> None:
+    async def test_send_handles_exception(self, _mock_jid: MagicMock) -> None:
         source = _make_source()
         source.client.send_message = AsyncMock(side_effect=Exception("network error"))
         provider = WhatsAppPersonalProvider(source)
@@ -210,7 +222,7 @@ class TestWhatsAppPersonalProvider:
         assert result.success is False
         assert "network error" in (result.error or "")
 
-    async def test_close_is_noop(self) -> None:
+    async def test_close_is_noop(self, _mock_jid: MagicMock) -> None:
         source = _make_source()
         provider = WhatsAppPersonalProvider(source)
         # Should not raise
