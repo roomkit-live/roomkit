@@ -203,7 +203,10 @@ class HookEngine:
                     extra={"room_id": room_id},
                 )
                 result.hook_errors.append(
-                    {"hook": hook.name, "error": f"expected HookResult, got {type(hook_result).__name__}"}
+                    {
+                        "hook": hook.name,
+                        "error": f"expected HookResult, got {type(hook_result).__name__}",
+                    }
                 )
                 continue
 

@@ -14,10 +14,15 @@ from roomkit.core.retry import retry_with_backoff
 from roomkit.core.transcoder import DefaultContentTranscoder
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import Access, ChannelCategory, ChannelDirection, ChannelMediaType, EventStatus
+from roomkit.models.enums import (
+    Access,
+    ChannelCategory,
+    ChannelDirection,
+    ChannelMediaType,
+    EventStatus,
+)
 from roomkit.models.event import (
     AudioContent,
-    CompositeContent,
     DeleteContent,
     EditContent,
     LocationContent,
@@ -415,7 +420,10 @@ class EventRouter:
         # Edit/Delete: check capability flags directly
         if isinstance(event.content, EditContent) and target_binding.capabilities.supports_edit:
             return event
-        if isinstance(event.content, DeleteContent) and target_binding.capabilities.supports_delete:
+        if (
+            isinstance(event.content, DeleteContent)
+            and target_binding.capabilities.supports_delete
+        ):
             return event
 
         transcoded_content = await self._transcoder.transcode(

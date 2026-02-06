@@ -212,7 +212,9 @@ class InboundMixin(HelpersMixin):
             try:
                 return await asyncio.wait_for(
                     self._process_locked(
-                        event, room_id, context,
+                        event,
+                        room_id,
+                        context,
                         resolved_identity=resolved_identity,
                         pending_id_result=pending_id_result,
                     ),
@@ -280,9 +282,7 @@ class InboundMixin(HelpersMixin):
                     room_id,
                     extra={"room_id": room_id, "target_event_id": target_id},
                 )
-                return InboundResult(
-                    blocked=True, reason="target_event_not_found"
-                )
+                return InboundResult(blocked=True, reason="target_event_not_found")
 
             # Authorization check
             if isinstance(event.content, EditContent):
@@ -301,13 +301,13 @@ class InboundMixin(HelpersMixin):
                 event.content.delete_type == DeleteType.SENDER
                 and event.source.participant_id != target_event.source.participant_id
             ):
-                    logger.warning(
-                        "Delete rejected: sender %s is not author %s",
-                        event.source.participant_id,
-                        target_event.source.participant_id,
-                        extra={"room_id": room_id},
-                    )
-                    return InboundResult(blocked=True, reason="not_original_author")
+                logger.warning(
+                    "Delete rejected: sender %s is not author %s",
+                    event.source.participant_id,
+                    target_event.source.participant_id,
+                    extra={"room_id": room_id},
+                )
+                return InboundResult(blocked=True, reason="not_original_author")
 
             # Apply state updates to the target event
             if isinstance(event.content, EditContent):
@@ -391,9 +391,9 @@ class InboundMixin(HelpersMixin):
             return InboundResult(event=event)
 
         # Refresh context locally by appending the new event (avoids 4 store queries)
-        context = context.model_copy(update={
-            "recent_events": [*context.recent_events[-49:], event]
-        })
+        context = context.model_copy(
+            update={"recent_events": [*context.recent_events[-49:], event]}
+        )
 
         # Broadcast to other channels
         router = self._get_router()  # type: ignore[attr-defined]
@@ -481,9 +481,9 @@ class InboundMixin(HelpersMixin):
             reentry_binding = await self._store.get_binding(room_id, reentry.source.channel_id)
             if reentry_binding:
                 # Append reentry event to context locally instead of full rebuild
-                reentry_ctx = context.model_copy(update={
-                    "recent_events": [*context.recent_events[-49:], reentry]
-                })
+                reentry_ctx = context.model_copy(
+                    update={"recent_events": [*context.recent_events[-49:], reentry]}
+                )
                 reentry_result = await router.broadcast(reentry, reentry_binding, reentry_ctx)
                 # Store reentry's blocked events
                 for blocked in reentry_result.blocked_events:

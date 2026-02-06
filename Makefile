@@ -36,10 +36,10 @@ docs-serve:
 # --- Publishing ---
 
 build-dist: clean
-	python -m build
+	uv run python -m build
 
 publish: build-dist
-	twine upload dist/*
+	uv run twine upload dist/*
 
 # --- Website deployment ---
 
@@ -53,7 +53,7 @@ deploy-status:
 
 release: all build-dist
 	@echo "Publishing to PyPI..."
-	twine upload dist/*
+	uv run twine upload dist/*
 	@echo "Deploying website..."
 	./deploy.sh full
 	@echo "Release complete!"

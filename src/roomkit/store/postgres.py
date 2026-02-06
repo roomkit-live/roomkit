@@ -91,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_rooms_metadata ON rooms USING GIN (data jsonb_pat
 
 
 def _dump(model: Any) -> str:
-    return model.model_dump_json()
+    return str(model.model_dump_json())
 
 
 class PostgresStore(ConversationStore):

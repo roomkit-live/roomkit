@@ -162,13 +162,15 @@ class TestWhatsAppPersonalProvider:
 
         assert result.success is True
         source.client.build_audio_message.assert_called_once_with(
-            "https://example.com/voice.ogg", ptt=True,
+            "https://example.com/voice.ogg",
+            ptt=True,
         )
         # Mimetype should be patched from "audio/ogg" to "audio/ogg; codecs=opus"
         audio_msg = source.client.build_audio_message.return_value
         assert audio_msg.audioMessage.mimetype == "audio/ogg; codecs=opus"
         source.client.send_message.assert_called_once_with(
-            "1234567890@s.whatsapp.net", audio_msg,
+            "1234567890@s.whatsapp.net",
+            audio_msg,
         )
 
     async def test_send_video_content(self, _mock_jid: MagicMock) -> None:
