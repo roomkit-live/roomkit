@@ -271,11 +271,10 @@ class InboundMixin(HelpersMixin):
                         extra={"room_id": room_id},
                     )
                     return InboundResult(blocked=True, reason="not_original_author")
-            elif isinstance(event.content, DeleteContent):
-                if (
-                    event.content.delete_type == DeleteType.SENDER
-                    and event.source.participant_id != target_event.source.participant_id
-                ):
+            elif isinstance(event.content, DeleteContent) and (
+                event.content.delete_type == DeleteType.SENDER
+                and event.source.participant_id != target_event.source.participant_id
+            ):
                     logger.warning(
                         "Delete rejected: sender %s is not author %s",
                         event.source.participant_id,
