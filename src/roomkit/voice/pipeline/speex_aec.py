@@ -328,7 +328,7 @@ class SpeexAECProvider(AECProvider):
         else:
             attenuation_db = 0.0
 
-        logger.info(
+        logger.debug(
             "[AEC stats] processed=%d ref_hits=%d ref_misses=%d "
             "refs_fed=%d | "
             "in_rms=%d out_rms=%d attenuation=%.1fdB",

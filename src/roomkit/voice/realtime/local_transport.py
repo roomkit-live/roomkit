@@ -381,7 +381,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
         queue_ms = (queue_bytes / bps * 1000) if bps else 0
 
         label = "FINAL audio stats" if final else "audio stats"
-        logger.info(
+        logger.debug(
             "[%s] queued=%dB played=%dB silence=%dB "
             "queue_now=%d chunks/%.0fms "
             "cb=%d underruns=%d pa_err=%d mic_suppressed=%d",
