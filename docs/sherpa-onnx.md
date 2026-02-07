@@ -12,26 +12,83 @@ pip install roomkit[sherpa-onnx]
 
 All sherpa-onnx providers support NVIDIA GPU acceleration via CUDA for faster inference.
 
+> **Important:** The default `sherpa-onnx` pip package is **CPU-only**. You must install
+> the CUDA-specific wheel to enable GPU acceleration.
+
 ### Prerequisites
 
 - NVIDIA GPU with compute capability 6.0+
-- [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) 11.8 or 12.x
-- [cuDNN](https://developer.nvidia.com/cudnn) 8.x+ (matching your CUDA version)
+- NVIDIA driver (verify with `nvidia-smi`)
+- **cuDNN 9** system library (see installation below)
 
-Verify your setup:
+### Step 1 — Install cuDNN 9 (system-wide)
 
-```bash
-nvidia-smi          # confirm driver + GPU visible
-nvcc --version      # confirm CUDA toolkit installed
-```
+sherpa-onnx CUDA wheels link against cuDNN 9. This is a system library, not a Python package.
 
-### Installation
-
-The `sherpa-onnx` wheel ships with ONNX Runtime GPU support — no extra packages needed:
+**Ubuntu/Debian:**
 
 ```bash
-pip install roomkit[sherpa-onnx]
+# Add NVIDIA package repository (if not already configured)
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt-get update
+
+# Install cuDNN 9 for CUDA 12
+sudo apt-get -y install cudnn9-cuda-12
 ```
+
+For Ubuntu 22.04, replace `ubuntu2404` with `ubuntu2204` in the URL above.
+
+Verify:
+
+```bash
+ldconfig -p | grep cudnn   # should list libcudnn.so.9
+```
+
+### Step 2 — Install the sherpa-onnx CUDA wheel
+
+The CUDA wheels are hosted on a separate index (not on PyPI).
+
+**With uv (recommended):**
+
+```bash
+uv pip install sherpa-onnx==1.12.23+cuda12.cudnn9 \
+    -f https://k2-fsa.github.io/sherpa/onnx/cuda.html
+```
+
+**With pip:**
+
+```bash
+pip install sherpa-onnx==1.12.23+cuda12.cudnn9 --no-index \
+    -f https://k2-fsa.github.io/sherpa/onnx/cuda.html
+```
+
+> **CUDA 11 vs 12:** If your system has CUDA 11.x, use `sherpa-onnx==1.12.23+cuda`
+> instead. Check with `nvcc --version`.
+
+### Step 3 — Verify
+
+```bash
+python -c "
+import sherpa_onnx
+print('sherpa-onnx version:', sherpa_onnx.__version__)
+print('file:', sherpa_onnx.__file__)
+"
+```
+
+When you set `provider="cuda"` in a config and CUDA is available, you should see
+GPU memory usage increase in `nvidia-smi`.
+
+### Troubleshooting
+
+| Error | Cause | Fix |
+|---|---|---|
+| `libcublasLt.so.11: cannot open shared object file` | sherpa-onnx CUDA 11 wheel installed on CUDA 12 system | Install the `+cuda12.cudnn9` wheel instead |
+| `libcublasLt.so.12: cannot open shared object file` | CUDA toolkit not installed | `sudo apt install cuda-toolkit-12` |
+| `libonnxruntime_providers_cuda.so: Failed to load` | cuDNN not installed | Install cuDNN 9 (Step 1 above) |
+| `libcudnn.so.9: cannot open shared object file` | cuDNN 9 missing | `sudo apt install cudnn9-cuda-12` |
+| `Please compile with -DSHERPA_ONNX_ENABLE_GPU=ON` | CPU-only sherpa-onnx wheel installed | Install the CUDA wheel (Step 2 above) |
+| CUDA requested but falls back to CPU silently | Wrong wheel or missing cuDNN | Check `nvidia-smi` for GPU memory usage |
 
 ### Configuration
 
@@ -314,5 +371,6 @@ vad = SherpaOnnxVADProvider(SherpaOnnxVADConfig(model="ten-vad.onnx"))
 
 ## Examples
 
+- [`examples/voice_local_onnx_vllm.py`](../examples/voice_local_onnx_vllm.py) — fully local voice assistant with sherpa-onnx STT/TTS/VAD + Ollama/vLLM, CUDA support.
 - [`examples/voice_sherpa_onnx_vad.py`](../examples/voice_sherpa_onnx_vad.py) — standalone local mic demo with neural VAD + optional denoiser.
 - [`examples/voice_full_stack.py`](../examples/voice_full_stack.py) — full voice assistant (set `VAD_MODEL` and/or `DENOISE_MODEL` env vars).

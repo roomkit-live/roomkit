@@ -27,6 +27,24 @@ Requirements:
 
     System (optional): libspeexdsp (apt install libspeexdsp1) for AEC
 
+GPU acceleration (CUDA) for sherpa-onnx:
+    The default sherpa-onnx pip package is CPU-only. For GPU support:
+
+    1. Install cuDNN 9 (system library, once):
+       # Add NVIDIA repo (Ubuntu 24.04 — change for your version)
+       wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+       sudo dpkg -i cuda-keyring_1.1-1_all.deb && sudo apt-get update
+       sudo apt-get -y install cudnn9-cuda-12
+
+    2. Install the CUDA 12 wheel:
+       uv pip install sherpa-onnx==1.12.23+cuda12.cudnn9 \
+           -f https://k2-fsa.github.io/sherpa/onnx/cuda.html
+
+    3. Set the env var:
+       export ONNX_PROVIDER=cuda
+
+    See docs/sherpa-onnx.md for troubleshooting and CUDA 11 instructions.
+
 Models (download once):
     # VAD — TEN-VAD (recommended)
     wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.onnx
