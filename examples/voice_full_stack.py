@@ -6,6 +6,7 @@ Talk to Claude through your microphone with real audio processing:
   - ElevenLabs for text-to-speech
   - SpeexAEC for echo cancellation (strips speaker echo from mic)
   - RNNoise for noise suppression
+  - sherpa-onnx neural VAD (TEN-VAD or Silero) for speech detection
   - WavFileRecorder for debug audio capture
 
 Audio flows through the full pipeline:
@@ -14,7 +15,7 @@ Audio flows through the full pipeline:
   → Deepgram STT → Claude → ElevenLabs TTS → [Recorder tap] → Speaker
 
 Requirements:
-    pip install roomkit[local-audio,anthropic]
+    pip install roomkit[local-audio,anthropic,sherpa-onnx]
     System: libspeexdsp (apt install libspeexdsp1 / brew install speexdsp)
     System (optional): librnnoise (apt install librnnoise0)
 
@@ -22,6 +23,7 @@ Run with:
     ANTHROPIC_API_KEY=... \\
     DEEPGRAM_API_KEY=... \\
     ELEVENLABS_API_KEY=... \\
+    VAD_MODEL=path/to/ten-vad.onnx \\
     uv run python examples/voice_full_stack.py
 
 Environment variables:
@@ -35,6 +37,9 @@ Environment variables:
     RECORDING_MODE      Channel mode: mixed | separate | stereo (default: stereo)
     AEC                 Enable echo cancellation: 1 | 0 (default: 1)
     DENOISE             Enable noise suppression: 1 | 0 (default: 1)
+    VAD_MODEL           Path to sherpa-onnx VAD .onnx model file
+    VAD_MODEL_TYPE      Model type: ten | silero (default: ten)
+    VAD_THRESHOLD       Speech probability threshold 0-1 (default: 0.5)
 
 Press Ctrl+C to stop.
 """
@@ -67,6 +72,7 @@ from roomkit.voice.pipeline import (
     WavFileRecorder,
 )
 from roomkit.voice.pipeline.vad.energy import EnergyVADProvider
+from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADConfig, SherpaOnnxVADProvider
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 from roomkit.voice.tts.elevenlabs import ElevenLabsConfig, ElevenLabsTTSProvider
 
@@ -171,12 +177,35 @@ async def main() -> None:
         "Recording to %s (mode=%s)", recording_dir, rec_mode_name
     )
 
-    # --- VAD (energy-based) ---------------------------------------------------
-    vad = EnergyVADProvider(
-        energy_threshold=300.0,
-        silence_threshold_ms=600,
-        min_speech_duration_ms=200,
-    )
+    # --- VAD (sherpa-onnx neural VAD or energy fallback) ----------------------
+    vad_model = os.environ.get("VAD_MODEL", "")
+    if vad_model:
+        vad_model_type = os.environ.get("VAD_MODEL_TYPE", "ten")
+        vad_threshold = float(os.environ.get("VAD_THRESHOLD", "0.5"))
+        vad = SherpaOnnxVADProvider(
+            SherpaOnnxVADConfig(
+                model=vad_model,
+                model_type=vad_model_type,
+                threshold=vad_threshold,
+                silence_threshold_ms=600,
+                min_speech_duration_ms=200,
+                speech_pad_ms=300,
+                sample_rate=sample_rate,
+            )
+        )
+        logger.info(
+            "VAD: sherpa-onnx (model_type=%s, threshold=%.2f, model=%s)",
+            vad_model_type,
+            vad_threshold,
+            vad_model,
+        )
+    else:
+        vad = EnergyVADProvider(
+            energy_threshold=300.0,
+            silence_threshold_ms=600,
+            min_speech_duration_ms=200,
+        )
+        logger.info("VAD: EnergyVAD (set VAD_MODEL for neural VAD)")
 
     # --- Pipeline config ------------------------------------------------------
     pipeline_config = AudioPipelineConfig(

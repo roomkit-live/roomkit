@@ -48,6 +48,8 @@ from roomkit.voice.pipeline.turn import (
 from roomkit.voice.pipeline.vad import (
     EnergyVADProvider,
     MockVADProvider,
+    SherpaOnnxVADConfig,
+    SherpaOnnxVADProvider,
     VADConfig,
     VADEvent,
     VADEventType,
@@ -66,6 +68,8 @@ __all__ = [
     "AECProvider",
     "SpeexAECProvider",
     "EnergyVADProvider",
+    "SherpaOnnxVADConfig",
+    "SherpaOnnxVADProvider",
     "AGCProvider",
     "AudioPostProcessor",
     "AudioRecorder",

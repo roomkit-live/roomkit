@@ -70,6 +70,8 @@ from roomkit.voice.pipeline import (
     RecordingTrigger,
     ResamplerConfig,
     RNNoiseDenoiserProvider,
+    SherpaOnnxVADConfig,
+    SherpaOnnxVADProvider,
     SpeexAECProvider,
     TurnContext,
     TurnDecision,
@@ -119,6 +121,8 @@ __all__ = [
     "AECProvider",
     "SpeexAECProvider",
     "EnergyVADProvider",
+    "SherpaOnnxVADConfig",
+    "SherpaOnnxVADProvider",
     "AGCProvider",
     "AudioPostProcessor",
     "AudioRecorder",
@@ -288,6 +292,20 @@ def get_rnnoise_denoiser_provider() -> type:
     from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
     return RNNoiseDenoiserProvider
+
+
+def get_sherpa_onnx_vad_provider() -> type:
+    """Get SherpaOnnxVADProvider class (requires sherpa-onnx)."""
+    from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADProvider
+
+    return SherpaOnnxVADProvider
+
+
+def get_sherpa_onnx_vad_config() -> type:
+    """Get SherpaOnnxVADConfig class."""
+    from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADConfig
+
+    return SherpaOnnxVADConfig
 
 
 def get_speex_aec_provider() -> type:

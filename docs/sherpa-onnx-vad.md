@@ -1,0 +1,135 @@
+# SherpaOnnxVADProvider
+
+Neural voice activity detection using [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). Supports **TEN-VAD** and **Silero VAD** models for production-quality speech detection that works reliably in noisy environments.
+
+Unlike `EnergyVADProvider` (simple RMS thresholding), the neural VAD can distinguish speech from loud non-speech noise like keyboard typing, music, or HVAC.
+
+## Quick start
+
+```python
+from roomkit.voice.pipeline import AudioPipelineConfig
+from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADConfig, SherpaOnnxVADProvider
+
+vad = SherpaOnnxVADProvider(
+    SherpaOnnxVADConfig(
+        model="path/to/ten-vad.onnx",
+        model_type="ten",
+    )
+)
+
+config = AudioPipelineConfig(vad=vad)
+```
+
+## Installation
+
+```bash
+pip install roomkit[sherpa-onnx]
+```
+
+Download a model:
+
+```bash
+# TEN-VAD (recommended — fast, low latency)
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.onnx
+
+# Silero VAD
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/silero_vad.onnx
+```
+
+## Configuration
+
+All parameters are set via `SherpaOnnxVADConfig`:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `model` | `""` | Path to the `.onnx` model file. |
+| `model_type` | `"ten"` | Model architecture: `"ten"` or `"silero"`. |
+| `threshold` | `0.5` | Speech probability threshold (0–1). Lower = more sensitive. |
+| `silence_threshold_ms` | `500` | Consecutive silence in ms to trigger `SPEECH_END`. |
+| `min_speech_duration_ms` | `250` | Minimum speech duration to emit. Shorter segments are discarded. |
+| `speech_pad_ms` | `300` | Pre-roll buffer — audio before speech onset included in the segment. |
+| `max_speech_duration` | `20.0` | Maximum speech segment length in seconds (sherpa-internal). |
+| `sample_rate` | `16000` | Expected audio sample rate. |
+| `num_threads` | `1` | CPU threads for inference. |
+| `provider` | `"cpu"` | ONNX execution provider (`"cpu"` or `"cuda"`). |
+
+## How it works
+
+The provider uses sherpa-onnx's `VoiceActivityDetector` with frame-level `is_speech_detected()` plus its own state machine:
+
+1. Each audio frame is converted from int16 PCM to float32 and fed to the detector.
+2. `is_speech_detected()` returns whether the current frame contains speech.
+3. The state machine tracks idle/speaking transitions:
+   - **Idle → Speaking**: emits `SPEECH_START` immediately (no delay).
+   - **Speaking → Idle**: after `silence_threshold_ms` of consecutive non-speech, emits `SPEECH_END` with accumulated `audio_bytes`.
+4. A pre-roll buffer keeps recent frames so speech onset isn't clipped.
+5. Segments shorter than `min_speech_duration_ms` are silently discarded.
+
+This gives instant `SPEECH_START` events (not delayed until a segment completes) and full control over timing parameters.
+
+## TEN-VAD vs Silero VAD
+
+| | TEN-VAD | Silero VAD |
+|---|---|---|
+| Latency | Very low | Low |
+| Model size | ~2 MB | ~2 MB |
+| Accuracy | Excellent | Excellent |
+| Use case | Real-time voice assistants | General purpose |
+
+Both models work well. TEN-VAD is recommended for real-time applications where latency matters.
+
+## Lazy initialization
+
+The sherpa-onnx detector is created lazily on the first call to `process()`, not at construction time. This means:
+
+- Importing and constructing `SherpaOnnxVADProvider` is fast.
+- Model loading happens only when audio actually arrives.
+- `sherpa-onnx` must be installed at construction time (the import check happens in `__init__`).
+
+## Fallback pattern
+
+Use neural VAD when available, fall back to energy-based:
+
+```python
+import os
+
+from roomkit.voice.pipeline import AudioPipelineConfig
+from roomkit.voice.pipeline.vad.energy import EnergyVADProvider
+
+vad_model = os.environ.get("VAD_MODEL", "")
+if vad_model:
+    from roomkit.voice.pipeline.vad.sherpa_onnx import (
+        SherpaOnnxVADConfig,
+        SherpaOnnxVADProvider,
+    )
+
+    vad = SherpaOnnxVADProvider(
+        SherpaOnnxVADConfig(
+            model=vad_model,
+            model_type=os.environ.get("VAD_MODEL_TYPE", "ten"),
+            threshold=float(os.environ.get("VAD_THRESHOLD", "0.5")),
+        )
+    )
+else:
+    vad = EnergyVADProvider(energy_threshold=300.0)
+
+config = AudioPipelineConfig(vad=vad)
+```
+
+## Lazy loader
+
+If you want to avoid importing sherpa-onnx at module level:
+
+```python
+from roomkit.voice import get_sherpa_onnx_vad_provider, get_sherpa_onnx_vad_config
+
+SherpaOnnxVADProvider = get_sherpa_onnx_vad_provider()
+SherpaOnnxVADConfig = get_sherpa_onnx_vad_config()
+
+vad = SherpaOnnxVADProvider(SherpaOnnxVADConfig(model="ten-vad.onnx"))
+```
+
+## Examples
+
+- [`examples/voice_sherpa_onnx_vad.py`](../examples/voice_sherpa_onnx_vad.py) — standalone local mic demo with neural VAD.
+- [`examples/voice_full_stack.py`](../examples/voice_full_stack.py) — full voice assistant using neural VAD (set `VAD_MODEL` env var).
