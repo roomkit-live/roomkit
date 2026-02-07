@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import struct
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -19,6 +18,7 @@ if TYPE_CHECKING:
     from roomkit.voice.pipeline.diarization.base import DiarizationResult
     from roomkit.voice.pipeline.dtmf.base import DTMFEvent
     from roomkit.voice.pipeline.recorder.base import RecordingHandle, RecordingResult
+    from roomkit.voice.pipeline.resampler.base import ResamplerProvider
     from roomkit.voice.pipeline.vad.base import VADEvent
 
 logger = logging.getLogger("roomkit.voice.pipeline")
@@ -34,111 +34,6 @@ def _maybe_schedule(result: object) -> None:
             # No running event loop — log and close the coroutine to avoid warning
             logger.warning("Async callback returned outside event loop; dropping")
             result.close()
-
-
-def _resample_frame(
-    frame: AudioFrame,
-    target_rate: int,
-    target_channels: int,
-    target_width: int,
-) -> AudioFrame:
-    """Resample an AudioFrame to the target format.
-
-    Handles channel conversion, sample rate conversion (linear interpolation),
-    and sample width conversion. Returns the original frame unchanged when the
-    format already matches.
-    """
-    if (
-        frame.sample_rate == target_rate
-        and frame.channels == target_channels
-        and frame.sample_width == target_width
-    ):
-        return frame
-
-    from roomkit.voice.audio_frame import AudioFrame as AudioFrameClass
-
-    data = frame.data
-    src_width = frame.sample_width
-    src_channels = frame.channels
-    src_rate = frame.sample_rate
-
-    # --- Decode raw bytes into list of integer samples ---
-    fmt_map = {1: "b", 2: "h", 4: "i"}
-    src_fmt = fmt_map.get(src_width)
-    if src_fmt is None:
-        return frame  # unsupported width, pass-through
-    num_samples = len(data) // src_width
-    samples = list(struct.unpack(f"<{num_samples}{src_fmt}", data[:num_samples * src_width]))
-
-    # --- Channel conversion ---
-    if src_channels != target_channels:
-        if src_channels == 2 and target_channels == 1:
-            # Stereo → mono: average L+R
-            samples = [
-                (samples[i] + samples[i + 1]) // 2 for i in range(0, len(samples), 2)
-            ]
-        elif src_channels == 1 and target_channels == 2:
-            # Mono → stereo: duplicate
-            stereo: list[int] = []
-            for s in samples:
-                stereo.append(s)
-                stereo.append(s)
-            samples = stereo
-        num_samples = len(samples)
-        src_channels = target_channels
-
-    # --- Sample rate conversion (linear interpolation) ---
-    if src_rate != target_rate:
-        frames_per_channel = num_samples // src_channels
-        new_frames = int(frames_per_channel * target_rate / src_rate)
-        resampled: list[int] = []
-        for ch in range(src_channels):
-            ch_samples = [samples[i * src_channels + ch] for i in range(frames_per_channel)]
-            for i in range(new_frames):
-                src_pos = i * (frames_per_channel - 1) / max(new_frames - 1, 1)
-                idx = int(src_pos)
-                frac = src_pos - idx
-                if idx + 1 < frames_per_channel:
-                    val = ch_samples[idx] * (1 - frac) + ch_samples[idx + 1] * frac
-                else:
-                    val = ch_samples[idx]
-                resampled.append(int(val))
-        # Interleave channels
-        if src_channels > 1:
-            interleaved: list[int] = []
-            for i in range(new_frames):
-                for ch in range(src_channels):
-                    interleaved.append(resampled[ch * new_frames + i])
-            samples = interleaved
-        else:
-            samples = resampled
-        num_samples = len(samples)
-
-    # --- Sample width conversion ---
-    if src_width != target_width:
-        max_src = (1 << (src_width * 8 - 1)) - 1
-        max_tgt = (1 << (target_width * 8 - 1)) - 1
-        if max_src > 0:
-            samples = [int(s * max_tgt / max_src) for s in samples]
-
-    # --- Encode back to bytes ---
-    tgt_fmt = fmt_map.get(target_width)
-    if tgt_fmt is None:
-        return frame
-    # Clamp values to valid range for target width
-    min_val = -(1 << (target_width * 8 - 1))
-    max_val = (1 << (target_width * 8 - 1)) - 1
-    samples = [max(min_val, min(max_val, s)) for s in samples]
-    out_data = struct.pack(f"<{num_samples}{tgt_fmt}", *samples)
-
-    return AudioFrameClass(
-        data=out_data,
-        sample_rate=target_rate,
-        channels=target_channels,
-        sample_width=target_width,
-        timestamp_ms=frame.timestamp_ms,
-        metadata=dict(frame.metadata),
-    )
 
 
 # Callback type aliases
@@ -183,6 +78,16 @@ class AudioPipeline:
         self._recording_handles: dict[str, RecordingHandle] = {}
         # Debug tap sessions (per session, keyed by session_id)
         self._debug_tap_sessions: dict[str, DebugTapSession] = {}
+        # Resolve effective resampler (auto-default when contract is set)
+        self._resampler: ResamplerProvider | None
+        if config.resampler is not None:
+            self._resampler = config.resampler
+        elif config.contract is not None:
+            from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
+
+            self._resampler = LinearResamplerProvider()
+        else:
+            self._resampler = None
 
     # -----------------------------------------------------------------
     # Callback registration
@@ -238,16 +143,16 @@ class AudioPipeline:
         current_frame = frame
 
         # Stage 0: Inbound resampler (transport → internal format)
-        if self._config.resampler is not None:
-            rs = self._config.resampler
+        if self._resampler is not None and self._config.contract is not None:
+            int_fmt = self._config.contract.internal_format
             current_frame.metadata["original_sample_rate"] = current_frame.sample_rate
             current_frame.metadata["original_channels"] = current_frame.channels
             try:
-                current_frame = _resample_frame(
+                current_frame = self._resampler.resample(
                     current_frame,
-                    rs.internal_sample_rate,
-                    rs.internal_channels,
-                    rs.internal_sample_width,
+                    int_fmt.sample_rate,
+                    int_fmt.channels,
+                    int_fmt.sample_width,
                 )
             except Exception:
                 logger.exception("Inbound resampler error")
@@ -441,10 +346,10 @@ class AudioPipeline:
                 logger.exception("AEC feed_reference error")
 
         # Stage 4: Outbound resampler (internal → transport format)
-        if self._config.resampler is not None and self._config.contract is not None:
+        if self._resampler is not None and self._config.contract is not None:
             out_fmt = self._config.contract.transport_outbound_format
             try:
-                current_frame = _resample_frame(
+                current_frame = self._resampler.resample(
                     current_frame,
                     out_fmt.sample_rate,
                     out_fmt.channels,
@@ -517,6 +422,8 @@ class AudioPipeline:
 
     def reset(self) -> None:
         """Reset all pipeline stage state."""
+        if self._resampler is not None:
+            self._resampler.reset()
         if self._config.vad is not None:
             self._config.vad.reset()
         if self._config.diarization is not None:
@@ -540,6 +447,8 @@ class AudioPipeline:
 
     def close(self) -> None:
         """Release all pipeline resources."""
+        if self._resampler is not None:
+            self._resampler.close()
         if self._config.vad is not None:
             self._config.vad.close()
         if self._config.denoiser is not None:

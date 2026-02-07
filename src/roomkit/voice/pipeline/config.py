@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from roomkit.voice.pipeline.dtmf.base import DTMFDetector
     from roomkit.voice.pipeline.postprocessor.base import AudioPostProcessor
     from roomkit.voice.pipeline.recorder.base import AudioRecorder, RecordingConfig
+    from roomkit.voice.pipeline.resampler.base import ResamplerProvider
     from roomkit.voice.pipeline.turn.base import TurnDetector
     from roomkit.voice.pipeline.vad.base import VADConfig, VADProvider
 
@@ -66,23 +67,6 @@ class AudioPipelineContract:
     def output_format(self) -> AudioFormat:
         """Backwards-compatible alias for ``transport_outbound_format``."""
         return self.transport_outbound_format
-
-
-@dataclass
-class ResamplerConfig:
-    """Configuration for the resampler pipeline stage."""
-
-    internal_sample_rate: int = 16000
-    """Target sample rate for internal pipeline processing."""
-
-    internal_channels: int = 1
-    """Target number of channels for internal processing."""
-
-    internal_sample_width: int = 2
-    """Target bytes per sample for internal processing."""
-
-    codec: str | None = None
-    """Optional codec hint for resampling (e.g. for decoder selection)."""
 
 
 @dataclass
@@ -143,8 +127,8 @@ class AudioPipelineConfig:
     interruption: InterruptionConfig | None = None
     """Optional interruption (barge-in) configuration."""
 
-    resampler: ResamplerConfig | None = None
-    """Optional resampler configuration for format conversion."""
+    resampler: ResamplerProvider | None = None
+    """Optional resampler provider for format conversion."""
 
     contract: AudioPipelineContract | None = None
     """Optional input/output format contract."""

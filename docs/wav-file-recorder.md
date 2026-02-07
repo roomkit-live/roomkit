@@ -97,6 +97,57 @@ The recorder taps are positioned early in the pipeline:
 - **Inbound tap**: after resampling, before AEC/AGC/denoiser/VAD. You hear the raw mic signal (at pipeline sample rate).
 - **Outbound tap**: after post-processors, before AEC reference feed. You hear the final TTS output.
 
+## Debug taps
+
+For deeper diagnostics, `PipelineDebugTaps` captures audio at every pipeline stage boundary into separate WAV files. Unlike the recorder (which captures the signal at a single point), debug taps let you compare the signal before and after each transformation — useful for verifying that AEC, AGC, or denoiser stages are working correctly.
+
+```python
+from roomkit.voice.pipeline import AudioPipelineConfig, PipelineDebugTaps
+
+config = AudioPipelineConfig(
+    debug_taps=PipelineDebugTaps(output_dir="./debug_audio/"),
+    # ... other providers
+)
+```
+
+Output files are numbered by pipeline order:
+
+```
+debug_audio/
+  {session_id}_01_raw.wav           # after resampler, before processing
+  {session_id}_02_post_aec.wav
+  {session_id}_03_post_agc.wav
+  {session_id}_04_post_denoiser.wav
+  {session_id}_05_post_vad_speech_001.wav  # accumulated speech segments
+  {session_id}_06_outbound_raw.wav         # before post-processors
+  {session_id}_07_outbound_final.wav       # after post-processors
+```
+
+### Selecting stages
+
+By default all stages are captured. To capture only specific stages:
+
+```python
+PipelineDebugTaps(
+    output_dir="./debug_audio/",
+    stages=["raw", "post_denoiser", "post_vad_speech"],
+)
+```
+
+Valid stage names: `raw`, `post_aec`, `post_agc`, `post_denoiser`, `post_vad_speech`, `outbound_raw`, `outbound_final`.
+
+### Recorder vs debug taps
+
+| | WavFileRecorder | PipelineDebugTaps |
+|---|---|---|
+| Purpose | Capture full session audio | Compare signal at each stage |
+| Output | 1-2 files per session | Up to 7+ files per session |
+| Inbound/outbound | Configurable (both, inbound, outbound) | All stages captured |
+| Channel modes | Mixed, separate, stereo | One file per stage |
+| Production use | Yes | Development/debugging only |
+
+Both can be used simultaneously. The recorder taps run at a fixed pipeline position, while debug taps are wired at each stage boundary.
+
 ## Example
 
 See [`examples/wav_recorder.py`](../examples/wav_recorder.py) for a complete runnable example using mock providers.

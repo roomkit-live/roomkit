@@ -12,7 +12,6 @@ from roomkit.voice.pipeline.config import (
     AudioFormat,
     AudioPipelineConfig,
     AudioPipelineContract,
-    ResamplerConfig,
 )
 from roomkit.voice.pipeline.debug_taps import PipelineDebugTaps
 from roomkit.voice.pipeline.denoiser import (
@@ -41,6 +40,11 @@ from roomkit.voice.pipeline.recorder import (
     RecordingTrigger,
     WavFileRecorder,
 )
+from roomkit.voice.pipeline.resampler import (
+    LinearResamplerProvider,
+    MockResamplerProvider,
+    ResamplerProvider,
+)
 from roomkit.voice.pipeline.turn import (
     MockTurnDetector,
     TurnContext,
@@ -65,7 +69,6 @@ __all__ = [
     "AudioPipelineConfig",
     "AudioPipelineContract",
     "PipelineDebugTaps",
-    "ResamplerConfig",
     # Engine
     "AudioPipeline",
     # Provider ABCs + implementations
@@ -76,6 +79,8 @@ __all__ = [
     "SherpaOnnxVADProvider",
     "AGCProvider",
     "AudioPostProcessor",
+    "ResamplerProvider",
+    "LinearResamplerProvider",
     "AudioRecorder",
     "WavFileRecorder",
     "BackchannelDetector",
@@ -113,6 +118,7 @@ __all__ = [
     "MockDenoiserProvider",
     "MockDiarizationProvider",
     "MockDTMFDetector",
+    "MockResamplerProvider",
     "MockTurnDetector",
     "MockVADProvider",
 ]

@@ -12,8 +12,9 @@ from roomkit.voice.pipeline.config import (
     AudioFormat,
     AudioPipelineConfig,
     AudioPipelineContract,
-    ResamplerConfig,
 )
+from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
+from roomkit.voice.pipeline.resampler.mock import MockResamplerProvider
 from roomkit.voice.pipeline.denoiser.mock import MockDenoiserProvider
 from roomkit.voice.pipeline.diarization.base import DiarizationResult
 from roomkit.voice.pipeline.diarization.mock import MockDiarizationProvider
@@ -601,10 +602,13 @@ class TestResamplerStage:
         data = struct.pack(f"<{len(samples)}h", *samples)
         frame = self._stereo_frame(data, rate=48000, channels=2)
 
-        rs = ResamplerConfig(
-            internal_sample_rate=16000, internal_channels=1, internal_sample_width=2
+        contract = AudioPipelineContract(
+            transport_inbound_format=AudioFormat(sample_rate=48000, channels=2),
+            internal_format=AudioFormat(sample_rate=16000, channels=1, sample_width=2),
         )
-        config = AudioPipelineConfig(resampler=rs)
+        config = AudioPipelineConfig(
+            resampler=LinearResamplerProvider(), contract=contract
+        )
         pipeline = AudioPipeline(config)
 
         pipeline.process_inbound(_session(), frame)
@@ -618,10 +622,12 @@ class TestResamplerStage:
         """No resampling when frame already matches internal format."""
         frame = _frame(b"\x01\x00\x02\x00")
 
-        rs = ResamplerConfig(
-            internal_sample_rate=16000, internal_channels=1, internal_sample_width=2
+        contract = AudioPipelineContract(
+            internal_format=AudioFormat(sample_rate=16000, channels=1, sample_width=2),
         )
-        config = AudioPipelineConfig(resampler=rs)
+        config = AudioPipelineConfig(
+            resampler=LinearResamplerProvider(), contract=contract
+        )
         pipeline = AudioPipeline(config)
 
         pipeline.process_inbound(_session(), frame)
@@ -637,8 +643,12 @@ class TestResamplerStage:
         data = struct.pack(f"<{len(samples)}h", *samples)
         frame = self._stereo_frame(data, rate=44100, channels=2)
 
-        rs = ResamplerConfig(internal_sample_rate=16000, internal_channels=1)
-        config = AudioPipelineConfig(resampler=rs)
+        contract = AudioPipelineContract(
+            internal_format=AudioFormat(sample_rate=16000, channels=1),
+        )
+        config = AudioPipelineConfig(
+            resampler=LinearResamplerProvider(), contract=contract
+        )
         pipeline = AudioPipeline(config)
 
         pipeline.process_inbound(_session(), frame)
@@ -653,8 +663,9 @@ class TestResamplerStage:
 
         out_fmt = AudioFormat(sample_rate=48000, channels=2, sample_width=2)
         contract = AudioPipelineContract(transport_outbound_format=out_fmt)
-        rs = ResamplerConfig(internal_sample_rate=16000, internal_channels=1)
-        config = AudioPipelineConfig(resampler=rs, contract=contract)
+        config = AudioPipelineConfig(
+            resampler=LinearResamplerProvider(), contract=contract
+        )
         pipeline = AudioPipeline(config)
 
         result = pipeline.process_outbound(_session(), frame)
@@ -671,3 +682,51 @@ class TestResamplerStage:
         pipeline.process_inbound(_session(), frame)
         assert frame.data == b"\x01\x00\x02\x00"
         assert "original_sample_rate" not in frame.metadata
+
+    def test_auto_default_resampler_when_contract_set(self):
+        """Pipeline auto-creates LinearResamplerProvider when contract is set."""
+        contract = AudioPipelineContract(
+            internal_format=AudioFormat(sample_rate=16000, channels=1, sample_width=2),
+        )
+        config = AudioPipelineConfig(contract=contract)
+        pipeline = AudioPipeline(config)
+
+        assert pipeline._resampler is not None
+        assert pipeline._resampler.name == "linear"
+
+    def test_no_auto_default_without_contract(self):
+        """No auto-default resampler without contract."""
+        config = AudioPipelineConfig()
+        pipeline = AudioPipeline(config)
+        assert pipeline._resampler is None
+
+    def test_explicit_resampler_used_over_auto_default(self):
+        """Explicit resampler takes priority over auto-default."""
+        mock_resampler = MockResamplerProvider()
+        contract = AudioPipelineContract(
+            internal_format=AudioFormat(sample_rate=16000, channels=1, sample_width=2),
+        )
+        config = AudioPipelineConfig(resampler=mock_resampler, contract=contract)
+        pipeline = AudioPipeline(config)
+
+        assert pipeline._resampler is mock_resampler
+
+    def test_resampler_reset_on_pipeline_reset(self):
+        """Pipeline reset() calls resampler.reset()."""
+        mock_resampler = MockResamplerProvider()
+        contract = AudioPipelineContract()
+        config = AudioPipelineConfig(resampler=mock_resampler, contract=contract)
+        pipeline = AudioPipeline(config)
+
+        pipeline.reset()
+        assert mock_resampler.reset_count == 1
+
+    def test_resampler_close_on_pipeline_close(self):
+        """Pipeline close() calls resampler.close()."""
+        mock_resampler = MockResamplerProvider()
+        contract = AudioPipelineContract()
+        config = AudioPipelineConfig(resampler=mock_resampler, contract=contract)
+        pipeline = AudioPipeline(config)
+
+        pipeline.close()
+        assert mock_resampler.closed
