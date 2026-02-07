@@ -26,6 +26,8 @@ import time
 from collections import deque
 from typing import Any
 
+from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.pipeline.aec_provider import AECProvider
 from roomkit.voice.realtime.base import RealtimeSession
 from roomkit.voice.realtime.transport import (
     RealtimeAudioTransport,
@@ -61,6 +63,10 @@ class LocalAudioTransport(RealtimeAudioTransport):
             AI is speaking (half-duplex).  Prevents speaker echo from
             triggering the provider's server-side VAD.  Recommended when
             using speakers instead of headphones.  Default True.
+        aec: Optional AEC provider for echo cancellation.  When set,
+            mic audio is processed through ``aec.process()`` and speaker
+            audio is fed as reference via ``aec.feed_reference()``.
+            Requires ``input_sample_rate == output_sample_rate``.
     """
 
     def __init__(
@@ -73,8 +79,15 @@ class LocalAudioTransport(RealtimeAudioTransport):
         input_device: int | str | None = None,
         output_device: int | str | None = None,
         mute_mic_during_playback: bool = True,
+        aec: AECProvider | None = None,
     ) -> None:
         self._sd = _import_sounddevice()
+
+        if aec is not None and input_sample_rate != output_sample_rate:
+            raise ValueError(
+                f"AEC requires matching sample rates, got "
+                f"input={input_sample_rate} output={output_sample_rate}"
+            )
 
         self._input_sample_rate = input_sample_rate
         self._output_sample_rate = output_sample_rate
@@ -112,6 +125,17 @@ class LocalAudioTransport(RealtimeAudioTransport):
         self._cb_status_errors = 0  # PortAudio status flags
         self._mic_frames_suppressed = 0  # mic frames dropped (echo suppression)
         self._last_stats_time = 0.0
+
+        # --- AEC ---
+        self._aec = aec
+        if aec is not None:
+            self._aec_block_bytes = (
+                int(input_sample_rate * block_duration_ms / 1000) * channels * 2
+            )
+            self._ref_buffer = bytearray()
+        else:
+            self._aec_block_bytes = 0
+            self._ref_buffer = bytearray()
 
     @property
     def name(self) -> str:
@@ -164,6 +188,10 @@ class LocalAudioTransport(RealtimeAudioTransport):
 
             audio_bytes = bytes(indata)
 
+            # AEC: remove speaker echo from the captured mic audio.
+            if self._aec is not None:
+                audio_bytes = self._aec_process(audio_bytes)
+
             for cb in self._audio_callbacks:
                 if self._loop is not None and self._loop.is_running():
                     self._loop.call_soon_threadsafe(cb, session, audio_bytes)
@@ -193,6 +221,12 @@ class LocalAudioTransport(RealtimeAudioTransport):
         """Queue audio for playback through the system speakers."""
         if not audio or self._closing_event.is_set() or len(audio) < 2:
             return
+
+        # AEC: feed speaker audio as reference so the canceller can
+        # model the echo that will bleed into the microphone.
+        if self._aec is not None:
+            self._aec_feed_reference(audio)
+
         with self._buffer_lock:
             self._output_buffer.append(audio)
         self._bytes_queued += len(audio)
@@ -250,6 +284,9 @@ class LocalAudioTransport(RealtimeAudioTransport):
             stream.abort()
             stream.close()
         self._sessions.clear()
+
+        if self._aec is not None:
+            self._aec.close()
 
     # -- Speaker callback (runs in PortAudio C thread) --
 
@@ -339,6 +376,35 @@ class LocalAudioTransport(RealtimeAudioTransport):
             self._cb_status_errors,
             self._mic_frames_suppressed,
         )
+
+    # -- AEC helpers --
+
+    def _aec_process(self, audio_bytes: bytes) -> bytes:
+        """Run mic audio through the AEC to remove speaker echo."""
+        frame = AudioFrame(
+            data=audio_bytes,
+            sample_rate=self._input_sample_rate,
+            channels=self._channels,
+            sample_width=2,
+        )
+        result = self._aec.process(frame)  # type: ignore[union-attr]
+        return result.data
+
+    def _aec_feed_reference(self, audio: bytes) -> None:
+        """Buffer speaker audio and feed complete frames to the AEC."""
+        self._ref_buffer.extend(audio)
+        block = self._aec_block_bytes
+
+        while len(self._ref_buffer) >= block:
+            chunk = bytes(self._ref_buffer[:block])
+            del self._ref_buffer[:block]
+            frame = AudioFrame(
+                data=chunk,
+                sample_rate=self._input_sample_rate,
+                channels=self._channels,
+                sample_width=2,
+            )
+            self._aec.feed_reference(frame)  # type: ignore[union-attr]
 
     # -- Callback registration --
 

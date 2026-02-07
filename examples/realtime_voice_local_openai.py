@@ -5,6 +5,7 @@ your speakers.  Uses OpenAI's semantic VAD for smarter turn detection.
 
 Requirements:
     pip install roomkit[realtime-openai,local-audio]
+    System: libspeexdsp (apt install libspeexdsp1 / brew install speexdsp)
 
 Run with:
     OPENAI_API_KEY=... uv run python examples/realtime_voice_local_openai.py
@@ -16,7 +17,8 @@ Environment variables:
     SYSTEM_PROMPT       Custom system prompt
     VAD_TYPE            Turn detection: semantic_vad | server_vad (default: semantic_vad)
     VAD_EAGERNESS       Semantic VAD eagerness: low | medium | high | auto (default: high)
-    MUTE_MIC            Mute mic during playback: 1 | 0 (default: 0, use with AEC)
+    AEC                 Enable Speex echo cancellation: 1 | 0 (default: 1)
+    MUTE_MIC            Mute mic during playback: 1 | 0 (default: 0, use without AEC)
 
 Press Ctrl+C to stop.
 """
@@ -30,6 +32,7 @@ import signal
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
+from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
 from roomkit.voice.realtime.local_transport import LocalAudioTransport
 
 logging.basicConfig(
@@ -54,19 +57,31 @@ async def main() -> None:
         model=os.environ.get("OPENAI_MODEL", "gpt-4o-realtime-preview"),
     )
 
-    # --- Local audio transport: mic for input, speakers for output ---
+    # --- AEC (Acoustic Echo Cancellation) ---
     #
-    # Tip: set PipeWire echo-cancel as default source/sink for full-duplex:
-    #   wpctl set-default <echo-cancel-source-id>
-    #   wpctl set-default <echo-cancel-sink-id>
-    # Then MUTE_MIC=0 (default) works great — AEC strips speaker echo.
-    # Without AEC, set MUTE_MIC=1 to prevent echo triggering barge-in.
+    # Uses SpeexDSP to strip speaker echo from the mic signal in
+    # real time, enabling full-duplex conversation without muting
+    # the mic during playback.  Disable with AEC=0 and use MUTE_MIC=1
+    # as a fallback if libspeexdsp is unavailable.
+    use_aec = os.environ.get("AEC", "1") == "1"
     mute_mic = os.environ.get("MUTE_MIC", "0") == "1"
 
+    sample_rate = 24000  # OpenAI Realtime uses 24 kHz for both directions
+    block_ms = 20
+    frame_size = sample_rate * block_ms // 1000  # 480 samples
+
+    aec = SpeexAECProvider(
+        frame_size=frame_size,
+        filter_length=frame_size * 10,
+        sample_rate=sample_rate,
+    ) if use_aec else None
+
     transport = LocalAudioTransport(
-        input_sample_rate=24000,  # OpenAI Realtime expects 24kHz input
-        output_sample_rate=24000,
+        input_sample_rate=sample_rate,
+        output_sample_rate=sample_rate,
+        block_duration_ms=block_ms,
         mute_mic_during_playback=mute_mic,
+        aec=aec,
     )
 
     # --- VAD configuration ---
