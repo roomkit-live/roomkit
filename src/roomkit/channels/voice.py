@@ -232,10 +232,10 @@ class VoiceChannel(Channel):
                 name=f"speech_start:{session.id}",
             )
         elif vad_event.type == VADEventType.SPEECH_END:
-            self._schedule(
-                self._fire_speech_end_hooks(session, room_id),
-                name=f"speech_end_hook:{session.id}",
-            )
+            # ON_SPEECH_END hooks are fired by _process_speech_end() to
+            # guarantee ordering (ON_SPEECH_END before ON_TRANSCRIPTION).
+            # Do NOT fire them here to avoid duplicate invocations.
+            pass
         elif vad_event.type == VADEventType.SILENCE:
             self._schedule(
                 self._fire_vad_silence_hook(session, int(vad_event.duration_ms or 0), room_id),
@@ -734,7 +734,12 @@ class VoiceChannel(Channel):
     # -------------------------------------------------------------------------
 
     async def _process_speech_end(self, session: VoiceSession, audio: bytes, room_id: str) -> None:
-        """Process speech end: fire hooks, transcribe, route inbound."""
+        """Process speech end: fire hooks, transcribe, route inbound.
+
+        ON_SPEECH_END hooks are fired here (not in _on_pipeline_vad_event)
+        to guarantee ordering: ON_SPEECH_END always fires before
+        ON_TRANSCRIPTION and before routing to the AI.
+        """
         if not self._framework:
             return
 

@@ -38,6 +38,8 @@ Environment variables:
     DEBUG_TAPS_DIR      Directory for pipeline debug taps (disabled if unset)
     DEBUG_TAPS_STAGES   Comma-separated stages to capture (default: all)
     AEC                 Enable echo cancellation: 1 | 0 (default: 1)
+    AEC_TYPE            AEC engine: webrtc | speex (default: webrtc)
+    MUTE_DURING_PLAYBACK  Half-duplex mic mute: 1 | 0 (default: 0)
     DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 1)
     DENOISE_MODEL       Path to GTCRN .onnx model (sherpa-onnx denoiser, overrides DENOISE)
     VAD_MODEL           Path to sherpa-onnx VAD .onnx model file
@@ -133,26 +135,45 @@ async def main() -> None:
     block_ms = 20
     frame_size = sample_rate * block_ms // 1000  # 320 samples
 
-    # --- Backend: local mic + speakers ----------------------------------------
-    backend = LocalAudioBackend(
-        input_sample_rate=sample_rate,
-        output_sample_rate=24000,  # ElevenLabs default output rate
-        channels=1,
-        block_duration_ms=block_ms,
-    )
-
-    # --- AEC (Speex echo cancellation) ----------------------------------------
+    # --- AEC (echo cancellation) ----------------------------------------------
     use_aec = os.environ.get("AEC", "1") == "1"
+    aec_type = os.environ.get("AEC_TYPE", "webrtc").lower()
     aec = None
     if use_aec:
-        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
+        if aec_type == "webrtc":
+            from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 
-        aec = SpeexAECProvider(
-            frame_size=frame_size,
-            filter_length=frame_size * 10,  # 200ms echo tail
-            sample_rate=sample_rate,
-        )
-        logger.info("AEC enabled (Speex, filter=%d samples)", frame_size * 10)
+            aec = WebRTCAECProvider(sample_rate=sample_rate)
+            logger.info("AEC enabled (WebRTC AEC3)")
+        else:
+            from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
+
+            aec = SpeexAECProvider(
+                frame_size=frame_size,
+                filter_length=frame_size * 10,  # 200ms echo tail
+                sample_rate=sample_rate,
+            )
+            logger.info("AEC enabled (Speex, filter=%d samples)", frame_size * 10)
+
+    # --- Backend: local mic + speakers ----------------------------------------
+    # When AEC is enabled, input and output sample rates MUST match so the
+    # adaptive filter can correlate the speaker reference with the mic signal.
+    output_rate = sample_rate if use_aec else 24000
+    mute_during = os.environ.get("MUTE_DURING_PLAYBACK", "0") == "1"
+    backend = LocalAudioBackend(
+        input_sample_rate=sample_rate,
+        output_sample_rate=output_rate,
+        channels=1,
+        block_duration_ms=block_ms,
+        aec=aec,
+        mute_mic_during_playback=mute_during,
+    )
+    logger.info(
+        "Backend: LocalAudio (in=%dHz, out=%dHz, mute_during_playback=%s)",
+        sample_rate,
+        output_rate,
+        mute_during,
+    )
 
     # --- Denoiser (RNNoise or sherpa-onnx GTCRN) ------------------------------
     denoiser = None
@@ -252,16 +273,18 @@ async def main() -> None:
     logger.info("STT: Deepgram nova-2 (language=%s)", language)
 
     # --- ElevenLabs TTS -------------------------------------------------------
+    # Use PCM at the same rate as the backend output (16kHz when AEC, 24kHz otherwise)
+    tts_format = f"pcm_{output_rate}"
     tts = ElevenLabsTTSProvider(
         config=ElevenLabsConfig(
             api_key=env["ELEVENLABS_API_KEY"],
             voice_id=os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
             model_id="eleven_multilingual_v2",
-            output_format="pcm_24000",  # Raw PCM at 24kHz for local playback
+            output_format=tts_format,
             optimize_streaming_latency=3,
         )
     )
-    logger.info("TTS: ElevenLabs (voice=%s)", tts._config.voice_id)
+    logger.info("TTS: ElevenLabs (voice=%s, format=%s)", tts._config.voice_id, tts_format)
 
     # --- Claude AI ------------------------------------------------------------
     ai_provider = AnthropicAIProvider(
@@ -287,6 +310,11 @@ async def main() -> None:
         tts=tts,
         backend=backend,
         pipeline=pipeline_config,
+    )
+    logger.info(
+        "Interruption: strategy=%s, barge_in=%s",
+        voice._interruption_handler._config.strategy.value,
+        voice._enable_barge_in,
     )
     kit.register_channel(voice)
 

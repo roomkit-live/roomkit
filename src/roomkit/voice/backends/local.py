@@ -50,6 +50,8 @@ from roomkit.voice.base import (
 if TYPE_CHECKING:
     import sounddevice as sd
 
+    from roomkit.voice.pipeline.aec.base import AECProvider
+
 logger = logging.getLogger("roomkit.voice.local")
 
 
@@ -85,6 +87,13 @@ class LocalAudioBackend(VoiceBackend):
             Controls how often ``on_audio_received`` fires.
         input_device: Sounddevice input device index or name (None = default).
         output_device: Sounddevice output device index or name (None = default).
+        aec: Optional AEC provider for echo cancellation.  When set,
+            speaker audio is fed as reference via ``aec.feed_reference()``
+            from the output callback.  Requires matching sample rates.
+        mute_mic_during_playback: If True (default), suppress mic frames
+            while the speaker is playing (half-duplex).  Prevents echo
+            from triggering VAD and false barge-ins when using speakers
+            instead of headphones.
     """
 
     def __init__(
@@ -96,8 +105,16 @@ class LocalAudioBackend(VoiceBackend):
         block_duration_ms: int = 20,
         input_device: int | str | None = None,
         output_device: int | str | None = None,
+        aec: AECProvider | None = None,
+        mute_mic_during_playback: bool = True,
     ) -> None:
         self._sd = _import_sounddevice()
+
+        if aec is not None and input_sample_rate != output_sample_rate:
+            raise ValueError(
+                f"AEC requires matching input and output sample rates, got "
+                f"input={input_sample_rate} output={output_sample_rate}"
+            )
 
         self._input_sample_rate = input_sample_rate
         self._output_sample_rate = output_sample_rate
@@ -123,6 +140,20 @@ class LocalAudioBackend(VoiceBackend):
         self._playing_sessions: set[str] = set()
         self._output_streams: dict[str, sd.RawOutputStream] = {}
         self._playback_tasks: dict[str, asyncio.Task[None]] = {}
+
+        # Half-duplex echo suppression
+        self._mute_mic_during_playback = mute_mic_during_playback
+
+        # --- AEC ---
+        self._aec = aec
+        if aec is not None:
+            self._aec_block_bytes = (
+                int(input_sample_rate * block_duration_ms / 1000) * channels * 2
+            )
+            self._ref_buffer = bytearray()
+        else:
+            self._aec_block_bytes = 0
+            self._ref_buffer = bytearray()
 
     @property
     def name(self) -> str:
@@ -219,6 +250,12 @@ class LocalAudioBackend(VoiceBackend):
             if not callback_ref:
                 return
 
+            # Half-duplex echo suppression: suppress mic frames while the
+            # speaker is playing.  Prevents echo from triggering VAD /
+            # barge-in when using speakers instead of headphones.
+            if self._mute_mic_during_playback and self._playing_sessions:
+                return
+
             frame = AudioFrame(
                 data=bytes(indata),
                 sample_rate=self._input_sample_rate,
@@ -292,6 +329,11 @@ class LocalAudioBackend(VoiceBackend):
 
     async def _play_pcm(self, pcm_data: bytes) -> None:
         """Play a complete PCM-16 LE buffer through speakers."""
+        if self._aec is not None:
+            logger.warning(
+                "AEC reference feeding is not supported with non-streaming "
+                "playback (sd.play). Use streaming TTS for AEC support."
+            )
         sd = self._sd
 
         n_samples = len(pcm_data) // 2
@@ -344,6 +386,7 @@ class LocalAudioBackend(VoiceBackend):
 
         def _output_callback(outdata: bytearray, frames: int, time_info: Any, status: Any) -> None:
             nbytes = frames * 2 * self._channels  # int16
+            stop = False
             with buf_lock:
                 n = min(len(audio_buf), nbytes)
                 if n > 0:
@@ -354,7 +397,18 @@ class LocalAudioBackend(VoiceBackend):
                 # When producer finished and buffer drained, stop playback.
                 if producer_done.is_set() and len(audio_buf) == 0:
                     loop.call_soon_threadsafe(finished.set)
-                    raise sd.CallbackStop
+                    stop = True
+
+            # AEC: feed the COMPLETE output frame (audio + silence) as
+            # reference.  The SpeexDSP split API requires playback() for
+            # every output frame — skipping silence frames causes the
+            # internal ring buffer to lose sync with the actual speaker
+            # output and prevents the adaptive filter from converging.
+            if self._aec is not None:
+                self._aec_feed_played(bytearray(bytes(outdata)))
+
+            if stop:
+                raise sd.CallbackStop
 
         stream = sd.RawOutputStream(
             samplerate=self._output_sample_rate,
@@ -362,6 +416,11 @@ class LocalAudioBackend(VoiceBackend):
             dtype="int16",
             callback=_output_callback,
             device=self._output_device,
+            # Low latency when AEC is active — minimizes the time gap
+            # between when reference audio is fed and when the speaker
+            # actually plays it.  Without this, PortAudio buffers hundreds
+            # of ms and the AEC's ring buffer drifts out of sync.
+            latency="low" if self._aec is not None else "high",
         )
         self._output_streams[session.id] = stream
         stream.start()
@@ -429,3 +488,28 @@ class LocalAudioBackend(VoiceBackend):
 
     def is_playing(self, session: VoiceSession) -> bool:
         return session.id in self._playing_sessions
+
+    # -------------------------------------------------------------------------
+    # AEC helpers
+    # -------------------------------------------------------------------------
+
+    def _aec_feed_played(self, played: bytearray) -> None:
+        """Feed actually-played speaker bytes to the AEC as reference.
+
+        Called from ``_output_callback`` so the reference is time-aligned
+        with what the speaker is outputting.  Accumulates bytes and feeds
+        them in exact ``frame_size``-aligned chunks.
+        """
+        self._ref_buffer.extend(played)
+        block = self._aec_block_bytes
+
+        while len(self._ref_buffer) >= block:
+            chunk = bytes(self._ref_buffer[:block])
+            del self._ref_buffer[:block]
+            frame = AudioFrame(
+                data=chunk,
+                sample_rate=self._input_sample_rate,
+                channels=self._channels,
+                sample_width=2,
+            )
+            self._aec.feed_reference(frame)  # type: ignore[union-attr]
