@@ -32,7 +32,7 @@ class SherpaOnnxSTTConfig:
         language: Language code (Whisper only).
         sample_rate: Expected audio sample rate.
         num_threads: Number of CPU threads for inference.
-        provider_type: ONNX execution provider (``"cpu"`` or ``"cuda"``).
+        provider: ONNX execution provider (``"cpu"`` or ``"cuda"``).
     """
 
     mode: str = "transducer"
@@ -43,7 +43,7 @@ class SherpaOnnxSTTConfig:
     language: str = "en"
     sample_rate: int = 16000
     num_threads: int = 2
-    provider_type: str = "cpu"
+    provider: str = "cpu"
 
 
 def _pcm_s16le_to_float32(data: bytes) -> list[float]:
@@ -89,7 +89,7 @@ class SherpaOnnxSTTProvider(STTProvider):
                 num_threads=cfg.num_threads,
                 sample_rate=cfg.sample_rate,
                 feature_dim=80,
-                provider=cfg.provider_type,
+                provider=cfg.provider,
             )
         return self._online_recognizer
 
@@ -104,7 +104,7 @@ class SherpaOnnxSTTProvider(STTProvider):
                     tokens=cfg.tokens,
                     language=cfg.language,
                     num_threads=cfg.num_threads,
-                    provider=cfg.provider_type,
+                    provider=cfg.provider,
                 )
             else:
                 self._offline_recognizer = self._sherpa.OfflineRecognizer.from_transducer(
@@ -115,7 +115,7 @@ class SherpaOnnxSTTProvider(STTProvider):
                     num_threads=cfg.num_threads,
                     sample_rate=cfg.sample_rate,
                     feature_dim=80,
-                    provider=cfg.provider_type,
+                    provider=cfg.provider,
                 )
         return self._offline_recognizer
 

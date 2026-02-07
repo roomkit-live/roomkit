@@ -8,6 +8,84 @@ pip install roomkit[sherpa-onnx]
 
 ---
 
+## GPU Acceleration (CUDA)
+
+All sherpa-onnx providers support NVIDIA GPU acceleration via CUDA for faster inference.
+
+### Prerequisites
+
+- NVIDIA GPU with compute capability 6.0+
+- [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) 11.8 or 12.x
+- [cuDNN](https://developer.nvidia.com/cudnn) 8.x+ (matching your CUDA version)
+
+Verify your setup:
+
+```bash
+nvidia-smi          # confirm driver + GPU visible
+nvcc --version      # confirm CUDA toolkit installed
+```
+
+### Installation
+
+The `sherpa-onnx` wheel ships with ONNX Runtime GPU support — no extra packages needed:
+
+```bash
+pip install roomkit[sherpa-onnx]
+```
+
+### Configuration
+
+Set `provider="cuda"` on any sherpa-onnx config dataclass:
+
+| Provider | Config class | Field |
+|---|---|---|
+| VAD | `SherpaOnnxVADConfig` | `provider="cuda"` |
+| Denoiser | `SherpaOnnxDenoiserConfig` | `provider="cuda"` |
+| STT | `SherpaOnnxSTTConfig` | `provider="cuda"` |
+| TTS | `SherpaOnnxTTSConfig` | `provider="cuda"` |
+
+### Example
+
+```python
+from roomkit.voice.pipeline import AudioPipelineConfig
+from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
+    SherpaOnnxDenoiserConfig,
+    SherpaOnnxDenoiserProvider,
+)
+from roomkit.voice.pipeline.vad.sherpa_onnx import (
+    SherpaOnnxVADConfig,
+    SherpaOnnxVADProvider,
+)
+from roomkit.voice.stt.sherpa_onnx import SherpaOnnxSTTConfig, SherpaOnnxSTTProvider
+from roomkit.voice.tts.sherpa_onnx import SherpaOnnxTTSConfig, SherpaOnnxTTSProvider
+
+# All four providers on GPU
+denoiser = SherpaOnnxDenoiserProvider(
+    SherpaOnnxDenoiserConfig(model="gtcrn_simple.onnx", provider="cuda")
+)
+vad = SherpaOnnxVADProvider(
+    SherpaOnnxVADConfig(model="ten-vad.onnx", provider="cuda")
+)
+stt = SherpaOnnxSTTProvider(
+    SherpaOnnxSTTConfig(
+        tokens="tokens.txt",
+        encoder="encoder.onnx",
+        decoder="decoder.onnx",
+        joiner="joiner.onnx",
+        provider="cuda",
+    )
+)
+tts = SherpaOnnxTTSProvider(
+    SherpaOnnxTTSConfig(model="vits.onnx", tokens="tokens.txt", provider="cuda")
+)
+
+pipeline_config = AudioPipelineConfig(denoiser=denoiser, vad=vad)
+```
+
+If CUDA is unavailable at runtime, ONNX Runtime falls back to CPU automatically.
+
+---
+
 ## SherpaOnnxDenoiserProvider
 
 Neural speech enhancement using the GTCRN model. Removes background noise from microphone audio before it reaches VAD and STT.
@@ -45,14 +123,21 @@ All parameters are set via `SherpaOnnxDenoiserConfig`:
 | `model` | `""` | Path to the `gtcrn_simple.onnx` model file. |
 | `num_threads` | `1` | CPU threads for inference. |
 | `provider` | `"cpu"` | ONNX execution provider (`"cpu"` or `"cuda"`). |
+| `context_frames` | `10` | Number of preceding frames for temporal context (see below). |
 
 ### How it works
 
+GTCRN is an offline model — it needs temporal context to distinguish speech from noise. Processing isolated 20ms frames produces poor quality and boundary artifacts. The provider uses a **sliding context window** to give the model enough context:
+
 1. Each audio frame is converted from int16 PCM to float32 samples in [-1, 1].
-2. `OfflineSpeechDenoiser.run(samples)` processes the entire frame at once (no chunking needed).
-3. The denoised float32 samples are converted back to int16 PCM.
-4. A new `AudioFrame` is returned with the cleaned audio, preserving all metadata.
-5. On any error, the original frame is returned unchanged (pass-through).
+2. The samples are appended to a sliding context buffer (up to `context_frames` preceding frames).
+3. `OfflineSpeechDenoiser.run(context_buffer, sample_rate)` processes the full context window.
+4. Only the **last frame's portion** of the denoised output is extracted — no latency is added.
+5. The denoised float32 samples are converted back to int16 PCM.
+6. A new `AudioFrame` is returned with the cleaned audio, preserving all metadata.
+7. On any error, the original frame is returned unchanged (pass-through).
+
+The default `context_frames=10` (200ms at 16kHz) provides ~6x better signal-to-noise ratio compared to frame-by-frame processing, at ~5ms per frame (well within the 20ms real-time budget).
 
 ### Lazy initialization
 

@@ -32,7 +32,7 @@ class SherpaOnnxTTSConfig:
         speed: Speech speed multiplier (1.0 = normal).
         sample_rate: Output sample rate (usually determined by the model).
         num_threads: Number of CPU threads for inference.
-        provider_type: ONNX execution provider (``"cpu"`` or ``"cuda"``).
+        provider: ONNX execution provider (``"cpu"`` or ``"cuda"``).
     """
 
     model: str = ""
@@ -43,7 +43,7 @@ class SherpaOnnxTTSConfig:
     speed: float = 1.0
     sample_rate: int = 22050
     num_threads: int = 2
-    provider_type: str = "cpu"
+    provider: str = "cpu"
 
 
 def _float32_to_pcm_s16le(samples: list[float]) -> bytes:
@@ -115,7 +115,7 @@ class SherpaOnnxTTSProvider(TTSProvider):
             model_config = self._sherpa.OfflineTtsModelConfig(
                 vits=vits_config,
                 num_threads=cfg.num_threads,
-                provider=cfg.provider_type,
+                provider=cfg.provider,
             )
             tts_config = self._sherpa.OfflineTtsConfig(model=model_config)
             self._tts = self._sherpa.OfflineTts(tts_config)
