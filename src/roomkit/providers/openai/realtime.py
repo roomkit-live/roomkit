@@ -317,7 +317,16 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.debug("OpenAI WebSocket closed for session %s", session.id)
+            if session.state == RealtimeSessionState.ACTIVE:
+                logger.warning("OpenAI WebSocket closed unexpectedly for session %s", session.id)
+                session.state = RealtimeSessionState.ENDED
+                await self._fire_error_callbacks(
+                    session,
+                    "connection_closed",
+                    f"WebSocket closed unexpectedly for session {session.id}",
+                )
+            else:
+                logger.debug("OpenAI WebSocket closed for session %s", session.id)
 
     async def _handle_server_event(self, session: RealtimeSession, event: dict[str, Any]) -> None:
         """Map OpenAI server events to callbacks."""

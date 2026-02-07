@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from collections import deque
 from typing import Any
@@ -91,14 +92,18 @@ class LocalAudioTransport(RealtimeAudioTransport):
         self._input_streams: dict[str, Any] = {}  # session_id -> RawInputStream
         self._sessions: dict[str, RealtimeSession] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._closing = False
+        self._closing_event = threading.Event()
 
         # Speaker output: callback-driven stream + chunk queue
         self._output_stream: Any | None = None
         self._output_buffer: deque[bytes] = deque()
         self._output_buf_offset = 0  # bytes consumed in the front chunk
+        self._buffer_lock = threading.Lock()
 
         # --- Diagnostics (all touched from callback thread) ---
+        # CPython's GIL guarantees atomic int increments, so these
+        # counters are safe to update from the PortAudio callback
+        # thread without a lock.
         self._bytes_queued = 0  # total bytes pushed via send_audio
         self._bytes_played = 0  # total bytes written to speaker
         self._bytes_silence = 0  # total silence bytes (underrun)
@@ -145,7 +150,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
         def _mic_callback(
             indata: bytes, frames: int, time_info: Any, status: Any
         ) -> None:
-            if self._closing:
+            if self._closing_event.is_set():
                 return
             if status:
                 logger.warning("Mic status: %s", status)
@@ -153,7 +158,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
             # Half-duplex echo suppression: don't send mic audio while
             # the speaker is playing AI audio, otherwise the provider's
             # server-side VAD picks up the echo and triggers barge-in.
-            if self._mute_mic_during_playback and self._output_buffer:
+            if self._mute_mic_during_playback and len(self._output_buffer) > 0:
                 self._mic_frames_suppressed += 1
                 return
 
@@ -186,9 +191,10 @@ class LocalAudioTransport(RealtimeAudioTransport):
 
     async def send_audio(self, session: RealtimeSession, audio: bytes) -> None:
         """Queue audio for playback through the system speakers."""
-        if not audio or self._closing or len(audio) < 2:
+        if not audio or self._closing_event.is_set() or len(audio) < 2:
             return
-        self._output_buffer.append(audio)
+        with self._buffer_lock:
+            self._output_buffer.append(audio)
         self._bytes_queued += len(audio)
 
         # Periodic stats (logged from asyncio thread, not the callback)
@@ -213,14 +219,15 @@ class LocalAudioTransport(RealtimeAudioTransport):
             state = "speaking" if speaking else "silent"
             logger.info("[%s] %s", who, state)
         elif msg_type == "clear_audio":
-            n = len(self._output_buffer)
-            self._output_buffer.clear()
-            self._output_buf_offset = 0
+            with self._buffer_lock:
+                n = len(self._output_buffer)
+                self._output_buffer.clear()
+                self._output_buf_offset = 0
             logger.info("[barge-in] cleared audio queue (%d chunks)", n)
 
     async def disconnect(self, session: RealtimeSession) -> None:
         """Stop mic capture and speaker output for the session."""
-        self._closing = True
+        self._closing_event.set()
         self._log_stats(time.monotonic(), final=True)
         self._stop_output()
 
@@ -234,7 +241,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
 
     async def close(self) -> None:
         """Stop all streams."""
-        self._closing = True
+        self._closing_event.set()
         self._log_stats(time.monotonic(), final=True)
         self._stop_output()
 
@@ -260,20 +267,21 @@ class LocalAudioTransport(RealtimeAudioTransport):
         self._cb_count += 1
         bytes_needed = frames * self._channels * 2  # 2 bytes per int16 sample
         written = 0
-        buf = self._output_buffer
 
         # Pull audio chunks into outdata
-        while written < bytes_needed and buf:
-            chunk = buf[0]
-            avail = len(chunk) - self._output_buf_offset
-            n = min(avail, bytes_needed - written)
-            src_start = self._output_buf_offset
-            outdata[written : written + n] = chunk[src_start : src_start + n]
-            written += n
-            self._output_buf_offset += n
-            if self._output_buf_offset >= len(chunk):
-                buf.popleft()
-                self._output_buf_offset = 0
+        with self._buffer_lock:
+            buf = self._output_buffer
+            while written < bytes_needed and buf:
+                chunk = buf[0]
+                avail = len(chunk) - self._output_buf_offset
+                n = min(avail, bytes_needed - written)
+                src_start = self._output_buf_offset
+                outdata[written : written + n] = chunk[src_start : src_start + n]
+                written += n
+                self._output_buf_offset += n
+                if self._output_buf_offset >= len(chunk):
+                    buf.popleft()
+                    self._output_buf_offset = 0
 
         self._bytes_played += written
 
@@ -288,8 +296,9 @@ class LocalAudioTransport(RealtimeAudioTransport):
 
     def _stop_output(self) -> None:
         """Close the speaker output stream."""
-        self._output_buffer.clear()
-        self._output_buf_offset = 0
+        with self._buffer_lock:
+            self._output_buffer.clear()
+            self._output_buf_offset = 0
         out = self._output_stream
         if out is not None:
             self._output_stream = None
@@ -308,8 +317,9 @@ class LocalAudioTransport(RealtimeAudioTransport):
             return
         self._last_stats_time = now
 
-        queue_bytes = sum(len(c) for c in self._output_buffer)
-        queue_chunks = len(self._output_buffer)
+        with self._buffer_lock:
+            queue_bytes = sum(len(c) for c in self._output_buffer)
+            queue_chunks = len(self._output_buffer)
         bps = self._output_sample_rate * self._channels * 2
         queue_ms = (queue_bytes / bps * 1000) if bps else 0
 

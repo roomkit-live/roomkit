@@ -218,6 +218,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         session.state = RealtimeSessionState.ACTIVE
         session.provider_session_id = session.id
+        session._response_started = False  # type: ignore[attr-defined]
 
         # Start receive loop
         self._receive_tasks[session.id] = asyncio.create_task(
@@ -242,11 +243,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             await live.send_realtime_input(
                 audio=types.Blob(data=audio, mime_type="audio/pcm"),
             )
-        except Exception:
+        except Exception as exc:
             # Connection lost — the receive loop will handle reconnection.
             # Don't mark ENDED here; just suppress further sends.
             if session.state == RealtimeSessionState.ACTIVE:
                 session.state = RealtimeSessionState.CONNECTING
+            await self._fire_error_callbacks(session, "send_audio_failed", str(exc))
             return
 
     async def inject_text(
@@ -314,9 +316,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         ctxmgr = self._live_ctxmgrs.pop(session.id, None)
         self._sessions.pop(session.id, None)
         # Clean up transcription buffers and stored config
-        for key in list(self._transcription_buffers):
-            if key[0] == session.id:
-                del self._transcription_buffers[key]
+        self._clear_transcription_buffers(session.id)
         self._live_configs.pop(session.id, None)
         if ctxmgr is not None:
             with contextlib.suppress(Exception):
@@ -401,6 +401,11 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                         self._MAX_RECONNECTS,
                     )
                     session.state = RealtimeSessionState.ENDED
+                    await self._fire_error_callbacks(
+                        session,
+                        "max_reconnects",
+                        f"Connection lost after {self._MAX_RECONNECTS} reconnect attempts",
+                    )
                     return
 
                 delay = min(0.5 * (2 ** (reconnect_count - 1)), 4.0)
@@ -420,7 +425,18 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 except Exception:
                     logger.exception("Reconnect failed for session %s", session.id)
                     session.state = RealtimeSessionState.ENDED
+                    await self._fire_error_callbacks(
+                        session,
+                        "reconnect_failed",
+                        f"Reconnect failed for session {session.id}",
+                    )
                     return
+
+    def _clear_transcription_buffers(self, session_id: str) -> None:
+        """Remove all transcription buffer entries for a session."""
+        for key in list(self._transcription_buffers):
+            if key[0] == session_id:
+                del self._transcription_buffers[key]
 
     async def _reconnect(self, session: RealtimeSession) -> None:
         """Reconnect to Gemini Live using the stored config."""
@@ -437,9 +453,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 await old_ctxmgr.__aexit__(None, None, None)
 
         # Clear stale transcription buffers
-        for key in list(self._transcription_buffers):
-            if key[0] == session.id:
-                del self._transcription_buffers[key]
+        self._clear_transcription_buffers(session.id)
 
         live_config = self._live_configs.get(session.id)
         if not live_config:
@@ -511,7 +525,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             if (
                 hasattr(content, "model_turn")
                 and content.model_turn
-                and (not hasattr(session, "_response_started") or not session._response_started)
+                and not session._response_started  # type: ignore[attr-defined]
             ):
                 # Flush user transcription — model responding means user
                 # speech is done and transcription should be complete.
@@ -612,6 +626,17 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     await result
             except Exception:
                 logger.exception("Error in transcription callback for session %s", session.id)
+
+    async def _fire_error_callbacks(
+        self, session: RealtimeSession, code: str, message: str
+    ) -> None:
+        for cb in self._error_callbacks:
+            try:
+                result = cb(session, code, message)
+                if hasattr(result, "__await__"):
+                    await result
+            except Exception:
+                logger.exception("Error in error callback for session %s", session.id)
 
     async def _fire_tool_call_callbacks(
         self,

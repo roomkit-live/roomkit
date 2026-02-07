@@ -230,6 +230,43 @@ class TestTurnDetector:
         assert entry.speaker_id is None
         assert entry.duration_ms is None
 
+    def test_turn_context_with_multiple_entries(self):
+        """TurnContext should hold multiple entries."""
+        entries = [
+            TurnEntry(text="Hello"),
+            TurnEntry(text="How are you"),
+            TurnEntry(text="I need help"),
+        ]
+        ctx = TurnContext(entries=entries, silence_ms=500.0, session_id="s1")
+        assert len(ctx.entries) == 3
+        assert ctx.entries[2].text == "I need help"
+
+    def test_turn_entry_speaker_id_and_duration(self):
+        """TurnEntry fields should carry through to detector."""
+        entry = TurnEntry(text="Hi there", speaker_id="spk_0", duration_ms=1200.0)
+        ctx = TurnContext(entries=[entry], session_id="s1")
+
+        detector = MockTurnDetector()
+        detector.evaluate(ctx)
+
+        assert len(detector.evaluations) == 1
+        evaluated_entry = detector.evaluations[0].entries[0]
+        assert evaluated_entry.speaker_id == "spk_0"
+        assert evaluated_entry.duration_ms == 1200.0
+
+    def test_turn_context_silence_ms(self):
+        """silence_ms should be passed through to the detector."""
+        ctx = TurnContext(
+            entries=[TurnEntry(text="Done")],
+            silence_ms=2500.0,
+            session_id="s1",
+        )
+
+        detector = MockTurnDetector()
+        detector.evaluate(ctx)
+
+        assert detector.evaluations[0].silence_ms == 2500.0
+
 
 # ---------------------------------------------------------------------------
 # BackchannelDetector

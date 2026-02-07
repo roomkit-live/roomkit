@@ -204,12 +204,17 @@ class LocalAudioBackend(VoiceBackend):
 
         blocksize = int(self._input_sample_rate * self._block_duration_ms / 1000)
 
+        # Capture references as locals so the PortAudio callback thread
+        # reads stable snapshots instead of mutable instance attributes.
+        callback_ref = self._audio_received_callback
+        loop_ref = self._loop
+
         def _audio_callback(
             indata: bytes, frames: int, time_info: Any, status: Any
         ) -> None:
             if status:
                 logger.warning("Mic status: %s", status)
-            if not self._audio_received_callback:
+            if not callback_ref:
                 return
 
             frame = AudioFrame(
@@ -219,12 +224,10 @@ class LocalAudioBackend(VoiceBackend):
                 sample_width=2,
             )
 
-            if self._loop is not None and self._loop.is_running():
-                self._loop.call_soon_threadsafe(
-                    self._audio_received_callback, session, frame
-                )
+            if loop_ref is not None and loop_ref.is_running():
+                loop_ref.call_soon_threadsafe(callback_ref, session, frame)
             else:
-                self._audio_received_callback(session, frame)
+                callback_ref(session, frame)
 
         stream = self._sd.RawInputStream(
             samplerate=self._input_sample_rate,
@@ -251,8 +254,12 @@ class LocalAudioBackend(VoiceBackend):
         """
         stream = self._input_streams.pop(session.id, None)
         if stream is not None:
-            stream.stop()
-            stream.close()
+            try:
+                stream.stop()
+            except Exception:
+                logger.warning("Error stopping mic stream for session %s", session.id)
+            finally:
+                stream.close()
             logger.info("Mic capture stopped: session=%s", session.id)
 
     # -------------------------------------------------------------------------

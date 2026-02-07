@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceCapability, VoiceSession
 from roomkit.voice.pipeline.config import AudioPipelineConfig
+from roomkit.voice.pipeline.diarization_provider import DiarizationResult
 from roomkit.voice.pipeline.dtmf_detector import DTMFEvent
 from roomkit.voice.pipeline.engine import AudioPipeline
 from roomkit.voice.pipeline.mock import (
@@ -12,6 +15,7 @@ from roomkit.voice.pipeline.mock import (
     MockAGCProvider,
     MockAudioRecorder,
     MockDenoiserProvider,
+    MockDiarizationProvider,
     MockDTMFDetector,
     MockVADProvider,
 )
@@ -348,3 +352,201 @@ class TestResetClose:
         assert denoiser.closed
         assert dtmf.closed
         assert recorder.closed
+
+
+# ---------------------------------------------------------------------------
+# Async callback execution
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncCallbacks:
+    async def test_async_vad_event_callback(self):
+        """Async VAD event callbacks should be scheduled and executed."""
+        vad = MockVADProvider(events=[VADEvent(type=VADEventType.SPEECH_START)])
+        config = AudioPipelineConfig(vad=vad)
+        pipeline = AudioPipeline(config)
+
+        received: list[VADEvent] = []
+
+        async def async_cb(session, event):
+            await asyncio.sleep(0)
+            received.append(event)
+
+        pipeline.on_vad_event(async_cb)
+
+        pipeline.process_inbound(_session(), _frame())
+
+        # Allow the scheduled task to run
+        await asyncio.sleep(0.01)
+
+        assert len(received) == 1
+        assert received[0].type == VADEventType.SPEECH_START
+
+    async def test_async_speech_end_callback(self):
+        """Async speech_end callbacks should be scheduled and executed."""
+        vad = MockVADProvider(
+            events=[VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"\x01\x02")]
+        )
+        config = AudioPipelineConfig(vad=vad)
+        pipeline = AudioPipeline(config)
+
+        received: list[bytes] = []
+
+        async def async_cb(session, audio):
+            await asyncio.sleep(0)
+            received.append(audio)
+
+        pipeline.on_speech_end(async_cb)
+
+        pipeline.process_inbound(_session(), _frame())
+
+        await asyncio.sleep(0.01)
+
+        assert len(received) == 1
+        assert received[0] == b"\x01\x02"
+
+
+# ---------------------------------------------------------------------------
+# Speaker change callbacks
+# ---------------------------------------------------------------------------
+
+
+class TestSpeakerChangeCallbacks:
+    def test_speaker_change_fires_on_new_speaker(self):
+        """Two different speaker_ids should fire 2 speaker change callbacks."""
+        results = [
+            DiarizationResult(speaker_id="spk_A", confidence=0.9, is_new_speaker=True),
+            DiarizationResult(speaker_id="spk_B", confidence=0.8, is_new_speaker=True),
+        ]
+        diarizer = MockDiarizationProvider(results=results)
+        config = AudioPipelineConfig(diarization=diarizer)
+        pipeline = AudioPipeline(config)
+
+        received: list[DiarizationResult] = []
+        pipeline.on_speaker_change(lambda _s, r: received.append(r))
+
+        session = _session()
+        pipeline.process_inbound(session, _frame())
+        pipeline.process_inbound(session, _frame())
+
+        assert len(received) == 2
+        assert received[0].speaker_id == "spk_A"
+        assert received[1].speaker_id == "spk_B"
+
+    def test_no_speaker_change_when_same_speaker(self):
+        """Same speaker_id on consecutive frames should fire only 1 callback (initial)."""
+        results = [
+            DiarizationResult(speaker_id="spk_A", confidence=0.9, is_new_speaker=True),
+            DiarizationResult(speaker_id="spk_A", confidence=0.95, is_new_speaker=False),
+        ]
+        diarizer = MockDiarizationProvider(results=results)
+        config = AudioPipelineConfig(diarization=diarizer)
+        pipeline = AudioPipeline(config)
+
+        received: list[DiarizationResult] = []
+        pipeline.on_speaker_change(lambda _s, r: received.append(r))
+
+        session = _session()
+        pipeline.process_inbound(session, _frame())
+        pipeline.process_inbound(session, _frame())
+
+        assert len(received) == 1
+        assert received[0].speaker_id == "spk_A"
+
+
+# ---------------------------------------------------------------------------
+# Error propagation (pipeline resilience)
+# ---------------------------------------------------------------------------
+
+
+class TestErrorPropagation:
+    def test_aec_error_does_not_crash_pipeline(self):
+        """AEC error should be caught; pipeline continues to VAD."""
+
+        class FailingAEC(MockAECProvider):
+            def process(self, frame):
+                raise RuntimeError("AEC boom")
+
+        aec = FailingAEC()
+        vad = MockVADProvider(events=[VADEvent(type=VADEventType.SPEECH_START)])
+        config = AudioPipelineConfig(aec=aec, vad=vad)
+        pipeline = AudioPipeline(config)
+
+        pipeline.process_inbound(_session(), _frame())
+
+        # VAD still ran despite AEC failure
+        assert len(vad.frames) == 1
+
+    def test_vad_error_does_not_crash_pipeline(self):
+        """VAD error should be caught; pipeline doesn't raise."""
+
+        class FailingVAD(MockVADProvider):
+            def process(self, frame):
+                raise RuntimeError("VAD boom")
+
+        vad = FailingVAD()
+        denoiser = MockDenoiserProvider()
+        config = AudioPipelineConfig(denoiser=denoiser, vad=vad)
+        pipeline = AudioPipeline(config)
+
+        # Should not raise
+        pipeline.process_inbound(_session(), _frame())
+
+        # Denoiser ran before VAD
+        assert len(denoiser.frames) == 1
+
+
+# ---------------------------------------------------------------------------
+# Multi-session recording
+# ---------------------------------------------------------------------------
+
+
+class TestMultiSessionRecording:
+    def test_separate_recording_handles_per_session(self):
+        """Two sessions activated separately get unique recording IDs."""
+        recorder = MockAudioRecorder()
+        config = AudioPipelineConfig(
+            recorder=recorder,
+            recording_config=RecordingConfig(),
+        )
+        pipeline = AudioPipeline(config)
+
+        s1 = _session("s1")
+        s2 = _session("s2")
+
+        # Activate and record the handles individually
+        # (on_session_active resets, so we can't have both active simultaneously
+        # via on_session_active — instead, we verify IDs are unique.)
+        pipeline.on_session_active(s1)
+        handle_s1 = pipeline._recording_handles.get("s1")
+        assert handle_s1 is not None
+
+        pipeline.on_session_active(s2)
+        handle_s2 = pipeline._recording_handles.get("s2")
+        assert handle_s2 is not None
+
+        assert handle_s1.recording_id != handle_s2.recording_id
+        assert len(recorder.started) == 2
+
+    def test_session_ended_only_stops_its_recording(self):
+        """Ending a session only stops that session's recording handle."""
+        recorder = MockAudioRecorder()
+        config = AudioPipelineConfig(
+            recorder=recorder,
+            recording_config=RecordingConfig(),
+        )
+        pipeline = AudioPipeline(config)
+
+        session = _session("s1")
+        pipeline.on_session_active(session)
+        assert "s1" in pipeline._recording_handles
+
+        pipeline.on_session_ended(session)
+        assert "s1" not in pipeline._recording_handles
+        assert len(recorder.stopped) == 1
+
+        # A second session's handle is unaffected by the first ending
+        s2 = _session("s2")
+        pipeline.on_session_active(s2)
+        assert "s2" in pipeline._recording_handles
+        assert len(recorder.started) == 2

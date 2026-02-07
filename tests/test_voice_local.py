@@ -217,6 +217,22 @@ class TestLocalAudioMicCapture:
         # Only one stream created
         assert sd.RawInputStream.call_count == 1
 
+    async def test_stop_listening_closes_even_if_stop_raises(self) -> None:
+        """stream.close() must be called even if stream.stop() raises."""
+        backend, sd = _make_backend()
+
+        mock_stream = MagicMock()
+        mock_stream.stop.side_effect = RuntimeError("PortAudio error")
+        sd.RawInputStream = MagicMock(return_value=mock_stream)
+
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.start_listening(session)
+        await backend.stop_listening(session)
+
+        mock_stream.stop.assert_called_once()
+        mock_stream.close.assert_called_once()
+        assert session.id not in backend._input_streams
+
     async def test_disconnect_stops_listening(self) -> None:
         backend, sd = _make_backend()
 
