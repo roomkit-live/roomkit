@@ -479,8 +479,10 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             va = response.voice_activity
             if hasattr(va, "voice_activity_type") and va.voice_activity_type:
                 if va.voice_activity_type == "ACTIVITY_START":
+                    logger.info("[VAD] speech_start (session %s)", session.id)
                     await self._fire_callbacks(self._speech_start_callbacks, session)
                 elif va.voice_activity_type == "ACTIVITY_END":
+                    logger.info("[VAD] speech_end (session %s)", session.id)
                     # Flush user transcription buffer — speech ended
                     await self._flush_transcription_buffer(session, "user")
                     await self._fire_callbacks(self._speech_end_callbacks, session)
@@ -515,11 +517,15 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 # speech is done and transcription should be complete.
                 await self._flush_transcription_buffer(session, "user")
                 session._response_started = True  # type: ignore[attr-defined]
+                logger.info("[Gemini] response_start (session %s)", session.id)
                 await self._fire_callbacks(self._response_start_callbacks, session)
 
             # Interrupted — user barged in while model was speaking
             if hasattr(content, "interrupted") and content.interrupted:
-                logger.debug("Model interrupted for session %s", session.id)
+                logger.info(
+                    "[Gemini] INTERRUPTED — AI cut off by barge-in (session %s)",
+                    session.id,
+                )
                 await self._flush_transcription_buffer(session, "assistant")
                 session._response_started = False  # type: ignore[attr-defined]
                 await self._fire_callbacks(self._speech_start_callbacks, session)
@@ -531,6 +537,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 # User buffer may not have been flushed by ACTIVITY_END
                 # (some models don't send voice_activity events, or
                 # transcription chunks arrive after ACTIVITY_END).
+                logger.info("[Gemini] turn_complete (session %s)", session.id)
                 await self._flush_transcription_buffer(session, "user")
                 await self._flush_transcription_buffer(session, "assistant")
                 session._response_started = False  # type: ignore[attr-defined]

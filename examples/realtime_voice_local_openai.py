@@ -1,0 +1,130 @@
+"""RoomKit — Speech-to-speech with OpenAI Realtime using local mic/speakers.
+
+Talk to GPT-4o using your system microphone — AI audio plays through
+your speakers.  Uses OpenAI's semantic VAD for smarter turn detection.
+
+Requirements:
+    pip install roomkit[realtime-openai,local-audio]
+
+Run with:
+    OPENAI_API_KEY=... uv run python examples/realtime_voice_local_openai.py
+
+Environment variables:
+    OPENAI_API_KEY      (required) OpenAI API key
+    OPENAI_MODEL        Model name (default: gpt-4o-realtime-preview)
+    OPENAI_VOICE        Voice preset (default: alloy)
+    SYSTEM_PROMPT       Custom system prompt
+    VAD_TYPE            Turn detection: semantic_vad | server_vad (default: semantic_vad)
+    VAD_EAGERNESS       Semantic VAD eagerness: low | medium | high | auto (default: high)
+    MUTE_MIC            Mute mic during playback: 1 | 0 (default: 0, use with AEC)
+
+Press Ctrl+C to stop.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import signal
+
+from roomkit import RealtimeVoiceChannel, RoomKit
+from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
+from roomkit.voice.realtime.local_transport import LocalAudioTransport
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+)
+logger = logging.getLogger("realtime_voice_local_openai")
+
+
+async def main() -> None:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("Set OPENAI_API_KEY to run this example.")
+        print("  OPENAI_API_KEY=... uv run python examples/realtime_voice_local_openai.py")
+        return
+
+    kit = RoomKit()
+
+    # --- OpenAI Realtime provider (speech-to-speech) ---
+    provider = OpenAIRealtimeProvider(
+        api_key=api_key,
+        model=os.environ.get("OPENAI_MODEL", "gpt-4o-realtime-preview"),
+    )
+
+    # --- Local audio transport: mic for input, speakers for output ---
+    #
+    # Tip: set PipeWire echo-cancel as default source/sink for full-duplex:
+    #   wpctl set-default <echo-cancel-source-id>
+    #   wpctl set-default <echo-cancel-sink-id>
+    # Then MUTE_MIC=0 (default) works great — AEC strips speaker echo.
+    # Without AEC, set MUTE_MIC=1 to prevent echo triggering barge-in.
+    mute_mic = os.environ.get("MUTE_MIC", "0") == "1"
+
+    transport = LocalAudioTransport(
+        input_sample_rate=24000,  # OpenAI Realtime expects 24kHz input
+        output_sample_rate=24000,
+        mute_mic_during_playback=mute_mic,
+    )
+
+    # --- VAD configuration ---
+    vad_type = os.environ.get("VAD_TYPE", "semantic_vad")
+    eagerness = os.environ.get("VAD_EAGERNESS", "high")
+
+    provider_config: dict[str, object] = {
+        "turn_detection_type": vad_type,
+    }
+    if vad_type == "semantic_vad":
+        provider_config["eagerness"] = eagerness
+    elif vad_type == "server_vad":
+        provider_config["silence_duration_ms"] = 800
+
+    # --- Realtime voice channel ---
+    channel = RealtimeVoiceChannel(
+        "voice",
+        provider=provider,
+        transport=transport,
+        system_prompt=os.environ.get(
+            "SYSTEM_PROMPT",
+            "You are a friendly voice assistant. Be concise and helpful.",
+        ),
+        voice=os.environ.get("OPENAI_VOICE", "alloy"),
+        input_sample_rate=24000,
+        output_sample_rate=24000,
+    )
+    kit.register_channel(channel)
+
+    # --- Room ---
+    await kit.create_room(room_id="local-demo")
+    await kit.attach_channel("local-demo", "voice")
+
+    # --- Start session (connection=None for local transport) ---
+    session = await channel.start_session(
+        "local-demo",
+        "local-user",
+        connection=None,
+        metadata={"provider_config": provider_config},
+    )
+
+    logger.info("OpenAI Realtime session started (VAD=%s, eagerness=%s)", vad_type, eagerness)
+    logger.info("Speak into your microphone! Press Ctrl+C to stop.\n")
+
+    # --- Keep running until Ctrl+C ---
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop.set)
+
+    await stop.wait()
+
+    # --- Cleanup ---
+    logger.info("\nStopping...")
+    await channel.end_session(session)
+    await kit.close()
+    logger.info("Done.")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

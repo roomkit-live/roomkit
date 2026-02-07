@@ -162,3 +162,108 @@ class SpeakerChangeEvent:
 
     timestamp: datetime = field(default_factory=_utcnow)
     """When the speaker change was detected."""
+
+
+@dataclass(frozen=True)
+class DTMFDetectedEvent:
+    """DTMF tone detected in the audio stream."""
+
+    session: VoiceSession
+    """The voice session where the DTMF was detected."""
+
+    digit: str
+    """The DTMF digit ('0'-'9', '*', '#', 'A'-'D')."""
+
+    duration_ms: float
+    """Duration of the tone in milliseconds."""
+
+    confidence: float = 1.0
+    """Detection confidence (0.0 to 1.0)."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the DTMF was detected."""
+
+
+@dataclass(frozen=True)
+class TurnCompleteEvent:
+    """User's conversational turn is considered complete."""
+
+    session: VoiceSession
+    """The voice session."""
+
+    text: str
+    """Full accumulated text of the completed turn."""
+
+    confidence: float = 1.0
+    """Confidence in the turn completion decision."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the turn was determined complete."""
+
+
+@dataclass(frozen=True)
+class TurnIncompleteEvent:
+    """User's conversational turn is not yet complete (accumulating)."""
+
+    session: VoiceSession
+    """The voice session."""
+
+    text: str
+    """Text accumulated so far in this potential turn."""
+
+    confidence: float = 1.0
+    """Confidence in the incomplete decision."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the decision was made."""
+
+
+@dataclass(frozen=True)
+class BackchannelEvent:
+    """Backchannel utterance detected (e.g. 'uh-huh', 'yeah')."""
+
+    session: VoiceSession
+    """The voice session."""
+
+    text: str
+    """The backchannel text."""
+
+    confidence: float = 1.0
+    """Detection confidence (0.0 to 1.0)."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the backchannel was detected."""
+
+
+@dataclass(frozen=True)
+class RecordingStartedEvent:
+    """Audio recording has started for a session."""
+
+    session: VoiceSession
+    """The voice session being recorded."""
+
+    recording_id: str
+    """Unique identifier for this recording."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the recording started."""
+
+
+@dataclass(frozen=True)
+class RecordingStoppedEvent:
+    """Audio recording has stopped for a session."""
+
+    session: VoiceSession
+    """The voice session that was being recorded."""
+
+    recording_id: str
+    """Unique identifier for this recording."""
+
+    path: str = ""
+    """File path of the completed recording."""
+
+    duration_ms: float = 0.0
+    """Duration of the recording in milliseconds."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the recording stopped."""

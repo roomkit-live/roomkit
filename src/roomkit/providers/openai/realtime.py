@@ -107,12 +107,14 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         self._connections[session.id] = ws
         self._sessions[session.id] = session
 
+        pc = provider_config or {}
+
         # Configure session
         session_config: dict[str, Any] = {
             "modalities": ["text", "audio"],
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
-            "input_audio_transcription": {"model": "whisper-1"},
+            "input_audio_transcription": {"model": pc.get("stt_model", "gpt-4o-transcribe")},
         }
 
         if voice:
@@ -123,10 +125,40 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             session_config["instructions"] = system_prompt
         if tools:
             session_config["tools"] = tools
-        if server_vad:
-            session_config["turn_detection"] = {"type": "server_vad"}
+
+        # --- Turn detection / VAD ---
+        td_type = pc.get("turn_detection_type", "server_vad" if server_vad else None)
+        if td_type == "semantic_vad":
+            td: dict[str, Any] = {"type": "semantic_vad"}
+            eagerness = pc.get("eagerness")
+            if eagerness:
+                td["eagerness"] = eagerness
+            if pc.get("interrupt_response") is not None:
+                td["interrupt_response"] = bool(pc["interrupt_response"])
+            if pc.get("create_response") is not None:
+                td["create_response"] = bool(pc["create_response"])
+            session_config["turn_detection"] = td
+        elif td_type == "server_vad":
+            td = {"type": "server_vad"}
+            if pc.get("threshold") is not None:
+                td["threshold"] = float(pc["threshold"])
+            if pc.get("silence_duration_ms") is not None:
+                td["silence_duration_ms"] = int(pc["silence_duration_ms"])
+            if pc.get("prefix_padding_ms") is not None:
+                td["prefix_padding_ms"] = int(pc["prefix_padding_ms"])
+            if pc.get("interrupt_response") is not None:
+                td["interrupt_response"] = bool(pc["interrupt_response"])
+            if pc.get("create_response") is not None:
+                td["create_response"] = bool(pc["create_response"])
+            session_config["turn_detection"] = td
         else:
             session_config["turn_detection"] = None
+
+        logger.info(
+            "Sending session.update: turn_detection=%s, voice=%s",
+            session_config.get("turn_detection"),
+            session_config.get("voice"),
+        )
 
         await ws.send(
             json.dumps(
@@ -292,9 +324,11 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         event_type = event.get("type", "")
 
         if event_type == "input_audio_buffer.speech_started":
+            logger.info("[VAD] speech_start (session %s)", session.id)
             await self._fire_callbacks(self._speech_start_callbacks, session)
 
         elif event_type == "input_audio_buffer.speech_stopped":
+            logger.info("[VAD] speech_end (session %s)", session.id)
             await self._fire_callbacks(self._speech_end_callbacks, session)
 
         elif event_type == "response.audio.delta":
@@ -302,6 +336,11 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             if audio_b64:
                 audio_bytes = base64.b64decode(audio_b64)
                 await self._fire_audio_callbacks(session, audio_bytes)
+
+        elif event_type == "response.audio_transcript.delta":
+            text = event.get("delta", "")
+            if text:
+                await self._fire_transcription_callbacks(session, text, "assistant", False)
 
         elif event_type == "conversation.item.input_audio_transcription.completed":
             text = event.get("transcript", "")
@@ -324,15 +363,40 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             await self._fire_tool_call_callbacks(session, call_id, name, arguments)
 
         elif event_type == "response.created":
+            logger.info("[OpenAI] response_start (session %s)", session.id)
             await self._fire_callbacks(self._response_start_callbacks, session)
 
         elif event_type == "response.done":
+            status = event.get("response", {}).get("status", "")
+            logger.info(
+                "[OpenAI] response_done status=%s (session %s)", status, session.id
+            )
             await self._fire_callbacks(self._response_end_callbacks, session)
+
+        elif event_type == "session.created":
+            td = event.get("session", {}).get("turn_detection", {})
+            logger.info(
+                "[OpenAI] session.created: turn_detection=%s (session %s)",
+                td,
+                session.id,
+            )
+
+        elif event_type == "session.updated":
+            td = event.get("session", {}).get("turn_detection", {})
+            logger.info(
+                "[OpenAI] session.updated: turn_detection=%s (session %s)",
+                td,
+                session.id,
+            )
+
+        elif event_type == "input_audio_buffer.committed":
+            logger.debug("[OpenAI] audio_buffer committed (session %s)", session.id)
 
         elif event_type == "error":
             error = event.get("error", {})
             code = error.get("code", "unknown")
             message = error.get("message", "Unknown error")
+            logger.error("[OpenAI] error [%s] %s (session %s)", code, message, session.id)
             await self._fire_error_callbacks(session, code, message)
 
     # -- Callback helpers --

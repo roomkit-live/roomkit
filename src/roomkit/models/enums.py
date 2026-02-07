@@ -72,6 +72,10 @@ class EventType(StrEnum):
     # Side effects
     TASK_CREATED = "task_created"
     OBSERVATION = "observation"
+    # Voice pipeline events
+    DTMF = "dtmf"
+    RECORDING_STARTED = "recording_started"
+    RECORDING_STOPPED = "recording_stopped"
 
 
 @unique
@@ -185,6 +189,13 @@ class HookTrigger(StrEnum):
     ON_VAD_SILENCE = "on_vad_silence"
     ON_VAD_AUDIO_LEVEL = "on_vad_audio_level"
     ON_SPEAKER_CHANGE = "on_speaker_change"
+    # Voice - Pipeline
+    ON_DTMF = "on_dtmf"
+    ON_TURN_COMPLETE = "on_turn_complete"
+    ON_TURN_INCOMPLETE = "on_turn_incomplete"
+    ON_BACKCHANNEL = "on_backchannel"
+    ON_RECORDING_STARTED = "on_recording_started"
+    ON_RECORDING_STOPPED = "on_recording_stopped"
     # Realtime Voice (RFC §20)
     ON_REALTIME_TOOL_CALL = "on_realtime_tool_call"
     ON_REALTIME_TEXT_INJECTED = "on_realtime_text_injected"

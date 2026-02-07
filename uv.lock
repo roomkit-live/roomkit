@@ -3513,6 +3513,10 @@ gemini = [
 httpx = [
     { name = "httpx" },
 ]
+local-audio = [
+    { name = "numpy" },
+    { name = "sounddevice" },
+]
 openai = [
     { name = "openai" },
 ]
@@ -3612,6 +3616,7 @@ requires-dist = [
     { name = "neonize", marker = "extra == 'sources'", specifier = ">=0.3.14" },
     { name = "neonize", marker = "extra == 'whatsapp-personal'", specifier = ">=0.3.14" },
     { name = "numpy", marker = "extra == 'fastrtc'" },
+    { name = "numpy", marker = "extra == 'local-audio'" },
     { name = "openai", marker = "extra == 'all'", specifier = ">=1.30" },
     { name = "openai", marker = "extra == 'dev'", specifier = ">=1.30" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.30" },
@@ -3631,6 +3636,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "sherpa-onnx", marker = "extra == 'sherpa-onnx'", specifier = ">=1.10" },
+    { name = "sounddevice", marker = "extra == 'local-audio'" },
     { name = "twilio", marker = "extra == 'all'", specifier = ">=9.0" },
     { name = "twilio", marker = "extra == 'dev'", specifier = ">=9.0" },
     { name = "twilio", marker = "extra == 'providers'", specifier = ">=9.0" },
@@ -3640,7 +3646,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["all", "anthropic", "dev", "docs", "fastrtc", "gemini", "httpx", "openai", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "realtime-gemini", "realtime-openai", "sherpa-onnx", "sources", "sse", "teams", "twilio", "vllm", "websocket", "whatsapp-personal"]
+provides-extras = ["all", "anthropic", "dev", "docs", "fastrtc", "gemini", "httpx", "local-audio", "openai", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "realtime-gemini", "realtime-openai", "sherpa-onnx", "sources", "sse", "teams", "twilio", "vllm", "websocket", "whatsapp-personal"]
 
 [[package]]
 name = "rpds-py"
@@ -3860,6 +3866,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e8/c4/ba2f8066cceb6f23394729afe52f3bf7adec04bf9ed2c820b39e19299111/sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88", size = 30594, upload-time = "2021-05-16T22:03:42.897Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0", size = 29575, upload-time = "2021-05-16T22:03:41.177Z" },
+]
+
+[[package]]
+name = "sounddevice"
+version = "0.5.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2a/f9/2592608737553638fca98e21e54bfec40bf577bb98a61b2770c912aab25e/sounddevice-0.5.5.tar.gz", hash = "sha256:22487b65198cb5bf2208755105b524f78ad173e5ab6b445bdab1c989f6698df3", size = 143191, upload-time = "2026-01-23T18:36:43.529Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/0a/478e441fd049002cf308520c0d62dd8333e7c6cc8d997f0dda07b9fbcc46/sounddevice-0.5.5-py3-none-any.whl", hash = "sha256:30ff99f6c107f49d25ad16a45cacd8d91c25a1bcdd3e81a206b921a3a6405b1f", size = 32807, upload-time = "2026-01-23T18:36:35.649Z" },
+    { url = "https://files.pythonhosted.org/packages/56/f9/c037c35f6d0b6bc3bc7bfb314f1d6f1f9a341328ef47cd63fc4f850a7b27/sounddevice-0.5.5-py3-none-macosx_10_6_x86_64.macosx_10_6_universal2.whl", hash = "sha256:05eb9fd6c54c38d67741441c19164c0dae8ce80453af2d8c4ad2e7823d15b722", size = 108557, upload-time = "2026-01-23T18:36:37.41Z" },
+    { url = "https://files.pythonhosted.org/packages/88/a1/d19dd9889cd4bce2e233c4fac007cd8daaf5b9fe6e6a5d432cf17be0b807/sounddevice-0.5.5-py3-none-win32.whl", hash = "sha256:1234cc9b4c9df97b6cbe748146ae0ec64dd7d6e44739e8e42eaa5b595313a103", size = 317765, upload-time = "2026-01-23T18:36:39.047Z" },
+    { url = "https://files.pythonhosted.org/packages/c3/0e/002ed7c4c1c2ab69031f78989d3b789fee3a7fba9e586eb2b81688bf4961/sounddevice-0.5.5-py3-none-win_amd64.whl", hash = "sha256:cfc6b2c49fb7f555591c78cb8ecf48d6a637fd5b6e1db5fec6ed9365d64b3519", size = 365324, upload-time = "2026-01-23T18:36:40.496Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/39/a61d4b83a7746b70d23d9173be688c0c6bfc7173772344b7442c2c155497/sounddevice-0.5.5-py3-none-win_arm64.whl", hash = "sha256:3861901ddd8230d2e0e8ae62ac320cdd4c688d81df89da036dcb812f757bb3e6", size = 317115, upload-time = "2026-01-23T18:36:42.235Z" },
 ]
 
 [[package]]

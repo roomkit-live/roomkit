@@ -162,30 +162,45 @@ Providers handle the actual API calls. Every provider has a mock counterpart for
 
 ### Audio Pipeline
 
-The audio pipeline sits between the voice backend (transport) and STT. It processes raw audio frames through pluggable stages:
+The audio pipeline sits between the voice backend (transport) and STT, processing raw audio through pluggable inbound and outbound chains:
 
 ```
-Backend -> [Denoiser] -> VAD -> [Diarization] -> STT
+Inbound:   Backend → [Resampler] → [Recorder] → [AEC] → [AGC] → [Denoiser] → VAD → [Diarization] + [DTMF] → STT
+Outbound:  TTS → [PostProcessors] → [Recorder] → AEC.feed_reference → [Resampler] → Backend
 ```
+
+AEC and AGC stages are automatically skipped when the backend declares `NATIVE_AEC` / `NATIVE_AGC` capabilities.
 
 | Component | Role | Required |
 |-----------|------|----------|
 | `VADProvider` | Voice activity detection (speech start/end) | No |
 | `DenoiserProvider` | Noise reduction before VAD | No |
 | `DiarizationProvider` | Speaker identification | No |
-| `AudioPostProcessor` | Custom frame transforms (deferred) | No |
+| `AECProvider` | Acoustic Echo Cancellation | No |
+| `AGCProvider` | Automatic Gain Control | No |
+| `DTMFDetector` | DTMF tone detection (parallel with main chain) | No |
+| `AudioRecorder` | Record inbound/outbound audio | No |
+| `AudioPostProcessor` | Custom outbound frame transforms | No |
+| `TurnDetector` | Post-STT turn completion detection | No |
+| `BackchannelDetector` | Distinguish interruptions from acknowledgements | No |
 
 All stages are optional — configure what you need:
 
 ```python
 from roomkit import VoiceChannel
 from roomkit.voice.pipeline import AudioPipelineConfig, VADConfig
+from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
 
-# Traditional voice: VAD drives STT transcription
 pipeline = AudioPipelineConfig(
-    vad=my_vad_provider,
+    vad=my_vad,
     denoiser=my_denoiser,
     diarization=my_diarizer,
+    aec=my_aec,
+    agc=my_agc,
+    dtmf=my_dtmf_detector,
+    recorder=my_recorder,
+    recording_config=my_recording_config,
+    turn_detector=my_turn_detector,
     vad_config=VADConfig(silence_threshold_ms=500),
 )
 voice = VoiceChannel("voice", stt=stt, tts=tts, backend=backend, pipeline=pipeline)
@@ -194,7 +209,18 @@ voice = VoiceChannel("voice", stt=stt, tts=tts, backend=backend, pipeline=pipeli
 preprocess = AudioPipelineConfig(denoiser=my_denoiser, diarization=my_diarizer)
 ```
 
-The pipeline fires events that the hook system can intercept: `ON_SPEECH_START`, `ON_SPEECH_END`, `ON_VAD_SILENCE`, `ON_VAD_AUDIO_LEVEL`, `ON_SPEAKER_CHANGE`. See [`examples/voice_pipeline.py`](examples/voice_pipeline.py) for a complete example.
+**Interruption strategies** control how user speech during TTS playback is handled:
+
+```python
+voice = VoiceChannel(
+    "voice", stt=stt, tts=tts, backend=backend, pipeline=pipeline,
+    interruption=InterruptionConfig(strategy=InterruptionStrategy.CONFIRMED, min_speech_ms=300),
+)
+```
+
+Four strategies: `IMMEDIATE` (interrupt on any speech), `CONFIRMED` (wait for sustained speech), `SEMANTIC` (use backchannel detection to ignore "uh-huh"), `DISABLED` (ignore speech during playback).
+
+The pipeline fires events that the hook system can intercept: `ON_SPEECH_START`, `ON_SPEECH_END`, `ON_VAD_SILENCE`, `ON_VAD_AUDIO_LEVEL`, `ON_SPEAKER_CHANGE`, `ON_DTMF`, `ON_TURN_COMPLETE`, `ON_TURN_INCOMPLETE`, `ON_BACKCHANNEL`, `ON_RECORDING_STARTED`, `ON_RECORDING_STOPPED`. See [`examples/voice_pipeline.py`](examples/voice_pipeline.py) for a complete example.
 
 ### Realtime Voice (Speech-to-Speech)
 
@@ -238,7 +264,7 @@ async def check(event: RoomEvent, ctx: RoomContext) -> HookResult:
     return HookResult.allow()
 ```
 
-**Triggers:** `BEFORE_BROADCAST`, `AFTER_BROADCAST`, `ON_ROOM_CREATED`, `ON_ROOM_PAUSED`, `ON_ROOM_CLOSED`, `ON_CHANNEL_ATTACHED`, `ON_CHANNEL_DETACHED`, `ON_CHANNEL_MUTED`, `ON_CHANNEL_UNMUTED`, `ON_IDENTITY_AMBIGUOUS`, `ON_IDENTITY_UNKNOWN`, `ON_PARTICIPANT_IDENTIFIED`, `ON_TASK_CREATED`, `ON_DELIVERY_STATUS`, `ON_ERROR`, `ON_SPEECH_START`, `ON_SPEECH_END`, `ON_TRANSCRIPTION`, `BEFORE_TTS`, `AFTER_TTS`, `ON_TTS_CANCELLED`, `ON_BARGE_IN`, `ON_VAD_SILENCE`, `ON_VAD_AUDIO_LEVEL`, `ON_SPEAKER_CHANGE`, `ON_REALTIME_TOOL_CALL`, `ON_REALTIME_TEXT_INJECTED`, `ON_OBSERVATION`.
+**Triggers:** `BEFORE_BROADCAST`, `AFTER_BROADCAST`, `ON_ROOM_CREATED`, `ON_ROOM_PAUSED`, `ON_ROOM_CLOSED`, `ON_CHANNEL_ATTACHED`, `ON_CHANNEL_DETACHED`, `ON_CHANNEL_MUTED`, `ON_CHANNEL_UNMUTED`, `ON_IDENTITY_AMBIGUOUS`, `ON_IDENTITY_UNKNOWN`, `ON_PARTICIPANT_IDENTIFIED`, `ON_TASK_CREATED`, `ON_DELIVERY_STATUS`, `ON_ERROR`, `ON_SPEECH_START`, `ON_SPEECH_END`, `ON_TRANSCRIPTION`, `BEFORE_TTS`, `AFTER_TTS`, `ON_TTS_CANCELLED`, `ON_BARGE_IN`, `ON_VAD_SILENCE`, `ON_VAD_AUDIO_LEVEL`, `ON_SPEAKER_CHANGE`, `ON_DTMF`, `ON_TURN_COMPLETE`, `ON_TURN_INCOMPLETE`, `ON_BACKCHANNEL`, `ON_RECORDING_STARTED`, `ON_RECORDING_STOPPED`, `ON_REALTIME_TOOL_CALL`, `ON_REALTIME_TEXT_INJECTED`, `ON_OBSERVATION`.
 
 Hooks support **filtering** by channel type, channel ID, and direction:
 

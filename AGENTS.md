@@ -105,14 +105,21 @@ src/roomkit/
 │   ├── events.py            # BargeInEvent, VADSilenceEvent, SpeakerChangeEvent, etc.
 │   ├── stt/                 # Speech-to-text: DeepgramSTT, SherpaOnnxSTT, MockSTT
 │   ├── tts/                 # Text-to-speech: ElevenLabsTTS, SherpaOnnxTTS, MockTTS
-│   ├── pipeline/            # Audio processing pipeline (VAD, denoiser, diarization)
-│   │   ├── engine.py        # AudioPipeline orchestrator
+│   ├── interruption.py      # InterruptionHandler, InterruptionConfig, 4 strategies
+│   ├── pipeline/            # Audio processing pipeline (10 provider ABCs)
+│   │   ├── engine.py        # AudioPipeline orchestrator (inbound + outbound)
 │   │   ├── config.py        # AudioPipelineConfig
 │   │   ├── vad_provider.py  # VADProvider ABC, VADEvent, VADConfig
 │   │   ├── denoiser_provider.py  # DenoiserProvider ABC
 │   │   ├── diarization_provider.py  # DiarizationProvider ABC, DiarizationResult
-│   │   ├── postprocessor.py # AudioPostProcessor ABC (deferred)
-│   │   └── mock.py          # MockVADProvider, MockDenoiserProvider, MockDiarizationProvider
+│   │   ├── aec_provider.py  # AECProvider ABC (echo cancellation)
+│   │   ├── agc_provider.py  # AGCProvider ABC (gain control)
+│   │   ├── dtmf_detector.py # DTMFDetector ABC, DTMFEvent
+│   │   ├── recorder.py      # AudioRecorder ABC, RecordingConfig, RecordingHandle
+│   │   ├── turn_detector.py # TurnDetector ABC, TurnContext, TurnDecision
+│   │   ├── backchannel_detector.py  # BackchannelDetector ABC
+│   │   ├── postprocessor.py # AudioPostProcessor ABC
+│   │   └── mock.py          # 9 mock providers for testing
 │   ├── realtime/            # Speech-to-speech: GeminiLive, OpenAIRealtime, Mock
 │   └── backends/            # Audio transport: FastRTCVoiceBackend, MockVoiceBackend
 └── identity/
@@ -246,35 +253,72 @@ async def sms_audit(event: RoomEvent, ctx: RoomContext) -> None:
 
 ### Audio Pipeline (Voice)
 
-The audio pipeline sits between the voice backend and STT, processing raw audio frames through pluggable stages: **denoiser -> VAD -> diarization**.
+The audio pipeline sits between the voice backend and STT, processing audio through pluggable inbound and outbound chains:
+
+```
+Inbound:   Backend → [Resampler] → [Recorder] → [AEC] → [AGC] → [Denoiser] → VAD → [Diarization] + [DTMF]
+Outbound:  TTS → [PostProcessors] → [Recorder] → AEC.feed_reference → [Resampler] → Backend
+```
+
+AEC and AGC stages are automatically skipped when the backend declares `NATIVE_AEC` / `NATIVE_AGC` capabilities via `VoiceCapability` flags.
 
 ```python
 from roomkit import VoiceChannel
 from roomkit.voice.pipeline import AudioPipelineConfig, VADConfig
+from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
 
 # All stages are optional — configure what you need
-# Traditional voice: VAD drives speech detection + STT
 pipeline = AudioPipelineConfig(
     vad=my_vad_provider,
     denoiser=my_denoiser,
     diarization=my_diarizer,
+    aec=my_aec,
+    agc=my_agc,
+    dtmf=my_dtmf_detector,
+    recorder=my_recorder,
+    recording_config=my_recording_config,
+    turn_detector=my_turn_detector,
     vad_config=VADConfig(silence_threshold_ms=500),
 )
 
-# Realtime voice: denoiser + diarization only (provider handles VAD)
-# preprocess = AudioPipelineConfig(denoiser=my_denoiser, diarization=my_diarizer)
-
-voice = VoiceChannel("voice", stt=stt, tts=tts, backend=backend, pipeline=pipeline)
+voice = VoiceChannel(
+    "voice", stt=stt, tts=tts, backend=backend, pipeline=pipeline,
+    interruption=InterruptionConfig(strategy=InterruptionStrategy.CONFIRMED, min_speech_ms=300),
+)
 ```
 
 **Provider ABCs** (implement these to add a new provider):
 
-- `VADProvider` — `process(frame: AudioFrame) -> VADEvent | None`, `reset()`, `close()`
-- `DenoiserProvider` — `process(frame: AudioFrame) -> AudioFrame`, `close()`
-- `DiarizationProvider` — `process(frame: AudioFrame) -> DiarizationResult | None`, `reset()`, `close()`
-- `AudioPostProcessor` — `process(frame: AudioFrame) -> AudioFrame`, `close()` (deferred)
+- `VADProvider` — `process(frame) -> VADEvent | None`, `reset()`, `close()`
+- `DenoiserProvider` — `process(frame) -> AudioFrame`, `reset()`, `close()`
+- `DiarizationProvider` — `process(frame) -> DiarizationResult | None`, `reset()`, `close()`
+- `AudioPostProcessor` — `process(frame) -> AudioFrame`, `reset()`, `close()`
+- `AGCProvider` — `process(frame) -> AudioFrame`, `reset()`, `close()`
+- `AECProvider` — `process(frame) -> AudioFrame`, `feed_reference(frame)`, `reset()`, `close()`
+- `DTMFDetector` — `process(frame) -> DTMFEvent | None`, `reset()`, `close()`
+- `AudioRecorder` — `start(session, config) -> RecordingHandle`, `stop(handle) -> RecordingResult`, `tap_inbound/outbound(handle, frame)`
+- `TurnDetector` — `evaluate(context: TurnContext) -> TurnDecision`
+- `BackchannelDetector` — `evaluate(context: BackchannelContext) -> BackchannelDecision`
 
-**AudioFrame** (`voice/audio_frame.py`) replaces `AudioChunk` for inbound audio:
+**Capability flags** (`voice/base.py`):
+- `VoiceCapability.NATIVE_AEC` — backend has built-in echo cancellation; AEC stage is skipped
+- `VoiceCapability.NATIVE_AGC` — backend has built-in gain control; AGC stage is skipped
+- `VoiceCapability.DTMF_INBAND` — backend sends DTMF as in-band audio tones
+- `VoiceCapability.DTMF_SIGNALING` — backend sends DTMF via out-of-band signaling
+
+**InterruptionHandler** (`voice/interruption.py`):
+Four strategies for handling user speech during TTS playback:
+- `IMMEDIATE` — interrupt on any speech (default, matches legacy `enable_barge_in=True`)
+- `CONFIRMED` — wait for `min_speech_ms` of sustained speech
+- `SEMANTIC` — use `BackchannelDetector` to ignore acknowledgements ("uh-huh", "yeah")
+- `DISABLED` — ignore speech during playback (matches legacy `enable_barge_in=False`)
+
+Legacy `enable_barge_in`/`barge_in_threshold_ms` params are automatically mapped to the appropriate strategy.
+
+**Turn detection** (`voice/pipeline/turn_detector.py`):
+`TurnDetector` integrates post-STT in `VoiceChannel._process_speech_end()`. Transcription fragments accumulate in `_pending_turns` until the detector returns `is_complete=True`, at which point the combined text is routed. `ON_TURN_COMPLETE` and `ON_TURN_INCOMPLETE` hooks fire accordingly.
+
+**AudioFrame** (`voice/audio_frame.py`) is the inbound audio unit:
 
 ```python
 @dataclass
@@ -287,9 +331,9 @@ class AudioFrame:
     metadata: dict[str, Any] = field(default_factory=dict)
 ```
 
-Pipeline stages annotate `frame.metadata` as they process (e.g., `denoiser`, `vad`, `diarization` keys).
+Pipeline stages annotate `frame.metadata` as they process (e.g., `denoiser`, `vad`, `aec`, `agc`, `diarization`, `dtmf` keys).
 
-**Mock providers** (`voice/pipeline/mock.py`) accept pre-configured event sequences for testing:
+**Mock providers** (`voice/pipeline/mock.py`) — 9 mocks for testing: `MockVADProvider`, `MockDenoiserProvider`, `MockDiarizationProvider`, `MockAGCProvider`, `MockAECProvider`, `MockDTMFDetector`, `MockAudioRecorder`, `MockTurnDetector`, `MockBackchannelDetector`. All accept pre-configured event sequences:
 
 ```python
 from roomkit.voice.pipeline import MockVADProvider, VADEvent, VADEventType
@@ -546,10 +590,11 @@ async def test_create_room(self) -> None:
 
 ### Adding a New Pipeline Provider
 
-1. Create provider in `voice/pipeline/<name>.py` implementing the ABC (`VADProvider`, `DenoiserProvider`, or `DiarizationProvider`)
-2. Implement `name` property, `process()` method, and optionally `reset()` / `close()`
-3. Export from `voice/pipeline/__init__.py`
-4. Add tests in `tests/test_audio_pipeline.py`
+1. Create provider in `voice/pipeline/<name>.py` implementing the appropriate ABC (`VADProvider`, `DenoiserProvider`, `DiarizationProvider`, `AGCProvider`, `AECProvider`, `DTMFDetector`, `AudioRecorder`, `AudioPostProcessor`, `TurnDetector`, or `BackchannelDetector`)
+2. Implement `name` property, `process()` (or `evaluate()` for TurnDetector/BackchannelDetector), and `reset()` / `close()`
+3. Add a corresponding mock to `voice/pipeline/mock.py`
+4. Export from `voice/pipeline/__init__.py`
+5. Add tests in `tests/test_audio_pipeline.py`
 
 ### Adding a New Hook Trigger
 
@@ -670,6 +715,8 @@ Delivery:            ON_DELIVERY_STATUS
 Side Effects:        ON_TASK_CREATED, ON_ERROR
 Voice:               ON_SPEECH_START, ON_SPEECH_END, ON_TRANSCRIPTION, BEFORE_TTS, AFTER_TTS
 Voice Pipeline:      ON_VAD_SILENCE, ON_VAD_AUDIO_LEVEL, ON_SPEAKER_CHANGE, ON_BARGE_IN, ON_TTS_CANCELLED
+                     ON_DTMF, ON_TURN_COMPLETE, ON_TURN_INCOMPLETE, ON_BACKCHANNEL,
+                     ON_RECORDING_STARTED, ON_RECORDING_STOPPED
 Realtime Voice:      ON_REALTIME_TOOL_CALL, ON_REALTIME_TEXT_INJECTED
 Observability:       ON_OBSERVATION
 ```

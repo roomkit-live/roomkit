@@ -161,13 +161,13 @@ class VoiceBackend(ABC):
         Args:
             callback: Function called with (session, audio_frame).
         """
-        pass  # Default no-op, override if supported
+        pass  # noqa: B027
 
     # -------------------------------------------------------------------------
     # Barge-in support
     # -------------------------------------------------------------------------
 
-    def on_barge_in(self, callback: BargeInCallback) -> None:
+    def on_barge_in(self, callback: BargeInCallback) -> None:  # noqa: B027
         """Register callback for barge-in detection.
 
         Only called if capabilities includes BARGE_IN.
@@ -177,7 +177,6 @@ class VoiceBackend(ABC):
         Args:
             callback: Function called with (session).
         """
-        pass  # Default no-op, override if supported
 
     async def cancel_audio(self, session: VoiceSession) -> bool:
         """Cancel ongoing audio playback for a session.
@@ -218,4 +217,4 @@ class VoiceBackend(ABC):
             text: The transcribed or response text.
             role: Either "user" (transcription) or "assistant" (AI response).
         """
-        pass  # Default no-op, override if supported
+        pass  # noqa: B027

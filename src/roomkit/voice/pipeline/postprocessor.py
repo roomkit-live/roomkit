@@ -34,5 +34,8 @@ class AudioPostProcessor(ABC):
         """
         ...
 
+    def reset(self) -> None:  # noqa: B027
+        """Reset internal state."""
+
     def close(self) -> None:  # noqa: B027
         """Release resources."""

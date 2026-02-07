@@ -33,6 +33,7 @@ vllm = ["openai>=1.30"]
 gemini = ["google-genai>=1.0.0"]
 sherpa-onnx = ["sherpa-onnx>=1.10"]
 fastrtc = ["fastrtc", "numpy"]
+local-audio = ["sounddevice", "numpy"]
 twilio = ["twilio>=9.0"]
 phonenumbers = ["phonenumbers>=8.13"]
 pynacl = ["pynacl>=1.5"]
@@ -138,6 +139,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["fastrtc", "fastrtc.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["sounddevice", "sounddevice.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

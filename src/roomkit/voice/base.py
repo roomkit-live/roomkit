@@ -45,6 +45,18 @@ class VoiceCapability(Flag):
     BARGE_IN = auto()
     """Backend detects and handles barge-in (user interrupts TTS)."""
 
+    NATIVE_AEC = auto()
+    """Backend provides its own Acoustic Echo Cancellation."""
+
+    NATIVE_AGC = auto()
+    """Backend provides its own Automatic Gain Control."""
+
+    DTMF_INBAND = auto()
+    """Backend can detect DTMF tones from the audio stream."""
+
+    DTMF_SIGNALING = auto()
+    """Backend receives DTMF via out-of-band signaling (e.g. SIP INFO)."""
+
 
 @dataclass
 class AudioChunk:

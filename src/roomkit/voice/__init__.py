@@ -15,23 +15,61 @@ from roomkit.voice.base import (
     VoiceSessionState,
 )
 from roomkit.voice.events import (
+    BackchannelEvent,
     BargeInEvent,
+    DTMFDetectedEvent,
     PartialTranscriptionEvent,
+    RecordingStartedEvent,
+    RecordingStoppedEvent,
     SpeakerChangeEvent,
     TTSCancelledEvent,
+    TurnCompleteEvent,
+    TurnIncompleteEvent,
     VADAudioLevelEvent,
     VADSilenceEvent,
 )
+from roomkit.voice.interruption import (
+    InterruptionConfig,
+    InterruptionDecision,
+    InterruptionHandler,
+    InterruptionStrategy,
+)
 from roomkit.voice.pipeline import (
+    AECProvider,
+    AGCConfig,
+    AGCProvider,
+    AudioFormat,
     AudioPipeline,
     AudioPipelineConfig,
+    AudioPipelineContract,
     AudioPostProcessor,
+    AudioRecorder,
+    BackchannelContext,
+    BackchannelDecision,
+    BackchannelDetector,
     DenoiserProvider,
     DiarizationProvider,
     DiarizationResult,
+    DTMFDetector,
+    DTMFEvent,
+    MockAECProvider,
+    MockAGCProvider,
+    MockAudioRecorder,
+    MockBackchannelDetector,
     MockDenoiserProvider,
     MockDiarizationProvider,
+    MockDTMFDetector,
+    MockTurnDetector,
     MockVADProvider,
+    RecordingChannelMode,
+    RecordingConfig,
+    RecordingHandle,
+    RecordingMode,
+    RecordingResult,
+    TurnContext,
+    TurnDecision,
+    TurnDetector,
+    TurnEntry,
     VADConfig,
     VADEvent,
     VADEventType,
@@ -53,26 +91,65 @@ __all__ = [
     "AudioReceivedCallback",
     "BargeInCallback",
     # Event types
+    "BackchannelEvent",
     "BargeInEvent",
+    "DTMFDetectedEvent",
     "PartialTranscriptionEvent",
+    "RecordingStartedEvent",
+    "RecordingStoppedEvent",
     "SpeakerChangeEvent",
     "TTSCancelledEvent",
+    "TurnCompleteEvent",
+    "TurnIncompleteEvent",
     "VADAudioLevelEvent",
     "VADSilenceEvent",
-    # Pipeline types
+    # Pipeline config
+    "AudioFormat",
     "AudioPipeline",
     "AudioPipelineConfig",
+    "AudioPipelineContract",
+    # Provider ABCs
+    "AECProvider",
+    "AGCProvider",
     "AudioPostProcessor",
+    "AudioRecorder",
+    "BackchannelDetector",
     "DenoiserProvider",
     "DiarizationProvider",
+    "DTMFDetector",
+    "TurnDetector",
+    "VADProvider",
+    # Data types
+    "AGCConfig",
+    "BackchannelContext",
+    "BackchannelDecision",
     "DiarizationResult",
+    "DTMFEvent",
+    "RecordingChannelMode",
+    "RecordingConfig",
+    "RecordingHandle",
+    "RecordingMode",
+    "RecordingResult",
+    "TurnContext",
+    "TurnDecision",
+    "TurnEntry",
     "VADConfig",
     "VADEvent",
     "VADEventType",
-    "VADProvider",
+    # Interruption
+    "InterruptionConfig",
+    "InterruptionDecision",
+    "InterruptionHandler",
+    "InterruptionStrategy",
     # Pipeline mocks
+    "MockAECProvider",
+    "MockAGCProvider",
+    "MockAudioRecorder",
+    "MockBackchannelDetector",
     "MockDenoiserProvider",
     "MockDiarizationProvider",
+    "MockDTMFDetector",
+    "MockTurnDetector",
     "MockVADProvider",
     # Providers
     "STTProvider",
@@ -108,6 +185,13 @@ def get_elevenlabs_config() -> type:
     from roomkit.voice.tts.elevenlabs import ElevenLabsConfig
 
     return ElevenLabsConfig
+
+
+def get_local_audio_backend() -> type:
+    """Get LocalAudioBackend class (requires sounddevice, numpy)."""
+    from roomkit.voice.backends.local import LocalAudioBackend
+
+    return LocalAudioBackend
 
 
 def get_fastrtc_backend() -> type:
@@ -171,6 +255,13 @@ def get_websocket_realtime_transport() -> type:
     from roomkit.voice.realtime.ws_transport import WebSocketRealtimeTransport
 
     return WebSocketRealtimeTransport
+
+
+def get_local_audio_transport() -> type:
+    """Get LocalAudioTransport class (requires sounddevice, numpy)."""
+    from roomkit.voice.realtime.local_transport import LocalAudioTransport
+
+    return LocalAudioTransport
 
 
 def get_fastrtc_realtime_transport() -> type:
