@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.base import VoiceSession
     from roomkit.voice.pipeline.config import AudioPipelineConfig
+    from roomkit.voice.pipeline.debug_taps import DebugTapSession
     from roomkit.voice.pipeline.diarization.base import DiarizationResult
     from roomkit.voice.pipeline.dtmf.base import DTMFEvent
     from roomkit.voice.pipeline.recorder.base import RecordingHandle, RecordingResult
@@ -180,6 +181,8 @@ class AudioPipeline:
         self._last_speaker_id: str | None = None
         # Active recording handle (per session, keyed by session_id)
         self._recording_handles: dict[str, RecordingHandle] = {}
+        # Debug tap sessions (per session, keyed by session_id)
+        self._debug_tap_sessions: dict[str, DebugTapSession] = {}
 
     # -----------------------------------------------------------------
     # Callback registration
@@ -220,6 +223,12 @@ class AudioPipeline:
         """
         self.process_inbound(session, frame)
 
+    def _debug_tap(self, session_id: str, stage: str, frame: AudioFrame) -> None:
+        """Write a frame to the debug tap for the given stage (if active)."""
+        dt = self._debug_tap_sessions.get(session_id)
+        if dt is not None:
+            dt.tap(stage, frame)
+
     def process_inbound(self, session: VoiceSession, frame: AudioFrame) -> None:
         """Process a single inbound audio frame through the pipeline.
 
@@ -259,6 +268,9 @@ class AudioPipeline:
                 except Exception:
                     logger.exception("Recorder inbound tap error")
 
+        # Debug tap: raw (after resampler, before processing)
+        self._debug_tap(session.id, "raw", current_frame)
+
         # Stage 1.5: DTMF detection (before AEC/denoiser to preserve tones)
         if self._config.dtmf is not None:
             try:
@@ -288,6 +300,9 @@ class AudioPipeline:
             except Exception:
                 logger.exception("AEC error")
 
+        # Debug tap: post_aec
+        self._debug_tap(session.id, "post_aec", current_frame)
+
         # Stage 3: AGC (skip if backend has NATIVE_AGC)
         if (
             self._config.agc is not None
@@ -299,6 +314,9 @@ class AudioPipeline:
             except Exception:
                 logger.exception("AGC error")
 
+        # Debug tap: post_agc
+        self._debug_tap(session.id, "post_agc", current_frame)
+
         # Stage 4: Denoiser
         if self._config.denoiser is not None:
             try:
@@ -306,6 +324,9 @@ class AudioPipeline:
                 current_frame.metadata["denoiser"] = self._config.denoiser.name
             except Exception:
                 logger.exception("Denoiser error")
+
+        # Debug tap: post_denoiser
+        self._debug_tap(session.id, "post_denoiser", current_frame)
 
         # Stage 5: VAD
         vad_event: VADEvent | None = None
@@ -331,6 +352,15 @@ class AudioPipeline:
 
             # Fire speech_end callbacks with accumulated audio
             if vad_event.type == VADEventType.SPEECH_END and vad_event.audio_bytes is not None:
+                # Debug tap: post_vad_speech (accumulated speech segment)
+                dt = self._debug_tap_sessions.get(session.id)
+                if dt is not None:
+                    dt.tap_vad_speech(
+                        vad_event.audio_bytes,
+                        sample_rate=current_frame.sample_rate,
+                        channels=current_frame.channels,
+                        sample_width=current_frame.sample_width,
+                    )
                 for cb in self._speech_end_callbacks:
                     try:
                         result = cb(session, vad_event.audio_bytes)
@@ -371,12 +401,18 @@ class AudioPipeline:
         """
         current_frame = frame
 
+        # Debug tap: outbound_raw (before postprocessors)
+        self._debug_tap(session.id, "outbound_raw", current_frame)
+
         # Stage 1: PostProcessors
         for pp in self._config.postprocessors:
             try:
                 current_frame = pp.process(current_frame)
             except Exception:
                 logger.exception("PostProcessor '%s' error", pp.name)
+
+        # Debug tap: outbound_final (after postprocessors)
+        self._debug_tap(session.id, "outbound_final", current_frame)
 
         # Stage 2: Recorder outbound tap
         handle = self._recording_handles.get(session.id)
@@ -430,6 +466,14 @@ class AudioPipeline:
         """
         self.reset()
 
+        # Start debug taps if configured
+        if self._config.debug_taps is not None and self._config.debug_taps.output_dir:
+            from roomkit.voice.pipeline.debug_taps import DebugTapSession
+
+            self._debug_tap_sessions[session.id] = DebugTapSession(
+                self._config.debug_taps, session.id
+            )
+
         # Start recording if configured
         if self._config.recorder is not None and self._config.recording_config is not None:
             try:
@@ -447,8 +491,13 @@ class AudioPipeline:
     def on_session_ended(self, session: VoiceSession) -> None:
         """Called when a voice session ends.
 
-        Stops recording if active.
+        Stops recording and debug taps if active.
         """
+        # Close debug taps
+        dt = self._debug_tap_sessions.pop(session.id, None)
+        if dt is not None:
+            dt.close()
+
         handle = self._recording_handles.pop(session.id, None)
         if handle is not None and self._config.recorder is not None:
             try:
@@ -484,6 +533,10 @@ class AudioPipeline:
             pp.reset()
         self._last_speaker_id = None
         self._recording_handles.clear()
+        # Close debug taps from any previous session
+        for dt in self._debug_tap_sessions.values():
+            dt.close()
+        self._debug_tap_sessions.clear()
 
     def close(self) -> None:
         """Release all pipeline resources."""

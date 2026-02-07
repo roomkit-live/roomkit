@@ -14,6 +14,7 @@ from roomkit.voice.pipeline.config import (
     AudioPipelineContract,
     ResamplerConfig,
 )
+from roomkit.voice.pipeline.debug_taps import PipelineDebugTaps
 from roomkit.voice.pipeline.denoiser import (
     DenoiserProvider,
     MockDenoiserProvider,
@@ -63,6 +64,7 @@ __all__ = [
     "AudioFormat",
     "AudioPipelineConfig",
     "AudioPipelineContract",
+    "PipelineDebugTaps",
     "ResamplerConfig",
     # Engine
     "AudioPipeline",

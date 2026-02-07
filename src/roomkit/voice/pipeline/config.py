@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from roomkit.voice.pipeline.aec.base import AECProvider
     from roomkit.voice.pipeline.agc.base import AGCConfig, AGCProvider
     from roomkit.voice.pipeline.backchannel.base import BackchannelDetector
+    from roomkit.voice.pipeline.debug_taps import PipelineDebugTaps
     from roomkit.voice.pipeline.denoiser.base import DenoiserProvider
     from roomkit.voice.pipeline.diarization.base import DiarizationProvider
     from roomkit.voice.pipeline.dtmf.base import DTMFDetector
@@ -147,3 +148,6 @@ class AudioPipelineConfig:
 
     contract: AudioPipelineContract | None = None
     """Optional input/output format contract."""
+
+    debug_taps: PipelineDebugTaps | None = None
+    """Optional diagnostic audio capture at pipeline stage boundaries."""

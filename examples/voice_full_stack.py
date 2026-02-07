@@ -35,6 +35,8 @@ Environment variables:
     SYSTEM_PROMPT       Custom system prompt for Claude
     RECORDING_DIR       Directory for WAV recordings (default: ./recordings)
     RECORDING_MODE      Channel mode: mixed | separate | stereo (default: stereo)
+    DEBUG_TAPS_DIR      Directory for pipeline debug taps (disabled if unset)
+    DEBUG_TAPS_STAGES   Comma-separated stages to capture (default: all)
     AEC                 Enable echo cancellation: 1 | 0 (default: 1)
     DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 1)
     DENOISE_MODEL       Path to GTCRN .onnx model (sherpa-onnx denoiser, overrides DENOISE)
@@ -68,6 +70,7 @@ from roomkit.channels.ai import AIChannel
 from roomkit.voice.backends.local import LocalAudioBackend
 from roomkit.voice.pipeline import (
     AudioPipelineConfig,
+    PipelineDebugTaps,
     RecordingChannelMode,
     RecordingConfig,
     WavFileRecorder,
@@ -218,6 +221,18 @@ async def main() -> None:
         )
         logger.info("VAD: EnergyVAD (set VAD_MODEL for neural VAD)")
 
+    # --- Debug taps (pipeline stage audio capture) ----------------------------
+    debug_taps = None
+    debug_taps_dir = os.environ.get("DEBUG_TAPS_DIR", "")
+    if debug_taps_dir:
+        stages_env = os.environ.get("DEBUG_TAPS_STAGES", "all")
+        stages = [s.strip() for s in stages_env.split(",")]
+        debug_taps = PipelineDebugTaps(
+            output_dir=debug_taps_dir,
+            stages=stages,
+        )
+        logger.info("Debug taps: %s (stages=%s)", debug_taps_dir, stages)
+
     # --- Pipeline config ------------------------------------------------------
     pipeline_config = AudioPipelineConfig(
         vad=vad,
@@ -225,6 +240,7 @@ async def main() -> None:
         denoiser=denoiser,
         recorder=recorder,
         recording_config=recording_config,
+        debug_taps=debug_taps,
     )
 
     # --- Deepgram STT ---------------------------------------------------------
