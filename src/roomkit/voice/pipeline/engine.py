@@ -248,9 +248,9 @@ class AudioPipeline:
             }
 
             # Fire VAD event callbacks
-            for cb in self._vad_event_callbacks:
+            for vad_cb in self._vad_event_callbacks:
                 try:
-                    result = cb(session, vad_event)
+                    result = vad_cb(session, vad_event)
                     _maybe_schedule(result)
                 except Exception:
                     logger.exception("VAD event callback error")
@@ -266,9 +266,9 @@ class AudioPipeline:
                         channels=current_frame.channels,
                         sample_width=current_frame.sample_width,
                     )
-                for cb in self._speech_end_callbacks:
+                for se_cb in self._speech_end_callbacks:
                     try:
-                        result = cb(session, vad_event.audio_bytes)
+                        result = se_cb(session, vad_event.audio_bytes)
                         _maybe_schedule(result)
                     except Exception:
                         logger.exception("Speech end callback error")
@@ -284,9 +284,9 @@ class AudioPipeline:
                     }
                     if diarization_result.speaker_id != self._last_speaker_id:
                         self._last_speaker_id = diarization_result.speaker_id
-                        for cb in self._speaker_change_callbacks:
+                        for sc_cb in self._speaker_change_callbacks:
                             try:
-                                result = cb(session, diarization_result)
+                                result = sc_cb(session, diarization_result)
                                 _maybe_schedule(result)
                             except Exception:
                                 logger.exception("Speaker change callback error")

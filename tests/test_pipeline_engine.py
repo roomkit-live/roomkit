@@ -13,8 +13,6 @@ from roomkit.voice.pipeline.config import (
     AudioPipelineConfig,
     AudioPipelineContract,
 )
-from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
-from roomkit.voice.pipeline.resampler.mock import MockResamplerProvider
 from roomkit.voice.pipeline.denoiser.mock import MockDenoiserProvider
 from roomkit.voice.pipeline.diarization.base import DiarizationResult
 from roomkit.voice.pipeline.diarization.mock import MockDiarizationProvider
@@ -23,6 +21,8 @@ from roomkit.voice.pipeline.dtmf.mock import MockDTMFDetector
 from roomkit.voice.pipeline.engine import AudioPipeline
 from roomkit.voice.pipeline.recorder.base import RecordingConfig
 from roomkit.voice.pipeline.recorder.mock import MockAudioRecorder
+from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
+from roomkit.voice.pipeline.resampler.mock import MockResamplerProvider
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
 from roomkit.voice.pipeline.vad.mock import MockVADProvider
 

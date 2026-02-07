@@ -170,7 +170,7 @@ class SpeexAECProvider(AECProvider):
         self._filter_length = filter_length
         self._sample_rate = sample_rate
 
-        self._state = self._create_state()
+        self._state: ctypes.c_void_p | None = self._create_state()
         self._stderr = _StderrSuppressor()
 
         # Pre-allocated buffers — reused every call to avoid per-frame
@@ -362,7 +362,7 @@ class SpeexAECProvider(AECProvider):
             _SPEEX_ECHO_SET_SAMPLING_RATE,
             ctypes.byref(sr),
         )
-        return state
+        return ctypes.c_void_p(state)
 
     def __del__(self) -> None:
         self.close()

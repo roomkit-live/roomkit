@@ -24,7 +24,7 @@ def _rms_int16(data: bytes) -> float:
         return 0.0
     samples = struct.unpack(f"<{n_samples}h", data[: n_samples * 2])
     sum_sq = sum(s * s for s in samples)
-    return (sum_sq / n_samples) ** 0.5
+    return float((sum_sq / n_samples) ** 0.5)
 
 
 class EnergyVADProvider(VADProvider):

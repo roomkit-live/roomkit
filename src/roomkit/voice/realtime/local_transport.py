@@ -362,7 +362,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
             try:
                 out.abort()
                 out.close()
-            except Exception:
+            except Exception:  # nosec B110
                 pass
 
     # -- Diagnostics --

@@ -357,7 +357,7 @@ def mount_fastrtc_voice(
 
     backend._session_factory = session_factory  # type: ignore[attr-defined]
 
-    class AudioPassthroughHandler(AsyncStreamHandler):
+    class AudioPassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
         """Passes raw audio frames to the backend's on_audio_received callback."""
 
         def copy(self) -> AudioPassthroughHandler:

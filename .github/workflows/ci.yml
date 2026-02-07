@@ -77,13 +77,13 @@ jobs:
         run: uv python install 3.12
 
       - name: Install base package only
-        run: uv pip install . --system
+        run: uv venv && uv pip install .
 
       - name: Install pytest
-        run: uv pip install pytest pytest-asyncio --system
+        run: uv pip install pytest pytest-asyncio
 
       - name: Run smoke test
-        run: python -m pytest tests/test_smoke_quickstart.py -v
+        run: uv run pytest tests/test_smoke_quickstart.py -v
 
   test:
     name: Test (Python ${{ matrix.python-version }})

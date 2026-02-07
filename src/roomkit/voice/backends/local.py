@@ -345,7 +345,7 @@ class LocalAudioBackend(VoiceBackend):
         producer_done = threading.Event()
 
         def _output_callback(
-            outdata: bytes, frames: int, time_info: Any, status: Any
+            outdata: bytearray, frames: int, time_info: Any, status: Any
         ) -> None:
             nbytes = frames * 2 * self._channels  # int16
             with buf_lock:

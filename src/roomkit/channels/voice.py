@@ -891,7 +891,7 @@ class VoiceChannel(Channel):
             try:
                 from roomkit.voice.events import TurnIncompleteEvent
 
-                event = TurnIncompleteEvent(
+                incomplete_event = TurnIncompleteEvent(
                     session=session,
                     text=combined_so_far,
                     confidence=decision.confidence,
@@ -899,7 +899,7 @@ class VoiceChannel(Channel):
                 await self._framework.hook_engine.run_async_hooks(
                     room_id,
                     HookTrigger.ON_TURN_INCOMPLETE,
-                    event,
+                    incomplete_event,
                     context,
                     skip_event_filter=True,
                 )

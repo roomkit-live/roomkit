@@ -53,10 +53,12 @@ class TestSherpaOnnxSTTProvider:
     async def test_batch_transcribe_transducer(self) -> None:
         sherpa = _mock_sherpa_module()
         stream_mock = MagicMock()
-        stream_mock.result.text = "  hello world  "
         recognizer_mock = MagicMock()
         recognizer_mock.create_stream.return_value = stream_mock
-        sherpa.OfflineRecognizer.from_transducer.return_value = recognizer_mock
+        # is_ready returns True once then False to exit the decode loop
+        recognizer_mock.is_ready.side_effect = [True, False]
+        recognizer_mock.get_result.return_value = "  hello world  "
+        sherpa.OnlineRecognizer.from_transducer.return_value = recognizer_mock
 
         provider = self._make_provider(
             sherpa,
@@ -72,7 +74,8 @@ class TestSherpaOnnxSTTProvider:
 
         assert result.text == "hello world"
         recognizer_mock.create_stream.assert_called_once()
-        recognizer_mock.decode.assert_called_once_with(stream_mock)
+        stream_mock.input_finished.assert_called_once()
+        recognizer_mock.decode_stream.assert_called_once_with(stream_mock)
 
     @pytest.mark.asyncio
     async def test_batch_transcribe_whisper(self) -> None:
@@ -97,6 +100,7 @@ class TestSherpaOnnxSTTProvider:
 
         assert result.text == "whisper result"
         sherpa.OfflineRecognizer.from_whisper.assert_called_once()
+        recognizer_mock.decode_stream.assert_called_once_with(stream_mock)
 
     @pytest.mark.asyncio
     async def test_streaming_transducer(self) -> None:
@@ -107,14 +111,8 @@ class TestSherpaOnnxSTTProvider:
 
         # Simulate: first chunk returns partial, second chunk returns final at endpoint,
         # third call (flush on is_final) returns empty after reset.
-        result_mock_1 = MagicMock()
-        result_mock_1.text = " hello "
-        result_mock_2 = MagicMock()
-        result_mock_2.text = " hello world "
-        result_mock_3 = MagicMock()
-        result_mock_3.text = ""
-
-        recognizer_mock.get_result.side_effect = [result_mock_1, result_mock_2, result_mock_3]
+        # get_result returns strings (str() is called on them in the provider)
+        recognizer_mock.get_result.side_effect = [" hello ", " hello world ", ""]
         recognizer_mock.is_endpoint.side_effect = [False, True]
         recognizer_mock.is_ready.return_value = False  # no decode loop needed
         sherpa.OnlineRecognizer.from_transducer.return_value = recognizer_mock

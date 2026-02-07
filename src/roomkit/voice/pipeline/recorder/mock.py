@@ -37,7 +37,7 @@ class MockAudioRecorder(AudioRecorder):
         handle = RecordingHandle(
             id=f"rec_{self._next_id}",
             session_id=session.id,
-            path=f"/tmp/recording_{self._next_id}.wav",
+            path=f"/tmp/recording_{self._next_id}.wav",  # nosec B108
         )
         self.started.append((session.id, config))
         return handle

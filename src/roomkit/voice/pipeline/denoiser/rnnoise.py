@@ -269,7 +269,7 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
         state = self._lib.rnnoise_create(None)
         if not state:
             raise RuntimeError("rnnoise_create returned NULL")
-        return state
+        return ctypes.c_void_p(state)
 
     def __del__(self) -> None:
         self.close()
