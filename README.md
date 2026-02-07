@@ -165,7 +165,7 @@ Providers handle the actual API calls. Every provider has a mock counterpart for
 The audio pipeline sits between the voice backend (transport) and STT, processing raw audio through pluggable inbound and outbound chains:
 
 ```
-Inbound:   Backend → [Resampler] → [Recorder] → [AEC] → [AGC] → [Denoiser] → VAD → [Diarization] + [DTMF] → STT
+Inbound:   Backend → [Resampler] → [Recorder] → [DTMF] → [AEC] → [AGC] → [Denoiser] → VAD → [Diarization] → STT
 Outbound:  TTS → [PostProcessors] → [Recorder] → AEC.feed_reference → [Resampler] → Backend
 ```
 

@@ -256,7 +256,7 @@ async def sms_audit(event: RoomEvent, ctx: RoomContext) -> None:
 The audio pipeline sits between the voice backend and STT, processing audio through pluggable inbound and outbound chains:
 
 ```
-Inbound:   Backend → [Resampler] → [Recorder] → [AEC] → [AGC] → [Denoiser] → VAD → [Diarization] + [DTMF]
+Inbound:   Backend → [Resampler] → [Recorder] → [DTMF] → [AEC] → [AGC] → [Denoiser] → VAD → [Diarization]
 Outbound:  TTS → [PostProcessors] → [Recorder] → AEC.feed_reference → [Resampler] → Backend
 ```
 
@@ -298,7 +298,7 @@ voice = VoiceChannel(
 - `DTMFDetector` — `process(frame) -> DTMFEvent | None`, `reset()`, `close()`
 - `AudioRecorder` — `start(session, config) -> RecordingHandle`, `stop(handle) -> RecordingResult`, `tap_inbound/outbound(handle, frame)`
 - `TurnDetector` — `evaluate(context: TurnContext) -> TurnDecision`
-- `BackchannelDetector` — `evaluate(context: BackchannelContext) -> BackchannelDecision`
+- `BackchannelDetector` — `classify(context: BackchannelContext) -> BackchannelDecision`
 
 **Capability flags** (`voice/base.py`):
 - `VoiceCapability.NATIVE_AEC` — backend has built-in echo cancellation; AEC stage is skipped
@@ -308,8 +308,8 @@ voice = VoiceChannel(
 
 **InterruptionHandler** (`voice/interruption.py`):
 Four strategies for handling user speech during TTS playback:
-- `IMMEDIATE` — interrupt on any speech (default, matches legacy `enable_barge_in=True`)
-- `CONFIRMED` — wait for `min_speech_ms` of sustained speech
+- `IMMEDIATE` — interrupt on any speech (matches legacy `enable_barge_in=True`)
+- `CONFIRMED` — wait for `min_speech_ms` of sustained speech (default)
 - `SEMANTIC` — use `BackchannelDetector` to ignore acknowledgements ("uh-huh", "yeah")
 - `DISABLED` — ignore speech during playback (matches legacy `enable_barge_in=False`)
 
@@ -462,7 +462,7 @@ async def on_source_error(event):
 # Event types: room_created, room_closed, room_paused,
 # room_channel_attached, room_channel_detached,
 # channel_connected, channel_disconnected,
-# voice_connected, voice_disconnected,
+# voice_session_started, voice_session_ended,
 # source_attached, source_detached, source_error, source_exhausted
 ```
 

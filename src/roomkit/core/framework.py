@@ -266,12 +266,13 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         channel.bind_session(session, room_id, binding)
 
         await self._emit_framework_event(
-            "voice_connected",
+            "voice_session_started",
             room_id=room_id,
             channel_id=channel_id,
             data={
                 "session_id": session.id,
                 "participant_id": participant_id,
+                "channel_id": channel_id,
             },
         )
 
@@ -297,12 +298,13 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         await self._voice.disconnect(session)
 
         await self._emit_framework_event(
-            "voice_disconnected",
+            "voice_session_ended",
             room_id=session.room_id,
             channel_id=session.channel_id,
             data={
                 "session_id": session.id,
                 "participant_id": session.participant_id,
+                "channel_id": session.channel_id,
             },
         )
 
