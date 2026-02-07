@@ -118,7 +118,9 @@ Environment variables:
     RECORDING_DIR       Directory for WAV recordings (default: ./recordings)
     RECORDING_MODE      Channel mode: mixed | separate | stereo (default: stereo)
     DEBUG_TAPS_DIR      Directory for pipeline debug taps (disabled if unset)
-    ONNX_PROVIDER       ONNX execution provider: cpu | cuda (default: cpu)
+    ONNX_PROVIDER       ONNX execution provider for STT/TTS: cpu | cuda (default: cpu)
+                        VAD and denoiser always use CPU (per-frame overhead makes
+                        CUDA slower for these tiny models)
 
 Press Ctrl+C to stop.
 """
@@ -197,10 +199,13 @@ async def main() -> None:
 
     kit = RoomKit()
 
-    # --- Global ONNX provider (cpu or cuda) -----------------------------------
+    # --- ONNX execution providers ----------------------------------------------
+    # CUDA accelerates STT and TTS (batch inference on larger models).
+    # VAD and denoiser run per-frame (every 20ms) on tiny models — the GPU
+    # transfer overhead makes them *slower* on CUDA, so they always use CPU.
     onnx_provider = os.environ.get("ONNX_PROVIDER", "cpu")
     if onnx_provider == "cuda":
-        logger.info("ONNX execution provider: CUDA (GPU)")
+        logger.info("ONNX execution provider: CUDA (GPU) for STT/TTS, CPU for VAD/denoiser")
     else:
         logger.info("ONNX execution provider: CPU")
 
@@ -241,7 +246,7 @@ async def main() -> None:
         )
 
         denoiser = SherpaOnnxDenoiserProvider(
-            SherpaOnnxDenoiserConfig(model=denoise_model, provider=onnx_provider)
+            SherpaOnnxDenoiserConfig(model=denoise_model, provider="cpu")
         )
         logger.info("Denoiser: sherpa-onnx GTCRN (model=%s)", denoise_model)
 
@@ -258,7 +263,7 @@ async def main() -> None:
             min_speech_duration_ms=200,
             speech_pad_ms=300,
             sample_rate=sample_rate,
-            provider=onnx_provider,
+            provider="cpu",
         )
     )
     logger.info(
@@ -406,6 +411,11 @@ async def main() -> None:
             "Recording stopped: %s (%.1fs, %d bytes, files=%s)",
             event.id, event.duration_seconds, event.size_bytes, event.urls,
         )
+
+    # --- Warmup: pre-load models (avoids delay on first interaction) ----------
+    logger.info("Loading models...")
+    await asyncio.gather(stt.warmup(), tts.warmup())
+    logger.info("Models loaded — ready!")
 
     # --- Start voice session --------------------------------------------------
     session = await backend.connect("local-voice", "local-user", "voice")

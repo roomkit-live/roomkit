@@ -94,12 +94,17 @@ GPU memory usage increase in `nvidia-smi`.
 
 Set `provider="cuda"` on any sherpa-onnx config dataclass:
 
-| Provider | Config class | Field |
-|---|---|---|
-| VAD | `SherpaOnnxVADConfig` | `provider="cuda"` |
-| Denoiser | `SherpaOnnxDenoiserConfig` | `provider="cuda"` |
-| STT | `SherpaOnnxSTTConfig` | `provider="cuda"` |
-| TTS | `SherpaOnnxTTSConfig` | `provider="cuda"` |
+| Provider | Config class | Recommended provider | Why |
+|---|---|---|---|
+| STT | `SherpaOnnxSTTConfig` | `"cuda"` | Batch inference on larger models — benefits from GPU |
+| TTS | `SherpaOnnxTTSConfig` | `"cuda"` | Synthesis is compute-heavy — benefits from GPU |
+| VAD | `SherpaOnnxVADConfig` | `"cpu"` | Runs per-frame (every 20ms), tiny model — GPU transfer overhead makes CUDA slower |
+| Denoiser | `SherpaOnnxDenoiserConfig` | `"cpu"` | Runs per-frame (every 20ms), tiny model — GPU transfer overhead makes CUDA slower |
+
+> **Best practice:** Use CUDA for STT and TTS only. VAD and denoiser process every
+> 20ms audio frame with tiny models (2-5MB). The GPU memory transfer overhead per
+> frame exceeds the computation time, making CUDA slower than CPU for these providers.
+> Worse, it can cause 100% CPU usage and system hangs.
 
 ### Example
 
@@ -116,12 +121,12 @@ from roomkit.voice.pipeline.vad.sherpa_onnx import (
 from roomkit.voice.stt.sherpa_onnx import SherpaOnnxSTTConfig, SherpaOnnxSTTProvider
 from roomkit.voice.tts.sherpa_onnx import SherpaOnnxTTSConfig, SherpaOnnxTTSProvider
 
-# All four providers on GPU
+# STT + TTS on GPU, VAD + denoiser on CPU (recommended)
 denoiser = SherpaOnnxDenoiserProvider(
-    SherpaOnnxDenoiserConfig(model="gtcrn_simple.onnx", provider="cuda")
+    SherpaOnnxDenoiserConfig(model="gtcrn_simple.onnx", provider="cpu")
 )
 vad = SherpaOnnxVADProvider(
-    SherpaOnnxVADConfig(model="ten-vad.onnx", provider="cuda")
+    SherpaOnnxVADConfig(model="ten-vad.onnx", provider="cpu")
 )
 stt = SherpaOnnxSTTProvider(
     SherpaOnnxSTTConfig(

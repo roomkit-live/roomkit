@@ -51,5 +51,8 @@ class TTSProvider(ABC):
         # Make this an async generator (unreachable, but required for type)
         yield  # pragma: no cover
 
+    async def warmup(self) -> None:  # noqa: B027
+        """Pre-load models so the first call is fast. Override in subclasses."""
+
     async def close(self) -> None:  # noqa: B027
         """Release resources. Override in subclasses if needed."""

@@ -56,5 +56,8 @@ class STTProvider(ABC):
         result = await self.transcribe(combined)
         yield TranscriptionResult(text=result.text, is_final=True, confidence=result.confidence)
 
+    async def warmup(self) -> None:  # noqa: B027
+        """Pre-load models so the first call is fast. Override in subclasses."""
+
     async def close(self) -> None:  # noqa: B027
         """Release resources. Override in subclasses if needed."""

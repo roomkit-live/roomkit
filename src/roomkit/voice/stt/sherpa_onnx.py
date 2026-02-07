@@ -119,6 +119,14 @@ class SherpaOnnxSTTProvider(STTProvider):
                 )
         return self._offline_recognizer
 
+    async def warmup(self) -> None:
+        """Pre-load the recognizer model (CUDA init can be slow)."""
+        if self._config.mode == "transducer":
+            await asyncio.to_thread(self._get_online_recognizer)
+        else:
+            await asyncio.to_thread(self._get_offline_recognizer)
+        logger.info("STT model warmed up (mode=%s)", self._config.mode)
+
     async def transcribe(
         self, audio: AudioContent | AudioChunk | AudioFrame
     ) -> TranscriptionResult:
@@ -149,8 +157,11 @@ class SherpaOnnxSTTProvider(STTProvider):
                 stream = recognizer.create_stream()
                 stream.accept_waveform(sample_rate, samples)
                 stream.input_finished()
+                n = 0
                 while recognizer.is_ready(stream):
                     recognizer.decode_stream(stream)
+                    n += 1
+                logger.debug("Transducer transcribe: %d decode steps", n)
                 return str(recognizer.get_result(stream)).strip()
         else:
             recognizer = self._get_offline_recognizer()

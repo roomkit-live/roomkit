@@ -131,6 +131,10 @@ class SherpaOnnxTTSProvider(TTSProvider):
             )
         return self._tts
 
+    async def warmup(self) -> None:
+        """Pre-load the TTS model (CUDA init can be slow)."""
+        await asyncio.to_thread(self._get_tts)
+
     async def synthesize(self, text: str, *, voice: str | None = None) -> AudioContent:
         """Synthesize text to audio.
 
