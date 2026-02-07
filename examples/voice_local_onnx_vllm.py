@@ -214,14 +214,6 @@ async def main() -> None:
 
     tts_sample_rate = int(os.environ.get("TTS_SAMPLE_RATE", "22050"))
 
-    # --- Backend: local mic + speakers ----------------------------------------
-    backend = LocalAudioBackend(
-        input_sample_rate=sample_rate,
-        output_sample_rate=tts_sample_rate,
-        channels=1,
-        block_duration_ms=block_ms,
-    )
-
     # --- AEC (optional, Speex echo cancellation) ------------------------------
     aec = None
     if os.environ.get("AEC", "0") == "1":
@@ -233,6 +225,18 @@ async def main() -> None:
             sample_rate=sample_rate,
         )
         logger.info("AEC enabled (Speex, filter=%d samples)", frame_size * 10)
+
+    # --- Backend: local mic + speakers ----------------------------------------
+    # When AEC is active it removes speaker echo from the mic signal, so we
+    # can keep the mic open during playback and allow barge-in interruption.
+    # Without AEC the mic is muted during playback to prevent feedback loops.
+    backend = LocalAudioBackend(
+        input_sample_rate=sample_rate,
+        output_sample_rate=tts_sample_rate,
+        channels=1,
+        block_duration_ms=block_ms,
+        mute_mic_during_playback=aec is None,
+    )
 
     # --- Denoiser (optional, sherpa-onnx GTCRN) -------------------------------
     denoiser = None
