@@ -34,6 +34,7 @@ gemini = ["google-genai>=1.0.0"]
 sherpa-onnx = ["sherpa-onnx>=1.10"]
 fastrtc = ["fastrtc", "numpy"]
 local-audio = ["sounddevice", "numpy"]
+rtp = ["aiortp>=0.1.0"]
 twilio = ["twilio>=9.0"]
 phonenumbers = ["phonenumbers>=8.13"]
 pynacl = ["pynacl>=1.5"]
@@ -138,6 +139,10 @@ module = ["sherpa_onnx", "sherpa_onnx.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["aiortp", "aiortp.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["fastrtc", "fastrtc.*"]
 ignore_missing_imports = true
 
@@ -177,6 +182,9 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["roomkit"]
+
 [tool.ruff.lint.per-file-ignores]
 "src/roomkit/channels/__init__.py" = ["N802"]  # Factory functions use PascalCase by design
 "src/roomkit/voice/backends/base.py" = ["B027"]  # Optional callback hooks with default no-ops
@@ -201,6 +209,7 @@ omit = [
     "src/roomkit/providers/openai/realtime.py",
     "src/roomkit/providers/gemini/realtime.py",
     "src/roomkit/providers/pydantic_ai/*.py",
+    "src/roomkit/voice/backends/rtp.py",
 ]
 
 [tool.coverage.report]
