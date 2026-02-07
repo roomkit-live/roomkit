@@ -6,10 +6,12 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
+from roomkit.voice.base import TranscriptionResult
+
 if TYPE_CHECKING:
     from roomkit.models.event import AudioContent
     from roomkit.voice.audio_frame import AudioFrame
-    from roomkit.voice.base import AudioChunk, TranscriptionResult
+    from roomkit.voice.base import AudioChunk
 
 
 class STTProvider(ABC):
@@ -21,14 +23,16 @@ class STTProvider(ABC):
         return self.__class__.__name__
 
     @abstractmethod
-    async def transcribe(self, audio: AudioContent | AudioChunk | AudioFrame) -> str:
+    async def transcribe(
+        self, audio: AudioContent | AudioChunk | AudioFrame
+    ) -> TranscriptionResult:
         """Transcribe complete audio to text.
 
         Args:
             audio: Audio content (URL), raw audio chunk, or audio frame.
 
         Returns:
-            Transcribed text.
+            TranscriptionResult with text and metadata.
         """
         ...
 
@@ -49,11 +53,8 @@ class STTProvider(ABC):
             data=b"".join(c.data for c in chunks),
             sample_rate=chunks[0].sample_rate if chunks else 16000,
         )
-        text = await self.transcribe(combined)
-
-        from roomkit.voice.base import TranscriptionResult
-
-        yield TranscriptionResult(text=text, is_final=True)
+        result = await self.transcribe(combined)
+        yield TranscriptionResult(text=result.text, is_final=True, confidence=result.confidence)
 
     async def close(self) -> None:  # noqa: B027
         """Release resources. Override in subclasses if needed."""

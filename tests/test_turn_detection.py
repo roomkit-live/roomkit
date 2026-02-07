@@ -22,12 +22,14 @@ class _MockSTT:
         self._transcripts = transcripts
         self._index = 0
 
-    async def transcribe(self, frame: AudioFrame) -> str:
+    async def transcribe(self, frame: AudioFrame):
+        from roomkit.voice.base import TranscriptionResult
+
         if self._index < len(self._transcripts):
             text = self._transcripts[self._index]
             self._index += 1
-            return text
-        return ""
+            return TranscriptionResult(text=text)
+        return TranscriptionResult(text="")
 
     async def close(self) -> None:
         pass

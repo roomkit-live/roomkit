@@ -119,14 +119,16 @@ class SherpaOnnxSTTProvider(STTProvider):
                 )
         return self._offline_recognizer
 
-    async def transcribe(self, audio: AudioContent | AudioChunk | AudioFrame) -> str:
+    async def transcribe(
+        self, audio: AudioContent | AudioChunk | AudioFrame
+    ) -> TranscriptionResult:
         """Transcribe complete audio using the offline recognizer.
 
         Args:
             audio: Audio content or raw audio chunk (PCM S16LE expected).
 
         Returns:
-            Transcribed text.
+            TranscriptionResult with text.
         """
         recognizer = self._get_offline_recognizer()
 
@@ -145,7 +147,8 @@ class SherpaOnnxSTTProvider(STTProvider):
             recognizer.decode(stream)
             return str(stream.result.text.strip())
 
-        return await asyncio.to_thread(_run)
+        text = await asyncio.to_thread(_run)
+        return TranscriptionResult(text=text)
 
     async def transcribe_stream(
         self, audio_stream: AsyncIterator[AudioChunk]

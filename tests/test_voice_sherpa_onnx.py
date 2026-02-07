@@ -68,9 +68,9 @@ class TestSherpaOnnxSTTProvider:
         )
 
         audio = AudioChunk(data=_make_pcm_s16le([0.5, -0.3, 0.1]), sample_rate=16000)
-        text = await provider.transcribe(audio)
+        result = await provider.transcribe(audio)
 
-        assert text == "hello world"
+        assert result.text == "hello world"
         recognizer_mock.create_stream.assert_called_once()
         recognizer_mock.decode.assert_called_once_with(stream_mock)
 
@@ -93,9 +93,9 @@ class TestSherpaOnnxSTTProvider:
         )
 
         audio = AudioChunk(data=_make_pcm_s16le([0.1, 0.2]), sample_rate=16000)
-        text = await provider.transcribe(audio)
+        result = await provider.transcribe(audio)
 
-        assert text == "whisper result"
+        assert result.text == "whisper result"
         sherpa.OfflineRecognizer.from_whisper.assert_called_once()
 
     @pytest.mark.asyncio

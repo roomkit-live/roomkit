@@ -771,7 +771,8 @@ class VoiceChannel(Channel):
                 channels=1,
                 sample_width=2,
             )
-            text = await self._stt.transcribe(audio_frame)
+            stt_result = await self._stt.transcribe(audio_frame)
+            text = stt_result.text
 
             if not text.strip():
                 logger.debug("Empty transcription, skipping")

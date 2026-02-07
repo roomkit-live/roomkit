@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from roomkit.models.event import AudioContent
     from roomkit.providers.sms.meta import WebhookMeta
     from roomkit.voice.backends.base import VoiceBackend
-    from roomkit.voice.base import VoiceSession
+    from roomkit.voice.base import TranscriptionResult, VoiceSession
     from roomkit.voice.stt.base import STTProvider
     from roomkit.voice.tts.base import TTSProvider
 
@@ -372,14 +372,14 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         if isinstance(channel, RealtimeVoiceChannel):
             await channel.end_session(session)
 
-    async def transcribe(self, audio: AudioContent) -> str:
+    async def transcribe(self, audio: AudioContent) -> TranscriptionResult:
         """Transcribe audio to text using configured STT provider.
 
         Args:
             audio: AudioContent with URL to audio file.
 
         Returns:
-            Transcribed text.
+            TranscriptionResult with text and metadata.
 
         Raises:
             VoiceNotConfiguredError: If no STT provider is configured.

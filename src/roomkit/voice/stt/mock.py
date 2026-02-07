@@ -21,11 +21,13 @@ class MockSTTProvider(STTProvider):
         self.calls: list[AudioContent | AudioChunk | AudioFrame] = []
         self._index = 0
 
-    async def transcribe(self, audio: AudioContent | AudioChunk | AudioFrame) -> str:
+    async def transcribe(
+        self, audio: AudioContent | AudioChunk | AudioFrame
+    ) -> TranscriptionResult:
         self.calls.append(audio)
-        result = self.transcripts[self._index % len(self.transcripts)]
+        text = self.transcripts[self._index % len(self.transcripts)]
         self._index += 1
-        return result
+        return TranscriptionResult(text=text)
 
     async def transcribe_stream(
         self, audio_stream: AsyncIterator[AudioChunk]

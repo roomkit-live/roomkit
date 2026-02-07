@@ -72,14 +72,16 @@ class DeepgramSTTProvider(STTProvider):
         }
         return {k: str(v).lower() if isinstance(v, bool) else v for k, v in params.items()}
 
-    async def transcribe(self, audio: AudioContent | AudioChunk | AudioFrame) -> str:
+    async def transcribe(
+        self, audio: AudioContent | AudioChunk | AudioFrame
+    ) -> TranscriptionResult:
         """Transcribe complete audio to text.
 
         Args:
             audio: Audio content (URL), raw audio chunk, or audio frame.
 
         Returns:
-            Transcribed text.
+            TranscriptionResult with text and metadata.
         """
         client = self._get_client()
         params = self._build_query_params()
@@ -118,11 +120,18 @@ class DeepgramSTTProvider(STTProvider):
 
         # Extract transcript
         try:
-            transcript: str = result["results"]["channels"][0]["alternatives"][0]["transcript"]
-            return transcript.strip()
+            alt = result["results"]["channels"][0]["alternatives"][0]
+            transcript: str = alt.get("transcript", "")
+            confidence = alt.get("confidence")
+            language = result["results"]["channels"][0].get("detected_language")
+            return TranscriptionResult(
+                text=transcript.strip(),
+                confidence=confidence,
+                language=language,
+            )
         except (KeyError, IndexError):
             logger.warning("No transcript in Deepgram response: %s", result)
-            return ""
+            return TranscriptionResult(text="")
 
     async def transcribe_stream(
         self, audio_stream: AsyncIterator[AudioChunk]

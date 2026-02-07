@@ -21,22 +21,23 @@ class TestMockSTT:
         stt = MockSTTProvider(transcripts=["Hello world"])
         chunk = AudioChunk(data=b"fake-audio")
         result = await stt.transcribe(chunk)
-        assert result == "Hello world"
+        assert result.text == "Hello world"
+        assert result.is_final is True
         assert len(stt.calls) == 1
 
     async def test_transcribe_accepts_audio_frame(self) -> None:
         stt = MockSTTProvider(transcripts=["From frame"])
         frame = AudioFrame(data=b"fake-audio", sample_rate=48000)
         result = await stt.transcribe(frame)
-        assert result == "From frame"
+        assert result.text == "From frame"
         assert len(stt.calls) == 1
 
     async def test_transcribe_cycles_through_transcripts(self) -> None:
         stt = MockSTTProvider(transcripts=["One", "Two"])
         chunk = AudioChunk(data=b"audio")
-        assert await stt.transcribe(chunk) == "One"
-        assert await stt.transcribe(chunk) == "Two"
-        assert await stt.transcribe(chunk) == "One"
+        assert (await stt.transcribe(chunk)).text == "One"
+        assert (await stt.transcribe(chunk)).text == "Two"
+        assert (await stt.transcribe(chunk)).text == "One"
 
     async def test_transcribe_stream_yields_result(self) -> None:
         stt = MockSTTProvider(transcripts=["Streamed text"])
@@ -366,7 +367,7 @@ class TestRoomKitVoiceIntegration:
         kit = RoomKit(stt=stt)
         audio = AudioContent(url="https://example.com/audio.wav")
         result = await kit.transcribe(audio)
-        assert result == "Transcribed text"
+        assert result.text == "Transcribed text"
 
     async def test_synthesize_uses_tts_provider(self) -> None:
         tts = MockTTSProvider()
