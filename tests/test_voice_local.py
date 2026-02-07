@@ -15,6 +15,7 @@ def _mock_sounddevice() -> MagicMock:
     """Create a mock sounddevice module."""
     sd = MagicMock()
     sd.RawInputStream = MagicMock
+    sd.CallbackStop = type("CallbackStop", (Exception,), {})
     sd.play = MagicMock()
     sd.wait = MagicMock()
     sd.stop = MagicMock()
@@ -307,7 +308,15 @@ class TestLocalAudioSpeakerPlayback:
     async def test_send_audio_stream(self) -> None:
         backend, sd = _make_backend()
 
-        pytest.importorskip("numpy")
+        captured_callback = None
+        mock_stream = MagicMock()
+
+        def fake_raw_output_stream(**kwargs):
+            nonlocal captured_callback
+            captured_callback = kwargs["callback"]
+            return mock_stream
+
+        sd.RawOutputStream = fake_raw_output_stream
 
         session = await backend.connect("room-1", "user-1", "voice-1")
 
@@ -315,10 +324,23 @@ class TestLocalAudioSpeakerPlayback:
             yield AudioChunk(data=b"\x00\x01\x00\x02")
             yield AudioChunk(data=b"\x00\x03\x00\x04")
 
-        await backend.send_audio(session, audio_gen())
+        # Run send_audio in background so we can simulate the callback.
+        send_task = asyncio.create_task(
+            backend.send_audio(session, audio_gen())
+        )
+        await asyncio.sleep(0.05)  # let _consume pull all chunks
 
-        assert sd.play.call_count == 2
-        assert sd.wait.call_count == 2
+        # Simulate PortAudio callback draining the buffer.
+        assert captured_callback is not None
+        outdata = bytearray(1024)
+        with pytest.raises(sd.CallbackStop):
+            captured_callback(outdata, 512, None, None)
+
+        await send_task
+
+        mock_stream.start.assert_called_once()
+        mock_stream.abort.assert_called_once()
+        mock_stream.close.assert_called_once()
 
     async def test_is_playing_tracks_state(self) -> None:
         backend, _ = _make_backend()
@@ -336,12 +358,26 @@ class TestLocalAudioSpeakerPlayback:
         result = await backend.cancel_audio(session)
         assert result is False
 
-        # Mark as playing, then cancel
+        # Mark as playing (no output stream) → falls back to sd.stop()
         backend._playing_sessions.add(session.id)
         result = await backend.cancel_audio(session)
         assert result is True
         assert backend.is_playing(session) is False
         sd.stop.assert_called_once()
+
+    async def test_cancel_audio_cancels_playback_task(self) -> None:
+        backend, sd = _make_backend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        mock_task = MagicMock()
+        backend._playing_sessions.add(session.id)
+        backend._output_streams[session.id] = MagicMock()
+        backend._playback_tasks[session.id] = mock_task
+
+        result = await backend.cancel_audio(session)
+        assert result is True
+        mock_task.cancel.assert_called_once()
+        assert session.id not in backend._playback_tasks
 
 
 # ---------------------------------------------------------------------------

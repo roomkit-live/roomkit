@@ -46,6 +46,7 @@ from roomkit.voice.pipeline.turn import (
     TurnEntry,
 )
 from roomkit.voice.pipeline.vad import (
+    EnergyVADProvider,
     MockVADProvider,
     VADConfig,
     VADEvent,
@@ -61,9 +62,10 @@ __all__ = [
     "ResamplerConfig",
     # Engine
     "AudioPipeline",
-    # Provider ABCs
+    # Provider ABCs + implementations
     "AECProvider",
     "SpeexAECProvider",
+    "EnergyVADProvider",
     "AGCProvider",
     "AudioPostProcessor",
     "AudioRecorder",

@@ -52,6 +52,7 @@ from roomkit.voice.pipeline import (
     DiarizationResult,
     DTMFDetector,
     DTMFEvent,
+    EnergyVADProvider,
     MockAECProvider,
     MockAGCProvider,
     MockAudioRecorder,
@@ -69,7 +70,6 @@ from roomkit.voice.pipeline import (
     RecordingTrigger,
     ResamplerConfig,
     RNNoiseDenoiserProvider,
-    WavFileRecorder,
     SpeexAECProvider,
     TurnContext,
     TurnDecision,
@@ -79,6 +79,7 @@ from roomkit.voice.pipeline import (
     VADEvent,
     VADEventType,
     VADProvider,
+    WavFileRecorder,
 )
 from roomkit.voice.stt.base import STTProvider
 from roomkit.voice.tts.base import TTSProvider
@@ -114,9 +115,10 @@ __all__ = [
     "AudioPipelineConfig",
     "AudioPipelineContract",
     "ResamplerConfig",
-    # Provider ABCs
+    # Provider ABCs + implementations
     "AECProvider",
     "SpeexAECProvider",
+    "EnergyVADProvider",
     "AGCProvider",
     "AudioPostProcessor",
     "AudioRecorder",

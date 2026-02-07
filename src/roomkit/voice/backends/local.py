@@ -29,8 +29,10 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import struct
+import threading
 import uuid
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
@@ -119,6 +121,8 @@ class LocalAudioBackend(VoiceBackend):
 
         # Playback tracking for barge-in
         self._playing_sessions: set[str] = set()
+        self._output_streams: dict[str, sd.RawOutputStream] = {}
+        self._playback_tasks: dict[str, asyncio.Task[None]] = {}
 
     @property
     def name(self) -> str:
@@ -282,18 +286,14 @@ class LocalAudioBackend(VoiceBackend):
             if isinstance(audio, bytes):
                 await self._play_pcm(audio)
             else:
-                async for chunk in audio:
-                    if session.id not in self._playing_sessions:
-                        break  # Cancelled
-                    if chunk.data:
-                        await self._play_pcm(chunk.data)
+                await self._play_stream(session, audio)
         except Exception:
             logger.exception("Error playing audio for session %s", session.id)
         finally:
             self._playing_sessions.discard(session.id)
 
     async def _play_pcm(self, pcm_data: bytes) -> None:
-        """Play raw PCM-16 LE bytes through speakers."""
+        """Play a complete PCM-16 LE buffer through speakers."""
         sd = self._sd
 
         n_samples = len(pcm_data) // 2
@@ -314,6 +314,91 @@ class LocalAudioBackend(VoiceBackend):
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, _play)
+
+    async def _play_stream(
+        self,
+        session: VoiceSession,
+        chunks: AsyncIterator[AudioChunk],
+    ) -> None:
+        """Play a stream of AudioChunks with buffered output.
+
+        Uses a callback-based ``RawOutputStream`` following the
+        `sounddevice asyncio pattern`_: PortAudio's own audio thread
+        pulls PCM data from a shared buffer and raises ``CallbackStop``
+        once the buffer is fully drained, signalling an ``asyncio.Event``
+        to wake the coroutine.
+
+        Chunk consumption runs in a cancellable task so that
+        ``cancel_audio()`` can abort both the TTS HTTP stream and the
+        drain wait in one shot.
+
+        .. _sounddevice asyncio pattern:
+           https://python-sounddevice.readthedocs.io/en/0.5.3/examples.html
+           #using-a-stream-in-an-asyncio-coroutine
+        """
+        sd = self._sd
+        loop = asyncio.get_running_loop()
+        finished = asyncio.Event()
+
+        audio_buf = bytearray()
+        buf_lock = threading.Lock()
+        producer_done = threading.Event()
+
+        def _output_callback(
+            outdata: bytes, frames: int, time_info: Any, status: Any
+        ) -> None:
+            nbytes = frames * 2 * self._channels  # int16
+            with buf_lock:
+                n = min(len(audio_buf), nbytes)
+                if n > 0:
+                    outdata[:n] = bytes(audio_buf[:n])
+                    del audio_buf[:n]
+                if n < nbytes:
+                    outdata[n:] = b"\x00" * (nbytes - n)
+                # When producer finished and buffer drained, stop playback.
+                if producer_done.is_set() and len(audio_buf) == 0:
+                    loop.call_soon_threadsafe(finished.set)
+                    raise sd.CallbackStop
+
+        stream = sd.RawOutputStream(
+            samplerate=self._output_sample_rate,
+            channels=self._channels,
+            dtype="int16",
+            callback=_output_callback,
+            device=self._output_device,
+        )
+        self._output_streams[session.id] = stream
+        stream.start()
+
+        async def _run() -> None:
+            # Phase 1: consume TTS chunks into the buffer.
+            async for chunk in chunks:
+                if session.id not in self._playing_sessions:
+                    return
+                if chunk.data:
+                    with buf_lock:
+                        audio_buf.extend(chunk.data)
+
+            # Phase 2: wait for the PortAudio callback to drain.
+            producer_done.set()
+            with buf_lock:
+                if len(audio_buf) == 0:
+                    return  # nothing to drain
+            await finished.wait()
+
+        task = asyncio.create_task(_run())
+        self._playback_tasks[session.id] = task
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass  # Normal: cancelled by cancel_audio() during barge-in
+        finally:
+            self._playback_tasks.pop(session.id, None)
+            ostream = self._output_streams.pop(session.id, None)
+            if ostream is not None:
+                with contextlib.suppress(Exception):
+                    ostream.abort()
+                ostream.close()
 
     async def send_transcription(
         self, session: VoiceSession, text: str, role: str = "user"
@@ -336,7 +421,13 @@ class LocalAudioBackend(VoiceBackend):
         was_playing = session.id in self._playing_sessions
         if was_playing:
             self._playing_sessions.discard(session.id)
-            self._sd.stop()
+            # Cancel the consumption task — unblocks the async-for
+            # that may be waiting on the TTS HTTP stream.
+            task = self._playback_tasks.pop(session.id, None)
+            if task is not None:
+                task.cancel()
+            else:
+                self._sd.stop()  # Fallback for _play_pcm() based playback
             logger.info("Audio cancelled for session %s", session.id)
         return was_playing
 
