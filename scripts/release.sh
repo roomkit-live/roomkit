@@ -57,7 +57,15 @@ echo "    Tagged v${VERSION}."
 echo "==> Building..."
 uv build
 echo "==> Publishing to PyPI..."
-uv publish
+if [[ -n "${UV_PUBLISH_TOKEN:-}" ]]; then
+    uv publish
+elif [[ -f "$HOME/.pypirc" ]]; then
+    PYPI_TOKEN=$(python3 -c "import configparser; c = configparser.ConfigParser(); c.read('$HOME/.pypirc'); print(c.get('pypi', 'password'))")
+    uv publish --username __token__ --password "$PYPI_TOKEN"
+else
+    echo "Error: No PyPI credentials found. Set UV_PUBLISH_TOKEN or create ~/.pypirc"
+    exit 1
+fi
 echo "    Published."
 
 # --- Push ---
