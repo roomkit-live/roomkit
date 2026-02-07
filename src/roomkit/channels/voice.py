@@ -383,7 +383,10 @@ class VoiceChannel(Channel):
             await self._framework._emit_framework_event(
                 "voice_session_started",
                 room_id=room_id,
-                data={"session_id": session.id},
+                data={
+                    "session_id": session.id,
+                    "channel_id": self.channel_id,
+                },
             )
         except Exception:
             logger.exception("Error emitting voice_session_started")
@@ -395,7 +398,10 @@ class VoiceChannel(Channel):
             await self._framework._emit_framework_event(
                 "voice_session_ended",
                 room_id=room_id,
-                data={"session_id": session.id},
+                data={
+                    "session_id": session.id,
+                    "channel_id": self.channel_id,
+                },
             )
         except Exception:
             logger.exception("Error emitting voice_session_ended")
@@ -415,7 +421,12 @@ class VoiceChannel(Channel):
             logger.exception("Error emitting recording_started")
 
     async def _emit_recording_stopped(
-        self, session: VoiceSession, recording_id: str, room_id: str
+        self,
+        session: VoiceSession,
+        recording_id: str,
+        room_id: str,
+        *,
+        duration_seconds: float = 0.0,
     ) -> None:
         if not self._framework:
             return
@@ -423,7 +434,11 @@ class VoiceChannel(Channel):
             await self._framework._emit_framework_event(
                 "recording_stopped",
                 room_id=room_id,
-                data={"session_id": session.id, "id": recording_id},
+                data={
+                    "session_id": session.id,
+                    "id": recording_id,
+                    "duration_seconds": duration_seconds,
+                },
             )
         except Exception:
             logger.exception("Error emitting recording_stopped")
@@ -628,7 +643,9 @@ class VoiceChannel(Channel):
                 context,
                 skip_event_filter=True,
             )
-            await self._emit_recording_stopped(session, result.id, room_id)
+            await self._emit_recording_stopped(
+                session, result.id, room_id, duration_seconds=result.duration_seconds
+            )
         except Exception:
             logger.exception("Error firing ON_RECORDING_STOPPED hook")
 
@@ -794,14 +811,18 @@ class VoiceChannel(Channel):
                 # No turn detector — route immediately (existing behaviour)
                 await self._route_text(session, final_text, room_id)
 
-        except Exception:
+        except Exception as exc:
             logger.exception("Error processing speech end")
             if self._framework:
                 try:
                     await self._framework._emit_framework_event(
                         "stt_error",
                         room_id=room_id,
-                        data={"session_id": session.id},
+                        data={
+                            "session_id": session.id,
+                            "provider": self._stt.name if self._stt else "unknown",
+                            "error": str(exc),
+                        },
                     )
                 except Exception:
                     logger.exception("Error emitting stt_error")
@@ -1008,12 +1029,16 @@ class VoiceChannel(Channel):
                 skip_event_filter=True,
             )
 
-        except Exception:
+        except Exception as exc:
             logger.exception("Error delivering voice audio")
             try:
                 await self._framework._emit_framework_event(
                     "tts_error",
                     room_id=room_id,
+                    data={
+                        "provider": self._tts.name if self._tts else "unknown",
+                        "error": str(exc),
+                    },
                 )
             except Exception:
                 logger.exception("Error emitting tts_error")

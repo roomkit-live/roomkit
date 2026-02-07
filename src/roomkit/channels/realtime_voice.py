@@ -213,12 +213,13 @@ class RealtimeVoiceChannel(Channel):
         # Fire framework event
         if self._framework:
             await self._framework._emit_framework_event(
-                "voice_connected",
+                "voice_session_started",
                 room_id=room_id,
                 channel_id=self.channel_id,
                 data={
                     "session_id": session.id,
                     "participant_id": participant_id,
+                    "channel_id": self.channel_id,
                     "provider": self._provider.name,
                 },
             )
@@ -261,12 +262,13 @@ class RealtimeVoiceChannel(Channel):
         # Fire framework event
         if self._framework:
             await self._framework._emit_framework_event(
-                "voice_disconnected",
+                "voice_session_ended",
                 room_id=room_id,
                 channel_id=self.channel_id,
                 data={
                     "session_id": session.id,
                     "participant_id": session.participant_id,
+                    "channel_id": self.channel_id,
                 },
             )
 
