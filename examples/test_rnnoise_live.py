@@ -18,7 +18,7 @@ import time
 
 import sounddevice as sd
 
-from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
 SAMPLE_RATE = 16000
 BLOCK_MS = 10

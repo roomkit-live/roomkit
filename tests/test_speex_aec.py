@@ -30,14 +30,14 @@ def _frame(n_samples: int = 320, value: int = 0) -> AudioFrame:
 
 class TestSpeexAECInit:
     def test_default_construction(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider()
         assert aec.name == "speex_aec"
         aec.close()
 
     def test_custom_params(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=160, filter_length=1600, sample_rate=8000)
         assert aec.name == "speex_aec"
@@ -51,7 +51,7 @@ class TestSpeexAECInit:
 
 class TestSpeexAECProcess:
     def test_process_returns_new_frame(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         frame_in = _frame(320, value=100)
@@ -66,7 +66,7 @@ class TestSpeexAECProcess:
         aec.close()
 
     def test_process_preserves_timestamp(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         frame_in = _frame(320)
@@ -76,7 +76,7 @@ class TestSpeexAECProcess:
         aec.close()
 
     def test_process_copies_metadata(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         frame_in = _frame(320)
@@ -90,7 +90,7 @@ class TestSpeexAECProcess:
 
     def test_process_wrong_frame_size_passthrough(self):
         """When frame size doesn't match, frame should pass through unchanged."""
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         wrong_frame = _frame(160)  # Half the expected size
@@ -99,7 +99,7 @@ class TestSpeexAECProcess:
         aec.close()
 
     def test_process_after_close_passthrough(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         aec.close()
@@ -109,7 +109,7 @@ class TestSpeexAECProcess:
 
     def test_silence_in_silence_out(self):
         """Processing silence with no reference should yield silence."""
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         frame_in = _frame(320, value=0)
@@ -126,7 +126,7 @@ class TestSpeexAECProcess:
 
 class TestSpeexAECFeedReference:
     def test_feed_reference_accepts_frame(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         ref = _frame(320, value=500)
@@ -134,7 +134,7 @@ class TestSpeexAECFeedReference:
         aec.close()
 
     def test_feed_reference_wrong_size_ignored(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         wrong = _frame(160)
@@ -142,7 +142,7 @@ class TestSpeexAECFeedReference:
         aec.close()
 
     def test_feed_reference_after_close(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         aec.close()
@@ -156,7 +156,7 @@ class TestSpeexAECFeedReference:
 
 class TestSpeexAECLifecycle:
     def test_reset_does_not_raise(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         aec.reset()
@@ -166,14 +166,14 @@ class TestSpeexAECLifecycle:
         aec.close()
 
     def test_double_close(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         aec.close()
         aec.close()  # Must not raise
 
     def test_close_then_reset(self):
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320)
         aec.close()
@@ -192,7 +192,7 @@ class TestSpeexAECEchoCancellation:
         Uses the split API: interleave feed_reference() (playback) and
         process() (capture) so the adaptive filter can converge.
         """
-        from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320, filter_length=3200)
 

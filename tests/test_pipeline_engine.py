@@ -6,26 +6,24 @@ import asyncio
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceCapability, VoiceSession
+from roomkit.voice.pipeline.aec.mock import MockAECProvider
+from roomkit.voice.pipeline.agc.mock import MockAGCProvider
 from roomkit.voice.pipeline.config import (
     AudioFormat,
     AudioPipelineConfig,
     AudioPipelineContract,
     ResamplerConfig,
 )
-from roomkit.voice.pipeline.diarization_provider import DiarizationResult
-from roomkit.voice.pipeline.dtmf_detector import DTMFEvent
+from roomkit.voice.pipeline.denoiser.mock import MockDenoiserProvider
+from roomkit.voice.pipeline.diarization.base import DiarizationResult
+from roomkit.voice.pipeline.diarization.mock import MockDiarizationProvider
+from roomkit.voice.pipeline.dtmf.base import DTMFEvent
+from roomkit.voice.pipeline.dtmf.mock import MockDTMFDetector
 from roomkit.voice.pipeline.engine import AudioPipeline
-from roomkit.voice.pipeline.mock import (
-    MockAECProvider,
-    MockAGCProvider,
-    MockAudioRecorder,
-    MockDenoiserProvider,
-    MockDiarizationProvider,
-    MockDTMFDetector,
-    MockVADProvider,
-)
-from roomkit.voice.pipeline.recorder import RecordingConfig
-from roomkit.voice.pipeline.vad_provider import VADEvent, VADEventType
+from roomkit.voice.pipeline.recorder.base import RecordingConfig
+from roomkit.voice.pipeline.recorder.mock import MockAudioRecorder
+from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+from roomkit.voice.pipeline.vad.mock import MockVADProvider
 
 
 def _frame(data: bytes = b"\x00\x00") -> AudioFrame:
@@ -207,7 +205,7 @@ class TestDTMF:
 class TestOutboundPath:
     def test_postprocessors_applied(self):
         """Outbound path should apply postprocessors."""
-        from roomkit.voice.pipeline.mock import MockDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.mock import MockDenoiserProvider
 
         # Reuse MockDenoiserProvider as a postprocessor-like mock
         # (it implements process() correctly)

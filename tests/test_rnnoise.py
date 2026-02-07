@@ -45,28 +45,28 @@ def _frame(n_samples: int = 160, value: int = 0, sample_rate: int = 16000) -> Au
 
 class TestRNNoiseInit:
     def test_default_construction(self):
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
         assert dn.name == "rnnoise"
         dn.close()
 
     def test_48khz_construction(self):
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider(sample_rate=48000)
         assert dn.name == "rnnoise"
         dn.close()
 
     def test_24khz_construction(self):
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider(sample_rate=24000)
         assert dn.name == "rnnoise"
         dn.close()
 
     def test_invalid_sample_rate(self):
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         with pytest.raises(ValueError, match="divides evenly into 48000"):
             RNNoiseDenoiserProvider(sample_rate=22050)
@@ -79,7 +79,7 @@ class TestRNNoiseInit:
 
 class TestRNNoiseProcess:
     def test_process_returns_new_frame(self):
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
         frame_in = _frame(160, value=100)
@@ -94,7 +94,7 @@ class TestRNNoiseProcess:
         dn.close()
 
     def test_process_preserves_timestamp(self):
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
         frame_in = _frame(160)
@@ -104,7 +104,7 @@ class TestRNNoiseProcess:
         dn.close()
 
     def test_process_copies_metadata(self):
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
         frame_in = _frame(160)
@@ -118,7 +118,7 @@ class TestRNNoiseProcess:
 
     def test_process_wrong_frame_size_passthrough(self):
         """When frame size is not a multiple of chunk size, pass through."""
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
         wrong_frame = _frame(100)  # Not a multiple of 160
@@ -128,7 +128,7 @@ class TestRNNoiseProcess:
 
     def test_process_multi_chunk_frame(self):
         """Frames larger than one chunk (e.g. 20ms at 24kHz = 480) work."""
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider(sample_rate=24000)
         # 480 samples = 2 × 240 (two 10ms chunks at 24 kHz)
@@ -139,7 +139,7 @@ class TestRNNoiseProcess:
         dn.close()
 
     def test_process_after_close_passthrough(self):
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
         dn.close()
@@ -149,7 +149,7 @@ class TestRNNoiseProcess:
 
     def test_silence_in_silence_out(self):
         """Processing silence should yield near-silence."""
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
         frame_in = _frame(160, value=0)
@@ -168,7 +168,7 @@ class TestRNNoiseProcess:
 
 class TestRNNoiseLifecycle:
     def test_reset_does_not_raise(self):
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
         dn.reset()
@@ -178,14 +178,14 @@ class TestRNNoiseLifecycle:
         dn.close()
 
     def test_double_close(self):
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
         dn.close()
         dn.close()  # Must not raise
 
     def test_close_then_reset(self):
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
         dn.close()
@@ -204,7 +204,7 @@ class TestRNNoiseDenoise:
         Generates a simple tone mixed with pseudo-random noise and
         verifies that RNNoise reduces the overall energy.
         """
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         dn = RNNoiseDenoiserProvider()
 

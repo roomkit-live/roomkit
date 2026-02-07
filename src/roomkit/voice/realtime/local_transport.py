@@ -27,8 +27,8 @@ from collections import deque
 from typing import Any
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.pipeline.aec_provider import AECProvider
-from roomkit.voice.pipeline.denoiser_provider import DenoiserProvider
+from roomkit.voice.pipeline.aec.base import AECProvider
+from roomkit.voice.pipeline.denoiser.base import DenoiserProvider
 from roomkit.voice.realtime.base import RealtimeSession
 from roomkit.voice.realtime.transport import (
     RealtimeAudioTransport,

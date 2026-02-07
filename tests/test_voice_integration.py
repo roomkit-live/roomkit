@@ -17,7 +17,7 @@ from roomkit.models.event import TextContent
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceSessionState
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
-from roomkit.voice.pipeline.vad_provider import VADEvent, VADEventType
+from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
 
 
 def _speech_events(audio: bytes = b"fake-audio-data") -> list[VADEvent | None]:
@@ -585,8 +585,8 @@ class TestPipelineVADHooksIntegration:
         from roomkit.models.channel import ChannelBinding
         from roomkit.models.enums import ChannelType
         from roomkit.voice.events import SpeakerChangeEvent
-        from roomkit.voice.pipeline.diarization_provider import DiarizationResult
-        from roomkit.voice.pipeline.mock import MockDiarizationProvider
+        from roomkit.voice.pipeline.diarization.base import DiarizationResult
+        from roomkit.voice.pipeline.diarization.mock import MockDiarizationProvider
 
         diarizer = MockDiarizationProvider(results=[
             DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),

@@ -6,36 +6,34 @@ import pytest
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceSession
-from roomkit.voice.pipeline.aec_provider import AECProvider
-from roomkit.voice.pipeline.agc_provider import AGCConfig, AGCProvider
-from roomkit.voice.pipeline.backchannel_detector import (
+from roomkit.voice.pipeline.aec.base import AECProvider
+from roomkit.voice.pipeline.aec.mock import MockAECProvider
+from roomkit.voice.pipeline.agc.base import AGCConfig, AGCProvider
+from roomkit.voice.pipeline.agc.mock import MockAGCProvider
+from roomkit.voice.pipeline.backchannel.base import (
     BackchannelContext,
     BackchannelDecision,
     BackchannelDetector,
 )
+from roomkit.voice.pipeline.backchannel.mock import MockBackchannelDetector
 from roomkit.voice.pipeline.config import AudioFormat, AudioPipelineContract
-from roomkit.voice.pipeline.dtmf_detector import DTMFDetector, DTMFEvent
-from roomkit.voice.pipeline.mock import (
-    MockAECProvider,
-    MockAGCProvider,
-    MockAudioRecorder,
-    MockBackchannelDetector,
-    MockDTMFDetector,
-    MockTurnDetector,
-)
-from roomkit.voice.pipeline.recorder import (
+from roomkit.voice.pipeline.dtmf.base import DTMFDetector, DTMFEvent
+from roomkit.voice.pipeline.dtmf.mock import MockDTMFDetector
+from roomkit.voice.pipeline.recorder.base import (
     AudioRecorder,
     RecordingChannelMode,
     RecordingConfig,
     RecordingMode,
     RecordingTrigger,
 )
-from roomkit.voice.pipeline.turn_detector import (
+from roomkit.voice.pipeline.recorder.mock import MockAudioRecorder
+from roomkit.voice.pipeline.turn.base import (
     TurnContext,
     TurnDecision,
     TurnDetector,
     TurnEntry,
 )
+from roomkit.voice.pipeline.turn.mock import MockTurnDetector
 
 
 def _frame(data: bytes = b"\x00\x00") -> AudioFrame:
@@ -348,7 +346,7 @@ class TestBackchannelDetector:
 
 class TestDenoiserReset:
     def test_denoiser_has_reset(self):
-        from roomkit.voice.pipeline.mock import MockDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.mock import MockDenoiserProvider
 
         d = MockDenoiserProvider()
         d.reset()
@@ -357,7 +355,7 @@ class TestDenoiserReset:
 
 class TestPostProcessorReset:
     def test_postprocessor_has_reset(self):
-        from roomkit.voice.pipeline.postprocessor import AudioPostProcessor
+        from roomkit.voice.pipeline.postprocessor.base import AudioPostProcessor
 
         # Verify reset exists on ABC
         assert hasattr(AudioPostProcessor, "reset")

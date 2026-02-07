@@ -109,17 +109,16 @@ src/roomkit/
 │   ├── pipeline/            # Audio processing pipeline (10 provider ABCs)
 │   │   ├── engine.py        # AudioPipeline orchestrator (inbound + outbound)
 │   │   ├── config.py        # AudioPipelineConfig
-│   │   ├── vad_provider.py  # VADProvider ABC, VADEvent, VADConfig
-│   │   ├── denoiser_provider.py  # DenoiserProvider ABC
-│   │   ├── diarization_provider.py  # DiarizationProvider ABC, DiarizationResult
-│   │   ├── aec_provider.py  # AECProvider ABC (echo cancellation)
-│   │   ├── agc_provider.py  # AGCProvider ABC (gain control)
-│   │   ├── dtmf_detector.py # DTMFDetector ABC, DTMFEvent
-│   │   ├── recorder.py      # AudioRecorder ABC, RecordingConfig, RecordingHandle
-│   │   ├── turn_detector.py # TurnDetector ABC, TurnContext, TurnDecision
-│   │   ├── backchannel_detector.py  # BackchannelDetector ABC
-│   │   ├── postprocessor.py # AudioPostProcessor ABC
-│   │   └── mock.py          # 9 mock providers for testing
+│   │   ├── vad/             # VADProvider ABC, VADEvent, VADConfig, MockVADProvider
+│   │   ├── denoiser/        # DenoiserProvider ABC, RNNoiseDenoiserProvider, Mock
+│   │   ├── diarization/     # DiarizationProvider ABC, DiarizationResult, Mock
+│   │   ├── aec/             # AECProvider ABC, SpeexAECProvider, Mock
+│   │   ├── agc/             # AGCProvider ABC, AGCConfig, Mock
+│   │   ├── dtmf/            # DTMFDetector ABC, DTMFEvent, Mock
+│   │   ├── recorder/        # AudioRecorder ABC, RecordingConfig, Mock
+│   │   ├── turn/            # TurnDetector ABC, TurnContext, TurnDecision, Mock
+│   │   ├── backchannel/     # BackchannelDetector ABC, Mock
+│   │   └── postprocessor/   # AudioPostProcessor ABC
 │   ├── realtime/            # Speech-to-speech: GeminiLive, OpenAIRealtime, Mock
 │   └── backends/            # Audio transport: FastRTCVoiceBackend, MockVoiceBackend
 └── identity/
@@ -315,7 +314,7 @@ Four strategies for handling user speech during TTS playback:
 
 Legacy `enable_barge_in`/`barge_in_threshold_ms` params are automatically mapped to the appropriate strategy.
 
-**Turn detection** (`voice/pipeline/turn_detector.py`):
+**Turn detection** (`voice/pipeline/turn/base.py`):
 `TurnDetector` integrates post-STT in `VoiceChannel._process_speech_end()`. Transcription fragments accumulate in `_pending_turns` until the detector returns `is_complete=True`, at which point the combined text is routed. `ON_TURN_COMPLETE` and `ON_TURN_INCOMPLETE` hooks fire accordingly.
 
 **AudioFrame** (`voice/audio_frame.py`) is the inbound audio unit:
@@ -333,7 +332,7 @@ class AudioFrame:
 
 Pipeline stages annotate `frame.metadata` as they process (e.g., `denoiser`, `vad`, `aec`, `agc`, `diarization`, `dtmf` keys).
 
-**Mock providers** (`voice/pipeline/mock.py`) — 9 mocks for testing: `MockVADProvider`, `MockDenoiserProvider`, `MockDiarizationProvider`, `MockAGCProvider`, `MockAECProvider`, `MockDTMFDetector`, `MockAudioRecorder`, `MockTurnDetector`, `MockBackchannelDetector`. All accept pre-configured event sequences:
+**Mock providers** (each in its provider's `mock.py`, e.g. `voice/pipeline/vad/mock.py`) — 9 mocks for testing: `MockVADProvider`, `MockDenoiserProvider`, `MockDiarizationProvider`, `MockAGCProvider`, `MockAECProvider`, `MockDTMFDetector`, `MockAudioRecorder`, `MockTurnDetector`, `MockBackchannelDetector`. All accept pre-configured event sequences:
 
 ```python
 from roomkit.voice.pipeline import MockVADProvider, VADEvent, VADEventType
@@ -590,10 +589,10 @@ async def test_create_room(self) -> None:
 
 ### Adding a New Pipeline Provider
 
-1. Create provider in `voice/pipeline/<name>.py` implementing the appropriate ABC (`VADProvider`, `DenoiserProvider`, `DiarizationProvider`, `AGCProvider`, `AECProvider`, `DTMFDetector`, `AudioRecorder`, `AudioPostProcessor`, `TurnDetector`, or `BackchannelDetector`)
+1. Create provider in the appropriate subdirectory, e.g. `voice/pipeline/vad/silero.py`, implementing the corresponding ABC (`VADProvider`, `DenoiserProvider`, `DiarizationProvider`, `AGCProvider`, `AECProvider`, `DTMFDetector`, `AudioRecorder`, `AudioPostProcessor`, `TurnDetector`, or `BackchannelDetector`)
 2. Implement `name` property, `process()` (or `evaluate()` for TurnDetector/BackchannelDetector), and `reset()` / `close()`
-3. Add a corresponding mock to `voice/pipeline/mock.py`
-4. Export from `voice/pipeline/__init__.py`
+3. Add a corresponding mock to the provider's `mock.py` (e.g. `voice/pipeline/vad/mock.py`)
+4. Export from the subdirectory's `__init__.py` and from `voice/pipeline/__init__.py`
 5. Add tests in `tests/test_audio_pipeline.py`
 
 ### Adding a New Hook Trigger

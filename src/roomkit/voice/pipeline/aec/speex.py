@@ -6,7 +6,7 @@ and can be installed on macOS via Homebrew (``brew install speexdsp``).
 
 Usage::
 
-    from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+    from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
     aec = SpeexAECProvider(frame_size=320, filter_length=3200)
     config = AudioPipelineConfig(aec=aec)
@@ -22,7 +22,7 @@ import os
 import threading
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.pipeline.aec_provider import AECProvider
+from roomkit.voice.pipeline.aec.base import AECProvider
 
 logger = logging.getLogger("roomkit.voice.pipeline.speex_aec")
 

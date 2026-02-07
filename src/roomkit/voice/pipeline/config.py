@@ -7,16 +7,16 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from roomkit.voice.interruption import InterruptionConfig
-    from roomkit.voice.pipeline.aec_provider import AECProvider
-    from roomkit.voice.pipeline.agc_provider import AGCConfig, AGCProvider
-    from roomkit.voice.pipeline.backchannel_detector import BackchannelDetector
-    from roomkit.voice.pipeline.denoiser_provider import DenoiserProvider
-    from roomkit.voice.pipeline.diarization_provider import DiarizationProvider
-    from roomkit.voice.pipeline.dtmf_detector import DTMFDetector
-    from roomkit.voice.pipeline.postprocessor import AudioPostProcessor
-    from roomkit.voice.pipeline.recorder import AudioRecorder, RecordingConfig
-    from roomkit.voice.pipeline.turn_detector import TurnDetector
-    from roomkit.voice.pipeline.vad_provider import VADConfig, VADProvider
+    from roomkit.voice.pipeline.aec.base import AECProvider
+    from roomkit.voice.pipeline.agc.base import AGCConfig, AGCProvider
+    from roomkit.voice.pipeline.backchannel.base import BackchannelDetector
+    from roomkit.voice.pipeline.denoiser.base import DenoiserProvider
+    from roomkit.voice.pipeline.diarization.base import DiarizationProvider
+    from roomkit.voice.pipeline.dtmf.base import DTMFDetector
+    from roomkit.voice.pipeline.postprocessor.base import AudioPostProcessor
+    from roomkit.voice.pipeline.recorder.base import AudioRecorder, RecordingConfig
+    from roomkit.voice.pipeline.turn.base import TurnDetector
+    from roomkit.voice.pipeline.vad.base import VADConfig, VADProvider
 
 
 @dataclass

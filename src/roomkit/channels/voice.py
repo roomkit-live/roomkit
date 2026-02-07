@@ -31,8 +31,8 @@ if TYPE_CHECKING:
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import VoiceSession
     from roomkit.voice.pipeline.config import AudioPipelineConfig
-    from roomkit.voice.pipeline.diarization_provider import DiarizationResult
-    from roomkit.voice.pipeline.vad_provider import VADEvent
+    from roomkit.voice.pipeline.diarization.base import DiarizationResult
+    from roomkit.voice.pipeline.vad.base import VADEvent
     from roomkit.voice.stt.base import STTProvider
     from roomkit.voice.tts.base import TTSProvider
 
@@ -196,7 +196,7 @@ class VoiceChannel(Channel):
 
     def _on_pipeline_vad_event(self, session: VoiceSession, vad_event: VADEvent) -> None:
         """Handle VAD events from pipeline — fire corresponding hooks."""
-        from roomkit.voice.pipeline.vad_provider import VADEventType
+        from roomkit.voice.pipeline.vad.base import VADEventType
 
         binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
@@ -847,7 +847,7 @@ class VoiceChannel(Channel):
             await self._route_text(session, text, room_id)
             return
 
-        from roomkit.voice.pipeline.turn_detector import TurnContext, TurnEntry
+        from roomkit.voice.pipeline.turn.base import TurnContext, TurnEntry
 
         # Accumulate entry
         entries = self._pending_turns.setdefault(session.id, [])

@@ -32,7 +32,7 @@ import signal
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
-from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 from roomkit.voice.realtime.local_transport import LocalAudioTransport
 
 logging.basicConfig(
@@ -81,7 +81,7 @@ async def main() -> None:
     # --- Denoiser (RNNoise noise suppression) ---
     denoiser = None
     if use_denoise:
-        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         denoiser = RNNoiseDenoiserProvider(sample_rate=sample_rate)
 

@@ -9,16 +9,16 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.base import VoiceCapability
-from roomkit.voice.pipeline.vad_provider import VADEventType
+from roomkit.voice.pipeline.vad.base import VADEventType
 
 if TYPE_CHECKING:
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.base import VoiceSession
     from roomkit.voice.pipeline.config import AudioPipelineConfig
-    from roomkit.voice.pipeline.diarization_provider import DiarizationResult
-    from roomkit.voice.pipeline.dtmf_detector import DTMFEvent
-    from roomkit.voice.pipeline.recorder import RecordingHandle, RecordingResult
-    from roomkit.voice.pipeline.vad_provider import VADEvent
+    from roomkit.voice.pipeline.diarization.base import DiarizationResult
+    from roomkit.voice.pipeline.dtmf.base import DTMFEvent
+    from roomkit.voice.pipeline.recorder.base import RecordingHandle, RecordingResult
+    from roomkit.voice.pipeline.vad.base import VADEvent
 
 logger = logging.getLogger("roomkit.voice.pipeline")
 
@@ -246,7 +246,7 @@ class AudioPipeline:
         # Stage 1: Recorder inbound tap
         handle = self._recording_handles.get(session.id)
         if handle is not None and self._config.recorder is not None:
-            from roomkit.voice.pipeline.recorder import RecordingMode
+            from roomkit.voice.pipeline.recorder.base import RecordingMode
 
             rec_mode = (
                 self._config.recording_config.mode
@@ -381,7 +381,7 @@ class AudioPipeline:
         # Stage 2: Recorder outbound tap
         handle = self._recording_handles.get(session.id)
         if handle is not None and self._config.recorder is not None:
-            from roomkit.voice.pipeline.recorder import RecordingMode
+            from roomkit.voice.pipeline.recorder.base import RecordingMode
 
             rec_mode = (
                 self._config.recording_config.mode

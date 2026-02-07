@@ -8,7 +8,7 @@ from enum import StrEnum, unique
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from roomkit.voice.pipeline.backchannel_detector import BackchannelDetector
+    from roomkit.voice.pipeline.backchannel.base import BackchannelDetector
 
 logger = logging.getLogger("roomkit.voice.interruption")
 
@@ -160,7 +160,7 @@ class InterruptionHandler:
                     reason="speech too short (semantic fallback)",
                 )
 
-            from roomkit.voice.pipeline.backchannel_detector import BackchannelContext
+            from roomkit.voice.pipeline.backchannel.base import BackchannelContext
 
             ctx = BackchannelContext(
                 transcript=speech_text,

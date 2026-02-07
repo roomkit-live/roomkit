@@ -7,8 +7,8 @@ from roomkit.voice.interruption import (
     InterruptionHandler,
     InterruptionStrategy,
 )
-from roomkit.voice.pipeline.backchannel_detector import BackchannelDecision
-from roomkit.voice.pipeline.mock import MockBackchannelDetector
+from roomkit.voice.pipeline.backchannel.base import BackchannelDecision
+from roomkit.voice.pipeline.backchannel.mock import MockBackchannelDetector
 
 
 class TestDisabledStrategy:

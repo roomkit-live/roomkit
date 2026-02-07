@@ -8,9 +8,10 @@ from roomkit.channels.voice import VoiceChannel
 from roomkit.models.enums import HookTrigger
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.pipeline.config import AudioPipelineConfig
-from roomkit.voice.pipeline.mock import MockTurnDetector, MockVADProvider
-from roomkit.voice.pipeline.turn_detector import TurnDecision
-from roomkit.voice.pipeline.vad_provider import VADEvent, VADEventType
+from roomkit.voice.pipeline.turn.base import TurnDecision
+from roomkit.voice.pipeline.turn.mock import MockTurnDetector
+from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+from roomkit.voice.pipeline.vad.mock import MockVADProvider
 
 
 class _MockSTT:

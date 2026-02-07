@@ -281,14 +281,14 @@ def get_fastrtc_realtime_transport() -> type:
 
 def get_rnnoise_denoiser_provider() -> type:
     """Get RNNoiseDenoiserProvider class (requires librnnoise system library)."""
-    from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+    from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
     return RNNoiseDenoiserProvider
 
 
 def get_speex_aec_provider() -> type:
     """Get SpeexAECProvider class (requires libspeexdsp system library)."""
-    from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
+    from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
     return SpeexAECProvider
 

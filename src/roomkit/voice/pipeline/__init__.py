@@ -1,11 +1,12 @@
 """Audio processing pipeline for voice (RFC §12.3)."""
 
-from roomkit.voice.pipeline.aec_provider import AECProvider
-from roomkit.voice.pipeline.agc_provider import AGCConfig, AGCProvider
-from roomkit.voice.pipeline.backchannel_detector import (
+from roomkit.voice.pipeline.aec import AECProvider, MockAECProvider, SpeexAECProvider
+from roomkit.voice.pipeline.agc import AGCConfig, AGCProvider, MockAGCProvider
+from roomkit.voice.pipeline.backchannel import (
     BackchannelContext,
     BackchannelDecision,
     BackchannelDetector,
+    MockBackchannelDetector,
 )
 from roomkit.voice.pipeline.config import (
     AudioFormat,
@@ -13,24 +14,22 @@ from roomkit.voice.pipeline.config import (
     AudioPipelineContract,
     ResamplerConfig,
 )
-from roomkit.voice.pipeline.denoiser_provider import DenoiserProvider
-from roomkit.voice.pipeline.diarization_provider import DiarizationProvider, DiarizationResult
-from roomkit.voice.pipeline.dtmf_detector import DTMFDetector, DTMFEvent
-from roomkit.voice.pipeline.engine import AudioPipeline
-from roomkit.voice.pipeline.mock import (
-    MockAECProvider,
-    MockAGCProvider,
-    MockAudioRecorder,
-    MockBackchannelDetector,
+from roomkit.voice.pipeline.denoiser import (
+    DenoiserProvider,
     MockDenoiserProvider,
-    MockDiarizationProvider,
-    MockDTMFDetector,
-    MockTurnDetector,
-    MockVADProvider,
+    RNNoiseDenoiserProvider,
 )
+from roomkit.voice.pipeline.diarization import (
+    DiarizationProvider,
+    DiarizationResult,
+    MockDiarizationProvider,
+)
+from roomkit.voice.pipeline.dtmf import DTMFDetector, DTMFEvent, MockDTMFDetector
+from roomkit.voice.pipeline.engine import AudioPipeline
 from roomkit.voice.pipeline.postprocessor import AudioPostProcessor
 from roomkit.voice.pipeline.recorder import (
     AudioRecorder,
+    MockAudioRecorder,
     RecordingChannelMode,
     RecordingConfig,
     RecordingHandle,
@@ -38,15 +37,20 @@ from roomkit.voice.pipeline.recorder import (
     RecordingResult,
     RecordingTrigger,
 )
-from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
-from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
-from roomkit.voice.pipeline.turn_detector import (
+from roomkit.voice.pipeline.turn import (
+    MockTurnDetector,
     TurnContext,
     TurnDecision,
     TurnDetector,
     TurnEntry,
 )
-from roomkit.voice.pipeline.vad_provider import VADConfig, VADEvent, VADEventType, VADProvider
+from roomkit.voice.pipeline.vad import (
+    MockVADProvider,
+    VADConfig,
+    VADEvent,
+    VADEventType,
+    VADProvider,
+)
 
 __all__ = [
     # Config
