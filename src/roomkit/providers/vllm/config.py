@@ -25,3 +25,6 @@ class VLLMConfig:
     api_key: str = "none"
     max_tokens: int = 1024
     temperature: float = 0.7
+    timeout: float = 120.0
+    """HTTP request timeout in seconds. Increase for servers that load
+    models on first request (e.g. Ollama cold start)."""

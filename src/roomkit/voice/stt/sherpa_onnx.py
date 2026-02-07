@@ -122,7 +122,10 @@ class SherpaOnnxSTTProvider(STTProvider):
     async def transcribe(
         self, audio: AudioContent | AudioChunk | AudioFrame
     ) -> TranscriptionResult:
-        """Transcribe complete audio using the offline recognizer.
+        """Transcribe complete audio.
+
+        For transducer mode, uses the OnlineRecognizer (feeds all audio then
+        reads the result).  For whisper mode, uses the OfflineRecognizer.
 
         Args:
             audio: Audio content or raw audio chunk (PCM S16LE expected).
@@ -130,8 +133,6 @@ class SherpaOnnxSTTProvider(STTProvider):
         Returns:
             TranscriptionResult with text.
         """
-        recognizer = self._get_offline_recognizer()
-
         if hasattr(audio, "url"):
             raise ValueError(
                 "SherpaOnnxSTTProvider does not support URL-based AudioContent. "
@@ -141,11 +142,24 @@ class SherpaOnnxSTTProvider(STTProvider):
         samples = _pcm_s16le_to_float32(audio.data)
         sample_rate = getattr(audio, "sample_rate", self._config.sample_rate)
 
-        def _run() -> str:
-            stream = recognizer.create_stream()
-            stream.accept_waveform(sample_rate, samples)
-            recognizer.decode(stream)
-            return str(stream.result.text.strip())
+        if self._config.mode == "transducer":
+            recognizer = self._get_online_recognizer()
+
+            def _run() -> str:
+                stream = recognizer.create_stream()
+                stream.accept_waveform(sample_rate, samples)
+                stream.input_finished()
+                while recognizer.is_ready(stream):
+                    recognizer.decode_stream(stream)
+                return str(recognizer.get_result(stream)).strip()
+        else:
+            recognizer = self._get_offline_recognizer()
+
+            def _run() -> str:
+                stream = recognizer.create_stream()
+                stream.accept_waveform(sample_rate, samples)
+                recognizer.decode_stream(stream)
+                return str(stream.result.text.strip())
 
         text = await asyncio.to_thread(_run)
         return TranscriptionResult(text=text)
@@ -183,11 +197,11 @@ class SherpaOnnxSTTProvider(STTProvider):
                 ) -> None:
                     s.accept_waveform(sr, sa)
                     while recognizer.is_ready(s):
-                        recognizer.decode(s)
+                        recognizer.decode_stream(s)
 
                 await asyncio.to_thread(_feed_and_decode)
 
-                text = recognizer.get_result(stream).text.strip()
+                text = str(recognizer.get_result(stream)).strip()
                 if text and text != last_text:
                     is_endpoint = recognizer.is_endpoint(stream)
                     yield TranscriptionResult(
@@ -200,7 +214,7 @@ class SherpaOnnxSTTProvider(STTProvider):
 
             if chunk.is_final:
                 # Flush any remaining text
-                text = recognizer.get_result(stream).text.strip()
+                text = str(recognizer.get_result(stream)).strip()
                 if text and text != last_text:
                     yield TranscriptionResult(text=text, is_final=True)
                 break

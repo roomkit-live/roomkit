@@ -42,6 +42,7 @@ class OpenAIAIProvider(AIProvider):
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
+            timeout=config.timeout,
         )
 
     @property

@@ -36,5 +36,6 @@ def create_vllm_provider(config: VLLMConfig) -> OpenAIAIProvider:
         model=config.model,
         max_tokens=config.max_tokens,
         temperature=config.temperature,
+        timeout=config.timeout,
     )
     return OpenAIAIProvider(openai_config)

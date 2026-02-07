@@ -104,15 +104,31 @@ class AIChannel(Channel):
         try:
             response = await self._provider.generate(ai_context)
         except ProviderError as exc:
-            logger.exception(
-                "AI provider error for channel %s",
-                self.channel_id,
-                extra={
-                    "provider": exc.provider,
-                    "retryable": exc.retryable,
-                    "status_code": exc.status_code,
-                },
-            )
+            if exc.status_code == 404:
+                logger.error(
+                    "AI model not found (channel=%s, provider=%s): %s",
+                    self.channel_id,
+                    exc.provider,
+                    exc,
+                )
+            elif exc.status_code and exc.status_code >= 500:
+                logger.error(
+                    "AI provider server error (channel=%s, provider=%s, status=%s): %s",
+                    self.channel_id,
+                    exc.provider,
+                    exc.status_code,
+                    exc,
+                )
+            else:
+                logger.exception(
+                    "AI provider error for channel %s",
+                    self.channel_id,
+                    extra={
+                        "provider": exc.provider,
+                        "retryable": exc.retryable,
+                        "status_code": exc.status_code,
+                    },
+                )
             return ChannelOutput.empty()
         except Exception:
             logger.exception("AI provider failed for channel %s", self.channel_id)
