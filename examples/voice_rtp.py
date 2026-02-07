@@ -38,7 +38,12 @@ from roomkit import (
 )
 from roomkit.channels.ai import AIChannel
 from roomkit.voice.backends.rtp import RTPVoiceBackend
-from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider, VADEvent, VADEventType
+from roomkit.voice.pipeline import (
+    AudioPipelineConfig,
+    MockVADProvider,
+    VADEvent,
+    VADEventType,
+)
 from roomkit.voice.pipeline.dtmf import MockDTMFDetector
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
