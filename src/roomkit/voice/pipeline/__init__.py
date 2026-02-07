@@ -36,6 +36,7 @@ from roomkit.voice.pipeline.recorder import (
     RecordingMode,
     RecordingResult,
     RecordingTrigger,
+    WavFileRecorder,
 )
 from roomkit.voice.pipeline.turn import (
     MockTurnDetector,
@@ -66,6 +67,7 @@ __all__ = [
     "AGCProvider",
     "AudioPostProcessor",
     "AudioRecorder",
+    "WavFileRecorder",
     "BackchannelDetector",
     "DenoiserProvider",
     "RNNoiseDenoiserProvider",
