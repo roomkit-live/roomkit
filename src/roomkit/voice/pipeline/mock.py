@@ -232,7 +232,7 @@ class MockAudioRecorder(AudioRecorder):
     def start(self, session: VoiceSession, config: RecordingConfig) -> RecordingHandle:
         self._next_id += 1
         handle = RecordingHandle(
-            recording_id=f"rec_{self._next_id}",
+            id=f"rec_{self._next_id}",
             session_id=session.id,
             path=f"/tmp/recording_{self._next_id}.wav",
         )
@@ -242,17 +242,17 @@ class MockAudioRecorder(AudioRecorder):
     def stop(self, handle: RecordingHandle) -> RecordingResult:
         self.stopped.append(handle)
         return RecordingResult(
-            recording_id=handle.recording_id,
-            path=handle.path,
-            duration_ms=1000.0,
+            id=handle.id,
+            urls=[handle.path] if handle.path else [],
+            duration_seconds=1.0,
             size_bytes=32000,
         )
 
     def tap_inbound(self, handle: RecordingHandle, frame: AudioFrame) -> None:
-        self.inbound_frames.append((handle.recording_id, frame))
+        self.inbound_frames.append((handle.id, frame))
 
     def tap_outbound(self, handle: RecordingHandle, frame: AudioFrame) -> None:
-        self.outbound_frames.append((handle.recording_id, frame))
+        self.outbound_frames.append((handle.id, frame))
 
     def reset(self) -> None:
         self.reset_count += 1
@@ -281,7 +281,7 @@ class MockTurnDetector(TurnDetector):
             decision = self._decisions[self._index]
             self._index += 1
             return decision
-        return TurnDecision(is_complete=True, confidence=1.0, reason="default")
+        return TurnDecision(is_complete=True, confidence=1.0)
 
     def reset(self) -> None:
         self._index = 0
@@ -305,7 +305,7 @@ class MockBackchannelDetector(BackchannelDetector):
     def name(self) -> str:
         return "MockBackchannelDetector"
 
-    def evaluate(self, context: BackchannelContext) -> BackchannelDecision:
+    def classify(self, context: BackchannelContext) -> BackchannelDecision:
         self.evaluations.append(context)
         if self._index < len(self._decisions):
             decision = self._decisions[self._index]

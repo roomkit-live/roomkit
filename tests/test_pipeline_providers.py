@@ -13,6 +13,7 @@ from roomkit.voice.pipeline.backchannel_detector import (
     BackchannelDecision,
     BackchannelDetector,
 )
+from roomkit.voice.pipeline.config import AudioFormat, AudioPipelineContract
 from roomkit.voice.pipeline.dtmf_detector import DTMFDetector, DTMFEvent
 from roomkit.voice.pipeline.mock import (
     MockAECProvider,
@@ -27,6 +28,7 @@ from roomkit.voice.pipeline.recorder import (
     RecordingChannelMode,
     RecordingConfig,
     RecordingMode,
+    RecordingTrigger,
 )
 from roomkit.voice.pipeline.turn_detector import (
     TurnContext,
@@ -75,7 +77,9 @@ class TestAGCProvider:
         cfg = AGCConfig()
         assert cfg.target_level_dbfs == -3.0
         assert cfg.max_gain_db == 30.0
-        assert cfg.extra == {}
+        assert cfg.attack_ms == 10.0
+        assert cfg.release_ms == 100.0
+        assert cfg.metadata == {}
 
 
 # ---------------------------------------------------------------------------
@@ -163,8 +167,9 @@ class TestAudioRecorder:
         config = RecordingConfig()
 
         handle = recorder.start(session, config)
-        assert handle.recording_id == "rec_1"
+        assert handle.id == "rec_1"
         assert handle.session_id == "s1"
+        assert handle.state == "recording"
 
         recorder.tap_inbound(handle, _frame(b"\x01"))
         recorder.tap_outbound(handle, _frame(b"\x02"))
@@ -172,22 +177,37 @@ class TestAudioRecorder:
         assert len(recorder.outbound_frames) == 1
 
         result = recorder.stop(handle)
-        assert result.recording_id == "rec_1"
-        assert result.duration_ms == 1000.0
+        assert result.id == "rec_1"
+        assert result.duration_seconds == 1.0
 
     def test_recording_config_defaults(self):
         cfg = RecordingConfig()
-        assert cfg.mode == RecordingMode.ALWAYS
-        assert cfg.channel_mode == RecordingChannelMode.MIXED
-        assert cfg.output_format == "wav"
+        assert cfg.mode == RecordingMode.BOTH
+        assert cfg.trigger == RecordingTrigger.ALWAYS
+        assert cfg.channels == RecordingChannelMode.MIXED
+        assert cfg.format == "wav"
+        assert cfg.storage == ""
+        assert cfg.retention_days is None
+        assert cfg.metadata == {}
 
     def test_recording_mode_values(self):
-        assert RecordingMode.ALWAYS == "always"
-        assert RecordingMode.SPEECH_ONLY == "speech_only"
+        assert RecordingMode.INBOUND_ONLY == "inbound_only"
+        assert RecordingMode.OUTBOUND_ONLY == "outbound_only"
+        assert RecordingMode.BOTH == "both"
+
+    def test_recording_mode_backwards_compat(self):
+        """Legacy 'always' and 'speech_only' strings map to BOTH."""
+        assert RecordingMode("always") == RecordingMode.BOTH
+        assert RecordingMode("speech_only") == RecordingMode.BOTH
+
+    def test_recording_trigger_values(self):
+        assert RecordingTrigger.ALWAYS == "always"
+        assert RecordingTrigger.SPEECH_ONLY == "speech_only"
 
     def test_recording_channel_mode_values(self):
         assert RecordingChannelMode.MIXED == "mixed"
         assert RecordingChannelMode.SEPARATE == "separate"
+        assert RecordingChannelMode.STEREO == "stereo"
 
 
 # ---------------------------------------------------------------------------
@@ -205,8 +225,8 @@ class TestTurnDetector:
         detector = MockTurnDetector(decisions=[decision])
 
         ctx = TurnContext(
-            entries=[TurnEntry(text="Hello")],
-            silence_ms=1000.0,
+            conversation_history=[TurnEntry(text="Hello")],
+            silence_duration_ms=1000.0,
             session_id="s1",
         )
         result = detector.evaluate(ctx)
@@ -224,48 +244,71 @@ class TestTurnDetector:
         detector = MockTurnDetector()
         result = detector.evaluate(TurnContext())
         assert result.is_complete  # Default is complete
+        assert result.reason is None  # Default reason is None
 
     def test_turn_entry_defaults(self):
         entry = TurnEntry(text="hi")
-        assert entry.speaker_id is None
+        assert entry.role is None
         assert entry.duration_ms is None
 
     def test_turn_context_with_multiple_entries(self):
-        """TurnContext should hold multiple entries."""
+        """TurnContext should hold multiple conversation_history entries."""
         entries = [
             TurnEntry(text="Hello"),
             TurnEntry(text="How are you"),
             TurnEntry(text="I need help"),
         ]
-        ctx = TurnContext(entries=entries, silence_ms=500.0, session_id="s1")
-        assert len(ctx.entries) == 3
-        assert ctx.entries[2].text == "I need help"
+        ctx = TurnContext(
+            conversation_history=entries, silence_duration_ms=500.0, session_id="s1"
+        )
+        assert len(ctx.conversation_history) == 3
+        assert ctx.conversation_history[2].text == "I need help"
 
-    def test_turn_entry_speaker_id_and_duration(self):
+    def test_turn_entry_role_and_duration(self):
         """TurnEntry fields should carry through to detector."""
-        entry = TurnEntry(text="Hi there", speaker_id="spk_0", duration_ms=1200.0)
-        ctx = TurnContext(entries=[entry], session_id="s1")
+        entry = TurnEntry(text="Hi there", role="user", duration_ms=1200.0)
+        ctx = TurnContext(conversation_history=[entry], session_id="s1")
 
         detector = MockTurnDetector()
         detector.evaluate(ctx)
 
         assert len(detector.evaluations) == 1
-        evaluated_entry = detector.evaluations[0].entries[0]
-        assert evaluated_entry.speaker_id == "spk_0"
+        evaluated_entry = detector.evaluations[0].conversation_history[0]
+        assert evaluated_entry.role == "user"
         assert evaluated_entry.duration_ms == 1200.0
 
-    def test_turn_context_silence_ms(self):
-        """silence_ms should be passed through to the detector."""
+    def test_turn_context_silence_duration_ms(self):
+        """silence_duration_ms should be passed through to the detector."""
         ctx = TurnContext(
-            entries=[TurnEntry(text="Done")],
-            silence_ms=2500.0,
+            conversation_history=[TurnEntry(text="Done")],
+            silence_duration_ms=2500.0,
             session_id="s1",
         )
 
         detector = MockTurnDetector()
         detector.evaluate(ctx)
 
-        assert detector.evaluations[0].silence_ms == 2500.0
+        assert detector.evaluations[0].silence_duration_ms == 2500.0
+
+    def test_turn_context_new_fields(self):
+        """TurnContext exposes transcript, is_final, speech_duration_ms, metadata."""
+        ctx = TurnContext(
+            transcript="Hello world",
+            is_final=True,
+            speech_duration_ms=1500.0,
+            metadata={"source": "test"},
+        )
+        assert ctx.transcript == "Hello world"
+        assert ctx.is_final is True
+        assert ctx.speech_duration_ms == 1500.0
+        assert ctx.metadata == {"source": "test"}
+
+    def test_turn_decision_suggested_wait_ms(self):
+        """TurnDecision has suggested_wait_ms field."""
+        decision = TurnDecision(
+            is_complete=False, confidence=0.5, suggested_wait_ms=500.0
+        )
+        assert decision.suggested_wait_ms == 500.0
 
 
 # ---------------------------------------------------------------------------
@@ -278,23 +321,23 @@ class TestBackchannelDetector:
         with pytest.raises(TypeError):
             BackchannelDetector()  # type: ignore[abstract]
 
-    def test_mock_evaluate_backchannel(self):
+    def test_mock_classify_backchannel(self):
         decision = BackchannelDecision(is_backchannel=True, confidence=0.95)
         detector = MockBackchannelDetector(decisions=[decision])
 
-        ctx = BackchannelContext(text="uh-huh", duration_ms=300.0, session_id="s1")
-        result = detector.evaluate(ctx)
+        ctx = BackchannelContext(transcript="uh-huh", speech_duration_ms=300.0, session_id="s1")
+        result = detector.classify(ctx)
         assert result.is_backchannel
         assert result.confidence == 0.95
 
-    def test_mock_evaluate_not_backchannel(self):
+    def test_mock_classify_not_backchannel(self):
         detector = MockBackchannelDetector()
-        ctx = BackchannelContext(text="Actually, I disagree", duration_ms=2000.0)
-        result = detector.evaluate(ctx)
+        ctx = BackchannelContext(transcript="Actually, I disagree", speech_duration_ms=2000.0)
+        result = detector.classify(ctx)
         assert not result.is_backchannel
 
     def test_backchannel_context_defaults(self):
-        ctx = BackchannelContext(text="yeah", duration_ms=200.0)
+        ctx = BackchannelContext(transcript="yeah", speech_duration_ms=200.0)
         assert ctx.session_id == ""
 
 
@@ -318,3 +361,55 @@ class TestPostProcessorReset:
 
         # Verify reset exists on ABC
         assert hasattr(AudioPostProcessor, "reset")
+
+
+# ---------------------------------------------------------------------------
+# AudioPipelineContract — 3-format model
+# ---------------------------------------------------------------------------
+
+
+class TestAudioPipelineContract:
+    def test_three_format_fields(self):
+        """Contract exposes transport_inbound, transport_outbound, internal formats."""
+        fmt_in = AudioFormat(sample_rate=48000, channels=2, sample_width=2, codec="opus")
+        fmt_out = AudioFormat(sample_rate=48000, channels=2, sample_width=2, codec="opus")
+        fmt_int = AudioFormat(sample_rate=16000, channels=1, sample_width=2, codec="pcm_s16le")
+        contract = AudioPipelineContract(
+            transport_inbound_format=fmt_in,
+            transport_outbound_format=fmt_out,
+            internal_format=fmt_int,
+        )
+        assert contract.transport_inbound_format is fmt_in
+        assert contract.transport_outbound_format is fmt_out
+        assert contract.internal_format is fmt_int
+
+    def test_backwards_compat_aliases(self):
+        """input_format/output_format properties map to transport formats."""
+        fmt_in = AudioFormat(sample_rate=48000)
+        fmt_out = AudioFormat(sample_rate=24000)
+        contract = AudioPipelineContract(
+            transport_inbound_format=fmt_in,
+            transport_outbound_format=fmt_out,
+        )
+        assert contract.input_format is fmt_in
+        assert contract.output_format is fmt_out
+
+    def test_default_formats(self):
+        """Default contract uses 16kHz mono pcm_s16le for all three."""
+        contract = AudioPipelineContract()
+        for fmt in (
+            contract.transport_inbound_format,
+            contract.transport_outbound_format,
+            contract.internal_format,
+        ):
+            assert fmt.sample_rate == 16000
+            assert fmt.channels == 1
+            assert fmt.sample_width == 2
+            assert fmt.codec == "pcm_s16le"
+
+    def test_codec_field_on_audio_format(self):
+        """AudioFormat has a codec field with default pcm_s16le."""
+        fmt = AudioFormat()
+        assert fmt.codec == "pcm_s16le"
+        fmt2 = AudioFormat(codec="opus")
+        assert fmt2.codec == "opus"

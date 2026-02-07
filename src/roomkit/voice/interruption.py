@@ -35,14 +35,23 @@ class InterruptionStrategy(StrEnum):
 class InterruptionConfig:
     """Configuration for interruption (barge-in) behaviour."""
 
-    strategy: InterruptionStrategy = InterruptionStrategy.IMMEDIATE
+    strategy: InterruptionStrategy = InterruptionStrategy.CONFIRMED
     """Which strategy to use."""
 
-    min_speech_ms: int = 200
+    min_speech_ms: int = 300
     """Minimum speech duration (ms) before triggering (used by CONFIRMED)."""
 
     allow_during_first_ms: int = 0
     """If > 0, only allow interruptions after this many ms of playback."""
+
+    flush_partial_tts: bool = True
+    """Whether to flush any buffered TTS audio on interruption."""
+
+    keep_partial_transcript: bool = True
+    """Whether to keep the partial transcript when interrupted."""
+
+    backchannel_detector: BackchannelDetector | None = None
+    """Optional backchannel detector for SEMANTIC strategy."""
 
 
 @dataclass
@@ -76,7 +85,7 @@ class InterruptionHandler:
         backchannel_detector: BackchannelDetector | None = None,
     ) -> None:
         self._config = config
-        self._backchannel_detector = backchannel_detector
+        self._backchannel_detector = backchannel_detector or config.backchannel_detector
 
     @property
     def config(self) -> InterruptionConfig:
@@ -154,10 +163,10 @@ class InterruptionHandler:
             from roomkit.voice.pipeline.backchannel_detector import BackchannelContext
 
             ctx = BackchannelContext(
-                text=speech_text,
-                duration_ms=float(speech_duration_ms),
+                transcript=speech_text,
+                speech_duration_ms=float(speech_duration_ms),
             )
-            bc_result = self._backchannel_detector.evaluate(ctx)
+            bc_result = self._backchannel_detector.classify(ctx)
             if bc_result.is_backchannel:
                 return InterruptionDecision(
                     should_interrupt=False,

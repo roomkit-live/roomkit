@@ -3,21 +3,31 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
 class BackchannelContext:
     """Context for backchannel detection."""
 
-    text: str
-    """The transcribed text to evaluate."""
+    transcript: str | None = None
+    """The transcribed text to classify."""
 
-    duration_ms: float
+    speech_duration_ms: float = 0.0
     """Duration of the utterance in milliseconds."""
+
+    audio_bytes: bytes | None = None
+    """Raw audio of the utterance (for acoustic classifiers)."""
+
+    bot_speech_progress: float = 0.0
+    """How far into the bot's current utterance (0.0–1.0)."""
 
     session_id: str = ""
     """The voice session this utterance belongs to."""
+
+    metadata: dict[str, Any] = field(default_factory=dict)
+    """Additional context for the classifier."""
 
 
 @dataclass
@@ -29,6 +39,9 @@ class BackchannelDecision:
 
     confidence: float = 1.0
     """Confidence in the decision (0.0 to 1.0)."""
+
+    label: str | None = None
+    """Classification label (e.g. ``"acknowledgement"``, ``"filler"``)."""
 
 
 class BackchannelDetector(ABC):
@@ -46,11 +59,11 @@ class BackchannelDetector(ABC):
         ...
 
     @abstractmethod
-    def evaluate(self, context: BackchannelContext) -> BackchannelDecision:
-        """Evaluate whether an utterance is a backchannel.
+    def classify(self, context: BackchannelContext) -> BackchannelDecision:
+        """Classify whether an utterance is a backchannel.
 
         Args:
-            context: The utterance context to evaluate.
+            context: The utterance context to classify.
 
         Returns:
             A BackchannelDecision indicating classification.

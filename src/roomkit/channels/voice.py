@@ -409,7 +409,7 @@ class VoiceChannel(Channel):
             await self._framework._emit_framework_event(
                 "recording_started",
                 room_id=room_id,
-                data={"session_id": session.id, "recording_id": recording_id},
+                data={"session_id": session.id, "id": recording_id},
             )
         except Exception:
             logger.exception("Error emitting recording_started")
@@ -423,7 +423,7 @@ class VoiceChannel(Channel):
             await self._framework._emit_framework_event(
                 "recording_stopped",
                 room_id=room_id,
-                data={"session_id": session.id, "recording_id": recording_id},
+                data={"session_id": session.id, "id": recording_id},
             )
         except Exception:
             logger.exception("Error emitting recording_stopped")
@@ -593,7 +593,7 @@ class VoiceChannel(Channel):
             context = await self._framework._build_context(room_id)
             event = RecordingStartedEvent(
                 session=session,
-                recording_id=handle.recording_id,
+                id=handle.id,
             )
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
@@ -602,7 +602,7 @@ class VoiceChannel(Channel):
                 context,
                 skip_event_filter=True,
             )
-            await self._emit_recording_started(session, handle.recording_id, room_id)
+            await self._emit_recording_started(session, handle.id, room_id)
         except Exception:
             logger.exception("Error firing ON_RECORDING_STARTED hook")
 
@@ -617,9 +617,9 @@ class VoiceChannel(Channel):
             context = await self._framework._build_context(room_id)
             event = RecordingStoppedEvent(
                 session=session,
-                recording_id=result.recording_id,
-                path=result.path,
-                duration_ms=result.duration_ms,
+                id=result.id,
+                urls=tuple(result.urls),
+                duration_seconds=result.duration_seconds,
             )
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
@@ -628,7 +628,7 @@ class VoiceChannel(Channel):
                 context,
                 skip_event_filter=True,
             )
-            await self._emit_recording_stopped(session, result.recording_id, room_id)
+            await self._emit_recording_stopped(session, result.id, room_id)
         except Exception:
             logger.exception("Error firing ON_RECORDING_STOPPED hook")
 
@@ -829,11 +829,13 @@ class VoiceChannel(Channel):
 
         # Accumulate entry
         entries = self._pending_turns.setdefault(session.id, [])
-        entries.append(TurnEntry(text=text))
+        entries.append(TurnEntry(text=text, role="user"))
 
         turn_ctx = TurnContext(
-            entries=list(entries),
-            silence_ms=0.0,
+            conversation_history=list(entries),
+            silence_duration_ms=0.0,
+            transcript=text,
+            is_final=True,
             session_id=session.id,
         )
         decision = turn_detector.evaluate(turn_ctx)

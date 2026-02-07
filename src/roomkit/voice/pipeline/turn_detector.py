@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -13,8 +14,8 @@ class TurnEntry:
     text: str
     """Transcribed text of the utterance."""
 
-    speaker_id: str | None = None
-    """Speaker identity (from diarization), if available."""
+    role: str | None = None
+    """Conversational role (``"user"`` or ``"assistant"``)."""
 
     duration_ms: float | None = None
     """Duration of the utterance in milliseconds."""
@@ -24,14 +25,26 @@ class TurnEntry:
 class TurnContext:
     """Accumulated context for turn detection."""
 
-    entries: list[TurnEntry] = field(default_factory=list)
+    conversation_history: list[TurnEntry] = field(default_factory=list)
     """Utterances accumulated so far in this potential turn."""
 
-    silence_ms: float = 0.0
+    silence_duration_ms: float = 0.0
     """Silence duration since last utterance in milliseconds."""
+
+    transcript: str = ""
+    """Current transcript text for the latest utterance."""
+
+    is_final: bool = False
+    """Whether the transcript is final (not partial)."""
+
+    speech_duration_ms: float = 0.0
+    """Duration of the current speech segment in milliseconds."""
 
     session_id: str = ""
     """The voice session this turn belongs to."""
+
+    metadata: dict[str, Any] = field(default_factory=dict)
+    """Additional context for the turn detector."""
 
 
 @dataclass
@@ -44,8 +57,11 @@ class TurnDecision:
     confidence: float = 1.0
     """Confidence in the decision (0.0 to 1.0)."""
 
-    reason: str = ""
+    reason: str | None = None
     """Human-readable reason for the decision."""
+
+    suggested_wait_ms: float | None = None
+    """If incomplete, how long to wait before re-evaluating."""
 
 
 class TurnDetector(ABC):

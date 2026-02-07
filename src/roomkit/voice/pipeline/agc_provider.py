@@ -20,7 +20,13 @@ class AGCConfig:
     max_gain_db: float = 30.0
     """Maximum gain applied in dB."""
 
-    extra: dict[str, object] = field(default_factory=dict)
+    attack_ms: float = 10.0
+    """Attack time in milliseconds (how quickly gain increases)."""
+
+    release_ms: float = 100.0
+    """Release time in milliseconds (how quickly gain decreases)."""
+
+    metadata: dict[str, object] = field(default_factory=dict)
     """Provider-specific configuration."""
 
 

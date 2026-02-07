@@ -133,6 +133,64 @@ class TestSemanticStrategy:
         assert not decision.should_interrupt
 
 
+class TestDefaultsAndNewFields:
+    def test_default_strategy_is_confirmed(self):
+        config = InterruptionConfig()
+        assert config.strategy == InterruptionStrategy.CONFIRMED
+
+    def test_default_min_speech_ms(self):
+        config = InterruptionConfig()
+        assert config.min_speech_ms == 300
+
+    def test_flush_partial_tts_default(self):
+        config = InterruptionConfig()
+        assert config.flush_partial_tts is True
+
+    def test_keep_partial_transcript_default(self):
+        config = InterruptionConfig()
+        assert config.keep_partial_transcript is True
+
+    def test_backchannel_detector_on_config(self):
+        """BackchannelDetector can be set on the config itself."""
+        bc = MockBackchannelDetector(
+            decisions=[BackchannelDecision(is_backchannel=True, confidence=0.9)]
+        )
+        config = InterruptionConfig(
+            strategy=InterruptionStrategy.SEMANTIC,
+            backchannel_detector=bc,
+        )
+        handler = InterruptionHandler(config)
+        decision = handler.evaluate(
+            playback_position_ms=500,
+            speech_duration_ms=300,
+            speech_text="uh-huh",
+        )
+        assert not decision.should_interrupt
+        assert decision.is_backchannel
+
+    def test_constructor_detector_overrides_config(self):
+        """Explicit backchannel_detector kwarg takes priority over config."""
+        bc_config = MockBackchannelDetector(
+            decisions=[BackchannelDecision(is_backchannel=True, confidence=0.9)]
+        )
+        bc_override = MockBackchannelDetector(
+            decisions=[BackchannelDecision(is_backchannel=False, confidence=0.5)]
+        )
+        config = InterruptionConfig(
+            strategy=InterruptionStrategy.SEMANTIC,
+            backchannel_detector=bc_config,
+        )
+        handler = InterruptionHandler(config, backchannel_detector=bc_override)
+        decision = handler.evaluate(
+            playback_position_ms=500,
+            speech_duration_ms=300,
+            speech_text="Actually wait",
+        )
+        # bc_override says not backchannel → should interrupt
+        assert decision.should_interrupt
+        assert not decision.is_backchannel
+
+
 class TestBackwardsCompat:
     def test_legacy_enable_barge_in_true(self):
         """Legacy enable_barge_in=True maps to IMMEDIATE with allow_during_first_ms."""

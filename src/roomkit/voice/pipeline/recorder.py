@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum, unique
 from typing import TYPE_CHECKING
 
@@ -14,7 +15,30 @@ if TYPE_CHECKING:
 
 @unique
 class RecordingMode(StrEnum):
-    """When recording is active."""
+    """Which audio directions to record."""
+
+    INBOUND_ONLY = "inbound_only"
+    """Record only inbound (microphone) audio."""
+
+    OUTBOUND_ONLY = "outbound_only"
+    """Record only outbound (TTS/speaker) audio."""
+
+    BOTH = "both"
+    """Record both inbound and outbound audio."""
+
+    @classmethod
+    def _missing_(cls, value: object) -> RecordingMode | None:
+        """Backwards-compat: map legacy ``"always"``/``"speech_only"`` to ``BOTH``."""
+        if isinstance(value, str):
+            lower = value.lower()
+            if lower in ("always", "speech_only"):
+                return cls.BOTH
+        return None
+
+
+@unique
+class RecordingTrigger(StrEnum):
+    """When recording is temporally active."""
 
     ALWAYS = "always"
     """Record for the entire session."""
@@ -33,24 +57,33 @@ class RecordingChannelMode(StrEnum):
     SEPARATE = "separate"
     """Record inbound and outbound as separate channels."""
 
+    STEREO = "stereo"
+    """Record inbound and outbound as left/right stereo channels."""
+
 
 @dataclass
 class RecordingConfig:
     """Configuration for audio recording."""
 
-    mode: RecordingMode = RecordingMode.ALWAYS
-    """When to record."""
+    mode: RecordingMode = RecordingMode.BOTH
+    """Which audio directions to record."""
 
-    channel_mode: RecordingChannelMode = RecordingChannelMode.MIXED
+    trigger: RecordingTrigger = RecordingTrigger.ALWAYS
+    """When to temporally activate recording."""
+
+    channels: RecordingChannelMode = RecordingChannelMode.MIXED
     """How to mix audio channels."""
 
-    output_format: str = "wav"
+    format: str = "wav"
     """Output file format."""
 
-    output_dir: str = ""
-    """Directory for recording files (empty = system temp)."""
+    storage: str = ""
+    """Integrator-defined storage identifier, resolved at runtime."""
 
-    extra: dict[str, object] = field(default_factory=dict)
+    retention_days: int | None = None
+    """Optional retention period in days (None = indefinite)."""
+
+    metadata: dict[str, object] = field(default_factory=dict)
     """Provider-specific configuration."""
 
 
@@ -58,11 +91,17 @@ class RecordingConfig:
 class RecordingHandle:
     """Handle to an active recording."""
 
-    recording_id: str
+    id: str
     """Unique identifier for this recording."""
 
     session_id: str
     """The voice session being recorded."""
+
+    state: str = "recording"
+    """Current state: ``"recording"`` or ``"stopped"``."""
+
+    started_at: datetime | None = None
+    """When the recording started (UTC)."""
 
     path: str = ""
     """File path where the recording is being written."""
@@ -72,17 +111,26 @@ class RecordingHandle:
 class RecordingResult:
     """Result returned when a recording is stopped."""
 
-    recording_id: str
+    id: str
     """Unique identifier for this recording."""
 
-    path: str
-    """File path of the completed recording."""
+    urls: list[str] = field(default_factory=list)
+    """URLs or paths to the completed recording file(s)."""
 
-    duration_ms: float
-    """Total duration of the recording in milliseconds."""
+    duration_seconds: float = 0.0
+    """Total duration of the recording in seconds."""
+
+    format: str = "wav"
+    """File format of the recording."""
+
+    mode: RecordingChannelMode = RecordingChannelMode.MIXED
+    """Channel mode used for the recording."""
 
     size_bytes: int = 0
     """File size in bytes."""
+
+    metadata: dict[str, object] = field(default_factory=dict)
+    """Provider-specific result metadata."""
 
 
 class AudioRecorder(ABC):

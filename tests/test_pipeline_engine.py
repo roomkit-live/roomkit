@@ -6,7 +6,12 @@ import asyncio
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceCapability, VoiceSession
-from roomkit.voice.pipeline.config import AudioPipelineConfig
+from roomkit.voice.pipeline.config import (
+    AudioFormat,
+    AudioPipelineConfig,
+    AudioPipelineContract,
+    ResamplerConfig,
+)
 from roomkit.voice.pipeline.diarization_provider import DiarizationResult
 from roomkit.voice.pipeline.dtmf_detector import DTMFEvent
 from roomkit.voice.pipeline.engine import AudioPipeline
@@ -169,6 +174,30 @@ class TestDTMF:
         pipeline.process_inbound(_session(), frame)
         assert frame.metadata["dtmf"]["digit"] == "#"
 
+    def test_dtmf_runs_before_aec(self):
+        """DTMF processes the frame before AEC modifies it."""
+        order: list[str] = []
+
+        class OrderTrackingDTMF(MockDTMFDetector):
+            def process(self, frame):
+                order.append("dtmf")
+                return super().process(frame)
+
+        class OrderTrackingAEC(MockAECProvider):
+            def process(self, frame):
+                order.append("aec")
+                return super().process(frame)
+
+        event = DTMFEvent(digit="9", duration_ms=50.0)
+        dtmf = OrderTrackingDTMF(events=[event])
+        aec = OrderTrackingAEC()
+        config = AudioPipelineConfig(dtmf=dtmf, aec=aec)
+        pipeline = AudioPipeline(config)
+
+        pipeline.process_inbound(_session(), _frame())
+
+        assert order == ["dtmf", "aec"]
+
 
 # ---------------------------------------------------------------------------
 # Outbound path
@@ -273,7 +302,7 @@ class TestRecorderLifecycle:
 
         assert len(recorder.started) == 1
         assert len(started) == 1
-        assert started[0][1].recording_id == "rec_1"
+        assert started[0][1].id == "rec_1"
 
     def test_session_ended_stops_recording(self):
         """on_session_ended should stop recording."""
@@ -293,7 +322,7 @@ class TestRecorderLifecycle:
 
         assert len(recorder.stopped) == 1
         assert len(stopped) == 1
-        assert stopped[0][1].recording_id == "rec_1"
+        assert stopped[0][1].id == "rec_1"
 
     def test_no_recording_without_config(self):
         """Recording doesn't start without recording_config."""
@@ -525,7 +554,7 @@ class TestMultiSessionRecording:
         handle_s2 = pipeline._recording_handles.get("s2")
         assert handle_s2 is not None
 
-        assert handle_s1.recording_id != handle_s2.recording_id
+        assert handle_s1.id != handle_s2.id
         assert len(recorder.started) == 2
 
     def test_session_ended_only_stops_its_recording(self):
@@ -550,3 +579,97 @@ class TestMultiSessionRecording:
         pipeline.on_session_active(s2)
         assert "s2" in pipeline._recording_handles
         assert len(recorder.started) == 2
+
+
+# ---------------------------------------------------------------------------
+# Resampler stage
+# ---------------------------------------------------------------------------
+
+
+class TestResamplerStage:
+    def _stereo_frame(
+        self, data: bytes, rate: int = 48000, channels: int = 2, width: int = 2
+    ) -> AudioFrame:
+        return AudioFrame(
+            data=data, sample_rate=rate, channels=channels, sample_width=width
+        )
+
+    def test_inbound_resamples_48k_stereo_to_16k_mono(self):
+        """Inbound resampler converts 48kHz stereo to 16kHz mono."""
+        import struct
+
+        # 48kHz stereo: 4 frames × 2 channels = 8 samples
+        samples = [100, 100, 200, 200, 300, 300, 400, 400]
+        data = struct.pack(f"<{len(samples)}h", *samples)
+        frame = self._stereo_frame(data, rate=48000, channels=2)
+
+        rs = ResamplerConfig(
+            internal_sample_rate=16000, internal_channels=1, internal_sample_width=2
+        )
+        config = AudioPipelineConfig(resampler=rs)
+        pipeline = AudioPipeline(config)
+
+        pipeline.process_inbound(_session(), frame)
+
+        # After resampling, frame metadata should have originals
+        # (The frame passed in gets metadata annotated before resampling)
+        assert frame.metadata.get("original_sample_rate") == 48000
+        assert frame.metadata.get("original_channels") == 2
+
+    def test_inbound_noop_when_formats_match(self):
+        """No resampling when frame already matches internal format."""
+        frame = _frame(b"\x01\x00\x02\x00")
+
+        rs = ResamplerConfig(
+            internal_sample_rate=16000, internal_channels=1, internal_sample_width=2
+        )
+        config = AudioPipelineConfig(resampler=rs)
+        pipeline = AudioPipeline(config)
+
+        pipeline.process_inbound(_session(), frame)
+
+        # Data unchanged — still the same frame (no conversion happened)
+        assert frame.data == b"\x01\x00\x02\x00"
+
+    def test_metadata_annotation(self):
+        """Resampler annotates original_sample_rate and original_channels."""
+        import struct
+
+        samples = [100, 100, 200, 200]
+        data = struct.pack(f"<{len(samples)}h", *samples)
+        frame = self._stereo_frame(data, rate=44100, channels=2)
+
+        rs = ResamplerConfig(internal_sample_rate=16000, internal_channels=1)
+        config = AudioPipelineConfig(resampler=rs)
+        pipeline = AudioPipeline(config)
+
+        pipeline.process_inbound(_session(), frame)
+
+        assert frame.metadata["original_sample_rate"] == 44100
+        assert frame.metadata["original_channels"] == 2
+
+    def test_outbound_resamples_to_transport_format(self):
+        """Outbound resampler converts internal format to transport format."""
+
+        frame = _frame(b"\x64\x00\xc8\x00")  # 2 samples: 100, 200
+
+        out_fmt = AudioFormat(sample_rate=48000, channels=2, sample_width=2)
+        contract = AudioPipelineContract(transport_outbound_format=out_fmt)
+        rs = ResamplerConfig(internal_sample_rate=16000, internal_channels=1)
+        config = AudioPipelineConfig(resampler=rs, contract=contract)
+        pipeline = AudioPipeline(config)
+
+        result = pipeline.process_outbound(_session(), frame)
+        # Result should have the target format
+        assert result.sample_rate == 48000
+        assert result.channels == 2
+
+    def test_no_resampler_leaves_frame_unchanged(self):
+        """Without resampler config, frames pass through unchanged."""
+        frame = _frame(b"\x01\x00\x02\x00")
+        config = AudioPipelineConfig()
+        pipeline = AudioPipeline(config)
+
+        pipeline.process_inbound(_session(), frame)
+        assert frame.data == b"\x01\x00\x02\x00"
+        assert "original_sample_rate" not in frame.metadata

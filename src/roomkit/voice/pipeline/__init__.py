@@ -11,6 +11,7 @@ from roomkit.voice.pipeline.config import (
     AudioFormat,
     AudioPipelineConfig,
     AudioPipelineContract,
+    ResamplerConfig,
 )
 from roomkit.voice.pipeline.denoiser_provider import DenoiserProvider
 from roomkit.voice.pipeline.diarization_provider import DiarizationProvider, DiarizationResult
@@ -35,6 +36,7 @@ from roomkit.voice.pipeline.recorder import (
     RecordingHandle,
     RecordingMode,
     RecordingResult,
+    RecordingTrigger,
 )
 from roomkit.voice.pipeline.turn_detector import (
     TurnContext,
@@ -49,6 +51,7 @@ __all__ = [
     "AudioFormat",
     "AudioPipelineConfig",
     "AudioPipelineContract",
+    "ResamplerConfig",
     # Engine
     "AudioPipeline",
     # Provider ABCs
@@ -73,6 +76,7 @@ __all__ = [
     "RecordingHandle",
     "RecordingMode",
     "RecordingResult",
+    "RecordingTrigger",
     "TurnContext",
     "TurnDecision",
     "TurnEntry",

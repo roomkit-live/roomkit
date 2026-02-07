@@ -89,14 +89,15 @@ async def main() -> None:
 
     # --- Recording (auto-starts when session becomes active) ------------------
     recorder = MockAudioRecorder()
-    recording_config = RecordingConfig(output_dir="/tmp/recordings")
+    recording_config = RecordingConfig(storage="/tmp/recordings")
 
     # --- Turn detection -------------------------------------------------------
     # First utterance: incomplete (user hasn't finished).
     # Second utterance: complete (ready to route to AI).
     turn_detector = MockTurnDetector(
         decisions=[
-            TurnDecision(is_complete=False, confidence=0.4, reason="waiting for more"),
+            TurnDecision(is_complete=False, confidence=0.4, reason="waiting for more",
+                         suggested_wait_ms=500.0),
             TurnDecision(is_complete=True, confidence=0.95, reason="sentence complete"),
         ]
     )
@@ -154,13 +155,13 @@ async def main() -> None:
         HookTrigger.ON_RECORDING_STARTED, execution=HookExecution.ASYNC, name="log_rec_start"
     )
     async def on_recording_started(event, ctx):
-        print(f"[hook] Recording started: {event.recording_id}")
+        print(f"[hook] Recording started: {event.id}")
 
     @kit.hook(
         HookTrigger.ON_RECORDING_STOPPED, execution=HookExecution.ASYNC, name="log_rec_stop"
     )
     async def on_recording_stopped(event, ctx):
-        print(f"[hook] Recording stopped: {event.recording_id} ({event.duration_ms}ms)")
+        print(f"[hook] Recording stopped: {event.id} ({event.duration_seconds}s)")
 
     @kit.hook(
         HookTrigger.ON_TURN_COMPLETE, execution=HookExecution.ASYNC, name="log_turn_complete"

@@ -242,7 +242,7 @@ class RecordingStartedEvent:
     session: VoiceSession
     """The voice session being recorded."""
 
-    recording_id: str
+    id: str
     """Unique identifier for this recording."""
 
     timestamp: datetime = field(default_factory=_utcnow)
@@ -256,14 +256,14 @@ class RecordingStoppedEvent:
     session: VoiceSession
     """The voice session that was being recorded."""
 
-    recording_id: str
+    id: str
     """Unique identifier for this recording."""
 
-    path: str = ""
-    """File path of the completed recording."""
+    urls: tuple[str, ...] = ()
+    """URLs or paths to the completed recording file(s)."""
 
-    duration_ms: float = 0.0
-    """Duration of the recording in milliseconds."""
+    duration_seconds: float = 0.0
+    """Duration of the recording in seconds."""
 
     timestamp: datetime = field(default_factory=_utcnow)
     """When the recording stopped."""
