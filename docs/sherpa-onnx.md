@@ -1,10 +1,112 @@
-# SherpaOnnxVADProvider
+# sherpa-onnx Providers
+
+RoomKit integrates with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) for neural audio processing. All sherpa-onnx providers are pure-Python — no system libraries required.
+
+```bash
+pip install roomkit[sherpa-onnx]
+```
+
+---
+
+## SherpaOnnxDenoiserProvider
+
+Neural speech enhancement using the GTCRN model. Removes background noise from microphone audio before it reaches VAD and STT.
+
+Unlike `RNNoiseDenoiserProvider` (which requires `librnnoise` installed via apt/brew), the sherpa-onnx denoiser is a pure-Python dependency.
+
+### Quick start
+
+```python
+from roomkit.voice.pipeline import AudioPipelineConfig
+from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
+    SherpaOnnxDenoiserConfig,
+    SherpaOnnxDenoiserProvider,
+)
+
+denoiser = SherpaOnnxDenoiserProvider(
+    SherpaOnnxDenoiserConfig(model="path/to/gtcrn_simple.onnx")
+)
+
+config = AudioPipelineConfig(denoiser=denoiser)
+```
+
+### Download the model
+
+```bash
+wget https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx
+```
+
+### Configuration
+
+All parameters are set via `SherpaOnnxDenoiserConfig`:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `model` | `""` | Path to the `gtcrn_simple.onnx` model file. |
+| `num_threads` | `1` | CPU threads for inference. |
+| `provider` | `"cpu"` | ONNX execution provider (`"cpu"` or `"cuda"`). |
+
+### How it works
+
+1. Each audio frame is converted from int16 PCM to float32 samples in [-1, 1].
+2. `OfflineSpeechDenoiser.run(samples)` processes the entire frame at once (no chunking needed).
+3. The denoised float32 samples are converted back to int16 PCM.
+4. A new `AudioFrame` is returned with the cleaned audio, preserving all metadata.
+5. On any error, the original frame is returned unchanged (pass-through).
+
+### Lazy initialization
+
+The denoiser is created lazily on the first call to `process()`, not at construction time. This means:
+
+- Constructing `SherpaOnnxDenoiserProvider` is fast.
+- Model loading happens only when audio actually arrives.
+- `sherpa-onnx` must be installed at construction time (the import check happens in `__init__`).
+
+### Lazy loader
+
+```python
+from roomkit.voice import get_sherpa_onnx_denoiser_provider, get_sherpa_onnx_denoiser_config
+
+SherpaOnnxDenoiserProvider = get_sherpa_onnx_denoiser_provider()
+SherpaOnnxDenoiserConfig = get_sherpa_onnx_denoiser_config()
+
+denoiser = SherpaOnnxDenoiserProvider(
+    SherpaOnnxDenoiserConfig(model="gtcrn_simple.onnx")
+)
+```
+
+### Denoiser + VAD together
+
+```python
+from roomkit.voice.pipeline import AudioPipelineConfig
+from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
+    SherpaOnnxDenoiserConfig,
+    SherpaOnnxDenoiserProvider,
+)
+from roomkit.voice.pipeline.vad.sherpa_onnx import (
+    SherpaOnnxVADConfig,
+    SherpaOnnxVADProvider,
+)
+
+denoiser = SherpaOnnxDenoiserProvider(
+    SherpaOnnxDenoiserConfig(model="gtcrn_simple.onnx")
+)
+vad = SherpaOnnxVADProvider(
+    SherpaOnnxVADConfig(model="ten-vad.onnx")
+)
+
+config = AudioPipelineConfig(denoiser=denoiser, vad=vad)
+```
+
+---
+
+## SherpaOnnxVADProvider
 
 Neural voice activity detection using [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). Supports **TEN-VAD** and **Silero VAD** models for production-quality speech detection that works reliably in noisy environments.
 
 Unlike `EnergyVADProvider` (simple RMS thresholding), the neural VAD can distinguish speech from loud non-speech noise like keyboard typing, music, or HVAC.
 
-## Quick start
+### Quick start
 
 ```python
 from roomkit.voice.pipeline import AudioPipelineConfig
@@ -20,13 +122,7 @@ vad = SherpaOnnxVADProvider(
 config = AudioPipelineConfig(vad=vad)
 ```
 
-## Installation
-
-```bash
-pip install roomkit[sherpa-onnx]
-```
-
-Download a model:
+### Download a model
 
 ```bash
 # TEN-VAD (recommended — fast, low latency)
@@ -36,7 +132,7 @@ wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/silero_vad.onnx
 ```
 
-## Configuration
+### Configuration
 
 All parameters are set via `SherpaOnnxVADConfig`:
 
@@ -53,7 +149,7 @@ All parameters are set via `SherpaOnnxVADConfig`:
 | `num_threads` | `1` | CPU threads for inference. |
 | `provider` | `"cpu"` | ONNX execution provider (`"cpu"` or `"cuda"`). |
 
-## How it works
+### How it works
 
 The provider uses sherpa-onnx's `VoiceActivityDetector` with frame-level `is_speech_detected()` plus its own state machine:
 
@@ -67,7 +163,7 @@ The provider uses sherpa-onnx's `VoiceActivityDetector` with frame-level `is_spe
 
 This gives instant `SPEECH_START` events (not delayed until a segment completes) and full control over timing parameters.
 
-## TEN-VAD vs Silero VAD
+### TEN-VAD vs Silero VAD
 
 | | TEN-VAD | Silero VAD |
 |---|---|---|
@@ -78,7 +174,7 @@ This gives instant `SPEECH_START` events (not delayed until a segment completes)
 
 Both models work well. TEN-VAD is recommended for real-time applications where latency matters.
 
-## Lazy initialization
+### Lazy initialization
 
 The sherpa-onnx detector is created lazily on the first call to `process()`, not at construction time. This means:
 
@@ -86,7 +182,7 @@ The sherpa-onnx detector is created lazily on the first call to `process()`, not
 - Model loading happens only when audio actually arrives.
 - `sherpa-onnx` must be installed at construction time (the import check happens in `__init__`).
 
-## Fallback pattern
+### Fallback pattern
 
 Use neural VAD when available, fall back to energy-based:
 
@@ -116,7 +212,7 @@ else:
 config = AudioPipelineConfig(vad=vad)
 ```
 
-## Lazy loader
+### Lazy loader
 
 If you want to avoid importing sherpa-onnx at module level:
 
@@ -129,7 +225,9 @@ SherpaOnnxVADConfig = get_sherpa_onnx_vad_config()
 vad = SherpaOnnxVADProvider(SherpaOnnxVADConfig(model="ten-vad.onnx"))
 ```
 
+---
+
 ## Examples
 
-- [`examples/voice_sherpa_onnx_vad.py`](../examples/voice_sherpa_onnx_vad.py) — standalone local mic demo with neural VAD.
-- [`examples/voice_full_stack.py`](../examples/voice_full_stack.py) — full voice assistant using neural VAD (set `VAD_MODEL` env var).
+- [`examples/voice_sherpa_onnx_vad.py`](../examples/voice_sherpa_onnx_vad.py) — standalone local mic demo with neural VAD + optional denoiser.
+- [`examples/voice_full_stack.py`](../examples/voice_full_stack.py) — full voice assistant (set `VAD_MODEL` and/or `DENOISE_MODEL` env vars).

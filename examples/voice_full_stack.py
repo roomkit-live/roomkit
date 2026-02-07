@@ -5,7 +5,7 @@ Talk to Claude through your microphone with real audio processing:
   - Claude (Anthropic) for AI responses
   - ElevenLabs for text-to-speech
   - SpeexAEC for echo cancellation (strips speaker echo from mic)
-  - RNNoise for noise suppression
+  - RNNoise or sherpa-onnx GTCRN for noise suppression
   - sherpa-onnx neural VAD (TEN-VAD or Silero) for speech detection
   - WavFileRecorder for debug audio capture
 
@@ -17,7 +17,7 @@ Audio flows through the full pipeline:
 Requirements:
     pip install roomkit[local-audio,anthropic,sherpa-onnx]
     System: libspeexdsp (apt install libspeexdsp1 / brew install speexdsp)
-    System (optional): librnnoise (apt install librnnoise0)
+    System (optional): librnnoise (apt install librnnoise0) — or use DENOISE_MODEL for sherpa-onnx
 
 Run with:
     ANTHROPIC_API_KEY=... \\
@@ -36,7 +36,8 @@ Environment variables:
     RECORDING_DIR       Directory for WAV recordings (default: ./recordings)
     RECORDING_MODE      Channel mode: mixed | separate | stereo (default: stereo)
     AEC                 Enable echo cancellation: 1 | 0 (default: 1)
-    DENOISE             Enable noise suppression: 1 | 0 (default: 1)
+    DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 1)
+    DENOISE_MODEL       Path to GTCRN .onnx model (sherpa-onnx denoiser, overrides DENOISE)
     VAD_MODEL           Path to sherpa-onnx VAD .onnx model file
     VAD_MODEL_TYPE      Model type: ten | silero (default: ten)
     VAD_THRESHOLD       Speech probability threshold 0-1 (default: 0.5)
@@ -150,16 +151,26 @@ async def main() -> None:
         )
         logger.info("AEC enabled (Speex, filter=%d samples)", frame_size * 10)
 
-    # --- Denoiser (RNNoise noise suppression) ---------------------------------
-    use_denoise = os.environ.get("DENOISE", "1") == "1"
+    # --- Denoiser (RNNoise or sherpa-onnx GTCRN) ------------------------------
     denoiser = None
-    if use_denoise:
+    denoise_model = os.environ.get("DENOISE_MODEL", "")
+    if denoise_model:
+        from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
+            SherpaOnnxDenoiserConfig,
+            SherpaOnnxDenoiserProvider,
+        )
+
+        denoiser = SherpaOnnxDenoiserProvider(
+            SherpaOnnxDenoiserConfig(model=denoise_model)
+        )
+        logger.info("Denoiser: sherpa-onnx GTCRN (model=%s)", denoise_model)
+    elif os.environ.get("DENOISE", "1") == "1":
         from roomkit.voice.pipeline.denoiser.rnnoise import (
             RNNoiseDenoiserProvider,
         )
 
         denoiser = RNNoiseDenoiserProvider(sample_rate=sample_rate)
-        logger.info("Denoiser enabled (RNNoise)")
+        logger.info("Denoiser: RNNoise")
 
     # --- WAV recorder (debug audio capture) -----------------------------------
     recording_dir = os.environ.get("RECORDING_DIR", "./recordings")

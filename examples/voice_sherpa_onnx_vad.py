@@ -1,30 +1,39 @@
-"""RoomKit -- Neural VAD with sherpa-onnx (TEN-VAD / Silero VAD).
+"""RoomKit -- Neural VAD + Denoiser with sherpa-onnx.
 
-Demonstrates SherpaOnnxVADProvider with a local microphone. The neural
-VAD replaces simple energy thresholding with a proper speech detection
-model, giving much better accuracy in noisy environments.
+Demonstrates SherpaOnnxVADProvider and (optionally) SherpaOnnxDenoiserProvider
+with a local microphone. The neural VAD replaces simple energy thresholding
+with a proper speech detection model, giving much better accuracy in noisy
+environments. The GTCRN denoiser cleans up the audio before VAD processing.
 
-Supported models:
+Supported VAD models:
   - TEN-VAD:  fast, low latency, good for real-time voice assistants
   - Silero VAD: widely used, slightly heavier
 
 Prerequisites:
     pip install roomkit[local-audio,sherpa-onnx]
 
-Download a model (TEN-VAD example):
+Download models:
+    # VAD (required)
     wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.onnx
+    # Denoiser (optional)
+    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx
 
-Run with:
+Run with VAD only:
     VAD_MODEL=ten-vad.onnx uv run python examples/voice_sherpa_onnx_vad.py
+
+Run with VAD + Denoiser:
+    VAD_MODEL=ten-vad.onnx DENOISE_MODEL=gtcrn_simple.onnx \\
+        uv run python examples/voice_sherpa_onnx_vad.py
 
 Or with Silero:
     VAD_MODEL=silero_vad.onnx VAD_MODEL_TYPE=silero \\
         uv run python examples/voice_sherpa_onnx_vad.py
 
 Environment variables:
-    VAD_MODEL       (required) Path to .onnx model file
+    VAD_MODEL       (required) Path to VAD .onnx model file
     VAD_MODEL_TYPE  Model type: ten | silero (default: ten)
     VAD_THRESHOLD   Speech probability threshold 0-1 (default: 0.5)
+    DENOISE_MODEL   Path to GTCRN denoiser .onnx model (optional)
 
 Press Ctrl+C to stop.
 """
@@ -110,8 +119,22 @@ async def main() -> None:
         model_path,
     )
 
+    # --- Denoiser (optional, GTCRN via sherpa-onnx) ----------------------------
+    denoise_model = os.environ.get("DENOISE_MODEL", "")
+    denoiser = None
+    if denoise_model:
+        from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
+            SherpaOnnxDenoiserConfig,
+            SherpaOnnxDenoiserProvider,
+        )
+
+        denoiser = SherpaOnnxDenoiserProvider(
+            SherpaOnnxDenoiserConfig(model=denoise_model)
+        )
+        logger.info("Denoiser: sherpa-onnx GTCRN (model=%s)", denoise_model)
+
     # --- Pipeline config ------------------------------------------------------
-    pipeline = AudioPipelineConfig(vad=vad)
+    pipeline = AudioPipelineConfig(vad=vad, denoiser=denoiser)
 
     # --- STT + TTS (mock — swap with real providers for production) -----------
     stt = MockSTTProvider(transcripts=["Hello from sherpa-onnx VAD!"])

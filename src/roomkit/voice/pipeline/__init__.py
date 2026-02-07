@@ -18,6 +18,8 @@ from roomkit.voice.pipeline.denoiser import (
     DenoiserProvider,
     MockDenoiserProvider,
     RNNoiseDenoiserProvider,
+    SherpaOnnxDenoiserConfig,
+    SherpaOnnxDenoiserProvider,
 )
 from roomkit.voice.pipeline.diarization import (
     DiarizationProvider,
@@ -77,6 +79,8 @@ __all__ = [
     "BackchannelDetector",
     "DenoiserProvider",
     "RNNoiseDenoiserProvider",
+    "SherpaOnnxDenoiserConfig",
+    "SherpaOnnxDenoiserProvider",
     "DiarizationProvider",
     "DTMFDetector",
     "TurnDetector",
