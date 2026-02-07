@@ -84,9 +84,7 @@ class TestLocalAudioSessionManagement:
 
     async def test_connect_merges_custom_metadata(self) -> None:
         backend, _ = _make_backend()
-        session = await backend.connect(
-            "room-1", "user-1", "voice-1", metadata={"lang": "fr"}
-        )
+        session = await backend.connect("room-1", "user-1", "voice-1", metadata={"lang": "fr"})
         assert session.metadata["lang"] == "fr"
         assert "input_sample_rate" in session.metadata
 
@@ -325,9 +323,7 @@ class TestLocalAudioSpeakerPlayback:
             yield AudioChunk(data=b"\x00\x03\x00\x04")
 
         # Run send_audio in background so we can simulate the callback.
-        send_task = asyncio.create_task(
-            backend.send_audio(session, audio_gen())
-        )
+        send_task = asyncio.create_task(backend.send_audio(session, audio_gen()))
         await asyncio.sleep(0.05)  # let _consume pull all chunks
 
         # Simulate PortAudio callback draining the buffer.

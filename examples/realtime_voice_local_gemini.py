@@ -72,11 +72,15 @@ async def main() -> None:
     block_ms = 20
     frame_size = sample_rate * block_ms // 1000  # 480 samples
 
-    aec = SpeexAECProvider(
-        frame_size=frame_size,
-        filter_length=frame_size * 10,  # 200ms echo tail — shorter = faster convergence
-        sample_rate=sample_rate,
-    ) if use_aec else None
+    aec = (
+        SpeexAECProvider(
+            frame_size=frame_size,
+            filter_length=frame_size * 10,  # 200ms echo tail — shorter = faster convergence
+            sample_rate=sample_rate,
+        )
+        if use_aec
+        else None
+    )
 
     # --- Denoiser (RNNoise noise suppression) ---
     denoiser = None

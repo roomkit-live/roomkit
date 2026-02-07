@@ -163,9 +163,7 @@ async def main() -> None:
             SherpaOnnxDenoiserProvider,
         )
 
-        denoiser = SherpaOnnxDenoiserProvider(
-            SherpaOnnxDenoiserConfig(model=denoise_model)
-        )
+        denoiser = SherpaOnnxDenoiserProvider(SherpaOnnxDenoiserConfig(model=denoise_model))
         logger.info("Denoiser: sherpa-onnx GTCRN (model=%s)", denoise_model)
     elif os.environ.get("DENOISE", "1") == "1":
         from roomkit.voice.pipeline.denoiser.rnnoise import (
@@ -178,18 +176,14 @@ async def main() -> None:
     # --- WAV recorder (debug audio capture) -----------------------------------
     recording_dir = os.environ.get("RECORDING_DIR", "./recordings")
     rec_mode_name = os.environ.get("RECORDING_MODE", "stereo").lower()
-    rec_channel_mode = CHANNEL_MODES.get(
-        rec_mode_name, RecordingChannelMode.STEREO
-    )
+    rec_channel_mode = CHANNEL_MODES.get(rec_mode_name, RecordingChannelMode.STEREO)
 
     recorder = WavFileRecorder()
     recording_config = RecordingConfig(
         storage=recording_dir,
         channels=rec_channel_mode,
     )
-    logger.info(
-        "Recording to %s (mode=%s)", recording_dir, rec_mode_name
-    )
+    logger.info("Recording to %s (mode=%s)", recording_dir, rec_mode_name)
 
     # --- VAD (sherpa-onnx neural VAD or energy fallback) ----------------------
     vad_model = os.environ.get("VAD_MODEL", "")
@@ -261,9 +255,7 @@ async def main() -> None:
     tts = ElevenLabsTTSProvider(
         config=ElevenLabsConfig(
             api_key=env["ELEVENLABS_API_KEY"],
-            voice_id=os.environ.get(
-                "ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"
-            ),
+            voice_id=os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
             model_id="eleven_multilingual_v2",
             output_format="pcm_24000",  # Raw PCM at 24kHz for local playback
             optimize_streaming_latency=3,
@@ -308,9 +300,7 @@ async def main() -> None:
     # --- Room -----------------------------------------------------------------
     await kit.create_room(room_id="voice-demo")
     await kit.attach_channel("voice-demo", "voice")
-    await kit.attach_channel(
-        "voice-demo", "ai", category=ChannelCategory.INTELLIGENCE
-    )
+    await kit.attach_channel("voice-demo", "ai", category=ChannelCategory.INTELLIGENCE)
 
     # --- Hooks ----------------------------------------------------------------
 

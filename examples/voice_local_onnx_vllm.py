@@ -183,9 +183,7 @@ def check_env() -> None:
         "TTS_TOKENS": "Path to TTS tokens.txt",
     }
     missing = [
-        f"  {key:20s} — {desc}"
-        for key, desc in required.items()
-        if not os.environ.get(key)
+        f"  {key:20s} — {desc}" for key, desc in required.items() if not os.environ.get(key)
     ]
     if missing:
         print("Missing required environment variables:\n")
@@ -268,7 +266,9 @@ async def main() -> None:
     )
     logger.info(
         "VAD: sherpa-onnx (type=%s, threshold=%.2f, model=%s)",
-        vad_model_type, vad_threshold, vad_model,
+        vad_model_type,
+        vad_threshold,
+        vad_model,
     )
 
     # --- WAV recorder (optional debug audio capture) --------------------------
@@ -318,7 +318,8 @@ async def main() -> None:
     )
     logger.info(
         "STT: sherpa-onnx (mode=%s, encoder=%s)",
-        stt_mode, os.environ["STT_ENCODER"],
+        stt_mode,
+        os.environ["STT_ENCODER"],
     )
 
     # --- TTS (sherpa-onnx) ----------------------------------------------------
@@ -335,7 +336,8 @@ async def main() -> None:
     )
     logger.info(
         "TTS: sherpa-onnx (model=%s, rate=%d)",
-        os.environ["TTS_MODEL"], tts_sample_rate,
+        os.environ["TTS_MODEL"],
+        tts_sample_rate,
     )
 
     # --- LLM (local via OpenAI-compatible API: Ollama, vLLM, etc.) ------------
@@ -409,7 +411,10 @@ async def main() -> None:
     async def on_rec_stopped(event, ctx):
         logger.info(
             "Recording stopped: %s (%.1fs, %d bytes, files=%s)",
-            event.id, event.duration_seconds, event.size_bytes, event.urls,
+            event.id,
+            event.duration_seconds,
+            event.size_bytes,
+            event.urls,
         )
 
     # --- Warmup: pre-load models (avoids delay on first interaction) ----------

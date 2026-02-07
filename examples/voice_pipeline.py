@@ -165,8 +165,10 @@ async def main() -> None:
 
     @kit.hook(HookTrigger.ON_BARGE_IN, execution=HookExecution.ASYNC, name="log_barge_in")
     async def on_barge_in(event, ctx):
-        print(f"[hook] Barge-in: interrupted '{event.interrupted_text}'"
-              f" at {event.audio_position_ms}ms")
+        print(
+            f"[hook] Barge-in: interrupted '{event.interrupted_text}'"
+            f" at {event.audio_position_ms}ms"
+        )
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION, name="log_transcription")
     async def on_transcription(text, ctx):

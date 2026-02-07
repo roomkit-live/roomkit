@@ -197,8 +197,7 @@ class SpeexAECProvider(AECProvider):
         self._total_out_energy = 0
 
         logger.info(
-            "SpeexAEC init: frame_size=%d, filter_length=%d (%dms), "
-            "sample_rate=%d",
+            "SpeexAEC init: frame_size=%d, filter_length=%d (%dms), sample_rate=%d",
             frame_size,
             filter_length,
             filter_length * 1000 // sample_rate,
@@ -242,20 +241,12 @@ class SpeexAECProvider(AECProvider):
             # available" when the ring buffer is empty (expected during
             # silence).
             with self._stderr:
-                self._lib.speex_echo_capture(
-                    self._state, self._in_buf, self._out_buf
-                )
+                self._lib.speex_echo_capture(self._state, self._in_buf, self._out_buf)
 
             # Accumulate energy over the full interval so the log
             # reflects average behaviour, not a single-frame snapshot.
-            in_energy = sum(
-                self._in_buf[i] * self._in_buf[i]
-                for i in range(self._frame_size)
-            )
-            out_energy = sum(
-                self._out_buf[i] * self._out_buf[i]
-                for i in range(self._frame_size)
-            )
+            in_energy = sum(self._in_buf[i] * self._in_buf[i] for i in range(self._frame_size))
+            out_energy = sum(self._out_buf[i] * self._out_buf[i] for i in range(self._frame_size))
             self._total_in_energy += in_energy
             self._total_out_energy += out_energy
 
@@ -349,9 +340,7 @@ class SpeexAECProvider(AECProvider):
         self._total_out_energy = 0
 
     def _create_state(self) -> ctypes.c_void_p:
-        state = self._lib.speex_echo_state_init(
-            self._frame_size, self._filter_length
-        )
+        state = self._lib.speex_echo_state_init(self._frame_size, self._filter_length)
         if not state:
             raise RuntimeError("speex_echo_state_init returned NULL")
 

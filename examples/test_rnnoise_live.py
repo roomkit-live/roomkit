@@ -50,9 +50,7 @@ def main() -> None:
         samples = struct.unpack(f"<{n}h", bytes(indata))
         frames_in.append(samples)
 
-        frame = AudioFrame(
-            data=bytes(indata), sample_rate=SAMPLE_RATE, channels=1, sample_width=2
-        )
+        frame = AudioFrame(data=bytes(indata), sample_rate=SAMPLE_RATE, channels=1, sample_width=2)
         result = dn.process(frame)
         out_samples = struct.unpack(f"<{n}h", result.data)
         frames_out.append(out_samples)

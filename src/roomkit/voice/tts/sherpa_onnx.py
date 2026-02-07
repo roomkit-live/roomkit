@@ -109,8 +109,12 @@ class SherpaOnnxTTSProvider(TTSProvider):
             logger.info(
                 "Loading TTS model: model=%s, tokens=%s, data_dir=%s, "
                 "lexicon=%s, provider=%s, num_threads=%d",
-                cfg.model, cfg.tokens, cfg.data_dir,
-                cfg.lexicon, cfg.provider, cfg.num_threads,
+                cfg.model,
+                cfg.tokens,
+                cfg.data_dir,
+                cfg.lexicon,
+                cfg.provider,
+                cfg.num_threads,
             )
             vits_config = self._sherpa.OfflineTtsVitsModelConfig(
                 model=cfg.model,
@@ -127,7 +131,8 @@ class SherpaOnnxTTSProvider(TTSProvider):
             self._tts = self._sherpa.OfflineTts(tts_config)
             logger.info(
                 "TTS model loaded: sample_rate=%d, num_speakers=%d",
-                self._tts.sample_rate, self._tts.num_speakers,
+                self._tts.sample_rate,
+                self._tts.num_speakers,
             )
         return self._tts
 

@@ -51,18 +51,13 @@ class LinearResamplerProvider(ResamplerProvider):
         if src_fmt is None:
             return frame  # unsupported width, pass-through
         num_samples = len(data) // src_width
-        samples = list(
-            struct.unpack(f"<{num_samples}{src_fmt}", data[: num_samples * src_width])
-        )
+        samples = list(struct.unpack(f"<{num_samples}{src_fmt}", data[: num_samples * src_width]))
 
         # --- Channel conversion ---
         if src_channels != target_channels:
             if src_channels == 2 and target_channels == 1:
                 # Stereo -> mono: average L+R
-                samples = [
-                    (samples[i] + samples[i + 1]) // 2
-                    for i in range(0, len(samples), 2)
-                ]
+                samples = [(samples[i] + samples[i + 1]) // 2 for i in range(0, len(samples), 2)]
             elif src_channels == 1 and target_channels == 2:
                 # Mono -> stereo: duplicate
                 stereo: list[int] = []
@@ -79,9 +74,7 @@ class LinearResamplerProvider(ResamplerProvider):
             new_frames = int(frames_per_channel * target_rate / src_rate)
             resampled: list[int] = []
             for ch in range(src_channels):
-                ch_samples = [
-                    samples[i * src_channels + ch] for i in range(frames_per_channel)
-                ]
+                ch_samples = [samples[i * src_channels + ch] for i in range(frames_per_channel)]
                 for i in range(new_frames):
                     src_pos = i * (frames_per_channel - 1) / max(new_frames - 1, 1)
                     idx = int(src_pos)

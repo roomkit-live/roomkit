@@ -154,9 +154,7 @@ class VoiceChannel(Channel):
         """Create AudioPipeline and wire backend -> pipeline -> callbacks."""
         from roomkit.voice.pipeline.engine import AudioPipeline
 
-        self._pipeline = AudioPipeline(
-            config, backend_capabilities=backend.capabilities
-        )
+        self._pipeline = AudioPipeline(config, backend_capabilities=backend.capabilities)
 
         # Backend delivers raw audio -> pipeline processes it
         backend.on_audio_received(self._on_audio_received)
@@ -234,9 +232,7 @@ class VoiceChannel(Channel):
             )
         elif vad_event.type == VADEventType.SILENCE:
             self._schedule(
-                self._fire_vad_silence_hook(
-                    session, int(vad_event.duration_ms or 0), room_id
-                ),
+                self._fire_vad_silence_hook(session, int(vad_event.duration_ms or 0), room_id),
                 name=f"vad_silence:{session.id}",
             )
         elif vad_event.type == VADEventType.AUDIO_LEVEL:
@@ -277,9 +273,7 @@ class VoiceChannel(Channel):
             name=f"dtmf:{session.id}",
         )
 
-    def _on_pipeline_recording_started(
-        self, session: VoiceSession, handle: Any
-    ) -> None:
+    def _on_pipeline_recording_started(self, session: VoiceSession, handle: Any) -> None:
         """Handle recording started from pipeline — fire hook."""
         binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
@@ -291,9 +285,7 @@ class VoiceChannel(Channel):
             name=f"recording_started:{session.id}",
         )
 
-    def _on_pipeline_recording_stopped(
-        self, session: VoiceSession, result: Any
-    ) -> None:
+    def _on_pipeline_recording_stopped(self, session: VoiceSession, result: Any) -> None:
         """Handle recording stopped from pipeline — fire hook."""
         binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
@@ -549,9 +541,7 @@ class VoiceChannel(Channel):
         except Exception:
             logger.exception("Error firing ON_SPEAKER_CHANGE hook")
 
-    async def _fire_backchannel_hook(
-        self, session: VoiceSession, text: str, room_id: str
-    ) -> None:
+    async def _fire_backchannel_hook(self, session: VoiceSession, text: str, room_id: str) -> None:
         if not self._framework:
             return
         try:
@@ -572,9 +562,7 @@ class VoiceChannel(Channel):
         except Exception:
             logger.exception("Error firing ON_BACKCHANNEL hook")
 
-    async def _fire_dtmf_hook(
-        self, session: VoiceSession, dtmf_event: Any, room_id: str
-    ) -> None:
+    async def _fire_dtmf_hook(self, session: VoiceSession, dtmf_event: Any, room_id: str) -> None:
         if not self._framework:
             return
         try:
@@ -803,9 +791,7 @@ class VoiceChannel(Channel):
             )
 
             # Turn detection: if configured, evaluate before routing
-            turn_detector = (
-                self._pipeline_config.turn_detector if self._pipeline_config else None
-            )
+            turn_detector = self._pipeline_config.turn_detector if self._pipeline_config else None
             if turn_detector is not None:
                 await self._evaluate_turn(session, final_text, room_id, context)
             else:

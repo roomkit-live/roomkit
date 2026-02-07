@@ -213,9 +213,7 @@ class LocalAudioBackend(VoiceBackend):
         callback_ref = self._audio_received_callback
         loop_ref = self._loop
 
-        def _audio_callback(
-            indata: bytes, frames: int, time_info: Any, status: Any
-        ) -> None:
+        def _audio_callback(indata: bytes, frames: int, time_info: Any, status: Any) -> None:
             if status:
                 logger.warning("Mic status: %s", status)
             if not callback_ref:
@@ -344,9 +342,7 @@ class LocalAudioBackend(VoiceBackend):
         buf_lock = threading.Lock()
         producer_done = threading.Event()
 
-        def _output_callback(
-            outdata: bytearray, frames: int, time_info: Any, status: Any
-        ) -> None:
+        def _output_callback(outdata: bytearray, frames: int, time_info: Any, status: Any) -> None:
             nbytes = frames * 2 * self._channels  # int16
             with buf_lock:
                 n = min(len(audio_buf), nbytes)

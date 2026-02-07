@@ -76,7 +76,9 @@ def check_env() -> str:
     if not model:
         print("VAD_MODEL environment variable is required.\n")
         print("Download a model first:")
-        print("  wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.onnx\n")
+        print(
+            "  wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.onnx\n"
+        )
         print("Then run:")
         print("  VAD_MODEL=ten-vad.onnx uv run python examples/voice_sherpa_onnx_vad.py")
         sys.exit(1)
@@ -128,9 +130,7 @@ async def main() -> None:
             SherpaOnnxDenoiserProvider,
         )
 
-        denoiser = SherpaOnnxDenoiserProvider(
-            SherpaOnnxDenoiserConfig(model=denoise_model)
-        )
+        denoiser = SherpaOnnxDenoiserProvider(SherpaOnnxDenoiserConfig(model=denoise_model))
         logger.info("Denoiser: sherpa-onnx GTCRN (model=%s)", denoise_model)
 
     # --- Pipeline config ------------------------------------------------------
@@ -152,9 +152,7 @@ async def main() -> None:
 
     ai = AIChannel(
         "ai",
-        provider=MockAIProvider(
-            responses=["Neural VAD detected your speech!"]
-        ),
+        provider=MockAIProvider(responses=["Neural VAD detected your speech!"]),
     )
     kit.register_channel(ai)
 

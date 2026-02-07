@@ -375,8 +375,10 @@ class TestMultipleUtterances:
         # Gap:              we break after SPEECH_END, no extra frames consumed
         # Second utterance: 6 speech + 3 silence (SPEECH_END on 3rd)
         speech_flags = (
-            [True] * 6 + [False] * 3   # first utterance: 9 flags
-            + [True] * 6 + [False] * 3  # second utterance: 9 flags
+            [True] * 6
+            + [False] * 3  # first utterance: 9 flags
+            + [True] * 6
+            + [False] * 3  # second utterance: 9 flags
         )
         detector.is_speech_detected.side_effect = speech_flags
 

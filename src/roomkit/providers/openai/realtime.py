@@ -377,9 +377,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
 
         elif event_type == "response.done":
             status = event.get("response", {}).get("status", "")
-            logger.info(
-                "[OpenAI] response_done status=%s (session %s)", status, session.id
-            )
+            logger.info("[OpenAI] response_done status=%s (session %s)", status, session.id)
             await self._fire_callbacks(self._response_end_callbacks, session)
 
         elif event_type == "session.created":

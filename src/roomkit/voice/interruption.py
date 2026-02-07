@@ -147,8 +147,7 @@ class InterruptionHandler:
             if self._backchannel_detector is None:
                 # No detector configured — fall back to confirmed behaviour
                 logger.warning(
-                    "SEMANTIC strategy but no backchannel_detector; "
-                    "falling back to CONFIRMED"
+                    "SEMANTIC strategy but no backchannel_detector; falling back to CONFIRMED"
                 )
                 if speech_duration_ms >= self._config.min_speech_ms:
                     return InterruptionDecision(

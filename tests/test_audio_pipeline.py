@@ -291,9 +291,7 @@ class TestAudioPipelineVADOnly:
 
     def test_process_frame_fires_speech_end_callback(self) -> None:
         audio = b"accumulated-audio"
-        vad = MockVADProvider(
-            events=[VADEvent(type=VADEventType.SPEECH_END, audio_bytes=audio)]
-        )
+        vad = MockVADProvider(events=[VADEvent(type=VADEventType.SPEECH_END, audio_bytes=audio)])
         pipeline = AudioPipeline(AudioPipelineConfig(vad=vad))
 
         end_events = []
@@ -316,9 +314,7 @@ class TestAudioPipelineVADOnly:
         assert len(events) == 0
 
     def test_frame_metadata_updated_on_vad_event(self) -> None:
-        vad = MockVADProvider(
-            events=[VADEvent(type=VADEventType.SPEECH_START, confidence=0.9)]
-        )
+        vad = MockVADProvider(events=[VADEvent(type=VADEventType.SPEECH_START, confidence=0.9)])
         pipeline = AudioPipeline(AudioPipelineConfig(vad=vad))
 
         frame = _frame()
@@ -348,9 +344,7 @@ class TestAudioPipelineDenoiser:
 
     def test_denoiser_metadata_persists_through_pipeline(self) -> None:
         denoiser = MockDenoiserProvider()
-        vad = MockVADProvider(
-            events=[VADEvent(type=VADEventType.SPEECH_START, confidence=0.8)]
-        )
+        vad = MockVADProvider(events=[VADEvent(type=VADEventType.SPEECH_START, confidence=0.8)])
         pipeline = AudioPipeline(AudioPipelineConfig(vad=vad, denoiser=denoiser))
 
         frame = _frame()
@@ -365,9 +359,11 @@ class TestAudioPipelineDiarization:
 
     def test_speaker_change_callback_fires(self) -> None:
         vad = MockVADProvider()
-        diarizer = MockDiarizationProvider(results=[
-            DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),
-        ])
+        diarizer = MockDiarizationProvider(
+            results=[
+                DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),
+            ]
+        )
         pipeline = AudioPipeline(AudioPipelineConfig(vad=vad, diarization=diarizer))
 
         changes = []
@@ -380,11 +376,13 @@ class TestAudioPipelineDiarization:
 
     def test_speaker_change_fires_only_on_change(self) -> None:
         vad = MockVADProvider()
-        diarizer = MockDiarizationProvider(results=[
-            DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),
-            DiarizationResult(speaker_id="speaker_0", confidence=0.95, is_new_speaker=False),
-            DiarizationResult(speaker_id="speaker_1", confidence=0.85, is_new_speaker=True),
-        ])
+        diarizer = MockDiarizationProvider(
+            results=[
+                DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),
+                DiarizationResult(speaker_id="speaker_0", confidence=0.95, is_new_speaker=False),
+                DiarizationResult(speaker_id="speaker_1", confidence=0.85, is_new_speaker=True),
+            ]
+        )
         pipeline = AudioPipeline(AudioPipelineConfig(vad=vad, diarization=diarizer))
 
         changes = []
@@ -403,9 +401,11 @@ class TestAudioPipelineDiarization:
 
     def test_diarization_metadata_added(self) -> None:
         vad = MockVADProvider()
-        diarizer = MockDiarizationProvider(results=[
-            DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),
-        ])
+        diarizer = MockDiarizationProvider(
+            results=[
+                DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),
+            ]
+        )
         pipeline = AudioPipeline(AudioPipelineConfig(vad=vad, diarization=diarizer))
 
         frame = _frame()
@@ -422,12 +422,12 @@ class TestAudioPipelineFullChain:
     def test_metadata_accumulation(self) -> None:
         """Metadata accumulates through denoiser -> VAD -> diarization."""
         denoiser = MockDenoiserProvider()
-        vad = MockVADProvider(
-            events=[VADEvent(type=VADEventType.SPEECH_START, confidence=0.8)]
+        vad = MockVADProvider(events=[VADEvent(type=VADEventType.SPEECH_START, confidence=0.8)])
+        diarizer = MockDiarizationProvider(
+            results=[
+                DiarizationResult(speaker_id="speaker_0", confidence=0.92, is_new_speaker=True),
+            ]
         )
-        diarizer = MockDiarizationProvider(results=[
-            DiarizationResult(speaker_id="speaker_0", confidence=0.92, is_new_speaker=True),
-        ])
         pipeline = AudioPipeline(
             AudioPipelineConfig(vad=vad, denoiser=denoiser, diarization=diarizer)
         )
@@ -459,9 +459,7 @@ class TestAudioPipelineReset:
     def test_reset_resets_vad_and_diarization(self) -> None:
         vad = MockVADProvider()
         diarizer = MockDiarizationProvider()
-        pipeline = AudioPipeline(
-            AudioPipelineConfig(vad=vad, diarization=diarizer)
-        )
+        pipeline = AudioPipeline(AudioPipelineConfig(vad=vad, diarization=diarizer))
 
         pipeline.reset()
 
@@ -470,13 +468,13 @@ class TestAudioPipelineReset:
 
     def test_reset_clears_last_speaker(self) -> None:
         vad = MockVADProvider()
-        diarizer = MockDiarizationProvider(results=[
-            DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),
-            DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=False),
-        ])
-        pipeline = AudioPipeline(
-            AudioPipelineConfig(vad=vad, diarization=diarizer)
+        diarizer = MockDiarizationProvider(
+            results=[
+                DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),
+                DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=False),
+            ]
         )
+        pipeline = AudioPipeline(AudioPipelineConfig(vad=vad, diarization=diarizer))
 
         changes = []
         pipeline.on_speaker_change(lambda s, r: changes.append(r))
@@ -563,9 +561,7 @@ class TestAudioPipelineNoVAD:
         assert frame.metadata["denoiser"] == "MockDenoiserProvider"
 
     def test_diarization_only(self) -> None:
-        diarizer = MockDiarizationProvider(
-            results=[DiarizationResult("speaker_0", 0.9, True)]
-        )
+        diarizer = MockDiarizationProvider(results=[DiarizationResult("speaker_0", 0.9, True)])
         pipeline = AudioPipeline(AudioPipelineConfig(diarization=diarizer))
 
         changes = []
@@ -579,12 +575,8 @@ class TestAudioPipelineNoVAD:
 
     def test_denoiser_and_diarization(self) -> None:
         denoiser = MockDenoiserProvider()
-        diarizer = MockDiarizationProvider(
-            results=[DiarizationResult("speaker_0", 0.95, True)]
-        )
-        pipeline = AudioPipeline(
-            AudioPipelineConfig(denoiser=denoiser, diarization=diarizer)
-        )
+        diarizer = MockDiarizationProvider(results=[DiarizationResult("speaker_0", 0.95, True)])
+        pipeline = AudioPipeline(AudioPipelineConfig(denoiser=denoiser, diarization=diarizer))
 
         frame = _frame(b"audio")
         pipeline.process_frame(_session(), frame)
@@ -618,9 +610,7 @@ class TestAudioPipelineNoVAD:
     def test_close_without_vad(self) -> None:
         denoiser = MockDenoiserProvider()
         diarizer = MockDiarizationProvider()
-        pipeline = AudioPipeline(
-            AudioPipelineConfig(denoiser=denoiser, diarization=diarizer)
-        )
+        pipeline = AudioPipeline(AudioPipelineConfig(denoiser=denoiser, diarization=diarizer))
         pipeline.close()
         assert denoiser.closed
         assert diarizer.closed

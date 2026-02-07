@@ -179,8 +179,7 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
 
         if n_samples == 0 or n_samples % chunk != 0:
             logger.warning(
-                "Frame size %d is not a multiple of %d samples. "
-                "Passing frame through unchanged.",
+                "Frame size %d is not a multiple of %d samples. Passing frame through unchanged.",
                 n_samples,
                 chunk,
             )
@@ -202,28 +201,18 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
                     # spectral images that corrupt the RNNoise output.
                     for i in range(chunk):
                         cur = float(samples_i16[offset + i])
-                        nxt = (
-                            float(samples_i16[offset + i + 1])
-                            if i + 1 < chunk
-                            else cur
-                        )
+                        nxt = float(samples_i16[offset + i + 1]) if i + 1 < chunk else cur
                         base = i * factor
                         for j in range(factor):
                             # lerp: cur at j=0, nxt at j=factor
-                            self._in_buf[base + j] = (
-                                cur + (nxt - cur) * j / factor
-                            )
+                            self._in_buf[base + j] = cur + (nxt - cur) * j / factor
 
-                self._lib.rnnoise_process_frame(
-                    self._state, self._out_buf, self._in_buf
-                )
+                self._lib.rnnoise_process_frame(self._state, self._out_buf, self._in_buf)
 
                 # Read the 480-sample output, downsampling back.
                 if factor == 1:
                     for i in range(chunk):
-                        out_i16.append(
-                            max(-32768, min(32767, int(self._out_buf[i])))
-                        )
+                        out_i16.append(max(-32768, min(32767, int(self._out_buf[i]))))
                 else:
                     # Downsample by averaging each group of `factor`
                     # samples — acts as a box-car anti-alias filter.
@@ -233,9 +222,7 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
                         for j in range(factor):
                             avg += self._out_buf[base + j]
                         avg /= factor
-                        out_i16.append(
-                            max(-32768, min(32767, int(avg)))
-                        )
+                        out_i16.append(max(-32768, min(32767, int(avg))))
 
         out_data = struct.pack(f"<{n_samples}h", *out_i16)
 

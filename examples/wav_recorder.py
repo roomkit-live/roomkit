@@ -234,9 +234,7 @@ async def main() -> None:
     async def on_recording_started(event, ctx):
         logger.info("[hook] Recording started: %s", event.id)
 
-    @kit.hook(
-        HookTrigger.ON_RECORDING_STOPPED, execution=HookExecution.ASYNC, name="log_rec_stop"
-    )
+    @kit.hook(HookTrigger.ON_RECORDING_STOPPED, execution=HookExecution.ASYNC, name="log_rec_stop")
     async def on_recording_stopped(event, ctx):
         logger.info(
             "[hook] Recording stopped: %s (%.2fs, %d bytes)",

@@ -256,9 +256,7 @@ class TestTurnDetector:
             TurnEntry(text="How are you"),
             TurnEntry(text="I need help"),
         ]
-        ctx = TurnContext(
-            conversation_history=entries, silence_duration_ms=500.0, session_id="s1"
-        )
+        ctx = TurnContext(conversation_history=entries, silence_duration_ms=500.0, session_id="s1")
         assert len(ctx.conversation_history) == 3
         assert ctx.conversation_history[2].text == "I need help"
 
@@ -303,9 +301,7 @@ class TestTurnDetector:
 
     def test_turn_decision_suggested_wait_ms(self):
         """TurnDecision has suggested_wait_ms field."""
-        decision = TurnDecision(
-            is_complete=False, confidence=0.5, suggested_wait_ms=500.0
-        )
+        decision = TurnDecision(is_complete=False, confidence=0.5, suggested_wait_ms=500.0)
         assert decision.suggested_wait_ms == 500.0
 
 

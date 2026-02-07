@@ -89,9 +89,11 @@ class TestTurnDetection:
         detector = MockTurnDetector(
             decisions=[TurnDecision(is_complete=True, confidence=0.9, reason="done")]
         )
-        vad = MockVADProvider(events=[
-            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
-        ])
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
+            ]
+        )
         config = AudioPipelineConfig(vad=vad, turn_detector=detector)
         stt = _MockSTT(transcripts=["Hello world"])
         backend = _MockBackend()
@@ -108,15 +110,11 @@ class TestTurnDetection:
         mock_fw.process_inbound = AsyncMock()
         channel.set_framework(mock_fw)
 
-        session = VoiceSession(
-            id="s1", room_id="r1", participant_id="p1", channel_id="ch1"
-        )
+        session = VoiceSession(id="s1", room_id="r1", participant_id="p1", channel_id="ch1")
         from roomkit.models.channel import ChannelBinding
         from roomkit.models.enums import ChannelType
 
-        binding = ChannelBinding(
-            room_id="r1", channel_id="ch1", channel_type=ChannelType.VOICE
-        )
+        binding = ChannelBinding(room_id="r1", channel_id="ch1", channel_type=ChannelType.VOICE)
         channel.bind_session(session, "r1", binding)
 
         # Simulate audio -> speech end -> transcribe -> turn detect
@@ -125,7 +123,8 @@ class TestTurnDetection:
 
         # Check ON_TURN_COMPLETE was fired
         turn_complete_calls = [
-            c for c in mock_fw.hook_engine.run_async_hooks.call_args_list
+            c
+            for c in mock_fw.hook_engine.run_async_hooks.call_args_list
             if c.args[1] == HookTrigger.ON_TURN_COMPLETE
         ]
         assert len(turn_complete_calls) == 1
@@ -140,14 +139,18 @@ class TestTurnDetection:
         from roomkit.voice.base import VoiceSession
 
         # First call: incomplete. Second call: complete.
-        detector = MockTurnDetector(decisions=[
-            TurnDecision(is_complete=False, confidence=0.6, reason="trailing"),
-            TurnDecision(is_complete=True, confidence=0.95, reason="done"),
-        ])
-        vad = MockVADProvider(events=[
-            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio1"),
-            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio2"),
-        ])
+        detector = MockTurnDetector(
+            decisions=[
+                TurnDecision(is_complete=False, confidence=0.6, reason="trailing"),
+                TurnDecision(is_complete=True, confidence=0.95, reason="done"),
+            ]
+        )
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio1"),
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio2"),
+            ]
+        )
         config = AudioPipelineConfig(vad=vad, turn_detector=detector)
         stt = _MockSTT(transcripts=["Hello", "world"])
         backend = _MockBackend()
@@ -166,15 +169,11 @@ class TestTurnDetection:
         mock_fw.process_inbound = AsyncMock()
         channel.set_framework(mock_fw)
 
-        session = VoiceSession(
-            id="s1", room_id="r1", participant_id="p1", channel_id="ch1"
-        )
+        session = VoiceSession(id="s1", room_id="r1", participant_id="p1", channel_id="ch1")
         from roomkit.models.channel import ChannelBinding
         from roomkit.models.enums import ChannelType
 
-        binding = ChannelBinding(
-            room_id="r1", channel_id="ch1", channel_type=ChannelType.VOICE
-        )
+        binding = ChannelBinding(room_id="r1", channel_id="ch1", channel_type=ChannelType.VOICE)
         channel.bind_session(session, "r1", binding)
 
         # First utterance — incomplete, should not route
@@ -182,7 +181,8 @@ class TestTurnDetection:
         await asyncio.sleep(0.15)
 
         incomplete_calls = [
-            c for c in mock_fw.hook_engine.run_async_hooks.call_args_list
+            c
+            for c in mock_fw.hook_engine.run_async_hooks.call_args_list
             if c.args[1] == HookTrigger.ON_TURN_INCOMPLETE
         ]
         assert len(incomplete_calls) == 1
@@ -193,7 +193,8 @@ class TestTurnDetection:
         await asyncio.sleep(0.15)
 
         complete_calls = [
-            c for c in mock_fw.hook_engine.run_async_hooks.call_args_list
+            c
+            for c in mock_fw.hook_engine.run_async_hooks.call_args_list
             if c.args[1] == HookTrigger.ON_TURN_COMPLETE
         ]
         assert len(complete_calls) == 1
@@ -209,9 +210,11 @@ class TestTurnDetection:
 
         from roomkit.voice.base import VoiceSession
 
-        vad = MockVADProvider(events=[
-            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
-        ])
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
+            ]
+        )
         config = AudioPipelineConfig(vad=vad)  # No turn_detector
         stt = _MockSTT(transcripts=["Hello"])
         backend = _MockBackend()
@@ -227,15 +230,11 @@ class TestTurnDetection:
         mock_fw.process_inbound = AsyncMock()
         channel.set_framework(mock_fw)
 
-        session = VoiceSession(
-            id="s1", room_id="r1", participant_id="p1", channel_id="ch1"
-        )
+        session = VoiceSession(id="s1", room_id="r1", participant_id="p1", channel_id="ch1")
         from roomkit.models.channel import ChannelBinding
         from roomkit.models.enums import ChannelType
 
-        binding = ChannelBinding(
-            room_id="r1", channel_id="ch1", channel_type=ChannelType.VOICE
-        )
+        binding = ChannelBinding(room_id="r1", channel_id="ch1", channel_type=ChannelType.VOICE)
         channel.bind_session(session, "r1", binding)
 
         await backend.simulate_audio(session, AudioFrame(data=b"\x00"))
@@ -244,7 +243,8 @@ class TestTurnDetection:
         # Should route directly without turn hooks
         assert mock_fw.process_inbound.called
         turn_calls = [
-            c for c in mock_fw.hook_engine.run_async_hooks.call_args_list
+            c
+            for c in mock_fw.hook_engine.run_async_hooks.call_args_list
             if c.args[1] in (HookTrigger.ON_TURN_COMPLETE, HookTrigger.ON_TURN_INCOMPLETE)
         ]
         assert len(turn_calls) == 0

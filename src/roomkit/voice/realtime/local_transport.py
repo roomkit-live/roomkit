@@ -178,9 +178,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
         # --- Input stream (microphone) ---
         blocksize = int(self._input_sample_rate * self._block_duration_ms / 1000)
 
-        def _mic_callback(
-            indata: bytes, frames: int, time_info: Any, status: Any
-        ) -> None:
+        def _mic_callback(indata: bytes, frames: int, time_info: Any, status: Any) -> None:
             if self._closing_event.is_set():
                 return
             if status:
@@ -301,9 +299,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
 
     # -- Speaker callback (runs in PortAudio C thread) --
 
-    def _speaker_callback(
-        self, outdata: Any, frames: int, time_info: Any, status: Any
-    ) -> None:
+    def _speaker_callback(self, outdata: Any, frames: int, time_info: Any, status: Any) -> None:
         """Pull queued audio into the output buffer; fill gaps with silence.
 
         Writes directly into the PortAudio output buffer to avoid

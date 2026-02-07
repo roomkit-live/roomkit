@@ -92,9 +92,7 @@ class TestInboundOrder:
         """AEC should be skipped when backend has NATIVE_AEC."""
         aec = MockAECProvider()
         config = AudioPipelineConfig(aec=aec)
-        pipeline = AudioPipeline(
-            config, backend_capabilities=VoiceCapability.NATIVE_AEC
-        )
+        pipeline = AudioPipeline(config, backend_capabilities=VoiceCapability.NATIVE_AEC)
 
         pipeline.process_inbound(_session(), _frame())
         assert len(aec.frames) == 0
@@ -103,9 +101,7 @@ class TestInboundOrder:
         """AGC should be skipped when backend has NATIVE_AGC."""
         agc = MockAGCProvider()
         config = AudioPipelineConfig(agc=agc)
-        pipeline = AudioPipeline(
-            config, backend_capabilities=VoiceCapability.NATIVE_AGC
-        )
+        pipeline = AudioPipeline(config, backend_capabilities=VoiceCapability.NATIVE_AGC)
 
         pipeline.process_inbound(_session(), _frame())
         assert len(agc.frames) == 0
@@ -239,9 +235,7 @@ class TestOutboundPath:
         """AEC feed_reference skipped when backend has NATIVE_AEC."""
         aec = MockAECProvider()
         config = AudioPipelineConfig(aec=aec)
-        pipeline = AudioPipeline(
-            config, backend_capabilities=VoiceCapability.NATIVE_AEC
-        )
+        pipeline = AudioPipeline(config, backend_capabilities=VoiceCapability.NATIVE_AEC)
 
         pipeline.process_outbound(_session(), _frame())
         assert len(aec.reference_frames) == 0
@@ -347,9 +341,7 @@ class TestResetClose:
         dtmf = MockDTMFDetector()
         vad = MockVADProvider()
 
-        config = AudioPipelineConfig(
-            aec=aec, agc=agc, denoiser=denoiser, dtmf=dtmf, vad=vad
-        )
+        config = AudioPipelineConfig(aec=aec, agc=agc, denoiser=denoiser, dtmf=dtmf, vad=vad)
         pipeline = AudioPipeline(config)
 
         pipeline.reset()
@@ -589,9 +581,7 @@ class TestResamplerStage:
     def _stereo_frame(
         self, data: bytes, rate: int = 48000, channels: int = 2, width: int = 2
     ) -> AudioFrame:
-        return AudioFrame(
-            data=data, sample_rate=rate, channels=channels, sample_width=width
-        )
+        return AudioFrame(data=data, sample_rate=rate, channels=channels, sample_width=width)
 
     def test_inbound_resamples_48k_stereo_to_16k_mono(self):
         """Inbound resampler converts 48kHz stereo to 16kHz mono."""
@@ -606,9 +596,7 @@ class TestResamplerStage:
             transport_inbound_format=AudioFormat(sample_rate=48000, channels=2),
             internal_format=AudioFormat(sample_rate=16000, channels=1, sample_width=2),
         )
-        config = AudioPipelineConfig(
-            resampler=LinearResamplerProvider(), contract=contract
-        )
+        config = AudioPipelineConfig(resampler=LinearResamplerProvider(), contract=contract)
         pipeline = AudioPipeline(config)
 
         pipeline.process_inbound(_session(), frame)
@@ -625,9 +613,7 @@ class TestResamplerStage:
         contract = AudioPipelineContract(
             internal_format=AudioFormat(sample_rate=16000, channels=1, sample_width=2),
         )
-        config = AudioPipelineConfig(
-            resampler=LinearResamplerProvider(), contract=contract
-        )
+        config = AudioPipelineConfig(resampler=LinearResamplerProvider(), contract=contract)
         pipeline = AudioPipeline(config)
 
         pipeline.process_inbound(_session(), frame)
@@ -646,9 +632,7 @@ class TestResamplerStage:
         contract = AudioPipelineContract(
             internal_format=AudioFormat(sample_rate=16000, channels=1),
         )
-        config = AudioPipelineConfig(
-            resampler=LinearResamplerProvider(), contract=contract
-        )
+        config = AudioPipelineConfig(resampler=LinearResamplerProvider(), contract=contract)
         pipeline = AudioPipeline(config)
 
         pipeline.process_inbound(_session(), frame)
@@ -663,9 +647,7 @@ class TestResamplerStage:
 
         out_fmt = AudioFormat(sample_rate=48000, channels=2, sample_width=2)
         contract = AudioPipelineContract(transport_outbound_format=out_fmt)
-        config = AudioPipelineConfig(
-            resampler=LinearResamplerProvider(), contract=contract
-        )
+        config = AudioPipelineConfig(resampler=LinearResamplerProvider(), contract=contract)
         pipeline = AudioPipeline(config)
 
         result = pipeline.process_outbound(_session(), frame)

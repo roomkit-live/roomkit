@@ -87,11 +87,13 @@ class TestVoicePipelineIntegration:
         backend = MockVoiceBackend()
 
         # Three frames: SPEECH_START, then nothing, then SPEECH_END with audio
-        vad = MockVADProvider(events=[
-            VADEvent(type=VADEventType.SPEECH_START),
-            None,
-            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
-        ])
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_START),
+                None,
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
+            ]
+        )
         pipeline = AudioPipelineConfig(vad=vad)
 
         kit = RoomKit(stt=stt, tts=tts, voice=backend)
@@ -364,12 +366,14 @@ class TestVoicePipelineIntegration:
         backend = MockVoiceBackend()
 
         # 4 events: 2 per session (SPEECH_START + SPEECH_END)
-        vad = MockVADProvider(events=[
-            VADEvent(type=VADEventType.SPEECH_START),
-            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio1"),
-            VADEvent(type=VADEventType.SPEECH_START),
-            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio2"),
-        ])
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_START),
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio1"),
+                VADEvent(type=VADEventType.SPEECH_START),
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio2"),
+            ]
+        )
         pipeline = AudioPipelineConfig(vad=vad)
 
         kit = RoomKit(stt=stt, voice=backend)
@@ -497,10 +501,12 @@ class TestPipelineVADHooksIntegration:
         from roomkit.models.enums import ChannelType
         from roomkit.voice.events import VADSilenceEvent
 
-        vad = MockVADProvider(events=[
-            VADEvent(type=VADEventType.SILENCE, duration_ms=500),
-            VADEvent(type=VADEventType.SILENCE, duration_ms=1000),
-        ])
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SILENCE, duration_ms=500),
+                VADEvent(type=VADEventType.SILENCE, duration_ms=1000),
+            ]
+        )
         pipeline = AudioPipelineConfig(vad=vad)
         backend = MockVoiceBackend()
         channel = VoiceChannel("voice-1", backend=backend, pipeline=pipeline)
@@ -541,10 +547,12 @@ class TestPipelineVADHooksIntegration:
         from roomkit.models.enums import ChannelType
         from roomkit.voice.events import VADAudioLevelEvent
 
-        vad = MockVADProvider(events=[
-            VADEvent(type=VADEventType.AUDIO_LEVEL, level_db=-30.0, confidence=0.2),
-            VADEvent(type=VADEventType.AUDIO_LEVEL, level_db=-15.0, confidence=0.8),
-        ])
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.AUDIO_LEVEL, level_db=-30.0, confidence=0.2),
+                VADEvent(type=VADEventType.AUDIO_LEVEL, level_db=-15.0, confidence=0.8),
+            ]
+        )
         pipeline = AudioPipelineConfig(vad=vad)
         backend = MockVoiceBackend()
         channel = VoiceChannel("voice-1", backend=backend, pipeline=pipeline)
@@ -588,10 +596,12 @@ class TestPipelineVADHooksIntegration:
         from roomkit.voice.pipeline.diarization.base import DiarizationResult
         from roomkit.voice.pipeline.diarization.mock import MockDiarizationProvider
 
-        diarizer = MockDiarizationProvider(results=[
-            DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),
-            DiarizationResult(speaker_id="speaker_1", confidence=0.85, is_new_speaker=True),
-        ])
+        diarizer = MockDiarizationProvider(
+            results=[
+                DiarizationResult(speaker_id="speaker_0", confidence=0.9, is_new_speaker=True),
+                DiarizationResult(speaker_id="speaker_1", confidence=0.85, is_new_speaker=True),
+            ]
+        )
         vad = MockVADProvider()
         pipeline = AudioPipelineConfig(vad=vad, diarization=diarizer)
         backend = MockVoiceBackend()
@@ -644,9 +654,11 @@ class TestBargeInIntegration:
         backend = MockVoiceBackend(capabilities=caps)
 
         # VAD will fire SPEECH_START (which triggers barge-in check)
-        vad = MockVADProvider(events=[
-            VADEvent(type=VADEventType.SPEECH_START),
-        ])
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_START),
+            ]
+        )
         pipeline = AudioPipelineConfig(vad=vad)
 
         channel = VoiceChannel(
@@ -718,9 +730,11 @@ class TestBargeInIntegration:
         caps = VoiceCapability.INTERRUPTION
         backend = MockVoiceBackend(capabilities=caps)
 
-        vad = MockVADProvider(events=[
-            VADEvent(type=VADEventType.SPEECH_START),
-        ])
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_START),
+            ]
+        )
         pipeline = AudioPipelineConfig(vad=vad)
 
         channel = VoiceChannel(
@@ -774,9 +788,11 @@ class TestBargeInIntegration:
         caps = VoiceCapability.INTERRUPTION
         backend = MockVoiceBackend(capabilities=caps)
 
-        vad = MockVADProvider(events=[
-            VADEvent(type=VADEventType.SPEECH_START),
-        ])
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_START),
+            ]
+        )
         pipeline = AudioPipelineConfig(vad=vad)
 
         channel = VoiceChannel(

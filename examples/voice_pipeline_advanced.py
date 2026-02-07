@@ -96,8 +96,12 @@ async def main() -> None:
     # Second utterance: complete (ready to route to AI).
     turn_detector = MockTurnDetector(
         decisions=[
-            TurnDecision(is_complete=False, confidence=0.4, reason="waiting for more",
-                         suggested_wait_ms=500.0),
+            TurnDecision(
+                is_complete=False,
+                confidence=0.4,
+                reason="waiting for more",
+                suggested_wait_ms=500.0,
+            ),
             TurnDecision(is_complete=True, confidence=0.95, reason="sentence complete"),
         ]
     )
@@ -157,9 +161,7 @@ async def main() -> None:
     async def on_recording_started(event, ctx):
         print(f"[hook] Recording started: {event.id}")
 
-    @kit.hook(
-        HookTrigger.ON_RECORDING_STOPPED, execution=HookExecution.ASYNC, name="log_rec_stop"
-    )
+    @kit.hook(HookTrigger.ON_RECORDING_STOPPED, execution=HookExecution.ASYNC, name="log_rec_stop")
     async def on_recording_stopped(event, ctx):
         print(f"[hook] Recording stopped: {event.id} ({event.duration_seconds}s)")
 
@@ -175,9 +177,7 @@ async def main() -> None:
     async def on_turn_incomplete(event, ctx):
         print(f"[hook] Turn incomplete: '{event.text}' (confidence={event.confidence})")
 
-    @kit.hook(
-        HookTrigger.ON_BACKCHANNEL, execution=HookExecution.ASYNC, name="log_backchannel"
-    )
+    @kit.hook(HookTrigger.ON_BACKCHANNEL, execution=HookExecution.ASYNC, name="log_backchannel")
     async def on_backchannel(event, ctx):
         print(f"[hook] Backchannel detected: '{event.text}'")
 

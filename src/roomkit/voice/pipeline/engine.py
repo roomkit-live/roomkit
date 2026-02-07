@@ -293,7 +293,6 @@ class AudioPipeline:
             except Exception:
                 logger.exception("Diarization error")
 
-
     # -----------------------------------------------------------------
     # Outbound processing
     # -----------------------------------------------------------------

@@ -195,9 +195,7 @@ class WavFileRecorder(AudioRecorder):
 
         if ws.config.channels == RecordingChannelMode.SEPARATE:
             if ws.inbound_writer is None:
-                ws.inbound_writer = self._open_writer(
-                    Path(f"{ws.handle.path}_inbound.wav"), ws
-                )
+                ws.inbound_writer = self._open_writer(Path(f"{ws.handle.path}_inbound.wav"), ws)
             ws.inbound_writer.writeframes(frame.data)
             ws.inbound_frames += len(frame.data) // (ws.sample_width * ws.channels)
         else:
@@ -216,9 +214,7 @@ class WavFileRecorder(AudioRecorder):
 
         if ws.config.channels == RecordingChannelMode.SEPARATE:
             if ws.outbound_writer is None:
-                ws.outbound_writer = self._open_writer(
-                    Path(f"{ws.handle.path}_outbound.wav"), ws
-                )
+                ws.outbound_writer = self._open_writer(Path(f"{ws.handle.path}_outbound.wav"), ws)
             ws.outbound_writer.writeframes(frame.data)
             ws.outbound_frames += len(frame.data) // (ws.sample_width * ws.channels)
         else:
@@ -293,9 +289,7 @@ class WavFileRecorder(AudioRecorder):
             src_offset = i * sw
             dst_offset = i * sw * 2
             stereo[dst_offset : dst_offset + sw] = inb[src_offset : src_offset + sw]
-            stereo[dst_offset + sw : dst_offset + sw * 2] = outb[
-                src_offset : src_offset + sw
-            ]
+            stereo[dst_offset + sw : dst_offset + sw * 2] = outb[src_offset : src_offset + sw]
 
         with wave.open(str(path), "wb") as w:
             w.setnchannels(2)

@@ -12,6 +12,7 @@ from roomkit.voice.pipeline.vad.energy import EnergyVADProvider, _rms_int16
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_frame(
     amplitude: int = 0,
     n_samples: int = 320,
@@ -38,6 +39,7 @@ def _speech(
 # Unit: _rms_int16
 # ---------------------------------------------------------------------------
 
+
 class TestRmsInt16:
     def test_silence(self) -> None:
         data = struct.pack("<4h", 0, 0, 0, 0)
@@ -59,6 +61,7 @@ class TestRmsInt16:
 # ---------------------------------------------------------------------------
 # Basic transitions
 # ---------------------------------------------------------------------------
+
 
 class TestBasicTransitions:
     def test_silence_produces_no_events(self) -> None:
@@ -107,6 +110,7 @@ class TestBasicTransitions:
 # Audio accumulation
 # ---------------------------------------------------------------------------
 
+
 class TestAudioAccumulation:
     def test_accumulated_audio_contains_speech_frames(self) -> None:
         vad = EnergyVADProvider(
@@ -138,12 +142,13 @@ class TestAudioAccumulation:
 # Min speech duration filtering
 # ---------------------------------------------------------------------------
 
+
 class TestMinSpeechDuration:
     def test_short_speech_discarded(self) -> None:
         vad = EnergyVADProvider(
             energy_threshold=300,
-            silence_threshold_ms=40,   # 2 frames
-            min_speech_duration_ms=500, # much longer than we'll speak
+            silence_threshold_ms=40,  # 2 frames
+            min_speech_duration_ms=500,  # much longer than we'll speak
             speech_pad_ms=0,
         )
         # Single speech frame → SPEECH_START
@@ -189,6 +194,7 @@ class TestMinSpeechDuration:
 # Pre-roll buffer
 # ---------------------------------------------------------------------------
 
+
 class TestPreRoll:
     def test_pre_roll_included_in_audio(self) -> None:
         vad = EnergyVADProvider(
@@ -223,6 +229,7 @@ class TestPreRoll:
 # Reset
 # ---------------------------------------------------------------------------
 
+
 class TestReset:
     def test_reset_clears_state(self) -> None:
         vad = EnergyVADProvider(energy_threshold=300)
@@ -245,6 +252,7 @@ class TestReset:
 # name property
 # ---------------------------------------------------------------------------
 
+
 class TestName:
     def test_name(self) -> None:
         vad = EnergyVADProvider()
@@ -254,6 +262,7 @@ class TestName:
 # ---------------------------------------------------------------------------
 # Multiple utterances
 # ---------------------------------------------------------------------------
+
 
 class TestMultipleUtterances:
     def test_two_utterances(self) -> None:

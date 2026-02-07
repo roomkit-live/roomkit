@@ -51,9 +51,7 @@ class TestConfirmedStrategy:
             min_speech_ms=300,
         )
         handler = InterruptionHandler(config)
-        decision = handler.evaluate(
-            playback_position_ms=500, speech_duration_ms=400
-        )
+        decision = handler.evaluate(playback_position_ms=500, speech_duration_ms=400)
         assert decision.should_interrupt
         assert decision.reason == "speech confirmed"
 
@@ -63,9 +61,7 @@ class TestConfirmedStrategy:
             min_speech_ms=300,
         )
         handler = InterruptionHandler(config)
-        decision = handler.evaluate(
-            playback_position_ms=500, speech_duration_ms=100
-        )
+        decision = handler.evaluate(playback_position_ms=500, speech_duration_ms=100)
         assert not decision.should_interrupt
         assert decision.reason == "speech too short"
 
@@ -75,9 +71,7 @@ class TestConfirmedStrategy:
             min_speech_ms=200,
         )
         handler = InterruptionHandler(config)
-        decision = handler.evaluate(
-            playback_position_ms=500, speech_duration_ms=200
-        )
+        decision = handler.evaluate(playback_position_ms=500, speech_duration_ms=200)
         assert decision.should_interrupt
 
 
@@ -98,9 +92,7 @@ class TestSemanticStrategy:
         assert decision.is_backchannel
 
     def test_not_backchannel_interrupts(self):
-        bc = MockBackchannelDetector(
-            decisions=[BackchannelDecision(is_backchannel=False)]
-        )
+        bc = MockBackchannelDetector(decisions=[BackchannelDecision(is_backchannel=False)])
         config = InterruptionConfig(strategy=InterruptionStrategy.SEMANTIC)
         handler = InterruptionHandler(config, backchannel_detector=bc)
 
@@ -120,16 +112,12 @@ class TestSemanticStrategy:
         handler = InterruptionHandler(config)  # No backchannel_detector
 
         # Long enough speech
-        decision = handler.evaluate(
-            playback_position_ms=500, speech_duration_ms=300
-        )
+        decision = handler.evaluate(playback_position_ms=500, speech_duration_ms=300)
         assert decision.should_interrupt
         assert "fallback" in decision.reason
 
         # Short speech
-        decision = handler.evaluate(
-            playback_position_ms=500, speech_duration_ms=100
-        )
+        decision = handler.evaluate(playback_position_ms=500, speech_duration_ms=100)
         assert not decision.should_interrupt
 
 
@@ -196,14 +184,9 @@ class TestBackwardsCompat:
         """Legacy enable_barge_in=True maps to IMMEDIATE with allow_during_first_ms."""
         from roomkit.channels.voice import VoiceChannel
 
-        channel = VoiceChannel(
-            "ch1", enable_barge_in=True, barge_in_threshold_ms=300
-        )
+        channel = VoiceChannel("ch1", enable_barge_in=True, barge_in_threshold_ms=300)
         assert channel._enable_barge_in is True
-        assert (
-            channel._interruption_handler.config.strategy
-            == InterruptionStrategy.IMMEDIATE
-        )
+        assert channel._interruption_handler.config.strategy == InterruptionStrategy.IMMEDIATE
         assert channel._interruption_handler.config.allow_during_first_ms == 300
 
     def test_legacy_enable_barge_in_false(self):
@@ -212,10 +195,7 @@ class TestBackwardsCompat:
 
         channel = VoiceChannel("ch1", enable_barge_in=False)
         assert channel._enable_barge_in is False
-        assert (
-            channel._interruption_handler.config.strategy
-            == InterruptionStrategy.DISABLED
-        )
+        assert channel._interruption_handler.config.strategy == InterruptionStrategy.DISABLED
 
     def test_explicit_interruption_overrides_legacy(self):
         """Explicit interruption param takes precedence over legacy."""
@@ -231,7 +211,4 @@ class TestBackwardsCompat:
             interruption=config,
         )
         assert channel._enable_barge_in is True  # IMMEDIATE != DISABLED
-        assert (
-            channel._interruption_handler.config.strategy
-            == InterruptionStrategy.IMMEDIATE
-        )
+        assert channel._interruption_handler.config.strategy == InterruptionStrategy.IMMEDIATE
