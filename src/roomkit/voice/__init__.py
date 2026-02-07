@@ -36,6 +36,7 @@ from roomkit.voice.interruption import (
 )
 from roomkit.voice.pipeline import (
     AECProvider,
+    SpeexAECProvider,
     AGCConfig,
     AGCProvider,
     AudioFormat,
@@ -113,6 +114,7 @@ __all__ = [
     "ResamplerConfig",
     # Provider ABCs
     "AECProvider",
+    "SpeexAECProvider",
     "AGCProvider",
     "AudioPostProcessor",
     "AudioRecorder",
@@ -273,6 +275,13 @@ def get_fastrtc_realtime_transport() -> type:
     from roomkit.voice.realtime.fastrtc_transport import FastRTCRealtimeTransport
 
     return FastRTCRealtimeTransport
+
+
+def get_speex_aec_provider() -> type:
+    """Get SpeexAECProvider class (requires libspeexdsp system library)."""
+    from roomkit.voice.pipeline.speex_aec import SpeexAECProvider as _cls
+
+    return _cls
 
 
 def get_mount_fastrtc_realtime() -> Any:

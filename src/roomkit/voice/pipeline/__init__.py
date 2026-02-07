@@ -1,6 +1,7 @@
 """Audio processing pipeline for voice (RFC §12.3)."""
 
 from roomkit.voice.pipeline.aec_provider import AECProvider
+from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
 from roomkit.voice.pipeline.agc_provider import AGCConfig, AGCProvider
 from roomkit.voice.pipeline.backchannel_detector import (
     BackchannelContext,
@@ -56,6 +57,7 @@ __all__ = [
     "AudioPipeline",
     # Provider ABCs
     "AECProvider",
+    "SpeexAECProvider",
     "AGCProvider",
     "AudioPostProcessor",
     "AudioRecorder",
