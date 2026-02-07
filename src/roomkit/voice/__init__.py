@@ -36,7 +36,6 @@ from roomkit.voice.interruption import (
 )
 from roomkit.voice.pipeline import (
     AECProvider,
-    SpeexAECProvider,
     AGCConfig,
     AGCProvider,
     AudioFormat,
@@ -69,6 +68,8 @@ from roomkit.voice.pipeline import (
     RecordingResult,
     RecordingTrigger,
     ResamplerConfig,
+    RNNoiseDenoiserProvider,
+    SpeexAECProvider,
     TurnContext,
     TurnDecision,
     TurnDetector,
@@ -120,6 +121,7 @@ __all__ = [
     "AudioRecorder",
     "BackchannelDetector",
     "DenoiserProvider",
+    "RNNoiseDenoiserProvider",
     "DiarizationProvider",
     "DTMFDetector",
     "TurnDetector",
@@ -277,11 +279,18 @@ def get_fastrtc_realtime_transport() -> type:
     return FastRTCRealtimeTransport
 
 
+def get_rnnoise_denoiser_provider() -> type:
+    """Get RNNoiseDenoiserProvider class (requires librnnoise system library)."""
+    from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+
+    return RNNoiseDenoiserProvider
+
+
 def get_speex_aec_provider() -> type:
     """Get SpeexAECProvider class (requires libspeexdsp system library)."""
-    from roomkit.voice.pipeline.speex_aec import SpeexAECProvider as _cls
+    from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
 
-    return _cls
+    return SpeexAECProvider
 
 
 def get_mount_fastrtc_realtime() -> Any:

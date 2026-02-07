@@ -1,7 +1,6 @@
 """Audio processing pipeline for voice (RFC §12.3)."""
 
 from roomkit.voice.pipeline.aec_provider import AECProvider
-from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
 from roomkit.voice.pipeline.agc_provider import AGCConfig, AGCProvider
 from roomkit.voice.pipeline.backchannel_detector import (
     BackchannelContext,
@@ -39,6 +38,8 @@ from roomkit.voice.pipeline.recorder import (
     RecordingResult,
     RecordingTrigger,
 )
+from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
 from roomkit.voice.pipeline.turn_detector import (
     TurnContext,
     TurnDecision,
@@ -63,6 +64,7 @@ __all__ = [
     "AudioRecorder",
     "BackchannelDetector",
     "DenoiserProvider",
+    "RNNoiseDenoiserProvider",
     "DiarizationProvider",
     "DTMFDetector",
     "TurnDetector",
