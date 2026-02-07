@@ -7,6 +7,16 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "aec-audio-processing"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/f1/d4c91eeaed6a2d91b448eb3eb17c150a505973aa7c5495d8772325918e38/aec_audio_processing-1.0.1.tar.gz", hash = "sha256:f03a3ce3f45bf15a04a8504d0f692a651180ca2d3171bd9f3de0516e5f2b8360", size = 5897164, upload-time = "2025-09-01T13:13:16.718Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/36/4f/13a1dfdde223744a65efd17e3d3f322286e4f5220b7f3d1eb54c776930f1/aec_audio_processing-1.0.1-cp312-cp312-win_amd64.whl", hash = "sha256:158946224289773ed9101aaf4acedddb8eaed442f94809ffd7fb4778e4c65f47", size = 920835, upload-time = "2025-09-01T13:13:12.087Z" },
+    { url = "https://files.pythonhosted.org/packages/11/b0/96a1bdb897a4aff9d21efa2f805a5ba2e9cba99945e855045719105a3513/aec_audio_processing-1.0.1-cp313-cp313-win_amd64.whl", hash = "sha256:25502a35a08a55650d926b0280199118af42e6405cda177039fa5ad04d24671e", size = 920835, upload-time = "2025-09-01T13:13:13.698Z" },
+]
+
+[[package]]
 name = "ag-ui-protocol"
 version = "0.1.10"
 source = { registry = "https://pypi.org/simple" }
@@ -3581,6 +3591,9 @@ twilio = [
 vllm = [
     { name = "openai" },
 ]
+webrtc-aec = [
+    { name = "aec-audio-processing" },
+]
 websocket = [
     { name = "websockets" },
 ]
@@ -3590,6 +3603,7 @@ whatsapp-personal = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aec-audio-processing", marker = "extra == 'webrtc-aec'", specifier = ">=0.1" },
     { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.1.0" },
     { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30" },
@@ -3659,7 +3673,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["all", "anthropic", "dev", "docs", "fastrtc", "gemini", "httpx", "local-audio", "openai", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sources", "sse", "teams", "twilio", "vllm", "websocket", "whatsapp-personal"]
+provides-extras = ["all", "anthropic", "dev", "docs", "fastrtc", "gemini", "httpx", "local-audio", "openai", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sources", "sse", "teams", "twilio", "vllm", "webrtc-aec", "websocket", "whatsapp-personal"]
 
 [[package]]
 name = "rpds-py"

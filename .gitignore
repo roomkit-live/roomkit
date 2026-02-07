@@ -29,3 +29,9 @@ Thumbs.db
 *.swo
 *~
 site
+.claude/
+examples/debug_audio/
+examples/recordings/
+examples/piper/
+examples/kroko/
+examples/*.onnx

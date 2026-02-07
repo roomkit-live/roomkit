@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck security test coverage all clean docs publish deploy release
+.PHONY: install lint format typecheck security test coverage all clean docs deploy release
 
 install:
 	uv sync --extra dev
@@ -36,14 +36,6 @@ docs:
 docs-serve:
 	uv run mkdocs serve
 
-# --- Publishing ---
-
-build-dist: clean
-	uv run python -m build
-
-publish: build-dist
-	uv run twine upload dist/*
-
 # --- Website deployment ---
 
 deploy:
@@ -52,11 +44,10 @@ deploy:
 deploy-status:
 	./deploy.sh status
 
-# --- Full release (publish to PyPI + deploy website) ---
+# --- Release (bump, test, build, publish, tag, push) ---
 
-release: all build-dist
-	@echo "Publishing to PyPI..."
-	uv run twine upload dist/*
-	@echo "Deploying website..."
-	./deploy.sh full
-	@echo "Release complete!"
+release:
+ifndef VERSION
+	$(error VERSION is required. Usage: make release VERSION=0.4.1)
+endif
+	./scripts/release.sh $(VERSION)
