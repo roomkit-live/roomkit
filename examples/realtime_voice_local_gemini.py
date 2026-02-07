@@ -6,6 +6,7 @@ your speakers.  No browser, no WebSocket, no server required.
 Requirements:
     pip install roomkit[realtime-gemini,local-audio]
     System: libspeexdsp (apt install libspeexdsp1 / brew install speexdsp)
+    System (optional): librnnoise for noise suppression
 
 Run with:
     GOOGLE_API_KEY=... uv run python examples/realtime_voice_local_gemini.py
@@ -16,6 +17,7 @@ Environment variables:
     GEMINI_VOICE        Voice preset (default: Aoede)
     SYSTEM_PROMPT       Custom system prompt
     AEC                 Enable Speex echo cancellation: 1 | 0 (default: 1)
+    DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 0)
     MUTE_MIC            Mute mic during playback: 1 | 0 (default: 0, use without AEC)
 
 Press Ctrl+C to stop.
@@ -60,20 +62,28 @@ async def main() -> None:
     # Uses SpeexDSP to strip speaker echo from the mic signal in
     # real time, enabling full-duplex conversation without muting
     # the mic during playback.  AEC requires matching sample rates
-    # so both input and output use 16 kHz.  Disable with AEC=0 and
+    # so both mic and speaker use 24 kHz.  Disable with AEC=0 and
     # use MUTE_MIC=1 as a fallback if libspeexdsp is unavailable.
     use_aec = os.environ.get("AEC", "1") == "1"
+    use_denoise = os.environ.get("DENOISE", "0") == "1"
     mute_mic = os.environ.get("MUTE_MIC", "0") == "1"
 
-    sample_rate = 16000
+    sample_rate = 24000  # Gemini outputs 24 kHz — mic must match for AEC
     block_ms = 20
-    frame_size = sample_rate * block_ms // 1000  # 320 samples
+    frame_size = sample_rate * block_ms // 1000  # 480 samples
 
     aec = SpeexAECProvider(
         frame_size=frame_size,
-        filter_length=frame_size * 10,
+        filter_length=frame_size * 10,  # 200ms echo tail — shorter = faster convergence
         sample_rate=sample_rate,
     ) if use_aec else None
+
+    # --- Denoiser (RNNoise noise suppression) ---
+    denoiser = None
+    if use_denoise:
+        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+
+        denoiser = RNNoiseDenoiserProvider(sample_rate=sample_rate)
 
     transport = LocalAudioTransport(
         input_sample_rate=sample_rate,
@@ -81,6 +91,7 @@ async def main() -> None:
         block_duration_ms=block_ms,
         mute_mic_during_playback=mute_mic,
         aec=aec,
+        denoiser=denoiser,
     )
 
     # --- Realtime voice channel ---
@@ -93,6 +104,7 @@ async def main() -> None:
             "You are a friendly voice assistant. Be concise and helpful.",
         ),
         voice=os.environ.get("GEMINI_VOICE", "Aoede"),
+        input_sample_rate=sample_rate,
     )
     kit.register_channel(channel)
 

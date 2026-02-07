@@ -6,6 +6,7 @@ your speakers.  Uses OpenAI's semantic VAD for smarter turn detection.
 Requirements:
     pip install roomkit[realtime-openai,local-audio]
     System: libspeexdsp (apt install libspeexdsp1 / brew install speexdsp)
+    System (optional): librnnoise for noise suppression
 
 Run with:
     OPENAI_API_KEY=... uv run python examples/realtime_voice_local_openai.py
@@ -18,6 +19,7 @@ Environment variables:
     VAD_TYPE            Turn detection: semantic_vad | server_vad (default: semantic_vad)
     VAD_EAGERNESS       Semantic VAD eagerness: low | medium | high | auto (default: high)
     AEC                 Enable Speex echo cancellation: 1 | 0 (default: 1)
+    DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 0)
     MUTE_MIC            Mute mic during playback: 1 | 0 (default: 0, use without AEC)
 
 Press Ctrl+C to stop.
@@ -64,6 +66,7 @@ async def main() -> None:
     # the mic during playback.  Disable with AEC=0 and use MUTE_MIC=1
     # as a fallback if libspeexdsp is unavailable.
     use_aec = os.environ.get("AEC", "1") == "1"
+    use_denoise = os.environ.get("DENOISE", "0") == "1"
     mute_mic = os.environ.get("MUTE_MIC", "0") == "1"
 
     sample_rate = 24000  # OpenAI Realtime uses 24 kHz for both directions
@@ -72,9 +75,16 @@ async def main() -> None:
 
     aec = SpeexAECProvider(
         frame_size=frame_size,
-        filter_length=frame_size * 10,
+        filter_length=frame_size * 25,  # 500ms echo tail
         sample_rate=sample_rate,
     ) if use_aec else None
+
+    # --- Denoiser (RNNoise noise suppression) ---
+    denoiser = None
+    if use_denoise:
+        from roomkit.voice.pipeline.rnnoise import RNNoiseDenoiserProvider
+
+        denoiser = RNNoiseDenoiserProvider(sample_rate=sample_rate)
 
     transport = LocalAudioTransport(
         input_sample_rate=sample_rate,
@@ -82,6 +92,7 @@ async def main() -> None:
         block_duration_ms=block_ms,
         mute_mic_during_playback=mute_mic,
         aec=aec,
+        denoiser=denoiser,
     )
 
     # --- VAD configuration ---

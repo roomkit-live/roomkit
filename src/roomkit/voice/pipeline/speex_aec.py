@@ -17,7 +17,9 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import logging
-import struct
+import math
+import os
+import threading
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.pipeline.aec_provider import AECProvider
@@ -58,17 +60,31 @@ def _load_speexdsp() -> ctypes.CDLL:
     _lib.speex_echo_state_reset.argtypes = [ctypes.c_void_p]
     _lib.speex_echo_state_reset.restype = None
 
-    # Async (split) API — allows feeding reference and processing
-    # capture at different times, which matches our pipeline design.
-    _lib.speex_echo_playback.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    # Split (asynchronous) API — handles temporal alignment internally
+    # via an internal ring buffer.  speex_echo_playback() feeds reference
+    # audio (what the speaker is playing), speex_echo_capture() processes
+    # mic audio and produces echo-cancelled output.
+    _lib.speex_echo_playback.argtypes = [
+        ctypes.c_void_p,  # state
+        ctypes.c_void_p,  # play (speaker reference)
+    ]
     _lib.speex_echo_playback.restype = None
 
     _lib.speex_echo_capture.argtypes = [
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_void_p,
+        ctypes.c_void_p,  # state
+        ctypes.c_void_p,  # rec (mic input)
+        ctypes.c_void_p,  # out (echo-cancelled)
     ]
     _lib.speex_echo_capture.restype = None
+
+    # Synchronous API — kept for tests.
+    _lib.speex_echo_cancellation.argtypes = [
+        ctypes.c_void_p,  # state
+        ctypes.c_void_p,  # rec (mic input)
+        ctypes.c_void_p,  # play (speaker reference)
+        ctypes.c_void_p,  # out (echo-cancelled)
+    ]
+    _lib.speex_echo_cancellation.restype = None
 
     # Control function for setting sample rate, etc.
     _lib.speex_echo_ctl.argtypes = [
@@ -85,13 +101,54 @@ def _load_speexdsp() -> ctypes.CDLL:
 _SPEEX_ECHO_SET_SAMPLING_RATE = 24
 _SPEEX_ECHO_GET_SAMPLING_RATE = 25
 
+# Log AEC stats every N process() calls (~1 s at 20 ms frames).
+_LOG_INTERVAL = 50
+
+
+class _StderrSuppressor:
+    """Temporarily redirect C-level stderr (fd 2) to ``/dev/null``.
+
+    SpeexDSP prints warnings to C stderr that are expected in our
+    usage pattern (e.g. "No playback frame available" during silence).
+    This context manager suppresses them without affecting Python's
+    logging, which uses its own file object.
+
+    Thread-safe: a lock ensures only one thread has stderr redirected
+    at a time.
+    """
+
+    def __init__(self) -> None:
+        self._devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        self._orig_fd = os.dup(2)
+        self._lock = threading.Lock()
+
+    def __enter__(self) -> _StderrSuppressor:
+        self._lock.acquire()
+        os.dup2(self._devnull_fd, 2)
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        os.dup2(self._orig_fd, 2)
+        self._lock.release()
+
+    def close(self) -> None:
+        if self._devnull_fd >= 0:
+            os.close(self._devnull_fd)
+            self._devnull_fd = -1
+        if self._orig_fd >= 0:
+            os.close(self._orig_fd)
+            self._orig_fd = -1
+
 
 class SpeexAECProvider(AECProvider):
     """AEC provider backed by SpeexDSP's adaptive echo canceller.
 
-    SpeexDSP uses a *split* (async) API that decouples reference feeding
-    from capture processing — a natural fit for the pipeline's separate
-    inbound/outbound paths.
+    Uses the split (asynchronous) API — ``speex_echo_playback()`` feeds
+    reference audio from the speaker, ``speex_echo_capture()`` processes
+    mic audio and returns echo-cancelled output.  The split API maintains
+    an internal ring buffer that handles temporal misalignment between
+    when reference audio is played and when the echo arrives at the mic,
+    which is critical for real hardware with output latency.
 
     Args:
         frame_size: Number of samples per frame.  Must match the frames
@@ -114,6 +171,39 @@ class SpeexAECProvider(AECProvider):
         self._sample_rate = sample_rate
 
         self._state = self._create_state()
+        self._stderr = _StderrSuppressor()
+
+        # Pre-allocated buffers — reused every call to avoid per-frame
+        # heap allocations in the real-time audio path.
+        self._in_buf = (ctypes.c_int16 * frame_size)()
+        self._out_buf = (ctypes.c_int16 * frame_size)()
+        self._ref_buf = (ctypes.c_int16 * frame_size)()
+        self._frame_bytes = frame_size * 2  # 2 bytes per int16 sample
+
+        # Lock for SpeexDSP state — protects _state, _in_buf, _out_buf,
+        # _ref_buf across the mic and speaker callback threads.
+        self._lock = threading.Lock()
+
+        # Track whether speex_echo_playback() has been called since
+        # the last speex_echo_capture(), for diagnostics only.
+        self._playback_fed = False
+
+        # Diagnostics — counters reset every _LOG_INTERVAL frames.
+        self._process_count = 0
+        self._ref_hits = 0  # process() had a real reference
+        self._ref_misses = 0  # process() used silence
+        self._refs_fed = 0  # feed_reference() calls
+        self._total_in_energy = 0  # accumulated over _LOG_INTERVAL frames
+        self._total_out_energy = 0
+
+        logger.info(
+            "SpeexAEC init: frame_size=%d, filter_length=%d (%dms), "
+            "sample_rate=%d",
+            frame_size,
+            filter_length,
+            filter_length * 1000 // sample_rate,
+            sample_rate,
+        )
 
     # ------------------------------------------------------------------
     # AECProvider interface
@@ -129,25 +219,52 @@ class SpeexAECProvider(AECProvider):
             return frame
 
         pcm_in = frame.data
-        n_samples = len(pcm_in) // 2  # 16-bit samples
 
-        if n_samples != self._frame_size:
+        if len(pcm_in) != self._frame_bytes:
             logger.warning(
                 "Frame size mismatch: got %d samples, expected %d. "
                 "Passing frame through unchanged.",
-                n_samples,
+                len(pcm_in) // 2,
                 self._frame_size,
             )
             return frame
 
-        in_buf = (ctypes.c_int16 * n_samples)(*struct.unpack(f"<{n_samples}h", pcm_in))
-        out_buf = (ctypes.c_int16 * n_samples)()
+        ctypes.memmove(self._in_buf, pcm_in, self._frame_bytes)
 
-        self._lib.speex_echo_capture(self._state, in_buf, out_buf)
+        if self._playback_fed:
+            self._ref_hits += 1
+        else:
+            self._ref_misses += 1
+        self._playback_fed = False
 
-        out_bytes = struct.pack(f"<{n_samples}h", *out_buf)
+        with self._lock:
+            # Suppress C stderr — SpeexDSP prints "No playback frame
+            # available" when the ring buffer is empty (expected during
+            # silence).
+            with self._stderr:
+                self._lib.speex_echo_capture(
+                    self._state, self._in_buf, self._out_buf
+                )
+
+            # Accumulate energy over the full interval so the log
+            # reflects average behaviour, not a single-frame snapshot.
+            in_energy = sum(
+                self._in_buf[i] * self._in_buf[i]
+                for i in range(self._frame_size)
+            )
+            out_energy = sum(
+                self._out_buf[i] * self._out_buf[i]
+                for i in range(self._frame_size)
+            )
+            self._total_in_energy += in_energy
+            self._total_out_energy += out_energy
+
+        self._process_count += 1
+        if self._process_count % _LOG_INTERVAL == 0:
+            self._log_stats()
+
         return AudioFrame(
-            data=out_bytes,
+            data=bytes(self._out_buf),
             sample_rate=frame.sample_rate,
             channels=frame.channels,
             sample_width=frame.sample_width,
@@ -156,12 +273,17 @@ class SpeexAECProvider(AECProvider):
         )
 
     def feed_reference(self, frame: AudioFrame) -> None:
-        """Feed a reference (playback / TTS) frame for echo modelling."""
+        """Feed a reference (playback / TTS) frame for echo modelling.
+
+        Calls ``speex_echo_playback()`` directly so the internal ring
+        buffer tracks the speaker output timing.
+        """
         if self._state is None:
             return
 
         pcm = frame.data
-        n_samples = len(pcm) // 2
+        n_bytes = len(pcm)
+        n_samples = n_bytes // 2
 
         if n_samples != self._frame_size:
             logger.warning(
@@ -171,23 +293,60 @@ class SpeexAECProvider(AECProvider):
             )
             return
 
-        ref_buf = (ctypes.c_int16 * n_samples)(*struct.unpack(f"<{n_samples}h", pcm))
-        self._lib.speex_echo_playback(self._state, ref_buf)
+        ctypes.memmove(self._ref_buf, pcm, n_bytes)
+        with self._lock, self._stderr:
+            self._lib.speex_echo_playback(self._state, self._ref_buf)
+        self._playback_fed = True
+        self._refs_fed += 1
 
     def reset(self) -> None:
         """Reset the adaptive filter state."""
+        self._playback_fed = False
         if self._state is not None:
-            self._lib.speex_echo_state_reset(self._state)
+            with self._lock:
+                self._lib.speex_echo_state_reset(self._state)
 
     def close(self) -> None:
         """Destroy the SpeexDSP echo state and release resources."""
         if self._state is not None:
             self._lib.speex_echo_state_destroy(self._state)
             self._state = None
+        self._stderr.close()
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _log_stats(self) -> None:
+        """Log periodic AEC diagnostics (averaged over the interval)."""
+        n = (self._frame_size * _LOG_INTERVAL) or 1
+        in_rms = math.isqrt(self._total_in_energy // n)
+        out_rms = math.isqrt(self._total_out_energy // n)
+
+        if in_rms > 0:
+            attenuation_db = 20 * math.log10(out_rms / in_rms) if out_rms > 0 else -99
+        else:
+            attenuation_db = 0.0
+
+        logger.info(
+            "[AEC stats] processed=%d ref_hits=%d ref_misses=%d "
+            "refs_fed=%d | "
+            "in_rms=%d out_rms=%d attenuation=%.1fdB",
+            self._process_count,
+            self._ref_hits,
+            self._ref_misses,
+            self._refs_fed,
+            in_rms,
+            out_rms,
+            attenuation_db,
+        )
+
+        # Reset interval counters.
+        self._ref_hits = 0
+        self._ref_misses = 0
+        self._refs_fed = 0
+        self._total_in_energy = 0
+        self._total_out_energy = 0
 
     def _create_state(self) -> ctypes.c_void_p:
         state = self._lib.speex_echo_state_init(

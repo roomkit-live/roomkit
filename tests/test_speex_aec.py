@@ -187,21 +187,29 @@ class TestSpeexAECLifecycle:
 
 class TestSpeexAECEchoCancellation:
     def test_echo_is_attenuated(self):
-        """When reference matches capture, AEC should reduce the output energy."""
+        """When reference matches capture, AEC should reduce the output energy.
+
+        Uses the split API: interleave feed_reference() (playback) and
+        process() (capture) so the adaptive filter can converge.
+        """
         from roomkit.voice.pipeline.speex_aec import SpeexAECProvider
 
         aec = SpeexAECProvider(frame_size=320, filter_length=3200)
 
-        # Simulate a loud tone playing through speakers (reference).
+        # Simulate a loud tone playing through speakers (reference)
+        # and arriving at the mic (capture) simultaneously.
         tone_value = 10000
         ref = _frame(320, value=tone_value)
+        capture = _frame(320, value=tone_value)
 
-        # Feed several reference frames so the adaptive filter converges.
+        # Interleave feed_reference + process so the adaptive filter
+        # converges on the echo path.
         for _ in range(50):
             aec.feed_reference(ref)
+            aec.process(capture)
 
-        # Now process a capture frame that contains the same tone (echo).
-        capture = _frame(320, value=tone_value)
+        # One more round — this is the result we check.
+        aec.feed_reference(ref)
         result = aec.process(capture)
 
         # The output energy should be lower than the input energy.

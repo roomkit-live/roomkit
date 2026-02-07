@@ -28,6 +28,7 @@ from typing import Any
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.pipeline.aec_provider import AECProvider
+from roomkit.voice.pipeline.denoiser_provider import DenoiserProvider
 from roomkit.voice.realtime.base import RealtimeSession
 from roomkit.voice.realtime.transport import (
     RealtimeAudioTransport,
@@ -67,6 +68,8 @@ class LocalAudioTransport(RealtimeAudioTransport):
             mic audio is processed through ``aec.process()`` and speaker
             audio is fed as reference via ``aec.feed_reference()``.
             Requires ``input_sample_rate == output_sample_rate``.
+        denoiser: Optional denoiser provider for noise suppression.
+            Applied to mic audio after AEC (if both are set).
     """
 
     def __init__(
@@ -80,6 +83,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
         output_device: int | str | None = None,
         mute_mic_during_playback: bool = True,
         aec: AECProvider | None = None,
+        denoiser: DenoiserProvider | None = None,
     ) -> None:
         self._sd = _import_sounddevice()
 
@@ -137,6 +141,9 @@ class LocalAudioTransport(RealtimeAudioTransport):
             self._aec_block_bytes = 0
             self._ref_buffer = bytearray()
 
+        # --- Denoiser ---
+        self._denoiser = denoiser
+
     @property
     def name(self) -> str:
         return "LocalAudioTransport"
@@ -162,7 +169,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
                 channels=self._channels,
                 dtype="int16",
                 device=self._output_device,
-                latency="high",
+                latency="low" if self._aec is not None else "high",
                 callback=self._speaker_callback,
             )
             out.start()
@@ -191,6 +198,13 @@ class LocalAudioTransport(RealtimeAudioTransport):
             # AEC: remove speaker echo from the captured mic audio.
             if self._aec is not None:
                 audio_bytes = self._aec_process(audio_bytes)
+
+            # Denoise: suppress background noise.
+            if self._denoiser is not None:
+                try:
+                    audio_bytes = self._denoise_process(audio_bytes)
+                except Exception:
+                    logger.exception("Denoiser error — passing audio through")
 
             for cb in self._audio_callbacks:
                 if self._loop is not None and self._loop.is_running():
@@ -221,11 +235,6 @@ class LocalAudioTransport(RealtimeAudioTransport):
         """Queue audio for playback through the system speakers."""
         if not audio or self._closing_event.is_set() or len(audio) < 2:
             return
-
-        # AEC: feed speaker audio as reference so the canceller can
-        # model the echo that will bleed into the microphone.
-        if self._aec is not None:
-            self._aec_feed_reference(audio)
 
         with self._buffer_lock:
             self._output_buffer.append(audio)
@@ -287,6 +296,8 @@ class LocalAudioTransport(RealtimeAudioTransport):
 
         if self._aec is not None:
             self._aec.close()
+        if self._denoiser is not None:
+            self._denoiser.close()
 
     # -- Speaker callback (runs in PortAudio C thread) --
 
@@ -313,7 +324,8 @@ class LocalAudioTransport(RealtimeAudioTransport):
                 avail = len(chunk) - self._output_buf_offset
                 n = min(avail, bytes_needed - written)
                 src_start = self._output_buf_offset
-                outdata[written : written + n] = chunk[src_start : src_start + n]
+                segment = chunk[src_start : src_start + n]
+                outdata[written : written + n] = segment
                 written += n
                 self._output_buf_offset += n
                 if self._output_buf_offset >= len(chunk):
@@ -330,6 +342,14 @@ class LocalAudioTransport(RealtimeAudioTransport):
             if written > 0:
                 # Partial fill = we ran out of data mid-callback
                 self._cb_underruns += 1
+
+        # AEC: feed the COMPLETE output frame (audio + silence) as
+        # reference.  The SpeexDSP split API requires playback() for
+        # every output frame — skipping silence frames causes the
+        # internal ring buffer to lose sync with the actual speaker
+        # output and prevents the adaptive filter from converging.
+        if self._aec is not None:
+            self._aec_feed_played(bytearray(bytes(outdata)))
 
     def _stop_output(self) -> None:
         """Close the speaker output stream."""
@@ -390,9 +410,13 @@ class LocalAudioTransport(RealtimeAudioTransport):
         result = self._aec.process(frame)  # type: ignore[union-attr]
         return result.data
 
-    def _aec_feed_reference(self, audio: bytes) -> None:
-        """Buffer speaker audio and feed complete frames to the AEC."""
-        self._ref_buffer.extend(audio)
+    def _aec_feed_played(self, played: bytearray) -> None:
+        """Feed actually-played speaker bytes to the AEC as reference.
+
+        Called from ``_speaker_callback`` so the reference is time-aligned
+        with what the speaker is outputting.
+        """
+        self._ref_buffer.extend(played)
         block = self._aec_block_bytes
 
         while len(self._ref_buffer) >= block:
@@ -405,6 +429,19 @@ class LocalAudioTransport(RealtimeAudioTransport):
                 sample_width=2,
             )
             self._aec.feed_reference(frame)  # type: ignore[union-attr]
+
+    # -- Denoiser helper --
+
+    def _denoise_process(self, audio_bytes: bytes) -> bytes:
+        """Run mic audio through the denoiser to suppress background noise."""
+        frame = AudioFrame(
+            data=audio_bytes,
+            sample_rate=self._input_sample_rate,
+            channels=self._channels,
+            sample_width=2,
+        )
+        result = self._denoiser.process(frame)  # type: ignore[union-attr]
+        return result.data
 
     # -- Callback registration --
 
