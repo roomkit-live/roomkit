@@ -56,11 +56,18 @@ class SherpaOnnxDenoiserConfig:
         model: Path to the ``gtcrn_simple.onnx`` model file.
         num_threads: Number of CPU threads for inference.
         provider: ONNX execution provider (``"cpu"`` or ``"cuda"``).
+        context_frames: Number of preceding frames to include as context
+            when denoising.  GTCRN is an offline model — processing tiny
+            20 ms frames in isolation produces poor quality and boundary
+            artifacts.  A sliding context window (default 10 = 200 ms)
+            gives the model enough temporal context to distinguish speech
+            from noise without adding latency.
     """
 
     model: str = ""
     num_threads: int = 1
     provider: str = "cpu"
+    context_frames: int = 10
 
 
 class SherpaOnnxDenoiserProvider(DenoiserProvider):
@@ -85,6 +92,7 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
         self._config = config
         self._sherpa: Any = __import__("sherpa_onnx")
         self._denoiser: Any = None
+        self._context: list[float] = []
 
     @property
     def name(self) -> str:
@@ -118,8 +126,9 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
     def process(self, frame: AudioFrame) -> AudioFrame:
         """Denoise an audio frame using GTCRN speech enhancement.
 
-        Converts int16 PCM to float32, runs the denoiser, and converts
-        back.  On error, logs a warning and returns the original frame.
+        Uses a sliding context window so the model sees preceding frames
+        for temporal context.  Only the current frame's portion of the
+        denoised output is returned — no latency is added.
         """
         if self._denoiser is None:
             try:
@@ -133,8 +142,36 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
 
         try:
             float_samples = _pcm_s16le_to_float32(frame.data)
-            result = self._denoiser.run(float_samples)
-            out_data = _float32_to_pcm_s16le(result.samples)
+            n_frame = len(float_samples)
+
+            # Append current frame to sliding context buffer
+            self._context.extend(float_samples)
+
+            # Trim to at most context_frames worth of samples
+            max_context = n_frame * max(self._config.context_frames, 1)
+            if len(self._context) > max_context:
+                self._context = self._context[-max_context:]
+
+            # Pad at the START to GTCRN block size (256 samples).
+            # Padding must go at the beginning so the real audio stays at
+            # the tail — we extract the last n_frame samples from the output.
+            to_process = list(self._context)
+            block = 256
+            remainder = len(to_process) % block
+            if remainder:
+                to_process = [0.0] * (block - remainder) + to_process
+
+            result = self._denoiser.run(to_process, frame.sample_rate)
+
+            # Extract the last n_frame samples (the current frame's portion)
+            denoised = result.samples
+            if len(denoised) >= n_frame:
+                out_samples = denoised[len(denoised) - n_frame :]
+            else:
+                # Fallback: model returned fewer samples than expected
+                out_samples = denoised
+
+            out_data = _float32_to_pcm_s16le(out_samples)
         except Exception:
             logger.warning(
                 "SherpaOnnxDenoiser: error during processing, passing through",
@@ -153,9 +190,11 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             metadata=dict(frame.metadata),
         )
 
-    def reset(self) -> None:  # noqa: B027
-        """Reset internal state (no-op — GTCRN is stateless per call)."""
+    def reset(self) -> None:
+        """Reset sliding context buffer."""
+        self._context.clear()
 
     def close(self) -> None:
         """Release the denoiser."""
         self._denoiser = None
+        self._context.clear()
