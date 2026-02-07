@@ -33,6 +33,7 @@ vllm = ["openai>=1.30"]
 gemini = ["google-genai>=1.0.0"]
 sherpa-onnx = ["sherpa-onnx>=1.10"]
 fastrtc = ["fastrtc", "numpy"]
+webrtc-aec = ["aec-audio-processing>=0.1"]
 local-audio = ["sounddevice", "numpy"]
 rtp = ["aiortp>=0.1.0"]
 twilio = ["twilio>=9.0"]
@@ -147,6 +148,10 @@ module = ["fastrtc", "fastrtc.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["aec_audio_processing", "aec_audio_processing.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["sounddevice", "sounddevice.*"]
 ignore_missing_imports = true
 
@@ -210,6 +215,7 @@ omit = [
     "src/roomkit/providers/gemini/realtime.py",
     "src/roomkit/providers/pydantic_ai/*.py",
     "src/roomkit/voice/backends/rtp.py",
+    "src/roomkit/voice/pipeline/aec/webrtc.py",
 ]
 
 [tool.coverage.report]
