@@ -218,6 +218,13 @@ def get_local_audio_backend() -> type:
     return LocalAudioBackend
 
 
+def get_rtp_backend() -> type:
+    """Get RTPVoiceBackend class (requires aiortp)."""
+    from roomkit.voice.backends.rtp import RTPVoiceBackend
+
+    return RTPVoiceBackend
+
+
 def get_fastrtc_backend() -> type:
     """Get FastRTCVoiceBackend class (requires fastrtc, numpy)."""
     from roomkit.voice.backends.fastrtc import FastRTCVoiceBackend

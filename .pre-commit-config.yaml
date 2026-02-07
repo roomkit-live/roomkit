@@ -5,13 +5,16 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
-    hooks:
-      - id: mypy
-        additional_dependencies: [pydantic>=2.9]
-        args: [--strict]
-        exclude: ^examples/
+  # mypy runs in CI via `uv run mypy src/` with all deps installed.
+  # The pre-commit mirror lacks optional dependency stubs (httpx,
+  # websockets, openai, etc.) so it produces false positives.
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.19.1
+  #   hooks:
+  #     - id: mypy
+  #       additional_dependencies: [pydantic>=2.9]
+  #       args: [--strict]
+  #       exclude: ^(examples|tests)/
   - repo: https://github.com/PyCQA/bandit
     rev: 1.9.3
     hooks:

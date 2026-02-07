@@ -174,6 +174,12 @@ class VoiceChannel(Channel):
         if VoiceCapability.BARGE_IN in backend.capabilities:
             backend.on_barge_in(self._on_backend_barge_in)
 
+        # Out-of-band DTMF from backend (e.g. RFC 4733 via RTP)
+        if VoiceCapability.DTMF_SIGNALING in backend.capabilities and hasattr(
+            backend, "on_dtmf_received"
+        ):
+            backend.on_dtmf_received(self._on_pipeline_dtmf)
+
     def _on_audio_received(self, session: VoiceSession, frame: AudioFrame) -> None:
         """Handle raw audio frame from backend — feed into pipeline."""
         if self._pipeline is not None:
