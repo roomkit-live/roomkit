@@ -29,7 +29,28 @@ if [[ "$BRANCH" != "main" ]]; then
     exit 1
 fi
 
+# --- Ensure GitHub Actions CI is green ---
+echo "==> Checking GitHub Actions status..."
+CI_STATUS=$(gh run list --branch main --limit 1 --json status,conclusion --jq '.[0]')
+CI_CONCLUSION=$(echo "$CI_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('conclusion',''))")
+CI_STATE=$(echo "$CI_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))")
+if [[ "$CI_STATE" != "completed" ]]; then
+    echo "Error: latest CI run on main is still '${CI_STATE}'. Wait for it to finish."
+    exit 1
+fi
+if [[ "$CI_CONCLUSION" != "success" ]]; then
+    echo "Error: latest CI run on main concluded with '${CI_CONCLUSION}'. Fix CI before releasing."
+    echo "       See: gh run list --branch main --limit 1"
+    exit 1
+fi
+echo "    CI is green."
+
 echo "==> Releasing v${VERSION}"
+
+# --- Run mypy ---
+echo "==> Running mypy..."
+uv run mypy src/
+echo "    mypy passed."
 
 # --- Bump version in source ---
 sed -i "s/^__version__ = .*/__version__ = \"${VERSION}\"/" src/roomkit/_version.py
