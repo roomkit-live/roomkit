@@ -404,6 +404,13 @@ class VoiceChannel(Channel):
                             break
                         if result.is_final and result.text:
                             barge_in_fired = False
+                            # Signal audio gen to stop so the SDK's
+                            # sender task unblocks and the stream
+                            # closes cleanly (no timeout needed).
+                            import contextlib
+
+                            with contextlib.suppress(asyncio.QueueFull):
+                                cur_queue.put_nowait(None)
                             # Provider signals turn complete — route to AI
                             self._schedule(
                                 self._handle_continuous_transcription(

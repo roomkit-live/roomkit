@@ -328,12 +328,12 @@ async def main() -> None:
     ai_provider = AnthropicAIProvider(
         AnthropicConfig(
             api_key=env["ANTHROPIC_API_KEY"],
-            model="claude-sonnet-4-20250514",
+            model="claude-haiku-4-5-20251001",
             max_tokens=256,
             temperature=0.7,
         )
     )
-    logger.info("AI: Claude (claude-sonnet-4-20250514)")
+    logger.info("AI: Claude (claude-haiku-4-5-20251001)")
 
     system_prompt = os.environ.get(
         "SYSTEM_PROMPT",
