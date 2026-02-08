@@ -52,6 +52,10 @@ class _MockBackend:
     def capabilities(self):
         return self._caps
 
+    @property
+    def feeds_aec_reference(self):
+        return False
+
     def on_audio_received(self, cb):
         self._audio_cbs.append(cb)
 
