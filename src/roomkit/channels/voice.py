@@ -44,6 +44,26 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+# Buffer ~200ms of audio before sending to STT stream.
+# Small per-frame chunks cause resampling artifacts at frame boundaries
+# when the provider resamples (e.g. 16kHz -> 24kHz).  Larger chunks
+# give the stateless resampler enough context for clean interpolation.
+_STT_STREAM_BUFFER_BYTES = 6400  # 200ms at 16kHz mono 16-bit
+
+
+@dataclass
+class _STTStreamState:
+    """Track an active streaming STT session."""
+
+    queue: asyncio.Queue  # Queue[AudioChunk | None]
+    task: asyncio.Task  # consumer task running transcribe_stream
+    frame_buffer: bytearray = field(default_factory=bytearray)
+    frame_buffer_rate: int = 16000
+    final_text: str | None = None
+    error: bool = False
+    cancelled: bool = False
+
+
 @dataclass
 class TTSPlaybackState:
     """Track ongoing TTS playback for barge-in detection."""
@@ -115,6 +135,11 @@ class VoiceChannel(Channel):
         self._pipeline: Any = None  # AudioPipeline | None
         # Pending turns for turn detection (session_id -> list of TurnEntry)
         self._pending_turns: dict[str, list[Any]] = {}
+        # Active streaming STT sessions (session_id -> state)
+        self._stt_streams: dict[str, _STTStreamState] = {}
+        # Continuous STT mode: stream all audio to STT, no local VAD
+        self._continuous_stt = False
+        self._continuous_stt_tasks: dict[str, asyncio.Task] = {}
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -163,9 +188,18 @@ class VoiceChannel(Channel):
         # Backend delivers raw audio -> pipeline processes it
         backend.on_audio_received(self._on_audio_received)
 
+        # Continuous STT: no local VAD, stream all audio to STT provider
+        self._continuous_stt = (
+            config.vad is None and self._stt is not None and self._stt.supports_streaming
+        )
+
         # Pipeline events -> VoiceChannel hooks
-        self._pipeline.on_speech_end(self._on_pipeline_speech_end)
-        self._pipeline.on_vad_event(self._on_pipeline_vad_event)
+        if self._continuous_stt:
+            self._pipeline.on_processed_frame(self._on_processed_frame_for_stt)
+        else:
+            self._pipeline.on_speech_end(self._on_pipeline_speech_end)
+            self._pipeline.on_vad_event(self._on_pipeline_vad_event)
+            self._pipeline.on_speech_frame(self._on_pipeline_speech_frame)
         if config.diarization is not None:
             self._pipeline.on_speaker_change(self._on_pipeline_speaker_change)
         if config.dtmf is not None:
@@ -189,8 +223,289 @@ class VoiceChannel(Channel):
         if self._pipeline is not None:
             self._pipeline.process_frame(session, frame)
 
+    def _on_pipeline_speech_frame(self, session: VoiceSession, frame: AudioFrame) -> None:
+        """Handle processed audio frame during speech — feed to STT stream.
+
+        Frames are buffered (~200ms) before being sent to the queue to
+        avoid per-frame resampling artifacts in providers that resample
+        (e.g. 16kHz → 24kHz).
+        """
+        stream_state = self._stt_streams.get(session.id)
+        if stream_state is None or stream_state.cancelled:
+            return
+        stream_state.frame_buffer.extend(frame.data)
+        stream_state.frame_buffer_rate = frame.sample_rate
+        if len(stream_state.frame_buffer) >= _STT_STREAM_BUFFER_BYTES:
+            self._flush_stt_buffer(stream_state, session.id)
+
+    def _flush_stt_buffer(self, state: _STTStreamState, session_id: str) -> None:
+        """Flush buffered audio frames to the STT stream queue."""
+        if not state.frame_buffer:
+            return
+        from roomkit.voice.base import AudioChunk as OutChunk
+
+        chunk = OutChunk(
+            data=bytes(state.frame_buffer),
+            sample_rate=state.frame_buffer_rate,
+        )
+        state.frame_buffer.clear()
+        try:
+            state.queue.put_nowait(chunk)
+        except asyncio.QueueFull:
+            logger.warning("STT stream queue full for session %s, dropping chunk", session_id)
+
+    def _start_stt_stream(
+        self,
+        session: VoiceSession,
+        room_id: str,
+        pre_roll: bytes | None = None,
+    ) -> None:
+        """Start a streaming STT session.
+
+        Args:
+            pre_roll: Pre-speech audio from the VAD buffer.  Sent as the
+                first chunk so the STT provider receives the full utterance
+                including audio captured before SPEECH_START fired.
+        """
+        # Cancel any existing stream for this session
+        self._cancel_stt_stream(session.id)
+        logger.debug("Starting STT stream for session %s", session.id)
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=500)
+
+        # Seed the queue with pre-roll audio so the first word isn't lost
+        if pre_roll:
+            from roomkit.voice.base import AudioChunk as OutChunk
+
+            sample_rate = session.metadata.get("input_sample_rate", 16000)
+            queue.put_nowait(OutChunk(data=pre_roll, sample_rate=sample_rate))
+
+        async def audio_gen() -> AsyncIterator[AudioChunk]:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    return
+                yield chunk
+
+        async def consume(state: _STTStreamState) -> None:
+            try:
+                assert self._stt is not None
+                async for result in self._stt.transcribe_stream(audio_gen()):
+                    if state.cancelled:
+                        return
+                    if result.is_final and result.text:
+                        state.final_text = result.text
+                    elif not result.is_final and result.text:
+                        # Keep latest partial as fallback final_text
+                        state.final_text = result.text
+                        self._schedule(
+                            self._fire_partial_transcription_hook(session, result, room_id),
+                            name=f"partial_stt:{session.id}",
+                        )
+            except Exception:
+                logger.exception("STT stream error for session %s", session.id)
+                state.error = True
+
+        state = _STTStreamState(queue=queue, task=asyncio.Task.__new__(asyncio.Task))
+        self._stt_streams[session.id] = state
+        try:
+            loop = asyncio.get_running_loop()
+            state.task = loop.create_task(consume(state), name=f"stt_stream:{session.id}")
+        except RuntimeError:
+            self._stt_streams.pop(session.id, None)
+
+    def _cancel_stt_stream(self, session_id: str) -> None:
+        """Cancel an active streaming STT session."""
+        state = self._stt_streams.pop(session_id, None)
+        if state is None:
+            return
+        state.cancelled = True
+        import contextlib
+
+        with contextlib.suppress(asyncio.QueueFull):
+            state.queue.put_nowait(None)
+        state.task.cancel()
+
+    # -----------------------------------------------------------------
+    # Continuous STT (no local VAD — provider handles endpointing)
+    # -----------------------------------------------------------------
+
+    def _on_processed_frame_for_stt(self, session: VoiceSession, frame: AudioFrame) -> None:
+        """Feed every processed frame to the continuous STT stream.
+
+        In continuous mode the STT provider handles endpointing
+        server-side (e.g. Gradium ``end_text`` events), so we just
+        buffer and forward audio without any local silence detection.
+        """
+        stream_state = self._stt_streams.get(session.id)
+        if stream_state is None or stream_state.cancelled:
+            return
+
+        stream_state.frame_buffer.extend(frame.data)
+        stream_state.frame_buffer_rate = frame.sample_rate
+        if len(stream_state.frame_buffer) >= _STT_STREAM_BUFFER_BYTES:
+            self._flush_stt_buffer(stream_state, session.id)
+
+    def _start_continuous_stt(self, session: VoiceSession) -> None:
+        """Start continuous STT streaming for a session.
+
+        Opens a long-lived stream to the STT provider and relies on the
+        provider's server-side VAD / endpointing (e.g. Gradium ``end_text``
+        events).  Individual segments are accumulated; when the provider
+        yields ``is_final=True`` the accumulated text is treated as a
+        complete utterance and routed to the AI.
+
+        The stream auto-restarts on provider errors or session-duration
+        limits (Gradium allows up to 300 s per stream).
+        """
+        binding_info = self._session_bindings.get(session.id)
+        if not binding_info or not self._stt:
+            return
+        room_id, _ = binding_info
+        logger.info("Starting continuous STT for session %s", session.id)
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=500)
+        state = _STTStreamState(queue=queue, task=asyncio.Task.__new__(asyncio.Task))
+        self._stt_streams[session.id] = state
+
+        async def run_continuous(state: _STTStreamState) -> None:
+            while not state.cancelled:
+                # Fresh queue for each stream cycle (reconnect after expiry)
+                state.queue = asyncio.Queue(maxsize=500)
+                state.frame_buffer.clear()
+                cur_queue = state.queue
+
+                async def audio_gen(
+                    q: asyncio.Queue = cur_queue,
+                ) -> AsyncIterator[AudioChunk]:
+                    while True:
+                        chunk = await q.get()
+                        if chunk is None:
+                            return
+                        yield chunk
+
+                try:
+                    assert self._stt is not None
+                    barge_in_fired = False
+                    async for result in self._stt.transcribe_stream(audio_gen()):
+                        if state.cancelled:
+                            break
+                        if result.is_final and result.text:
+                            barge_in_fired = False
+                            # Provider signals turn complete — route to AI
+                            self._schedule(
+                                self._handle_continuous_transcription(
+                                    session, result.text, room_id
+                                ),
+                                name=f"continuous_stt:{session.id}",
+                            )
+                        elif not result.is_final and result.text:
+                            # Barge-in: user speaking during TTS playback
+                            if not barge_in_fired:
+                                playback = self._playing_sessions.get(session.id)
+                                if playback:
+                                    decision = self._interruption_handler.evaluate(
+                                        playback_position_ms=(playback.position_ms),
+                                        speech_duration_ms=0,
+                                    )
+                                    if decision.should_interrupt:
+                                        barge_in_fired = True
+                                        self._schedule(
+                                            self._handle_barge_in(session, playback, room_id),
+                                            name=f"barge_in:{session.id}",
+                                        )
+                            self._schedule(
+                                self._fire_partial_transcription_hook(session, result, room_id),
+                                name=f"partial_stt:{session.id}",
+                            )
+                except asyncio.CancelledError:
+                    return
+                except Exception:
+                    logger.exception(
+                        "Continuous STT stream error for session %s",
+                        session.id,
+                    )
+                    await asyncio.sleep(1.0)
+
+                if not state.cancelled:
+                    logger.info(
+                        "Continuous STT stream ended for %s, reconnecting",
+                        session.id,
+                    )
+
+        try:
+            loop = asyncio.get_running_loop()
+            state.task = loop.create_task(
+                run_continuous(state), name=f"continuous_stt:{session.id}"
+            )
+        except RuntimeError:
+            self._stt_streams.pop(session.id, None)
+
+    def _stop_continuous_stt(self, session_id: str) -> None:
+        """Stop continuous STT for a session."""
+        self._cancel_stt_stream(session_id)
+
+    async def _handle_continuous_transcription(
+        self, session: VoiceSession, text: str, room_id: str
+    ) -> None:
+        """Process a transcription result from continuous STT."""
+        if not self._framework or not text.strip():
+            return
+        try:
+            logger.info("Transcription: %s", text)
+
+            if self._backend:
+                await self._backend.send_transcription(session, text, "user")
+
+            context = await self._framework._build_context(room_id)
+
+            # Fire ON_SPEECH_END hooks (continuous mode synthesises speech events)
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_SPEECH_END,
+                session,
+                context,
+                skip_event_filter=True,
+            )
+
+            # Fire ON_TRANSCRIPTION hooks
+            transcription_result = await self._framework.hook_engine.run_sync_hooks(
+                room_id,
+                HookTrigger.ON_TRANSCRIPTION,
+                text,
+                context,
+                skip_event_filter=True,
+            )
+
+            if not transcription_result.allowed:
+                logger.info("Transcription blocked by hook: %s", transcription_result.reason)
+                return
+
+            final_text = (
+                transcription_result.event if isinstance(transcription_result.event, str) else text
+            )
+
+            turn_detector = self._pipeline_config.turn_detector if self._pipeline_config else None
+            if turn_detector is not None:
+                await self._evaluate_turn(session, final_text, room_id, context)
+            else:
+                await self._route_text(session, final_text, room_id)
+
+        except Exception:
+            logger.exception("Error processing continuous STT transcription")
+
     def _on_pipeline_speech_end(self, session: VoiceSession, audio: bytes) -> None:
         """Handle speech end from pipeline — fire hooks and transcribe."""
+        # Signal end-of-audio to streaming STT (if active)
+        stream_state = self._stt_streams.get(session.id)
+        if stream_state is not None:
+            # Flush remaining buffered frames before sending sentinel
+            self._flush_stt_buffer(stream_state, session.id)
+            try:
+                stream_state.queue.put_nowait(None)
+            except asyncio.QueueFull:
+                logger.warning("STT stream queue full on sentinel for %s", session.id)
+
         binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
@@ -230,6 +545,10 @@ class VoiceChannel(Channel):
                         self._fire_backchannel_hook(session, "", room_id),
                         name=f"backchannel:{session.id}",
                     )
+
+            # Start streaming STT if provider supports it
+            if self._stt and self._stt.supports_streaming:
+                self._start_stt_stream(session, room_id, pre_roll=vad_event.audio_bytes)
 
             self._schedule(
                 self._fire_speech_start_hooks(session, room_id),
@@ -328,6 +647,9 @@ class VoiceChannel(Channel):
         # Notify pipeline of session activation
         if self._pipeline is not None:
             self._pipeline.on_session_active(session)
+        # Start continuous STT if enabled (no local VAD)
+        if self._continuous_stt:
+            self._start_continuous_stt(session)
         # Emit voice_session_started framework event
         if self._framework:
             self._schedule(
@@ -337,6 +659,8 @@ class VoiceChannel(Channel):
 
     def unbind_session(self, session: VoiceSession) -> None:
         """Remove session binding."""
+        # Cancel any active streaming STT
+        self._cancel_stt_stream(session.id)
         binding_info = self._session_bindings.pop(session.id, None)
         # Notify pipeline of session end
         if self._pipeline is not None:
@@ -463,6 +787,31 @@ class VoiceChannel(Channel):
             )
         except Exception:
             logger.exception("Error firing ON_SPEECH_START hooks")
+
+    async def _fire_partial_transcription_hook(
+        self, session: VoiceSession, result: Any, room_id: str
+    ) -> None:
+        if not self._framework:
+            return
+        try:
+            from roomkit.voice.events import PartialTranscriptionEvent
+
+            context = await self._framework._build_context(room_id)
+            event = PartialTranscriptionEvent(
+                session=session,
+                text=result.text,
+                confidence=result.confidence or 0.0,
+                is_stable=result.is_final,
+            )
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_PARTIAL_TRANSCRIPTION,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+        except Exception:
+            logger.exception("Error firing ON_PARTIAL_TRANSCRIPTION hook")
 
     async def _fire_speech_end_hooks(self, session: VoiceSession, room_id: str) -> None:
         if not self._framework:
@@ -656,6 +1005,10 @@ class VoiceChannel(Channel):
     ) -> None:
         if not self._framework:
             return
+        # Cancel streaming STT on barge-in (skip in continuous mode —
+        # the long-lived stream must stay open)
+        if not self._continuous_stt:
+            self._cancel_stt_stream(session.id)
         try:
             from roomkit.voice.events import BargeInEvent
 
@@ -768,14 +1121,49 @@ class VoiceChannel(Channel):
 
             # Get audio parameters from session metadata (set by backend)
             sample_rate = session.metadata.get("input_sample_rate", 16000)
-            audio_frame = AudioFrame(
-                data=audio,
-                sample_rate=sample_rate,
-                channels=1,
-                sample_width=2,
-            )
-            stt_result = await self._stt.transcribe(audio_frame)
-            text = stt_result.text
+
+            # Try to collect streaming STT result; fall back to batch
+            text: str | None = None
+            stream_state = self._stt_streams.pop(session.id, None)
+            if stream_state is not None and not stream_state.error and not stream_state.cancelled:
+                try:
+                    await asyncio.wait_for(stream_state.task, timeout=5.0)
+                    text = stream_state.final_text
+                    if text:
+                        logger.debug("STT stream result for %s: %s", session.id, text)
+                    else:
+                        logger.debug(
+                            "STT stream returned no text for %s, falling back to batch",
+                            session.id,
+                        )
+                except (TimeoutError, asyncio.CancelledError):
+                    logger.warning(
+                        "STT stream timeout/cancelled for %s, falling back to batch",
+                        session.id,
+                    )
+                    stream_state.task.cancel()
+                except Exception:
+                    logger.exception("STT stream collection error for %s", session.id)
+            elif stream_state is not None:
+                logger.debug(
+                    "STT stream unusable for %s (error=%s, cancelled=%s)",
+                    session.id,
+                    stream_state.error,
+                    stream_state.cancelled,
+                )
+
+            # Batch fallback: no stream, stream error, or no final text
+            if text is None:
+                if stream_state is not None:
+                    logger.info("Falling back to batch STT for %s", session.id)
+                audio_frame = AudioFrame(
+                    data=audio,
+                    sample_rate=sample_rate,
+                    channels=1,
+                    sample_width=2,
+                )
+                stt_result = await self._stt.transcribe(audio_frame)
+                text = stt_result.text
 
             if not text.strip():
                 logger.debug("Empty transcription, skipping")
@@ -1090,5 +1478,7 @@ class VoiceChannel(Channel):
             self._pipeline.close()
         if self._backend:
             await self._backend.close()
+        for sid in list(self._stt_streams):
+            self._cancel_stt_stream(sid)
         self._session_bindings.clear()
         self._playing_sessions.clear()

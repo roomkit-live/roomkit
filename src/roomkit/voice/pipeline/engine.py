@@ -38,6 +38,8 @@ def _maybe_schedule(result: object) -> None:
 
 # Callback type aliases
 SpeechEndPipelineCallback = Callable[["VoiceSession", bytes], Any]
+SpeechFramePipelineCallback = Callable[["VoiceSession", "AudioFrame"], Any]
+ProcessedFrameCallback = Callable[["VoiceSession", "AudioFrame"], Any]
 VADEventCallback = Callable[["VoiceSession", "VADEvent"], Any]
 SpeakerChangeCallback = Callable[["VoiceSession", "DiarizationResult"], Any]
 DTMFCallback = Callable[["VoiceSession", "DTMFEvent"], Any]
@@ -70,7 +72,10 @@ class AudioPipeline:
         self._backend_capabilities = backend_capabilities
         self._backend_feeds_aec_ref = backend_feeds_aec_reference
         self._speech_end_callbacks: list[SpeechEndPipelineCallback] = []
+        self._speech_frame_callbacks: list[SpeechFramePipelineCallback] = []
+        self._processed_frame_callbacks: list[ProcessedFrameCallback] = []
         self._vad_event_callbacks: list[VADEventCallback] = []
+        self._in_speech_sessions: set[str] = set()
         self._speaker_change_callbacks: list[SpeakerChangeCallback] = []
         self._dtmf_callbacks: list[DTMFCallback] = []
         self._recording_started_callbacks: list[RecordingStartedCallback] = []
@@ -103,6 +108,19 @@ class AudioPipeline:
     def on_speech_end(self, callback: SpeechEndPipelineCallback) -> None:
         """Register callback for when VAD detects speech end."""
         self._speech_end_callbacks.append(callback)
+
+    def on_speech_frame(self, callback: SpeechFramePipelineCallback) -> None:
+        """Register callback for processed audio frames during speech."""
+        self._speech_frame_callbacks.append(callback)
+
+    def on_processed_frame(self, callback: ProcessedFrameCallback) -> None:
+        """Register callback for every processed inbound frame.
+
+        Fires after all pipeline stages (AEC, denoiser, VAD, etc.) for
+        every frame, regardless of speech state.  Used by continuous STT
+        streaming when no local VAD is configured.
+        """
+        self._processed_frame_callbacks.append(callback)
 
     def on_vad_event(self, callback: VADEventCallback) -> None:
         """Register callback for all VAD events."""
@@ -258,6 +276,12 @@ class AudioPipeline:
                 "confidence": vad_event.confidence,
             }
 
+            # Track per-session speech state for speech_frame callbacks
+            if vad_event.type == VADEventType.SPEECH_START:
+                self._in_speech_sessions.add(session.id)
+            elif vad_event.type == VADEventType.SPEECH_END:
+                self._in_speech_sessions.discard(session.id)
+
             # Fire VAD event callbacks
             for vad_cb in self._vad_event_callbacks:
                 try:
@@ -284,6 +308,16 @@ class AudioPipeline:
                     except Exception:
                         logger.exception("Speech end callback error")
 
+        # Fire speech_frame callbacks for processed frames during speech.
+        # Includes the SPEECH_START frame, excludes the SPEECH_END frame.
+        if session.id in self._in_speech_sessions and self._speech_frame_callbacks:
+            for sf_cb in self._speech_frame_callbacks:
+                try:
+                    result = sf_cb(session, current_frame)
+                    _maybe_schedule(result)
+                except Exception:
+                    logger.exception("Speech frame callback error")
+
         # Stage 6: Diarization
         if self._config.diarization is not None:
             try:
@@ -303,6 +337,15 @@ class AudioPipeline:
                                 logger.exception("Speaker change callback error")
             except Exception:
                 logger.exception("Diarization error")
+
+        # Fire processed_frame callbacks for every frame (regardless of speech).
+        if self._processed_frame_callbacks:
+            for pf_cb in self._processed_frame_callbacks:
+                try:
+                    result = pf_cb(session, current_frame)
+                    _maybe_schedule(result)
+                except Exception:
+                    logger.exception("Processed frame callback error")
 
     # -----------------------------------------------------------------
     # Outbound processing
@@ -428,6 +471,8 @@ class AudioPipeline:
 
         Stops recording and debug taps if active.
         """
+        self._in_speech_sessions.discard(session.id)
+
         # Close debug taps
         dt = self._debug_tap_sessions.pop(session.id, None)
         if dt is not None:
@@ -452,6 +497,7 @@ class AudioPipeline:
 
     def reset(self) -> None:
         """Reset all pipeline stage state."""
+        self._in_speech_sessions.clear()
         self._inbound_sample_rate = None
         if self._aec_resampler is not None:
             self._aec_resampler.reset()

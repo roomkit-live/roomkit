@@ -48,6 +48,10 @@ class DeepgramSTTProvider(STTProvider):
     def name(self) -> str:
         return "DeepgramSTT"
 
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
             self._client = httpx.AsyncClient(

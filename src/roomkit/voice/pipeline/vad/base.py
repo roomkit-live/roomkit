@@ -29,7 +29,8 @@ class VADEvent:
     """The type of VAD event."""
 
     audio_bytes: bytes | None = None
-    """Accumulated speech audio (set on SPEECH_END)."""
+    """Speech audio.  Set on SPEECH_START (pre-roll buffer) and
+    SPEECH_END (full accumulated speech including pre-roll)."""
 
     confidence: float | None = None
     """Confidence score (0.0 to 1.0)."""

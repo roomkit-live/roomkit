@@ -77,6 +77,10 @@ class SherpaOnnxSTTProvider(STTProvider):
     def name(self) -> str:
         return "SherpaOnnxSTT"
 
+    @property
+    def supports_streaming(self) -> bool:
+        return self._config.mode == "transducer"
+
     def _get_online_recognizer(self) -> Any:
         """Lazily create an OnlineRecognizer for streaming (transducer only)."""
         if self._online_recognizer is None:

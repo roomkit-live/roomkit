@@ -22,6 +22,11 @@ class STTProvider(ABC):
         """Provider name (e.g. 'whisper', 'deepgram')."""
         return self.__class__.__name__
 
+    @property
+    def supports_streaming(self) -> bool:
+        """Whether this provider supports streaming transcription."""
+        return False
+
     @abstractmethod
     async def transcribe(
         self, audio: AudioContent | AudioChunk | AudioFrame

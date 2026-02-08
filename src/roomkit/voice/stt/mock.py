@@ -16,10 +16,15 @@ if TYPE_CHECKING:
 class MockSTTProvider(STTProvider):
     """Mock speech-to-text for testing."""
 
-    def __init__(self, transcripts: list[str] | None = None) -> None:
+    def __init__(self, transcripts: list[str] | None = None, *, streaming: bool = False) -> None:
         self.transcripts = transcripts or ["Hello", "How can I help you?"]
         self.calls: list[AudioContent | AudioChunk | AudioFrame] = []
         self._index = 0
+        self._streaming = streaming
+
+    @property
+    def supports_streaming(self) -> bool:
+        return self._streaming
 
     async def transcribe(
         self, audio: AudioContent | AudioChunk | AudioFrame
