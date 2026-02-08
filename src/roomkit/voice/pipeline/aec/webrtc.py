@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
+from typing import Any
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.pipeline.aec.base import AECProvider
@@ -33,7 +34,7 @@ _WEBRTC_FRAME_MS = 10
 _LOG_INTERVAL = 100
 
 
-def _import_webrtc() -> type:
+def _import_webrtc() -> Any:
     """Import AudioProcessor, raising a clear error if missing."""
     try:
         from aec_audio_processing import AudioProcessor
@@ -197,7 +198,7 @@ class WebRTCAECProvider(AECProvider):
 
     def close(self) -> None:
         """Release resources."""
-        self._ap = None  # type: ignore[assignment]
+        self._ap = None
 
     # ------------------------------------------------------------------
     # Internals

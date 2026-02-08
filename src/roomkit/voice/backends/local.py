@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     import sounddevice as sd
 
     from roomkit.voice.pipeline.aec.base import AECProvider
+    from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
 
 logger = logging.getLogger("roomkit.voice.local")
 
@@ -158,7 +159,7 @@ class LocalAudioBackend(VoiceBackend):
                     LinearResamplerProvider,
                 )
 
-                self._aec_resampler = LinearResamplerProvider()
+                self._aec_resampler: LinearResamplerProvider | None = LinearResamplerProvider()
                 logger.info(
                     "AEC transport-level reference: resampling %dHz -> %dHz",
                     output_sample_rate,
