@@ -16,10 +16,11 @@ Environment variables:
     GEMINI_MODEL        Model name (default: gemini-2.5-flash-native-audio-preview-12-2025)
     GEMINI_VOICE        Voice preset (default: Aoede)
     SYSTEM_PROMPT       Custom system prompt
-    AEC                 Enable echo cancellation: 1 | 0 (default: 1)
-    AEC_TYPE            AEC engine: webrtc | speex (default: webrtc)
+    AEC                 Echo cancellation: webrtc | speex | 1 (=webrtc) | 0
+                        (default: webrtc)
     DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 0)
-    MUTE_MIC            Mute mic during playback: 1 | 0 (default: 0, use without AEC)
+    MUTE_MIC            Mute mic during playback: 1 | 0 (default: auto,
+                        off with AEC)
 
 Press Ctrl+C to stop.
 """
@@ -60,37 +61,33 @@ async def main() -> None:
     # --- AEC (Acoustic Echo Cancellation) ---
     #
     # Strips speaker echo from the mic signal in real time, enabling
-    # full-duplex conversation.  AEC requires matching sample rates
-    # so both mic and speaker use 24 kHz.  Disable with AEC=0 and
-    # use MUTE_MIC=1 as a fallback.
+    # full-duplex conversation.  Disable with AEC=0 and use MUTE_MIC=1
+    # as a fallback.
     #
-    # AEC_TYPE=webrtc (default) — WebRTC AEC3 (pip install aec-audio-processing)
-    # AEC_TYPE=speex            — SpeexDSP    (apt install libspeexdsp1)
-    use_aec = os.environ.get("AEC", "1") == "1"
-    aec_type = os.environ.get("AEC_TYPE", "webrtc").lower()
+    # AEC=webrtc (default) — WebRTC AEC3 (pip install aec-audio-processing)
+    # AEC=speex            — SpeexDSP    (apt install libspeexdsp1)
     use_denoise = os.environ.get("DENOISE", "0") == "1"
-    mute_mic = os.environ.get("MUTE_MIC", "0") == "1"
 
     sample_rate = 24000  # Gemini outputs 24 kHz — mic must match for AEC
     block_ms = 20
     frame_size = sample_rate * block_ms // 1000  # 480 samples
 
     aec = None
-    if use_aec:
-        if aec_type == "webrtc":
-            from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
+    aec_mode = os.environ.get("AEC", "webrtc").lower()
+    if aec_mode in ("1", "webrtc"):
+        from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 
-            aec = WebRTCAECProvider(sample_rate=sample_rate)
-            logger.info("AEC enabled (WebRTC AEC3)")
-        else:
-            from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
+        aec = WebRTCAECProvider(sample_rate=sample_rate)
+        logger.info("AEC enabled (WebRTC AEC3)")
+    elif aec_mode == "speex":
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
-            aec = SpeexAECProvider(
-                frame_size=frame_size,
-                filter_length=frame_size * 10,  # 200ms echo tail
-                sample_rate=sample_rate,
-            )
-            logger.info("AEC enabled (Speex)")
+        aec = SpeexAECProvider(
+            frame_size=frame_size,
+            filter_length=frame_size * 10,  # 200ms echo tail
+            sample_rate=sample_rate,
+        )
+        logger.info("AEC enabled (Speex)")
 
     # --- Denoiser (RNNoise noise suppression) ---
     denoiser = None
@@ -98,6 +95,12 @@ async def main() -> None:
         from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
 
         denoiser = RNNoiseDenoiserProvider(sample_rate=sample_rate)
+
+    # When AEC is active it removes speaker echo from the mic signal, so we
+    # can keep the mic open during playback.  Without AEC the mic is muted
+    # during playback to prevent feedback loops.
+    mute_env = os.environ.get("MUTE_MIC")
+    mute_mic = mute_env != "0" if mute_env is not None else aec is None
 
     transport = LocalAudioTransport(
         input_sample_rate=sample_rate,
