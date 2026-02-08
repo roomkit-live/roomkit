@@ -37,6 +37,21 @@ class TTSProvider(ABC):
         """
         ...
 
+    @property
+    def supports_streaming_input(self) -> bool:
+        """Whether this TTS accepts streaming text input."""
+        return False
+
+    async def synthesize_stream_input(
+        self, text_stream: AsyncIterator[str], *, voice: str | None = None
+    ) -> AsyncIterator[AudioChunk]:
+        """Stream audio from streaming text chunks.
+
+        Override for providers that accept an async text stream as input.
+        """
+        raise NotImplementedError(f"{self.name} does not support streaming text input.")
+        yield  # pragma: no cover
+
     async def synthesize_stream(
         self, text: str, *, voice: str | None = None
     ) -> AsyncIterator[AudioChunk]:

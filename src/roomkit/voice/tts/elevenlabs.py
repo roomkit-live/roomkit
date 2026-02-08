@@ -60,6 +60,10 @@ class ElevenLabsTTSProvider(TTSProvider):
     def default_voice(self) -> str:
         return self._config.voice_id
 
+    @property
+    def supports_streaming_input(self) -> bool:
+        return True
+
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
             self._client = httpx.AsyncClient(

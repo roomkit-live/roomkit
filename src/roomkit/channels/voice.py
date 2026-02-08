@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from roomkit.models.context import RoomContext
     from roomkit.models.delivery import InboundMessage
     from roomkit.models.event import RoomEvent
+    from roomkit.providers.ai.base import AIProvider
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import AudioChunk, VoiceSession
@@ -119,6 +120,11 @@ class VoiceChannel(Channel):
         enable_barge_in: bool = True,
         barge_in_threshold_ms: int = 200,
         interruption: InterruptionConfig | None = None,
+        ai_provider: AIProvider | None = None,
+        ai_channel_id: str | None = None,
+        ai_system_prompt: str | None = None,
+        ai_temperature: float = 0.7,
+        ai_max_tokens: int = 1024,
     ) -> None:
         super().__init__(channel_id)
         self._stt = stt
@@ -127,6 +133,12 @@ class VoiceChannel(Channel):
         self._pipeline_config = pipeline
         self._streaming = streaming
         self._framework: RoomKit | None = None
+        # Streaming AI → TTS
+        self._ai_provider = ai_provider
+        self._ai_channel_id = ai_channel_id
+        self._ai_system_prompt = ai_system_prompt
+        self._ai_temperature = ai_temperature
+        self._ai_max_tokens = ai_max_tokens
         # Map session_id -> (room_id, binding) for routing
         self._session_bindings: dict[str, tuple[str, ChannelBinding]] = {}
         # Track TTS playback for barge-in detection
@@ -370,7 +382,7 @@ class VoiceChannel(Channel):
 
         async def run_continuous(state: _STTStreamState) -> None:
             while not state.cancelled:
-                # Fresh queue for each stream cycle (reconnect after expiry)
+                # Fresh queue + WebSocket per turn (avoids server-side overlap)
                 state.queue = asyncio.Queue(maxsize=500)
                 state.frame_buffer.clear()
                 cur_queue = state.queue
@@ -428,8 +440,8 @@ class VoiceChannel(Channel):
                     await asyncio.sleep(1.0)
 
                 if not state.cancelled:
-                    logger.info(
-                        "Continuous STT stream ended for %s, reconnecting",
+                    logger.debug(
+                        "STT stream cycle ended for %s, reconnecting",
                         session.id,
                     )
 
@@ -488,6 +500,8 @@ class VoiceChannel(Channel):
             turn_detector = self._pipeline_config.turn_detector if self._pipeline_config else None
             if turn_detector is not None:
                 await self._evaluate_turn(session, final_text, room_id, context)
+            elif self._can_stream_ai_tts:
+                await self._stream_ai_to_tts(session, final_text, room_id)
             else:
                 await self._route_text(session, final_text, room_id)
 
@@ -689,6 +703,16 @@ class VoiceChannel(Channel):
             "streaming": self._streaming,
             "pipeline": self._pipeline_config is not None,
         }
+
+    @property
+    def _can_stream_ai_tts(self) -> bool:
+        """Whether streaming AI → TTS is available."""
+        return (
+            self._ai_provider is not None
+            and self._ai_provider.supports_streaming
+            and self._tts is not None
+            and getattr(self._tts, "supports_streaming_input", False)
+        )
 
     def capabilities(self) -> ChannelCapabilities:
         return ChannelCapabilities(
@@ -1197,6 +1221,8 @@ class VoiceChannel(Channel):
             turn_detector = self._pipeline_config.turn_detector if self._pipeline_config else None
             if turn_detector is not None:
                 await self._evaluate_turn(session, final_text, room_id, context)
+            elif self._can_stream_ai_tts:
+                await self._stream_ai_to_tts(session, final_text, room_id)
             else:
                 # No turn detector — route immediately (existing behaviour)
                 await self._route_text(session, final_text, room_id)
@@ -1294,6 +1320,133 @@ class VoiceChannel(Channel):
                 )
             except Exception:
                 logger.exception("Error firing ON_TURN_INCOMPLETE hook")
+
+    # -------------------------------------------------------------------------
+    # Streaming AI → TTS (bypasses framework routing for low latency)
+    # -------------------------------------------------------------------------
+
+    async def _stream_ai_to_tts(self, session: VoiceSession, text: str, room_id: str) -> None:
+        """Stream AI response directly to TTS, bypassing the framework.
+
+        This orchestrates AI generation and TTS directly for minimal
+        time-to-first-audio.  Events are still stored for conversation
+        history, but the normal ``process_inbound() → AIChannel → deliver()``
+        path is bypassed.
+        """
+        if not self._framework or not self._ai_provider or not self._tts or not self._backend:
+            return
+
+        from roomkit.models.event import EventSource, TextContent
+        from roomkit.models.event import RoomEvent as RoomEventModel
+        from roomkit.voice.tts.sentence_splitter import split_sentences
+
+        # 1. Store user event for conversation history
+        user_event = RoomEventModel(
+            room_id=room_id,
+            source=EventSource(
+                channel_id=self.channel_id,
+                channel_type=ChannelType.VOICE,
+                participant_id=session.participant_id,
+            ),
+            content=TextContent(body=text),
+        )
+        await self._framework._store.add_event(user_event)
+
+        # 2. Build AI context from stored conversation history
+        ai_context = await self._build_streaming_ai_context(text, room_id)
+
+        # 3. Stream AI → sentence splitter → TTS → outbound → backend
+        accumulated_text: list[str] = []
+        audio_started = False
+
+        async def token_stream() -> AsyncIterator[str]:
+            async for delta in self._ai_provider.generate_stream(ai_context):
+                accumulated_text.append(delta)
+                yield delta
+
+        try:
+            sentence_stream = split_sentences(token_stream())
+            audio_stream = self._tts.synthesize_stream_input(sentence_stream)
+
+            self._playing_sessions[session.id] = TTSPlaybackState(
+                session_id=session.id, text="(streaming)"
+            )
+
+            try:
+                if self._pipeline is not None:
+                    audio_stream = self._wrap_outbound(session, audio_stream)
+                audio_started = True
+                await self._backend.send_audio(session, audio_stream)
+            finally:
+                self._playing_sessions.pop(session.id, None)
+
+        except Exception:
+            if not audio_started:
+                # No audio sent yet — fall back to normal routing
+                logger.exception("Streaming AI→TTS failed before audio started, falling back")
+                await self._route_text(session, text, room_id)
+                return
+            logger.exception("Streaming AI→TTS error after audio started")
+            return
+
+        full_response = "".join(accumulated_text)
+
+        # 4. Store AI response event
+        ai_event = RoomEventModel(
+            room_id=room_id,
+            source=EventSource(
+                channel_id=self._ai_channel_id or "ai",
+                channel_type=ChannelType.AI,
+            ),
+            content=TextContent(body=full_response),
+        )
+        await self._framework._store.add_event(ai_event)
+
+        # 5. Fire TTS hooks (informational — streaming already complete)
+        try:
+            context = await self._framework._build_context(room_id)
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.BEFORE_TTS,
+                full_response,
+                context,
+                skip_event_filter=True,
+            )
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.AFTER_TTS,
+                full_response,
+                context,
+                skip_event_filter=True,
+            )
+        except Exception:
+            logger.exception("Error firing TTS hooks after streaming")
+
+        # 6. Send assistant transcription to frontend
+        await self._backend.send_transcription(session, full_response, "assistant")
+
+    async def _build_streaming_ai_context(self, text: str, room_id: str) -> Any:
+        """Build an AIContext from conversation history for streaming."""
+        from roomkit.models.event import TextContent
+        from roomkit.providers.ai.base import AIContext, AIMessage
+
+        context = await self._framework._build_context(room_id)
+        ai_channel_id = self._ai_channel_id
+
+        messages: list[AIMessage] = []
+        for event in context.recent_events[-50:]:
+            if isinstance(event.content, TextContent):
+                role = "assistant" if event.source.channel_id == ai_channel_id else "user"
+                messages.append(AIMessage(role=role, content=event.content.body))
+
+        messages.append(AIMessage(role="user", content=text))
+
+        return AIContext(
+            messages=messages,
+            system_prompt=self._ai_system_prompt,
+            temperature=self._ai_temperature,
+            max_tokens=self._ai_max_tokens,
+        )
 
     async def _route_text(self, session: VoiceSession, text: str, room_id: str) -> None:
         """Route transcribed text through the inbound pipeline."""

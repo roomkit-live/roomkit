@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Any
 
 from roomkit.providers.ai.base import (
@@ -43,6 +44,10 @@ class AnthropicAIProvider(AIProvider):
     @property
     def model_name(self) -> str:
         return self._config.model
+
+    @property
+    def supports_streaming(self) -> bool:
+        return True
 
     @property
     def supports_vision(self) -> bool:
@@ -143,3 +148,38 @@ class AnthropicAIProvider(AIProvider):
             metadata={"model": response.model},
             tool_calls=tool_calls,
         )
+
+    async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
+        """Yield text deltas as they arrive from the Anthropic Messages API."""
+        messages: list[dict[str, Any]] = [
+            {"role": m.role, "content": self._format_content(m.content)} for m in context.messages
+        ]
+        kwargs: dict[str, Any] = {
+            "model": self._config.model,
+            "max_tokens": context.max_tokens or self._config.max_tokens,
+            "messages": messages,
+        }
+        if context.system_prompt:
+            kwargs["system"] = context.system_prompt
+        if context.temperature is not None:
+            kwargs["temperature"] = context.temperature
+
+        try:
+            async with self._client.messages.stream(**kwargs) as stream:
+                async for text in stream.text_stream:
+                    yield text
+        except self._api_status_error as exc:
+            retryable = exc.status_code in (429, 500, 502, 503, 529)
+            raise ProviderError(
+                str(exc),
+                retryable=retryable,
+                provider="anthropic",
+                status_code=exc.status_code,
+            ) from exc
+        except Exception as exc:
+            raise ProviderError(
+                str(exc),
+                retryable=False,
+                provider="anthropic",
+                status_code=None,
+            ) from exc

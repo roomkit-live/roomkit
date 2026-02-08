@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -63,18 +64,23 @@ def _resample(data: bytes, src_rate: int, dst_rate: int) -> bytes:
     return np.clip(resampled, -32768, 32767).astype(np.int16).tobytes()
 
 
-async def _close_stream(stream: Any) -> None:
+async def _close_stream(stream: Any, *, timeout: float = 2.0) -> None:
     """Close a Gradium STT stream, freeing the WebSocket session slot.
 
     The SDK's ``stream._stream`` is an async generator wrapping an
     ``aiohttp.ClientSession`` + WebSocket via ``async with``.  Calling
     ``aclose()`` triggers the generator's ``finally`` block which awaits
     the send/receive tasks and closes the WebSocket + session.
+
+    A timeout is applied because the SDK's sender task may be blocked
+    reading from an audio generator that's still waiting on queue data.
+    Without a timeout, ``aclose()`` hangs indefinitely and prevents
+    the continuous STT loop from reconnecting.
     """
     try:
         raw = getattr(stream, "_stream", None)
         if raw is not None and hasattr(raw, "aclose"):
-            await raw.aclose()
+            await asyncio.wait_for(raw.aclose(), timeout=timeout)
     except Exception:
         logger.debug("Error closing Gradium STT stream", exc_info=True)
 
@@ -159,13 +165,15 @@ class GradiumSTTProvider(STTProvider):
 
         Turn detection uses ``step`` messages: when ``inactivity_prob``
         exceeds the configured threshold for enough consecutive steps
-        AND we have completed segments, the accumulated text is yielded
-        as ``is_final=True`` and state is reset for the next turn —
-        all within the same WebSocket session.
+        AND we have accumulated text, the result is yielded as
+        ``is_final=True`` and the generator **returns**, closing the
+        WebSocket.  The caller (``run_continuous`` in VoiceChannel)
+        reconnects for the next turn, giving each turn a fresh Gradium
+        session — this avoids server-side segment overlap across turns.
 
         Yields:
             - ``is_final=False`` for each ``text`` update (partial)
-            - ``is_final=True`` when VAD detects turn completion
+            - ``is_final=True`` when VAD detects turn completion (then returns)
         """
         client = self._get_client()
         threshold = self._config.vad_turn_threshold
@@ -232,7 +240,7 @@ class GradiumSTTProvider(STTProvider):
                                 )
                             consecutive_inactive = 0
 
-                        if segments:
+                        if segments or current_partial:
                             logger.debug(
                                 "VAD step %d/%d prob=[%.2f,%.2f,%.2f] segs=%d partial=%r",
                                 consecutive_inactive,
@@ -242,22 +250,18 @@ class GradiumSTTProvider(STTProvider):
                                 current_partial or None,
                             )
 
-                        if consecutive_inactive >= required_steps and segments:
-                            # Turn complete — collect text, reset, continue
+                        if consecutive_inactive >= required_steps and (
+                            segments or current_partial
+                        ):
+                            # Turn complete — yield and close stream
                             parts = list(segments)
                             if current_partial:
                                 parts.append(current_partial)
-                                current_partial = ""
                             text = " ".join(parts)
 
                             now = time.monotonic()
                             turn_dur_ms = int((now - first_text_at) * 1000) if first_text_at else 0
                             silence_ms = int((now - last_text_at) * 1000) if last_text_at else 0
-
-                            segments.clear()
-                            consecutive_inactive = 0
-                            first_text_at = 0.0
-                            last_text_at = 0.0
 
                             logger.info(
                                 "VAD turn complete (turn=%dms, silence=%dms, vad_steps=%d): %s",
@@ -267,6 +271,9 @@ class GradiumSTTProvider(STTProvider):
                                 text,
                             )
                             yield TranscriptionResult(text=text, is_final=True)
+                            # Return to close the WebSocket; run_continuous
+                            # reconnects for the next turn.
+                            return
         finally:
             await _close_stream(stream)
 

@@ -26,6 +26,14 @@ class GradiumTTSConfig:
     region: str = "us"
     model_name: str = "default"
     output_format: str = "pcm_16000"  # matches pipeline's 16kHz default
+    # Speed: negative = faster (-4.0 to -0.1), positive = slower (0.1 to 4.0)
+    padding_bonus: float | None = None
+    # Temperature: 0 = deterministic, up to 1.4 = more diverse (default: 0.7)
+    temperature: float | None = None
+    # Voice similarity: 1.0 to 4.0 (default: 2.0), higher = more similar
+    cfg_coef: float | None = None
+    # Rewrite rules: "en", "fr", "de", "es", "pt" or custom rules string
+    rewrite_rules: str | None = None
     json_config: dict[str, Any] | None = field(default=None, repr=False)
 
 
@@ -53,6 +61,10 @@ class GradiumTTSProvider(TTSProvider):
     def default_voice(self) -> str:
         return self._config.voice_id
 
+    @property
+    def supports_streaming_input(self) -> bool:
+        return True
+
     def _get_client(self) -> Any:
         if self._client is None:
             from gradium import GradiumClient
@@ -64,7 +76,12 @@ class GradiumTTSProvider(TTSProvider):
         return self._client
 
     def _get_sample_rate(self) -> int:
-        """Get sample rate from output format."""
+        """Get sample rate from output format.
+
+        Per Gradium docs, plain ``pcm`` / ``wav`` output at 48 kHz.
+        Explicit rate suffixes (``pcm_16000``, ``pcm_24000``, etc.)
+        override.
+        """
         fmt = self._config.output_format
         if "48000" in fmt:
             return 48000
@@ -74,8 +91,8 @@ class GradiumTTSProvider(TTSProvider):
             return 16000
         elif "8000" in fmt:
             return 8000
-        # wav/pcm/opus without explicit rate default to 24kHz
-        return 24000
+        # Plain pcm/wav/opus without rate suffix → 48kHz (Gradium default)
+        return 48000
 
     def _get_audio_format(self) -> str:
         """Get audio format string."""
@@ -116,8 +133,21 @@ class GradiumTTSProvider(TTSProvider):
             setup["voice_id"] = voice_value
         else:
             setup["voice"] = voice_value
+
+        # Build json_config from explicit params + user overrides
+        jc: dict[str, Any] = {}
+        if self._config.padding_bonus is not None:
+            jc["padding_bonus"] = self._config.padding_bonus
+        if self._config.temperature is not None:
+            jc["temp"] = self._config.temperature
+        if self._config.cfg_coef is not None:
+            jc["cfg_coef"] = self._config.cfg_coef
+        if self._config.rewrite_rules is not None:
+            jc["rewrite_rules"] = self._config.rewrite_rules
         if self._config.json_config is not None:
-            setup["json_config"] = self._config.json_config
+            jc.update(self._config.json_config)
+        if jc:
+            setup["json_config"] = jc
         return setup
 
     async def synthesize(self, text: str, *, voice: str | None = None) -> AudioContent:

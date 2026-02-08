@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -117,6 +118,11 @@ class AIProvider(ABC):
         return False
 
     @property
+    def supports_streaming(self) -> bool:
+        """Whether this provider supports streaming token generation."""
+        return False
+
+    @property
     @abstractmethod
     def model_name(self) -> str:
         """Model identifier (e.g. 'claude-sonnet-4-20250514', 'gpt-4o')."""
@@ -135,6 +141,11 @@ class AIProvider(ABC):
             tasks/observations.
         """
         ...
+
+    async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
+        """Yield text deltas as they arrive. Override for streaming providers."""
+        raise NotImplementedError(f"{self.name} does not support streaming generation")
+        yield  # type: ignore[misc]  # pragma: no cover
 
     async def close(self) -> None:  # noqa: B027
         """Release resources. Override in subclasses that hold connections."""

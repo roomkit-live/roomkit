@@ -51,6 +51,11 @@ Environment variables:
                         Without denoiser you can raise to 0.5 for fewer false
                         positives.
 
+    --- TTS (optional) ---
+    TTS_SPEED           Speech speed: -4.0 (fastest) to 4.0 (slowest).
+                        Default: unset (Gradium default ~0.0).
+                        Try -1.0 for slightly faster conversational speech.
+
     --- Pipeline (optional) ---
     AEC                 Echo cancellation: webrtc | speex | 1 (=webrtc) | 0
                         (default: webrtc)
@@ -297,6 +302,9 @@ async def main() -> None:
     )
 
     # --- Gradium TTS ----------------------------------------------------------
+    padding_bonus_env = os.environ.get("TTS_SPEED", "")
+    padding_bonus = float(padding_bonus_env) if padding_bonus_env else None
+    language = os.environ.get("LANGUAGE", "en")
     tts = GradiumTTSProvider(
         config=GradiumTTSConfig(
             api_key=env["GRADIUM_API_KEY"],
@@ -304,9 +312,17 @@ async def main() -> None:
             region=region,
             model_name=os.environ.get("GRADIUM_TTS_MODEL", "default"),
             output_format=f"pcm_{output_rate}",
+            padding_bonus=padding_bonus,
+            rewrite_rules=language if language != "en" else None,
         )
     )
-    logger.info("TTS: Gradium (voice=%s, format=pcm_%d)", tts._config.voice_id, output_rate)
+    logger.info(
+        "TTS: Gradium (voice=%s, format=pcm_%d, speed=%s, rewrite=%s)",
+        tts._config.voice_id,
+        output_rate,
+        padding_bonus,
+        language if language != "en" else None,
+    )
 
     # --- Claude AI ------------------------------------------------------------
     ai_provider = AnthropicAIProvider(
@@ -332,6 +348,11 @@ async def main() -> None:
         tts=tts,
         backend=backend,
         pipeline=pipeline_config,
+        ai_provider=ai_provider,
+        ai_channel_id="ai",
+        ai_system_prompt=system_prompt,
+        ai_temperature=0.7,
+        ai_max_tokens=256,
     )
     logger.info(
         "Interruption: strategy=%s, barge_in=%s",
