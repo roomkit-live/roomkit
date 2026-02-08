@@ -7,11 +7,16 @@ Suitable for local testing and simple deployments where a neural VAD
 
 from __future__ import annotations
 
+import logging
 import struct
 from collections import deque
 from typing import TYPE_CHECKING
 
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType, VADProvider
+
+logger = logging.getLogger(__name__)
+
+_DEBUG_SUMMARY_INTERVAL = 50  # frames (~1s at 20ms/frame)
 
 if TYPE_CHECKING:
     from roomkit.voice.audio_frame import AudioFrame
@@ -62,6 +67,12 @@ class EnergyVADProvider(VADProvider):
         self._pre_roll: deque[bytes] = deque()
         self._pre_roll_ms: float = 0.0
 
+        # Debug logging counters
+        self._debug_frame_count = 0
+        self._debug_rms_sum = 0.0
+        self._debug_rms_max = 0.0
+        self._debug_speech_count = 0
+
     @property
     def name(self) -> str:
         return "EnergyVADProvider"
@@ -85,6 +96,33 @@ class EnergyVADProvider(VADProvider):
         rms = _rms_int16(frame.data)
         duration_ms = self._frame_duration_ms(frame)
         is_speech = rms >= self._energy_threshold
+
+        # Debug logging: accumulate stats and emit periodic summary
+        if logger.isEnabledFor(logging.DEBUG):
+            self._debug_frame_count += 1
+            self._debug_rms_sum += rms
+            if rms > self._debug_rms_max:
+                self._debug_rms_max = rms
+            if is_speech:
+                self._debug_speech_count += 1
+            if self._debug_frame_count >= _DEBUG_SUMMARY_INTERVAL:
+                avg = self._debug_rms_sum / self._debug_frame_count
+                state = "speaking" if self._speaking else "idle"
+                logger.debug(
+                    "VAD: state=%s is_speech=%d/%d rms_avg=%.0f rms_max=%.0f"
+                    " silence_ms=%.0f speech_ms=%.0f",
+                    state,
+                    self._debug_speech_count,
+                    self._debug_frame_count,
+                    avg,
+                    self._debug_rms_max,
+                    self._silence_ms,
+                    self._speech_ms,
+                )
+                self._debug_frame_count = 0
+                self._debug_rms_sum = 0.0
+                self._debug_rms_max = 0.0
+                self._debug_speech_count = 0
 
         if not self._speaking:
             # --- Idle state ---
@@ -140,3 +178,7 @@ class EnergyVADProvider(VADProvider):
         self._speech_buf = bytearray()
         self._pre_roll.clear()
         self._pre_roll_ms = 0.0
+        self._debug_frame_count = 0
+        self._debug_rms_sum = 0.0
+        self._debug_rms_max = 0.0
+        self._debug_speech_count = 0

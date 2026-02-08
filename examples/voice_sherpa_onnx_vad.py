@@ -32,7 +32,7 @@ Or with Silero:
 Environment variables:
     VAD_MODEL       (required) Path to VAD .onnx model file
     VAD_MODEL_TYPE  Model type: ten | silero (default: ten)
-    VAD_THRESHOLD   Speech probability threshold 0-1 (default: 0.5)
+    VAD_THRESHOLD   Speech probability threshold 0-1 (default: 0.35)
     DENOISE_MODEL   Path to GTCRN denoiser .onnx model (optional)
 
 Press Ctrl+C to stop.
@@ -88,7 +88,7 @@ def check_env() -> str:
 async def main() -> None:
     model_path = check_env()
     model_type = os.environ.get("VAD_MODEL_TYPE", "ten")
-    threshold = float(os.environ.get("VAD_THRESHOLD", "0.5"))
+    threshold = float(os.environ.get("VAD_THRESHOLD", "0.35"))
 
     kit = RoomKit()
 

@@ -110,7 +110,12 @@ Environment variables:
     --- VAD (sherpa-onnx) ---
     VAD_MODEL           (required) Path to VAD .onnx model
     VAD_MODEL_TYPE      Model type: ten | silero (default: ten)
-    VAD_THRESHOLD       Speech probability threshold 0-1 (default: 0.5)
+    VAD_THRESHOLD       Speech probability threshold 0-1 (default: 0.35)
+                        Lower values improve sensitivity for short utterances.
+                        The GTCRN denoiser slightly alters spectral features,
+                        which reduces TEN-VAD confidence — 0.35 compensates.
+                        Without denoiser you can raise to 0.5 for fewer false
+                        positives.
 
     --- Pipeline (optional) ---
     DENOISE_MODEL       Path to GTCRN .onnx model (enables denoiser)
@@ -266,7 +271,7 @@ async def main() -> None:
     # --- VAD (sherpa-onnx neural VAD) -----------------------------------------
     vad_model = os.environ["VAD_MODEL"]
     vad_model_type = os.environ.get("VAD_MODEL_TYPE", "ten")
-    vad_threshold = float(os.environ.get("VAD_THRESHOLD", "0.5"))
+    vad_threshold = float(os.environ.get("VAD_THRESHOLD", "0.35"))
     vad = SherpaOnnxVADProvider(
         SherpaOnnxVADConfig(
             model=vad_model,

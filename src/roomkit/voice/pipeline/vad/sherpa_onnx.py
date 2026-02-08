@@ -21,6 +21,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+_DEBUG_SUMMARY_INTERVAL = 50  # frames (~1s at 20ms/frame)
+
+
+def _rms_int16(data: bytes) -> float:
+    """Compute RMS of int16 little-endian PCM data."""
+    n_samples = len(data) // 2
+    if n_samples == 0:
+        return 0.0
+    samples = struct.unpack(f"<{n_samples}h", data[: n_samples * 2])
+    sum_sq = sum(s * s for s in samples)
+    return float((sum_sq / n_samples) ** 0.5)
+
+
 def _pcm_s16le_to_float32(data: bytes) -> list[float]:
     """Convert PCM signed 16-bit little-endian bytes to float32 list in [-1, 1]."""
     n = len(data) // 2
@@ -36,7 +49,8 @@ class SherpaOnnxVADConfig:
         model: Path to the ``.onnx`` model file.
         model_type: Model architecture — ``"ten"`` for TEN-VAD or
             ``"silero"`` for Silero VAD.
-        threshold: Speech probability threshold (0–1).
+        threshold: Speech probability threshold (0–1).  Default 0.35
+            works well with denoised audio; raise to 0.5 without denoiser.
         silence_threshold_ms: Consecutive silence in ms to trigger SPEECH_END.
         min_speech_duration_ms: Minimum speech duration to emit; shorter
             segments are silently discarded.
@@ -50,7 +64,7 @@ class SherpaOnnxVADConfig:
 
     model: str = ""
     model_type: str = "ten"
-    threshold: float = 0.5
+    threshold: float = 0.35
     silence_threshold_ms: float = 500
     min_speech_duration_ms: float = 250
     speech_pad_ms: float = 300
@@ -92,6 +106,12 @@ class SherpaOnnxVADProvider(VADProvider):
         # Pre-roll buffer
         self._pre_roll: deque[bytes] = deque()
         self._pre_roll_ms: float = 0.0
+
+        # Debug logging counters
+        self._debug_frame_count = 0
+        self._debug_rms_sum = 0.0
+        self._debug_rms_max = 0.0
+        self._debug_speech_count = 0
 
     @property
     def name(self) -> str:
@@ -157,6 +177,34 @@ class SherpaOnnxVADProvider(VADProvider):
 
         is_speech = self._detector.is_speech_detected()
 
+        # Debug logging: accumulate stats and emit periodic summary
+        if logger.isEnabledFor(logging.DEBUG):
+            rms = _rms_int16(frame.data)
+            self._debug_frame_count += 1
+            self._debug_rms_sum += rms
+            if rms > self._debug_rms_max:
+                self._debug_rms_max = rms
+            if is_speech:
+                self._debug_speech_count += 1
+            if self._debug_frame_count >= _DEBUG_SUMMARY_INTERVAL:
+                avg = self._debug_rms_sum / self._debug_frame_count
+                state = "speaking" if self._speaking else "idle"
+                logger.debug(
+                    "VAD: state=%s is_speech=%d/%d rms_avg=%.0f rms_max=%.0f"
+                    " silence_ms=%.0f speech_ms=%.0f",
+                    state,
+                    self._debug_speech_count,
+                    self._debug_frame_count,
+                    avg,
+                    self._debug_rms_max,
+                    self._silence_ms,
+                    self._speech_ms,
+                )
+                self._debug_frame_count = 0
+                self._debug_rms_sum = 0.0
+                self._debug_rms_max = 0.0
+                self._debug_speech_count = 0
+
         if not self._speaking:
             # --- Idle state ---
             self._push_pre_roll(frame.data, duration_ms)
@@ -211,6 +259,10 @@ class SherpaOnnxVADProvider(VADProvider):
         self._speech_buf = bytearray()
         self._pre_roll.clear()
         self._pre_roll_ms = 0.0
+        self._debug_frame_count = 0
+        self._debug_rms_sum = 0.0
+        self._debug_rms_max = 0.0
+        self._debug_speech_count = 0
         if self._detector is not None:
             self._detector.reset()
 

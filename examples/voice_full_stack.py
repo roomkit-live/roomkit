@@ -44,7 +44,7 @@ Environment variables:
     DENOISE_MODEL       Path to GTCRN .onnx model (sherpa-onnx denoiser, overrides DENOISE)
     VAD_MODEL           Path to sherpa-onnx VAD .onnx model file
     VAD_MODEL_TYPE      Model type: ten | silero (default: ten)
-    VAD_THRESHOLD       Speech probability threshold 0-1 (default: 0.5)
+    VAD_THRESHOLD       Speech probability threshold 0-1 (default: 0.35)
 
 Press Ctrl+C to stop.
 """
@@ -210,7 +210,7 @@ async def main() -> None:
     vad_model = os.environ.get("VAD_MODEL", "")
     if vad_model:
         vad_model_type = os.environ.get("VAD_MODEL_TYPE", "ten")
-        vad_threshold = float(os.environ.get("VAD_THRESHOLD", "0.5"))
+        vad_threshold = float(os.environ.get("VAD_THRESHOLD", "0.35"))
         vad = SherpaOnnxVADProvider(
             SherpaOnnxVADConfig(
                 model=vad_model,
