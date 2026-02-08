@@ -3585,6 +3585,9 @@ sse = [
 teams = [
     { name = "botbuilder-core" },
 ]
+telegram = [
+    { name = "httpx" },
+]
 twilio = [
     { name = "twilio" },
 ]
@@ -3628,6 +3631,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'providers'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'sources'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'sse'", specifier = ">=0.27" },
+    { name = "httpx", marker = "extra == 'telegram'", specifier = ">=0.27" },
     { name = "httpx-sse", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "httpx-sse", marker = "extra == 'sources'", specifier = ">=0.4" },
     { name = "httpx-sse", marker = "extra == 'sse'", specifier = ">=0.4" },
@@ -3673,7 +3677,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["all", "anthropic", "dev", "docs", "fastrtc", "gemini", "httpx", "local-audio", "openai", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sources", "sse", "teams", "twilio", "vllm", "webrtc-aec", "websocket", "whatsapp-personal"]
+provides-extras = ["all", "anthropic", "dev", "docs", "fastrtc", "gemini", "httpx", "local-audio", "openai", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sources", "sse", "teams", "telegram", "twilio", "vllm", "webrtc-aec", "websocket", "whatsapp-personal"]
 
 [[package]]
 name = "rpds-py"

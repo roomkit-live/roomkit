@@ -90,6 +90,20 @@ MESSENGER_CAPABILITIES = ChannelCapabilities(
     supports_media=True,
 )
 
+TELEGRAM_CAPABILITIES = ChannelCapabilities(
+    media_types=[
+        ChannelMediaType.TEXT,
+        ChannelMediaType.RICH,
+        ChannelMediaType.MEDIA,
+        ChannelMediaType.LOCATION,
+    ],
+    max_length=4096,
+    supports_edit=True,
+    supports_delete=True,
+    supports_reactions=True,
+    supports_media=True,
+)
+
 TEAMS_CAPABILITIES = ChannelCapabilities(
     media_types=[
         ChannelMediaType.TEXT,
@@ -205,6 +219,21 @@ def MessengerChannel(
         provider=provider,
         capabilities=MESSENGER_CAPABILITIES,
         recipient_key="facebook_user_id",
+    )
+
+
+def TelegramChannel(
+    channel_id: str,
+    *,
+    provider: Any = None,
+) -> TransportChannel:
+    """Create a Telegram Bot transport channel."""
+    return TransportChannel(
+        channel_id,
+        ChannelType.TELEGRAM,
+        provider=provider,
+        capabilities=TELEGRAM_CAPABILITIES,
+        recipient_key="telegram_chat_id",
     )
 
 

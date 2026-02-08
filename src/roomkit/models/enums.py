@@ -19,6 +19,7 @@ class ChannelType(StrEnum):
     REALTIME_VOICE = "realtime_voice"
     PUSH = "push"
     MESSENGER = "messenger"
+    TELEGRAM = "telegram"
     TEAMS = "teams"
     WEBHOOK = "webhook"
     SYSTEM = "system"

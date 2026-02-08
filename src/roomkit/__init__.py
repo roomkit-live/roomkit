@@ -8,6 +8,7 @@ from roomkit.channels import (
     RCSChannel,
     SMSChannel,
     TeamsChannel,
+    TelegramChannel,
     WhatsAppChannel,
     WhatsAppPersonalChannel,
 )
@@ -144,6 +145,11 @@ from roomkit.providers.teams.webhook import (
     parse_teams_activity,
     parse_teams_webhook,
 )
+from roomkit.providers.telegram.base import TelegramProvider
+from roomkit.providers.telegram.bot import TelegramBotProvider
+from roomkit.providers.telegram.config import TelegramConfig
+from roomkit.providers.telegram.mock import MockTelegramProvider
+from roomkit.providers.telegram.webhook import parse_telegram_webhook
 from roomkit.providers.telnyx.config import TelnyxConfig
 from roomkit.providers.telnyx.rcs import (
     TelnyxRCSConfig,
@@ -294,6 +300,7 @@ __all__ = [
     "VoiceChannel",
     "WebSocketChannel",
     "MessengerChannel",
+    "TelegramChannel",
     "TeamsChannel",
     "HTTPChannel",
     "WhatsAppChannel",
@@ -362,6 +369,7 @@ __all__ = [
     "EmailProvider",
     "HTTPProvider",
     "MessengerProvider",
+    "TelegramProvider",
     "TeamsProvider",
     "RCSProvider",
     "SMSProvider",
@@ -401,6 +409,11 @@ __all__ = [
     "MessengerConfig",
     "MockMessengerProvider",
     "parse_messenger_webhook",
+    # Telegram
+    "MockTelegramProvider",
+    "TelegramBotProvider",
+    "TelegramConfig",
+    "parse_telegram_webhook",
     # Teams
     "BotFrameworkTeamsProvider",
     "ConversationReferenceStore",
