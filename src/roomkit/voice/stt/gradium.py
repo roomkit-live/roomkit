@@ -64,7 +64,7 @@ def _resample(data: bytes, src_rate: int, dst_rate: int) -> bytes:
     return np.clip(resampled, -32768, 32767).astype(np.int16).tobytes()
 
 
-async def _close_stream(stream: Any, *, timeout: float = 2.0) -> None:
+async def _close_stream(stream: Any, *, timeout: float = 2.0) -> bool:
     """Close a Gradium STT stream, freeing the WebSocket session slot.
 
     The SDK's ``stream._stream`` is an async generator wrapping an
@@ -76,13 +76,19 @@ async def _close_stream(stream: Any, *, timeout: float = 2.0) -> None:
     reading from an audio generator that's still waiting on queue data.
     Without a timeout, ``aclose()`` hangs indefinitely and prevents
     the continuous STT loop from reconnecting.
+
+    Returns:
+        True if the close completed cleanly, False if it timed out or
+        errored (caller should reset the client).
     """
     try:
         raw = getattr(stream, "_stream", None)
         if raw is not None and hasattr(raw, "aclose"):
             await asyncio.wait_for(raw.aclose(), timeout=timeout)
+        return True
     except Exception:
         logger.debug("Error closing Gradium STT stream", exc_info=True)
+        return False
 
 
 class GradiumSTTProvider(STTProvider):
@@ -275,7 +281,12 @@ class GradiumSTTProvider(STTProvider):
                             # reconnects for the next turn.
                             return
         finally:
-            await _close_stream(stream)
+            clean = await _close_stream(stream)
+            if not clean:
+                # Aborted close may corrupt the SDK's aiohttp session.
+                # Force a fresh client on the next reconnect.
+                logger.debug("Stream close was not clean, resetting client")
+                self._client = None
 
     async def close(self) -> None:
         """Release resources."""
