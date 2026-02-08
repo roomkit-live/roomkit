@@ -73,5 +73,25 @@ echo "==> Pushing..."
 git push && git push --tags
 echo "    Pushed."
 
+# --- GitHub Release ---
+# Find the previous tag to generate the changelog range.
+PREV_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | sed -n '2p')
+echo "==> Creating GitHub Release (v${VERSION}, since ${PREV_TAG:-scratch})..."
+
+NOTES="## What's Changed"$'\n\n'
+if [[ -n "${PREV_TAG:-}" ]]; then
+    NOTES+=$(git log "${PREV_TAG}..v${VERSION}" --pretty=format:"- %s" \
+        | grep -v "^- Bump version")
+    NOTES+=$'\n\n'"**Full Changelog**: https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/compare/${PREV_TAG}...v${VERSION}"
+else
+    NOTES+=$(git log "v${VERSION}" --pretty=format:"- %s" \
+        | grep -v "^- Bump version")
+fi
+
+gh release create "v${VERSION}" \
+    --title "v${VERSION}" \
+    --notes "${NOTES}"
+echo "    GitHub Release created."
+
 echo ""
 echo "==> Release v${VERSION} complete!"
