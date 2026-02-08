@@ -1,30 +1,30 @@
-"""RoomKit -- Full-stack voice assistant with local microphone.
+"""RoomKit -- Cloud voice assistant with local microphone.
 
-Talk to Claude through your microphone with real audio processing:
+Talk to Claude through your microphone with cloud AI services:
   - Deepgram for speech-to-text (streaming)
   - Claude (Anthropic) for AI responses
   - ElevenLabs for text-to-speech
-  - SpeexAEC for echo cancellation (strips speaker echo from mic)
+  - WebRTC or Speex AEC for echo cancellation
   - RNNoise or sherpa-onnx GTCRN for noise suppression
   - sherpa-onnx neural VAD (TEN-VAD or Silero) for speech detection
   - WavFileRecorder for debug audio capture
 
 Audio flows through the full pipeline:
 
-  Mic → [Resampler] → [Recorder tap] → [AEC] → [Denoiser] → VAD
-  → Deepgram STT → Claude → ElevenLabs TTS → [Recorder tap] → Speaker
+  Mic -> [Resampler] -> [Recorder tap] -> [AEC] -> [Denoiser] -> VAD
+  -> Deepgram STT -> Claude -> ElevenLabs TTS -> [Recorder tap] -> Speaker
 
 Requirements:
     pip install roomkit[local-audio,anthropic,sherpa-onnx]
-    System: libspeexdsp (apt install libspeexdsp1 / brew install speexdsp)
-    System (optional): librnnoise (apt install librnnoise0) — or use DENOISE_MODEL for sherpa-onnx
+    System (optional): libspeexdsp (apt install libspeexdsp1) for Speex AEC
+    System (optional): librnnoise (apt install librnnoise0) -- or use DENOISE_MODEL
 
 Run with:
     ANTHROPIC_API_KEY=... \\
     DEEPGRAM_API_KEY=... \\
     ELEVENLABS_API_KEY=... \\
     VAD_MODEL=path/to/ten-vad.onnx \\
-    uv run python examples/voice_full_stack.py
+    uv run python examples/voice_cloud.py
 
 Environment variables:
     ANTHROPIC_API_KEY   (required) Anthropic API key
@@ -33,18 +33,29 @@ Environment variables:
     ELEVENLABS_VOICE_ID Voice ID (default: Rachel)
     LANGUAGE            Language code for STT (default: en)
     SYSTEM_PROMPT       Custom system prompt for Claude
+
+    --- VAD (sherpa-onnx) ---
+    VAD_MODEL           Path to sherpa-onnx VAD .onnx model file
+    VAD_MODEL_TYPE      Model type: ten | silero (default: ten)
+    VAD_THRESHOLD       Speech probability threshold 0-1 (default: 0.35)
+                        Lower values improve sensitivity for short utterances.
+                        The GTCRN denoiser slightly alters spectral features,
+                        which reduces TEN-VAD confidence -- 0.35 compensates.
+                        Without denoiser you can raise to 0.5 for fewer false
+                        positives.
+
+    --- Pipeline (optional) ---
+    AEC                 Echo cancellation: webrtc | speex | 1 (=webrtc) | 0
+                        (default: webrtc)
+    DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 1)
+    DENOISE_MODEL       Path to GTCRN .onnx model (sherpa-onnx denoiser,
+                        overrides DENOISE)
+    MUTE_MIC            Mute mic during playback: 1 | 0 (default: auto,
+                        off with AEC)
     RECORDING_DIR       Directory for WAV recordings (default: ./recordings)
     RECORDING_MODE      Channel mode: mixed | separate | stereo (default: stereo)
     DEBUG_TAPS_DIR      Directory for pipeline debug taps (disabled if unset)
     DEBUG_TAPS_STAGES   Comma-separated stages to capture (default: all)
-    AEC                 Enable echo cancellation: 1 | 0 (default: 1)
-    AEC_TYPE            AEC engine: webrtc | speex (default: webrtc)
-    MUTE_DURING_PLAYBACK  Half-duplex mic mute: 1 | 0 (default: 0)
-    DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 1)
-    DENOISE_MODEL       Path to GTCRN .onnx model (sherpa-onnx denoiser, overrides DENOISE)
-    VAD_MODEL           Path to sherpa-onnx VAD .onnx model file
-    VAD_MODEL_TYPE      Model type: ten | silero (default: ten)
-    VAD_THRESHOLD       Speech probability threshold 0-1 (default: 0.35)
 
 Press Ctrl+C to stop.
 """
@@ -64,6 +75,7 @@ from roomkit import (
     ChannelCategory,
     ChannelType,
     HookExecution,
+    HookResult,
     HookTrigger,
     RoomKit,
     VoiceChannel,
@@ -86,7 +98,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
-logger = logging.getLogger("voice_full_stack")
+logger = logging.getLogger("voice_cloud")
 
 # Channel mode mapping
 CHANNEL_MODES = {
@@ -118,7 +130,7 @@ def check_env() -> dict[str, str]:
         print(
             "  ANTHROPIC_API_KEY=... DEEPGRAM_API_KEY=... "
             "ELEVENLABS_API_KEY=... \\\n"
-            "    uv run python examples/voice_full_stack.py"
+            "    uv run python examples/voice_cloud.py"
         )
         sys.exit(1)
 
@@ -134,45 +146,47 @@ async def main() -> None:
     sample_rate = 16000
     block_ms = 20
     frame_size = sample_rate * block_ms // 1000  # 320 samples
+    output_rate = 24000  # ElevenLabs native rate
 
     # --- AEC (echo cancellation) ----------------------------------------------
-    use_aec = os.environ.get("AEC", "1") == "1"
-    aec_type = os.environ.get("AEC_TYPE", "webrtc").lower()
+    # Unified format: AEC=webrtc | speex | 1 (=webrtc) | 0
     aec = None
-    if use_aec:
-        if aec_type == "webrtc":
-            from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
+    aec_mode = os.environ.get("AEC", "webrtc").lower()
+    if aec_mode in ("1", "webrtc"):
+        from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 
-            aec = WebRTCAECProvider(sample_rate=sample_rate)
-            logger.info("AEC enabled (WebRTC AEC3)")
-        else:
-            from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
+        aec = WebRTCAECProvider(sample_rate=sample_rate)
+        logger.info("AEC enabled (WebRTC AEC3)")
+    elif aec_mode == "speex":
+        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
-            aec = SpeexAECProvider(
-                frame_size=frame_size,
-                filter_length=frame_size * 10,  # 200ms echo tail
-                sample_rate=sample_rate,
-            )
-            logger.info("AEC enabled (Speex, filter=%d samples)", frame_size * 10)
+        aec = SpeexAECProvider(
+            frame_size=frame_size,
+            filter_length=frame_size * 10,  # 200ms echo tail
+            sample_rate=sample_rate,
+        )
+        logger.info("AEC enabled (Speex, filter=%d samples)", frame_size * 10)
 
     # --- Backend: local mic + speakers ----------------------------------------
-    # When AEC is enabled, input and output sample rates MUST match so the
-    # adaptive filter can correlate the speaker reference with the mic signal.
-    output_rate = sample_rate if use_aec else 24000
-    mute_during = os.environ.get("MUTE_DURING_PLAYBACK", "0") == "1"
+    # When AEC is active it removes speaker echo from the mic signal, so we
+    # can keep the mic open during playback and allow barge-in interruption.
+    # Without AEC the mic is muted during playback to prevent feedback loops.
+    # Override with MUTE_MIC=0|1 for testing.
+    mute_env = os.environ.get("MUTE_MIC")
+    mute_mic = mute_env != "0" if mute_env is not None else aec is None
     backend = LocalAudioBackend(
         input_sample_rate=sample_rate,
         output_sample_rate=output_rate,
         channels=1,
         block_duration_ms=block_ms,
         aec=aec,
-        mute_mic_during_playback=mute_during,
+        mute_mic_during_playback=mute_mic,
     )
     logger.info(
-        "Backend: LocalAudio (in=%dHz, out=%dHz, mute_during_playback=%s)",
+        "Backend: LocalAudio (in=%dHz, out=%dHz, mute_mic=%s)",
         sample_rate,
         output_rate,
-        mute_during,
+        mute_mic,
     )
 
     # --- Denoiser (RNNoise or sherpa-onnx GTCRN) ------------------------------
@@ -223,7 +237,7 @@ async def main() -> None:
             )
         )
         logger.info(
-            "VAD: sherpa-onnx (model_type=%s, threshold=%.2f, model=%s)",
+            "VAD: sherpa-onnx (type=%s, threshold=%.2f, model=%s)",
             vad_model_type,
             vad_threshold,
             vad_model,
@@ -273,7 +287,6 @@ async def main() -> None:
     logger.info("STT: Deepgram nova-2 (language=%s)", language)
 
     # --- ElevenLabs TTS -------------------------------------------------------
-    # Use PCM at the same rate as the backend output (16kHz when AEC, 24kHz otherwise)
     tts_format = f"pcm_{output_rate}"
     tts = ElevenLabsTTSProvider(
         config=ElevenLabsConfig(
@@ -332,45 +345,29 @@ async def main() -> None:
 
     # --- Hooks ----------------------------------------------------------------
 
-    @kit.hook(
-        HookTrigger.ON_SPEECH_START,
-        execution=HookExecution.ASYNC,
-    )
+    @kit.hook(HookTrigger.ON_SPEECH_START, execution=HookExecution.ASYNC)
     async def on_speech_start(session, ctx):
         logger.info("Speech started")
 
-    @kit.hook(
-        HookTrigger.ON_SPEECH_END,
-        execution=HookExecution.ASYNC,
-    )
+    @kit.hook(HookTrigger.ON_SPEECH_END, execution=HookExecution.ASYNC)
     async def on_speech_end(session, ctx):
         logger.info("Speech ended")
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
     async def on_transcription(text, ctx):
-        from roomkit import HookResult
-
         logger.info("You said: %s", text)
         return HookResult.allow()
 
     @kit.hook(HookTrigger.BEFORE_TTS)
     async def before_tts(text, ctx):
-        from roomkit import HookResult
-
         logger.info("Claude says: %s", text)
         return HookResult.allow()
 
-    @kit.hook(
-        HookTrigger.ON_RECORDING_STARTED,
-        execution=HookExecution.ASYNC,
-    )
+    @kit.hook(HookTrigger.ON_RECORDING_STARTED, execution=HookExecution.ASYNC)
     async def on_rec_started(event, ctx):
         logger.info("Recording started: %s", event.id)
 
-    @kit.hook(
-        HookTrigger.ON_RECORDING_STOPPED,
-        execution=HookExecution.ASYNC,
-    )
+    @kit.hook(HookTrigger.ON_RECORDING_STOPPED, execution=HookExecution.ASYNC)
     async def on_rec_stopped(event, ctx):
         logger.info(
             "Recording stopped: %s (%.1fs, %d bytes, files=%s)",

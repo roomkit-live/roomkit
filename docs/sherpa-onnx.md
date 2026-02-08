@@ -378,4 +378,4 @@ vad = SherpaOnnxVADProvider(SherpaOnnxVADConfig(model="ten-vad.onnx"))
 
 - [`examples/voice_local_onnx_vllm.py`](../examples/voice_local_onnx_vllm.py) — fully local voice assistant with sherpa-onnx STT/TTS/VAD + Ollama/vLLM, CUDA support.
 - [`examples/voice_sherpa_onnx_vad.py`](../examples/voice_sherpa_onnx_vad.py) — standalone local mic demo with neural VAD + optional denoiser.
-- [`examples/voice_full_stack.py`](../examples/voice_full_stack.py) — full voice assistant (set `VAD_MODEL` and/or `DENOISE_MODEL` env vars).
+- [`examples/voice_cloud.py`](../examples/voice_cloud.py) — cloud voice assistant with Deepgram STT + ElevenLabs TTS + Claude (set `VAD_MODEL` and/or `DENOISE_MODEL` env vars).

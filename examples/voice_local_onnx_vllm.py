@@ -119,7 +119,7 @@ Environment variables:
 
     --- Pipeline (optional) ---
     DENOISE_MODEL       Path to GTCRN .onnx model (enables denoiser)
-    AEC                 Echo cancellation: speex | webrtc | 1 (=speex) | 0 (default: 0)
+    AEC                 Echo cancellation: webrtc | speex | 1 (=webrtc) | 0 (default: 0)
     MUTE_MIC            Mute mic during playback: 1 | 0 (default: auto, off with AEC)
     RECORDING_DIR       Directory for WAV recordings (default: ./recordings)
     RECORDING_MODE      Channel mode: mixed | separate | stereo (default: stereo)
@@ -223,7 +223,12 @@ async def main() -> None:
     # --- AEC (optional, echo cancellation) ------------------------------------
     aec = None
     aec_mode = os.environ.get("AEC", "0").lower()
-    if aec_mode in ("1", "speex"):
+    if aec_mode in ("1", "webrtc"):
+        from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
+
+        aec = WebRTCAECProvider(sample_rate=sample_rate)
+        logger.info("AEC enabled (WebRTC AEC3)")
+    elif aec_mode == "speex":
         from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(
@@ -232,11 +237,6 @@ async def main() -> None:
             sample_rate=sample_rate,
         )
         logger.info("AEC enabled (Speex, filter=%d samples)", frame_size * 10)
-    elif aec_mode == "webrtc":
-        from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
-
-        aec = WebRTCAECProvider(sample_rate=sample_rate)
-        logger.info("AEC enabled (WebRTC AEC3)")
 
     # --- Backend: local mic + speakers ----------------------------------------
     # When AEC is active it removes speaker echo from the mic signal, so we
