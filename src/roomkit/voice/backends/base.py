@@ -148,6 +148,17 @@ class VoiceBackend(ABC):
         """
         return VoiceCapability.NONE
 
+    @property
+    def feeds_aec_reference(self) -> bool:
+        """Whether this backend feeds AEC reference at the transport level.
+
+        When True, the pipeline skips ``aec.feed_reference()`` in the
+        outbound path to avoid double-feeding.  Transport-level feeding
+        (from the speaker callback) is preferred because it is
+        time-aligned with actual speaker output.
+        """
+        return False
+
     # -------------------------------------------------------------------------
     # Raw audio delivery (pipeline integration)
     # -------------------------------------------------------------------------

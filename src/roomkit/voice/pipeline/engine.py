@@ -64,9 +64,11 @@ class AudioPipeline:
         config: AudioPipelineConfig,
         *,
         backend_capabilities: VoiceCapability = VoiceCapability.NONE,
+        backend_feeds_aec_reference: bool = False,
     ) -> None:
         self._config = config
         self._backend_capabilities = backend_capabilities
+        self._backend_feeds_aec_ref = backend_feeds_aec_reference
         self._speech_end_callbacks: list[SpeechEndPipelineCallback] = []
         self._vad_event_callbacks: list[VADEventCallback] = []
         self._speaker_change_callbacks: list[SpeakerChangeCallback] = []
@@ -74,6 +76,11 @@ class AudioPipeline:
         self._recording_started_callbacks: list[RecordingStartedCallback] = []
         self._recording_stopped_callbacks: list[RecordingStoppedCallback] = []
         self._last_speaker_id: str | None = None
+        # Inbound sample rate — tracked from first frame, used to resample
+        # AEC reference (outbound) to match inbound processing rate.
+        self._inbound_sample_rate: int | None = None
+        # Lazy resampler for AEC reference (created on first mismatch)
+        self._aec_resampler: ResamplerProvider | None = None
         # Active recording handle (per session, keyed by session_id)
         self._recording_handles: dict[str, RecordingHandle] = {}
         # Debug tap sessions (per session, keyed by session_id)
@@ -141,6 +148,10 @@ class AudioPipeline:
                [Denoiser] -> [VAD] -> [Diarization]
         """
         current_frame = frame
+
+        # Track inbound sample rate for AEC reference resampling
+        if self._inbound_sample_rate is None:
+            self._inbound_sample_rate = frame.sample_rate
 
         # Stage 0: Inbound resampler (transport → internal format)
         if self._resampler is not None and self._config.contract is not None:
@@ -335,12 +346,32 @@ class AudioPipeline:
                     logger.exception("Recorder outbound tap error")
 
         # Stage 3: Feed AEC reference (so it can model echo)
+        # Skipped when the backend feeds reference at the transport level
+        # (time-aligned with actual speaker output), or when the backend
+        # has NATIVE_AEC.  The reference must match the inbound sample
+        # rate — resample if the outbound frame is at a different rate.
         if (
             self._config.aec is not None
             and VoiceCapability.NATIVE_AEC not in self._backend_capabilities
+            and not self._backend_feeds_aec_ref
         ):
             try:
-                self._config.aec.feed_reference(current_frame)
+                ref_frame = current_frame
+                target_rate = self._inbound_sample_rate
+                if target_rate and ref_frame.sample_rate != target_rate:
+                    if self._aec_resampler is None:
+                        from roomkit.voice.pipeline.resampler.linear import (
+                            LinearResamplerProvider,
+                        )
+
+                        self._aec_resampler = LinearResamplerProvider()
+                    ref_frame = self._aec_resampler.resample(
+                        ref_frame,
+                        target_rate,
+                        ref_frame.channels,
+                        ref_frame.sample_width,
+                    )
+                self._config.aec.feed_reference(ref_frame)
             except Exception:
                 logger.exception("AEC feed_reference error")
 
@@ -421,6 +452,9 @@ class AudioPipeline:
 
     def reset(self) -> None:
         """Reset all pipeline stage state."""
+        self._inbound_sample_rate = None
+        if self._aec_resampler is not None:
+            self._aec_resampler.reset()
         if self._resampler is not None:
             self._resampler.reset()
         if self._config.vad is not None:
@@ -448,6 +482,8 @@ class AudioPipeline:
         """Release all pipeline resources."""
         if self._resampler is not None:
             self._resampler.close()
+        if self._aec_resampler is not None:
+            self._aec_resampler.close()
         if self._config.vad is not None:
             self._config.vad.close()
         if self._config.denoiser is not None:

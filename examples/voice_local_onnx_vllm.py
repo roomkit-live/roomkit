@@ -114,7 +114,8 @@ Environment variables:
 
     --- Pipeline (optional) ---
     DENOISE_MODEL       Path to GTCRN .onnx model (enables denoiser)
-    AEC                 Enable Speex echo cancellation: 1 | 0 (default: 0)
+    AEC                 Echo cancellation: speex | webrtc | 1 (=speex) | 0 (default: 0)
+    MUTE_MIC            Mute mic during playback: 1 | 0 (default: auto, off with AEC)
     RECORDING_DIR       Directory for WAV recordings (default: ./recordings)
     RECORDING_MODE      Channel mode: mixed | separate | stereo (default: stereo)
     DEBUG_TAPS_DIR      Directory for pipeline debug taps (disabled if unset)
@@ -214,9 +215,10 @@ async def main() -> None:
 
     tts_sample_rate = int(os.environ.get("TTS_SAMPLE_RATE", "22050"))
 
-    # --- AEC (optional, Speex echo cancellation) ------------------------------
+    # --- AEC (optional, echo cancellation) ------------------------------------
     aec = None
-    if os.environ.get("AEC", "0") == "1":
+    aec_mode = os.environ.get("AEC", "0").lower()
+    if aec_mode in ("1", "speex"):
         from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
         aec = SpeexAECProvider(
@@ -225,17 +227,26 @@ async def main() -> None:
             sample_rate=sample_rate,
         )
         logger.info("AEC enabled (Speex, filter=%d samples)", frame_size * 10)
+    elif aec_mode == "webrtc":
+        from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
+
+        aec = WebRTCAECProvider(sample_rate=sample_rate)
+        logger.info("AEC enabled (WebRTC AEC3)")
 
     # --- Backend: local mic + speakers ----------------------------------------
     # When AEC is active it removes speaker echo from the mic signal, so we
     # can keep the mic open during playback and allow barge-in interruption.
     # Without AEC the mic is muted during playback to prevent feedback loops.
+    # Override with MUTE_MIC=0|1 for testing (e.g. MUTE_MIC=0 to test AEC).
+    mute_env = os.environ.get("MUTE_MIC")
+    mute_mic = mute_env != "0" if mute_env is not None else aec is None
     backend = LocalAudioBackend(
         input_sample_rate=sample_rate,
         output_sample_rate=tts_sample_rate,
         channels=1,
         block_duration_ms=block_ms,
-        mute_mic_during_playback=aec is None,
+        mute_mic_during_playback=mute_mic,
+        aec=aec,
     )
 
     # --- Denoiser (optional, sherpa-onnx GTCRN) -------------------------------

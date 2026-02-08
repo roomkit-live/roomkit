@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Coroutine
+from collections.abc import AsyncIterator, Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from roomkit.models.event import RoomEvent
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.backends.base import VoiceBackend
-    from roomkit.voice.base import VoiceSession
+    from roomkit.voice.base import AudioChunk, VoiceSession
     from roomkit.voice.pipeline.config import AudioPipelineConfig
     from roomkit.voice.pipeline.diarization.base import DiarizationResult
     from roomkit.voice.pipeline.vad.base import VADEvent
@@ -154,7 +154,11 @@ class VoiceChannel(Channel):
         """Create AudioPipeline and wire backend -> pipeline -> callbacks."""
         from roomkit.voice.pipeline.engine import AudioPipeline
 
-        self._pipeline = AudioPipeline(config, backend_capabilities=backend.capabilities)
+        self._pipeline = AudioPipeline(
+            config,
+            backend_capabilities=backend.capabilities,
+            backend_feeds_aec_reference=backend.feeds_aec_reference,
+        )
 
         # Backend delivers raw audio -> pipeline processes it
         backend.on_audio_received(self._on_audio_received)
@@ -961,6 +965,40 @@ class VoiceChannel(Channel):
 
         return ChannelOutputModel.empty()
 
+    async def _wrap_outbound(
+        self, session: VoiceSession, chunks: AsyncIterator[AudioChunk]
+    ) -> AsyncIterator[AudioChunk]:
+        """Wrap a TTS stream through the pipeline outbound path.
+
+        Each chunk is converted to an AudioFrame, processed through
+        ``pipeline.process_outbound()`` (which feeds AEC reference,
+        runs postprocessors, recorder taps, and outbound resampler),
+        then converted back to an AudioChunk for the backend.
+        """
+        from roomkit.voice.audio_frame import AudioFrame
+        from roomkit.voice.base import AudioChunk as OutChunk
+
+        async for chunk in chunks:
+            if not chunk.data or self._pipeline is None:
+                yield chunk
+                continue
+            frame = AudioFrame(
+                data=chunk.data,
+                sample_rate=chunk.sample_rate,
+                channels=chunk.channels,
+                sample_width=2,
+                timestamp_ms=chunk.timestamp_ms,
+            )
+            processed = self._pipeline.process_outbound(session, frame)
+            yield OutChunk(
+                data=processed.data,
+                sample_rate=processed.sample_rate,
+                channels=processed.channels,
+                format=chunk.format,
+                timestamp_ms=processed.timestamp_ms,
+                is_final=chunk.is_final,
+            )
+
     async def _deliver_voice(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> None:
@@ -1012,6 +1050,8 @@ class VoiceChannel(Channel):
 
                 try:
                     audio_stream = self._tts.synthesize_stream(final_text)
+                    if self._pipeline is not None:
+                        audio_stream = self._wrap_outbound(session, audio_stream)
                     await self._backend.send_audio(session, audio_stream)
                 except NotImplementedError:
                     await self._tts.synthesize(final_text)

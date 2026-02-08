@@ -110,12 +110,6 @@ class LocalAudioBackend(VoiceBackend):
     ) -> None:
         self._sd = _import_sounddevice()
 
-        if aec is not None and input_sample_rate != output_sample_rate:
-            raise ValueError(
-                f"AEC requires matching input and output sample rates, got "
-                f"input={input_sample_rate} output={output_sample_rate}"
-            )
-
         self._input_sample_rate = input_sample_rate
         self._output_sample_rate = output_sample_rate
         self._channels = channels
@@ -146,13 +140,36 @@ class LocalAudioBackend(VoiceBackend):
 
         # --- AEC ---
         self._aec = aec
+        self._aec_needs_resample = aec is not None and output_sample_rate != input_sample_rate
         if aec is not None:
+            # Block size in bytes at the *input* sample rate — the rate the
+            # AEC expects for both capture and reference.
             self._aec_block_bytes = (
                 int(input_sample_rate * block_duration_ms / 1000) * channels * 2
             )
+            # When output rate differs, we accumulate output-rate bytes and
+            # resample whole blocks to input rate before feeding the AEC.
+            self._aec_out_block_bytes = (
+                int(output_sample_rate * block_duration_ms / 1000) * channels * 2
+            )
             self._ref_buffer = bytearray()
+            if self._aec_needs_resample:
+                from roomkit.voice.pipeline.resampler.linear import (
+                    LinearResamplerProvider,
+                )
+
+                self._aec_resampler = LinearResamplerProvider()
+                logger.info(
+                    "AEC transport-level reference: resampling %dHz -> %dHz",
+                    output_sample_rate,
+                    input_sample_rate,
+                )
+            else:
+                self._aec_resampler = None
         else:
             self._aec_block_bytes = 0
+            self._aec_out_block_bytes = 0
+            self._aec_resampler = None
             self._ref_buffer = bytearray()
 
     @property
@@ -162,6 +179,10 @@ class LocalAudioBackend(VoiceBackend):
     @property
     def capabilities(self) -> VoiceCapability:
         return VoiceCapability.INTERRUPTION
+
+    @property
+    def feeds_aec_reference(self) -> bool:
+        return self._aec is not None
 
     # -------------------------------------------------------------------------
     # Session lifecycle
@@ -498,18 +519,40 @@ class LocalAudioBackend(VoiceBackend):
 
         Called from ``_output_callback`` so the reference is time-aligned
         with what the speaker is outputting.  Accumulates bytes and feeds
-        them in exact ``frame_size``-aligned chunks.
+        them in exact block-aligned chunks.  When the output and input
+        sample rates differ, each block is resampled to the input rate
+        before feeding the AEC.
         """
         self._ref_buffer.extend(played)
-        block = self._aec_block_bytes
 
-        while len(self._ref_buffer) >= block:
-            chunk = bytes(self._ref_buffer[:block])
-            del self._ref_buffer[:block]
-            frame = AudioFrame(
-                data=chunk,
-                sample_rate=self._input_sample_rate,
-                channels=self._channels,
-                sample_width=2,
-            )
-            self._aec.feed_reference(frame)  # type: ignore[union-attr]
+        if self._aec_needs_resample:
+            # Chunk at the output rate, then resample each block to input rate
+            block = self._aec_out_block_bytes
+            while len(self._ref_buffer) >= block:
+                chunk = bytes(self._ref_buffer[:block])
+                del self._ref_buffer[:block]
+                out_frame = AudioFrame(
+                    data=chunk,
+                    sample_rate=self._output_sample_rate,
+                    channels=self._channels,
+                    sample_width=2,
+                )
+                ref_frame = self._aec_resampler.resample(  # type: ignore[union-attr]
+                    out_frame,
+                    self._input_sample_rate,
+                    self._channels,
+                    2,
+                )
+                self._aec.feed_reference(ref_frame)  # type: ignore[union-attr]
+        else:
+            block = self._aec_block_bytes
+            while len(self._ref_buffer) >= block:
+                chunk = bytes(self._ref_buffer[:block])
+                del self._ref_buffer[:block]
+                frame = AudioFrame(
+                    data=chunk,
+                    sample_rate=self._input_sample_rate,
+                    channels=self._channels,
+                    sample_width=2,
+                )
+                self._aec.feed_reference(frame)  # type: ignore[union-attr]
