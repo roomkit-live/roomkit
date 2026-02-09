@@ -60,6 +60,7 @@ class _STTStreamState:
     frame_buffer: bytearray = field(default_factory=bytearray)
     frame_buffer_rate: int = 16000
     final_text: str | None = None
+    partial_text: str | None = None
     error: bool = False
     cancelled: bool = False
 
@@ -135,6 +136,8 @@ class VoiceChannel(Channel):
         self._pipeline: Any = None  # AudioPipeline | None
         # Pending turns for turn detection (session_id -> list of TurnEntry)
         self._pending_turns: dict[str, list[Any]] = {}
+        # Pending audio for audio-native turn detectors (session_id -> accumulated PCM)
+        self._pending_audio: dict[str, bytearray] = {}
         # Active streaming STT sessions (session_id -> state)
         self._stt_streams: dict[str, _STTStreamState] = {}
         # Continuous STT mode: stream all audio to STT, no local VAD
@@ -296,8 +299,7 @@ class VoiceChannel(Channel):
                     if result.is_final and result.text:
                         state.final_text = result.text
                     elif not result.is_final and result.text:
-                        # Keep latest partial as fallback final_text
-                        state.final_text = result.text
+                        state.partial_text = result.text
                         self._schedule(
                             self._fire_partial_transcription_hook(session, result, room_id),
                             name=f"partial_stt:{session.id}",
@@ -521,8 +523,11 @@ class VoiceChannel(Channel):
 
     def _on_pipeline_speech_end(self, session: VoiceSession, audio: bytes) -> None:
         """Handle speech end from pipeline — fire hooks and transcribe."""
-        # Signal end-of-audio to streaming STT (if active)
-        stream_state = self._stt_streams.get(session.id)
+        # Pop the stream state now so a rapid SPEECH_START can't steal it.
+        # Without this, a new stream created by _start_stt_stream would
+        # overwrite _stt_streams[session.id] before _process_speech_end
+        # runs, causing it to grab the wrong (new) stream.
+        stream_state = self._stt_streams.pop(session.id, None)
         if stream_state is not None:
             # Flush remaining buffered frames before sending sentinel
             self._flush_stt_buffer(stream_state, session.id)
@@ -538,7 +543,7 @@ class VoiceChannel(Channel):
         room_id, _ = binding_info
 
         self._schedule(
-            self._process_speech_end(session, audio, room_id),
+            self._process_speech_end(session, audio, room_id, stream_state),
             name=f"speech_end:{session.id}",
         )
 
@@ -690,8 +695,9 @@ class VoiceChannel(Channel):
         # Notify pipeline of session end
         if self._pipeline is not None:
             self._pipeline.on_session_ended(session)
-        # Clear pending turns
+        # Clear pending turns and audio
         self._pending_turns.pop(session.id, None)
+        self._pending_audio.pop(session.id, None)
         # Emit voice_session_ended framework event
         if binding_info and self._framework:
             room_id, _ = binding_info
@@ -1124,12 +1130,23 @@ class VoiceChannel(Channel):
     # Speech processing pipeline
     # -------------------------------------------------------------------------
 
-    async def _process_speech_end(self, session: VoiceSession, audio: bytes, room_id: str) -> None:
+    async def _process_speech_end(
+        self,
+        session: VoiceSession,
+        audio: bytes,
+        room_id: str,
+        stream_state: _STTStreamState | None = None,
+    ) -> None:
         """Process speech end: fire hooks, transcribe, route inbound.
 
         ON_SPEECH_END hooks are fired here (not in _on_pipeline_vad_event)
         to guarantee ordering: ON_SPEECH_END always fires before
         ON_TRANSCRIPTION and before routing to the AI.
+
+        Args:
+            stream_state: The STT stream state popped by the caller
+                (_on_pipeline_speech_end) so it is immune to a rapid
+                SPEECH_START overwriting _stt_streams[session.id].
         """
         if not self._framework:
             return
@@ -1158,11 +1175,10 @@ class VoiceChannel(Channel):
 
             # Try to collect streaming STT result; fall back to batch
             text: str | None = None
-            stream_state = self._stt_streams.pop(session.id, None)
             if stream_state is not None and not stream_state.error and not stream_state.cancelled:
                 try:
                     await asyncio.wait_for(stream_state.task, timeout=5.0)
-                    text = stream_state.final_text
+                    text = stream_state.final_text or stream_state.partial_text
                     if text:
                         logger.debug("STT stream result for %s: %s", session.id, text)
                     else:
@@ -1230,7 +1246,7 @@ class VoiceChannel(Channel):
             # Turn detection: if configured, evaluate before routing
             turn_detector = self._pipeline_config.turn_detector if self._pipeline_config else None
             if turn_detector is not None:
-                await self._evaluate_turn(session, final_text, room_id, context)
+                await self._evaluate_turn(session, final_text, room_id, context, audio_bytes=audio)
             else:
                 # No turn detector — route immediately
                 await self._route_text(session, final_text, room_id)
@@ -1261,6 +1277,8 @@ class VoiceChannel(Channel):
         text: str,
         room_id: str,
         context: RoomContext,
+        *,
+        audio_bytes: bytes | None = None,
     ) -> None:
         """Evaluate turn completion using the configured TurnDetector."""
         if not self._framework or not self._pipeline_config:
@@ -1276,12 +1294,22 @@ class VoiceChannel(Channel):
         entries = self._pending_turns.setdefault(session.id, [])
         entries.append(TurnEntry(text=text, role="user"))
 
+        # Accumulate audio for audio-native turn detectors
+        if audio_bytes:
+            buf = self._pending_audio.setdefault(session.id, bytearray())
+            buf.extend(audio_bytes)
+
+        accumulated_audio = bytes(self._pending_audio.get(session.id, b"")) or None
+        sample_rate = session.metadata.get("input_sample_rate", 16000)
+
         turn_ctx = TurnContext(
             conversation_history=list(entries),
             silence_duration_ms=0.0,
             transcript=text,
             is_final=True,
             session_id=session.id,
+            audio_bytes=accumulated_audio,
+            audio_sample_rate=sample_rate,
         )
         decision = turn_detector.evaluate(turn_ctx)
 
@@ -1289,6 +1317,7 @@ class VoiceChannel(Channel):
             # Fire ON_TURN_COMPLETE hook
             combined = " ".join(e.text for e in entries)
             self._pending_turns.pop(session.id, None)
+            self._pending_audio.pop(session.id, None)
             try:
                 from roomkit.voice.events import TurnCompleteEvent
 

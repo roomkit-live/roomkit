@@ -33,6 +33,16 @@ class SherpaOnnxSTTConfig:
         sample_rate: Expected audio sample rate.
         num_threads: Number of CPU threads for inference.
         provider: ONNX execution provider (``"cpu"`` or ``"cuda"``).
+        enable_endpoint_detection: Enable sherpa-onnx endpoint detection.
+            Enabled by default.  When VAD drives the stream lifecycle the
+            VAD fires first (its silence threshold is shorter), so this
+            is harmless in a pipeline and useful for standalone use.
+        rule1_min_trailing_silence: Endpoint rule 1 — minimum trailing
+            silence (seconds) after speech to trigger endpoint.
+        rule2_min_trailing_silence: Endpoint rule 2 — minimum trailing
+            silence (seconds) after speech with decoded text.
+        rule3_min_utterance_length: Endpoint rule 3 — minimum utterance
+            length (seconds) to trigger endpoint regardless of silence.
     """
 
     mode: str = "transducer"
@@ -44,6 +54,10 @@ class SherpaOnnxSTTConfig:
     sample_rate: int = 16000
     num_threads: int = 2
     provider: str = "cpu"
+    enable_endpoint_detection: bool = True
+    rule1_min_trailing_silence: float = 2.4
+    rule2_min_trailing_silence: float = 1.2
+    rule3_min_utterance_length: float = 20.0
 
 
 def _pcm_s16le_to_float32(data: bytes) -> list[float]:
@@ -94,6 +108,10 @@ class SherpaOnnxSTTProvider(STTProvider):
                 sample_rate=cfg.sample_rate,
                 feature_dim=80,
                 provider=cfg.provider,
+                enable_endpoint_detection=cfg.enable_endpoint_detection,
+                rule1_min_trailing_silence=cfg.rule1_min_trailing_silence,
+                rule2_min_trailing_silence=cfg.rule2_min_trailing_silence,
+                rule3_min_utterance_length=cfg.rule3_min_utterance_length,
             )
         return self._online_recognizer
 
@@ -219,6 +237,10 @@ class SherpaOnnxSTTProvider(STTProvider):
                 text = str(recognizer.get_result(stream)).strip()
                 if text and text != last_text:
                     is_endpoint = recognizer.is_endpoint(stream)
+                    if is_endpoint:
+                        logger.debug("STT stream endpoint: text=%r", text)
+                    else:
+                        logger.debug("STT stream partial: text=%r", text)
                     yield TranscriptionResult(
                         text=text,
                         is_final=is_endpoint,
@@ -228,8 +250,22 @@ class SherpaOnnxSTTProvider(STTProvider):
                     last_text = text if not is_endpoint else ""
 
             if chunk.is_final:
-                # Flush any remaining text
-                text = str(recognizer.get_result(stream)).strip()
-                if text and text != last_text:
-                    yield TranscriptionResult(text=text, is_final=True)
                 break
+
+        # Finalize: signal end-of-audio so the recognizer flushes any
+        # buffered results (critical for short utterances where
+        # is_endpoint never fired during streaming).
+        def _finalize(s: Any = stream) -> str:
+            s.input_finished()
+            while recognizer.is_ready(s):
+                recognizer.decode_stream(s)
+            return str(recognizer.get_result(s)).strip()
+
+        final_text = await asyncio.to_thread(_finalize)
+        logger.debug(
+            "STT stream finalize: text=%r last_text=%r",
+            final_text,
+            last_text,
+        )
+        if final_text:
+            yield TranscriptionResult(text=final_text, is_final=True)

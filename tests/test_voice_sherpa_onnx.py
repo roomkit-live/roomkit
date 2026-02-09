@@ -138,6 +138,55 @@ class TestSherpaOnnxSTTProvider:
         # Should have at least a partial or final result
         assert any(r.text for r in results)
 
+        # Verify endpoint config was passed to from_transducer
+        call_kwargs = sherpa.OnlineRecognizer.from_transducer.call_args
+        assert call_kwargs[1]["enable_endpoint_detection"] is True
+        assert call_kwargs[1]["rule1_min_trailing_silence"] == 2.4
+        assert call_kwargs[1]["rule2_min_trailing_silence"] == 1.2
+        assert call_kwargs[1]["rule3_min_utterance_length"] == 20.0
+
+    @pytest.mark.asyncio
+    async def test_vad_driven_finalize_yields_final(self) -> None:
+        """When VAD drives the lifecycle (endpoint never fires), _finalize
+        still yields is_final=True with the recognised text."""
+        sherpa = _mock_sherpa_module()
+        stream_mock = MagicMock()
+        recognizer_mock = MagicMock()
+        recognizer_mock.create_stream.return_value = stream_mock
+
+        # Simulate: partial "hello" on first chunk, same text on finalize.
+        # is_endpoint always returns False (VAD drives the lifecycle).
+        recognizer_mock.get_result.side_effect = [" hello ", " hello "]
+        recognizer_mock.is_endpoint.return_value = False
+        recognizer_mock.is_ready.return_value = False
+        sherpa.OnlineRecognizer.from_transducer.return_value = recognizer_mock
+
+        provider = self._make_provider(
+            sherpa,
+            mode="transducer",
+            tokens="tokens.txt",
+            encoder="encoder.onnx",
+            decoder="decoder.onnx",
+            joiner="joiner.onnx",
+        )
+
+        async def _audio_stream() -> Any:
+            yield AudioChunk(data=_make_pcm_s16le([0.1, 0.2]), sample_rate=16000)
+            # Sentinel: VAD signals end-of-speech
+            yield AudioChunk(data=b"", sample_rate=16000, is_final=True)
+
+        results: list[TranscriptionResult] = []
+        async for result in provider.transcribe_stream(_audio_stream()):
+            results.append(result)
+
+        # Should have partial + final
+        partials = [r for r in results if not r.is_final]
+        finals = [r for r in results if r.is_final]
+        assert len(partials) >= 1
+        assert partials[0].text == "hello"
+        assert len(finals) == 1
+        assert finals[0].text == "hello"
+
     @pytest.mark.asyncio
     async def test_whisper_streaming_raises(self) -> None:
         sherpa = _mock_sherpa_module()

@@ -485,10 +485,9 @@ def _patch_stt_stream() -> None:
     orig_process_end = VoiceChannel._process_speech_end
 
     @functools.wraps(orig_process_end)
-    async def traced_process_end(self, session, audio, room_id):
+    async def traced_process_end(self, session, audio, room_id, stream_state=None):
         sid = session.id[:8]
         t_start = time.monotonic()
-        stream_state = self._stt_streams.get(session.id)
         had_stream = stream_state is not None
         stream_ok = had_stream and not stream_state.error and not stream_state.cancelled
         t_speech_start = _stt_stream_timing.pop(session.id, None)
@@ -496,7 +495,7 @@ def _patch_stt_stream() -> None:
         final_text = None
         error = None
         try:
-            await orig_process_end(self, session, audio, room_id)
+            await orig_process_end(self, session, audio, room_id, stream_state)
         except Exception as exc:
             error = exc
             raise
@@ -507,14 +506,16 @@ def _patch_stt_stream() -> None:
 
             # Determine which path was used
             used_stream = False
+            partial_text = None
             if stream_ok and stream_state is not None:
                 final_text = stream_state.final_text
-                used_stream = final_text is not None
+                partial_text = stream_state.partial_text
+                used_stream = (final_text or partial_text) is not None
 
             logger.info(
                 "[STT-STREAM] result session=%s mode=%s stt_latency=%.0fms "
                 "speech_dur=%.0fms audio=%dB had_stream=%s "
-                "final_text=%r error=%s",
+                "final_text=%r partial_text=%r error=%s",
                 sid,
                 "stream" if used_stream else "batch",
                 stt_ms,
@@ -522,10 +523,36 @@ def _patch_stt_stream() -> None:
                 len(audio),
                 had_stream,
                 final_text,
+                partial_text,
                 error,
             )
 
     VoiceChannel._process_speech_end = traced_process_end
+
+
+def _patch_stt_provider() -> None:
+    """Trace sherpa-onnx STT streaming results (endpoint / partial / finalize)."""
+    try:
+        from roomkit.voice.stt.sherpa_onnx import SherpaOnnxSTTProvider
+    except ImportError:
+        return
+
+    orig_stream = SherpaOnnxSTTProvider.transcribe_stream
+
+    @functools.wraps(orig_stream)
+    async def traced_stream(self, audio_stream):
+        chunk_count = 0
+        async for result in orig_stream(self, audio_stream):
+            chunk_count += 1
+            logger.info(
+                "[STT-RESULT] is_final=%s text=%r (chunk #%d)",
+                result.is_final,
+                result.text,
+                chunk_count,
+            )
+            yield result
+
+    SherpaOnnxSTTProvider.transcribe_stream = traced_stream
 
 
 def install() -> None:
@@ -538,6 +565,7 @@ def install() -> None:
     _patch_denoiser()
     _patch_local_backend()
     _patch_stt_stream()
+    _patch_stt_provider()
     logger.info("=== Tracing active (summaries every %.0fs) ===", _SUMMARY_INTERVAL)
 
 
