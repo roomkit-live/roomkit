@@ -149,6 +149,10 @@ module = ["qwen_tts", "qwen_tts.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["torch", "torch.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["aiortp", "aiortp.*"]
 ignore_missing_imports = true
 
