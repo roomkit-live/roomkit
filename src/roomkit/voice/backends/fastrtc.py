@@ -284,6 +284,7 @@ class FastRTCVoiceBackend(VoiceBackend):
     async def close(self) -> None:
         for session in list(self._sessions.values()):
             await self.disconnect(session)
+        self._websockets.clear()
 
     # -------------------------------------------------------------------------
     # FastRTC integration methods (called by mount_fastrtc_voice)

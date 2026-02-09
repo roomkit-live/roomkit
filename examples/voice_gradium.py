@@ -284,6 +284,7 @@ async def main() -> None:
 
     # --- Gradium STT ----------------------------------------------------------
     region = os.environ.get("GRADIUM_REGION", "us")
+    language = os.environ.get("LANGUAGE", "en")
     vad_turn_steps = int(os.environ.get("VAD_TURN_STEPS", "6"))
     stt = GradiumSTTProvider(
         config=GradiumSTTConfig(
@@ -291,20 +292,21 @@ async def main() -> None:
             region=region,
             model_name=os.environ.get("GRADIUM_STT_MODEL", "default"),
             input_format="pcm",
+            language=language,
             vad_turn_steps=vad_turn_steps,
         )
     )
     logger.info(
-        "STT: Gradium (region=%s, model=%s, vad_steps=%d)",
+        "STT: Gradium (region=%s, model=%s, lang=%s, vad_steps=%d)",
         region,
         stt._config.model_name,
+        language,
         vad_turn_steps,
     )
 
     # --- Gradium TTS ----------------------------------------------------------
     padding_bonus_env = os.environ.get("TTS_SPEED", "")
     padding_bonus = float(padding_bonus_env) if padding_bonus_env else None
-    language = os.environ.get("LANGUAGE", "en")
     tts = GradiumTTSProvider(
         config=GradiumTTSConfig(
             api_key=env["GRADIUM_API_KEY"],

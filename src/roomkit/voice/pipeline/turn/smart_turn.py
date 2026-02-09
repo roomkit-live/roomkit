@@ -206,8 +206,8 @@ class SmartTurnDetector(TurnDetector):
 
         try:
             self._ensure_initialized()
-            assert self._session is not None
-            assert self._feature_extractor is not None
+            if self._session is None or self._feature_extractor is None:
+                raise RuntimeError("SmartTurnDetector failed to initialize")
 
             import numpy as np
 

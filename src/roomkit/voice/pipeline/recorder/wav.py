@@ -153,14 +153,7 @@ class WavFileRecorder(AudioRecorder):
                 urls.append(str(path))
                 total_size = path.stat().st_size
 
-        # Calculate duration from the longer of the two buffers
-        total_samples = max(ws.inbound_frames, ws.outbound_frames)
         duration = 0.0
-        if ws.sample_rate > 0 and total_samples > 0:
-            # Each frame contributes (len(data) / sample_width / channels) samples
-            # but we track frame count — we need byte-based duration instead
-            pass
-
         # Compute duration from byte lengths
         if ws.sample_rate > 0 and ws.sample_width > 0:
             if ws.config.channels == RecordingChannelMode.SEPARATE:

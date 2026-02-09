@@ -148,14 +148,22 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             float_samples = _pcm_s16le_to_float32(frame.data)
             n_frame = len(float_samples)
 
+            # Append current frame to sliding context buffer
+            self._context = np.concatenate([self._context, float_samples])
+
+            # Trim to at most context_frames worth of samples
+            max_context = n_frame * max(self._config.context_frames, 1)
+            if len(self._context) > max_context:
+                self._context = self._context[-max_context:]
+
             # Skip inference for near-silent frames — output silence directly.
             # The denoiser would suppress this to ~silence anyway; skipping
-            # avoids ONNX inference cost entirely at idle.
+            # avoids ONNX inference cost entirely at idle.  Context is kept
+            # up-to-date so speech onset always has a warm context window.
             threshold = self._config.silence_threshold
             if threshold > 0:
                 rms = float(np.sqrt(np.dot(float_samples, float_samples) / n_frame))
                 if rms < threshold:
-                    self._context = np.array([], dtype=np.float32)
                     from roomkit.voice.audio_frame import AudioFrame
 
                     return AudioFrame(
@@ -166,14 +174,6 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
                         timestamp_ms=frame.timestamp_ms,
                         metadata=dict(frame.metadata),
                     )
-
-            # Append current frame to sliding context buffer
-            self._context = np.concatenate([self._context, float_samples])
-
-            # Trim to at most context_frames worth of samples
-            max_context = n_frame * max(self._config.context_frames, 1)
-            if len(self._context) > max_context:
-                self._context = self._context[-max_context:]
 
             # Pad at the START to GTCRN block size (256 samples).
             # Padding must go at the beginning so the real audio stays at

@@ -270,7 +270,9 @@ class RTPVoiceBackend(VoiceBackend):
         self._playing_sessions.add(session.id)
         try:
             if isinstance(audio, bytes):
-                self._send_pcm_bytes(session, rtp_session, audio)
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self._send_pcm_bytes, session, rtp_session, audio
+                )
             else:
                 await self._send_pcm_stream(session, rtp_session, audio)
         except Exception:

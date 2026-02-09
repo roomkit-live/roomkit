@@ -82,15 +82,14 @@ class EnergyVADProvider(VADProvider):
         n_samples = len(frame.data) // (frame.sample_width * frame.channels)
         return (n_samples / frame.sample_rate) * 1000.0
 
-    def _push_pre_roll(self, data: bytes, duration_ms: float) -> None:
+    def _push_pre_roll(self, data: bytes, duration_ms: float, sample_rate: int) -> None:
         """Maintain a rolling buffer of recent frames for pre-speech padding."""
         self._pre_roll.append(data)
         self._pre_roll_ms += duration_ms
         while self._pre_roll_ms > self._speech_pad_ms and len(self._pre_roll) > 1:
             removed = self._pre_roll.popleft()
             n_samples = len(removed) // 2  # int16
-            # Approximate: assume same sample rate as current stream
-            self._pre_roll_ms -= (n_samples / 16000) * 1000.0
+            self._pre_roll_ms -= (n_samples / sample_rate) * 1000.0
 
     def process(self, frame: AudioFrame) -> VADEvent | None:
         rms = _rms_int16(frame.data)
@@ -126,7 +125,7 @@ class EnergyVADProvider(VADProvider):
 
         if not self._speaking:
             # --- Idle state ---
-            self._push_pre_roll(frame.data, duration_ms)
+            self._push_pre_roll(frame.data, duration_ms, frame.sample_rate)
 
             if is_speech:
                 self._speaking = True

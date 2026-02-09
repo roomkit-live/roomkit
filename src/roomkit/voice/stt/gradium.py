@@ -30,6 +30,9 @@ class GradiumSTTConfig:
     region: str = "us"
     model_name: str = "default"
     input_format: str = "pcm"  # pcm | wav | opus
+    # Language code: en | fr | de | es | pt.  Grounds the model to a
+    # specific language and improves transcription quality.
+    language: str | None = None
     json_config: dict[str, Any] | None = field(default=None, repr=False)
     # VAD turn-detection: use 3rd prediction (2s horizon) inactivity_prob.
     # When this exceeds the threshold for enough consecutive steps AND
@@ -122,26 +125,27 @@ class GradiumSTTProvider(STTProvider):
             "model_name": self._config.model_name,
             "input_format": self._config.input_format,
         }
+        jc: dict[str, Any] = {}
+        if self._config.language is not None:
+            jc["language"] = self._config.language
         if self._config.json_config is not None:
-            setup["json_config"] = self._config.json_config
+            jc.update(self._config.json_config)
+        if jc:
+            setup["json_config"] = jc
         return setup
 
     async def transcribe(
         self, audio: AudioContent | AudioChunk | AudioFrame
     ) -> TranscriptionResult:
         """Transcribe complete audio to text using the Gradium SDK."""
-        # Extract raw audio bytes and sample rate
         if hasattr(audio, "url"):
-            import httpx
+            raise ValueError(
+                "GradiumSTTProvider does not support URL-based AudioContent. "
+                "Provide raw AudioChunk data instead."
+            )
 
-            async with httpx.AsyncClient() as fetch_client:
-                resp = await fetch_client.get(audio.url)
-                resp.raise_for_status()
-                audio_data = resp.content
-                src_rate = 16000
-        else:
-            audio_data = audio.data
-            src_rate = getattr(audio, "sample_rate", 16000)
+        audio_data = audio.data
+        src_rate = getattr(audio, "sample_rate", 16000)
 
         # Resample to 24kHz for Gradium
         resampled = _resample(audio_data, src_rate, _GRADIUM_SAMPLE_RATE)
