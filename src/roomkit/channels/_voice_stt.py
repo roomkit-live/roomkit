@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.enums import HookTrigger
@@ -12,6 +12,7 @@ from roomkit.models.enums import HookTrigger
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.models.channel import ChannelBinding
+    from roomkit.models.context import RoomContext
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import AudioChunk, VoiceSession
@@ -42,6 +43,27 @@ class VoiceSTTMixin:
     _pending_turns: dict[str, list[TurnEntry]]
     _pending_audio: dict[str, bytearray]
     _debug_frame_count: int
+
+    # -- methods provided by other mixins / main class (TYPE_CHECKING only) --
+    if TYPE_CHECKING:
+
+        def _schedule(self, coro: Coroutine[Any, Any, Any], *, name: str) -> None: ...
+        async def _fire_partial_transcription_hook(
+            self, session: VoiceSession, result: Any, room_id: str
+        ) -> None: ...
+        async def _handle_barge_in(
+            self, session: VoiceSession, playback: TTSPlaybackState, room_id: str
+        ) -> None: ...
+        async def _evaluate_turn(
+            self,
+            session: VoiceSession,
+            text: str,
+            room_id: str,
+            context: RoomContext,
+            *,
+            audio_bytes: bytes | None = None,
+        ) -> None: ...
+        async def _route_text(self, session: VoiceSession, text: str, room_id: str) -> None: ...
 
     # -----------------------------------------------------------------
     # VAD-driven STT streaming

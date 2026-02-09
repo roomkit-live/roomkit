@@ -25,11 +25,11 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from roomkit.voice.pipeline.denoiser.base import DenoiserProvider
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from roomkit.voice.audio_frame import AudioFrame
 
 logger = logging.getLogger(__name__)
@@ -37,11 +37,15 @@ logger = logging.getLogger(__name__)
 
 def _pcm_s16le_to_float32(data: bytes) -> np.ndarray:
     """Convert PCM signed 16-bit little-endian bytes to float32 array in [-1, 1]."""
+    import numpy as np
+
     return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
 
 
 def _float32_to_pcm_s16le(samples: np.ndarray | list[float]) -> bytes:
     """Convert float32 array in [-1, 1] to PCM signed 16-bit little-endian bytes."""
+    import numpy as np
+
     arr = np.asarray(samples, dtype=np.float32)
     return np.clip(arr * 32767, -32767, 32767).astype(np.int16).tobytes()
 
@@ -92,6 +96,8 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
                 "sherpa-onnx is required for SherpaOnnxDenoiserProvider. "
                 "Install it with: pip install roomkit[sherpa-onnx]"
             ) from exc
+
+        import numpy as np
 
         self._config = config
         self._sherpa: Any = __import__("sherpa_onnx")
@@ -145,6 +151,8 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
                 return frame
 
         try:
+            import numpy as np
+
             float_samples = _pcm_s16le_to_float32(frame.data)
             n_frame = len(float_samples)
 
@@ -217,9 +225,13 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
 
     def reset(self) -> None:
         """Reset sliding context buffer."""
+        import numpy as np
+
         self._context = np.array([], dtype=np.float32)
 
     def close(self) -> None:
         """Release the denoiser."""
+        import numpy as np
+
         self._denoiser = None
         self._context = np.array([], dtype=np.float32)
