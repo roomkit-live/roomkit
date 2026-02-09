@@ -266,7 +266,7 @@ class ElevenLabsTTSProvider(TTSProvider):
                 async for message in ws:
                     if isinstance(message, str):
                         data = json.loads(message)
-                        if "audio" in data:
+                        if data.get("audio"):
                             import base64
 
                             audio_bytes = base64.b64decode(data["audio"])
