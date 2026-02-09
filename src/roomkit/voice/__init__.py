@@ -211,6 +211,34 @@ def get_elevenlabs_config() -> type:
     return ElevenLabsConfig
 
 
+def get_gradium_stt_provider() -> type:
+    """Get GradiumSTTProvider class (requires gradium)."""
+    from roomkit.voice.stt.gradium import GradiumSTTProvider
+
+    return GradiumSTTProvider
+
+
+def get_gradium_stt_config() -> type:
+    """Get GradiumSTTConfig class."""
+    from roomkit.voice.stt.gradium import GradiumSTTConfig
+
+    return GradiumSTTConfig
+
+
+def get_gradium_tts_provider() -> type:
+    """Get GradiumTTSProvider class (requires gradium)."""
+    from roomkit.voice.tts.gradium import GradiumTTSProvider
+
+    return GradiumTTSProvider
+
+
+def get_gradium_tts_config() -> type:
+    """Get GradiumTTSConfig class."""
+    from roomkit.voice.tts.gradium import GradiumTTSConfig
+
+    return GradiumTTSConfig
+
+
 def get_local_audio_backend() -> type:
     """Get LocalAudioBackend class (requires sounddevice, numpy)."""
     from roomkit.voice.backends.local import LocalAudioBackend

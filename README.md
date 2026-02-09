@@ -82,6 +82,7 @@ pip install roomkit[openai]            # OpenAI GPT
 pip install roomkit[gemini]            # Google Gemini AI
 pip install roomkit[teams]             # Microsoft Teams (Bot Framework)
 pip install roomkit[neonize]           # WhatsApp Personal (neonize)
+pip install roomkit[gradium]            # Gradium STT + TTS
 pip install roomkit[fastrtc]           # FastRTC voice backend
 pip install roomkit[realtime-gemini]   # Gemini Live speech-to-speech
 pip install roomkit[realtime-openai]   # OpenAI Realtime speech-to-speech
@@ -156,6 +157,8 @@ Providers handle the actual API calls. Every provider has a mock counterpart for
 |----------|------|------------|
 | `DeepgramSTTProvider` | Speech-to-text | `roomkit[httpx]` |
 | `ElevenLabsTTSProvider` | Text-to-speech | `roomkit[httpx]` |
+| `GradiumSTTProvider` | Speech-to-text | `roomkit[gradium]` |
+| `GradiumTTSProvider` | Text-to-speech | `roomkit[gradium]` |
 | `SherpaOnnxSTTProvider` | Local STT (transducer/Whisper) | `roomkit[sherpa-onnx]` |
 | `SherpaOnnxTTSProvider` | Local TTS (VITS/Piper) | `roomkit[sherpa-onnx]` |
 | `FastRTCVoiceBackend` | WebRTC audio transport | `roomkit[fastrtc]` |

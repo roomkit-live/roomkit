@@ -10,13 +10,14 @@ this module imported:
 Or simply:  import examples.trace_audio  at the top of the example.
 
 Traced points (logged as periodic summaries every ~2s):
-  [INBOUND]  VoiceChannel._on_audio_received     — mic → pipeline
-  [PIPELINE] AudioPipeline.process_inbound        — inbound stage
-  [PIPELINE] AudioPipeline.process_outbound       — outbound stage
-  [AEC]      AECProvider.process / feed_reference  — echo cancellation
-  [VAD]      VADProvider.process                   — RMS, is_speech, state
-  [DELIVER]  VoiceChannel._deliver_voice           — TTS → backend
-  [BACKEND]  LocalAudioBackend.send_audio          — chunks to speaker
+  [INBOUND]    VoiceChannel._on_audio_received     — mic → pipeline
+  [PIPELINE]   AudioPipeline.process_inbound        — inbound stage
+  [PIPELINE]   AudioPipeline.process_outbound       — outbound stage
+  [AEC]        AECProvider.process / feed_reference  — echo cancellation
+  [VAD]        VADProvider.process                   — RMS, is_speech, state
+  [STT-STREAM] VoiceChannel streaming STT lifecycle  — start/result/timing
+  [DELIVER]    VoiceChannel._deliver_voice           — TTS → backend
+  [BACKEND]    LocalAudioBackend.send_audio          — chunks to speaker
 """
 
 from __future__ import annotations
@@ -429,6 +430,104 @@ def _patch_denoiser() -> None:
     DenoiserProvider.process = _make_denoiser_wrapper(DenoiserProvider.process)
 
 
+def _patch_stt_stream() -> None:
+    """Trace streaming STT lifecycle in VoiceChannel."""
+    from roomkit.channels.voice import VoiceChannel
+
+    # Track per-session timing
+    _stt_stream_timing: dict[str, float] = {}  # session_id -> speech_start monotonic
+
+    orig_start = VoiceChannel._start_stt_stream
+
+    @functools.wraps(orig_start)
+    def traced_start(self, session, room_id, pre_roll=None):
+        sid = session.id[:8]
+        _stt_stream_timing[session.id] = time.monotonic()
+        supports = self._stt.supports_streaming if self._stt else False
+        pre_roll_ms = 0
+        if pre_roll:
+            sr = session.metadata.get("input_sample_rate", 16000)
+            pre_roll_ms = len(pre_roll) / (sr * 2) * 1000  # 16-bit mono
+        logger.info(
+            "[STT-STREAM] start session=%s provider=%s supports_streaming=%s "
+            "pre_roll=%dB (%.0fms)",
+            sid,
+            self._stt.name if self._stt else None,
+            supports,
+            len(pre_roll) if pre_roll else 0,
+            pre_roll_ms,
+        )
+        return orig_start(self, session, room_id, pre_roll=pre_roll)
+
+    VoiceChannel._start_stt_stream = traced_start
+
+    orig_flush = VoiceChannel._flush_stt_buffer
+
+    @functools.wraps(orig_flush)
+    def traced_flush(self, state, session_id):
+        buf_bytes = len(state.frame_buffer)
+        if buf_bytes > 0:
+            _counts["stt_flush"] += 1
+            _counts["stt_bytes"] += buf_bytes
+        return orig_flush(self, state, session_id)
+
+    VoiceChannel._flush_stt_buffer = traced_flush
+
+    orig_speech_frame = VoiceChannel._on_pipeline_speech_frame
+
+    @functools.wraps(orig_speech_frame)
+    def traced_speech_frame(self, session, frame):
+        _counts["stt_frames"] += 1
+        return orig_speech_frame(self, session, frame)
+
+    VoiceChannel._on_pipeline_speech_frame = traced_speech_frame
+
+    orig_process_end = VoiceChannel._process_speech_end
+
+    @functools.wraps(orig_process_end)
+    async def traced_process_end(self, session, audio, room_id):
+        sid = session.id[:8]
+        t_start = time.monotonic()
+        stream_state = self._stt_streams.get(session.id)
+        had_stream = stream_state is not None
+        stream_ok = had_stream and not stream_state.error and not stream_state.cancelled
+        t_speech_start = _stt_stream_timing.pop(session.id, None)
+
+        final_text = None
+        error = None
+        try:
+            await orig_process_end(self, session, audio, room_id)
+        except Exception as exc:
+            error = exc
+            raise
+        finally:
+            t_end = time.monotonic()
+            stt_ms = (t_end - t_start) * 1000
+            speech_dur_ms = (t_start - t_speech_start) * 1000 if t_speech_start else 0
+
+            # Determine which path was used
+            used_stream = False
+            if stream_ok and stream_state is not None:
+                final_text = stream_state.final_text
+                used_stream = final_text is not None
+
+            logger.info(
+                "[STT-STREAM] result session=%s mode=%s stt_latency=%.0fms "
+                "speech_dur=%.0fms audio=%dB had_stream=%s "
+                "final_text=%r error=%s",
+                sid,
+                "stream" if used_stream else "batch",
+                stt_ms,
+                speech_dur_ms,
+                len(audio),
+                had_stream,
+                final_text,
+                error,
+            )
+
+    VoiceChannel._process_speech_end = traced_process_end
+
+
 def install() -> None:
     """Install all trace patches."""
     logger.info("=== RoomKit audio trace installed ===")
@@ -438,6 +537,7 @@ def install() -> None:
     _patch_vad()
     _patch_denoiser()
     _patch_local_backend()
+    _patch_stt_stream()
     logger.info("=== Tracing active (summaries every %.0fs) ===", _SUMMARY_INTERVAL)
 
 

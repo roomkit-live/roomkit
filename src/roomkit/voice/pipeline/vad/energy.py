@@ -138,7 +138,11 @@ class EnergyVADProvider(VADProvider):
                     self._speech_buf.extend(chunk)
                 self._pre_roll.clear()
                 self._pre_roll_ms = 0.0
-                return VADEvent(type=VADEventType.SPEECH_START, confidence=1.0)
+                return VADEvent(
+                    type=VADEventType.SPEECH_START,
+                    confidence=1.0,
+                    audio_bytes=bytes(self._speech_buf),
+                )
         else:
             # --- Speaking state ---
             self._speech_buf.extend(frame.data)
