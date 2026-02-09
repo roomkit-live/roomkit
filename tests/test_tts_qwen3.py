@@ -36,11 +36,24 @@ class _FakeQwen3TTSModel:
         return [samples], 16000
 
 
+def _make_fake_torch() -> ModuleType:
+    """Create a minimal fake torch module with dtype constants."""
+    mod = ModuleType("torch")
+    mod.bfloat16 = "bfloat16"  # type: ignore[attr-defined]
+    mod.float16 = "float16"  # type: ignore[attr-defined]
+    mod.float32 = "float32"  # type: ignore[attr-defined]
+    mod.dtype = type("dtype", (), {})  # type: ignore[attr-defined]
+    return mod
+
+
 def _install_fake_qwen_tts() -> ModuleType:
-    """Install a fake qwen_tts module into sys.modules."""
+    """Install fake qwen_tts and torch modules into sys.modules."""
     mod = ModuleType("qwen_tts")
     mod.Qwen3TTSModel = _FakeQwen3TTSModel  # type: ignore[attr-defined]
     sys.modules["qwen_tts"] = mod
+    # _load_model() imports torch for dtype mapping; provide a fake
+    if "torch" not in sys.modules:
+        sys.modules["torch"] = _make_fake_torch()
     return mod
 
 
