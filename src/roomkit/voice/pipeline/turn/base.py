@@ -46,6 +46,12 @@ class TurnContext:
     metadata: dict[str, Any] = field(default_factory=dict)
     """Additional context for the turn detector."""
 
+    audio_bytes: bytes | None = None
+    """Raw PCM audio for the speech segment (int16 mono). None in continuous STT mode."""
+
+    audio_sample_rate: int = 16000
+    """Sample rate of audio_bytes in Hz."""
+
 
 @dataclass
 class TurnDecision:

@@ -45,6 +45,7 @@ realtime-gemini = ["google-genai>=1.0.0"]
 websocket = ["websockets>=13.0"]
 sse = ["httpx>=0.27", "httpx-sse>=0.4"]
 gradium = ["gradium>=0.5.7"]
+smart-turn = ["numpy", "onnxruntime", "transformers"]
 telegram = ["httpx>=0.27"]
 teams = ["botbuilder-core>=4.14"]
 whatsapp-personal = ["neonize>=0.3.14"]
@@ -170,6 +171,14 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["numpy", "numpy.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["onnxruntime", "onnxruntime.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["transformers", "transformers.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

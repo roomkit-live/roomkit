@@ -128,6 +128,13 @@ Environment variables:
                         VAD and denoiser always use CPU (per-frame overhead makes
                         CUDA slower for these tiny models)
 
+    --- Turn detection (optional) ---
+    SMART_TURN_MODEL    Path to smart-turn ONNX model (enables audio-native turn detection)
+                        Download from HuggingFace: pipecat-ai/smart-turn-v3
+                          wget https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/main/smart-turn-v3.2-cpu.onnx
+                        Requires: pip install roomkit[smart-turn]
+    SMART_TURN_THRESHOLD  Completion probability threshold 0-1 (default: 0.5)
+
 Press Ctrl+C to stop.
 """
 
@@ -312,6 +319,25 @@ async def main() -> None:
         debug_taps = PipelineDebugTaps(output_dir=debug_taps_dir, stages=stages)
         logger.info("Debug taps: %s (stages=%s)", debug_taps_dir, stages)
 
+    # --- Smart turn detection (optional, audio-native) -----------------------
+    turn_detector = None
+    smart_turn_model = os.environ.get("SMART_TURN_MODEL", "")
+    if smart_turn_model:
+        from roomkit.voice.pipeline.turn import SmartTurnConfig, SmartTurnDetector
+
+        smart_turn_threshold = float(os.environ.get("SMART_TURN_THRESHOLD", "0.5"))
+        turn_detector = SmartTurnDetector(
+            SmartTurnConfig(
+                model_path=smart_turn_model,
+                threshold=smart_turn_threshold,
+            )
+        )
+        logger.info(
+            "Turn detection: smart-turn (model=%s, threshold=%.2f)",
+            smart_turn_model,
+            smart_turn_threshold,
+        )
+
     # --- Pipeline config ------------------------------------------------------
     pipeline_config = AudioPipelineConfig(
         vad=vad,
@@ -320,6 +346,7 @@ async def main() -> None:
         recorder=recorder,
         recording_config=recording_config,
         debug_taps=debug_taps,
+        turn_detector=turn_detector,
     )
 
     # --- STT (sherpa-onnx) ----------------------------------------------------
@@ -423,6 +450,14 @@ async def main() -> None:
         logger.info("Assistant: %s", text)
         return HookResult.allow()
 
+    @kit.hook(HookTrigger.ON_TURN_COMPLETE, execution=HookExecution.ASYNC)
+    async def on_turn_complete(event, ctx):
+        logger.info("Turn complete (confidence=%.2f): %s", event.confidence, event.text)
+
+    @kit.hook(HookTrigger.ON_TURN_INCOMPLETE, execution=HookExecution.ASYNC)
+    async def on_turn_incomplete(event, ctx):
+        logger.info("Turn incomplete (confidence=%.2f): %s", event.confidence, event.text)
+
     @kit.hook(HookTrigger.ON_RECORDING_STARTED, execution=HookExecution.ASYNC)
     async def on_rec_started(event, ctx):
         logger.info("Recording started: %s", event.id)
@@ -472,6 +507,8 @@ async def main() -> None:
     voice.unbind_session(session)
     await asyncio.sleep(0.1)
     await backend.disconnect(session)
+    if turn_detector is not None:
+        turn_detector.close()
     await kit.close()
     logger.info("Done. Recordings saved to: %s", recording_dir)
 
