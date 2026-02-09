@@ -22,9 +22,10 @@ Usage::
 from __future__ import annotations
 
 import logging
-import struct
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
+import numpy as np
 
 from roomkit.voice.pipeline.denoiser.base import DenoiserProvider
 
@@ -34,18 +35,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _pcm_s16le_to_float32(data: bytes) -> list[float]:
-    """Convert PCM signed 16-bit little-endian bytes to float32 list in [-1, 1]."""
-    n = len(data) // 2
-    samples = struct.unpack(f"<{n}h", data[: n * 2])
-    return [s / 32768.0 for s in samples]
+def _pcm_s16le_to_float32(data: bytes) -> np.ndarray:
+    """Convert PCM signed 16-bit little-endian bytes to float32 array in [-1, 1]."""
+    return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
 
 
-def _float32_to_pcm_s16le(samples: list[float]) -> bytes:
-    """Convert float32 list in [-1, 1] to PCM signed 16-bit little-endian bytes."""
-    clamped = [max(-1.0, min(1.0, s)) for s in samples]
-    int_samples = [int(s * 32767) for s in clamped]
-    return struct.pack(f"<{len(int_samples)}h", *int_samples)
+def _float32_to_pcm_s16le(samples: np.ndarray | list[float]) -> bytes:
+    """Convert float32 array in [-1, 1] to PCM signed 16-bit little-endian bytes."""
+    arr = np.asarray(samples, dtype=np.float32)
+    return np.clip(arr * 32767, -32767, 32767).astype(np.int16).tobytes()
 
 
 @dataclass
@@ -59,15 +57,21 @@ class SherpaOnnxDenoiserConfig:
         context_frames: Number of preceding frames to include as context
             when denoising.  GTCRN is an offline model — processing tiny
             20 ms frames in isolation produces poor quality and boundary
-            artifacts.  A sliding context window (default 10 = 200 ms)
-            gives the model enough temporal context to distinguish speech
-            from noise without adding latency.
+            artifacts.  A sliding context window (default 3 = 60 ms,
+            ~6 STFT frames at 6.25 ms hop) gives the model's recurrent
+            layers enough warmup context while keeping inference ~3x
+            faster than the previous 200 ms window.
+        silence_threshold: RMS energy threshold (in float32 [-1, 1] scale)
+            below which ONNX inference is skipped entirely.  Frames below
+            this level are replaced with silence.  Set to 0 to disable.
+            Default 0.005 ≈ −46 dBFS — well below any speech.
     """
 
     model: str = ""
     num_threads: int = 1
     provider: str = "cpu"
-    context_frames: int = 10
+    context_frames: int = 3
+    silence_threshold: float = 0.005
 
 
 class SherpaOnnxDenoiserProvider(DenoiserProvider):
@@ -92,7 +96,7 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
         self._config = config
         self._sherpa: Any = __import__("sherpa_onnx")
         self._denoiser: Any = None
-        self._context: list[float] = []
+        self._context: np.ndarray = np.array([], dtype=np.float32)
 
     @property
     def name(self) -> str:
@@ -144,8 +148,27 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             float_samples = _pcm_s16le_to_float32(frame.data)
             n_frame = len(float_samples)
 
+            # Skip inference for near-silent frames — output silence directly.
+            # The denoiser would suppress this to ~silence anyway; skipping
+            # avoids ONNX inference cost entirely at idle.
+            threshold = self._config.silence_threshold
+            if threshold > 0:
+                rms = float(np.sqrt(np.dot(float_samples, float_samples) / n_frame))
+                if rms < threshold:
+                    self._context = np.array([], dtype=np.float32)
+                    from roomkit.voice.audio_frame import AudioFrame
+
+                    return AudioFrame(
+                        data=b"\x00" * len(frame.data),
+                        sample_rate=frame.sample_rate,
+                        channels=frame.channels,
+                        sample_width=frame.sample_width,
+                        timestamp_ms=frame.timestamp_ms,
+                        metadata=dict(frame.metadata),
+                    )
+
             # Append current frame to sliding context buffer
-            self._context.extend(float_samples)
+            self._context = np.concatenate([self._context, float_samples])
 
             # Trim to at most context_frames worth of samples
             max_context = n_frame * max(self._config.context_frames, 1)
@@ -155,13 +178,15 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             # Pad at the START to GTCRN block size (256 samples).
             # Padding must go at the beginning so the real audio stays at
             # the tail — we extract the last n_frame samples from the output.
-            to_process = list(self._context)
             block = 256
-            remainder = len(to_process) % block
+            remainder = len(self._context) % block
             if remainder:
-                to_process = [0.0] * (block - remainder) + to_process
+                pad = np.zeros(block - remainder, dtype=np.float32)
+                to_process = np.concatenate([pad, self._context])
+            else:
+                to_process = self._context
 
-            result = self._denoiser.run(to_process, frame.sample_rate)
+            result = self._denoiser.run(to_process.tolist(), frame.sample_rate)
 
             # Extract the last n_frame samples (the current frame's portion)
             denoised = result.samples
@@ -192,9 +217,9 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
 
     def reset(self) -> None:
         """Reset sliding context buffer."""
-        self._context.clear()
+        self._context = np.array([], dtype=np.float32)
 
     def close(self) -> None:
         """Release the denoiser."""
         self._denoiser = None
-        self._context.clear()
+        self._context = np.array([], dtype=np.float32)

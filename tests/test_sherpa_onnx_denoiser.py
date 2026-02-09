@@ -7,6 +7,7 @@ import struct
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from roomkit.voice.audio_frame import AudioFrame
@@ -79,7 +80,7 @@ class TestProcess:
         sherpa = _mock_sherpa_module()
         # Return zeros (silence) from denoiser
         denoiser = _denoiser_that_returns([0.0] * 160)
-        provider = _make_provider(sherpa, denoiser)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame_in = _frame(160, value=100)
         frame_out = provider.process(frame_in)
@@ -95,7 +96,7 @@ class TestProcess:
         sherpa = _mock_sherpa_module()
         # Return a known value
         denoiser = _denoiser_that_returns([0.5] * 4)
-        provider = _make_provider(sherpa, denoiser)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame_in = _frame(4, value=1000)
         frame_out = provider.process(frame_in)
@@ -108,7 +109,7 @@ class TestProcess:
     def test_process_preserves_timestamp(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
-        provider = _make_provider(sherpa, denoiser)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame_in = _frame(160, timestamp_ms=42.5)
         frame_out = provider.process(frame_in)
@@ -118,7 +119,7 @@ class TestProcess:
     def test_process_copies_metadata(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
-        provider = _make_provider(sherpa, denoiser)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame_in = _frame(160)
         frame_in.metadata["source"] = "test"
@@ -132,7 +133,7 @@ class TestProcess:
     def test_process_after_close_returns_original(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
-        provider = _make_provider(sherpa, denoiser)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         provider.close()
         frame = _frame(160)
@@ -147,13 +148,72 @@ class TestProcess:
         sherpa = _mock_sherpa_module()
         denoiser = MagicMock()
         denoiser.run.side_effect = RuntimeError("boom")
-        provider = _make_provider(sherpa, denoiser)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame = _frame(160, value=500)
         result = provider.process(frame)
 
         # Should return the original frame on error
         assert result is frame
+
+
+# ---------------------------------------------------------------------------
+# Silence gate
+# ---------------------------------------------------------------------------
+
+
+class TestSilenceGate:
+    def test_silent_frame_skips_inference(self) -> None:
+        sherpa = _mock_sherpa_module()
+        denoiser = _denoiser_that_returns([0.0] * 160)
+        provider = _make_provider(sherpa, denoiser)
+
+        # value=0 → silence → should be gated
+        frame = _frame(160, value=0)
+        result = provider.process(frame)
+
+        assert isinstance(result, AudioFrame)
+        # Output should be all zeros
+        assert result.data == b"\x00" * len(frame.data)
+        # Denoiser.run should NOT have been called
+        denoiser.run.assert_not_called()
+
+    def test_loud_frame_runs_inference(self) -> None:
+        sherpa = _mock_sherpa_module()
+        denoiser = _denoiser_that_returns([0.1] * 160)
+        provider = _make_provider(sherpa, denoiser)
+
+        # value=1000 → ~0.03 RMS → above default 0.005 threshold
+        frame = _frame(160, value=1000)
+        result = provider.process(frame)
+
+        assert isinstance(result, AudioFrame)
+        denoiser.run.assert_called_once()
+
+    def test_silence_gate_disabled_when_threshold_zero(self) -> None:
+        sherpa = _mock_sherpa_module()
+        denoiser = _denoiser_that_returns([0.0] * 160)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
+
+        # Even silence should run inference when gate is disabled
+        frame = _frame(160, value=0)
+        provider.process(frame)
+
+        denoiser.run.assert_called_once()
+
+    def test_silence_gate_preserves_frame_metadata(self) -> None:
+        sherpa = _mock_sherpa_module()
+        denoiser = _denoiser_that_returns([0.0] * 160)
+        provider = _make_provider(sherpa, denoiser)
+
+        frame = _frame(160, value=0, timestamp_ms=99.0)
+        frame.metadata["tag"] = "test"
+        result = provider.process(frame)
+
+        assert result.timestamp_ms == 99.0
+        assert result.sample_rate == 16000
+        assert result.channels == 1
+        assert result.metadata["tag"] == "test"
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +225,7 @@ class TestLazyInit:
     def test_denoiser_not_created_until_first_process(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
-        provider = _make_provider(sherpa, denoiser)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         assert provider._denoiser is None
 
@@ -175,7 +235,7 @@ class TestLazyInit:
     def test_ensure_denoiser_only_creates_once(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
-        provider = _make_provider(sherpa, denoiser)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         provider.process(_frame(160))
         provider.process(_frame(160))
@@ -190,6 +250,17 @@ class TestLazyInit:
 
 
 class TestConfig:
+    def test_context_frames_default_is_3(self) -> None:
+        with patch.dict("sys.modules", {"sherpa_onnx": _mock_sherpa_module()}):
+            import roomkit.voice.pipeline.denoiser.sherpa_onnx as dn_mod
+
+            importlib.reload(dn_mod)
+            from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
+                SherpaOnnxDenoiserConfig,
+            )
+
+            assert SherpaOnnxDenoiserConfig().context_frames == 3
+
     def test_config_populates_gtcrn(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
@@ -199,6 +270,7 @@ class TestConfig:
             model="/path/to/gtcrn_simple.onnx",
             num_threads=2,
             provider="cuda",
+            silence_threshold=0,
         )
 
         # Trigger lazy init
@@ -239,7 +311,7 @@ class TestLifecycle:
     def test_reset_is_safe(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
-        provider = _make_provider(sherpa, denoiser)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         # Reset before init — no-op
         provider.reset()
@@ -255,7 +327,7 @@ class TestLifecycle:
     def test_close_sets_denoiser_none(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
-        provider = _make_provider(sherpa, denoiser)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         provider.process(_frame(160))
         assert provider._denoiser is not None
@@ -266,7 +338,7 @@ class TestLifecycle:
     def test_double_close(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
-        provider = _make_provider(sherpa, denoiser)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         provider.close()
         provider.close()  # Must not raise
@@ -310,6 +382,8 @@ class TestPcmConversion:
 
             pcm = struct.pack("<1h", 0)
             result = _pcm_s16le_to_float32(pcm)
+            assert isinstance(result, np.ndarray)
+            assert result.dtype == np.float32
             assert len(result) == 1
             assert abs(result[0]) < 1e-6
 
