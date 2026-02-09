@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from roomkit.core._helpers import HelpersMixin
 from roomkit.models.context import RoomContext
@@ -26,12 +27,21 @@ from roomkit.models.identity import Identity, IdentityResult
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
+    from roomkit.core.event_router import EventRouter, StreamingResponse
     from roomkit.core.inbound_router import InboundRoomRouter
     from roomkit.core.locks import RoomLockManager
     from roomkit.identity.base import IdentityResolver
     from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.framework")
+
+
+@dataclass
+class _StreamingResult:
+    """Result of handling a streaming response."""
+
+    event: RoomEvent
+    delivered_to: set[str] = field(default_factory=set)
 
 
 class InboundMixin(HelpersMixin):
@@ -208,15 +218,17 @@ class InboundMixin(HelpersMixin):
             pending_id_result = None
 
         # Process under room lock
+        pending_streams: list = []
         async with self._lock_manager.locked(room_id):
             try:
-                return await asyncio.wait_for(
+                result = await asyncio.wait_for(
                     self._process_locked(
                         event,
                         room_id,
                         context,
                         resolved_identity=resolved_identity,
                         pending_id_result=pending_id_result,
+                        pending_streams_out=pending_streams,
                     ),
                     timeout=self._process_timeout,
                 )
@@ -234,6 +246,13 @@ class InboundMixin(HelpersMixin):
                 )
                 return InboundResult(blocked=True, reason="process_timeout")
 
+        # Handle streaming responses outside lock (TTS delivery can take seconds;
+        # holding the lock would block concurrent process_inbound calls)
+        if pending_streams:
+            await self._process_streaming_responses(pending_streams, room_id)
+
+        return result
+
     async def _process_locked(
         self,
         event: RoomEvent,
@@ -242,6 +261,7 @@ class InboundMixin(HelpersMixin):
         *,
         resolved_identity: Identity | None = None,
         pending_id_result: IdentityResult | None = None,
+        pending_streams_out: list | None = None,
     ) -> InboundResult:
         """Process an event under the room lock."""
         # Rebuild context under lock to prevent stale reads
@@ -454,6 +474,11 @@ class InboundMixin(HelpersMixin):
                 },
             )
 
+        # Pass streaming responses to caller (handled outside room lock
+        # to avoid blocking concurrent process_inbound calls during TTS)
+        if pending_streams_out is not None:
+            pending_streams_out.extend(broadcast_result.streaming_responses)
+
         # Store reentry events and re-broadcast them (drain loop)
         pending_reentries = deque(broadcast_result.reentry_events)
         max_reentries = self._max_chain_depth * 10
@@ -484,7 +509,11 @@ class InboundMixin(HelpersMixin):
                 reentry_ctx = context.model_copy(
                     update={"recent_events": [*context.recent_events[-49:], reentry]}
                 )
-                reentry_result = await router.broadcast(reentry, reentry_binding, reentry_ctx)
+                reentry_result = await router.broadcast(
+                    reentry,
+                    reentry_binding,
+                    reentry_ctx,
+                )
                 # Store reentry's blocked events
                 for blocked in reentry_result.blocked_events:
                     await self._store.add_event(blocked)
@@ -560,3 +589,114 @@ class InboundMixin(HelpersMixin):
                             target_id,
                             extra={"room_id": room_id, "channel_id": target_id},
                         )
+
+    async def _handle_streaming_response(
+        self,
+        router: EventRouter,
+        sr: StreamingResponse,
+        room_id: str,
+        context: RoomContext,
+    ) -> _StreamingResult | None:
+        """Consume a streaming response, pipe to streaming channels, store result."""
+        from roomkit.models.event import EventSource, TextContent
+
+        # Find streaming delivery targets (transport channels that support it)
+        streaming_targets: list[Any] = []
+        for binding in context.bindings:
+            if binding.category != ChannelCategory.TRANSPORT:
+                continue
+            if binding.channel_id == sr.source_channel_id:
+                continue
+            channel = router.get_channel(binding.channel_id)
+            if channel and getattr(channel, "supports_streaming_delivery", False):
+                streaming_targets.append((channel, binding))
+
+        accumulated: list[str] = []
+
+        async def accumulated_stream() -> Any:
+            async for delta in sr.stream:
+                accumulated.append(delta)
+                yield delta
+
+        delivered_to: set[str] = set()
+        if streaming_targets:
+            channel, binding = streaming_targets[0]  # V1: single target
+            placeholder = RoomEvent(
+                room_id=room_id,
+                source=EventSource(
+                    channel_id=sr.source_channel_id,
+                    channel_type=sr.source_channel_type,
+                ),
+                content=TextContent(body=""),
+                chain_depth=sr.trigger_event.chain_depth + 1,
+            )
+            try:
+                await channel.deliver_stream(accumulated_stream(), placeholder, binding, context)
+                delivered_to.add(binding.channel_id)
+            except Exception:
+                logger.exception("Streaming delivery to %s failed", binding.channel_id)
+        else:
+            # No streaming targets — just consume the stream
+            async for delta in sr.stream:
+                accumulated.append(delta)
+
+        full_text = "".join(accumulated)
+        if not full_text:
+            return None
+
+        response_event = RoomEvent(
+            room_id=room_id,
+            source=EventSource(
+                channel_id=sr.source_channel_id,
+                channel_type=sr.source_channel_type,
+            ),
+            content=TextContent(body=full_text),
+            chain_depth=sr.trigger_event.chain_depth + 1,
+        )
+        await self._store.add_event(response_event)
+
+        return _StreamingResult(event=response_event, delivered_to=delivered_to)
+
+    async def _process_streaming_responses(
+        self,
+        pending_streams: list,
+        room_id: str,
+    ) -> None:
+        """Handle streaming responses outside the room lock.
+
+        Streaming delivery (TTS playback) can take seconds. Running it outside
+        the lock allows other process_inbound calls to proceed concurrently,
+        preventing continuous STT echo from being queued behind the lock.
+        """
+        router = self._get_router()  # type: ignore[attr-defined]
+        context = await self._build_context(room_id)
+
+        for sr in pending_streams:
+            sr_result = await self._handle_streaming_response(router, sr, room_id, context)
+            if sr_result:
+                # Broadcast complete text to non-streaming channels
+                binding = await self._store.get_binding(room_id, sr_result.event.source.channel_id)
+                if binding:
+                    reentry_ctx = context.model_copy(
+                        update={
+                            "recent_events": [
+                                *context.recent_events[-49:],
+                                sr_result.event,
+                            ]
+                        }
+                    )
+                    reentry_result = await router.broadcast(
+                        sr_result.event,
+                        binding,
+                        reentry_ctx,
+                        exclude_delivery=sr_result.delivered_to,
+                    )
+                    for blocked in reentry_result.blocked_events:
+                        await self._store.add_event(blocked)
+                    # Run AFTER_BROADCAST hooks for the AI response
+                    await self._hook_engine.run_async_hooks(
+                        room_id,
+                        HookTrigger.AFTER_BROADCAST,
+                        sr_result.event,
+                        reentry_ctx,
+                    )

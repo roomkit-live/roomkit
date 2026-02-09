@@ -39,12 +39,23 @@ logger = logging.getLogger("roomkit.event_router")
 
 
 @dataclass
+class StreamingResponse:
+    """A streaming response from an intelligence channel."""
+
+    stream: Any  # AsyncIterator[str]
+    source_channel_id: str
+    source_channel_type: Any  # ChannelType
+    trigger_event: RoomEvent
+
+
+@dataclass
 class BroadcastResult:
     """Result of broadcasting an event to channels."""
 
     outputs: dict[str, ChannelOutput] = field(default_factory=dict)
     delivery_outputs: dict[str, ChannelOutput] = field(default_factory=dict)
     reentry_events: list[RoomEvent] = field(default_factory=list)
+    streaming_responses: list[StreamingResponse] = field(default_factory=list)
     tasks: list[Task] = field(default_factory=list)
     observations: list[Observation] = field(default_factory=list)
     metadata_updates: dict[str, Any] = field(default_factory=dict)
@@ -59,6 +70,7 @@ class _TargetResult:
     channel_id: str
     output: ChannelOutput | None = None
     delivery_output: ChannelOutput | None = None
+    streaming_response: StreamingResponse | None = None
     error: str | None = None
     reentry_events: list[RoomEvent] = field(default_factory=list)
     blocked_events: list[RoomEvent] = field(default_factory=list)
@@ -87,17 +99,27 @@ class EventRouter:
             self._circuit_breakers[channel_id] = CircuitBreaker()
         return self._circuit_breakers[channel_id]
 
+    def get_channel(self, channel_id: str) -> Channel | None:
+        """Look up a channel by ID."""
+        return self._channels.get(channel_id)
+
     async def broadcast(
         self,
         event: RoomEvent,
         source_binding: ChannelBinding,
         context: RoomContext,
+        *,
+        exclude_delivery: set[str] | None = None,
     ) -> BroadcastResult:
         """Broadcast an event to all eligible channels in the room.
 
         RFC §3.8: For each target channel:
         - on_event(): all channels react (intelligence generates, observers analyze)
         - deliver(): only transport channels push to external recipients
+
+        Args:
+            exclude_delivery: Channel IDs to skip delivery for (already
+                received content via streaming).
         """
         result = BroadcastResult()
 
@@ -171,8 +193,26 @@ class EventRouter:
                 output = await channel.on_event(transcoded_event, binding, context)
                 tr.output = output
 
+                # Streaming response: capture handle, skip reentry logic
+                if output.response_stream is not None:
+                    tr.streaming_response = StreamingResponse(
+                        stream=output.response_stream,
+                        source_channel_id=binding.channel_id,
+                        source_channel_type=binding.channel_type,
+                        trigger_event=transcoded_event,
+                    )
+                    tr.observations.extend(output.observations)
+                    target_results.append(tr)
+                    return
+
                 # Step 2: deliver — only transport channels push to external
                 if binding.category == ChannelCategory.TRANSPORT:
+                    # Skip delivery for channels that already received streaming content
+                    if exclude_delivery and binding.channel_id in exclude_delivery:
+                        tr.observations.extend(output.observations)
+                        target_results.append(tr)
+                        return
+
                     breaker = self._get_breaker(binding.channel_id)
 
                     if not breaker.allow_request():
@@ -303,6 +343,8 @@ class EventRouter:
                 result.metadata_updates.update(tr.output.metadata_updates)
             if tr.delivery_output is not None:
                 result.delivery_outputs[tr.channel_id] = tr.delivery_output
+            if tr.streaming_response is not None:
+                result.streaming_responses.append(tr.streaming_response)
             if tr.error is not None:
                 result.errors[tr.channel_id] = tr.error
             result.reentry_events.extend(tr.reentry_events)

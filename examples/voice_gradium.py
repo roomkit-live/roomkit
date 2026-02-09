@@ -348,11 +348,6 @@ async def main() -> None:
         tts=tts,
         backend=backend,
         pipeline=pipeline_config,
-        ai_provider=ai_provider,
-        ai_channel_id="ai",
-        ai_system_prompt=system_prompt,
-        ai_temperature=0.7,
-        ai_max_tokens=256,
     )
     logger.info(
         "Interruption: strategy=%s, barge_in=%s",

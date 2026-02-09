@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from typing import Any
 
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
@@ -48,6 +49,28 @@ class Channel(ABC):
     ) -> ChannelOutput:
         """React to an event. Default: no-op for transport channels."""
         return ChannelOutput.empty()
+
+    @property
+    def supports_streaming_delivery(self) -> bool:
+        """Whether this channel can accept streaming text delivery."""
+        return False
+
+    async def deliver_stream(
+        self,
+        text_stream: AsyncIterator[str],
+        event: RoomEvent,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> ChannelOutput:
+        """Deliver a streaming text response to this channel.
+
+        Default: accumulate text, deliver as complete event.
+        """
+        chunks: list[str] = []
+        async for chunk in text_stream:
+            chunks.append(chunk)
+        updated = event.model_copy(update={"content": TextContent(body="".join(chunks))})
+        return await self.deliver(updated, binding, context)
 
     def capabilities(self) -> ChannelCapabilities:
         """Return channel capabilities."""

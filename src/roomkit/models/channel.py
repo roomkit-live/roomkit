@@ -91,6 +91,7 @@ class ChannelOutput(BaseModel):
 
     responded: bool = False
     response_events: list[RoomEvent] = Field(default_factory=list)
+    response_stream: Any = Field(default=None, exclude=True)
     tasks: list[Task] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)
     metadata_updates: dict[str, Any] = Field(default_factory=dict)

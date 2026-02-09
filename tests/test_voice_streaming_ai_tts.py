@@ -1,12 +1,15 @@
-"""Tests for streaming AI → TTS pipeline in VoiceChannel."""
+"""Tests for streaming AI → TTS pipeline (framework-native architecture)."""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
 
-from roomkit import MockSTTProvider, MockVoiceBackend, RoomKit, VoiceChannel
+from roomkit import MockSTTProvider, MockTTSProvider, MockVoiceBackend, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
+from roomkit.models.channel import ChannelBinding
+from roomkit.models.context import RoomContext
+from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.providers.ai.base import AIContext, AIProvider, AIResponse
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import AudioChunk
@@ -16,7 +19,7 @@ from roomkit.voice.tts.base import TTSProvider
 from roomkit.voice.tts.sentence_splitter import split_sentences
 
 # ---------------------------------------------------------------------------
-# Sentence splitter tests
+# Sentence splitter tests (unchanged — unit tests, no architecture dependency)
 # ---------------------------------------------------------------------------
 
 
@@ -34,8 +37,6 @@ class TestSentenceSplitter:
     async def test_min_chunk_chars_respected(self) -> None:
         tokens = ["Hi. ", "Ok. ", "This is a longer sentence that should flush."]
         result = [s async for s in split_sentences(_aiter(tokens), min_chunk_chars=20)]
-        # "Hi. Ok. " is only 8 chars, not enough to split
-        # Everything accumulates until the longer text triggers a split or flush
         assert len(result) >= 1
         combined = " ".join(result)
         assert "Hi." in combined
@@ -60,7 +61,6 @@ class TestSentenceSplitter:
         result = [s async for s in split_sentences(_aiter(tokens), min_chunk_chars=5)]
         assert "First sentence." in result
         assert "Second one!" in result
-        # "Third?" and "Partial end" may be separate or combined depending on min_chunk
         combined = " ".join(result)
         assert "Third?" in combined
         assert "Partial end" in combined
@@ -182,7 +182,10 @@ def _build_kit(
     ai_provider: AIProvider,
     tts: TTSProvider | None = None,
     vad_events: list[VADEvent | None] | None = None,
-) -> tuple[RoomKit, VoiceChannel, MockVoiceBackend, MockVADProvider]:
+    ai_system_prompt: str = "Be helpful.",
+    ai_temperature: float = 0.5,
+    ai_max_tokens: int = 128,
+) -> tuple[RoomKit, VoiceChannel, MockVoiceBackend, MockVADProvider, AIChannel]:
     stt = MockSTTProvider(transcripts=["Hello world"])
     backend = MockVoiceBackend()
     vad = MockVADProvider(events=vad_events or _speech_events())
@@ -195,68 +198,158 @@ def _build_kit(
         tts=tts_provider,
         backend=backend,
         pipeline=pipeline,
-        ai_provider=ai_provider,
-        ai_channel_id="ai-1",
-        ai_system_prompt="Be helpful.",
-        ai_temperature=0.5,
-        ai_max_tokens=128,
     )
     kit = RoomKit(stt=stt, voice=backend)
     kit.register_channel(channel)
-    # Register AI channel for fallback routing
-    ai_channel = AIChannel("ai-1", provider=ai_provider, system_prompt="Be helpful.")
+
+    ai_channel = AIChannel(
+        "ai-1",
+        provider=ai_provider,
+        system_prompt=ai_system_prompt,
+        temperature=ai_temperature,
+        max_tokens=ai_max_tokens,
+    )
     kit.register_channel(ai_channel)
-    return kit, channel, backend, vad
+    return kit, channel, backend, vad, ai_channel
 
 
 # ---------------------------------------------------------------------------
-# _can_stream_ai_tts property tests
+# supports_streaming_delivery property tests
 # ---------------------------------------------------------------------------
 
 
-class TestCanStreamAiTts:
-    def test_true_when_both_support_streaming(self) -> None:
-        ai = _StreamingAIProvider(["hello"])
+class TestSupportsStreamingDelivery:
+    def test_true_when_tts_and_backend(self) -> None:
         tts = _StreamingInputTTS()
-        channel = VoiceChannel("v", ai_provider=ai, tts=tts)
-        assert channel._can_stream_ai_tts is True
-
-    def test_false_when_ai_not_streaming(self) -> None:
-        ai = _NonStreamingAIProvider()
-        tts = _StreamingInputTTS()
-        channel = VoiceChannel("v", ai_provider=ai, tts=tts)
-        assert channel._can_stream_ai_tts is False
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("v", tts=tts, backend=backend)
+        assert channel.supports_streaming_delivery is True
 
     def test_false_when_tts_not_streaming_input(self) -> None:
-        from roomkit import MockTTSProvider
-
-        ai = _StreamingAIProvider(["hello"])
         tts = MockTTSProvider()
-        channel = VoiceChannel("v", ai_provider=ai, tts=tts)
-        assert channel._can_stream_ai_tts is False
-
-    def test_false_when_no_ai_provider(self) -> None:
-        tts = _StreamingInputTTS()
-        channel = VoiceChannel("v", tts=tts)
-        assert channel._can_stream_ai_tts is False
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("v", tts=tts, backend=backend)
+        assert channel.supports_streaming_delivery is False
 
     def test_false_when_no_tts(self) -> None:
-        ai = _StreamingAIProvider(["hello"])
-        channel = VoiceChannel("v", ai_provider=ai)
-        assert channel._can_stream_ai_tts is False
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("v", backend=backend)
+        assert channel.supports_streaming_delivery is False
+
+    def test_false_when_no_backend(self) -> None:
+        tts = _StreamingInputTTS()
+        channel = VoiceChannel("v", tts=tts)
+        assert channel.supports_streaming_delivery is False
 
 
 # ---------------------------------------------------------------------------
-# Streaming AI → TTS integration tests
+# AIChannel streaming response tests
+# ---------------------------------------------------------------------------
+
+
+class TestAIChannelStreamingResponse:
+    async def test_returns_stream_when_provider_supports_it(self) -> None:
+        """AIChannel returns response_stream when provider supports streaming."""
+        ai = _StreamingAIProvider(["hello ", "world"])
+        channel = AIChannel("ai-1", provider=ai, system_prompt="Test")
+
+        from roomkit.models.event import EventSource, RoomEvent, TextContent
+
+        event = RoomEvent(
+            room_id="room-1",
+            source=EventSource(channel_id="voice-1", channel_type=ChannelType.VOICE),
+            content=TextContent(body="Hi"),
+        )
+        binding = ChannelBinding(
+            room_id="room-1",
+            channel_id="ai-1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+        )
+        from roomkit.models.context import RoomContext
+        from roomkit.models.room import Room
+
+        context = RoomContext(
+            room=Room(id="room-1"),
+            bindings=[binding],
+        )
+
+        output = await channel.on_event(event, binding, context)
+        assert output.responded is True
+        assert output.response_stream is not None
+        assert output.response_events == []
+
+        # Consume the stream
+        tokens = []
+        async for delta in output.response_stream:
+            tokens.append(delta)
+        assert tokens == ["hello ", "world"]
+
+    async def test_falls_back_when_tools_configured(self) -> None:
+        """AIChannel falls back to non-streaming when tools are in binding metadata."""
+        ai = _StreamingAIProvider(["hello"])
+        channel = AIChannel("ai-1", provider=ai, system_prompt="Test")
+
+        from roomkit.models.event import EventSource, RoomEvent, TextContent
+        from roomkit.models.room import Room
+
+        event = RoomEvent(
+            room_id="room-1",
+            source=EventSource(channel_id="voice-1", channel_type=ChannelType.VOICE),
+            content=TextContent(body="Hi"),
+        )
+        binding = ChannelBinding(
+            room_id="room-1",
+            channel_id="ai-1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+            metadata={"tools": [{"name": "search", "description": "Search"}]},
+        )
+        context = RoomContext(room=Room(id="room-1"), bindings=[binding])
+
+        output = await channel.on_event(event, binding, context)
+        assert output.responded is True
+        assert output.response_stream is None
+        assert len(output.response_events) == 1
+
+    async def test_falls_back_when_provider_not_streaming(self) -> None:
+        """AIChannel uses generate() when provider doesn't support streaming."""
+        ai = _NonStreamingAIProvider("fallback response")
+        channel = AIChannel("ai-1", provider=ai, system_prompt="Test")
+
+        from roomkit.models.event import EventSource, RoomEvent, TextContent
+        from roomkit.models.room import Room
+
+        event = RoomEvent(
+            room_id="room-1",
+            source=EventSource(channel_id="voice-1", channel_type=ChannelType.VOICE),
+            content=TextContent(body="Hi"),
+        )
+        binding = ChannelBinding(
+            room_id="room-1",
+            channel_id="ai-1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+        )
+        context = RoomContext(room=Room(id="room-1"), bindings=[binding])
+
+        output = await channel.on_event(event, binding, context)
+        assert output.responded is True
+        assert output.response_stream is None
+        assert len(output.response_events) == 1
+
+
+# ---------------------------------------------------------------------------
+# Framework-native streaming integration tests
 # ---------------------------------------------------------------------------
 
 
 class TestStreamingAiToTts:
     async def test_streaming_pipeline_end_to_end(self) -> None:
-        """Full flow: speech → STT → streaming AI → TTS → audio output."""
+        """Full flow: speech → STT → framework routes streaming AI → TTS → audio."""
         ai = _StreamingAIProvider(["I'm ", "doing ", "great!"])
         tts = _StreamingInputTTS()
-        kit, channel, backend, vad = _build_kit(ai, tts=tts)
+        kit, channel, backend, vad, _ = _build_kit(ai, tts=tts)
 
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
@@ -270,9 +363,9 @@ class TestStreamingAiToTts:
 
         await asyncio.sleep(0.5)
 
-        # AI streaming was called
+        # AI streaming was called (via framework)
         assert len(ai.generate_stream_calls) == 1
-        # TTS streaming input was called
+        # TTS streaming input was called (via deliver_stream)
         assert len(tts.synthesize_stream_input_calls) == 1
         # Audio was sent to backend
         assert len(backend.sent_audio) >= 1
@@ -291,7 +384,7 @@ class TestStreamingAiToTts:
         """User and AI events are stored in the conversation store."""
         ai = _StreamingAIProvider(["Response text."])
         tts = _StreamingInputTTS()
-        kit, channel, backend, vad = _build_kit(ai, tts=tts)
+        kit, channel, backend, vad, _ = _build_kit(ai, tts=tts)
 
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
@@ -304,26 +397,23 @@ class TestStreamingAiToTts:
 
         await asyncio.sleep(0.5)
 
-        # Check events stored
         events = await kit._store.list_events(room.id, offset=0, limit=50)
         texts = [e.content.body for e in events if hasattr(e.content, "body")]
         assert "Hello world" in texts  # user event
-        assert "Response text." in texts  # AI event
+        assert "Response text." in texts  # AI event (stored by framework)
 
         await kit.close()
 
-    async def test_fallback_to_route_text_when_not_streaming(self) -> None:
-        """When AI doesn't support streaming, falls back to normal routing."""
+    async def test_non_streaming_provider_uses_normal_routing(self) -> None:
+        """When AI doesn't support streaming, normal generate() path is used."""
         ai = _NonStreamingAIProvider("non-streaming response")
         tts = _StreamingInputTTS()
-        kit, channel, backend, vad = _build_kit(ai, tts=tts)
+        kit, channel, backend, vad, _ = _build_kit(ai, tts=tts)
 
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
         await kit.attach_channel(room.id, "ai-1")
         session = await kit.connect_voice(room.id, "user-1", "voice-1")
-
-        assert channel._can_stream_ai_tts is False
 
         await backend.simulate_audio_received(session, AudioFrame(data=b"\x01\x00"))
         await backend.simulate_audio_received(session, AudioFrame(data=b"\x02\x00"))
@@ -331,18 +421,18 @@ class TestStreamingAiToTts:
 
         await asyncio.sleep(0.5)
 
-        # TTS streaming input should NOT be called (normal path instead)
+        # TTS streaming input should NOT be called (normal deliver() path)
         assert len(tts.synthesize_stream_input_calls) == 0
-        # But AI generate() WAS called via normal route
+        # AI generate() WAS called (non-streaming)
         assert len(ai.generate_calls) >= 1
 
         await kit.close()
 
-    async def test_error_during_streaming_falls_back(self) -> None:
-        """When streaming AI errors before audio starts, falls back."""
+    async def test_error_during_streaming_handled(self) -> None:
+        """When streaming AI errors, it's handled gracefully."""
         ai = _ErrorStreamingAIProvider()
         tts = _StreamingInputTTS()
-        kit, channel, backend, vad = _build_kit(ai, tts=tts)
+        kit, channel, backend, vad, _ = _build_kit(ai, tts=tts)
 
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
@@ -355,14 +445,20 @@ class TestStreamingAiToTts:
 
         await asyncio.sleep(0.5)
 
-        # Should not crash — error logged and fallback attempted
+        # Should not crash — error logged by framework
         await kit.close()
 
-    async def test_ai_context_includes_system_prompt(self) -> None:
-        """AI context built for streaming includes system prompt and params."""
+    async def test_ai_context_uses_channel_config(self) -> None:
+        """AI context built by AIChannel uses its system prompt and params."""
         ai = _StreamingAIProvider(["Ok."])
         tts = _StreamingInputTTS()
-        kit, channel, backend, vad = _build_kit(ai, tts=tts)
+        kit, channel, backend, vad, _ = _build_kit(
+            ai,
+            tts=tts,
+            ai_system_prompt="Be helpful.",
+            ai_temperature=0.5,
+            ai_max_tokens=128,
+        )
 
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
@@ -380,8 +476,53 @@ class TestStreamingAiToTts:
         assert ctx.system_prompt == "Be helpful."
         assert ctx.temperature == 0.5
         assert ctx.max_tokens == 128
-        # Last message should be the user's text
         assert ctx.messages[-1].role == "user"
         assert ctx.messages[-1].content == "Hello world"
+
+        await kit.close()
+
+    async def test_deliver_stream_calls_synthesize_stream_input(self) -> None:
+        """VoiceChannel.deliver_stream() pipes text to TTS streaming input."""
+        tts = _StreamingInputTTS()
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", tts=tts, backend=backend)
+
+        from roomkit.models.event import EventSource, RoomEvent, TextContent
+        from roomkit.models.room import Room
+
+        kit = RoomKit(voice=backend)
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+        await kit.connect_voice(room.id, "user-1", "voice-1")
+
+        event = RoomEvent(
+            room_id=room.id,
+            source=EventSource(channel_id="ai-1", channel_type=ChannelType.AI),
+            content=TextContent(body=""),
+        )
+        binding = ChannelBinding(
+            room_id=room.id,
+            channel_id="voice-1",
+            channel_type=ChannelType.VOICE,
+        )
+        context = RoomContext(room=Room(id=room.id), bindings=[binding])
+
+        async def text_gen() -> AsyncIterator[str]:
+            yield "Hello "
+            yield "world!"
+
+        await channel.deliver_stream(text_gen(), event, binding, context)
+
+        assert len(tts.synthesize_stream_input_calls) == 1
+        assert len(backend.sent_audio) >= 1
+        # Transcription sent
+        assistant_transcriptions = [
+            (sid, text, role)
+            for sid, text, role in backend.sent_transcriptions
+            if role == "assistant"
+        ]
+        assert len(assistant_transcriptions) >= 1
+        assert assistant_transcriptions[0][1] == "Hello world!"
 
         await kit.close()

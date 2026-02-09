@@ -85,9 +85,16 @@ class AIChannel(Channel):
         """React to an event by generating an AI response.
 
         Skips events from this channel to prevent self-loops.
+        When the provider supports streaming and no tools are configured,
+        returns a streaming response for the framework to pipe to channels.
         """
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
+
+        raw_tools = binding.metadata.get("tools", [])
+        if self._provider.supports_streaming and not raw_tools:
+            return self._start_streaming_response(event, binding, context)
+
         return await self._generate_response(event, binding, context)
 
     async def deliver(
@@ -95,6 +102,16 @@ class AIChannel(Channel):
     ) -> ChannelOutput:
         """Intelligence channels are not called via deliver by the router."""
         return ChannelOutput.empty()
+
+    def _start_streaming_response(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        """Return a streaming response handle (generator starts on consumption)."""
+        ai_context = self._build_context(event, binding, context)
+        return ChannelOutput(
+            responded=True,
+            response_stream=self._provider.generate_stream(ai_context),
+        )
 
     async def _generate_response(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
