@@ -95,7 +95,7 @@ class TestTurnDetection:
         )
         vad = MockVADProvider(
             events=[
-                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio\x00"),
             ]
         )
         config = AudioPipelineConfig(vad=vad, turn_detector=detector)
@@ -122,7 +122,7 @@ class TestTurnDetection:
         channel.bind_session(session, "r1", binding)
 
         # Simulate audio -> speech end -> transcribe -> turn detect
-        await backend.simulate_audio(session, AudioFrame(data=b"\x00"))
+        await backend.simulate_audio(session, AudioFrame(data=b"\x00\x00"))
         await asyncio.sleep(0.15)
 
         # Check ON_TURN_COMPLETE was fired
@@ -181,7 +181,7 @@ class TestTurnDetection:
         channel.bind_session(session, "r1", binding)
 
         # First utterance — incomplete, should not route
-        await backend.simulate_audio(session, AudioFrame(data=b"\x00"))
+        await backend.simulate_audio(session, AudioFrame(data=b"\x00\x00"))
         await asyncio.sleep(0.15)
 
         incomplete_calls = [
@@ -193,7 +193,7 @@ class TestTurnDetection:
         assert not mock_fw.process_inbound.called
 
         # Second utterance — complete, should route combined text
-        await backend.simulate_audio(session, AudioFrame(data=b"\x01"))
+        await backend.simulate_audio(session, AudioFrame(data=b"\x01\x00"))
         await asyncio.sleep(0.15)
 
         complete_calls = [
@@ -216,7 +216,7 @@ class TestTurnDetection:
 
         vad = MockVADProvider(
             events=[
-                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio\x00"),
             ]
         )
         config = AudioPipelineConfig(vad=vad)  # No turn_detector
@@ -241,7 +241,7 @@ class TestTurnDetection:
         binding = ChannelBinding(room_id="r1", channel_id="ch1", channel_type=ChannelType.VOICE)
         channel.bind_session(session, "r1", binding)
 
-        await backend.simulate_audio(session, AudioFrame(data=b"\x00"))
+        await backend.simulate_audio(session, AudioFrame(data=b"\x00\x00"))
         await asyncio.sleep(0.15)
 
         # Should route directly without turn hooks

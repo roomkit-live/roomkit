@@ -169,8 +169,8 @@ class TestAudioRecorder:
         assert handle.session_id == "s1"
         assert handle.state == "recording"
 
-        recorder.tap_inbound(handle, _frame(b"\x01"))
-        recorder.tap_outbound(handle, _frame(b"\x02"))
+        recorder.tap_inbound(handle, _frame(b"\x01\x00"))
+        recorder.tap_outbound(handle, _frame(b"\x02\x00"))
         assert len(recorder.inbound_frames) == 1
         assert len(recorder.outbound_frames) == 1
 

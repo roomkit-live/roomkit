@@ -137,12 +137,12 @@ class TestLinearResamplerProvider:
         result = provider.resample(frame, 16000, 1, 2)
         assert result.metadata["key"] == "value"
 
-    def test_unsupported_width_passthrough(self):
-        """Unsupported sample width (3 bytes) returns frame unchanged."""
-        provider = LinearResamplerProvider()
-        frame = _frame(b"\x00\x00\x00", rate=16000, channels=1, width=3)
-        result = provider.resample(frame, 48000, 1, 2)
-        assert result is frame
+    def test_unsupported_width_rejected_by_audio_frame(self):
+        """Unsupported sample width (3 bytes) is rejected by AudioFrame validation."""
+        import pytest
+
+        with pytest.raises(ValueError, match="sample_width must be 1, 2, or 4"):
+            _frame(b"\x00\x00\x00", rate=16000, channels=1, width=3)
 
     def test_reset_and_close_are_noop(self):
         """reset() and close() don't raise."""

@@ -29,7 +29,7 @@ def _session(sid: str = "sess-1") -> VoiceSession:
     )
 
 
-def _frame(data: bytes = b"audio") -> AudioFrame:
+def _frame(data: bytes = b"audio\x00") -> AudioFrame:
     return AudioFrame(data=data, sample_rate=16000)
 
 
@@ -166,7 +166,7 @@ class TestMockDenoiserProvider:
 
     def test_passthrough(self) -> None:
         denoiser = MockDenoiserProvider()
-        frame = _frame(b"audio")
+        frame = _frame(b"audio\x00")
         result = denoiser.process(frame)
         assert result is frame  # Same object (passthrough)
 
@@ -333,7 +333,7 @@ class TestAudioPipelineDenoiser:
         vad = MockVADProvider()
         pipeline = AudioPipeline(AudioPipelineConfig(vad=vad, denoiser=denoiser))
 
-        frame = _frame(b"audio")
+        frame = _frame(b"audio\x00")
         pipeline.process_frame(_session(), frame)
 
         # Both providers should see the frame
@@ -432,7 +432,7 @@ class TestAudioPipelineFullChain:
             AudioPipelineConfig(vad=vad, denoiser=denoiser, diarization=diarizer)
         )
 
-        frame = _frame(b"audio")
+        frame = _frame(b"audio\x00")
         pipeline.process_frame(_session(), frame)
 
         assert frame.metadata["denoiser"] == "MockDenoiserProvider"
@@ -554,7 +554,7 @@ class TestAudioPipelineNoVAD:
         denoiser = MockDenoiserProvider()
         pipeline = AudioPipeline(AudioPipelineConfig(denoiser=denoiser))
 
-        frame = _frame(b"noisy")
+        frame = _frame(b"noisy\x00")
         pipeline.process_frame(_session(), frame)
 
         assert len(denoiser.frames) == 1
@@ -578,7 +578,7 @@ class TestAudioPipelineNoVAD:
         diarizer = MockDiarizationProvider(results=[DiarizationResult("speaker_0", 0.95, True)])
         pipeline = AudioPipeline(AudioPipelineConfig(denoiser=denoiser, diarization=diarizer))
 
-        frame = _frame(b"audio")
+        frame = _frame(b"audio\x00")
         pipeline.process_frame(_session(), frame)
 
         assert len(denoiser.frames) == 1

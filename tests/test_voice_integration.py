@@ -20,7 +20,7 @@ from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
 
 
-def _speech_events(audio: bytes = b"fake-audio-data") -> list[VADEvent | None]:
+def _speech_events(audio: bytes = b"fake-audio-data\x00") -> list[VADEvent | None]:
     """Create a standard speech start + speech end VAD event sequence."""
     return [
         VADEvent(type=VADEventType.SPEECH_START),
@@ -59,8 +59,8 @@ class TestVoicePipelineIntegration:
         assert session.state == VoiceSessionState.ACTIVE
 
         # Simulate two audio frames -> VAD fires SPEECH_START then SPEECH_END
-        await backend.simulate_audio_received(session, AudioFrame(data=b"frame-1"))
-        await backend.simulate_audio_received(session, AudioFrame(data=b"frame-2"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"frame-10"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"frame-20"))
 
         # Give the async pipeline time to process
         await asyncio.sleep(0.15)
@@ -91,7 +91,7 @@ class TestVoicePipelineIntegration:
             events=[
                 VADEvent(type=VADEventType.SPEECH_START),
                 None,
-                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio\x00"),
             ]
         )
         pipeline = AudioPipelineConfig(vad=vad)
@@ -134,7 +134,7 @@ class TestVoicePipelineIntegration:
 
         # Simulate 3 audio frames (matching the 3 VAD events)
         for i in range(3):
-            await backend.simulate_audio_received(session, AudioFrame(data=f"frame-{i}".encode()))
+            await backend.simulate_audio_received(session, AudioFrame(data=f"fr-{i:03d}".encode()))
 
         await asyncio.sleep(0.15)
 
@@ -157,7 +157,7 @@ class TestVoicePipelineIntegration:
         stt = MockSTTProvider(transcripts=["hello world"])
         backend = MockVoiceBackend()
 
-        vad = MockVADProvider(events=_speech_events(b"audio"))
+        vad = MockVADProvider(events=_speech_events(b"audio\x00"))
         pipeline = AudioPipelineConfig(vad=vad)
 
         kit = RoomKit(stt=stt, voice=backend)
@@ -201,7 +201,7 @@ class TestVoicePipelineIntegration:
         stt = MockSTTProvider(transcripts=["blocked message"])
         backend = MockVoiceBackend()
 
-        vad = MockVADProvider(events=_speech_events(b"audio"))
+        vad = MockVADProvider(events=_speech_events(b"audio\x00"))
         pipeline = AudioPipelineConfig(vad=vad)
 
         kit = RoomKit(stt=stt, voice=backend)
@@ -245,7 +245,7 @@ class TestVoicePipelineIntegration:
         backend = MockVoiceBackend()
         ai = MockAIProvider(responses=["Original response"])
 
-        vad = MockVADProvider(events=_speech_events(b"audio"))
+        vad = MockVADProvider(events=_speech_events(b"audio\x00"))
         pipeline = AudioPipelineConfig(vad=vad)
 
         kit = RoomKit(stt=stt, tts=tts, voice=backend)
@@ -288,7 +288,7 @@ class TestVoicePipelineIntegration:
         backend = MockVoiceBackend()
         ai = MockAIProvider(responses=["This should not be spoken"])
 
-        vad = MockVADProvider(events=_speech_events(b"audio"))
+        vad = MockVADProvider(events=_speech_events(b"audio\x00"))
         pipeline = AudioPipelineConfig(vad=vad)
 
         kit = RoomKit(stt=stt, tts=tts, voice=backend)
@@ -328,7 +328,7 @@ class TestVoicePipelineIntegration:
         backend = MockVoiceBackend()
         ai = MockAIProvider(responses=["Response"])
 
-        vad = MockVADProvider(events=_speech_events(b"audio"))
+        vad = MockVADProvider(events=_speech_events(b"audio\x00"))
         pipeline = AudioPipelineConfig(vad=vad)
 
         kit = RoomKit(stt=stt, tts=tts, voice=backend)

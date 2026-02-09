@@ -24,6 +24,7 @@ Output files are numbered by pipeline order::
 from __future__ import annotations
 
 import logging
+import re
 import wave
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,6 +47,9 @@ _STAGE_ORDER: dict[str, tuple[str, str]] = {
 }
 
 ALL_STAGES = list(_STAGE_ORDER.keys())
+
+# Pattern for sanitizing session IDs used in filenames
+_SAFE_FILENAME_RE = re.compile(r"[^a-zA-Z0-9_\-.]")
 
 
 @dataclass
@@ -127,15 +131,24 @@ class DebugTapSession:
 
     def __init__(self, config: PipelineDebugTaps, session_id: str) -> None:
         self._config = config
-        self._session_id = session_id
-        self._output_dir = Path(config.output_dir)
+        # Sanitize session_id to prevent path traversal in filenames
+        self._session_id = _SAFE_FILENAME_RE.sub("_", session_id)
+        # Validate output_dir: reject paths with traversal components
+        raw_dir = config.output_dir
+        if ".." in raw_dir:
+            logger.warning(
+                "Suspicious output_dir %r contains '..'; falling back to '.'",
+                raw_dir,
+            )
+            raw_dir = "."
+        self._output_dir = Path(raw_dir).resolve()
         self._enabled_stages = self._resolve_stages(config.stages)
         self._writers: dict[str, _DebugWavWriter] = {}
         self._vad_segment_count: int = 0
 
         logger.warning(
             "Pipeline debug taps enabled for session %s — stages: %s, output: %s",
-            session_id,
+            self._session_id,
             self._enabled_stages,
             self._output_dir,
         )

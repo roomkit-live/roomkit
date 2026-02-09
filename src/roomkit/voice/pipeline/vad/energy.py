@@ -51,11 +51,13 @@ class EnergyVADProvider(VADProvider):
         silence_threshold_ms: float = 500,
         min_speech_duration_ms: float = 200,
         speech_pad_ms: float = 300,
+        max_speech_duration_ms: float = 60_000,
     ) -> None:
         self._energy_threshold = energy_threshold
         self._silence_threshold_ms = silence_threshold_ms
         self._min_speech_duration_ms = min_speech_duration_ms
         self._speech_pad_ms = speech_pad_ms
+        self._max_speech_duration_ms = max_speech_duration_ms
 
         # State
         self._speaking = False
@@ -152,24 +154,33 @@ class EnergyVADProvider(VADProvider):
             else:
                 self._silence_ms += duration_ms
 
-                if self._silence_ms >= self._silence_threshold_ms:
-                    # Transition to idle
-                    self._speaking = False
-                    speech_ms = self._speech_ms
-                    audio = bytes(self._speech_buf)
+            # Force speech-end if max duration exceeded (safety cap)
+            force_end = self._speech_ms >= self._max_speech_duration_ms
+            if force_end:
+                logger.warning(
+                    "Speech duration %.0fms exceeded max (%.0fms); forcing SPEECH_END",
+                    self._speech_ms,
+                    self._max_speech_duration_ms,
+                )
 
-                    # Reset accumulators
-                    self._speech_buf = bytearray()
-                    self._speech_ms = 0.0
-                    self._silence_ms = 0.0
+            if self._silence_ms >= self._silence_threshold_ms or force_end:
+                # Transition to idle
+                self._speaking = False
+                speech_ms = self._speech_ms
+                audio = bytes(self._speech_buf)
 
-                    if speech_ms >= self._min_speech_duration_ms:
-                        return VADEvent(
-                            type=VADEventType.SPEECH_END,
-                            audio_bytes=audio,
-                            duration_ms=speech_ms,
-                        )
-                    # Too short — discard silently
+                # Reset accumulators
+                self._speech_buf = bytearray()
+                self._speech_ms = 0.0
+                self._silence_ms = 0.0
+
+                if speech_ms >= self._min_speech_duration_ms:
+                    return VADEvent(
+                        type=VADEventType.SPEECH_END,
+                        audio_bytes=audio,
+                        duration_ms=speech_ms,
+                    )
+                # Too short — discard silently
 
         return None
 

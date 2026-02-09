@@ -255,7 +255,7 @@ class TestAudioThreading:
         binding = ChannelBinding(room_id="r1", channel_id="ch1", channel_type=ChannelType.VOICE)
         channel.bind_session(session, "r1", binding)
 
-        await backend.simulate_audio(session, AudioFrame(data=b"\x00"))
+        await backend.simulate_audio(session, AudioFrame(data=b"\x00\x00"))
         await asyncio.sleep(0.15)
 
         # The MockTurnDetector records evaluations — check audio_bytes was set
@@ -315,7 +315,7 @@ class TestAudioThreading:
         channel.bind_session(session, "r1", binding)
 
         # First utterance — incomplete
-        await backend.simulate_audio(session, AudioFrame(data=b"\x00"))
+        await backend.simulate_audio(session, AudioFrame(data=b"\x00\x00"))
         await asyncio.sleep(0.15)
 
         assert len(detector.evaluations) == 1
@@ -324,7 +324,7 @@ class TestAudioThreading:
         assert first_audio_len > 0
 
         # Second utterance — complete, audio should be accumulated
-        await backend.simulate_audio(session, AudioFrame(data=b"\x01"))
+        await backend.simulate_audio(session, AudioFrame(data=b"\x01\x00"))
         await asyncio.sleep(0.15)
 
         assert len(detector.evaluations) == 2
@@ -369,7 +369,7 @@ class TestAudioThreading:
         binding = ChannelBinding(room_id="r1", channel_id="ch1", channel_type=ChannelType.VOICE)
         channel.bind_session(session, "r1", binding)
 
-        await backend.simulate_audio(session, AudioFrame(data=b"\x00"))
+        await backend.simulate_audio(session, AudioFrame(data=b"\x00\x00"))
         await asyncio.sleep(0.15)
 
         # After a complete turn, _pending_audio should be cleared

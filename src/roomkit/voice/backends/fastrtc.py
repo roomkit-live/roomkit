@@ -114,14 +114,19 @@ class FastRTCVoiceBackend(VoiceBackend):
     diarization) is handled by the AudioPipeline.
     """
 
+    #: Default maximum size for per-session audio queues.
+    DEFAULT_QUEUE_MAXSIZE: int = 1000
+
     def __init__(
         self,
         *,
         input_sample_rate: int = 48000,
         output_sample_rate: int = 24000,
+        audio_queue_maxsize: int = DEFAULT_QUEUE_MAXSIZE,
     ) -> None:
         self._input_sample_rate = input_sample_rate
         self._output_sample_rate = output_sample_rate
+        self._audio_queue_maxsize = audio_queue_maxsize
 
         # Callback for raw audio frames
         self._audio_received_callback: AudioReceivedCallback | None = None
@@ -169,7 +174,7 @@ class FastRTCVoiceBackend(VoiceBackend):
             metadata=session_metadata,
         )
         self._sessions[session_id] = session
-        self._audio_queues[session_id] = asyncio.Queue()
+        self._audio_queues[session_id] = asyncio.Queue(maxsize=self._audio_queue_maxsize)
         logger.info(
             "Voice session created: session=%s, room=%s, participant=%s",
             session_id,

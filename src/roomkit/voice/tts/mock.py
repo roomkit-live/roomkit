@@ -42,8 +42,12 @@ class MockTTSProvider(TTSProvider):
         # Simulate streaming with small chunks
         words = text.split()
         for i, word in enumerate(words):
+            raw = f"mock-audio-{word}".encode()
+            # Ensure even length for AudioFrame alignment (sample_width=2)
+            if len(raw) % 2 != 0:
+                raw += b"\x00"
             yield AudioChunk(
-                data=f"mock-audio-{word}".encode(),
+                data=raw,
                 sample_rate=16000,
                 is_final=(i == len(words) - 1),
             )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import struct
 import tempfile
 import uuid
@@ -27,6 +28,14 @@ if TYPE_CHECKING:
     from roomkit.voice.base import VoiceSession
 
 logger = logging.getLogger(__name__)
+
+# Pattern for sanitizing session IDs used in filenames
+_SAFE_FILENAME_RE = re.compile(r"[^a-zA-Z0-9_\-.]")
+
+
+def _sanitize_filename_component(value: str) -> str:
+    """Strip path separators and special characters from a filename component."""
+    return _SAFE_FILENAME_RE.sub("_", value)
 
 
 @dataclass
@@ -91,9 +100,22 @@ class WavFileRecorder(AudioRecorder):
         rec_id = str(uuid.uuid4())
         now = datetime.now(UTC)
         timestamp = now.strftime("%Y%m%dT%H%M%S")
-        base_name = f"{session.id}_{timestamp}"
+        safe_session_id = _sanitize_filename_component(session.id)
+        base_name = f"{safe_session_id}_{timestamp}"
 
-        output_dir = Path(config.storage) if config.storage else Path(tempfile.gettempdir())
+        fallback_dir = Path(tempfile.gettempdir())
+        if config.storage:
+            # Reject paths with traversal components
+            if ".." in Path(config.storage).parts:
+                logger.warning(
+                    "Suspicious storage path %r contains '..'; falling back to temp directory",
+                    config.storage,
+                )
+                output_dir = fallback_dir
+            else:
+                output_dir = Path(config.storage).resolve()
+        else:
+            output_dir = fallback_dir
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if config.channels == RecordingChannelMode.SEPARATE:

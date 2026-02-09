@@ -75,7 +75,7 @@ class TestPipelineSpeechFrame:
         pipeline = AudioPipeline(config)
 
         session = _session()
-        pipeline.process_inbound(session, AudioFrame(data=b"\x00"))
+        pipeline.process_inbound(session, AudioFrame(data=b"\x00\x00"))
         assert session.id in pipeline._in_speech_sessions
 
         pipeline.reset()
@@ -88,7 +88,7 @@ class TestPipelineSpeechFrame:
         pipeline = AudioPipeline(config)
 
         session = _session()
-        pipeline.process_inbound(session, AudioFrame(data=b"\x00"))
+        pipeline.process_inbound(session, AudioFrame(data=b"\x00\x00"))
         assert session.id in pipeline._in_speech_sessions
 
         pipeline.on_session_ended(session)

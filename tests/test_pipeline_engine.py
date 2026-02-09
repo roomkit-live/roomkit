@@ -218,7 +218,7 @@ class TestOutboundPath:
         config = AudioPipelineConfig(postprocessors=[pp])
         pipeline = AudioPipeline(config)
 
-        result = pipeline.process_outbound(_session(), _frame(b"\x01"))
+        result = pipeline.process_outbound(_session(), _frame(b"\x01\x00"))
         assert len(pp.frames) == 1
         assert result is not None
 
@@ -253,7 +253,7 @@ class TestOutboundPath:
         # Must start recording first
         pipeline.on_session_active(session)
 
-        pipeline.process_outbound(session, _frame(b"\x02"))
+        pipeline.process_outbound(session, _frame(b"\x02\x00"))
         assert len(recorder.outbound_frames) == 1
 
 
@@ -274,7 +274,7 @@ class TestRecorderLifecycle:
         session = _session()
 
         pipeline.on_session_active(session)
-        pipeline.process_inbound(session, _frame(b"\x01"))
+        pipeline.process_inbound(session, _frame(b"\x01\x00"))
 
         assert len(recorder.inbound_frames) == 1
 

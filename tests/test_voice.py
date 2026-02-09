@@ -471,7 +471,7 @@ class TestRoomKitVoiceIntegration:
 
 class TestAudioFrame:
     def test_default_values(self) -> None:
-        frame = AudioFrame(data=b"audio")
+        frame = AudioFrame(data=b"audio\x00")
         assert frame.sample_rate == 16000
         assert frame.channels == 1
         assert frame.sample_width == 2
@@ -480,7 +480,7 @@ class TestAudioFrame:
 
     def test_custom_values(self) -> None:
         frame = AudioFrame(
-            data=b"audio",
+            data=b"audio\x00\x00\x00",
             sample_rate=48000,
             channels=2,
             sample_width=4,
@@ -494,7 +494,7 @@ class TestAudioFrame:
         assert frame.metadata == {"stage": "denoised"}
 
     def test_metadata_accumulation(self) -> None:
-        frame = AudioFrame(data=b"audio")
+        frame = AudioFrame(data=b"audio\x00")
         frame.metadata["denoiser"] = "MockDenoiserProvider"
         frame.metadata["vad"] = {"type": "speech_start"}
         assert len(frame.metadata) == 2
