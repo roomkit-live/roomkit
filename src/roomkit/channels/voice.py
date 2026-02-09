@@ -218,6 +218,18 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             self._pipeline.on_recording_started(self._on_pipeline_recording_started)
             self._pipeline.on_recording_stopped(self._on_pipeline_recording_stopped)
 
+        # Wire speaker output to pipeline AEC for time-aligned reference.
+        # Generation-time feeding from process_outbound() is misaligned
+        # when TTS chunks are generated faster than real-time playback.
+        if config.aec is not None and backend.supports_playback_callback:
+
+            def _on_audio_played(session: VoiceSession, frame: AudioFrame) -> None:
+                if self._pipeline is not None:
+                    self._pipeline.feed_aec_reference(frame)
+
+            backend.on_audio_played(_on_audio_played)
+            self._pipeline.enable_playback_aec_feed()
+
         # Barge-in from backend (transport-level)
         if VoiceCapability.BARGE_IN in backend.capabilities:
             backend.on_barge_in(self._on_backend_barge_in)

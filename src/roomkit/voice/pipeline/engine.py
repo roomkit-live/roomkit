@@ -90,6 +90,11 @@ class AudioPipeline:
         self._recording_handles: dict[str, RecordingHandle] = {}
         # Debug tap sessions (per session, keyed by session_id)
         self._debug_tap_sessions: dict[str, DebugTapSession] = {}
+        # Whether playback-time AEC reference is wired (suppresses
+        # generation-time feeding in process_outbound).
+        self._playback_aec_wired = False
+        # Separate resampler for playback AEC path (may run on audio thread)
+        self._playback_aec_resampler: ResamplerProvider | None = None
         # Resolve effective resampler (auto-default when contract is set)
         self._resampler: ResamplerProvider | None
         if config.resampler is not None:
@@ -390,13 +395,15 @@ class AudioPipeline:
 
         # Stage 3: Feed AEC reference (so it can model echo)
         # Skipped when the backend feeds reference at the transport level
-        # (time-aligned with actual speaker output), or when the backend
-        # has NATIVE_AEC.  The reference must match the inbound sample
-        # rate — resample if the outbound frame is at a different rate.
+        # (time-aligned with actual speaker output), when the backend
+        # has NATIVE_AEC, or when playback-time feeding is wired via
+        # feed_aec_reference().  The reference must match the inbound
+        # sample rate — resample if the outbound frame is at a different rate.
         if (
             self._config.aec is not None
             and VoiceCapability.NATIVE_AEC not in self._backend_capabilities
             and not self._backend_feeds_aec_ref
+            and not self._playback_aec_wired
         ):
             try:
                 ref_frame = current_frame
@@ -432,6 +439,51 @@ class AudioPipeline:
                 logger.exception("Outbound resampler error")
 
         return current_frame
+
+    # -----------------------------------------------------------------
+    # External AEC reference (playback-time aligned)
+    # -----------------------------------------------------------------
+
+    def enable_playback_aec_feed(self) -> None:
+        """Mark that AEC reference is fed at playback time.
+
+        When called, ``process_outbound()`` skips its own
+        ``aec.feed_reference()`` to avoid double-feeding with
+        misaligned timing.
+        """
+        self._playback_aec_wired = True
+
+    def feed_aec_reference(self, frame: AudioFrame) -> None:
+        """Feed an AEC reference frame directly (from speaker output).
+
+        Called by the backend's speaker callback at playback time so
+        the AEC has time-aligned reference for echo cancellation.
+
+        Thread-safety: may be called from the audio I/O thread.  Uses
+        a separate resampler instance from ``process_outbound`` to
+        avoid thread-safety issues.
+        """
+        if self._config.aec is None:
+            return
+        try:
+            ref_frame = frame
+            target_rate = self._inbound_sample_rate
+            if target_rate and ref_frame.sample_rate != target_rate:
+                if self._playback_aec_resampler is None:
+                    from roomkit.voice.pipeline.resampler.linear import (
+                        LinearResamplerProvider,
+                    )
+
+                    self._playback_aec_resampler = LinearResamplerProvider()
+                ref_frame = self._playback_aec_resampler.resample(
+                    ref_frame,
+                    target_rate,
+                    ref_frame.channels,
+                    ref_frame.sample_width,
+                )
+            self._config.aec.feed_reference(ref_frame)
+        except Exception:
+            logger.exception("AEC feed_reference error (playback)")
 
     # -----------------------------------------------------------------
     # Session lifecycle
@@ -501,6 +553,8 @@ class AudioPipeline:
         self._inbound_sample_rate = None
         if self._aec_resampler is not None:
             self._aec_resampler.reset()
+        if self._playback_aec_resampler is not None:
+            self._playback_aec_resampler.reset()
         if self._resampler is not None:
             self._resampler.reset()
         if self._config.vad is not None:
@@ -530,6 +584,8 @@ class AudioPipeline:
             self._resampler.close()
         if self._aec_resampler is not None:
             self._aec_resampler.close()
+        if self._playback_aec_resampler is not None:
+            self._playback_aec_resampler.close()
         if self._config.vad is not None:
             self._config.vad.close()
         if self._config.denoiser is not None:

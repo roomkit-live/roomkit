@@ -19,6 +19,11 @@ if TYPE_CHECKING:
 # Callback type for raw audio frames from the transport
 AudioReceivedCallback = Callable[["VoiceSession", "AudioFrame"], Any]
 
+# Callback type for audio frames as they are played through the speaker.
+# Fired at playback time (time-aligned with actual speaker output) so AEC
+# can use the reference to cancel echo accurately.
+AudioPlayedCallback = Callable[["VoiceSession", "AudioFrame"], Any]
+
 
 class VoiceBackend(ABC):
     """Abstract base class for voice transport backends.
@@ -215,6 +220,34 @@ class VoiceBackend(ABC):
             True if audio is currently playing, False otherwise.
         """
         return False  # Default: assume not playing
+
+    # -------------------------------------------------------------------------
+    # Speaker output notifications (for pipeline AEC)
+    # -------------------------------------------------------------------------
+
+    @property
+    def supports_playback_callback(self) -> bool:
+        """Whether this backend fires :meth:`on_audio_played` callbacks.
+
+        When True, the pipeline can rely on playback-time AEC reference
+        instead of generation-time feeding from ``process_outbound``.
+        """
+        return False
+
+    def on_audio_played(self, callback: AudioPlayedCallback) -> None:  # noqa: B027
+        """Register a callback for audio frames as they are played.
+
+        Called with each audio frame at the moment it is output by the
+        speaker, providing time-aligned reference for echo cancellation.
+        The pipeline uses this to feed AEC reference at the correct time.
+
+        Note:
+            Callbacks may be invoked from the audio I/O thread —
+            implementations must be thread-safe.
+
+        Args:
+            callback: Function called with (session, audio_frame).
+        """
 
     async def send_transcription(
         self, session: VoiceSession, text: str, role: str = "user"

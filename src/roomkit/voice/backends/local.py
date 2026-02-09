@@ -38,7 +38,7 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.backends.base import AudioReceivedCallback, VoiceBackend
+from roomkit.voice.backends.base import AudioPlayedCallback, AudioReceivedCallback, VoiceBackend
 from roomkit.voice.base import (
     AudioChunk,
     BargeInCallback,
@@ -121,6 +121,7 @@ class LocalAudioBackend(VoiceBackend):
         # Callback registrations
         self._audio_received_callback: AudioReceivedCallback | None = None
         self._barge_in_callbacks: list[BargeInCallback] = []
+        self._audio_played_callbacks: list[AudioPlayedCallback] = []
 
         # Session tracking
         self._sessions: dict[str, VoiceSession] = {}
@@ -429,6 +430,19 @@ class LocalAudioBackend(VoiceBackend):
             if self._aec is not None:
                 self._aec_feed_played(bytearray(bytes(outdata)))
 
+            # Notify listeners about played audio (time-aligned reference
+            # for pipeline AEC).  The frame is created once and shared.
+            if self._audio_played_callbacks:
+                played_frame = AudioFrame(
+                    data=bytes(outdata),
+                    sample_rate=self._output_sample_rate,
+                    channels=self._channels,
+                    sample_width=2,
+                )
+                for cb in self._audio_played_callbacks:
+                    with contextlib.suppress(Exception):
+                        cb(session, played_frame)
+
             if stop:
                 raise sd.CallbackStop
 
@@ -493,6 +507,13 @@ class LocalAudioBackend(VoiceBackend):
 
     def on_barge_in(self, callback: BargeInCallback) -> None:
         self._barge_in_callbacks.append(callback)
+
+    @property
+    def supports_playback_callback(self) -> bool:
+        return True
+
+    def on_audio_played(self, callback: AudioPlayedCallback) -> None:
+        self._audio_played_callbacks.append(callback)
 
     async def cancel_audio(self, session: VoiceSession) -> bool:
         was_playing = session.id in self._playing_sessions

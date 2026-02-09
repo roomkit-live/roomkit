@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING
+from collections.abc import AsyncIterator, Coroutine
+from typing import TYPE_CHECKING, Any
 
 from roomkit.models.enums import HookTrigger
 
@@ -23,6 +24,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.voice")
 
+# Time to keep _playing_sessions alive after send_audio() returns.
+# Accounts for residual room echo/reverb after the speaker physically
+# finishes playing.  During this period, continuous STT discards any
+# transcription as echo.
+_PLAYBACK_DRAIN_S = 2.0
+
 
 class VoiceTTSMixin:
     """TTS delivery helpers for VoiceChannel."""
@@ -38,6 +45,11 @@ class VoiceTTSMixin:
     _playing_sessions: dict[str, TTSPlaybackState]
     _last_tts_ended_at: dict[str, float]
     _debug_frame_count: int
+
+    # -- methods provided by other mixins / main class (TYPE_CHECKING only) --
+    if TYPE_CHECKING:
+
+        def _schedule(self, coro: Coroutine[Any, Any, Any], *, name: str) -> None: ...
 
     async def _wrap_outbound(
         self, session: VoiceSession, chunks: AsyncIterator[AudioChunk]
@@ -73,6 +85,29 @@ class VoiceTTSMixin:
                     int(processed.timestamp_ms) if processed.timestamp_ms is not None else None
                 ),
                 is_final=chunk.is_final,
+            )
+
+    async def _finish_playback(self, session_id: str) -> None:
+        """Clear playback state after a post-drain delay for echo decay.
+
+        After ``send_audio()`` returns (speaker buffer drained), the room
+        may still have residual echo for 1-2 seconds.  This delay keeps
+        ``_playing_sessions`` alive so continuous STT discards any echo
+        transcribed during that window.
+
+        If ``interrupt()`` fires during the delay, it pops
+        ``_playing_sessions`` immediately — the delayed pop becomes a no-op.
+        """
+        import time as _time
+
+        await asyncio.sleep(_PLAYBACK_DRAIN_S)
+        playback = self._playing_sessions.pop(session_id, None)
+        if playback:
+            self._last_tts_ended_at[session_id] = _time.monotonic()
+            logger.debug(
+                "Playback drain complete for session %s (delay=%.1fs)",
+                session_id,
+                _PLAYBACK_DRAIN_S,
             )
 
     def _find_sessions(self, room_id: str, binding: ChannelBinding) -> list[VoiceSession]:
@@ -132,14 +167,19 @@ class VoiceTTSMixin:
                     audio = self._wrap_outbound(session, audio)
                 await self._backend.send_audio(session, audio)
             finally:
-                self._playing_sessions.pop(session.id, None)
-                self._last_tts_ended_at[session.id] = _time.monotonic()
                 logger.debug(
-                    "Streaming TTS playback ended for session %s (%.1fs)",
+                    "Streaming TTS send_audio returned for session %s (%.1fs), draining",
                     session.id,
                     _time.monotonic() - t0,
                 )
                 self._debug_frame_count = 0  # reset RMS debug counter
+                # Keep _playing_sessions alive during post-drain echo decay.
+                # _finish_playback pops it after the delay (interrupt() pops
+                # immediately if barge-in fires first).
+                self._schedule(
+                    self._finish_playback(session.id),
+                    name=f"finish_playback:{session.id}",
+                )
 
         full_text = "".join(accumulated)
         if full_text:
@@ -210,10 +250,10 @@ class VoiceTTSMixin:
                     await self._tts.synthesize(final_text)
                     logger.warning("TTS provider %s doesn't support streaming", self._tts.name)
                 finally:
-                    import time as _time
-
-                    self._playing_sessions.pop(session.id, None)
-                    self._last_tts_ended_at[session.id] = _time.monotonic()
+                    self._schedule(
+                        self._finish_playback(session.id),
+                        name=f"finish_playback:{session.id}",
+                    )
 
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
