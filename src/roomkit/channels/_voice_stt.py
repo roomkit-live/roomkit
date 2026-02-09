@@ -38,7 +38,7 @@ class VoiceSTTMixin:
     _pipeline_config: AudioPipelineConfig | None
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
     _playing_sessions: dict[str, TTSPlaybackState]
-    _last_interrupt_at: dict[str, float]
+    _last_tts_ended_at: dict[str, float]
     _stt_streams: dict[str, _STTStreamState]
     _continuous_stt: bool
     _pending_turns: dict[str, list[TurnEntry]]
@@ -238,6 +238,8 @@ class VoiceSTTMixin:
         self._stt_streams[session.id] = state
 
         async def run_continuous(state: _STTStreamState) -> None:
+            import time as _time
+
             backoff = 1.0
             while not state.cancelled:
                 # Fresh queue + WebSocket per turn (avoids server-side overlap)
@@ -258,17 +260,26 @@ class VoiceSTTMixin:
                     assert self._stt is not None
                     barge_in_fired = False
                     backoff = 1.0
-                    logger.debug("Continuous STT stream cycle starting for %s", session.id)
+                    last_tts = self._last_tts_ended_at.get(session.id, 0.0)
+                    since_tts = _time.monotonic() - last_tts if last_tts else -1.0
+                    logger.info(
+                        "Continuous STT stream cycle starting for %s (since_tts=%.1fs)",
+                        session.id,
+                        since_tts,
+                    )
                     async for result in self._stt.transcribe_stream(audio_gen()):
                         if state.cancelled:
                             break
                         playing = session.id in self._playing_sessions
                         if result.is_final and result.text:
+                            last_tts = self._last_tts_ended_at.get(session.id, 0.0)
+                            since_tts_now = _time.monotonic() - last_tts if last_tts else -1.0
                             logger.info(
-                                "STT final: %r (playing=%s, barge_in=%s)",
+                                "STT final: %r (playing=%s, barge_in=%s, since_tts=%.1fs)",
                                 result.text,
                                 playing,
                                 barge_in_fired,
+                                since_tts_now,
                             )
                             # During playback (and no barge-in), this is
                             # almost certainly TTS echo leaking through AEC.
@@ -339,9 +350,12 @@ class VoiceSTTMixin:
                     backoff = min(backoff * 2, 30.0)
 
                 if not state.cancelled:
-                    logger.debug(
-                        "STT stream cycle ended for %s, reconnecting",
+                    last_tts = self._last_tts_ended_at.get(session.id, 0.0)
+                    since_tts_end = _time.monotonic() - last_tts if last_tts else -1.0
+                    logger.info(
+                        "STT stream cycle ended for %s, reconnecting (since_tts=%.1fs)",
                         session.id,
+                        since_tts_end,
                     )
                     await asyncio.sleep(0.1)
 
@@ -357,10 +371,6 @@ class VoiceSTTMixin:
         """Stop continuous STT for a session."""
         self._cancel_stt_stream(session_id)
 
-    # Post-TTS echo cooldown: transcriptions arriving within this window
-    # after TTS ends (or is interrupted) are discarded as residual echo.
-    _ECHO_COOLDOWN_S = 4.0
-
     async def _handle_continuous_transcription(
         self, session: VoiceSession, text: str, room_id: str
     ) -> None:
@@ -368,27 +378,25 @@ class VoiceSTTMixin:
         if not self._framework or not text.strip():
             return
         try:
-            playback = self._playing_sessions.get(session.id)
-            if playback:
-                logger.warning("Discarding echo transcription during playback: %r", text)
-                return
-
-            # Discard transcriptions that arrive shortly after TTS playback
-            # ends or is interrupted — the mic/AEC pipeline still contains
-            # residual echo that the STT provider may transcribe.
             import time as _time
 
-            last_interrupt = self._last_interrupt_at.get(session.id, 0.0)  # type: ignore[attr-defined]
-            elapsed = _time.monotonic() - last_interrupt
-            if elapsed < self._ECHO_COOLDOWN_S:
-                logger.info(
-                    "Discarding post-TTS echo (%.1fs after interrupt): %r",
-                    elapsed,
+            playback = self._playing_sessions.get(session.id)
+            last_tts_end = self._last_tts_ended_at.get(session.id, 0.0)  # type: ignore[attr-defined]
+            since_tts = _time.monotonic() - last_tts_end if last_tts_end else -1.0
+
+            if playback:
+                logger.warning(
+                    "Discarding echo during playback: %r (pos=%dms)",
                     text,
+                    playback.position_ms,
                 )
                 return
 
-            logger.info("Transcription: %s", text)
+            logger.info(
+                "Transcription: %s (since_tts_end=%.1fs)",
+                text,
+                since_tts,
+            )
 
             if self._backend:
                 await self._backend.send_transcription(session, text, "user")
