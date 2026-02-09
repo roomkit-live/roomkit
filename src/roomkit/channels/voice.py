@@ -55,8 +55,8 @@ _STT_STREAM_BUFFER_BYTES = 6400  # 200ms at 16kHz mono 16-bit
 class _STTStreamState:
     """Track an active streaming STT session."""
 
-    queue: asyncio.Queue  # Queue[AudioChunk | None]
-    task: asyncio.Task  # consumer task running transcribe_stream
+    queue: asyncio.Queue[Any]  # Queue[AudioChunk | None]
+    task: asyncio.Task[Any]  # consumer task running transcribe_stream
     frame_buffer: bytearray = field(default_factory=bytearray)
     frame_buffer_rate: int = 16000
     final_text: str | None = None
@@ -139,7 +139,7 @@ class VoiceChannel(Channel):
         self._stt_streams: dict[str, _STTStreamState] = {}
         # Continuous STT mode: stream all audio to STT, no local VAD
         self._continuous_stt = False
-        self._continuous_stt_tasks: dict[str, asyncio.Task] = {}
+        self._continuous_stt_tasks: dict[str, asyncio.Task[Any]] = {}
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -271,7 +271,7 @@ class VoiceChannel(Channel):
         self._cancel_stt_stream(session.id)
         logger.debug("Starting STT stream for session %s", session.id)
 
-        queue: asyncio.Queue = asyncio.Queue(maxsize=500)
+        queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=500)
 
         # Seed the queue with pre-roll audio so the first word isn't lost
         if pre_roll:
@@ -378,19 +378,19 @@ class VoiceChannel(Channel):
         room_id, _ = binding_info
         logger.info("Starting continuous STT for session %s", session.id)
 
-        queue: asyncio.Queue = asyncio.Queue(maxsize=500)
+        queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=500)
         state = _STTStreamState(queue=queue, task=asyncio.Task.__new__(asyncio.Task))
         self._stt_streams[session.id] = state
 
         async def run_continuous(state: _STTStreamState) -> None:
             while not state.cancelled:
                 # Fresh queue + WebSocket per turn (avoids server-side overlap)
-                state.queue = asyncio.Queue(maxsize=500)
+                state.queue = asyncio.Queue[Any](maxsize=500)
                 state.frame_buffer.clear()
                 cur_queue = state.queue
 
                 async def audio_gen(
-                    q: asyncio.Queue = cur_queue,
+                    q: asyncio.Queue[Any] = cur_queue,
                 ) -> AsyncIterator[AudioChunk]:
                     while True:
                         chunk = await q.get()

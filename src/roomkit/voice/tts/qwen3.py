@@ -71,7 +71,7 @@ def _numpy_to_pcm_s16le(samples: Any) -> bytes:
 
     arr = np.clip(samples, -1.0, 1.0)
     int_samples = (arr * 32767).astype(np.int16)
-    return int_samples.tobytes()
+    return bytes(int_samples.tobytes())
 
 
 def _wrap_wav(pcm_data: bytes, sample_rate: int, num_channels: int = 1) -> bytes:
@@ -214,7 +214,7 @@ class Qwen3TTSProvider(TTSProvider):
         model = self._load_model()
 
         # Use cached prompt or build one
-        clone_prompt = self._cached_prompts.get(voice_name)
+        clone_prompt = self._cached_prompts.get(voice_name) if voice_name else None
         if clone_prompt is None:
             clone_prompt = model.create_voice_clone_prompt(
                 ref_audio=voice_cfg.ref_audio,
@@ -276,7 +276,7 @@ class Qwen3TTSProvider(TTSProvider):
         voice_name = voice or self.default_voice
         model = self._load_model()
 
-        clone_prompt = self._cached_prompts.get(voice_name)
+        clone_prompt = self._cached_prompts.get(voice_name) if voice_name else None
         if clone_prompt is None:
             clone_prompt = model.create_voice_clone_prompt(
                 ref_audio=voice_cfg.ref_audio,

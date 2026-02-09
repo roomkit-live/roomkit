@@ -61,7 +61,7 @@ def _resample(data: bytes, src_rate: int, dst_rate: int) -> bytes:
     # Clamp to valid range for interpolation
     next_idx = np.minimum(idx + 1, len(samples) - 1)
     resampled = samples[idx] * (1.0 - frac) + samples[next_idx] * frac
-    return np.clip(resampled, -32768, 32767).astype(np.int16).tobytes()
+    return bytes(np.clip(resampled, -32768, 32767).astype(np.int16).tobytes())
 
 
 async def _close_stream(stream: Any, *, timeout: float = 2.0) -> bool:

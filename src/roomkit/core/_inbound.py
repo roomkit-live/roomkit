@@ -218,7 +218,7 @@ class InboundMixin(HelpersMixin):
             pending_id_result = None
 
         # Process under room lock
-        pending_streams: list = []
+        pending_streams: list[Any] = []
         async with self._lock_manager.locked(room_id):
             try:
                 result = await asyncio.wait_for(
@@ -261,7 +261,7 @@ class InboundMixin(HelpersMixin):
         *,
         resolved_identity: Identity | None = None,
         pending_id_result: IdentityResult | None = None,
-        pending_streams_out: list | None = None,
+        pending_streams_out: list[Any] | None = None,
     ) -> InboundResult:
         """Process an event under the room lock."""
         # Rebuild context under lock to prevent stale reads
@@ -659,7 +659,7 @@ class InboundMixin(HelpersMixin):
 
     async def _process_streaming_responses(
         self,
-        pending_streams: list,
+        pending_streams: list[Any],
         room_id: str,
     ) -> None:
         """Handle streaming responses outside the room lock.

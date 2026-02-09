@@ -145,7 +145,7 @@ class AIProvider(ABC):
     async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
         """Yield text deltas as they arrive. Override for streaming providers."""
         raise NotImplementedError(f"{self.name} does not support streaming generation")
-        yield  # type: ignore[misc]  # pragma: no cover
+        yield  # pragma: no cover
 
     async def close(self) -> None:  # noqa: B027
         """Release resources. Override in subclasses that hold connections."""
