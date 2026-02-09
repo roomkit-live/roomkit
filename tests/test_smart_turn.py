@@ -10,6 +10,7 @@ import pytest
 from roomkit.voice.pipeline.turn.base import TurnContext, TurnDecision
 
 np = pytest.importorskip("numpy")
+ort = pytest.importorskip("onnxruntime")
 
 
 # ---------------------------------------------------------------------------
