@@ -258,10 +258,18 @@ class VoiceSTTMixin:
                     assert self._stt is not None
                     barge_in_fired = False
                     backoff = 1.0
+                    logger.debug("Continuous STT stream cycle starting for %s", session.id)
                     async for result in self._stt.transcribe_stream(audio_gen()):
                         if state.cancelled:
                             break
+                        playing = session.id in self._playing_sessions
                         if result.is_final and result.text:
+                            logger.info(
+                                "STT final: %r (playing=%s, barge_in=%s)",
+                                result.text,
+                                playing,
+                                barge_in_fired,
+                            )
                             # During playback (and no barge-in), this is
                             # almost certainly TTS echo leaking through AEC.
                             # Discard it and reconnect for a fresh stream.
@@ -304,6 +312,12 @@ class VoiceSTTMixin:
                                         playback_position_ms=(playback.position_ms),
                                         speech_duration_ms=0,
                                     )
+                                    logger.info(
+                                        "Barge-in eval: partial=%r pos=%dms interrupt=%s",
+                                        result.text,
+                                        playback.position_ms,
+                                        decision.should_interrupt,
+                                    )
                                     if decision.should_interrupt:
                                         barge_in_fired = True
                                         self._schedule(
@@ -345,7 +359,7 @@ class VoiceSTTMixin:
 
     # Post-TTS echo cooldown: transcriptions arriving within this window
     # after TTS ends (or is interrupted) are discarded as residual echo.
-    _ECHO_COOLDOWN_S = 2.0
+    _ECHO_COOLDOWN_S = 4.0
 
     async def _handle_continuous_transcription(
         self, session: VoiceSession, text: str, room_id: str

@@ -197,11 +197,14 @@ class GradiumSTTProvider(STTProvider):
                 if chunk.is_final:
                     break
 
+        logger.info("Gradium stream connecting")
         stream = await client.stt_stream(self._build_setup(), audio_gen())
+        logger.info("Gradium stream connected")
 
         segments: list[str] = []  # completed segments from end_text
         current_partial = ""  # latest text for the in-progress segment
         consecutive_inactive = 0  # consecutive VAD steps above threshold
+        msg_count = 0  # total messages received
 
         # Timing for latency diagnostics
         first_text_at = 0.0  # first text message of this turn
@@ -209,6 +212,7 @@ class GradiumSTTProvider(STTProvider):
 
         try:
             async for msg in stream._stream:  # noqa: SLF001
+                msg_count += 1
                 type_ = msg.get("type")
                 if type_ == "text":
                     text = msg.get("text", "")
@@ -221,6 +225,7 @@ class GradiumSTTProvider(STTProvider):
                         consecutive_inactive = 0  # speech detected
                         # Yield partial: completed segments + current
                         full = " ".join([*segments, current_partial])
+                        logger.debug("Gradium partial: %r", full)
                         yield TranscriptionResult(text=full, is_final=False)
 
                 elif type_ == "end_text":
@@ -285,11 +290,12 @@ class GradiumSTTProvider(STTProvider):
                             # reconnects for the next turn.
                             return
         finally:
+            logger.info("Gradium stream closing (msgs=%d, segs=%d)", msg_count, len(segments))
             clean = await _close_stream(stream)
             if not clean:
                 # Aborted close may corrupt the SDK's aiohttp session.
                 # Force a fresh client on the next reconnect.
-                logger.debug("Stream close was not clean, resetting client")
+                logger.info("Gradium stream close was not clean, resetting client")
                 self._client = None
 
     async def close(self) -> None:
