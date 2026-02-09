@@ -221,8 +221,13 @@ async def main() -> None:
     logger.info("Recording to %s (mode=%s)", recording_dir, rec_mode_name)
 
     # --- VAD (sherpa-onnx neural VAD or energy fallback) ----------------------
+    # VAD=0 disables local VAD → continuous STT mode (Deepgram handles endpointing)
+    vad_disabled = os.environ.get("VAD", "1") == "0"
     vad_model = os.environ.get("VAD_MODEL", "")
-    if vad_model:
+    if vad_disabled:
+        vad = None
+        logger.info("VAD: disabled (continuous STT mode)")
+    elif vad_model:
         vad_model_type = os.environ.get("VAD_MODEL_TYPE", "ten")
         vad_threshold = float(os.environ.get("VAD_THRESHOLD", "0.35"))
         vad = SherpaOnnxVADProvider(
@@ -275,11 +280,13 @@ async def main() -> None:
     # --- Deepgram STT ---------------------------------------------------------
     language = os.environ.get("LANGUAGE", "en")
     stt_model = os.environ.get("DEEPGRAM_MODEL", "nova-3")
+    keyterms = [k.strip() for k in os.environ.get("DEEPGRAM_KEYTERMS", "").split(",") if k.strip()]
     stt = DeepgramSTTProvider(
         config=DeepgramConfig(
             api_key=env["DEEPGRAM_API_KEY"],
             model=stt_model,
             language=language,
+            keyterm=keyterms,
             punctuate=True,
             smart_format=True,
             endpointing=300,

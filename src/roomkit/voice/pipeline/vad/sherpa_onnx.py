@@ -69,6 +69,15 @@ class SherpaOnnxVADConfig:
     min_speech_duration_ms: float = 250
     speech_pad_ms: float = 300
     max_speech_duration: float = 20.0
+    # Energy-based fast exit: if RMS drops below this threshold for
+    # silence_threshold_ms, force SPEECH_END even if the model still
+    # reports speech.  Addresses model inertia where is_speech_detected()
+    # stays True on silence after speech.  Set to 0 to disable.
+    energy_silence_rms: float = 20.0
+    # sherpa-onnx internal hysteresis — keep low so is_speech_detected()
+    # transitions quickly; our own silence_threshold_ms handles debounce.
+    sherpa_min_silence_duration: float = 0.05
+    sherpa_min_speech_duration: float = 0.1
     sample_rate: int = 16000
     num_threads: int = 1
     provider: str = "cpu"
@@ -100,6 +109,7 @@ class SherpaOnnxVADProvider(VADProvider):
         # State machine
         self._speaking = False
         self._silence_ms: float = 0.0
+        self._energy_silence_ms: float = 0.0
         self._speech_ms: float = 0.0
         self._speech_buf = bytearray()
 
@@ -131,11 +141,15 @@ class SherpaOnnxVADProvider(VADProvider):
             vad_config.silero_vad.model = cfg.model
             vad_config.silero_vad.threshold = cfg.threshold
             vad_config.silero_vad.max_speech_duration = cfg.max_speech_duration
+            vad_config.silero_vad.min_silence_duration = cfg.sherpa_min_silence_duration
+            vad_config.silero_vad.min_speech_duration = cfg.sherpa_min_speech_duration
         else:
             # Default to TEN-VAD
             vad_config.ten_vad.model = cfg.model
             vad_config.ten_vad.threshold = cfg.threshold
             vad_config.ten_vad.max_speech_duration = cfg.max_speech_duration
+            vad_config.ten_vad.min_silence_duration = cfg.sherpa_min_silence_duration
+            vad_config.ten_vad.min_speech_duration = cfg.sherpa_min_speech_duration
 
         vad_config.sample_rate = cfg.sample_rate
         vad_config.num_threads = cfg.num_threads
@@ -219,7 +233,11 @@ class SherpaOnnxVADProvider(VADProvider):
                     self._speech_buf.extend(chunk)
                 self._pre_roll.clear()
                 self._pre_roll_ms = 0.0
-                return VADEvent(type=VADEventType.SPEECH_START, confidence=1.0)
+                return VADEvent(
+                    type=VADEventType.SPEECH_START,
+                    confidence=1.0,
+                    audio_bytes=bytes(self._speech_buf),
+                )
         else:
             # --- Speaking state ---
             self._speech_buf.extend(frame.data)
@@ -230,24 +248,53 @@ class SherpaOnnxVADProvider(VADProvider):
             else:
                 self._silence_ms += duration_ms
 
-                if self._silence_ms >= self._config.silence_threshold_ms:
-                    # Transition to idle
-                    self._speaking = False
-                    speech_ms = self._speech_ms
-                    audio = bytes(self._speech_buf)
+            # Energy-based fast exit: the model may stay in speech state
+            # long after the user stops speaking (model inertia).  Track
+            # consecutive low-energy frames independently and force
+            # SPEECH_END when the audio is clearly silence.
+            rms_threshold = self._config.energy_silence_rms
+            if rms_threshold > 0:
+                rms = _rms_int16(frame.data)
+                if rms < rms_threshold:
+                    self._energy_silence_ms += duration_ms
+                else:
+                    self._energy_silence_ms = 0.0
+            else:
+                self._energy_silence_ms = 0.0
 
-                    # Reset accumulators
-                    self._speech_buf = bytearray()
-                    self._speech_ms = 0.0
-                    self._silence_ms = 0.0
+            silence_triggered = self._silence_ms >= self._config.silence_threshold_ms
+            energy_triggered = self._energy_silence_ms >= self._config.silence_threshold_ms
 
-                    if speech_ms >= self._config.min_speech_duration_ms:
-                        return VADEvent(
-                            type=VADEventType.SPEECH_END,
-                            audio_bytes=audio,
-                            duration_ms=speech_ms,
-                        )
-                    # Too short — discard silently
+            if silence_triggered or energy_triggered:
+                # Transition to idle
+                if energy_triggered and not silence_triggered:
+                    logger.debug(
+                        "VAD: energy-based speech end (rms < %.0f for %.0fms)",
+                        rms_threshold,
+                        self._energy_silence_ms,
+                    )
+                    # Reset sherpa detector to clear stuck internal state,
+                    # otherwise is_speech_detected() stays True and
+                    # immediately re-triggers a false SPEECH_START.
+                    if self._detector is not None:
+                        self._detector.reset()
+                self._speaking = False
+                speech_ms = self._speech_ms
+                audio = bytes(self._speech_buf)
+
+                # Reset accumulators
+                self._speech_buf = bytearray()
+                self._speech_ms = 0.0
+                self._silence_ms = 0.0
+                self._energy_silence_ms = 0.0
+
+                if speech_ms >= self._config.min_speech_duration_ms:
+                    return VADEvent(
+                        type=VADEventType.SPEECH_END,
+                        audio_bytes=audio,
+                        duration_ms=speech_ms,
+                    )
+                # Too short — discard silently
 
         return None
 
@@ -255,6 +302,7 @@ class SherpaOnnxVADProvider(VADProvider):
         """Reset all internal state."""
         self._speaking = False
         self._silence_ms = 0.0
+        self._energy_silence_ms = 0.0
         self._speech_ms = 0.0
         self._speech_buf = bytearray()
         self._pre_roll.clear()

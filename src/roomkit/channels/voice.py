@@ -453,6 +453,7 @@ class VoiceChannel(Channel):
                         "STT stream cycle ended for %s, reconnecting",
                         session.id,
                     )
+                    await asyncio.sleep(0.1)
 
         try:
             loop = asyncio.get_running_loop()

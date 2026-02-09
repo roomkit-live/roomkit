@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -22,19 +22,51 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DeepgramConfig:
-    """Configuration for Deepgram STT provider."""
+    """Configuration for Deepgram STT provider.
+
+    See https://developers.deepgram.com/reference/speech-to-text/listen-streaming
+    for the full parameter reference.
+    """
 
     api_key: str
+
+    # Model & language
     model: str = "nova-3"
     language: str = "en"
+    version: str | None = None
+
+    # Formatting
     punctuate: bool = True
-    diarize: bool = False
     smart_format: bool = True
+    numerals: bool = False
+    dictation: bool = False
+
+    # Content filtering
+    profanity_filter: bool = False
+    redact: list[str] | None = None  # e.g. ["pci", "ssn"]
+    replace: list[str] | None = None  # e.g. ["old:new"]
+    detect_entities: bool = False
+
+    # Speech features
+    diarize: bool = False
     filler_words: bool = False
+    multichannel: bool = False
+
+    # Keyword boosting (keywords uses legacy format, keyterm is Nova-3 only)
+    keywords: list[str] = field(default_factory=list)
+    keyterm: list[str] = field(default_factory=list)
+    search: list[str] = field(default_factory=list)
+
     # Real-time streaming options
     interim_results: bool = True
-    endpointing: int = 300  # ms of silence to end utterance
+    endpointing: int | bool = 300  # ms of silence, or False to disable
+    utterance_end_ms: int | None = None
     vad_events: bool = True
+
+    # Misc
+    tag: str | None = None
+    extra: list[str] = field(default_factory=list)  # e.g. ["key:value"]
+    mip_opt_out: bool = False
 
 
 class DeepgramSTTProvider(STTProvider):
@@ -65,16 +97,55 @@ class DeepgramSTTProvider(STTProvider):
         return self._client
 
     def _build_query_params(self) -> dict[str, Any]:
-        """Build query parameters for Deepgram API."""
+        """Build common query parameters for Deepgram API."""
+        c = self._config
         params: dict[str, Any] = {
-            "model": self._config.model,
-            "language": self._config.language,
-            "punctuate": self._config.punctuate,
-            "diarize": self._config.diarize,
-            "smart_format": self._config.smart_format,
-            "filler_words": self._config.filler_words,
+            "model": c.model,
+            "language": c.language,
+            "punctuate": c.punctuate,
+            "diarize": c.diarize,
+            "smart_format": c.smart_format,
+            "filler_words": c.filler_words,
+            "numerals": c.numerals,
+            "profanity_filter": c.profanity_filter,
+            "detect_entities": c.detect_entities,
+            "multichannel": c.multichannel,
+            "dictation": c.dictation,
         }
+        # Optional scalar params
+        if c.version is not None:
+            params["version"] = c.version
+        if c.tag is not None:
+            params["tag"] = c.tag
+        if c.mip_opt_out:
+            params["mip_opt_out"] = True
+        # Optional list params
+        if c.keywords:
+            params["keywords"] = c.keywords
+        if c.keyterm:
+            params["keyterm"] = c.keyterm
+        if c.search:
+            params["search"] = c.search
+        if c.redact:
+            params["redact"] = c.redact
+        if c.replace:
+            params["replace"] = c.replace
+        if c.extra:
+            params["extra"] = c.extra
+        # Stringify bools
         return {k: str(v).lower() if isinstance(v, bool) else v for k, v in params.items()}
+
+    @staticmethod
+    def _to_query_string(params: dict[str, Any]) -> str:
+        """Encode parameters as a query string, expanding list values."""
+        pairs: list[str] = []
+        for k, v in params.items():
+            if isinstance(v, list):
+                for item in v:
+                    pairs.append(f"{k}={item}")
+            else:
+                pairs.append(f"{k}={v}")
+        return "&".join(pairs)
 
     async def transcribe(
         self, audio: AudioContent | AudioChunk | AudioFrame
@@ -155,12 +226,17 @@ class DeepgramSTTProvider(STTProvider):
         # Build WebSocket URL with query params
         params = self._build_query_params()
         params["interim_results"] = str(self._config.interim_results).lower()
-        params["endpointing"] = self._config.endpointing
+        if isinstance(self._config.endpointing, bool):
+            params["endpointing"] = str(self._config.endpointing).lower()
+        else:
+            params["endpointing"] = self._config.endpointing
         params["vad_events"] = str(self._config.vad_events).lower()
+        if self._config.utterance_end_ms is not None:
+            params["utterance_end_ms"] = self._config.utterance_end_ms
         params["encoding"] = "linear16"
         params["sample_rate"] = "16000"
 
-        query_string = "&".join(f"{k}={v}" for k, v in params.items())
+        query_string = self._to_query_string(params)
         ws_url = f"wss://api.deepgram.com/v1/listen?{query_string}"
 
         headers = [("Authorization", f"Token {self._config.api_key}")]
