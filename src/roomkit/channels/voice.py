@@ -148,6 +148,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._stt_streams: dict[str, _STTStreamState] = {}
         # Continuous STT mode: stream all audio to STT, no local VAD
         self._continuous_stt = False
+        # Timestamp of last TTS interruption per session — used to discard
+        # echo transcriptions that arrive shortly after barge-in cancels TTS.
+        self._last_interrupt_at: dict[str, float] = {}
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -417,9 +420,10 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Notify pipeline of session end
         if self._pipeline is not None:
             self._pipeline.on_session_ended(session)
-        # Clear pending turns and audio
+        # Clear pending turns, audio, and interrupt cooldown
         self._pending_turns.pop(session.id, None)
         self._pending_audio.pop(session.id, None)
+        self._last_interrupt_at.pop(session.id, None)
         # Emit voice_session_ended framework event
         if binding_info and self._framework:
             room_id, _ = binding_info
@@ -499,9 +503,13 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
     async def interrupt(self, session: VoiceSession, *, reason: str = "explicit") -> bool:
         """Interrupt ongoing TTS playback for a session."""
+        import time as _time
+
         playback = self._playing_sessions.pop(session.id, None)
         if not playback:
             return False
+
+        self._last_interrupt_at[session.id] = _time.monotonic()
 
         if self._backend and VoiceCapability.INTERRUPTION in self._backend.capabilities:
             await self._backend.cancel_audio(session)

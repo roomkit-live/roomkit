@@ -38,6 +38,7 @@ class VoiceSTTMixin:
     _pipeline_config: AudioPipelineConfig | None
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
     _playing_sessions: dict[str, TTSPlaybackState]
+    _last_interrupt_at: dict[str, float]
     _stt_streams: dict[str, _STTStreamState]
     _continuous_stt: bool
     _pending_turns: dict[str, list[TurnEntry]]
@@ -342,6 +343,10 @@ class VoiceSTTMixin:
         """Stop continuous STT for a session."""
         self._cancel_stt_stream(session_id)
 
+    # Post-TTS echo cooldown: transcriptions arriving within this window
+    # after TTS ends (or is interrupted) are discarded as residual echo.
+    _ECHO_COOLDOWN_S = 2.0
+
     async def _handle_continuous_transcription(
         self, session: VoiceSession, text: str, room_id: str
     ) -> None:
@@ -353,6 +358,22 @@ class VoiceSTTMixin:
             if playback:
                 logger.warning("Discarding echo transcription during playback: %r", text)
                 return
+
+            # Discard transcriptions that arrive shortly after TTS playback
+            # ends or is interrupted — the mic/AEC pipeline still contains
+            # residual echo that the STT provider may transcribe.
+            import time as _time
+
+            last_interrupt = self._last_interrupt_at.get(session.id, 0.0)  # type: ignore[attr-defined]
+            elapsed = _time.monotonic() - last_interrupt
+            if elapsed < self._ECHO_COOLDOWN_S:
+                logger.info(
+                    "Discarding post-TTS echo (%.1fs after interrupt): %r",
+                    elapsed,
+                    text,
+                )
+                return
+
             logger.info("Transcription: %s", text)
 
             if self._backend:

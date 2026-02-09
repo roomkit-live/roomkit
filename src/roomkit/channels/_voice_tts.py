@@ -36,6 +36,7 @@ class VoiceTTSMixin:
     _pipeline_config: AudioPipelineConfig | None
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
     _playing_sessions: dict[str, TTSPlaybackState]
+    _last_interrupt_at: dict[str, float]
     _debug_frame_count: int
 
     async def _wrap_outbound(
@@ -132,6 +133,7 @@ class VoiceTTSMixin:
                 await self._backend.send_audio(session, audio)
             finally:
                 self._playing_sessions.pop(session.id, None)
+                self._last_interrupt_at[session.id] = _time.monotonic()
                 logger.debug(
                     "Streaming TTS playback ended for session %s (%.1fs)",
                     session.id,
@@ -208,7 +210,10 @@ class VoiceTTSMixin:
                     await self._tts.synthesize(final_text)
                     logger.warning("TTS provider %s doesn't support streaming", self._tts.name)
                 finally:
+                    import time as _time
+
                     self._playing_sessions.pop(session.id, None)
+                    self._last_interrupt_at[session.id] = _time.monotonic()
 
             await self._framework.hook_engine.run_async_hooks(
                 room_id,
