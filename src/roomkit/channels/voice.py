@@ -150,6 +150,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._continuous_stt = False
         # Timestamp of last TTS playback end per session (for echo diagnostics)
         self._last_tts_ended_at: dict[str, float] = {}
+        # Track scheduled fire-and-forget tasks for clean shutdown
+        self._scheduled_tasks: set[asyncio.Task[Any]] = set()
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -219,9 +221,14 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             self._pipeline.on_recording_stopped(self._on_pipeline_recording_stopped)
 
         # Wire speaker output to pipeline AEC for time-aligned reference.
-        # Generation-time feeding from process_outbound() is misaligned
-        # when TTS chunks are generated faster than real-time playback.
-        if config.aec is not None and backend.supports_playback_callback:
+        # Only when the backend doesn't already feed AEC reference at
+        # the transport level (same AEC instance) — otherwise double-
+        # feeding corrupts the AEC's internal ring buffer.
+        if (
+            config.aec is not None
+            and backend.supports_playback_callback
+            and not backend.feeds_aec_reference
+        ):
 
             def _on_audio_played(session: VoiceSession, frame: AudioFrame) -> None:
                 if self._pipeline is not None:
@@ -394,7 +401,23 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(coro, name=name)
+        task = loop.create_task(coro, name=name)
+        self._scheduled_tasks.add(task)
+        task.add_done_callback(self._task_done)
+
+    def _task_done(self, task: asyncio.Task[Any]) -> None:
+        """Done-callback for scheduled tasks: log exceptions and remove from set."""
+        self._scheduled_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error(
+                "Unhandled exception in scheduled task %s: %s",
+                task.get_name(),
+                exc,
+                exc_info=exc,
+            )
 
     # -------------------------------------------------------------------------
     # Session lifecycle
@@ -627,5 +650,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             await self._backend.close()
         for sid in list(self._stt_streams):
             self._cancel_stt_stream(sid)
+        # Cancel all outstanding scheduled tasks
+        for task in self._scheduled_tasks:
+            task.cancel()
+        self._scheduled_tasks.clear()
         self._session_bindings.clear()
         self._playing_sessions.clear()
