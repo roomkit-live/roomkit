@@ -274,17 +274,18 @@ async def main() -> None:
 
     # --- Deepgram STT ---------------------------------------------------------
     language = os.environ.get("LANGUAGE", "en")
+    stt_model = os.environ.get("DEEPGRAM_MODEL", "nova-3")
     stt = DeepgramSTTProvider(
         config=DeepgramConfig(
             api_key=env["DEEPGRAM_API_KEY"],
-            model="nova-2",
+            model=stt_model,
             language=language,
             punctuate=True,
             smart_format=True,
             endpointing=300,
         )
     )
-    logger.info("STT: Deepgram nova-2 (language=%s)", language)
+    logger.info("STT: Deepgram %s (language=%s)", stt_model, language)
 
     # --- ElevenLabs TTS -------------------------------------------------------
     tts_format = f"pcm_{output_rate}"

@@ -25,7 +25,7 @@ class DeepgramConfig:
     """Configuration for Deepgram STT provider."""
 
     api_key: str
-    model: str = "nova-2"
+    model: str = "nova-3"
     language: str = "en"
     punctuate: bool = True
     diarize: bool = False
@@ -148,6 +148,8 @@ class DeepgramSTTProvider(STTProvider):
         Yields:
             TranscriptionResult with partial and final transcripts.
         """
+        import json
+
         import websockets
 
         # Build WebSocket URL with query params
@@ -171,9 +173,9 @@ class DeepgramSTTProvider(STTProvider):
                         if chunk.data:
                             await ws.send(chunk.data)
                         if chunk.is_final:
-                            # Send close frame to signal end of audio
-                            await ws.send(b"")
                             break
+                    # Tell Deepgram to flush remaining audio and close
+                    await ws.send(json.dumps({"type": "CloseStream"}))
                 except Exception as e:
                     logger.error("Error sending audio to Deepgram: %s", e)
 
@@ -183,8 +185,6 @@ class DeepgramSTTProvider(STTProvider):
                 async for message in ws:
                     if isinstance(message, bytes):
                         continue
-
-                    import json
 
                     data = json.loads(message)
 

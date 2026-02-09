@@ -181,10 +181,13 @@ class WebRTCAECProvider(AECProvider):
         fb = self._frame_bytes
 
         with self._lock:
+            ap = self._ap
+            if ap is None:
+                return
             while len(self._ref_buf) >= fb:
                 chunk = bytes(self._ref_buf[:fb])
                 del self._ref_buf[:fb]
-                self._ap.process_reverse_stream(chunk)
+                ap.process_reverse_stream(chunk)
                 self._ref_fed_count += 1
 
     def reset(self) -> None:
