@@ -32,6 +32,7 @@ openai = ["openai>=1.30"]
 vllm = ["openai>=1.30"]
 gemini = ["google-genai>=1.0.0"]
 sherpa-onnx = ["sherpa-onnx>=1.10"]
+qwen-tts = ["qwen-tts>=0.1"]
 fastrtc = ["fastrtc", "numpy"]
 webrtc-aec = ["aec-audio-processing>=0.1"]
 local-audio = ["sounddevice", "numpy"]
@@ -142,6 +143,10 @@ module = ["sherpa_onnx", "sherpa_onnx.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["qwen_tts", "qwen_tts.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["aiortp", "aiortp.*"]
 ignore_missing_imports = true
 
@@ -212,7 +217,10 @@ omit = [
     "src/roomkit/voice/realtime/local_transport.py",
     "src/roomkit/voice/realtime/ws_transport.py",
     "src/roomkit/voice/stt/deepgram.py",
+    "src/roomkit/voice/stt/gradium.py",
     "src/roomkit/voice/tts/elevenlabs.py",
+    "src/roomkit/voice/tts/gradium.py",
+    "src/roomkit/voice/tts/qwen3.py",
     "src/roomkit/providers/openai/realtime.py",
     "src/roomkit/providers/gemini/realtime.py",
     "src/roomkit/providers/pydantic_ai/*.py",

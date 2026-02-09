@@ -267,6 +267,27 @@ def get_sherpa_onnx_tts_config() -> type:
     return SherpaOnnxTTSConfig
 
 
+def get_qwen3_tts_provider() -> type:
+    """Get Qwen3TTSProvider class (requires qwen-tts)."""
+    from roomkit.voice.tts.qwen3 import Qwen3TTSProvider
+
+    return Qwen3TTSProvider
+
+
+def get_qwen3_tts_config() -> type:
+    """Get Qwen3TTSConfig class."""
+    from roomkit.voice.tts.qwen3 import Qwen3TTSConfig
+
+    return Qwen3TTSConfig
+
+
+def get_qwen3_voice_clone_config() -> type:
+    """Get VoiceCloneConfig class for Qwen3-TTS."""
+    from roomkit.voice.tts.qwen3 import VoiceCloneConfig
+
+    return VoiceCloneConfig
+
+
 def get_openai_realtime_provider() -> type:
     """Get OpenAIRealtimeProvider class (requires openai, websockets)."""
     from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
