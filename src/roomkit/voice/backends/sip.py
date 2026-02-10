@@ -335,7 +335,8 @@ class SIPVoiceBackend(VoiceBackend):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect((remote_addr[0], remote_addr[1] or 5060))
-                return s.getsockname()[0]
+                result: str = s.getsockname()[0]
+                return result
         except OSError:
             logger.warning(
                 "Could not auto-detect local IP for remote %s; "

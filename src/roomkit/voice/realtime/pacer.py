@@ -181,7 +181,8 @@ class OutboundAudioPacer:
                     self._interrupt_event.clear()
                     break  # back to outer loop
 
-                audio = next_item  # type: ignore[assignment]
+                assert isinstance(next_item, bytes)
+                audio = next_item
                 if not audio:
                     continue
 

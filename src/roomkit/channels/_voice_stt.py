@@ -406,7 +406,7 @@ class VoiceSTTMixin:
             import time as _time
 
             playback = self._playing_sessions.get(session.id)
-            last_tts_end = self._last_tts_ended_at.get(session.id, 0.0)  # type: ignore[attr-defined]
+            last_tts_end = self._last_tts_ended_at.get(session.id, 0.0)
             since_tts = _time.monotonic() - last_tts_end if last_tts_end else -1.0
 
             if playback:

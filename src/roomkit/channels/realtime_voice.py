@@ -487,7 +487,7 @@ class RealtimeVoiceChannel(Channel):
                 sample_width=2,
             )
             frame = resamplers[1].resample(frame, transport_rate, 1, 2)
-            return frame.data
+            return bytes(frame.data)
         return audio
 
     def _on_provider_transcription(
