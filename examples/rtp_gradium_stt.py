@@ -187,7 +187,7 @@ async def main() -> None:
     async def on_transcription(text, ctx):
         print(f"\n>>> {text}\n")
         # Block further processing (no AI provider to forward to)
-        return HookResult.block()
+        return HookResult.block("transcribe-only, no AI provider")
 
     # --- Start RTP session ----------------------------------------------------
     session = await backend.connect("rtp-stt", "rtp-caller", "voice")

@@ -250,10 +250,14 @@ class VoiceSTTMixin:
                 cur_queue = state.queue
 
                 async def audio_gen(
+                    first_chunk: AudioChunk,
                     q: asyncio.Queue[Any] = cur_queue,
                 ) -> AsyncIterator[AudioChunk]:
                     from .voice import _STT_INACTIVITY_TIMEOUT_S
 
+                    # Yield the pre-fetched first chunk immediately so the
+                    # STT provider gets audio right after connecting.
+                    yield first_chunk
                     while True:
                         try:
                             chunk = await asyncio.wait_for(
@@ -285,6 +289,15 @@ class VoiceSTTMixin:
                     assert self._stt is not None
                     barge_in_fired = False
                     backoff = 1.0
+
+                    # Wait for the first audio chunk before connecting the
+                    # STT stream.  This avoids opening a WebSocket that sits
+                    # idle — some providers lose the first audio after a
+                    # long idle period.
+                    first_chunk = await cur_queue.get()
+                    if first_chunk is None or state.cancelled:
+                        continue
+
                     last_tts = self._last_tts_ended_at.get(session.id, 0.0)
                     since_tts = _time.monotonic() - last_tts if last_tts else -1.0
                     logger.info(
@@ -292,7 +305,7 @@ class VoiceSTTMixin:
                         session.id,
                         since_tts,
                     )
-                    async for result in self._stt.transcribe_stream(audio_gen()):
+                    async for result in self._stt.transcribe_stream(audio_gen(first_chunk)):
                         if state.cancelled:
                             break
                         playing = session.id in self._playing_sessions

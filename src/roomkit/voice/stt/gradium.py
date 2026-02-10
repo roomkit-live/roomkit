@@ -35,6 +35,16 @@ class GradiumSTTConfig:
     # specific language and improves transcription quality.
     language: str | None = None
     json_config: dict[str, Any] | None = field(default=None, repr=False)
+    # Pre-connect buffer: accumulate this much real audio (ms) before
+    # opening the WebSocket.  The server gets a burst of context on
+    # connect, avoiding lost first words from model warmup.  Set to 0
+    # to connect immediately (first chunk is still sent on connect).
+    connect_buffer_ms: int = 300
+    # Model processing delay in frames (80ms each).  The server needs
+    # this many frames before it starts producing text.  Silence is
+    # prepended to cover the delay so real speech isn't lost.
+    # Allowed values: 7, 8, 10, 12, 14, 16, 20, 24, 36, 48.
+    delay_in_frames: int = 7
     # VAD turn-detection: use 3rd prediction (2s horizon) inactivity_prob.
     # When this exceeds the threshold for enough consecutive steps AND
     # we have completed segments, the accumulated text is yielded as final.
@@ -126,7 +136,7 @@ class GradiumSTTProvider(STTProvider):
             "model_name": self._config.model_name,
             "input_format": self._config.input_format,
         }
-        jc: dict[str, Any] = {}
+        jc: dict[str, Any] = {"delay_in_frames": self._config.delay_in_frames}
         if self._config.language is not None:
             jc["language"] = self._config.language
         if self._config.json_config is not None:
@@ -197,7 +207,40 @@ class GradiumSTTProvider(STTProvider):
 
         audio_done = asyncio.Event()
 
+        # --- Pre-connect buffer: accumulate real audio before opening the
+        # WebSocket so the server gets a context burst on connect. --------
+        pre_buffer: list[bytes] = []
+        pre_buffer_bytes = 0
+        target_bytes = int(_GRADIUM_SAMPLE_RATE * 2 * self._config.connect_buffer_ms / 1000)
+        stream_exhausted = False
+
+        async for chunk in audio_stream:
+            if chunk.data:
+                src_rate = chunk.sample_rate or 16000
+                data = _resample(chunk.data, src_rate, _GRADIUM_SAMPLE_RATE)
+                pre_buffer.append(data)
+                pre_buffer_bytes += len(data)
+            if chunk.is_final:
+                stream_exhausted = True
+                break
+            if pre_buffer_bytes >= target_bytes:
+                break
+
         async def audio_gen() -> AsyncIterator[bytes]:
+            # Prepend silence matching delay_in_frames so the model's
+            # processing delay falls on silence, not real speech.
+            # Each frame = 80ms = 1920 samples at 24kHz = 3840 bytes.
+            delay = self._config.delay_in_frames
+            if delay > 0:
+                silence_bytes = delay * 1920 * 2  # 16-bit samples
+                yield b"\x00" * silence_bytes
+            # Yield pre-buffered real audio as a single burst.
+            if pre_buffer:
+                yield b"".join(pre_buffer)
+            if stream_exhausted:
+                audio_done.set()
+                return
+            # Then stream directly — no extra buffering.
             async for chunk in audio_stream:
                 if chunk.data:
                     src_rate = chunk.sample_rate or 16000
@@ -206,7 +249,8 @@ class GradiumSTTProvider(STTProvider):
                     break
             audio_done.set()
 
-        logger.info("Gradium stream connecting")
+        pre_ms = int(pre_buffer_bytes / (_GRADIUM_SAMPLE_RATE * 2) * 1000)
+        logger.info("Gradium stream connecting (pre-buffered %dms)", pre_ms)
         stream = await client.stt_stream(self._build_setup(), audio_gen())
         logger.info("Gradium stream connected")
 
