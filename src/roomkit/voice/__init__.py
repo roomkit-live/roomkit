@@ -253,6 +253,13 @@ def get_rtp_backend() -> type:
     return RTPVoiceBackend
 
 
+def get_sip_backend() -> type:
+    """Get SIPVoiceBackend class (requires aiosipua[rtp])."""
+    from roomkit.voice.backends.sip import SIPVoiceBackend
+
+    return SIPVoiceBackend
+
+
 def get_fastrtc_backend() -> type:
     """Get FastRTCVoiceBackend class (requires fastrtc, numpy)."""
     from roomkit.voice.backends.fastrtc import FastRTCVoiceBackend

@@ -37,6 +37,7 @@ fastrtc = ["fastrtc", "numpy"]
 webrtc-aec = ["aec-audio-processing>=0.1"]
 local-audio = ["sounddevice", "numpy"]
 rtp = ["aiortp>=0.1.0"]
+sip = ["aiosipua[rtp]>=0.1.0"]
 twilio = ["twilio>=9.0"]
 phonenumbers = ["phonenumbers>=8.13"]
 pynacl = ["pynacl>=1.5"]
@@ -158,6 +159,10 @@ module = ["aiortp", "aiortp.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["aiosipua", "aiosipua.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["fastrtc", "fastrtc.*"]
 ignore_missing_imports = true
 
@@ -244,6 +249,7 @@ omit = [
     "src/roomkit/providers/gemini/realtime.py",
     "src/roomkit/providers/pydantic_ai/*.py",
     "src/roomkit/voice/backends/rtp.py",
+    "src/roomkit/voice/backends/sip.py",
     "src/roomkit/voice/pipeline/aec/webrtc.py",
 ]
 
