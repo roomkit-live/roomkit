@@ -164,6 +164,7 @@ class SIPVoiceBackend(VoiceBackend):
         # Playback tracking for interruption support
         self._playing_sessions: set[str] = set()
         self._playback_tasks: dict[str, asyncio.Task[None]] = {}
+        self._session_pacers: dict[str, Any] = {}  # OutboundAudioPacer per session
 
         # Callback registrations
         self._audio_received_callback: AudioReceivedCallback | None = None
@@ -612,66 +613,38 @@ class SIPVoiceBackend(VoiceBackend):
         call_session: Any,
         chunks: AsyncIterator[AudioChunk],
     ) -> None:
-        """Stream AudioChunks as RTP packets."""
-        codec_rate = self._codec_rates.get(session.id, 8000)
-        clock_rate = self._clock_rates.get(session.id, 8000)
-        pcm_samples_per_frame = codec_rate // 50
-        bytes_per_frame = pcm_samples_per_frame * 2
-        ts_increment = clock_rate // 50
+        """Stream AudioChunks as paced RTP packets.
 
-        ts = self._send_timestamps.get(session.id, 0)
-        logger.debug(
-            "send_pcm_stream: codec_rate=%d clock_rate=%d frame=%dB ts_inc=%d",
-            codec_rate,
-            clock_rate,
-            bytes_per_frame,
-            ts_increment,
+        Uses :class:`OutboundAudioPacer` to pre-buffer ~150 ms then
+        pace to wall-clock rate — same mechanism the realtime SIP
+        transport uses.  This prevents jitter-buffer overflow when TTS
+        produces audio faster than real-time (e.g. local sherpa-onnx).
+        """
+        from roomkit.voice.realtime.pacer import OutboundAudioPacer
+
+        codec_rate = self._codec_rates.get(session.id, 8000)
+
+        async def rtp_send(data: bytes) -> None:
+            self._send_pcm_bytes(session, call_session, data)
+
+        pacer = OutboundAudioPacer(
+            send_fn=rtp_send,
+            sample_rate=codec_rate,
         )
+        self._session_pacers[session.id] = pacer
+        await pacer.start()
 
         async def _run() -> None:
-            nonlocal ts
-            buf = bytearray()
-            chunk_count = 0
-            frame_count = 0
-            total_bytes = 0
-            loop = asyncio.get_event_loop()
-            t0: float | None = None  # set on first frame
-            async for chunk in chunks:
-                if session.id not in self._playing_sessions:
-                    logger.debug("send_pcm_stream: cancelled after %d chunks", chunk_count)
-                    return
-                if chunk.data:
-                    buf.extend(chunk.data)
-                    total_bytes += len(chunk.data)
-                chunk_count += 1
-                while len(buf) >= bytes_per_frame:
-                    # Pace to real-time so the receiver jitter buffer
-                    # doesn't overflow on fast TTS (local/offline).
-                    if t0 is None:
-                        t0 = loop.time()
-                    else:
-                        target = t0 + frame_count * 0.02
-                        delay = target - loop.time()
-                        if delay > 0.001:
-                            await asyncio.sleep(delay)
-                    frame_data = bytes(buf[:bytes_per_frame])
-                    del buf[:bytes_per_frame]
-                    call_session.send_audio_pcm(frame_data, ts)
-                    ts += ts_increment
-                    frame_count += 1
-
-            remainder = len(buf)
-            if buf and session.id in self._playing_sessions:
-                call_session.send_audio_pcm(bytes(buf), ts)
-                ts += len(buf) // 2
-                frame_count += 1
-            logger.debug(
-                "send_pcm_stream done: %d chunks, %d frames, %dB total, %dB remainder",
-                chunk_count,
-                frame_count,
-                total_bytes,
-                remainder,
-            )
+            try:
+                async for chunk in chunks:
+                    if session.id not in self._playing_sessions:
+                        break
+                    if chunk.data:
+                        pacer.push(chunk.data)
+                pacer.end_of_response()
+            finally:
+                self._session_pacers.pop(session.id, None)
+                await pacer.stop()
 
         task = asyncio.create_task(_run())
         self._playback_tasks[session.id] = task
@@ -681,7 +654,11 @@ class SIPVoiceBackend(VoiceBackend):
             pass
         finally:
             self._playback_tasks.pop(session.id, None)
-            self._send_timestamps[session.id] = ts
+            # Ensure pacer is stopped even on cancellation
+            if session.id in self._session_pacers:
+                self._session_pacers.pop(session.id, None)
+                pacer.interrupt()
+                await pacer.stop()
 
     async def send_transcription(
         self, session: VoiceSession, text: str, role: str = "user"
@@ -757,6 +734,11 @@ class SIPVoiceBackend(VoiceBackend):
         was_playing = session.id in self._playing_sessions
         if was_playing:
             self._playing_sessions.discard(session.id)
+            # Interrupt the pacer first (drains its queue immediately),
+            # then cancel the feeder task that iterates over TTS chunks.
+            pacer = self._session_pacers.pop(session.id, None)
+            if pacer is not None:
+                pacer.interrupt()
             task = self._playback_tasks.pop(session.id, None)
             if task is not None:
                 task.cancel()
