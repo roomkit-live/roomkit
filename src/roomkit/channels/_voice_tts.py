@@ -64,6 +64,9 @@ class VoiceTTSMixin:
         from roomkit.voice.audio_frame import AudioFrame
         from roomkit.voice.base import AudioChunk as OutChunk
 
+        chunk_idx = 0
+        total_in_bytes = 0
+        total_out_bytes = 0
         async for chunk in chunks:
             if not chunk.data or self._pipeline is None:
                 yield chunk
@@ -76,6 +79,18 @@ class VoiceTTSMixin:
                 timestamp_ms=chunk.timestamp_ms,
             )
             processed = self._pipeline.process_outbound(session, frame)
+            total_in_bytes += len(chunk.data)
+            total_out_bytes += len(processed.data)
+            if chunk_idx < 3 or chunk_idx % 50 == 0:
+                logger.debug(
+                    "outbound[%d] in=%dB@%dHz out=%dB@%dHz",
+                    chunk_idx,
+                    len(chunk.data),
+                    chunk.sample_rate,
+                    len(processed.data),
+                    processed.sample_rate,
+                )
+            chunk_idx += 1
             yield OutChunk(
                 data=processed.data,
                 sample_rate=processed.sample_rate,
@@ -86,6 +101,13 @@ class VoiceTTSMixin:
                 ),
                 is_final=chunk.is_final,
             )
+        logger.debug(
+            "outbound done: %d chunks, in=%dB out=%dB (ratio=%.2f)",
+            chunk_idx,
+            total_in_bytes,
+            total_out_bytes,
+            total_out_bytes / total_in_bytes if total_in_bytes else 0,
+        )
 
     async def _finish_playback(self, session_id: str) -> None:
         """Clear playback state after a post-drain delay for echo decay.
@@ -159,7 +181,7 @@ class VoiceTTSMixin:
                 session_id=session.id, text="(streaming)"
             )
             t0 = _time.monotonic()
-            logger.debug("Streaming TTS playback started for session %s", session.id)
+            logger.info("Streaming TTS playback started for session %s", session.id)
             try:
                 sentences = split_sentences(tracking_stream())
                 audio = self._tts.synthesize_stream_input(sentences)

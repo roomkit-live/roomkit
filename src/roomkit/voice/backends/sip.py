@@ -620,24 +620,47 @@ class SIPVoiceBackend(VoiceBackend):
         ts_increment = clock_rate // 50
 
         ts = self._send_timestamps.get(session.id, 0)
+        logger.debug(
+            "send_pcm_stream: codec_rate=%d clock_rate=%d frame=%dB ts_inc=%d",
+            codec_rate,
+            clock_rate,
+            bytes_per_frame,
+            ts_increment,
+        )
 
         async def _run() -> None:
             nonlocal ts
             buf = bytearray()
+            chunk_count = 0
+            frame_count = 0
+            total_bytes = 0
             async for chunk in chunks:
                 if session.id not in self._playing_sessions:
+                    logger.debug("send_pcm_stream: cancelled after %d chunks", chunk_count)
                     return
                 if chunk.data:
                     buf.extend(chunk.data)
+                    total_bytes += len(chunk.data)
+                chunk_count += 1
                 while len(buf) >= bytes_per_frame:
                     frame_data = bytes(buf[:bytes_per_frame])
                     del buf[:bytes_per_frame]
                     call_session.send_audio_pcm(frame_data, ts)
                     ts += ts_increment
+                    frame_count += 1
 
+            remainder = len(buf)
             if buf and session.id in self._playing_sessions:
                 call_session.send_audio_pcm(bytes(buf), ts)
                 ts += len(buf) // 2
+                frame_count += 1
+            logger.debug(
+                "send_pcm_stream done: %d chunks, %d frames, %dB total, %dB remainder",
+                chunk_count,
+                frame_count,
+                total_bytes,
+                remainder,
+            )
 
         task = asyncio.create_task(_run())
         self._playback_tasks[session.id] = task
