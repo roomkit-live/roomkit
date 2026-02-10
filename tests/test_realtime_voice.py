@@ -514,3 +514,173 @@ class TestCloseCleanup:
 
         # Session should be ended
         assert session.state == RealtimeSessionState.ENDED
+
+
+# ---------------------------------------------------------------------------
+# Resampling (transport_sample_rate)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def resample_channel(
+    provider: MockRealtimeProvider, transport: MockRealtimeTransport
+) -> RealtimeVoiceChannel:
+    """Channel with transport_sample_rate set for resampling tests."""
+    return RealtimeVoiceChannel(
+        "rt-resample",
+        provider=provider,
+        transport=transport,
+        input_sample_rate=16000,
+        output_sample_rate=24000,
+        transport_sample_rate=8000,
+    )
+
+
+@pytest.fixture
+async def resample_kit(resample_channel: RealtimeVoiceChannel) -> RoomKit:
+    kit = RoomKit()
+    kit.register_channel(resample_channel)
+    return kit
+
+
+@pytest.fixture
+async def resample_room_id(resample_kit: RoomKit) -> str:
+    room = await resample_kit.create_room()
+    await resample_kit.attach_channel(room.id, "rt-resample")
+    return room.id
+
+
+class TestTransportSampleRateNone:
+    """transport_sample_rate=None (default) disables resampling."""
+
+    async def test_no_resamplers_created(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        room_id: str,
+    ) -> None:
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        assert session.id not in channel._session_resamplers
+
+    async def test_audio_passes_through(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        room_id: str,
+    ) -> None:
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        # Client → Provider: no resampling
+        audio = b"\x01\x00" * 80
+        await transport.simulate_client_audio(session, audio)
+        await asyncio.sleep(0.05)
+        assert len(provider.sent_audio) == 1
+        assert provider.sent_audio[0] == (session.id, audio)
+
+        # Provider → Client: no resampling
+        await provider.simulate_audio(session, audio)
+        await asyncio.sleep(0.05)
+        assert len(transport.sent_audio) == 1
+        assert transport.sent_audio[0] == (session.id, audio)
+
+
+class TestResamplingEnabled:
+    """transport_sample_rate != provider rates enables resampling."""
+
+    async def test_resamplers_created(
+        self,
+        resample_kit: RoomKit,
+        resample_channel: RealtimeVoiceChannel,
+        resample_room_id: str,
+    ) -> None:
+        session = await resample_channel.start_session(resample_room_id, "user-1", "fake-ws")
+        assert session.id in resample_channel._session_resamplers
+        inbound, outbound = resample_channel._session_resamplers[session.id]
+        assert inbound is not None
+        assert outbound is not None
+
+    async def test_inbound_audio_resampled(
+        self,
+        resample_kit: RoomKit,
+        resample_channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        resample_room_id: str,
+    ) -> None:
+        session = await resample_channel.start_session(resample_room_id, "user-1", "fake-ws")
+
+        # Send 10ms of 8kHz audio (80 samples) as client audio
+        import struct
+
+        audio_8k = struct.pack("<80h", *([500] * 80))
+        await transport.simulate_client_audio(session, audio_8k)
+        await asyncio.sleep(0.05)
+
+        # Provider should receive resampled audio (different size)
+        assert len(provider.sent_audio) == 1
+        received = provider.sent_audio[0][1]
+        # 8kHz → 16kHz: should be roughly 160 samples (320 bytes)
+        # SincResampler has a one-frame delay on first frame, so first call
+        # produces output for 0 or ~80 samples depending on implementation.
+        # Just verify it's different from input (was resampled).
+        assert received != audio_8k
+
+    async def test_outbound_audio_resampled(
+        self,
+        resample_kit: RoomKit,
+        resample_channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        resample_room_id: str,
+    ) -> None:
+        session = await resample_channel.start_session(resample_room_id, "user-1", "fake-ws")
+
+        # Send 10ms of 24kHz audio (240 samples) as provider audio
+        import struct
+
+        audio_24k = struct.pack("<240h", *([500] * 240))
+        await provider.simulate_audio(session, audio_24k)
+        await asyncio.sleep(0.05)
+
+        # Transport should receive resampled audio (different size)
+        assert len(transport.sent_audio) == 1
+        received = transport.sent_audio[0][1]
+        # 24kHz → 8kHz: should be roughly 80 samples (160 bytes)
+        assert received != audio_24k
+
+    async def test_session_cleanup_removes_resamplers(
+        self,
+        resample_kit: RoomKit,
+        resample_channel: RealtimeVoiceChannel,
+        resample_room_id: str,
+    ) -> None:
+        session = await resample_channel.start_session(resample_room_id, "user-1", "fake-ws")
+        assert session.id in resample_channel._session_resamplers
+
+        await resample_channel.end_session(session)
+        assert session.id not in resample_channel._session_resamplers
+
+
+class TestResamplingMatchingRates:
+    """No resamplers when transport_sample_rate matches provider rates."""
+
+    async def test_no_resamplers_when_rates_match(self) -> None:
+        provider = MockRealtimeProvider()
+        transport = MockRealtimeTransport()
+        ch = RealtimeVoiceChannel(
+            "rt-match",
+            provider=provider,
+            transport=transport,
+            input_sample_rate=16000,
+            output_sample_rate=16000,
+            transport_sample_rate=16000,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-match")
+
+        session = await ch.start_session(room.id, "user-1", "fake-ws")
+        assert session.id not in ch._session_resamplers

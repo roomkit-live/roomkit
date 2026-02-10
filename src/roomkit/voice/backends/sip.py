@@ -108,7 +108,7 @@ class SIPVoiceBackend(VoiceBackend):
         self._local_rtp_ip = local_rtp_ip
         self._rtp_port_start = rtp_port_start
         self._rtp_port_end = rtp_port_end
-        self._supported_codecs = supported_codecs or [0, 8]
+        self._supported_codecs = supported_codecs or [9, 0, 8]
         self._dtmf_payload_type = dtmf_payload_type
 
         # SIP components (created in start())
@@ -121,6 +121,10 @@ class SIPVoiceBackend(VoiceBackend):
         self._call_sessions: dict[str, Any] = {}  # session_id -> CallSession
         self._incoming_calls: dict[str, Any] = {}  # session_id -> IncomingCall
         self._call_to_session: dict[str, str] = {}  # call_id -> session_id
+
+        # Per-session codec info (populated after call_session.start())
+        self._codec_rates: dict[str, int] = {}  # actual audio sample rate
+        self._clock_rates: dict[str, int] = {}  # RTP clock rate
 
         # Outbound timestamp tracking per session
         self._send_timestamps: dict[str, int] = {}
@@ -198,6 +202,10 @@ class SIPVoiceBackend(VoiceBackend):
         call.accept(call_session.sdp_answer)
         await call_session.start()
 
+        # Store per-session codec info for sample rate awareness
+        codec_rate = call_session.codec_sample_rate  # 16000 for G.722, 8000 for G.711
+        clock_rate = call_session.clock_rate  # 8000 for both (G.722 RFC 3551 quirk)
+
         # Extract routing metadata from X-headers
         room_id = call.room_id or call.call_id
         participant_id = call.session_id or call.caller
@@ -229,6 +237,8 @@ class SIPVoiceBackend(VoiceBackend):
         self._incoming_calls[session.id] = call
         self._call_to_session[call.call_id] = session.id
         self._send_timestamps[session.id] = 0
+        self._codec_rates[session.id] = codec_rate
+        self._clock_rates[session.id] = clock_rate
 
         logger.info(
             "SIP call accepted: session=%s, room=%s, call_id=%s",
@@ -270,6 +280,8 @@ class SIPVoiceBackend(VoiceBackend):
         if call is not None:
             self._call_to_session.pop(call.call_id, None)
         self._send_timestamps.pop(session_id, None)
+        self._codec_rates.pop(session_id, None)
+        self._clock_rates.pop(session_id, None)
         self._playing_sessions.discard(session_id)
         task = self._playback_tasks.pop(session_id, None)
         if task is not None:
@@ -369,7 +381,7 @@ class SIPVoiceBackend(VoiceBackend):
                 return
             frame = AudioFrame(
                 data=pcm_data,
-                sample_rate=8000,
+                sample_rate=self._codec_rates.get(session.id, 8000),
                 channels=1,
                 sample_width=2,
             )
@@ -381,7 +393,8 @@ class SIPVoiceBackend(VoiceBackend):
         """Create an on_dtmf callback bound to *session*."""
 
         def _on_dtmf(digit: str, duration: int) -> None:
-            duration_ms = (duration / 8000) * 1000
+            clock_rate = self._clock_rates.get(session.id, 8000)
+            duration_ms = (duration / clock_rate) * 1000
             event = DTMFEvent(
                 digit=digit,
                 duration_ms=duration_ms,
@@ -420,15 +433,18 @@ class SIPVoiceBackend(VoiceBackend):
 
     def _send_pcm_bytes(self, session: VoiceSession, call_session: Any, pcm_data: bytes) -> None:
         """Send a complete PCM-16 LE buffer as RTP packets."""
-        samples_per_frame = 8000 // 50  # 20ms frames at 8kHz = 160 samples
-        bytes_per_frame = samples_per_frame * 2  # 16-bit samples
+        codec_rate = self._codec_rates.get(session.id, 8000)
+        clock_rate = self._clock_rates.get(session.id, 8000)
+        pcm_samples_per_frame = codec_rate // 50  # 320 for G.722, 160 for G.711
+        bytes_per_frame = pcm_samples_per_frame * 2  # 640 for G.722, 320 for G.711
+        ts_increment = clock_rate // 50  # 160 for both (G.722 RTP clock = 8000)
 
         ts = self._send_timestamps.get(session.id, 0)
         offset = 0
         while offset < len(pcm_data):
             chunk = pcm_data[offset : offset + bytes_per_frame]
             call_session.send_audio_pcm(chunk, ts)
-            ts += samples_per_frame
+            ts += ts_increment
             offset += bytes_per_frame
 
         self._send_timestamps[session.id] = ts
@@ -440,8 +456,11 @@ class SIPVoiceBackend(VoiceBackend):
         chunks: AsyncIterator[AudioChunk],
     ) -> None:
         """Stream AudioChunks as RTP packets."""
-        samples_per_frame = 8000 // 50
-        bytes_per_frame = samples_per_frame * 2
+        codec_rate = self._codec_rates.get(session.id, 8000)
+        clock_rate = self._clock_rates.get(session.id, 8000)
+        pcm_samples_per_frame = codec_rate // 50
+        bytes_per_frame = pcm_samples_per_frame * 2
+        ts_increment = clock_rate // 50
 
         ts = self._send_timestamps.get(session.id, 0)
 
@@ -457,7 +476,7 @@ class SIPVoiceBackend(VoiceBackend):
                     frame_data = bytes(buf[:bytes_per_frame])
                     del buf[:bytes_per_frame]
                     call_session.send_audio_pcm(frame_data, ts)
-                    ts += samples_per_frame
+                    ts += ts_increment
 
             if buf and session.id in self._playing_sessions:
                 call_session.send_audio_pcm(bytes(buf), ts)

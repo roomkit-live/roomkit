@@ -80,6 +80,7 @@ class RealtimeVoiceChannel(Channel):
         temperature: float | None = None,
         input_sample_rate: int = 16000,
         output_sample_rate: int = 24000,
+        transport_sample_rate: int | None = None,
         emit_transcription_events: bool = True,
         tool_handler: ToolHandler | None = None,
     ) -> None:
@@ -95,6 +96,10 @@ class RealtimeVoiceChannel(Channel):
             temperature: Default sampling temperature.
             input_sample_rate: Default input audio sample rate (Hz).
             output_sample_rate: Default output audio sample rate (Hz).
+            transport_sample_rate: Sample rate of audio from the transport (Hz).
+                When set and different from provider rates, enables automatic
+                resampling.  When ``None`` (default), no resampling is performed
+                — backwards compatible with WebSocket transports.
             emit_transcription_events: If True, emit final transcriptions
                 as RoomEvents so other channels see them.
             tool_handler: Async callable to execute tool calls.
@@ -111,6 +116,7 @@ class RealtimeVoiceChannel(Channel):
         self._temperature = temperature
         self._input_sample_rate = input_sample_rate
         self._output_sample_rate = output_sample_rate
+        self._transport_sample_rate = transport_sample_rate
         self._emit_transcription_events = emit_transcription_events
         self._tool_handler = tool_handler
         self._framework: RoomKit | None = None
@@ -118,6 +124,9 @@ class RealtimeVoiceChannel(Channel):
         # Active sessions: session_id -> (session, room_id, binding)
         self._sessions: dict[str, RealtimeSession] = {}
         self._session_rooms: dict[str, str] = {}  # session_id -> room_id
+
+        # Per-session resamplers: (inbound, outbound) pairs
+        self._session_resamplers: dict[str, tuple[Any, Any]] = {}
 
         # Wire internal callbacks
         provider.on_audio(self._on_provider_audio)
@@ -194,6 +203,18 @@ class RealtimeVoiceChannel(Channel):
         # Accept client connection
         await self._transport.accept(session, connection)
 
+        # Create per-session resamplers if transport rate differs from provider
+        if self._transport_sample_rate is not None:
+            needs_inbound = self._transport_sample_rate != self._input_sample_rate
+            needs_outbound = self._transport_sample_rate != self._output_sample_rate
+            if needs_inbound or needs_outbound:
+                from roomkit.voice.pipeline.resampler.sinc import SincResamplerProvider
+
+                self._session_resamplers[session.id] = (
+                    SincResamplerProvider(),  # inbound: transport → provider
+                    SincResamplerProvider(),  # outbound: provider → transport
+                )
+
         # Connect to provider
         await self._provider.connect(
             session,
@@ -258,6 +279,10 @@ class RealtimeVoiceChannel(Channel):
         session.state = RealtimeSessionState.ENDED
         self._sessions.pop(session.id, None)
         self._session_rooms.pop(session.id, None)
+        resamplers = self._session_resamplers.pop(session.id, None)
+        if resamplers:
+            resamplers[0].close()
+            resamplers[1].close()
 
         # Fire framework event
         if self._framework:
@@ -383,6 +408,18 @@ class RealtimeVoiceChannel(Channel):
         if session.state != RealtimeSessionState.ACTIVE:
             return
         try:
+            resamplers = self._session_resamplers.get(session.id)
+            if resamplers and self._transport_sample_rate != self._input_sample_rate:
+                from roomkit.voice.audio_frame import AudioFrame
+
+                frame = AudioFrame(
+                    data=audio,
+                    sample_rate=self._transport_sample_rate,  # type: ignore[arg-type]
+                    channels=1,
+                    sample_width=2,
+                )
+                frame = resamplers[0].resample(frame, self._input_sample_rate, 1, 2)
+                audio = frame.data
             await self._provider.send_audio(session, audio)
         except Exception:
             if session.state == RealtimeSessionState.ACTIVE:
@@ -402,6 +439,23 @@ class RealtimeVoiceChannel(Channel):
 
     async def _forward_provider_audio(self, session: RealtimeSession, audio: bytes) -> None:
         try:
+            resamplers = self._session_resamplers.get(session.id)
+            if resamplers and self._transport_sample_rate != self._output_sample_rate:
+                from roomkit.voice.audio_frame import AudioFrame
+
+                frame = AudioFrame(
+                    data=audio,
+                    sample_rate=self._output_sample_rate,
+                    channels=1,
+                    sample_width=2,
+                )
+                frame = resamplers[1].resample(
+                    frame,
+                    self._transport_sample_rate,
+                    1,
+                    2,  # type: ignore[arg-type]
+                )
+                audio = frame.data
             await self._transport.send_audio(session, audio)
         except Exception:
             logger.exception("Error forwarding provider audio for session %s", session.id)

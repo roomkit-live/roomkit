@@ -50,6 +50,8 @@ def _make_mock_call_session() -> MagicMock:
     session.sdp_answer = MagicMock()
     session.chosen_payload_type = 0
     session.remote_addr = ("10.0.0.1", 20000)
+    session.codec_sample_rate = 8000
+    session.clock_rate = 8000
     session.on_audio = None
     session.on_dtmf = None
     session.start = AsyncMock()
@@ -188,11 +190,11 @@ class TestSIPVoiceBackendInit:
         assert backend._local_rtp_ip == "10.0.0.5"
         assert backend._rtp_port_start == 10000
         assert backend._rtp_port_end == 20000
-        assert backend._supported_codecs == [0, 8]
+        assert backend._supported_codecs == [9, 0, 8]
         assert backend._dtmf_payload_type == 101
 
     def test_default_codecs(self, backend: Any) -> None:
-        assert backend._supported_codecs == [0, 8]
+        assert backend._supported_codecs == [9, 0, 8]
 
 
 class TestStart:
@@ -327,6 +329,8 @@ class TestHandleInvite:
         assert backend._incoming_calls[session.id] is call
         assert backend._call_to_session["test-call-1"] == session.id
         assert backend._send_timestamps[session.id] == 0
+        assert backend._codec_rates[session.id] == 8000
+        assert backend._clock_rates[session.id] == 8000
 
 
 class TestHandleBye:
@@ -428,6 +432,8 @@ class TestDisconnect:
         assert session.id not in backend._call_sessions
         assert session.id not in backend._incoming_calls
         assert session.id not in backend._send_timestamps
+        assert session.id not in backend._codec_rates
+        assert session.id not in backend._clock_rates
 
 
 class TestSendAudio:
