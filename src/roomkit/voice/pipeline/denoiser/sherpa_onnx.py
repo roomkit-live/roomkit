@@ -47,7 +47,7 @@ def _float32_to_pcm_s16le(samples: np.ndarray | list[float]) -> bytes:
     import numpy as np
 
     arr = np.asarray(samples, dtype=np.float32)
-    return np.clip(arr * 32767, -32767, 32767).astype(np.int16).tobytes()
+    return bytes(np.clip(arr * 32767, -32767, 32767).astype(np.int16).tobytes())
 
 
 @dataclass
