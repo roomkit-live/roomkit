@@ -14,11 +14,11 @@ Requires ``roomkit[sip]``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 from roomkit.voice.realtime.base import RealtimeSession
-from roomkit.voice.realtime.pacer import OutboundAudioPacer
 from roomkit.voice.realtime.transport import (
     RealtimeAudioTransport,
     TransportAudioCallback,
@@ -67,8 +67,6 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
         self._rt_sessions: dict[str, RealtimeSession] = {}
         # Reverse mapping: voice_session_id -> realtime_session_id
         self._voice_to_rt: dict[str, str] = {}
-        # Per-session outbound audio pacers
-        self._pacers: dict[str, OutboundAudioPacer] = {}
 
         self._audio_callbacks: list[TransportAudioCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
@@ -99,14 +97,6 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
         codec_rate = self._backend._codec_rates.get(voice_session.id, 8000)
         session.metadata["transport_sample_rate"] = codec_rate
 
-        # Create and start the outbound audio pacer for this session
-        pacer = OutboundAudioPacer(
-            send_fn=self._make_send_fn(session),
-            sample_rate=codec_rate,
-        )
-        self._pacers[session.id] = pacer
-        await pacer.start()
-
         logger.info(
             "SIP realtime transport: accepted session %s (SIP %s, codec_rate=%d)",
             session.id,
@@ -115,31 +105,28 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
         )
 
     async def send_audio(self, session: RealtimeSession, audio: bytes) -> None:
-        """Enqueue audio for paced delivery to the SIP caller."""
-        pacer = self._pacers.get(session.id)
-        if pacer is not None:
-            pacer.push(audio)
+        """Delegate audio delivery to the SIP backend's session pacer."""
+        voice_session = self._voice_sessions.get(session.id)
+        if voice_session is not None:
+            await self._backend.send_audio(voice_session, audio)
 
     async def send_message(self, session: RealtimeSession, message: dict[str, Any]) -> None:
         """No-op — SIP has no metadata/signaling channel for JSON messages."""
 
     def end_of_response(self, session: RealtimeSession) -> None:
-        """Signal end of AI response to the pacer."""
-        pacer = self._pacers.get(session.id)
-        if pacer is not None:
-            pacer.end_of_response()
+        """Signal end of AI response to the backend pacer."""
+        voice_session = self._voice_sessions.get(session.id)
+        if voice_session is not None:
+            self._backend.end_of_response(voice_session)
 
     def interrupt(self, session: RealtimeSession) -> None:
-        """Signal interruption — drain pacer queue, stop playback."""
-        pacer = self._pacers.get(session.id)
-        if pacer is not None:
-            pacer.interrupt()
+        """Signal interruption — delegate to backend cancel_audio."""
+        voice_session = self._voice_sessions.get(session.id)
+        if voice_session is not None:
+            asyncio.get_running_loop().create_task(self._backend.cancel_audio(voice_session))
 
     async def disconnect(self, session: RealtimeSession) -> None:
         """Disconnect a realtime session (does not send SIP BYE)."""
-        pacer = self._pacers.pop(session.id, None)
-        if pacer is not None:
-            await pacer.stop()
         voice_session = self._voice_sessions.pop(session.id, None)
         self._rt_sessions.pop(session.id, None)
         if voice_session is not None:
@@ -166,16 +153,6 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
 
     # -- Internal --
 
-    def _make_send_fn(self, session: RealtimeSession) -> Any:
-        """Create a send function bound to a specific session."""
-
-        async def _send(audio: bytes) -> None:
-            voice_session = self._voice_sessions.get(session.id)
-            if voice_session is not None and audio:
-                await self._backend.send_audio(voice_session, audio)
-
-        return _send
-
     def _on_sip_audio(self, voice_session: Any, frame: Any) -> None:
         """Handle inbound SIP audio: pass through to callbacks."""
         rt_session_id = self._voice_to_rt.get(voice_session.id)
@@ -194,8 +171,6 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
             try:
                 result = cb(session, audio)
                 if hasattr(result, "__await__"):
-                    import asyncio
-
                     try:
                         loop = asyncio.get_running_loop()
                     except RuntimeError:
@@ -211,8 +186,6 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
             try:
                 result = cb(session)
                 if hasattr(result, "__await__"):
-                    import asyncio
-
                     try:
                         loop = asyncio.get_running_loop()
                     except RuntimeError:

@@ -43,11 +43,13 @@ def _make_sip_backend() -> MagicMock:
     """Create a mock SIPVoiceBackend."""
     backend = MagicMock()
     backend._audio_received_callback = None
-    backend._codec_rates = {}  # real dict so pacer .get() returns int, not MagicMock
+    backend._codec_rates = {}  # real dict so .get() returns int, not MagicMock
     backend.on_audio_received = MagicMock(
         side_effect=lambda cb: setattr(backend, "_audio_received_callback", cb)
     )
     backend.send_audio = AsyncMock()
+    backend.cancel_audio = AsyncMock(return_value=True)
+    backend.end_of_response = MagicMock()
     return backend
 
 
@@ -92,7 +94,6 @@ class TestAccept:
         assert transport._voice_sessions[rt_session.id] is voice_session
         assert transport._rt_sessions[rt_session.id] is rt_session
         assert transport._voice_to_rt[voice_session.id] == rt_session.id
-        assert rt_session.id in transport._pacers
 
         await transport.disconnect(rt_session)
 
@@ -111,7 +112,6 @@ class TestDisconnect:
         assert rt_session.id not in transport._voice_sessions
         assert rt_session.id not in transport._rt_sessions
         assert voice_session.id not in transport._voice_to_rt
-        assert rt_session.id not in transport._pacers
 
     @pytest.mark.asyncio
     async def test_disconnect_unknown_session(self) -> None:
@@ -123,8 +123,8 @@ class TestDisconnect:
 
 class TestSendAudio:
     @pytest.mark.asyncio
-    async def test_send_audio_via_pacer(self) -> None:
-        """Audio pushed via send_audio() arrives at backend through the pacer."""
+    async def test_send_audio_delegates_to_backend(self) -> None:
+        """send_audio() delegates directly to backend.send_audio()."""
         backend = _make_sip_backend()
         transport = SIPRealtimeTransport(backend)
 
@@ -134,14 +134,8 @@ class TestSendAudio:
 
         audio = struct.pack("<160h", *([500] * 160))
         await transport.send_audio(rt_session, audio)
-        transport.end_of_response(rt_session)
-        # Allow pacer background task to process
-        await asyncio.sleep(0.2)
 
-        backend.send_audio.assert_awaited()
-        # All pushed bytes should arrive (possibly in a single pre-buffered burst)
-        total_sent = b"".join(call.args[1] for call in backend.send_audio.call_args_list)
-        assert total_sent == audio
+        backend.send_audio.assert_awaited_once_with(voice_session, audio)
 
         await transport.disconnect(rt_session)
 
@@ -225,9 +219,9 @@ class TestClose:
         assert len(transport._voice_to_rt) == 0
 
 
-class TestPacerIntegration:
+class TestDelegation:
     @pytest.mark.asyncio
-    async def test_interrupt_drains_pacer(self) -> None:
+    async def test_interrupt_delegates_to_cancel_audio(self) -> None:
         backend = _make_sip_backend()
         transport = SIPRealtimeTransport(backend)
 
@@ -235,26 +229,15 @@ class TestPacerIntegration:
         voice_session = FakeVoiceSession()
         await transport.accept(rt_session, voice_session)
 
-        # Push audio then interrupt
-        audio = struct.pack("<160h", *([500] * 160))
-        for _ in range(20):
-            await transport.send_audio(rt_session, audio)
         transport.interrupt(rt_session)
         await asyncio.sleep(0.05)
 
-        count_after_interrupt = backend.send_audio.await_count
-
-        # New response should still work
-        await transport.send_audio(rt_session, audio)
-        transport.end_of_response(rt_session)
-        await asyncio.sleep(0.2)
-
-        assert backend.send_audio.await_count > count_after_interrupt
+        backend.cancel_audio.assert_awaited_once_with(voice_session)
 
         await transport.disconnect(rt_session)
 
     @pytest.mark.asyncio
-    async def test_end_of_response_resets_pacing(self) -> None:
+    async def test_end_of_response_delegates_to_backend(self) -> None:
         backend = _make_sip_backend()
         transport = SIPRealtimeTransport(backend)
 
@@ -262,26 +245,27 @@ class TestPacerIntegration:
         voice_session = FakeVoiceSession()
         await transport.accept(rt_session, voice_session)
 
-        audio = struct.pack("<80h", *([500] * 80))
-
-        # First response
-        for _ in range(5):
-            await transport.send_audio(rt_session, audio)
         transport.end_of_response(rt_session)
-        await asyncio.sleep(0.2)
-
-        first_count = backend.send_audio.await_count
-        assert first_count >= 1
-
-        # Second response
-        for _ in range(5):
-            await transport.send_audio(rt_session, audio)
-        transport.end_of_response(rt_session)
-        await asyncio.sleep(0.2)
-
-        assert backend.send_audio.await_count > first_count
+        backend.end_of_response.assert_called_once_with(voice_session)
 
         await transport.disconnect(rt_session)
+
+    @pytest.mark.asyncio
+    async def test_end_of_response_unknown_session_noop(self) -> None:
+        backend = _make_sip_backend()
+        transport = SIPRealtimeTransport(backend)
+        rt_session = _make_rt_session("unknown")
+        transport.end_of_response(rt_session)
+        backend.end_of_response.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_interrupt_unknown_session_noop(self) -> None:
+        backend = _make_sip_backend()
+        transport = SIPRealtimeTransport(backend)
+        rt_session = _make_rt_session("unknown")
+        transport.interrupt(rt_session)
+        await asyncio.sleep(0.05)
+        backend.cancel_audio.assert_not_awaited()
 
 
 class TestCallbackRegistration:

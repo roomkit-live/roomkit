@@ -208,6 +208,9 @@ class VoiceBackend(ABC):
         """
         return False  # Default no-op, override if supported
 
+    def end_of_response(self, session: VoiceSession) -> None:  # noqa: B027
+        """Signal end of an AI response for outbound pacing."""
+
     def is_playing(self, session: VoiceSession) -> bool:
         """Check if audio is currently being sent to the session.
 

@@ -448,6 +448,8 @@ class TestSendAudio:
         # 20ms frame at 8kHz = 160 samples = 320 bytes
         pcm = b"\x00\x01" * 160
         await backend.send_audio(session, pcm)
+        backend.end_of_response(session)
+        await asyncio.sleep(0.15)
 
         mock_call_session.send_audio_pcm.assert_called_once_with(pcm, 0)
 
@@ -462,6 +464,8 @@ class TestSendAudio:
         # Two 20ms frames = 640 bytes
         pcm = b"\x00\x01" * 320
         await backend.send_audio(session, pcm)
+        backend.end_of_response(session)
+        await asyncio.sleep(0.15)
 
         calls = mock_call_session.send_audio_pcm.call_args_list
         assert len(calls) == 2

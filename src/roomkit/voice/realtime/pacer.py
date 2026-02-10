@@ -53,6 +53,8 @@ class OutboundAudioPacer:
 
         self._queue: asyncio.Queue[bytes | str] = asyncio.Queue()
         self._interrupt_event = asyncio.Event()
+        self._response_done = asyncio.Event()
+        self._response_done.set()  # No response in flight initially
         self._task: asyncio.Task[None] | None = None
 
     def push(self, audio: bytes) -> None:
@@ -62,7 +64,12 @@ class OutboundAudioPacer:
 
     def end_of_response(self) -> None:
         """Signal end of AI response. Resets pacing for next response."""
+        self._response_done.clear()
         self._queue.put_nowait(_RESPONSE_END)
+
+    async def wait_for_response_done(self) -> None:
+        """Wait until the current response has been fully flushed."""
+        await self._response_done.wait()
 
     def interrupt(self) -> None:
         """Drain queue + wake sender. Called on speech_start for barge-in."""
@@ -73,6 +80,7 @@ class OutboundAudioPacer:
             except asyncio.QueueEmpty:
                 break
         self._interrupt_event.set()
+        self._response_done.set()  # Unblock any wait_for_response_done() waiters
 
     async def start(self) -> None:
         """Start the background sender task."""
@@ -108,6 +116,7 @@ class OutboundAudioPacer:
 
             if item == _RESPONSE_END:
                 # Nothing to flush — channel handles resampler flush
+                self._response_done.set()
                 continue
 
             # Clear interrupt flag at the start of each new audio burst
@@ -156,6 +165,7 @@ class OutboundAudioPacer:
 
             # If we broke out due to RESPONSE_END, loop back for next response
             if next_item == _RESPONSE_END:
+                self._response_done.set()
                 continue
 
             # Start wall-clock pacing from after the burst
@@ -173,6 +183,7 @@ class OutboundAudioPacer:
                     if next_item == _STOP:
                         return
                     if next_item == _RESPONSE_END:
+                        self._response_done.set()
                         break  # back to outer loop for next response
                     continue
 

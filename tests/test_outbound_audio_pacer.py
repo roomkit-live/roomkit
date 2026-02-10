@@ -188,6 +188,63 @@ class TestStop:
         await pacer.stop()  # Should not raise
 
 
+class TestWaitForResponseDone:
+    async def test_wait_completes_after_flush(self) -> None:
+        """wait_for_response_done() resolves after response is flushed."""
+        received: list[bytes] = []
+
+        async def send_fn(audio: bytes) -> None:
+            received.append(audio)
+
+        pacer = OutboundAudioPacer(send_fn, sample_rate=8000, prebuffer_ms=0)
+        await pacer.start()
+
+        pacer.push(_make_audio(20))
+        pacer.end_of_response()
+        await asyncio.wait_for(pacer.wait_for_response_done(), timeout=1.0)
+
+        await pacer.stop()
+        assert len(received) >= 1
+
+    async def test_interrupt_unblocks_waiter(self) -> None:
+        """interrupt() unblocks a pending wait_for_response_done()."""
+
+        async def send_fn(audio: bytes) -> None:
+            pass
+
+        pacer = OutboundAudioPacer(send_fn, sample_rate=8000, prebuffer_ms=150)
+        await pacer.start()
+
+        # Push a lot of audio so pacing takes a long time
+        for _ in range(100):
+            pacer.push(_make_audio(20))
+        pacer.end_of_response()
+
+        # Start waiting, then interrupt before it can finish
+        wait_task = asyncio.create_task(pacer.wait_for_response_done())
+        await asyncio.sleep(0.05)
+        pacer.interrupt()
+
+        # Should unblock quickly
+        await asyncio.wait_for(wait_task, timeout=1.0)
+
+        await pacer.stop()
+
+    async def test_no_response_returns_immediately(self) -> None:
+        """wait_for_response_done() returns immediately when no response in flight."""
+
+        async def send_fn(audio: bytes) -> None:
+            pass
+
+        pacer = OutboundAudioPacer(send_fn, sample_rate=8000)
+        await pacer.start()
+
+        # No end_of_response() called, event is set by default
+        await asyncio.wait_for(pacer.wait_for_response_done(), timeout=0.1)
+
+        await pacer.stop()
+
+
 class TestEmptyAudio:
     async def test_empty_audio_skipped(self) -> None:
         """Empty bytes should not be sent."""
