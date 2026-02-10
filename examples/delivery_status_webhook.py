@@ -5,6 +5,7 @@ on_delivery_status decorator. Shows:
 - Registering delivery status handlers
 - Processing DeliveryStatus from provider webhooks
 - Tracking sent/delivered/failed states
+- Room-aware dispatch via channel_id resolution
 
 Run with:
     uv run python examples/delivery_status_webhook.py
@@ -23,6 +24,8 @@ from roomkit import (
 # Track delivery states
 delivery_log: list[dict[str, str]] = []
 
+CHANNEL_ID = "sms-twilio"
+
 
 async def main() -> None:
     kit = RoomKit()
@@ -31,8 +34,12 @@ async def main() -> None:
     kit.register_channel(ws)
     ws.register_connection("agent-conn", lambda _c, _e: asyncio.sleep(0))
 
+    # Create a room with a channel so delivery status can resolve the room
+    sms = WebSocketChannel(CHANNEL_ID)
+    kit.register_channel(sms)
     await kit.create_room(room_id="delivery-room")
     await kit.attach_channel("delivery-room", "ws-agent")
+    await kit.attach_channel("delivery-room", CHANNEL_ID)
 
     # --- Register delivery status handler ---
     @kit.on_delivery_status
@@ -52,9 +59,10 @@ async def main() -> None:
     # --- Simulate delivery status webhooks from an SMS provider ---
     print("Simulating delivery status webhooks...\n")
 
-    # Message 1: Sent -> Delivered -> Read
+    # Message 1: Sent -> Delivered
     statuses_msg1 = [
         DeliveryStatus(
+            channel_id=CHANNEL_ID,
             provider="twilio",
             message_id="SM001",
             status="sent",
@@ -62,6 +70,7 @@ async def main() -> None:
             sender="+15559876543",
         ),
         DeliveryStatus(
+            channel_id=CHANNEL_ID,
             provider="twilio",
             message_id="SM001",
             status="delivered",
@@ -73,6 +82,7 @@ async def main() -> None:
     # Message 2: Sent -> Failed
     statuses_msg2 = [
         DeliveryStatus(
+            channel_id=CHANNEL_ID,
             provider="twilio",
             message_id="SM002",
             status="sent",
@@ -80,6 +90,7 @@ async def main() -> None:
             sender="+15559876543",
         ),
         DeliveryStatus(
+            channel_id=CHANNEL_ID,
             provider="twilio",
             message_id="SM002",
             status="failed",
@@ -104,11 +115,11 @@ async def main() -> None:
         )
 
     # Summary
-    statuses = [e["status"] for e in delivery_log]
+    statuses_list = [e["status"] for e in delivery_log]
     print(
-        f"\nSummary: {statuses.count('sent')} sent, "
-        f"{statuses.count('delivered')} delivered, "
-        f"{statuses.count('failed')} failed"
+        f"\nSummary: {statuses_list.count('sent')} sent, "
+        f"{statuses_list.count('delivered')} delivered, "
+        f"{statuses_list.count('failed')} failed"
     )
 
     await kit.close()

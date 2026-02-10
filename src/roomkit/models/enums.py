@@ -174,7 +174,6 @@ class HookTrigger(StrEnum):
     ON_PARTICIPANT_IDENTIFIED = "on_participant_identified"
     # Side effects
     ON_TASK_CREATED = "on_task_created"
-    ON_ERROR = "on_error"
     # Delivery status (outbound message tracking)
     ON_DELIVERY_STATUS = "on_delivery_status"
     # Voice (RFC §18)
@@ -200,6 +199,8 @@ class HookTrigger(StrEnum):
     # Realtime Voice (RFC §20)
     ON_REALTIME_TOOL_CALL = "on_realtime_tool_call"
     ON_REALTIME_TEXT_INJECTED = "on_realtime_text_injected"
+    # Protocol observability
+    ON_PROTOCOL_TRACE = "on_protocol_trace"
 
 
 @unique

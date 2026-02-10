@@ -20,7 +20,13 @@ class ProviderResult(BaseModel):
 
 
 class InboundMessage(BaseModel):
-    """A message received from an external provider."""
+    """A message received from an external provider.
+
+    For stateful channels (voice, persistent WebSocket), set ``session``
+    to the session object.  After the hook pipeline passes,
+    ``process_inbound`` will call ``channel.connect_session()`` to bind
+    the long-lived session to the room.
+    """
 
     channel_id: str
     sender_id: str
@@ -30,6 +36,7 @@ class InboundMessage(BaseModel):
     thread_id: str | None = None
     idempotency_key: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    session: Any | None = None
 
 
 class InboundResult(BaseModel):
@@ -67,6 +74,8 @@ class DeliveryStatus(BaseModel):
         raw: Original webhook payload for debugging.
     """
 
+    room_id: str | None = None
+    channel_id: str | None = None
     provider: str
     message_id: str
     status: str

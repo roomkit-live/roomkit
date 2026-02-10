@@ -36,6 +36,7 @@ from roomkit.core.inbound_router import DefaultInboundRoomRouter, InboundRoomRou
 from roomkit.core.locks import InMemoryLockManager, RoomLockManager
 from roomkit.core.transcoder import DefaultContentTranscoder
 from roomkit.identity.base import IdentityResolver
+from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryStatus
 from roomkit.models.enums import (
     ChannelDirection,
@@ -44,6 +45,7 @@ from roomkit.models.enums import (
     EventType,
     HookExecution,
     HookTrigger,
+    RoomStatus,
 )
 from roomkit.models.event import EventSource, RoomEvent
 from roomkit.models.task import Observation, Task
@@ -57,9 +59,6 @@ from roomkit.realtime.memory import InMemoryRealtime
 from roomkit.sources.base import SourceHealth, SourceProvider, SourceStatus
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
-
-# Type alias for delivery status handlers
-DeliveryStatusHandler = Callable[[DeliveryStatus], Any]
 
 # Re-export type aliases so existing imports continue to work
 __all__ = [
@@ -173,7 +172,6 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         self._transcoder = DefaultContentTranscoder()
         self._event_handlers: list[tuple[str, FrameworkEventHandler]] = []
         self._identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]] = {}
-        self._delivery_status_handlers: list[DeliveryStatusHandler] = []
         self._inbound_router = inbound_router or DefaultInboundRoomRouter(self._store)
         self._event_router: EventRouter | None = None
         # Event-driven sources
@@ -183,6 +181,8 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         self._stt = stt
         self._tts = tts
         self._voice = voice
+        # Traces received before the room exists (flushed on attach_channel)
+        self._pending_traces: dict[str, list[object]] = {}
 
     @property
     def store(self) -> ConversationStore:
@@ -471,6 +471,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         participant_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         visibility: str = "all",
+        provider: str | None = None,
     ) -> RoomEvent:
         """Send an event directly into a room from a channel.
 
@@ -483,6 +484,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             participant_id: Optional participant/sender ID for the event source
             metadata: Optional event metadata
             visibility: Event visibility ("all" or "internal")
+            provider: Optional provider/backend name for event attribution
         """
         await self.get_room(room_id)
         binding = await self._get_binding(room_id, channel_id)
@@ -494,6 +496,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 channel_id=channel_id,
                 channel_type=binding.channel_type,
                 participant_id=participant_id,
+                provider=provider,
             ),
             content=content,
             chain_depth=chain_depth,
@@ -970,11 +973,14 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
 
         return decorator
 
-    def on_delivery_status(self, fn: DeliveryStatusHandler) -> DeliveryStatusHandler:
+    def on_delivery_status(
+        self, fn: Callable[[DeliveryStatus], Any]
+    ) -> Callable[[DeliveryStatus], Any]:
         """Decorator to register a delivery status handler.
 
         The decorated function is called when ``process_delivery_status()`` is
-        invoked with a ``DeliveryStatus`` from a provider webhook.
+        invoked with a ``DeliveryStatus`` from a provider webhook.  Handlers
+        are dispatched through the hook engine with room context.
 
         Example:
             @kit.on_delivery_status
@@ -984,17 +990,29 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 elif status.status == "failed":
                     logger.error("Message %s failed: %s", status.message_id, status.error_message)
         """
-        # Wrap sync handlers so process_delivery_status can always await
         if not asyncio.iscoroutinefunction(fn):
             orig = fn
 
-            async def wrapper(status: DeliveryStatus) -> Any:
+            async def _sync_wrap(status: DeliveryStatus) -> Any:
                 return orig(status)
 
-            wrapper.__name__ = getattr(orig, "__name__", "unknown")
-            self._delivery_status_handlers.append(wrapper)
+            _sync_wrap.__name__ = getattr(orig, "__name__", "unknown")
+            adapted: Callable[[DeliveryStatus], Any] = _sync_wrap
         else:
-            self._delivery_status_handlers.append(fn)
+            adapted = fn
+
+        async def _hook_fn(event: Any, context: RoomContext) -> None:
+            await adapted(event)
+
+        _hook_fn.__name__ = getattr(fn, "__name__", "unknown")
+        self._hook_engine.register(
+            HookRegistration(
+                trigger=HookTrigger.ON_DELIVERY_STATUS,
+                execution=HookExecution.ASYNC,
+                fn=_hook_fn,
+                name=getattr(fn, "__name__", "unknown"),
+            )
+        )
         return fn
 
     async def process_webhook(
@@ -1025,25 +1043,48 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             await self.process_inbound(inbound)
         elif meta.is_status:
             status = meta.to_status()
+            status.channel_id = channel_id
             await self.process_delivery_status(status)
         # else: unknown webhook type, silently acknowledge
 
     async def process_delivery_status(self, status: DeliveryStatus) -> None:
-        """Process a delivery status through registered ON_DELIVERY_STATUS handlers.
+        """Process a delivery status through the hook engine.
+
+        Resolves the room from ``status.room_id`` or ``status.channel_id``
+        (via the store) and dispatches ON_DELIVERY_STATUS hooks with full
+        room context.
 
         Args:
             status: The DeliveryStatus from meta.to_status().
         """
-        logger = logging.getLogger("roomkit.framework")
-        for handler in self._delivery_status_handlers:
-            try:
-                await handler(status)
-            except Exception:
-                logger.exception(
-                    "Delivery status handler %s failed for message %s",
-                    getattr(handler, "__name__", "unknown"),
-                    status.message_id,
-                )
+        room_id = status.room_id
+        if not room_id and status.channel_id:
+            room_id = await self._store.find_room_id_by_channel(
+                status.channel_id, status=str(RoomStatus.ACTIVE)
+            )
+
+        if not room_id:
+            logging.getLogger("roomkit.framework").warning(
+                "Cannot dispatch ON_DELIVERY_STATUS for message %s: no room_id resolved",
+                status.message_id,
+            )
+            return
+
+        try:
+            context = await self._build_context(room_id)
+        except Exception:
+            room = await self._store.get_room(room_id)
+            if room is None:
+                return
+            context = RoomContext(room=room, bindings=[])
+
+        await self._hook_engine.run_async_hooks(
+            room_id,
+            HookTrigger.ON_DELIVERY_STATUS,
+            status,
+            context,
+            skip_event_filter=True,
+        )
 
     def add_room_hook(
         self,
