@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 import threading
 import time
 from collections import deque
@@ -164,16 +165,40 @@ class LocalAudioTransport(RealtimeAudioTransport):
 
         # --- Output stream (speakers, callback-driven) ---
         if self._output_stream is None:
+            output_blocksize = int(
+                self._output_sample_rate * self._block_duration_ms / 1000
+            )
+            # On macOS CoreAudio, "low" latency can produce very small
+            # hardware buffers that underrun easily from Python callback
+            # jitter, causing audible crackling.  Use "high" on macOS.
+            if sys.platform == "darwin":
+                out_latency: str = "high"
+            elif self._aec is not None:
+                out_latency = "low"
+            else:
+                out_latency = "high"
+
             out = self._sd.RawOutputStream(
                 samplerate=self._output_sample_rate,
+                blocksize=output_blocksize,
                 channels=self._channels,
                 dtype="int16",
                 device=self._output_device,
-                latency="low" if self._aec is not None else "high",
+                latency=out_latency,
                 callback=self._speaker_callback,
             )
             out.start()
             self._output_stream = out
+            try:
+                logger.info(
+                    "Speaker stream: rate=%dHz blocksize=%d latency=%.1fms device=%s",
+                    self._output_sample_rate,
+                    output_blocksize,
+                    out.latency * 1000,
+                    self._output_device or "default",
+                )
+            except Exception:
+                logger.info("Speaker stream started (could not read stream info)")
 
         # --- Input stream (microphone) ---
         blocksize = int(self._input_sample_rate * self._block_duration_ms / 1000)
@@ -220,6 +245,16 @@ class LocalAudioTransport(RealtimeAudioTransport):
         )
         stream.start()
         self._input_streams[session.id] = stream
+        try:
+            logger.info(
+                "Mic stream: rate=%dHz blocksize=%d latency=%.1fms device=%s",
+                self._input_sample_rate,
+                blocksize,
+                stream.latency * 1000,
+                self._input_device or "default",
+            )
+        except Exception:
+            logger.info("Mic stream started (could not read latency)")
 
         logger.info(
             "Local audio started: session=%s, mic=%dHz, spk=%dHz, block=%dms",
@@ -307,6 +342,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
         """
         if status:
             self._cb_status_errors += 1
+            logger.warning("Speaker callback status: %s", status)
 
         self._cb_count += 1
         bytes_needed = frames * self._channels * 2  # 2 bytes per int16 sample
@@ -377,7 +413,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
         queue_ms = (queue_bytes / bps * 1000) if bps else 0
 
         label = "FINAL audio stats" if final else "audio stats"
-        logger.debug(
+        logger.info(
             "[%s] queued=%dB played=%dB silence=%dB "
             "queue_now=%d chunks/%.0fms "
             "cb=%d underruns=%d pa_err=%d mic_suppressed=%d",
