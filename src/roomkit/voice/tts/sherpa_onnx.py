@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import re
 import struct
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -77,6 +78,74 @@ def _wrap_wav(pcm_data: bytes, sample_rate: int, num_channels: int = 1) -> bytes
         data_size,
     )
     return header + pcm_data
+
+
+_PARAGRAPH_RE = re.compile(r"\n\n+")
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _split_text(text: str, max_chars: int = 300) -> list[str]:
+    """Split text into sentence-sized chunks for chunked TTS generation.
+
+    Splits on paragraph breaks (\\n\\n) first, then on sentence boundaries
+    (.!?) within each paragraph. Merges short sentence fragments to avoid
+    unnatural pauses. Breaks long chunks that exceed *max_chars* on the
+    nearest line break or whitespace.
+    """
+    text = text.strip()
+    if not text:
+        return []
+
+    # Phase 1: split on paragraph breaks
+    paragraphs = [p.strip() for p in _PARAGRAPH_RE.split(text) if p.strip()]
+
+    # Phase 2: split each paragraph on sentence boundaries, merge short bits
+    chunks: list[str] = []
+    for para in paragraphs:
+        sentences = [s.strip() for s in _SENTENCE_RE.split(para) if s.strip()]
+        # Merge short consecutive fragments (< 40 chars)
+        merged: list[str] = []
+        for sent in sentences:
+            if merged and len(merged[-1]) < 40:
+                merged[-1] = merged[-1] + " " + sent
+            else:
+                merged.append(sent)
+        chunks.extend(merged)
+
+    # Phase 3: break any chunk that still exceeds max_chars
+    result: list[str] = []
+    for chunk in chunks:
+        if len(chunk) <= max_chars:
+            result.append(chunk)
+            continue
+        # Try splitting on line breaks first
+        lines = chunk.split("\n")
+        buf = ""
+        for line in lines:
+            candidate = (buf + "\n" + line).strip() if buf else line
+            if len(candidate) <= max_chars:
+                buf = candidate
+            else:
+                if buf:
+                    result.append(buf)
+                # If a single line still exceeds max_chars, split on whitespace
+                if len(line) > max_chars:
+                    words = line.split()
+                    buf = ""
+                    for w in words:
+                        candidate = (buf + " " + w) if buf else w
+                        if len(candidate) <= max_chars:
+                            buf = candidate
+                        else:
+                            if buf:
+                                result.append(buf)
+                            buf = w
+                else:
+                    buf = line
+        if buf:
+            result.append(buf)
+
+    return result
 
 
 class SherpaOnnxTTSProvider(TTSProvider):
@@ -155,18 +224,23 @@ class SherpaOnnxTTSProvider(TTSProvider):
         tts = self._get_tts()
         sid = int(voice) if voice is not None else self._config.speaker_id
         speed = self._config.speed
+        chunks = _split_text(text)
 
-        def _run() -> Any:
-            return tts.generate(text, sid=sid, speed=speed)
+        def _run() -> list[float]:
+            all_samples: list[float] = []
+            for chunk in chunks:
+                audio = tts.generate(chunk, sid=sid, speed=speed)
+                all_samples.extend(audio.samples)
+            return all_samples
 
-        audio = await asyncio.to_thread(_run)
+        samples = await asyncio.to_thread(_run)
+        sample_rate = tts.sample_rate
 
-        pcm_data = _float32_to_pcm_s16le(list(audio.samples))
-        wav_data = _wrap_wav(pcm_data, audio.sample_rate)
+        pcm_data = _float32_to_pcm_s16le(samples)
+        wav_data = _wrap_wav(pcm_data, sample_rate)
         data_url = f"data:audio/wav;base64,{base64.b64encode(wav_data).decode()}"
 
-        # Estimate duration from samples
-        duration = len(audio.samples) / audio.sample_rate if audio.sample_rate else None
+        duration = len(samples) / sample_rate if sample_rate else None
 
         return AudioContentModel(
             url=data_url,
@@ -190,6 +264,7 @@ class SherpaOnnxTTSProvider(TTSProvider):
         tts = self._get_tts()
         sid = int(voice) if voice is not None else self._config.speaker_id
         speed = self._config.speed
+        text_chunks = _split_text(text)
 
         queue: asyncio.Queue[AudioChunk | None] = asyncio.Queue()
         loop = asyncio.get_running_loop()
@@ -207,7 +282,8 @@ class SherpaOnnxTTSProvider(TTSProvider):
             return 1  # continue generation
 
         def _run() -> None:
-            tts.generate(text, sid=sid, speed=speed, callback=_callback)
+            for tc in text_chunks:
+                tts.generate(tc, sid=sid, speed=speed, callback=_callback)
             loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
 
         task = asyncio.get_running_loop().run_in_executor(None, _run)
