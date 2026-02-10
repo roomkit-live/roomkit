@@ -637,17 +637,21 @@ class TestResamplingEnabled:
     ) -> None:
         session = await resample_channel.start_session(resample_room_id, "user-1", "fake-ws")
 
-        # Send 10ms of 24kHz audio (240 samples) as provider audio
+        # Send two 10ms chunks of 24kHz audio (240 samples each).
+        # The sinc resampler has a one-frame delay: first chunk is buffered,
+        # second chunk triggers output for the first.
         import struct
 
         audio_24k = struct.pack("<240h", *([500] * 240))
         await provider.simulate_audio(session, audio_24k)
-        await asyncio.sleep(0.05)
+        await provider.simulate_audio(session, audio_24k)
+        # Allow time for the queue-based sender's pre-buffer timeout
+        await asyncio.sleep(0.2)
 
         # Transport should receive resampled audio (different size)
-        assert len(transport.sent_audio) == 1
+        assert len(transport.sent_audio) >= 1
         received = transport.sent_audio[0][1]
-        # 24kHz → 8kHz: should be roughly 80 samples (160 bytes)
+        # 24kHz → 8kHz: resampled output should differ from input
         assert received != audio_24k
 
     async def test_session_cleanup_removes_resamplers(
@@ -661,6 +665,63 @@ class TestResamplingEnabled:
 
         await resample_channel.end_session(session)
         assert session.id not in resample_channel._session_resamplers
+
+
+class TestInterruptionFlush:
+    """Speech start (interrupt) discards stale audio and resets resampler."""
+
+    async def test_interrupt_discards_pending_audio(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        room_id: str,
+    ) -> None:
+        """Audio pushed before speech_start should NOT arrive at transport."""
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        # Push audio from provider (creates tasks in event loop)
+        await provider.simulate_audio(session, b"\x01\x00" * 80)
+        await provider.simulate_audio(session, b"\x01\x00" * 80)
+
+        # Speech start fires BEFORE the tasks above run — should discard them
+        await provider.simulate_speech_start(session)
+
+        # Let pending tasks run
+        await asyncio.sleep(0.05)
+
+        # No audio should have been sent (tasks were stale)
+        assert len(transport.sent_audio) == 0
+
+    async def test_interrupt_resets_outbound_resampler(
+        self,
+        resample_kit: RoomKit,
+        resample_channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        resample_room_id: str,
+    ) -> None:
+        """Interrupt resets the outbound resampler so stale buffered audio
+        doesn't leak into the next response."""
+        import struct
+
+        session = await resample_channel.start_session(resample_room_id, "user-1", "fake-ws")
+
+        # Push one chunk (sinc resampler buffers first frame)
+        audio_24k = struct.pack("<240h", *([500] * 240))
+        await provider.simulate_audio(session, audio_24k)
+        await asyncio.sleep(0.05)
+
+        # The first frame is still in the resampler buffer — interrupt should discard it
+        await provider.simulate_speech_start(session)
+        await asyncio.sleep(0.05)
+
+        # Verify the resampler state was cleared
+        resamplers = resample_channel._session_resamplers.get(session.id)
+        assert resamplers is not None
+        # Outbound resampler should have no pending state
+        assert len(resamplers[1]._state) == 0
 
 
 class TestResamplingMatchingRates:

@@ -167,23 +167,14 @@ class SincResamplerProvider(ResamplerProvider):
             resampled: list[int] = []
 
             if prev_state is None:
-                # First frame: no look-ahead available.
-                # Output with kernel truncation at the end (usually silence).
-                for ch in range(src_channels):
-                    extended = cur_per_ch[ch]
-                    resampled.extend(
-                        _sinc_resample_channel(
-                            extended,
-                            0,
-                            frames_per_channel,
-                            target_rate,
-                            src_rate,
-                            taps,
-                        )
-                    )
-                # Store current frame as pending for next call
+                # First frame: no look-ahead available yet.  Buffer it as
+                # pending so the next call can resample it with full kernel
+                # context.  Outputting it here *and* as pending on the next
+                # call would duplicate the first chunk (audible as a repeat
+                # of the first ~20 ms of speech).
                 new_tail: list[list[int]] = [[] for _ in range(src_channels)]
                 self._state[state_key] = (new_tail, cur_per_ch)
+                resampled = []
             else:
                 # Subsequent frames: output for PENDING frame using
                 # current frame as look-ahead context.
@@ -248,6 +239,89 @@ class SincResamplerProvider(ResamplerProvider):
             sample_width=target_width,
             timestamp_ms=frame.timestamp_ms,
             metadata=dict(frame.metadata),
+        )
+
+    def flush(
+        self,
+        target_rate: int,
+        target_channels: int,
+        target_width: int,
+    ) -> AudioFrame | None:
+        """Flush the pending frame using silence as look-ahead.
+
+        Returns ``None`` if no pending frame exists for the given direction.
+        After flushing, the state entry is deleted so the next response
+        starts fresh.
+        """
+        from roomkit.voice.audio_frame import AudioFrame as AudioFrameClass
+
+        # Find the matching state entry
+        state_key: tuple[int, int, int] | None = None
+        for key in self._state:
+            src_rate, tgt_rate, channels = key
+            if tgt_rate == target_rate and channels == target_channels:
+                state_key = key
+                break
+
+        if state_key is None:
+            return None
+
+        prev_state = self._state.pop(state_key)
+        tail_per_ch, pending_per_ch = prev_state
+
+        if not pending_per_ch or not pending_per_ch[0]:
+            return None
+
+        src_rate, _, src_channels = state_key
+        pending_fpc = len(pending_per_ch[0])
+        taps = self._taps
+
+        # Use silence as look-ahead context
+        silence = [0] * pending_fpc
+
+        resampled: list[int] = []
+        for ch in range(src_channels):
+            prefix = tail_per_ch[ch] if ch < len(tail_per_ch) else []
+            extended = prefix + pending_per_ch[ch] + silence
+            resampled.extend(
+                _sinc_resample_channel(
+                    extended,
+                    len(prefix),
+                    pending_fpc,
+                    target_rate,
+                    src_rate,
+                    taps,
+                )
+            )
+
+        # Interleave channels
+        if src_channels > 1:
+            new_frames = len(resampled) // src_channels
+            interleaved: list[int] = []
+            for i in range(new_frames):
+                for ch in range(src_channels):
+                    interleaved.append(resampled[ch * new_frames + i])
+            samples = interleaved
+        else:
+            samples = resampled
+
+        num_samples = len(samples)
+        if num_samples == 0:
+            return None
+
+        tgt_fmt = _FMT_MAP.get(target_width)
+        if tgt_fmt is None:
+            return None
+        min_val = -(1 << (target_width * 8 - 1))
+        max_val = (1 << (target_width * 8 - 1)) - 1
+        samples = [max(min_val, min(max_val, s)) for s in samples]
+        out_data = struct.pack(f"<{num_samples}{tgt_fmt}", *samples)
+
+        return AudioFrameClass(
+            data=out_data,
+            sample_rate=target_rate,
+            channels=target_channels,
+            sample_width=target_width,
         )
 
     def reset(self) -> None:

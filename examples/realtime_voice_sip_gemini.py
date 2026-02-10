@@ -63,6 +63,8 @@ async def main() -> None:
         local_rtp_ip=RTP_IP,
         rtp_port_start=RTP_PORT_START,
         rtp_port_end=RTP_PORT_END,
+        user_agent="RoomKit/0.1",
+        server_name="RoomKit",
     )
 
     # -- Gemini Live provider --
@@ -72,8 +74,8 @@ async def main() -> None:
     transport = SIPRealtimeTransport(sip_backend)
 
     # -- Realtime voice channel --
-    # G.722 negotiation gives 16kHz natively; G.711 fallback gives 8kHz.
-    # transport_sample_rate tells the channel to resample automatically.
+    # The SIP transport auto-detects the codec sample rate per call
+    # (16 kHz for G.722, 8 kHz for G.711) and resamples automatically.
     realtime = RealtimeVoiceChannel(
         "realtime-voice",
         provider=gemini,
@@ -82,7 +84,6 @@ async def main() -> None:
         voice=VOICE,
         input_sample_rate=16000,
         output_sample_rate=24000,
-        transport_sample_rate=8000,  # SIP telephony rate — auto-resamples
     )
     kit.register_channel(realtime)
 

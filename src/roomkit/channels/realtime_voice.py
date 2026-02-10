@@ -127,6 +127,13 @@ class RealtimeVoiceChannel(Channel):
 
         # Per-session resamplers: (inbound, outbound) pairs
         self._session_resamplers: dict[str, tuple[Any, Any]] = {}
+        # Per-session transport sample rates (from transport metadata)
+        self._session_transport_rates: dict[str, int] = {}
+        # Audio forward counters (for diagnostics)
+        self._audio_forward_count: dict[str, int] = {}
+        # Per-session generation counter: bumped on interrupt so pending
+        # send_audio tasks created before the interrupt become stale and skip.
+        self._audio_generation: dict[str, int] = {}
 
         # Wire internal callbacks
         provider.on_audio(self._on_provider_audio)
@@ -203,10 +210,16 @@ class RealtimeVoiceChannel(Channel):
         # Accept client connection
         await self._transport.accept(session, connection)
 
+        # Determine transport sample rate: prefer per-session (set by
+        # transport during accept, e.g. SIP codec negotiation) over the
+        # channel-level default.
+        transport_rate = session.metadata.get("transport_sample_rate", self._transport_sample_rate)
+
         # Create per-session resamplers if transport rate differs from provider
-        if self._transport_sample_rate is not None:
-            needs_inbound = self._transport_sample_rate != self._input_sample_rate
-            needs_outbound = self._transport_sample_rate != self._output_sample_rate
+        if transport_rate is not None:
+            self._session_transport_rates[session.id] = transport_rate
+            needs_inbound = transport_rate != self._input_sample_rate
+            needs_outbound = transport_rate != self._output_sample_rate
             if needs_inbound or needs_outbound:
                 from roomkit.voice.pipeline.resampler.sinc import SincResamplerProvider
 
@@ -279,6 +292,10 @@ class RealtimeVoiceChannel(Channel):
         session.state = RealtimeSessionState.ENDED
         self._sessions.pop(session.id, None)
         self._session_rooms.pop(session.id, None)
+        self._session_transport_rates.pop(session.id, None)
+        self._audio_forward_count.pop(session.id, None)
+        self._audio_generation.pop(session.id, None)
+
         resamplers = self._session_resamplers.pop(session.id, None)
         if resamplers:
             resamplers[0].close()
@@ -409,12 +426,13 @@ class RealtimeVoiceChannel(Channel):
             return
         try:
             resamplers = self._session_resamplers.get(session.id)
-            if resamplers and self._transport_sample_rate != self._input_sample_rate:
+            transport_rate = self._session_transport_rates.get(session.id)
+            if resamplers and transport_rate and transport_rate != self._input_sample_rate:
                 from roomkit.voice.audio_frame import AudioFrame
 
                 frame = AudioFrame(
                     data=audio,
-                    sample_rate=self._transport_sample_rate,  # type: ignore[arg-type]
+                    sample_rate=transport_rate,
                     channels=1,
                     sample_width=2,
                 )
@@ -426,39 +444,51 @@ class RealtimeVoiceChannel(Channel):
                 logger.exception("Error forwarding client audio for session %s", session.id)
             # Don't log again — provider already marked session as ended
 
-    def _on_provider_audio(self, session: RealtimeSession, audio: bytes) -> Any:
-        """Forward provider audio to client."""
+    def _on_provider_audio(self, session: RealtimeSession, audio: bytes) -> None:
+        """Resample + forward provider audio to transport.
+
+        Returns ``None`` so the provider's ``_fire_audio_callbacks`` does not
+        await anything — the receive loop is never blocked.
+
+        Each task captures the current generation counter so that tasks
+        created before an interrupt are silently discarded.
+        """
+        self._audio_forward_count[session.id] = self._audio_forward_count.get(session.id, 0) + 1
+        audio = self._resample_outbound(session, audio)
+        if not audio:
+            return
+        gen = self._audio_generation.get(session.id, 0)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
         loop.create_task(
-            self._forward_provider_audio(session, audio),
-            name=f"rt_provider_audio:{session.id}",
+            self._send_outbound_audio(session, audio, gen),
+            name=f"rt_send_audio:{session.id}",
         )
 
-    async def _forward_provider_audio(self, session: RealtimeSession, audio: bytes) -> None:
-        try:
-            resamplers = self._session_resamplers.get(session.id)
-            if resamplers and self._transport_sample_rate != self._output_sample_rate:
-                from roomkit.voice.audio_frame import AudioFrame
+    async def _send_outbound_audio(self, session: RealtimeSession, audio: bytes, gen: int) -> None:
+        """Send audio to transport, skipping if the generation is stale."""
+        if self._audio_generation.get(session.id, 0) != gen:
+            return
+        await self._transport.send_audio(session, audio)
 
-                frame = AudioFrame(
-                    data=audio,
-                    sample_rate=self._output_sample_rate,
-                    channels=1,
-                    sample_width=2,
-                )
-                frame = resamplers[1].resample(
-                    frame,
-                    self._transport_sample_rate,
-                    1,
-                    2,  # type: ignore[arg-type]
-                )
-                audio = frame.data
-            await self._transport.send_audio(session, audio)
-        except Exception:
-            logger.exception("Error forwarding provider audio for session %s", session.id)
+    def _resample_outbound(self, session: RealtimeSession, audio: bytes) -> bytes:
+        """Resample outbound audio from provider rate to transport rate."""
+        resamplers = self._session_resamplers.get(session.id)
+        transport_rate = self._session_transport_rates.get(session.id)
+        if resamplers and transport_rate and transport_rate != self._output_sample_rate:
+            from roomkit.voice.audio_frame import AudioFrame
+
+            frame = AudioFrame(
+                data=audio,
+                sample_rate=self._output_sample_rate,
+                channels=1,
+                sample_width=2,
+            )
+            frame = resamplers[1].resample(frame, transport_rate, 1, 2)
+            return frame.data
+        return audio
 
     def _on_provider_transcription(
         self, session: RealtimeSession, text: str, role: str, is_final: bool
@@ -533,7 +563,7 @@ class RealtimeVoiceChannel(Channel):
             if is_final and self._emit_transcription_events and final_text.strip():
                 participant_id = session.participant_id if role == "user" else None
                 logger.info(
-                    "Emitting transcription as RoomEvent: role=%s, text=%.80s",
+                    "Emitting transcription as RoomEvent: role=%s, text=%s",
                     role,
                     final_text,
                 )
@@ -558,7 +588,22 @@ class RealtimeVoiceChannel(Channel):
             )
 
     def _on_provider_speech_start(self, session: RealtimeSession) -> Any:
-        """Handle speech start from provider's server-side VAD."""
+        """Handle speech start from provider's server-side VAD.
+
+        Bumps the generation counter so pending send_audio tasks become
+        stale, resets the outbound resampler to discard its buffered frame,
+        and signals the transport to interrupt outbound audio.
+        """
+        # Bump generation — pending tasks with the old generation will skip
+        self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
+
+        # Discard outbound resampler state so stale audio doesn't leak
+        resamplers = self._session_resamplers.get(session.id)
+        if resamplers:
+            resamplers[1].reset()
+
+        self._transport.interrupt(session)
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -734,7 +779,26 @@ class RealtimeVoiceChannel(Channel):
         )
 
     def _on_provider_response_end(self, session: RealtimeSession) -> Any:
-        """Handle AI response end — clear typing indicator."""
+        """Handle AI response end — flush resampler, signal transport, clear indicator."""
+        # Flush the outbound resampler's pending frame (sinc one-frame delay)
+        resamplers = self._session_resamplers.get(session.id)
+        transport_rate = self._session_transport_rates.get(session.id)
+        if resamplers and transport_rate:
+            flushed = resamplers[1].flush(transport_rate, 1, 2)
+            if flushed and flushed.data:
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    pass
+                else:
+                    loop.create_task(
+                        self._transport.send_audio(session, flushed.data),
+                        name=f"rt_flush_audio:{session.id}",
+                    )
+
+        # Signal the transport that this response is done (resets pacing)
+        self._transport.end_of_response(session)
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -748,6 +812,16 @@ class RealtimeVoiceChannel(Channel):
         self, session: RealtimeSession, *, is_speaking: bool
     ) -> None:
         """Publish ephemeral speaking indicator for the AI."""
+        if not is_speaking:
+            forwarded = self._audio_forward_count.pop(session.id, 0)
+            if forwarded:
+                logger.info(
+                    "Response ended: forwarded %d audio chunks for session %s",
+                    forwarded,
+                    session.id,
+                )
+        elif is_speaking:
+            self._audio_forward_count[session.id] = 0
         try:
             await self._transport.send_message(
                 session,

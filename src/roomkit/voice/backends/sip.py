@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -42,6 +43,11 @@ from roomkit.voice.base import (
 from roomkit.voice.pipeline.dtmf.base import DTMFEvent
 
 logger = logging.getLogger("roomkit.voice.sip")
+
+# Well-known RTP payload types (RFC 3551)
+PT_PCMU = 0  # G.711 µ-law, 8 kHz
+PT_PCMA = 8  # G.711 A-law, 8 kHz
+PT_G722 = 9  # G.722, 16 kHz audio (8 kHz RTP clock)
 
 # Callback types
 DTMFReceivedCallback = Callable[["VoiceSession", DTMFEvent], Any]
@@ -87,8 +93,10 @@ class SIPVoiceBackend(VoiceBackend):
         rtp_port_start: First RTP port to allocate.
         rtp_port_end: Last RTP port in the allocation range.
         supported_codecs: List of payload type numbers to accept
-            (default ``[0, 8]`` = PCMU, PCMA).
+            (default ``[PT_G722, PT_PCMU, PT_PCMA]``).
         dtmf_payload_type: RTP payload type for RFC 4733 DTMF events.
+        user_agent: Value for the SIP ``User-Agent`` header in responses.
+        server_name: SDP session name (``s=`` line) in answers.
     """
 
     def __init__(
@@ -100,6 +108,8 @@ class SIPVoiceBackend(VoiceBackend):
         rtp_port_end: int = 20000,
         supported_codecs: list[int] | None = None,
         dtmf_payload_type: int = 101,
+        user_agent: str | None = None,
+        server_name: str = "-",
     ) -> None:
         self._aiosipua = _import_aiosipua()
         self._rtp_bridge = _import_rtp_bridge()
@@ -108,8 +118,10 @@ class SIPVoiceBackend(VoiceBackend):
         self._local_rtp_ip = local_rtp_ip
         self._rtp_port_start = rtp_port_start
         self._rtp_port_end = rtp_port_end
-        self._supported_codecs = supported_codecs or [9, 0, 8]
+        self._supported_codecs = supported_codecs or [PT_G722, PT_PCMU, PT_PCMA]
         self._dtmf_payload_type = dtmf_payload_type
+        self._user_agent = user_agent
+        self._server_name = server_name
 
         # SIP components (created in start())
         self._transport: Any = None
@@ -126,8 +138,10 @@ class SIPVoiceBackend(VoiceBackend):
         self._codec_rates: dict[str, int] = {}  # actual audio sample rate
         self._clock_rates: dict[str, int] = {}  # RTP clock rate
 
-        # Outbound timestamp tracking per session
+        # Outbound timestamp tracking and PCM carry buffer per session
         self._send_timestamps: dict[str, int] = {}
+        self._send_buffers: dict[str, bytearray] = {}
+        self._send_frame_count: dict[str, int] = {}  # RTP frames sent per session
 
         # Playback tracking for interruption support
         self._playing_sessions: set[str] = set()
@@ -162,7 +176,7 @@ class SIPVoiceBackend(VoiceBackend):
         uac_cls = self._aiosipua.SipUAC
 
         self._transport = transport_cls(local_addr=self._local_sip_addr)
-        self._uas = uas_cls(self._transport)
+        self._uas = uas_cls(self._transport, user_agent=self._user_agent)
         self._uac = uac_cls(self._transport)
 
         self._uas.on_invite = lambda call: asyncio.get_running_loop().create_task(
@@ -184,14 +198,21 @@ class SIPVoiceBackend(VoiceBackend):
             return
 
         rtp_port = self._allocate_rtp_port()
+        local_ip = self._resolve_local_ip(call.source_addr)
+
+        # Fix SIP Contact header: if transport is bound to 0.0.0.0,
+        # replace with the resolved IP so responses use a routable address.
+        if self._transport is not None and self._transport.local_addr[0] in ("0.0.0.0", ""):  # nosec B104
+            self._transport.local_addr = (local_ip, self._transport.local_addr[1])
 
         try:
             call_session = self._rtp_bridge.CallSession(
-                local_ip=self._local_rtp_ip,
+                local_ip=local_ip,
                 rtp_port=rtp_port,
                 offer=call.sdp_offer,
                 supported_codecs=self._supported_codecs,
                 dtmf_payload_type=self._dtmf_payload_type,
+                session_name=self._server_name,
             )
         except Exception:
             logger.exception("SDP negotiation failed for call %s", call.call_id)
@@ -237,6 +258,7 @@ class SIPVoiceBackend(VoiceBackend):
         self._incoming_calls[session.id] = call
         self._call_to_session[call.call_id] = session.id
         self._send_timestamps[session.id] = 0
+        self._send_frame_count[session.id] = 0
         self._codec_rates[session.id] = codec_rate
         self._clock_rates[session.id] = clock_rate
 
@@ -279,7 +301,11 @@ class SIPVoiceBackend(VoiceBackend):
         call = self._incoming_calls.pop(session_id, None)
         if call is not None:
             self._call_to_session.pop(call.call_id, None)
+        frames_sent = self._send_frame_count.pop(session_id, 0)
+        if frames_sent:
+            logger.info("SIP session %s: sent %d RTP frames total", session_id, frames_sent)
         self._send_timestamps.pop(session_id, None)
+        self._send_buffers.pop(session_id, None)
         self._codec_rates.pop(session_id, None)
         self._clock_rates.pop(session_id, None)
         self._playing_sessions.discard(session_id)
@@ -296,6 +322,27 @@ class SIPVoiceBackend(VoiceBackend):
         if self._next_rtp_port >= self._rtp_port_end:
             self._next_rtp_port = self._rtp_port_start
         return port
+
+    def _resolve_local_ip(self, remote_addr: tuple[str, int]) -> str:
+        """Return the local IP to advertise in SDP.
+
+        If *local_rtp_ip* was set to a specific address, use it as-is.
+        Otherwise (``0.0.0.0``), probe the OS routing table by opening a
+        UDP socket towards the caller to discover the correct local IP.
+        """
+        if self._local_rtp_ip and self._local_rtp_ip != "0.0.0.0":  # nosec B104
+            return self._local_rtp_ip
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect((remote_addr[0], remote_addr[1] or 5060))
+                return s.getsockname()[0]
+        except OSError:
+            logger.warning(
+                "Could not auto-detect local IP for remote %s; "
+                "falling back to 0.0.0.0 — set local_rtp_ip explicitly",
+                remote_addr,
+            )
+            return self._local_rtp_ip
 
     # -------------------------------------------------------------------------
     # Session lifecycle (VoiceBackend interface)
@@ -421,9 +468,11 @@ class SIPVoiceBackend(VoiceBackend):
         self._playing_sessions.add(session.id)
         try:
             if isinstance(audio, bytes):
-                await asyncio.get_running_loop().run_in_executor(
-                    None, self._send_pcm_bytes, session, call_session, audio
-                )
+                # Run synchronously — send_audio_pcm is just codec encode +
+                # UDP sendto, fast enough to not block the event loop.
+                # Using run_in_executor would break packet ordering when
+                # multiple chunks arrive in rapid succession (e.g. realtime).
+                self._send_pcm_bytes(session, call_session, audio)
             else:
                 await self._send_pcm_stream(session, call_session, audio)
         except Exception:
@@ -432,22 +481,34 @@ class SIPVoiceBackend(VoiceBackend):
             self._playing_sessions.discard(session.id)
 
     def _send_pcm_bytes(self, session: VoiceSession, call_session: Any, pcm_data: bytes) -> None:
-        """Send a complete PCM-16 LE buffer as RTP packets."""
+        """Send a PCM-16 LE buffer as RTP packets.
+
+        Buffers partial frames across calls so that only complete 20 ms
+        frames are sent.  This avoids codec encoding artifacts and RTP
+        timestamp jumps that confuse the remote jitter buffer.
+        """
         codec_rate = self._codec_rates.get(session.id, 8000)
         clock_rate = self._clock_rates.get(session.id, 8000)
         pcm_samples_per_frame = codec_rate // 50  # 320 for G.722, 160 for G.711
         bytes_per_frame = pcm_samples_per_frame * 2  # 640 for G.722, 320 for G.711
         ts_increment = clock_rate // 50  # 160 for both (G.722 RTP clock = 8000)
 
+        buf = self._send_buffers.get(session.id)
+        if buf is None:
+            buf = bytearray()
+            self._send_buffers[session.id] = buf
+        buf.extend(pcm_data)
+
         ts = self._send_timestamps.get(session.id, 0)
-        offset = 0
-        while offset < len(pcm_data):
-            chunk = pcm_data[offset : offset + bytes_per_frame]
-            call_session.send_audio_pcm(chunk, ts)
+        frame_count = self._send_frame_count.get(session.id, 0)
+        while len(buf) >= bytes_per_frame:
+            call_session.send_audio_pcm(bytes(buf[:bytes_per_frame]), ts)
+            del buf[:bytes_per_frame]
             ts += ts_increment
-            offset += bytes_per_frame
+            frame_count += 1
 
         self._send_timestamps[session.id] = ts
+        self._send_frame_count[session.id] = frame_count
 
     async def _send_pcm_stream(
         self,
@@ -547,6 +608,10 @@ class SIPVoiceBackend(VoiceBackend):
             if task is not None:
                 task.cancel()
             logger.info("Audio cancelled for session %s", session.id)
+        # Flush carry buffer so stale PCM doesn't leak into the next response
+        buf = self._send_buffers.get(session.id)
+        if buf is not None:
+            buf.clear()
         return was_playing
 
     def is_playing(self, session: VoiceSession) -> bool:

@@ -66,6 +66,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         # Transcription buffers: accumulate chunks until finished=True
         # Key: (session_id, role) -> list of text chunks
         self._transcription_buffers: dict[tuple[str, str], list[str]] = {}
+        # Audio chunk counter per session (for debug logging)
+        self._audio_chunk_count: dict[str, int] = {}
 
         # Callbacks
         self._audio_callbacks: list[RealtimeAudioCallback] = []
@@ -315,8 +317,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         live = self._live_sessions.pop(session.id, None)
         ctxmgr = self._live_ctxmgrs.pop(session.id, None)
         self._sessions.pop(session.id, None)
-        # Clean up transcription buffers and stored config
+        # Clean up transcription buffers, audio counters, and stored config
         self._clear_transcription_buffers(session.id)
+        self._audio_chunk_count.pop(session.id, None)
         self._live_configs.pop(session.id, None)
         if ctxmgr is not None:
             with contextlib.suppress(Exception):
@@ -383,9 +386,17 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
             try:
                 while True:
+                    logger.debug(
+                        "[Gemini] Waiting for next turn on session %s…",
+                        session.id,
+                    )
                     async for response in live.receive():
                         reconnect_count = 0  # reset on successful data
                         await self._handle_server_response(session, response)
+                    logger.debug(
+                        "[Gemini] Turn generator exhausted for session %s, looping for next turn",
+                        session.id,
+                    )
 
             except asyncio.CancelledError:
                 raise
@@ -394,6 +405,15 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     return
 
                 reconnect_count += 1
+                audio_chunks = self._audio_chunk_count.get(session.id, 0)
+                was_streaming = session._response_started  # type: ignore[attr-defined]
+                if was_streaming:
+                    logger.warning(
+                        "Gemini connection lost DURING active response "
+                        "(session %s, %d audio chunks sent so far)",
+                        session.id,
+                        audio_chunks,
+                    )
                 if reconnect_count > self._MAX_RECONNECTS:
                     logger.error(
                         "Gemini Live session %s: connection lost, max reconnects (%d) reached",
@@ -476,6 +496,15 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         """Map Gemini Live responses to callbacks."""
         # Handle audio data
         if hasattr(response, "data") and response.data:
+            count = self._audio_chunk_count.get(session.id, 0) + 1
+            self._audio_chunk_count[session.id] = count
+            if count % 50 == 1:
+                logger.debug(
+                    "[Gemini] audio chunk #%d (%d bytes) for session %s",
+                    count,
+                    len(response.data),
+                    session.id,
+                )
             await self._fire_audio_callbacks(session, response.data)
 
         # Handle tool calls
@@ -531,6 +560,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 # speech is done and transcription should be complete.
                 await self._flush_transcription_buffer(session, "user")
                 session._response_started = True  # type: ignore[attr-defined]
+                self._audio_chunk_count[session.id] = 0
                 logger.info("[Gemini] response_start (session %s)", session.id)
                 await self._fire_callbacks(self._response_start_callbacks, session)
 
@@ -551,7 +581,10 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 # User buffer may not have been flushed by ACTIVITY_END
                 # (some models don't send voice_activity events, or
                 # transcription chunks arrive after ACTIVITY_END).
-                logger.info("[Gemini] turn_complete (session %s)", session.id)
+                total = self._audio_chunk_count.get(session.id, 0)
+                logger.info(
+                    "[Gemini] turn_complete (session %s, %d audio chunks)", session.id, total
+                )
                 await self._flush_transcription_buffer(session, "user")
                 await self._flush_transcription_buffer(session, "assistant")
                 session._response_started = False  # type: ignore[attr-defined]

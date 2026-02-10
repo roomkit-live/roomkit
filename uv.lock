@@ -192,11 +192,11 @@ wheels = [
 
 [[package]]
 name = "aiosipua"
-version = "0.1.1"
+version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/45/aa/ec27ef5472e4e40ccec66f60a9672e4a1e49e7bdf6d95c1cbe4836b80ed9/aiosipua-0.1.1.tar.gz", hash = "sha256:665252fe6c44ccbcda8ed600e0f4b9163213f8f4e8539366d0f3871a36598cae", size = 63196, upload-time = "2026-02-10T02:32:19.554Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/f4/6f1b263c47a2a4d3db61721ca3202a05860b0f624fc3ba133220308e94b0/aiosipua-0.1.2.tar.gz", hash = "sha256:4e1a519eaa5bc74319c7e07e1a2de20b2ff471b319743987083e3dc4ba4f5027", size = 63370, upload-time = "2026-02-10T03:07:47.78Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f0/ac/450f8f504fb90defb883098818f3433854e59c4d3f2fd4b9047a7786b4a0/aiosipua-0.1.1-py3-none-any.whl", hash = "sha256:048811da867e057a2a1e5895e32ab05eeefbdda37070c89abfc303a4243a16c0", size = 33810, upload-time = "2026-02-10T02:32:18.641Z" },
+    { url = "https://files.pythonhosted.org/packages/47/52/8bd4b336ea94641272847df272ba77696bfc2f6d6a3073b8cdbd8b4e9d4e/aiosipua-0.1.2-py3-none-any.whl", hash = "sha256:b49b493091f45b791c80041b3cd302cafae0a7d2403f4fb99b7df0c4c9e35147", size = 33929, upload-time = "2026-02-10T03:07:46.467Z" },
 ]
 
 [package.optional-dependencies]
@@ -4416,7 +4416,7 @@ whatsapp-personal = [
 requires-dist = [
     { name = "aec-audio-processing", marker = "extra == 'webrtc-aec'", specifier = ">=0.1" },
     { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.1.0" },
-    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.1.0" },
+    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.1.2" },
     { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'dev'", specifier = ">=0.30" },

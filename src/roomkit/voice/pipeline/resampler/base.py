@@ -47,6 +47,21 @@ class ResamplerProvider(ABC):
         """
         ...
 
+    def flush(
+        self,
+        target_rate: int,
+        target_channels: int,
+        target_width: int,
+    ) -> AudioFrame | None:  # noqa: B027
+        """Flush any buffered audio remaining after end-of-stream.
+
+        Subclasses that hold a pending frame (e.g. for look-ahead context)
+        should override this to emit that frame using silence as look-ahead.
+
+        Returns ``None`` when there is nothing to flush.
+        """
+        return None
+
     def reset(self) -> None:  # noqa: B027
         """Reset internal state."""
 

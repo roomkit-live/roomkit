@@ -94,5 +94,11 @@ class RealtimeAudioTransport(ABC):
             callback: Called with (session) when the client disconnects.
         """
 
+    def end_of_response(self, session: RealtimeSession) -> None:  # noqa: B027
+        """Signal end of AI response (for transports with pacing)."""
+
+    def interrupt(self, session: RealtimeSession) -> None:  # noqa: B027
+        """Signal interruption — flush queue, stop playback."""
+
     async def close(self) -> None:
         """Release all transport resources."""
