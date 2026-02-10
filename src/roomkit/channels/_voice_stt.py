@@ -242,16 +242,41 @@ class VoiceSTTMixin:
 
             backoff = 1.0
             while not state.cancelled:
-                # Fresh queue + WebSocket per turn (avoids server-side overlap)
+                # Fresh queue + WebSocket per turn (avoids server-side overlap).
+                # Keep frame_buffer intact — audio arriving during the
+                # reconnection gap (sleep + WebSocket connect) is preserved
+                # and will be flushed to the new queue on the next frame.
                 state.queue = asyncio.Queue[Any](maxsize=500)
-                state.frame_buffer.clear()
                 cur_queue = state.queue
 
                 async def audio_gen(
                     q: asyncio.Queue[Any] = cur_queue,
                 ) -> AsyncIterator[AudioChunk]:
+                    from .voice import _STT_INACTIVITY_TIMEOUT_S
+
                     while True:
-                        chunk = await q.get()
+                        try:
+                            chunk = await asyncio.wait_for(
+                                q.get(), timeout=_STT_INACTIVITY_TIMEOUT_S
+                            )
+                        except TimeoutError:
+                            # No audio for timeout period — flush remaining
+                            # buffer and close the stream so the provider
+                            # can yield accumulated text as final.
+                            if state.frame_buffer:
+                                from roomkit.voice.base import AudioChunk as OutChunk
+
+                                yield OutChunk(
+                                    data=bytes(state.frame_buffer),
+                                    sample_rate=state.frame_buffer_rate,
+                                )
+                                state.frame_buffer.clear()
+                            logger.info(
+                                "Audio inactivity timeout (%.1fs) for %s, closing STT stream",
+                                _STT_INACTIVITY_TIMEOUT_S,
+                                session.id,
+                            )
+                            return
                         if chunk is None:
                             return
                         yield chunk

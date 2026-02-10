@@ -56,6 +56,12 @@ def _utcnow() -> datetime:
 # give the stateless resampler enough context for clean interpolation.
 _STT_STREAM_BUFFER_BYTES = 6400  # 200ms at 16kHz mono 16-bit
 
+# Seconds of silence before the continuous STT audio generator closes
+# the current stream.  Triggers the Gradium drain timeout which yields
+# accumulated text as a final result.  Must be longer than the longest
+# normal intra-utterance pause (~600ms) but short enough to feel responsive.
+_STT_INACTIVITY_TIMEOUT_S = 1.0
+
 
 @dataclass
 class _STTStreamState:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -181,6 +182,11 @@ class GradiumSTTProvider(STTProvider):
         reconnects for the next turn, giving each turn a fresh Gradium
         session — this avoids server-side segment overlap across turns.
 
+        When the audio stream ends (caller sends ``None`` sentinel)
+        without the server closing the WebSocket, a drain timeout
+        gives the server a few seconds to send final VAD messages
+        before yielding accumulated text as final.
+
         Yields:
             - ``is_final=False`` for each ``text`` update (partial)
             - ``is_final=True`` when VAD detects turn completion (then returns)
@@ -189,6 +195,8 @@ class GradiumSTTProvider(STTProvider):
         threshold = self._config.vad_turn_threshold
         required_steps = self._config.vad_turn_steps
 
+        audio_done = asyncio.Event()
+
         async def audio_gen() -> AsyncIterator[bytes]:
             async for chunk in audio_stream:
                 if chunk.data:
@@ -196,6 +204,7 @@ class GradiumSTTProvider(STTProvider):
                     yield _resample(chunk.data, src_rate, _GRADIUM_SAMPLE_RATE)
                 if chunk.is_final:
                     break
+            audio_done.set()
 
         logger.info("Gradium stream connecting")
         stream = await client.stt_stream(self._build_setup(), audio_gen())
@@ -210,8 +219,59 @@ class GradiumSTTProvider(STTProvider):
         first_text_at = 0.0  # first text message of this turn
         last_text_at = 0.0  # last text message (speech end proxy)
 
+        # Pump server messages into a queue so we can apply a drain
+        # timeout after audio ends.  Without this, the iteration on
+        # stream._stream blocks indefinitely when the Gradium server
+        # keeps the WebSocket open after audio stops.
+        msg_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+        async def _pump() -> None:
+            try:
+                async for msg in stream._stream:  # noqa: SLF001
+                    await msg_queue.put(msg)
+            except Exception:
+                logger.debug("Gradium message pump ended with error", exc_info=True)
+            await msg_queue.put(None)  # sentinel
+
+        pump_task = asyncio.get_running_loop().create_task(_pump(), name="gradium_msg_pump")
+
+        # Seconds to wait for final server messages after audio ends.
+        drain_timeout_s = 3.0
+
         try:
-            async for msg in stream._stream:  # noqa: SLF001
+            drain_deadline: float | None = None
+            while True:
+                # Once audio has ended, start a drain countdown
+                if drain_deadline is None and audio_done.is_set():
+                    drain_deadline = time.monotonic() + drain_timeout_s
+                    logger.debug(
+                        "Audio ended, draining server messages (%.0fs)",
+                        drain_timeout_s,
+                    )
+
+                if drain_deadline is not None:
+                    remaining = drain_deadline - time.monotonic()
+                    if remaining <= 0:
+                        logger.info("Drain timeout %.0fs after audio ended", drain_timeout_s)
+                        break
+                    timeout: float | None = remaining
+                else:
+                    # Poll with short timeout so we notice audio_done
+                    # promptly even if the server stops sending messages.
+                    timeout = 0.5
+
+                try:
+                    msg = await asyncio.wait_for(msg_queue.get(), timeout=timeout)
+                except TimeoutError:
+                    if drain_deadline is not None:
+                        logger.info("Drain timeout %.0fs after audio ended", drain_timeout_s)
+                        break
+                    # Normal poll timeout — re-check audio_done
+                    continue
+
+                if msg is None:
+                    break
+
                 msg_count += 1
                 type_ = msg.get("type")
                 if type_ == "text":
@@ -286,10 +346,24 @@ class GradiumSTTProvider(STTProvider):
                                 text,
                             )
                             yield TranscriptionResult(text=text, is_final=True)
-                            # Return to close the WebSocket; run_continuous
-                            # reconnects for the next turn.
                             return
+
+            # Stream ended or drain timed out without VAD turn completion.
+            # Yield accumulated text as final so it isn't silently lost.
+            if segments or current_partial:
+                parts = list(segments)
+                if current_partial:
+                    parts.append(current_partial)
+                text = " ".join(parts)
+                logger.info(
+                    "Stream ended with pending text, yielding as final: %s",
+                    text,
+                )
+                yield TranscriptionResult(text=text, is_final=True)
         finally:
+            pump_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pump_task
             logger.info("Gradium stream closing (msgs=%d, segs=%d)", msg_count, len(segments))
             clean = await _close_stream(stream)
             if not clean:

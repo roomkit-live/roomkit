@@ -170,11 +170,11 @@ wheels = [
 
 [[package]]
 name = "aiortp"
-version = "0.1.0"
+version = "0.1.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0d/98/145289b75ab0a6de9a0aac3ff0983bb92c2bf05acdb05d678c3a7e23a94f/aiortp-0.1.0.tar.gz", hash = "sha256:c9bf0521480282d801be33f5203efb561e5cd007a276261973ca72d7cfa6eae2", size = 29225, upload-time = "2026-02-07T15:22:18.204Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/93/a4/e1a5c149a8171b504e1fb4312b006b49797cc003906a4e706af6fafdfb8c/aiortp-0.1.1.tar.gz", hash = "sha256:d8749dc4a3376c9dd2d6ebcb7231e3398a9a1cb1a0c9a1b79534054e76db549a", size = 31981, upload-time = "2026-02-10T02:32:04.84Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ab/cc/7cd7be189fd87f87a684431d89d988eb4618e508d602ced9e833ba56a5d4/aiortp-0.1.0-py3-none-any.whl", hash = "sha256:1e519645a17e6c90ae7c94397ac63eded19fbf6f12d3d7f7b31d9fe851e9fc25", size = 22946, upload-time = "2026-02-07T15:22:16.609Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/db/d01d3600851e8f5c94a4351842ce7809a68afbedf70f95a8484773135c3b/aiortp-0.1.1-py3-none-any.whl", hash = "sha256:22f646c67f9e23eeeb670346248462d75ef8afcf20b746adea7c882723531038", size = 24018, upload-time = "2026-02-10T02:32:03.985Z" },
 ]
 
 [[package]]
@@ -188,6 +188,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/61/62/06741b579156360248d1ec624842ad0edf697050bbaf7c3e46394e106ad1/aiosignal-1.4.0.tar.gz", hash = "sha256:f47eecd9468083c2029cc99945502cb7708b082c232f9aca65da147157b251c7", size = 25007, upload-time = "2025-07-03T22:54:43.528Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/76/641ae371508676492379f16e2fa48f4e2c11741bd63c48be4b12a6b09cba/aiosignal-1.4.0-py3-none-any.whl", hash = "sha256:053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e", size = 7490, upload-time = "2025-07-03T22:54:42.156Z" },
+]
+
+[[package]]
+name = "aiosipua"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/45/aa/ec27ef5472e4e40ccec66f60a9672e4a1e49e7bdf6d95c1cbe4836b80ed9/aiosipua-0.1.1.tar.gz", hash = "sha256:665252fe6c44ccbcda8ed600e0f4b9163213f8f4e8539366d0f3871a36598cae", size = 63196, upload-time = "2026-02-10T02:32:19.554Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f0/ac/450f8f504fb90defb883098818f3433854e59c4d3f2fd4b9047a7786b4a0/aiosipua-0.1.1-py3-none-any.whl", hash = "sha256:048811da867e057a2a1e5895e32ab05eeefbdda37070c89abfc303a4243a16c0", size = 33810, upload-time = "2026-02-10T02:32:18.641Z" },
+]
+
+[package.optional-dependencies]
+rtp = [
+    { name = "aiortp" },
 ]
 
 [[package]]
@@ -4358,6 +4372,9 @@ rtp = [
 sherpa-onnx = [
     { name = "sherpa-onnx" },
 ]
+sip = [
+    { name = "aiosipua", extra = ["rtp"] },
+]
 smart-turn = [
     { name = "numpy" },
     { name = "onnxruntime" },
@@ -4399,6 +4416,7 @@ whatsapp-personal = [
 requires-dist = [
     { name = "aec-audio-processing", marker = "extra == 'webrtc-aec'", specifier = ">=0.1" },
     { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.1.0" },
+    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.1.0" },
     { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'dev'", specifier = ">=0.30" },
@@ -4476,7 +4494,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["all", "anthropic", "dev", "docs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "openai", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "vllm", "webrtc-aec", "websocket", "whatsapp-personal"]
+provides-extras = ["all", "anthropic", "dev", "docs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "openai", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "vllm", "webrtc-aec", "websocket", "whatsapp-personal"]
 
 [[package]]
 name = "rpds-py"

@@ -51,7 +51,6 @@ import logging
 import os
 import signal
 import sys
-import time
 import wave
 
 from roomkit import (
@@ -180,18 +179,12 @@ async def main() -> None:
     async def on_speech_end(session_arg, ctx):
         logger.info("Speech ended")
 
-    # Track latest partial for the inactivity watchdog
-    last_partial: dict[str, str] = {}
-
     @kit.hook(HookTrigger.ON_PARTIAL_TRANSCRIPTION, execution=HookExecution.ASYNC)
     async def on_partial(result, ctx):
         logger.info("Partial: %r", result.text)
-        if result.text:
-            last_partial["text"] = result.text
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
     async def on_transcription(text, ctx):
-        last_partial.pop("text", None)
         print(f"\n>>> {text}\n")
         # Block further processing (no AI provider to forward to)
         return HookResult.block()
@@ -205,14 +198,6 @@ async def main() -> None:
     )
     voice.bind_session(session, "rtp-stt", binding)
 
-    # --- Audio inactivity watchdog --------------------------------------------
-    # When an RTP stream ends abruptly (e.g. finite WAV file, RTCP BYE), no
-    # more frames arrive.  Without trailing silence, Gradium's server-side VAD
-    # may not detect the turn boundary.  This watchdog promotes the last partial
-    # transcription to a final result after 500ms of inactivity.
-    inactivity_timeout_s = 0.5
-    watchdog_state = {"last_frame": 0.0, "active": True}
-
     # --- Transport-level WAV recording (raw 8kHz, pre-pipeline) -----------------
     transport_wav: wave.Wave_write | None = None
     if record_dir:
@@ -224,47 +209,17 @@ async def main() -> None:
         transport_wav.setframerate(8000)
         logger.info("Transport recording: %s", transport_wav_path)
 
-    orig_on_audio = voice._on_audio_received
+        # Wrap the backend's audio callback to capture raw transport audio
+        # before pipeline processing.  We patch _audio_received_callback
+        # (the attribute the RTP backend actually uses) rather than the
+        # VoiceChannel method, which is stored as a bound method reference.
+        orig_cb = backend._audio_received_callback
 
-    def _track_audio(sess, frame):
-        watchdog_state["last_frame"] = time.monotonic()
-        # Write raw transport audio before any pipeline processing
-        if transport_wav is not None:
+        def _record_transport(sess, frame):
             transport_wav.writeframes(frame.data)
-        return orig_on_audio(sess, frame)
+            return orig_cb(sess, frame)
 
-    voice._on_audio_received = _track_audio
-
-    async def _inactivity_watchdog():
-        while watchdog_state["active"]:
-            await asyncio.sleep(0.1)
-            last = watchdog_state["last_frame"]
-            if last == 0.0:
-                continue
-            gap = time.monotonic() - last
-            if gap < inactivity_timeout_s:
-                continue
-
-            # RTP stream ended — promote last partial to final result.
-            text = last_partial.pop("text", None)
-            if text:
-                print(f"\n>>> {text}\n")
-                logger.info("Promoted partial to final after RTP inactivity")
-
-            # Close the STT stream to stop Gradium hallucinating on silence.
-            # The continuous-STT loop will reconnect for the next audio.
-            stream_state = voice._stt_streams.get(session.id)
-            if stream_state is not None:
-                voice._flush_stt_buffer(stream_state, session.id)
-                with contextlib.suppress(asyncio.QueueFull):
-                    stream_state.queue.put_nowait(None)
-                logger.info("Closed STT stream after RTP inactivity")
-
-            watchdog_state["last_frame"] = 0.0
-
-    watchdog_task = asyncio.get_running_loop().create_task(
-        _inactivity_watchdog(), name="audio_watchdog"
-    )
+        backend._audio_received_callback = _record_transport
 
     logger.info("RTP listening on 0.0.0.0:%d", local_port)
     logger.info("Send audio with e.g.:")
@@ -281,10 +236,6 @@ async def main() -> None:
         loop.add_signal_handler(sig, stop.set)
 
     await stop.wait()
-    watchdog_state["active"] = False
-    watchdog_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await watchdog_task
 
     # --- Cleanup --------------------------------------------------------------
     logger.info("\nStopping...")
