@@ -38,7 +38,7 @@ class ChannelOpsMixin(HelpersMixin):
         self._event_router = None  # Reset router cache
 
         # Wire protocol trace framework handler on all channels
-        channel._trace_framework_handler = self._on_channel_trace  # type: ignore[assignment]
+        channel._trace_framework_handler = self._on_channel_trace
 
         # Set framework reference on voice channels for inbound routing
         if isinstance(channel, (VoiceChannel, RealtimeVoiceChannel)):

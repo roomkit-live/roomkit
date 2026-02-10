@@ -298,7 +298,8 @@ class HelpersMixin:
             return None
         channel = self._channels.get(trace.channel_id)  # type: ignore[attr-defined]
         if channel is not None:
-            return channel.resolve_trace_room(trace.session_id)
+            result: str | None = channel.resolve_trace_room(trace.session_id)
+            return result
         return None
 
     async def _fire_trace_hook(self, trace: object, room_id: str) -> None:
