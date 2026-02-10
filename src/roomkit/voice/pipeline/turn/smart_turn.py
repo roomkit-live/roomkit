@@ -124,7 +124,7 @@ class SmartTurnDetector(TurnDetector):
 
         self._config = config
         self._session = None  # lazy-init ONNX InferenceSession
-        self._feature_extractor = None  # lazy-init WhisperFeatureExtractor
+        self._feature_extractor: Any = None  # lazy-init WhisperFeatureExtractor
 
     @property
     def name(self) -> str:
@@ -157,7 +157,9 @@ class SmartTurnDetector(TurnDetector):
 
         from transformers import WhisperFeatureExtractor
 
-        self._feature_extractor = WhisperFeatureExtractor(chunk_length=_CHUNK_SECONDS)
+        self._feature_extractor = WhisperFeatureExtractor(  # type: ignore[no-untyped-call]
+            chunk_length=_CHUNK_SECONDS
+        )
 
     # ------------------------------------------------------------------
     # Audio helpers
