@@ -634,6 +634,8 @@ class SIPVoiceBackend(VoiceBackend):
             chunk_count = 0
             frame_count = 0
             total_bytes = 0
+            loop = asyncio.get_event_loop()
+            t0: float | None = None  # set on first frame
             async for chunk in chunks:
                 if session.id not in self._playing_sessions:
                     logger.debug("send_pcm_stream: cancelled after %d chunks", chunk_count)
@@ -643,6 +645,15 @@ class SIPVoiceBackend(VoiceBackend):
                     total_bytes += len(chunk.data)
                 chunk_count += 1
                 while len(buf) >= bytes_per_frame:
+                    # Pace to real-time so the receiver jitter buffer
+                    # doesn't overflow on fast TTS (local/offline).
+                    if t0 is None:
+                        t0 = loop.time()
+                    else:
+                        target = t0 + frame_count * 0.02
+                        delay = target - loop.time()
+                        if delay > 0.001:
+                            await asyncio.sleep(delay)
                     frame_data = bytes(buf[:bytes_per_frame])
                     del buf[:bytes_per_frame]
                     call_session.send_audio_pcm(frame_data, ts)
