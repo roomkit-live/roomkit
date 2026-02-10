@@ -34,4 +34,5 @@ examples/debug_audio/
 examples/recordings/
 examples/piper/
 examples/kroko/
+examples/smart-turn/
 examples/*.onnx
