@@ -17,8 +17,10 @@ Usage:
 """
 
 import asyncio
+import json
 import logging
 import os
+from datetime import UTC, datetime
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,11 +51,44 @@ RTP_PORT_START = 10000
 RTP_PORT_END = 20000
 
 GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
-SYSTEM_PROMPT = "You are a friendly phone assistant. Be concise and helpful."
+SYSTEM_PROMPT = (
+    "You are a friendly phone assistant. Be concise and helpful. "
+    "You have access to a tool that returns the current date and time — "
+    "use it when the caller asks what time or date it is."
+)
 VOICE = "Aoede"
 
 # Set of blocked caller IDs (example: block known spam numbers)
 BLOCKED_CALLERS = {"+15550000000"}
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+
+TOOLS = [
+    {
+        "name": "get_current_datetime",
+        "description": "Returns the current date and time in ISO 8601 format.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+]
+
+
+async def handle_tool_call(session, name: str, arguments: dict) -> str:
+    """Execute tool calls from the AI."""
+    if name == "get_current_datetime":
+        now = datetime.now(UTC).astimezone()
+        return json.dumps(
+            {
+                "datetime": now.isoformat(),
+                "date": now.strftime("%A, %B %d, %Y"),
+                "time": now.strftime("%I:%M %p"),
+            }
+        )
+    return json.dumps({"error": f"Unknown tool: {name}"})
 
 
 async def main() -> None:
@@ -87,6 +122,8 @@ async def main() -> None:
         transport=transport,
         system_prompt=SYSTEM_PROMPT,
         voice=VOICE,
+        tools=TOOLS,
+        tool_handler=handle_tool_call,
         input_sample_rate=16000,
         output_sample_rate=24000,
     )
