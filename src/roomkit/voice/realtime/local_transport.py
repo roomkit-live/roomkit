@@ -165,9 +165,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
 
         # --- Output stream (speakers, callback-driven) ---
         if self._output_stream is None:
-            output_blocksize = int(
-                self._output_sample_rate * self._block_duration_ms / 1000
-            )
+            output_blocksize = int(self._output_sample_rate * self._block_duration_ms / 1000)
             # On macOS CoreAudio, "low" latency can produce very small
             # hardware buffers that underrun easily from Python callback
             # jitter, causing audible crackling.  Use "high" on macOS.
