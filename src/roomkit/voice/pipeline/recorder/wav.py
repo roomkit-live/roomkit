@@ -263,27 +263,39 @@ class WavFileRecorder(AudioRecorder):
             return
 
         sw = ws.sample_width
-        # Pad the shorter buffer with silence
-        max_len = max(len(ws.inbound_buf), len(ws.outbound_buf))
-        inb = bytes(ws.inbound_buf).ljust(max_len, b"\x00")
-        outb = bytes(ws.outbound_buf).ljust(max_len, b"\x00")
+        has_inbound = bool(ws.inbound_buf)
+        has_outbound = bool(ws.outbound_buf)
 
-        # Mix by averaging samples
-        fmt = "<h" if sw == 2 else "<b"
-        sample_count = max_len // sw
-        mixed = bytearray(max_len)
+        # If only one direction has data, write it directly (no mixing)
+        if has_inbound and not has_outbound:
+            data = bytes(ws.inbound_buf)
+        elif has_outbound and not has_inbound:
+            data = bytes(ws.outbound_buf)
+        else:
+            # Both directions present — mix by summing with clamp
+            max_len = max(len(ws.inbound_buf), len(ws.outbound_buf))
+            inb = bytes(ws.inbound_buf).ljust(max_len, b"\x00")
+            outb = bytes(ws.outbound_buf).ljust(max_len, b"\x00")
 
-        for i in range(sample_count):
-            offset = i * sw
-            a = struct.unpack_from(fmt, inb, offset)[0]
-            b = struct.unpack_from(fmt, outb, offset)[0]
-            struct.pack_into(fmt, mixed, offset, (a + b) // 2)
+            fmt = "<h" if sw == 2 else "<b"
+            sample_count = max_len // sw
+            min_val = -(1 << (sw * 8 - 1))
+            max_val = (1 << (sw * 8 - 1)) - 1
+            mixed = bytearray(max_len)
+
+            for i in range(sample_count):
+                offset = i * sw
+                a = struct.unpack_from(fmt, inb, offset)[0]
+                b = struct.unpack_from(fmt, outb, offset)[0]
+                struct.pack_into(fmt, mixed, offset, max(min_val, min(max_val, a + b)))
+
+            data = bytes(mixed)
 
         with wave.open(str(path), "wb") as w:
             w.setnchannels(ws.channels)
             w.setsampwidth(sw)
             w.setframerate(ws.sample_rate)
-            w.writeframes(bytes(mixed))
+            w.writeframes(data)
 
     @staticmethod
     def _write_stereo(ws: _WavSession, path: Path) -> None:

@@ -120,7 +120,7 @@ class TestMixedMode:
             assert w.getframerate() == 16000
             assert w.getnframes() == 100
 
-    def test_mixed_averages_both_directions(self, tmp_path: Path) -> None:
+    def test_mixed_sums_both_directions(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
         config = RecordingConfig(
             storage=str(tmp_path),
@@ -137,10 +137,10 @@ class TestMixedMode:
         with wave.open(result.urls[0], "rb") as w:
             frames = w.readframes(10)
 
-        # Average of 1000 and 500 = 750
+        # Sum of 1000 and 500 = 1500
         for i in range(10):
             sample = struct.unpack_from("<h", frames, i * 2)[0]
-            assert sample == 750
+            assert sample == 1500
 
     def test_mixed_pads_shorter_buffer(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
@@ -160,15 +160,37 @@ class TestMixedMode:
             assert w.getnframes() == 20
             frames = w.readframes(20)
 
-        # First 10 samples: (1000 + 500) / 2 = 750
+        # First 10 samples: 1000 + 500 = 1500
         for i in range(10):
             sample = struct.unpack_from("<h", frames, i * 2)[0]
-            assert sample == 750
+            assert sample == 1500
 
-        # Last 10 samples: (1000 + 0) / 2 = 500
+        # Last 10 samples: 1000 + 0 = 1000
         for i in range(10, 20):
             sample = struct.unpack_from("<h", frames, i * 2)[0]
-            assert sample == 500
+            assert sample == 1000
+
+    def test_mixed_clamps_on_overflow(self, tmp_path: Path) -> None:
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path),
+            channels=RecordingChannelMode.MIXED,
+        )
+        handle = recorder.start(_session(), config)
+
+        inbound = _pcm_tone(10, value=30000)
+        outbound = _pcm_tone(10, value=20000)
+        recorder.tap_inbound(handle, _frame(inbound))
+        recorder.tap_outbound(handle, _frame(outbound))
+        result = recorder.stop(handle)
+
+        with wave.open(result.urls[0], "rb") as w:
+            frames = w.readframes(10)
+
+        # 30000 + 20000 = 50000 > 32767, clamped to 32767
+        for i in range(10):
+            sample = struct.unpack_from("<h", frames, i * 2)[0]
+            assert sample == 32767
 
 
 class TestSeparateMode:
@@ -281,12 +303,11 @@ class TestRecordingMode:
         with wave.open(result.urls[0], "rb") as w:
             frames = w.readframes(50)
 
-        # Should only have inbound data (value=100), outbound was ignored
-        # In MIXED mode with only inbound, the outbound buffer is empty (zeros)
-        # so mix = (100 + 0) / 2 = 50
+        # Should only have inbound data (value=100), outbound was ignored.
+        # With only one direction, _write_mixed writes it directly (no averaging).
         for i in range(50):
             sample = struct.unpack_from("<h", frames, i * 2)[0]
-            assert sample == 50
+            assert sample == 100
 
     def test_outbound_only_ignores_inbound(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
@@ -304,10 +325,10 @@ class TestRecordingMode:
         with wave.open(result.urls[0], "rb") as w:
             frames = w.readframes(50)
 
-        # Only outbound (200), inbound ignored → mix = (0 + 200) / 2 = 100
+        # Only outbound (200), inbound ignored — written directly (no averaging).
         for i in range(50):
             sample = struct.unpack_from("<h", frames, i * 2)[0]
-            assert sample == 100
+            assert sample == 200
 
 
 class TestSpeechOnlyWarning:
