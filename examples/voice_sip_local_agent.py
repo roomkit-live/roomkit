@@ -117,7 +117,9 @@ from roomkit.models.trace import ProtocolTrace
 from roomkit.voice import parse_voice_session
 from roomkit.voice.backends.sip import SIPVoiceBackend
 from roomkit.voice.pipeline import (
+    AudioFormat,
     AudioPipelineConfig,
+    AudioPipelineContract,
     RecordingChannelMode,
     RecordingConfig,
     WavFileRecorder,
@@ -230,12 +232,24 @@ async def main() -> None:
     recording_config = RecordingConfig(storage=recording_dir, channels=rec_channel_mode)
     logger.info("Recording to %s (mode=%s)", recording_dir, rec_mode_name)
 
+    # --- Pipeline contract -----------------------------------------------
+    # SIP negotiates G.722 (16 kHz) or G.711 (8 kHz). TTS may output at a
+    # different rate (e.g. 22050 Hz for Piper). The contract tells the
+    # pipeline to resample outbound audio to match the SIP codec rate.
+    sip_rate = 16000  # G.722 preferred; change to 8000 if only G.711
+    contract = AudioPipelineContract(
+        transport_inbound_format=AudioFormat(sample_rate=sip_rate),
+        transport_outbound_format=AudioFormat(sample_rate=sip_rate),
+        internal_format=AudioFormat(sample_rate=sample_rate),
+    )
+
     # --- Pipeline config -------------------------------------------------
     pipeline_config = AudioPipelineConfig(
         vad=vad,
         denoiser=denoiser,
         recorder=recorder,
         recording_config=recording_config,
+        contract=contract,
     )
 
     # --- STT (sherpa-onnx) -----------------------------------------------
