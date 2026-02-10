@@ -36,3 +36,4 @@ examples/piper/
 examples/kroko/
 examples/smart-turn/
 examples/*.onnx
+wa-session.db
