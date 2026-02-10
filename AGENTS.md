@@ -2,6 +2,38 @@
 
 > Pure async Python library for multi-channel conversations with rooms, hooks, and pluggable backends.
 
+## Related Repositories
+
+The RoomKit ecosystem spans three repos (sibling directories at `../`):
+
+| Repo | Path | Purpose |
+|------|------|---------|
+| **roomkit** | `.` (this repo) | Library source, tests, examples |
+| **roomkit-docs** | `../roomkit-docs/` | MkDocs documentation site (42 pages: features, architecture, guides, API reference) |
+| **roomkit-specs** | `../roomkit-specs/` | Normative RFC specification (`roomkit-rfc.md`) |
+
+### RFC Conformance
+
+The RFC at `../roomkit-specs/roomkit-rfc.md` is the **normative specification**. All implementations must conform to it. Key invariants enforced by the RFC:
+
+- **Inbound pipeline order** (Section 10.1): route → handle_inbound → identity → lock → idempotency → index → BEFORE_BROADCAST → store → broadcast → AFTER_BROADCAST → unlock. MUST NOT reorder.
+- **Permission model** (Section 7): access (READ_WRITE/READ_ONLY/WRITE_ONLY/NONE), muting (suppresses responses, not side effects), visibility filtering.
+- **Event indexing**: sequential, atomic, monotonically increasing per room, starting at 0.
+- **Chain depth**: default max=5. MUST be enforced to prevent AI-to-AI infinite loops.
+- **Voice pipeline** (Section 12): stage ordering, AEC double-feeding prevention, DTMF parallel execution before AEC/AGC/denoiser, recording consent, turn detection latency <200ms.
+- **Side effects always collected**: tasks and observations are captured regardless of mute/access. "Muting silences the voice, not the brain."
+- **4 conformance levels**: Level 0 (Core, REQUIRED), Level 1 (Transport, RECOMMENDED), Level 2 (Rich, OPTIONAL), Level 3 (Voice, OPTIONAL).
+
+If a proposed change conflicts with the RFC, update the RFC first (in `roomkit-specs`), then update the code.
+
+### Documentation
+
+The docs at `../roomkit-docs/` are a MkDocs Material site. When adding features, update the corresponding docs page. Key structure:
+- `docs/features.md` — comprehensive feature reference
+- `docs/architecture.md` — architecture overview
+- `docs/guides/` — practical guides (resampler, sherpa-onnx, smart-turn, WAV recorder, RTP, SIP)
+- `docs/api/` — 27 API reference pages (generated via mkdocstrings)
+
 ## Quick Reference
 
 ```bash
@@ -52,6 +84,10 @@ src/roomkit/
 │   ├── transport.py         # TransportChannel (generic transport wrapper)
 │   ├── ai.py                # AIChannel (intelligence layer)
 │   ├── voice.py             # VoiceChannel (real-time audio with STT/TTS)
+│   ├── _voice_hooks.py      # Voice-specific hook implementations
+│   ├── _voice_stt.py        # Speech-to-text orchestration
+│   ├── _voice_tts.py        # Text-to-speech orchestration
+│   ├── _voice_turn.py       # Turn-taking logic for voice channels
 │   ├── realtime_voice.py    # RealtimeVoiceChannel (speech-to-speech AI)
 │   └── websocket.py         # WebSocketChannel (bidirectional real-time)
 ├── providers/
@@ -85,6 +121,7 @@ src/roomkit/
 │   ├── hook.py              # HookResult, InjectedEvent
 │   ├── context.py           # RoomContext (room, bindings, participants, recent_events)
 │   ├── task.py              # Task, Observation
+│   ├── trace.py             # ProtocolTrace (SIP/RTP debugging)
 │   └── framework_event.py   # FrameworkEvent (observability)
 ├── store/
 │   ├── base.py              # ConversationStore ABC
@@ -103,12 +140,14 @@ src/roomkit/
 │   ├── base.py              # AudioChunk, VoiceSession, VoiceCapability, callbacks
 │   ├── audio_frame.py       # AudioFrame dataclass (inbound audio)
 │   ├── events.py            # BargeInEvent, VADSilenceEvent, SpeakerChangeEvent, etc.
-│   ├── stt/                 # Speech-to-text: DeepgramSTT, SherpaOnnxSTT, MockSTT
-│   ├── tts/                 # Text-to-speech: ElevenLabsTTS, SherpaOnnxTTS, MockTTS
+│   ├── stt/                 # Speech-to-text: DeepgramSTT, SherpaOnnxSTT, GradiumSTT, MockSTT
+│   ├── tts/                 # Text-to-speech: ElevenLabsTTS, SherpaOnnxTTS, QwenTTS, GradiumTTS, MockTTS
 │   ├── interruption.py      # InterruptionHandler, InterruptionConfig, 4 strategies
 │   ├── pipeline/            # Audio processing pipeline (10 provider ABCs)
 │   │   ├── engine.py        # AudioPipeline orchestrator (inbound + outbound)
 │   │   ├── config.py        # AudioPipelineConfig
+│   │   ├── debug_taps.py    # Debug tapping for audio inspection
+│   │   ├── resampler/       # ResamplerProvider ABC, LinearResampler, SincResampler, Mock
 │   │   ├── vad/             # VADProvider ABC, VADEvent, VADConfig, MockVADProvider
 │   │   ├── denoiser/        # DenoiserProvider ABC, RNNoiseDenoiserProvider, Mock
 │   │   ├── diarization/     # DiarizationProvider ABC, DiarizationResult, Mock
@@ -120,7 +159,7 @@ src/roomkit/
 │   │   ├── backchannel/     # BackchannelDetector ABC, Mock
 │   │   └── postprocessor/   # AudioPostProcessor ABC
 │   ├── realtime/            # Speech-to-speech: GeminiLive, OpenAIRealtime, Mock
-│   └── backends/            # Audio transport: FastRTCVoiceBackend, MockVoiceBackend
+│   └── backends/            # Audio transport: FastRTC, RTP, SIP, Local, MockVoiceBackend
 └── identity/
     ├── base.py              # IdentityResolver ABC
     └── mock.py              # MockIdentityResolver
@@ -268,6 +307,7 @@ from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
 
 # All stages are optional — configure what you need
 pipeline = AudioPipelineConfig(
+    resampler=my_resampler,
     vad=my_vad_provider,
     denoiser=my_denoiser,
     diarization=my_diarizer,
@@ -288,6 +328,7 @@ voice = VoiceChannel(
 
 **Provider ABCs** (implement these to add a new provider):
 
+- `ResamplerProvider` — `resample(frame, target_rate, target_channels, target_width) -> AudioFrame`, `close()`
 - `VADProvider` — `process(frame) -> VADEvent | None`, `reset()`, `close()`
 - `DenoiserProvider` — `process(frame) -> AudioFrame`, `reset()`, `close()`
 - `DiarizationProvider` — `process(frame) -> DiarizationResult | None`, `reset()`, `close()`
