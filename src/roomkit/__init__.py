@@ -92,6 +92,7 @@ from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.task import Observation, Task
+from roomkit.models.trace import ProtocolTrace
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
@@ -223,6 +224,7 @@ from roomkit.voice import (
     VoiceCapability,
     VoiceSession,
     VoiceSessionState,
+    parse_voice_session,
 )
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.realtime import (
@@ -346,6 +348,7 @@ __all__ = [
     "MediaContent",
     "Observation",
     "Participant",
+    "ProtocolTrace",
     "ProviderResult",
     "RateLimit",
     "RetryPolicy",
@@ -490,6 +493,7 @@ __all__ = [
     "MockTTSProvider",
     "MockVADProvider",
     "MockVoiceBackend",
+    "parse_voice_session",
     "PartialTranscriptionEvent",
     "SpeakerChangeEvent",
     "STTProvider",

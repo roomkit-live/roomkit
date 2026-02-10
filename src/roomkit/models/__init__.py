@@ -54,6 +54,7 @@ from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.task import Observation, Task
+from roomkit.models.trace import ProtocolTrace
 
 __all__ = [
     "Access",
@@ -92,6 +93,7 @@ __all__ = [
     "Observation",
     "Participant",
     "ParticipantRole",
+    "ProtocolTrace",
     "ParticipantStatus",
     "ProviderResult",
     "RateLimit",

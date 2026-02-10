@@ -120,7 +120,7 @@ class HookEngine:
         self,
         room_id: str,
         trigger: HookTrigger,
-        execution: HookExecution,
+        execution: HookExecution | None,
         event: RoomEvent | None = None,
     ) -> list[HookRegistration]:
         """Get merged global + room hooks filtered and sorted by priority.
@@ -128,16 +128,19 @@ class HookEngine:
         Args:
             room_id: The room ID to get hooks for
             trigger: The hook trigger to filter by
-            execution: The execution mode to filter by
+            execution: The execution mode to filter by, or ``None`` to
+                match all execution modes.
             event: Optional event to filter hooks by channel_type/id/direction
         """
         all_hooks = [
-            h for h in self._global_hooks if h.trigger == trigger and h.execution == execution
+            h
+            for h in self._global_hooks
+            if h.trigger == trigger and (execution is None or h.execution == execution)
         ]
         room_hooks = [
             h
             for h in self._room_hooks.get(room_id, [])
-            if h.trigger == trigger and h.execution == execution
+            if h.trigger == trigger and (execution is None or h.execution == execution)
         ]
         all_hooks.extend(room_hooks)
 
@@ -236,6 +239,11 @@ class HookEngine:
     ) -> None:
         """Run async hooks concurrently. Errors are logged, never raised.
 
+        Finds hooks regardless of their declared execution mode so that
+        hooks registered with the default ``SYNC`` execution still fire
+        for triggers that are only invoked asynchronously (e.g.
+        ``AFTER_BROADCAST``, lifecycle hooks, voice hooks).
+
         Args:
             room_id: The room ID to run hooks for.
             trigger: The hook trigger type.
@@ -246,7 +254,7 @@ class HookEngine:
                 Use this for voice hooks where event is not a RoomEvent.
         """
         filter_event = None if skip_event_filter else event
-        hooks = self._get_hooks(room_id, trigger, HookExecution.ASYNC, event=filter_event)
+        hooks = self._get_hooks(room_id, trigger, None, event=filter_event)
         if not hooks:
             return
 

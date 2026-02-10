@@ -152,6 +152,11 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
     def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
         self._disconnect_callbacks.append(callback)
 
+    def set_trace_emitter(self, emitter: Any) -> None:
+        """Forward trace emitter to the underlying SIP backend."""
+        if hasattr(self._backend, "set_trace_emitter"):
+            self._backend.set_trace_emitter(emitter)
+
     async def close(self) -> None:
         """Disconnect all sessions."""
         for session_id in list(self._rt_sessions.keys()):

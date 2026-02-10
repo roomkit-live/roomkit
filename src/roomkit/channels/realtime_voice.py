@@ -154,6 +154,34 @@ class RealtimeVoiceChannel(Channel):
         Called automatically when the channel is registered with RoomKit.
         """
         self._framework = framework
+        self._sync_trace_emitter()
+
+    def on_trace(
+        self,
+        callback: Any,
+        *,
+        protocols: list[str] | None = None,
+    ) -> None:
+        """Register a trace observer and bridge to the transport."""
+        super().on_trace(callback, protocols=protocols)
+        self._sync_trace_emitter()
+
+    def _sync_trace_emitter(self) -> None:
+        """Set or clear the transport trace emitter based on trace_enabled."""
+        if self._transport is not None and hasattr(self._transport, "set_trace_emitter"):
+            self._transport.set_trace_emitter(
+                self.emit_trace if self.trace_enabled else None,
+            )
+
+    def resolve_trace_room(self, session_id: str | None) -> str | None:
+        """Resolve room_id from realtime session mappings."""
+        if session_id is None:
+            return None
+        return self._session_rooms.get(session_id)
+
+    @property
+    def provider_name(self) -> str | None:
+        return self._transport.name if self._transport is not None else None
 
     @property
     def info(self) -> dict[str, Any]:
@@ -316,6 +344,29 @@ class RealtimeVoiceChannel(Channel):
 
         logger.info("Realtime session %s ended", session.id)
 
+    async def connect_session(
+        self,
+        session: Any,
+        room_id: str,
+        binding: ChannelBinding,
+    ) -> None:
+        """Accept a realtime voice session via process_inbound.
+
+        Delegates to :meth:`start_session` which handles provider/transport
+        connection, resampling, and framework events.
+        """
+        await self.start_session(
+            room_id,
+            session.participant_id,
+            connection=session,
+            metadata=getattr(session, "metadata", None),
+        )
+
+    async def disconnect_session(self, session: Any, room_id: str) -> None:
+        """Clean up realtime sessions on remote disconnect."""
+        for rt_session in self._get_room_sessions(room_id):
+            await self.end_session(rt_session)
+
     # -- Channel ABC --
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
@@ -326,6 +377,7 @@ class RealtimeVoiceChannel(Channel):
                 channel_id=self.channel_id,
                 channel_type=self.channel_type,
                 participant_id=message.sender_id,
+                provider=self.provider_name,
             ),
             content=message.content,
         )
@@ -577,6 +629,7 @@ class RealtimeVoiceChannel(Channel):
                         "source": "realtime_voice",
                         "role": role,
                     },
+                    provider=self.provider_name,
                 )
 
         except Exception:

@@ -8,6 +8,9 @@ from typing import Any
 
 from roomkit.voice.realtime.base import RealtimeSession
 
+# Trace emitter callback type (same as VoiceBackend)
+TraceEmitter = Callable[..., Any]
+
 # Callback type aliases
 TransportAudioCallback = Callable[[RealtimeSession, bytes], Any]
 TransportDisconnectCallback = Callable[[RealtimeSession], Any]
@@ -99,6 +102,21 @@ class RealtimeAudioTransport(ABC):
 
     def interrupt(self, session: RealtimeSession) -> None:  # noqa: B027
         """Signal interruption — flush queue, stop playback."""
+
+    def set_trace_emitter(  # noqa: B027
+        self,
+        emitter: TraceEmitter | None,
+    ) -> None:
+        """Set a callback for emitting protocol traces.
+
+        Called by the owning channel when trace observers are registered.
+        Implementations should store the emitter and forward to the
+        underlying backend.
+
+        Args:
+            emitter: The channel's :meth:`emit_trace` method, or ``None``
+                to disable.
+        """
 
     async def close(self) -> None:
         """Release all transport resources."""

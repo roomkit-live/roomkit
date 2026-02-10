@@ -249,6 +249,25 @@ class VoiceBackend(ABC):
             callback: Function called with (session, audio_frame).
         """
 
+    # -------------------------------------------------------------------------
+    # Protocol trace
+    # -------------------------------------------------------------------------
+
+    def set_trace_emitter(  # noqa: B027
+        self,
+        emitter: Callable[..., Any] | None,
+    ) -> None:
+        """Set a callback for emitting protocol traces.
+
+        Called by the owning channel when trace observers are registered.
+        Implementations should store the emitter and call it at key
+        protocol points (e.g. INVITE, BYE for SIP).
+
+        Args:
+            emitter: The channel's :meth:`emit_trace` method, or ``None``
+                to disable.
+        """
+
     async def send_transcription(
         self, session: VoiceSession, text: str, role: str = "user"
     ) -> None:

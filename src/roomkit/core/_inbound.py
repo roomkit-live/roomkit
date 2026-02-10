@@ -85,6 +85,18 @@ class InboundMixin(HelpersMixin):
             room = await self.create_room()  # type: ignore[attr-defined]
             room_id = room.id
             await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
+        else:
+            # Ensure room exists; auto-create if needed (e.g. voice session
+            # with a room_id from SIP headers that hasn't been created yet).
+            room = await self._store.get_room(room_id)
+            if room is None:
+                room = await self.create_room(room_id=room_id)  # type: ignore[attr-defined]
+                await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
+            else:
+                # Room exists — ensure channel is attached
+                binding = await self._store.get_binding(room_id, message.channel_id)
+                if binding is None:
+                    await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
 
         context = await self._build_context(room_id)
 
@@ -250,6 +262,14 @@ class InboundMixin(HelpersMixin):
         # holding the lock would block concurrent process_inbound calls)
         if pending_streams:
             await self._process_streaming_responses(pending_streams, room_id)
+
+        # Bind session for stateful channels (voice, persistent WS, etc.)
+        # Runs AFTER hooks passed and the event was stored — a blocked
+        # event never reaches connect_session.
+        if message.session is not None and not result.blocked:
+            binding = await self._store.get_binding(room_id, message.channel_id)
+            if binding is not None:
+                await channel.connect_session(message.session, room_id, binding)
 
         return result
 

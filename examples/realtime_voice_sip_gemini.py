@@ -16,8 +16,6 @@ Usage:
     GOOGLE_API_KEY=... python examples/realtime_voice_sip_gemini.py
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import os
@@ -29,9 +27,15 @@ logging.basicConfig(
 logger = logging.getLogger("sip_gemini_example")
 
 from roomkit import RealtimeVoiceChannel, RoomKit
+from roomkit.models.context import RoomContext
+from roomkit.models.enums import HookTrigger
+from roomkit.models.event import RoomEvent, SystemContent
+from roomkit.models.hook import HookResult
+from roomkit.models.trace import ProtocolTrace
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
+from roomkit.voice import parse_voice_session
 from roomkit.voice.backends.sip import SIPVoiceBackend
-from roomkit.voice.base import VoiceSession
+from roomkit.voice.realtime.events import RealtimeTranscriptionEvent
 from roomkit.voice.realtime.sip_transport import SIPRealtimeTransport
 
 # ---------------------------------------------------------------------------
@@ -48,6 +52,9 @@ GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 SYSTEM_PROMPT = "You are a friendly phone assistant. Be concise and helpful."
 VOICE = "Aoede"
 
+# Set of blocked caller IDs (example: block known spam numbers)
+BLOCKED_CALLERS = {"+15550000000"}
+
 
 async def main() -> None:
     api_key = os.environ.get("GOOGLE_API_KEY")
@@ -58,7 +65,7 @@ async def main() -> None:
     kit = RoomKit()
 
     # -- SIP backend (answers incoming calls) --
-    sip_backend = SIPVoiceBackend(
+    sip = SIPVoiceBackend(
         local_sip_addr=(SIP_HOST, SIP_PORT),
         local_rtp_ip=RTP_IP,
         rtp_port_start=RTP_PORT_START,
@@ -71,11 +78,9 @@ async def main() -> None:
     gemini = GeminiLiveProvider(api_key=api_key, model=GEMINI_MODEL)
 
     # -- Bridge transport: SIP audio ↔ Gemini audio --
-    transport = SIPRealtimeTransport(sip_backend)
+    transport = SIPRealtimeTransport(sip)
 
     # -- Realtime voice channel --
-    # The SIP transport auto-detects the codec sample rate per call
-    # (16 kHz for G.722, 8 kHz for G.711) and resamples automatically.
     realtime = RealtimeVoiceChannel(
         "realtime-voice",
         provider=gemini,
@@ -88,63 +93,93 @@ async def main() -> None:
     kit.register_channel(realtime)
 
     # -------------------------------------------------------------------
-    # Incoming call → create room + start realtime session
+    # Hooks — same hooks work for text AND voice, that's the point
     # -------------------------------------------------------------------
 
-    async def handle_call(voice_session: VoiceSession) -> None:
-        room_id = voice_session.metadata.get("room_id", voice_session.id)
+    @kit.hook(HookTrigger.BEFORE_BROADCAST)
+    async def gate_incoming(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        """Block calls from spam numbers. Works identically to blocking
+        a text message — same hook, same interface."""
+        if isinstance(event.content, SystemContent) and event.content.code == "session_started":
+            caller = event.content.data.get("caller")
+            if caller in BLOCKED_CALLERS:
+                logger.warning("Blocked call from %s", caller)
+                return HookResult.block(f"caller_blocked:{caller}")
+            logger.info(
+                "BEFORE_BROADCAST — session_started from %s in room %s",
+                caller,
+                ctx.room.id,
+            )
+        return HookResult.allow()
+
+    @kit.hook(HookTrigger.ON_TRANSCRIPTION)
+    async def on_transcription(event: RealtimeTranscriptionEvent, ctx: RoomContext) -> HookResult:
+        """Log every transcription — both user speech and AI responses."""
+        tag = "USER" if event.role == "user" else "AI"
+        final = "final" if event.is_final else "interim"
         logger.info(
-            "Incoming SIP call — session=%s, room=%s, caller=%s",
-            voice_session.id,
-            room_id,
-            voice_session.metadata.get("caller"),
+            "ON_TRANSCRIPTION [%s] (%s): %s",
+            tag,
+            final,
+            event.text,
         )
+        return HookResult.allow()
 
-        await kit.create_room(room_id=room_id)
-        await kit.attach_channel(room_id, "realtime-voice")
-
-        # Start the realtime session, passing the SIP VoiceSession as
-        # the "connection" — SIPRealtimeTransport knows how to bridge it.
-        rt_session = await realtime.start_session(
-            room_id,
-            voice_session.participant_id,
-            connection=voice_session,
-        )
+    @kit.hook(HookTrigger.ON_PROTOCOL_TRACE)
+    async def on_protocol_trace(trace: ProtocolTrace, ctx: RoomContext) -> None:
+        """Log protocol-level traces (SIP INVITE, BYE, etc.)."""
         logger.info(
-            "Realtime session %s started for SIP call %s",
-            rt_session.id,
-            voice_session.id,
+            "ON_PROTOCOL_TRACE [room=%s] %s %s: %s",
+            ctx.room.id,
+            trace.direction,
+            trace.protocol,
+            trace.summary,
         )
 
-    def on_call(voice_session: VoiceSession) -> None:
-        asyncio.get_running_loop().create_task(handle_call(voice_session))
+    @kit.hook(HookTrigger.AFTER_BROADCAST)
+    async def log_events(event: RoomEvent, ctx: RoomContext) -> None:
+        """Log every event that passes through the room — voice or text."""
+        logger.info(
+            "AFTER_BROADCAST — type=%s channel=%s room=%s content=%s provider=%s",
+            event.type,
+            event.source.channel_id,
+            ctx.room.id,
+            type(event.content).__name__,
+            event.source.provider,
+        )
 
-    sip_backend.on_call(on_call)
+    # -------------------------------------------------------------------
+    # Incoming call → process through framework (room routing + hooks)
+    # -------------------------------------------------------------------
+
+    @sip.on_call
+    async def handle_call(session):
+        result = await kit.process_inbound(
+            parse_voice_session(session, channel_id="realtime-voice"),
+            room_id=session.metadata.get("room_id"),
+        )
+        if result.blocked:
+            logger.warning("Call rejected by hooks: %s", result.reason)
+        else:
+            logger.info("SIP call connected — session=%s", session.id)
 
     # -------------------------------------------------------------------
     # Remote hangup → end realtime session + close room
     # -------------------------------------------------------------------
 
-    async def handle_disconnect(voice_session: VoiceSession) -> None:
-        logger.info("SIP call ended — session=%s", voice_session.id)
-        room_id = voice_session.metadata.get("room_id", voice_session.id)
-
-        # End all realtime sessions in the room
+    @sip.on_call_disconnected
+    async def handle_disconnect(session):
+        logger.info("SIP call ended — session=%s", session.id)
+        room_id = session.metadata.get("room_id", session.id)
         for rt_session in realtime._get_room_sessions(room_id):
             await realtime.end_session(rt_session)
-
         await kit.close_room(room_id)
-
-    def on_disconnect(voice_session: VoiceSession) -> None:
-        asyncio.get_running_loop().create_task(handle_disconnect(voice_session))
-
-    sip_backend.on_call_disconnected(on_disconnect)
 
     # -------------------------------------------------------------------
     # Start
     # -------------------------------------------------------------------
 
-    await sip_backend.start()
+    await sip.start()
     logger.info(
         "SIP + Gemini Live ready — SIP %s:%d, RTP %d-%d",
         SIP_HOST,
@@ -157,7 +192,7 @@ async def main() -> None:
     try:
         await asyncio.Event().wait()
     finally:
-        await sip_backend.close()
+        await sip.close()
         await kit.close()
 
 

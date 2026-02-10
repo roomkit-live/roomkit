@@ -18,8 +18,10 @@ Usage::
         local_rtp_ip="10.0.0.5",
         rtp_port_start=10000,
     )
-    backend.on_call(on_incoming_call)
-    backend.on_call_disconnected(on_remote_hangup)
+    @backend.on_call
+    async def handle_call(session):
+        await kit.process_inbound(parse_voice_session(session, channel_id="voice"))
+
     await backend.start()
 """
 
@@ -52,6 +54,22 @@ PT_G722 = 9  # G.722, 16 kHz audio (8 kHz RTP clock)
 # Callback types
 DTMFReceivedCallback = Callable[["VoiceSession", DTMFEvent], Any]
 CallCallback = Callable[["VoiceSession"], Any]
+
+
+def _wrap_async(callback: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap an async callback so it can be fired from sync context.
+
+    If *callback* is a coroutine function it is wrapped in
+    ``asyncio.create_task``.  Sync callbacks are returned unchanged.
+    """
+    if asyncio.iscoroutinefunction(callback):
+        orig = callback
+
+        def _wrapper(*args: Any, **kwargs: Any) -> None:
+            asyncio.get_running_loop().create_task(orig(*args, **kwargs))
+
+        return _wrapper
+    return callback
 
 
 def _import_aiosipua() -> Any:
@@ -153,6 +171,9 @@ class SIPVoiceBackend(VoiceBackend):
         self._dtmf_callbacks: list[DTMFReceivedCallback] = []
         self._on_call_callback: CallCallback | None = None
         self._on_disconnect_callback: CallCallback | None = None
+
+        # Protocol trace emitter (set by channel when trace is enabled)
+        self._trace_emitter: Callable[..., Any] | None = None
 
         # Port allocator
         self._next_rtp_port = rtp_port_start
@@ -269,6 +290,46 @@ class SIPVoiceBackend(VoiceBackend):
             call.call_id,
         )
 
+        # Emit protocol traces for the INVITE + 200 OK
+        if self._trace_emitter is not None:
+            from roomkit.models.trace import ProtocolTrace
+
+            invite_raw = call.invite.serialize() if hasattr(call, "invite") else None
+            self._trace_emitter(
+                ProtocolTrace(
+                    channel_id=session.channel_id,
+                    direction="inbound",
+                    protocol="sip",
+                    summary=f"INVITE from {call.caller} to {call.callee}",
+                    raw=invite_raw,
+                    metadata={
+                        "call_id": call.call_id,
+                        "caller": call.caller,
+                        "callee": call.callee,
+                        "x_headers": call.x_headers,
+                    },
+                    session_id=session.id,
+                    room_id=room_id,
+                )
+            )
+            self._trace_emitter(
+                ProtocolTrace(
+                    channel_id=session.channel_id,
+                    direction="outbound",
+                    protocol="sip",
+                    summary=f"200 OK (codec={codec_rate}Hz, rtp_clock={clock_rate}Hz)",
+                    raw=call_session.sdp_answer if hasattr(call_session, "sdp_answer") else None,
+                    metadata={
+                        "call_id": call.call_id,
+                        "codec_sample_rate": codec_rate,
+                        "clock_rate": clock_rate,
+                        "rtp_port": rtp_port,
+                    },
+                    session_id=session.id,
+                    room_id=room_id,
+                )
+            )
+
         # Fire on_call callback so the app can route to a room
         if self._on_call_callback is not None:
             self._on_call_callback(session)
@@ -282,6 +343,24 @@ class SIPVoiceBackend(VoiceBackend):
 
         session = self._sessions.get(session_id)
         call_session = self._call_sessions.get(session_id)
+
+        # Emit trace before cleanup removes session data
+        if self._trace_emitter is not None and session is not None:
+            from roomkit.models.trace import ProtocolTrace
+
+            bye_raw = request.serialize() if hasattr(request, "serialize") else None
+            self._trace_emitter(
+                ProtocolTrace(
+                    channel_id=session.channel_id,
+                    direction="inbound",
+                    protocol="sip",
+                    summary=f"BYE from {call.caller}",
+                    raw=bye_raw,
+                    metadata={"call_id": call.call_id},
+                    session_id=session.id,
+                    room_id=session.metadata.get("room_id"),
+                )
+            )
 
         if call_session is not None:
             asyncio.get_running_loop().create_task(call_session.close())
@@ -391,6 +470,22 @@ class SIPVoiceBackend(VoiceBackend):
 
                 if call.dialog.state == DialogState.CONFIRMED:
                     self._uac.send_bye(call.dialog, call.source_addr)
+
+                    if self._trace_emitter is not None:
+                        from roomkit.models.trace import ProtocolTrace
+
+                        self._trace_emitter(
+                            ProtocolTrace(
+                                channel_id=session.channel_id,
+                                direction="outbound",
+                                protocol="sip",
+                                summary="BYE (local hangup)",
+                                raw=None,
+                                metadata={"call_id": call.call_id},
+                                session_id=session.id,
+                                room_id=session.metadata.get("room_id"),
+                            )
+                        )
             except Exception:
                 logger.exception("Failed to send BYE for session %s", session.id)
 
@@ -565,41 +660,64 @@ class SIPVoiceBackend(VoiceBackend):
     # Callbacks
     # -------------------------------------------------------------------------
 
+    def set_trace_emitter(self, emitter: Callable[..., Any] | None) -> None:
+        self._trace_emitter = emitter
+
     def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         self._audio_received_callback = callback
 
     def on_barge_in(self, callback: BargeInCallback) -> None:
         self._barge_in_callbacks.append(callback)
 
-    def on_dtmf_received(self, callback: DTMFReceivedCallback) -> None:
+    def on_dtmf_received(self, callback: DTMFReceivedCallback) -> DTMFReceivedCallback:
         """Register a callback for inbound DTMF digits (RFC 4733).
+
+        Accepts both sync and async callbacks.  Can be used as a decorator::
+
+            @backend.on_dtmf_received
+            async def handle_dtmf(session, event):
+                ...
 
         Args:
             callback: Function called with ``(session, dtmf_event)``.
         """
-        self._dtmf_callbacks.append(callback)
+        self._dtmf_callbacks.append(_wrap_async(callback))
+        return callback
 
-    def on_call(self, callback: CallCallback) -> None:
+    def on_call(self, callback: CallCallback) -> CallCallback:
         """Register a callback for incoming SIP calls.
 
         Fired after the INVITE has been accepted and the RTP session is
-        active.  Use this to route the session to a room.
+        active.  Accepts both sync and async callbacks.  Can be used as
+        a decorator::
+
+            @backend.on_call
+            async def handle_call(session):
+                await kit.process_inbound(
+                    parse_voice_session(session, channel_id="voice")
+                )
 
         Args:
             callback: Function called with ``(session)``.
         """
-        self._on_call_callback = callback
+        self._on_call_callback = _wrap_async(callback)
+        return callback
 
-    def on_call_disconnected(self, callback: CallCallback) -> None:
+    def on_call_disconnected(self, callback: CallCallback) -> CallCallback:
         """Register a callback for remote BYE (call hangup).
 
-        Fired when the remote party sends BYE.  Use this to clean up
-        the room and release resources.
+        Fired when the remote party sends BYE.  Accepts both sync and
+        async callbacks.  Can be used as a decorator::
+
+            @backend.on_call_disconnected
+            async def handle_disconnect(session):
+                ...
 
         Args:
             callback: Function called with ``(session)``.
         """
-        self._on_disconnect_callback = callback
+        self._on_disconnect_callback = _wrap_async(callback)
+        return callback
 
     async def cancel_audio(self, session: VoiceSession) -> bool:
         was_playing = session.id in self._playing_sessions

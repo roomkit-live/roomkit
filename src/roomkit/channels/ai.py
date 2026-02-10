@@ -156,6 +156,7 @@ class AIChannel(Channel):
             source=EventSource(
                 channel_id=self.channel_id,
                 channel_type=self.channel_type,
+                provider=self.provider_name,
             ),
             content=TextContent(body=response.content),
             chain_depth=event.chain_depth + 1,

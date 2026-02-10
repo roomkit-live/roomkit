@@ -435,6 +435,34 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         Called automatically when the channel is registered with RoomKit.
         """
         self._framework = framework
+        # Bridge trace emitter to backend when framework wiring enables it
+        self._sync_trace_emitter()
+
+    def on_trace(
+        self,
+        callback: Any,
+        *,
+        protocols: list[str] | None = None,
+    ) -> None:
+        """Register a trace observer and bridge to the backend."""
+        super().on_trace(callback, protocols=protocols)
+        self._sync_trace_emitter()
+
+    def _sync_trace_emitter(self) -> None:
+        """Set or clear the backend trace emitter based on trace_enabled."""
+        if self._backend is not None and hasattr(self._backend, "set_trace_emitter"):
+            self._backend.set_trace_emitter(
+                self.emit_trace if self.trace_enabled else None,
+            )
+
+    def resolve_trace_room(self, session_id: str | None) -> str | None:
+        """Resolve room_id from voice session bindings."""
+        if session_id is None:
+            return None
+        binding_info = self._session_bindings.get(session_id)
+        if binding_info:
+            return binding_info[0]
+        return None
 
     def bind_session(self, session: VoiceSession, room_id: str, binding: ChannelBinding) -> None:
         """Bind a voice session to a room for message routing."""
@@ -451,6 +479,25 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                 self._emit_session_started(session, room_id),
                 name=f"session_started:{session.id}",
             )
+
+    async def connect_session(
+        self,
+        session: Any,
+        room_id: str,
+        binding: ChannelBinding,
+    ) -> None:
+        """Accept a voice session via process_inbound.
+
+        Delegates to :meth:`bind_session` which handles pipeline
+        activation and framework events.
+        """
+        self.bind_session(session, room_id, binding)
+
+    async def disconnect_session(self, session: Any, room_id: str) -> None:
+        """Clean up a voice session on remote disconnect."""
+        self.unbind_session(session)
+        if self._backend is not None:
+            await self._backend.disconnect(session)
 
     def unbind_session(self, session: VoiceSession) -> None:
         """Remove session binding."""
@@ -475,6 +522,10 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
     # -------------------------------------------------------------------------
     # Properties
     # -------------------------------------------------------------------------
+
+    @property
+    def provider_name(self) -> str | None:
+        return self._backend.name if self._backend is not None else None
 
     @property
     def backend(self) -> VoiceBackend | None:
@@ -617,6 +668,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                 channel_type=self.channel_type,
                 participant_id=message.sender_id,
                 external_id=message.external_id,
+                provider=self.provider_name,
             ),
             content=message.content,
             idempotency_key=message.idempotency_key,

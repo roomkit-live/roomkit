@@ -81,6 +81,7 @@ class TransportChannel(Channel):
                 channel_type=channel_type,
                 participant_id=message.sender_id or None,
                 external_id=message.external_id,
+                provider=self.provider_name,
             ),
             content=message.content,
             idempotency_key=message.idempotency_key,

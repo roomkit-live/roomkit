@@ -78,6 +78,7 @@ class WebSocketChannel(Channel):
                 channel_id=self.channel_id,
                 channel_type=self.channel_type,
                 participant_id=message.sender_id,
+                provider=self.provider_name,
             ),
             content=message.content,
             idempotency_key=message.idempotency_key,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
@@ -41,6 +43,7 @@ class HelpersMixin:
     _hook_engine: HookEngine
     _event_handlers: list[tuple[str, FrameworkEventHandler]]
     _identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]]
+    _pending_traces: dict[str, list[object]]  # room_id -> [ProtocolTrace, ...]
 
     # -- Internal helpers --
 
@@ -268,6 +271,74 @@ class HelpersMixin:
             participants=participants,
             recent_events=recent,
         )
+
+    # -- Protocol trace --
+
+    def _on_channel_trace(self, trace: object) -> None:
+        """Forward a ProtocolTrace to ON_PROTOCOL_TRACE hooks for the room."""
+        from roomkit.models.trace import ProtocolTrace
+
+        if not isinstance(trace, ProtocolTrace):
+            return
+
+        room_id = trace.room_id
+        if room_id is None and trace.session_id is not None:
+            room_id = self._resolve_trace_room(trace)
+        if room_id is None:
+            return
+
+        with contextlib.suppress(RuntimeError):
+            asyncio.get_running_loop().create_task(self._fire_trace_hook(trace, room_id))
+
+    def _resolve_trace_room(self, trace: object) -> str | None:
+        """Try to resolve a room_id for a trace via the originating channel."""
+        from roomkit.models.trace import ProtocolTrace
+
+        if not isinstance(trace, ProtocolTrace):
+            return None
+        channel = self._channels.get(trace.channel_id)  # type: ignore[attr-defined]
+        if channel is not None:
+            return channel.resolve_trace_room(trace.session_id)
+        return None
+
+    async def _fire_trace_hook(self, trace: object, room_id: str) -> None:
+        """Fire ON_PROTOCOL_TRACE hooks for the given room.
+
+        If the room does not exist yet (e.g. SIP INVITE trace fires
+        before ``process_inbound`` creates the room), the trace is
+        buffered and replayed when :meth:`_flush_pending_traces` is
+        called from ``attach_channel``.
+        """
+        try:
+            context = await self._build_context(room_id)
+        except Exception:
+            self._pending_traces.setdefault(room_id, []).append(trace)
+            return
+        await self._hook_engine.run_async_hooks(
+            room_id,
+            HookTrigger.ON_PROTOCOL_TRACE,
+            trace,
+            context,
+            skip_event_filter=True,
+        )
+
+    async def _flush_pending_traces(self, room_id: str) -> None:
+        """Replay buffered traces for a room that now exists."""
+        traces = self._pending_traces.pop(room_id, None)
+        if not traces:
+            return
+        try:
+            context = await self._build_context(room_id)
+        except Exception:
+            return
+        for trace in traces:
+            await self._hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_PROTOCOL_TRACE,
+                trace,
+                context,
+                skip_event_filter=True,
+            )
 
     async def _emit_framework_event(
         self,

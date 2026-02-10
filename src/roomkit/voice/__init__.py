@@ -28,6 +28,7 @@ from roomkit.voice.events import (
     VADAudioLevelEvent,
     VADSilenceEvent,
 )
+from roomkit.voice.inbound import parse_voice_session
 from roomkit.voice.interruption import (
     InterruptionConfig,
     InterruptionDecision,
@@ -175,6 +176,8 @@ __all__ = [
     "MockResamplerProvider",
     "MockTurnDetector",
     "MockVADProvider",
+    # Inbound helpers
+    "parse_voice_session",
     # Providers
     "STTProvider",
     "TTSProvider",

@@ -37,6 +37,9 @@ class ChannelOpsMixin(HelpersMixin):
         self._channels[channel.channel_id] = channel
         self._event_router = None  # Reset router cache
 
+        # Wire protocol trace framework handler on all channels
+        channel._trace_framework_handler = self._on_channel_trace  # type: ignore[assignment]
+
         # Set framework reference on voice channels for inbound routing
         if isinstance(channel, (VoiceChannel, RealtimeVoiceChannel)):
             channel.set_framework(self)  # type: ignore[arg-type]
@@ -100,6 +103,8 @@ class ChannelOpsMixin(HelpersMixin):
                 channel_id=channel_id,
                 data={"access": str(access), "visibility": visibility},
             )
+            # Flush traces that arrived before the room existed
+            await self._flush_pending_traces(room_id)
             return result
 
     async def detach_channel(self, room_id: str, channel_id: str) -> bool:
