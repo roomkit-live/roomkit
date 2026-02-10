@@ -30,8 +30,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("voice_sip_example")
 
-from roomkit import RoomKit
-from roomkit.channels import VoiceChannel
+from roomkit import RoomKit, VoiceChannel
 from roomkit.voice import VoiceSession
 from roomkit.voice.backends.sip import SIPVoiceBackend
 
