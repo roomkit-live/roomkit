@@ -33,6 +33,8 @@ class SherpaOnnxSTTConfig:
             ``"nemo_transducer"`` for NeMo TDT/transducer models).
             When set, the model is treated as offline-only (no streaming).
         language: Language code (Whisper only).
+        task: Whisper task — ``"transcribe"`` (default) or ``"translate"``
+            (translates to English).
         sample_rate: Expected audio sample rate.
         num_threads: Number of CPU threads for inference.
         provider: ONNX execution provider (``"cpu"`` or ``"cuda"``).
@@ -55,6 +57,7 @@ class SherpaOnnxSTTConfig:
     joiner: str = ""
     model_type: str = ""
     language: str = "en"
+    task: str = "transcribe"
     sample_rate: int = 16000
     num_threads: int = 2
     provider: str = "cpu"
@@ -132,6 +135,7 @@ class SherpaOnnxSTTProvider(STTProvider):
                     decoder=cfg.decoder,
                     tokens=cfg.tokens,
                     language=cfg.language,
+                    task=cfg.task,
                     num_threads=cfg.num_threads,
                     provider=cfg.provider,
                 )
