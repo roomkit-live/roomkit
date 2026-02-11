@@ -64,6 +64,7 @@ def _make_provider(
 def _denoiser_that_returns(samples: list[float]) -> MagicMock:
     """Create a mock denoiser whose .run() returns given samples."""
     denoiser = MagicMock()
+    denoiser.sample_rate = 16000
     result = MagicMock()
     result.samples = samples
     denoiser.run.return_value = result
@@ -444,3 +445,119 @@ class TestPcmConversion:
             samples = struct.unpack("<2h", out)
             assert samples[0] == 32767
             assert samples[1] == -32767
+
+
+# ---------------------------------------------------------------------------
+# Resampling at non-native sample rates
+# ---------------------------------------------------------------------------
+
+
+class TestNonNativeRate:
+    """Audio at non-native rates is resampled before inference."""
+
+    def test_24k_resampled_to_native_before_run(self) -> None:
+        """run() receives native_rate (16000), not the input frame rate."""
+        sherpa = _mock_sherpa_module()
+        # 240 samples at 24kHz = 20ms, resampled to 16kHz = 160 samples
+        denoiser = _denoiser_that_returns([0.0] * 160)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
+
+        frame_in = _frame(240, value=100, sample_rate=24000)
+        provider.process(frame_in)
+
+        # run() should be called with native rate 16000, not 24000
+        assert denoiser.run.call_count == 1
+        _, called_rate = denoiser.run.call_args.args
+        assert called_rate == 16000
+
+    def test_output_preserves_original_sample_rate(self) -> None:
+        """Output frame has the same sample_rate as the input frame."""
+        sherpa = _mock_sherpa_module()
+        denoiser = _denoiser_that_returns([0.0] * 160)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
+
+        frame_in = _frame(240, value=100, sample_rate=24000)
+        frame_out = provider.process(frame_in)
+
+        assert frame_out.sample_rate == 24000
+
+    def test_output_preserves_original_byte_length(self) -> None:
+        """Output frame has the same number of bytes as the input frame."""
+        sherpa = _mock_sherpa_module()
+        denoiser = _denoiser_that_returns([0.0] * 160)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
+
+        frame_in = _frame(240, value=100, sample_rate=24000)
+        frame_out = provider.process(frame_in)
+
+        assert len(frame_out.data) == len(frame_in.data)
+
+    def test_native_rate_no_resample(self) -> None:
+        """At native rate (16kHz), no resampling occurs — run() gets 16000."""
+        sherpa = _mock_sherpa_module()
+        denoiser = _denoiser_that_returns([0.0] * 160)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
+
+        frame_in = _frame(160, value=100, sample_rate=16000)
+        provider.process(frame_in)
+
+        _, called_rate = denoiser.run.call_args.args
+        assert called_rate == 16000
+
+
+class TestResampleLinear:
+    """Unit tests for _resample_linear helper."""
+
+    def test_same_rate_passthrough(self) -> None:
+        with patch.dict("sys.modules", {"sherpa_onnx": _mock_sherpa_module()}):
+            import roomkit.voice.pipeline.denoiser.sherpa_onnx as dn_mod
+
+            importlib.reload(dn_mod)
+            from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
+                _resample_linear,
+            )
+
+            arr = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+            result = _resample_linear(arr, 16000, 16000)
+            np.testing.assert_array_equal(result, arr)
+
+    def test_downsample_length(self) -> None:
+        with patch.dict("sys.modules", {"sherpa_onnx": _mock_sherpa_module()}):
+            import roomkit.voice.pipeline.denoiser.sherpa_onnx as dn_mod
+
+            importlib.reload(dn_mod)
+            from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
+                _resample_linear,
+            )
+
+            # 240 samples at 24kHz -> 160 at 16kHz
+            arr = np.zeros(240, dtype=np.float32)
+            result = _resample_linear(arr, 24000, 16000)
+            assert len(result) == 160
+
+    def test_upsample_length(self) -> None:
+        with patch.dict("sys.modules", {"sherpa_onnx": _mock_sherpa_module()}):
+            import roomkit.voice.pipeline.denoiser.sherpa_onnx as dn_mod
+
+            importlib.reload(dn_mod)
+            from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
+                _resample_linear,
+            )
+
+            # 160 samples at 16kHz -> 240 at 24kHz
+            arr = np.zeros(160, dtype=np.float32)
+            result = _resample_linear(arr, 16000, 24000)
+            assert len(result) == 240
+
+    def test_empty_array(self) -> None:
+        with patch.dict("sys.modules", {"sherpa_onnx": _mock_sherpa_module()}):
+            import roomkit.voice.pipeline.denoiser.sherpa_onnx as dn_mod
+
+            importlib.reload(dn_mod)
+            from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
+                _resample_linear,
+            )
+
+            arr = np.array([], dtype=np.float32)
+            result = _resample_linear(arr, 16000, 24000)
+            assert len(result) == 0

@@ -50,6 +50,22 @@ def _float32_to_pcm_s16le(samples: np.ndarray | list[float]) -> bytes:
     return bytes(np.clip(arr * 32767, -32767, 32767).astype(np.int16).tobytes())
 
 
+def _resample_linear(samples: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
+    """Resample float32 samples using numpy linear interpolation."""
+    import numpy as np
+
+    if src_rate == dst_rate or len(samples) == 0:
+        return samples
+    ratio = dst_rate / src_rate
+    n_out = int(len(samples) * ratio)
+    if n_out == 0:
+        return np.array([], dtype=np.float32)
+    x_old = np.arange(len(samples), dtype=np.float64)
+    x_new = np.linspace(0, len(samples) - 1, n_out, dtype=np.float64)
+    result: np.ndarray = np.interp(x_new, x_old, samples).astype(np.float32)
+    return result
+
+
 @dataclass
 class SherpaOnnxDenoiserConfig:
     """Configuration for the sherpa-onnx GTCRN denoiser.
@@ -102,6 +118,7 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
         self._config = config
         self._sherpa: Any = __import__("sherpa_onnx")
         self._denoiser: Any = None
+        self._native_rate: int = 0  # Set on first _ensure_denoiser()
         self._context: np.ndarray = np.array([], dtype=np.float32)
 
     @property
@@ -128,9 +145,11 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             model=model_config,
         )
         self._denoiser = sherpa.OfflineSpeechDenoiser(denoiser_config)
+        self._native_rate = self._denoiser.sample_rate
         logger.debug(
-            "SherpaOnnxDenoiser: created denoiser model=%s",
+            "SherpaOnnxDenoiser: created denoiser model=%s native_rate=%d",
             cfg.model,
+            self._native_rate,
         )
 
     def process(self, frame: AudioFrame) -> AudioFrame:
@@ -154,6 +173,15 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             import numpy as np
 
             float_samples = _pcm_s16le_to_float32(frame.data)
+            n_frame_orig = len(float_samples)
+
+            # Resample to the denoiser's native rate if needed.
+            # This avoids sherpa-onnx creating a new LinearResample
+            # object on every frame (~50/s at 20ms).
+            native_rate = self._native_rate or 16000
+            need_resample = frame.sample_rate != native_rate and native_rate > 0
+            if need_resample:
+                float_samples = _resample_linear(float_samples, frame.sample_rate, native_rate)
             n_frame = len(float_samples)
 
             # Append current frame to sliding context buffer
@@ -194,7 +222,7 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             else:
                 to_process = self._context
 
-            result = self._denoiser.run(to_process.tolist(), frame.sample_rate)
+            result = self._denoiser.run(to_process.tolist(), native_rate)
 
             # Extract the last n_frame samples (the current frame's portion)
             denoised = result.samples
@@ -203,6 +231,18 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             else:
                 # Fallback: model returned fewer samples than expected
                 out_samples = denoised
+
+            # Resample back to original frame rate
+            if need_resample:
+                out_arr = np.asarray(out_samples, dtype=np.float32)
+                out_samples = _resample_linear(out_arr, native_rate, frame.sample_rate)
+                # Ensure exact sample count matches the input frame
+                out_samples = np.asarray(out_samples, dtype=np.float32)
+                if len(out_samples) != n_frame_orig:
+                    if len(out_samples) > n_frame_orig:
+                        out_samples = out_samples[:n_frame_orig]
+                    else:
+                        out_samples = np.pad(out_samples, (0, n_frame_orig - len(out_samples)))
 
             out_data = _float32_to_pcm_s16le(out_samples)
         except Exception:
