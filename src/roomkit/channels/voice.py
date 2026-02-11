@@ -218,9 +218,13 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Backend delivers raw audio -> pipeline processes it
         backend.on_audio_received(self._on_audio_received)
 
-        # Continuous STT: no local VAD, stream all audio to STT provider
+        # Continuous STT: no local VAD, stream all audio to STT provider.
+        # Batch mode takes priority — audio accumulates for manual flush.
         self._continuous_stt = (
-            config.vad is None and self._stt is not None and self._stt.supports_streaming
+            not self._batch_mode
+            and config.vad is None
+            and self._stt is not None
+            and self._stt.supports_streaming
         )
 
         # Pipeline events -> VoiceChannel hooks

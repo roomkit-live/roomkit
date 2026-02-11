@@ -34,6 +34,14 @@ class TestBatchModeConstruction:
         assert ch._batch_mode is True
         assert ch.info["batch_mode"] is True
 
+    def test_batch_mode_disables_continuous_stt(self) -> None:
+        """batch_mode=True must suppress continuous STT even if provider streams."""
+        stt = MockSTTProvider(streaming=True)
+        backend = MockVoiceBackend()
+        pipeline = AudioPipelineConfig()  # no VAD
+        ch = VoiceChannel("v1", stt=stt, backend=backend, pipeline=pipeline, batch_mode=True)
+        assert ch._continuous_stt is False
+
     def test_batch_mode_without_stt_raises(self) -> None:
         backend = MockVoiceBackend()
         pipeline = AudioPipelineConfig()
