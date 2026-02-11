@@ -283,9 +283,7 @@ class RealtimeVoiceChannel(Channel):
 
         # Cache the channel binding for audio gating
         if self._framework:
-            stored_binding = await self._framework._store.get_binding(
-                room_id, self.channel_id
-            )
+            stored_binding = await self._framework._store.get_binding(room_id, self.channel_id)
             if stored_binding is not None:
                 self._session_bindings[session.id] = stored_binding
 

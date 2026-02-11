@@ -43,15 +43,11 @@ class TestVoiceChannelBindingGate:
         pipeline = AudioPipelineConfig(vad=vad)
 
         kit = RoomKit(voice=backend)
-        channel = VoiceChannel(
-            "voice-1", stt=stt, tts=tts, backend=backend, pipeline=pipeline
-        )
+        channel = VoiceChannel("voice-1", stt=stt, tts=tts, backend=backend, pipeline=pipeline)
         kit.register_channel(channel)
 
         room = await kit.create_room()
-        await kit.attach_channel(
-            room.id, "voice-1", access=access
-        )
+        await kit.attach_channel(room.id, "voice-1", access=access)
         if muted:
             await kit.mute(room.id, "voice-1")
 
@@ -234,9 +230,7 @@ class TestRealtimeVoiceChannelBindingGate:
         return kit, channel, provider, transport, room.id
 
     async def test_read_write_allows_audio(self) -> None:
-        kit, channel, provider, transport, room_id = await self._setup(
-            access=Access.READ_WRITE
-        )
+        kit, channel, provider, transport, room_id = await self._setup(access=Access.READ_WRITE)
         sessions = list(channel._sessions.values())
         session = sessions[0]
 
@@ -247,9 +241,7 @@ class TestRealtimeVoiceChannelBindingGate:
         await kit.close()
 
     async def test_read_only_drops_audio(self) -> None:
-        kit, channel, provider, transport, room_id = await self._setup(
-            access=Access.READ_ONLY
-        )
+        kit, channel, provider, transport, room_id = await self._setup(access=Access.READ_ONLY)
         sessions = list(channel._sessions.values())
         session = sessions[0]
 
@@ -260,9 +252,7 @@ class TestRealtimeVoiceChannelBindingGate:
         await kit.close()
 
     async def test_access_none_drops_audio(self) -> None:
-        kit, channel, provider, transport, room_id = await self._setup(
-            access=Access.NONE
-        )
+        kit, channel, provider, transport, room_id = await self._setup(access=Access.NONE)
         sessions = list(channel._sessions.values())
         session = sessions[0]
 
@@ -284,9 +274,7 @@ class TestRealtimeVoiceChannelBindingGate:
         await kit.close()
 
     async def test_write_only_allows_audio(self) -> None:
-        kit, channel, provider, transport, room_id = await self._setup(
-            access=Access.WRITE_ONLY
-        )
+        kit, channel, provider, transport, room_id = await self._setup(access=Access.WRITE_ONLY)
         sessions = list(channel._sessions.values())
         session = sessions[0]
 
@@ -378,9 +366,7 @@ class TestMuteOnToolCall:
         await asyncio.sleep(0.1)
 
         # Transport should have been muted and then unmuted
-        mute_calls = [
-            c for c in transport.calls if c.method == "set_input_muted"
-        ]
+        mute_calls = [c for c in transport.calls if c.method == "set_input_muted"]
         assert len(mute_calls) == 2
         assert mute_calls[0].args["muted"] is True
         assert mute_calls[1].args["muted"] is False
@@ -407,8 +393,6 @@ class TestMuteOnToolCall:
         await asyncio.sleep(0.1)
 
         # Transport should NOT have been muted
-        mute_calls = [
-            c for c in transport.calls if c.method == "set_input_muted"
-        ]
+        mute_calls = [c for c in transport.calls if c.method == "set_input_muted"]
         assert len(mute_calls) == 0
         await kit.close()
