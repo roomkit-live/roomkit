@@ -58,7 +58,8 @@ class OpenAIAIProvider(AIProvider):
         return any(self._config.model.startswith(prefix) for prefix in _VISION_MODELS)
 
     def _format_content(
-        self, content: str | list[AITextPart | AIImagePart]
+        self,
+        content: str | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart],
     ) -> str | list[dict[str, Any]]:
         """Format message content for OpenAI API.
 

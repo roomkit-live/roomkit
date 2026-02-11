@@ -87,7 +87,10 @@ class GeminiAIProvider(AIProvider):
                 contents.append(self._types.Content(role=role, parts=parts))
         return contents
 
-    def _format_content(self, content: str | list[AITextPart | AIImagePart]) -> list[Any]:
+    def _format_content(
+        self,
+        content: str | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart],
+    ) -> list[Any]:
         """Convert content to Gemini Parts."""
         if isinstance(content, str):
             return [self._types.Part.from_text(text=content)]

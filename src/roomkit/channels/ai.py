@@ -180,7 +180,7 @@ class AIChannel(Channel):
 
     async def _run_tool_loop(self, context: AIContext) -> AIResponse:
         """Generate → execute tools → re-generate until a text response."""
-        response = await self._provider.generate(context)
+        response: AIResponse = await self._provider.generate(context)
 
         for round_idx in range(self._max_tool_rounds):
             if not response.tool_calls or not self._tool_handler:
@@ -193,7 +193,7 @@ class AIChannel(Channel):
             )
 
             # Append assistant message with tool calls
-            parts: list[AITextPart | AIToolCallPart] = []
+            parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
             if response.content:
                 parts.append(AITextPart(text=response.content))
             for tc in response.tool_calls:
@@ -201,7 +201,7 @@ class AIChannel(Channel):
             context.messages.append(AIMessage(role="assistant", content=parts))
 
             # Execute each tool and collect results
-            result_parts: list[AIToolResultPart] = []
+            result_parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
             for tc in response.tool_calls:
                 logger.info("Executing tool: %s(%s)", tc.name, tc.id)
                 result = await self._tool_handler(tc.name, tc.arguments)
@@ -293,7 +293,10 @@ class AIChannel(Channel):
             return "assistant"
         return "user"
 
-    def _extract_content(self, event: RoomEvent) -> str | list[AITextPart | AIImagePart]:
+    def _extract_content(
+        self,
+        event: RoomEvent,
+    ) -> str | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart]:
         """Extract content, including images if provider supports vision."""
         content = event.content
 
@@ -306,22 +309,22 @@ class AIChannel(Channel):
             return content.body  # Simple case: just text
 
         if isinstance(content, MediaContent):
-            parts: list[AITextPart | AIImagePart] = []
+            parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
             if content.caption:
                 parts.append(AITextPart(text=content.caption))
             parts.append(AIImagePart(url=content.url, mime_type=content.mime_type))
             return parts
 
         if isinstance(content, CompositeContent):
-            parts = []
+            cparts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
             for part in content.parts:
                 if isinstance(part, TextContent):
-                    parts.append(AITextPart(text=part.body))
+                    cparts.append(AITextPart(text=part.body))
                 elif isinstance(part, MediaContent):
                     if part.caption:
-                        parts.append(AITextPart(text=part.caption))
-                    parts.append(AIImagePart(url=part.url, mime_type=part.mime_type))
-            return parts if parts else ""
+                        cparts.append(AITextPart(text=part.caption))
+                    cparts.append(AIImagePart(url=part.url, mime_type=part.mime_type))
+            return cparts if cparts else ""
 
         # Fallback for other types
         return self._extract_text(event)
