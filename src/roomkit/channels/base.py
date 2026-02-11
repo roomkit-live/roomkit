@@ -171,6 +171,19 @@ class Channel(ABC):
         Default: no-op.
         """
 
+    def update_binding(  # noqa: B027
+        self,
+        room_id: str,
+        binding: ChannelBinding,
+    ) -> None:
+        """Notify the channel that a room's binding has changed.
+
+        Called by the framework after ``mute()``, ``unmute()``, or
+        ``set_access()`` update the store.  Override in session-based
+        channels (voice, realtime voice) to update cached binding state
+        used for audio gating.  Default: no-op.
+        """
+
     def capabilities(self) -> ChannelCapabilities:
         """Return channel capabilities."""
         return ChannelCapabilities(media_types=[ChannelMediaType.TEXT])

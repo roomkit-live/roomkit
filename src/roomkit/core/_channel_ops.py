@@ -140,6 +140,7 @@ class ChannelOpsMixin(HelpersMixin):
             binding = await self._get_binding(room_id, channel_id)
             updated = binding.model_copy(update={"muted": True})
             result = await self._store.update_binding(updated)
+            self._notify_binding_updated(room_id, channel_id, result)
             await self._emit_system_event(
                 room_id,
                 EventType.CHANNEL_MUTED,
@@ -163,6 +164,7 @@ class ChannelOpsMixin(HelpersMixin):
             binding = await self._get_binding(room_id, channel_id)
             updated = binding.model_copy(update={"muted": False})
             result = await self._store.update_binding(updated)
+            self._notify_binding_updated(room_id, channel_id, result)
             await self._emit_system_event(
                 room_id,
                 EventType.CHANNEL_UNMUTED,
@@ -209,6 +211,7 @@ class ChannelOpsMixin(HelpersMixin):
             old_access = binding.access
             updated = binding.model_copy(update={"access": access})
             result = await self._store.update_binding(updated)
+            self._notify_binding_updated(room_id, channel_id, result)
             await self._emit_system_event(
                 room_id,
                 EventType.CHANNEL_UPDATED,
@@ -254,6 +257,14 @@ class ChannelOpsMixin(HelpersMixin):
     async def list_bindings(self, room_id: str) -> list[ChannelBinding]:
         """List all channel bindings for a room."""
         return await self._store.list_bindings(room_id)
+
+    def _notify_binding_updated(
+        self, room_id: str, channel_id: str, binding: ChannelBinding
+    ) -> None:
+        """Push updated binding state to the channel for audio gating."""
+        channel = self._channels.get(channel_id)
+        if channel is not None:
+            channel.update_binding(room_id, binding)
 
     async def _get_binding(self, room_id: str, channel_id: str) -> ChannelBinding:
         from roomkit.core.framework import ChannelNotFoundError

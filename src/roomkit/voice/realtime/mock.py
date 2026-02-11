@@ -297,6 +297,14 @@ class MockRealtimeTransport(RealtimeAudioTransport):
         self._connections.clear()
         self.calls.append(MockCall(method="close"))
 
+    def set_input_muted(self, session: RealtimeSession, muted: bool) -> None:
+        self.calls.append(
+            MockCall(
+                method="set_input_muted",
+                args={"session_id": session.id, "muted": muted},
+            )
+        )
+
     # -- Callback registration --
 
     def on_audio_received(self, callback: TransportAudioCallback) -> None:

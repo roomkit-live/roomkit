@@ -14,6 +14,7 @@ from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelO
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import (
+    Access,
     ChannelCategory,
     ChannelDirection,
     ChannelMediaType,
@@ -83,6 +84,7 @@ class RealtimeVoiceChannel(Channel):
         transport_sample_rate: int | None = None,
         emit_transcription_events: bool = True,
         tool_handler: ToolHandler | None = None,
+        mute_on_tool_call: bool = False,
     ) -> None:
         """Initialize realtime voice channel.
 
@@ -106,6 +108,10 @@ class RealtimeVoiceChannel(Channel):
                 Signature: ``async (session, name, arguments) -> result``.
                 Return a dict or JSON string.  If not set, falls back to
                 ``ON_REALTIME_TOOL_CALL`` hooks.
+            mute_on_tool_call: If True, mute the transport microphone during
+                tool execution to prevent barge-in that causes providers
+                (e.g. Gemini) to silently drop the tool result.  Defaults
+                to False — use ``set_access()`` for fine-grained control.
         """
         super().__init__(channel_id)
         self._provider = provider
@@ -119,11 +125,14 @@ class RealtimeVoiceChannel(Channel):
         self._transport_sample_rate = transport_sample_rate
         self._emit_transcription_events = emit_transcription_events
         self._tool_handler = tool_handler
+        self._mute_on_tool_call = mute_on_tool_call
         self._framework: RoomKit | None = None
 
         # Active sessions: session_id -> (session, room_id, binding)
         self._sessions: dict[str, RealtimeSession] = {}
         self._session_rooms: dict[str, str] = {}  # session_id -> room_id
+        # Cached bindings for audio gating (access/muted enforcement)
+        self._session_bindings: dict[str, ChannelBinding] = {}
 
         # Per-session resamplers: (inbound, outbound) pairs
         self._session_resamplers: dict[str, tuple[Any, Any]] = {}
@@ -272,6 +281,14 @@ class RealtimeVoiceChannel(Channel):
         self._sessions[session.id] = session
         self._session_rooms[session.id] = room_id
 
+        # Cache the channel binding for audio gating
+        if self._framework:
+            stored_binding = await self._framework._store.get_binding(
+                room_id, self.channel_id
+            )
+            if stored_binding is not None:
+                self._session_bindings[session.id] = stored_binding
+
         # Fire framework event
         if self._framework:
             await self._framework._emit_framework_event(
@@ -320,6 +337,7 @@ class RealtimeVoiceChannel(Channel):
         session.state = RealtimeSessionState.ENDED
         self._sessions.pop(session.id, None)
         self._session_rooms.pop(session.id, None)
+        self._session_bindings.pop(session.id, None)
         self._session_transport_rates.pop(session.id, None)
         self._audio_forward_count.pop(session.id, None)
         self._audio_generation.pop(session.id, None)
@@ -366,6 +384,16 @@ class RealtimeVoiceChannel(Channel):
         """Clean up realtime sessions on remote disconnect."""
         for rt_session in self._get_room_sessions(room_id):
             await self.end_session(rt_session)
+
+    def update_binding(self, room_id: str, binding: ChannelBinding) -> None:
+        """Update cached bindings for all sessions in a room.
+
+        Called by the framework after mute/unmute/set_access so the
+        audio gate in ``_forward_client_audio`` sees the new state.
+        """
+        for sid, rid in self._session_rooms.items():
+            if rid == room_id:
+                self._session_bindings[sid] = binding
 
     # -- Channel ABC --
 
@@ -475,6 +503,12 @@ class RealtimeVoiceChannel(Channel):
 
     async def _forward_client_audio(self, session: RealtimeSession, audio: bytes) -> None:
         if session.state != RealtimeSessionState.ACTIVE:
+            return
+        # Enforce ChannelBinding.access and muted per RFC §7.5
+        binding = self._session_bindings.get(session.id)
+        if binding is not None and (
+            binding.access in (Access.READ_ONLY, Access.NONE) or binding.muted
+        ):
             return
         try:
             resamplers = self._session_resamplers.get(session.id)
@@ -753,6 +787,13 @@ class RealtimeVoiceChannel(Channel):
         """
         room_id = self._session_rooms.get(session.id)
 
+        # Optionally mute mic during tool execution to prevent barge-in
+        # that causes providers (e.g. Gemini) to silently drop the tool
+        # result.  Off by default — use set_access() for fine-grained
+        # control, or set mute_on_tool_call=True for the simple toggle.
+        if self._mute_on_tool_call and self._transport is not None:
+            self._transport.set_input_muted(session, True)
+
         try:
             result_str: str
 
@@ -819,6 +860,9 @@ class RealtimeVoiceChannel(Channel):
                 )
             except Exception:
                 logger.exception("Error submitting fallback tool result")
+        finally:
+            if self._mute_on_tool_call and self._transport is not None:
+                self._transport.set_input_muted(session, False)
 
     def _on_provider_response_start(self, session: RealtimeSession) -> Any:
         """Handle AI response start — publish typing indicator."""

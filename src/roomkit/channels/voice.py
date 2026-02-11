@@ -16,6 +16,7 @@ from roomkit.channels._voice_turn import VoiceTurnMixin
 from roomkit.channels.base import Channel
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import (
+    Access,
     ChannelCategory,
     ChannelDirection,
     ChannelMediaType,
@@ -276,7 +277,16 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
     # -------------------------------------------------------------------------
 
     def _on_audio_received(self, session: VoiceSession, frame: AudioFrame) -> None:
-        """Handle raw audio frame from backend — feed into pipeline."""
+        """Handle raw audio frame from backend — feed into pipeline.
+
+        Enforces ``ChannelBinding.access`` and ``muted`` per RFC §7.5:
+        audio is dropped when the binding is READ_ONLY, NONE, or muted.
+        """
+        binding_info = self._session_bindings.get(session.id)
+        if binding_info is not None:
+            binding = binding_info[1]
+            if binding.access in (Access.READ_ONLY, Access.NONE) or binding.muted:
+                return
         if self._pipeline is not None:
             self._pipeline.process_frame(session, frame)
 
@@ -519,6 +529,16 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self.unbind_session(session)
         if self._backend is not None:
             await self._backend.disconnect(session)
+
+    def update_binding(self, room_id: str, binding: ChannelBinding) -> None:
+        """Update cached bindings for all sessions in a room.
+
+        Called by the framework after mute/unmute/set_access so the
+        audio gate in ``_on_audio_received`` sees the new state.
+        """
+        for sid, (rid, _old) in self._session_bindings.items():
+            if rid == room_id:
+                self._session_bindings[sid] = (rid, binding)
 
     def unbind_session(self, session: VoiceSession) -> None:
         """Remove session binding."""
