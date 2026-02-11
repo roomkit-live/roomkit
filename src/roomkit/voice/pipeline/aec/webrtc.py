@@ -131,6 +131,9 @@ class WebRTCAECProvider(AECProvider):
 
     def process(self, frame: AudioFrame) -> AudioFrame:
         """Remove echo from a captured (mic) audio frame."""
+        if self._ap is None:
+            return frame  # closed, passthrough
+
         pcm_in = frame.data
         self._capture_buf.extend(pcm_in)
 
