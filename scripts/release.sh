@@ -53,11 +53,19 @@ uv run mypy src/
 echo "    mypy passed."
 
 # --- Bump version in source ---
-sed -i '' "s/^__version__ = .*/__version__ = \"${VERSION}\"/" src/roomkit/_version.py
+if [[ "$(uname)" == "Darwin" ]]; then
+    sed -i '' "s/^__version__ = .*/__version__ = \"${VERSION}\"/" src/roomkit/_version.py
+else
+    sed -i "s/^__version__ = .*/__version__ = \"${VERSION}\"/" src/roomkit/_version.py
+fi
 echo "    Updated src/roomkit/_version.py"
 
 # --- Bump version in test ---
-sed -i '' "s/assert roomkit.__version__ == .*/assert roomkit.__version__ == \"${VERSION}\"/" tests/test_public_api.py
+if [[ "$(uname)" == "Darwin" ]]; then
+    sed -i '' "s/assert roomkit.__version__ == .*/assert roomkit.__version__ == \"${VERSION}\"/" tests/test_public_api.py
+else
+    sed -i "s/assert roomkit.__version__ == .*/assert roomkit.__version__ == \"${VERSION}\"/" tests/test_public_api.py
+fi
 echo "    Updated tests/test_public_api.py"
 
 # --- Run tests ---
