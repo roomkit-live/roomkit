@@ -61,10 +61,10 @@ async def main() -> None:
 
     backend = MockVoiceBackend()
 
-    # Two voice turns: each is SPEECH_START → (silence) → SPEECH_END
+    # Four voice turns: each is SPEECH_START → (silence) → SPEECH_END
     vad = MockVADProvider(
         events=[
-            # Turn 1 — "What's the weather tomorrow?"
+            # Turn 1 — weather question
             VADEvent(type=VADEventType.SPEECH_START, confidence=0.95),
             None,
             VADEvent(
@@ -72,7 +72,7 @@ async def main() -> None:
                 audio_bytes=b"audio-turn-1",
                 duration_ms=1500.0,
             ),
-            # Turn 2 — "Yes please, read it to me"
+            # Turn 2 — AI will mention the SMS
             VADEvent(type=VADEventType.SPEECH_START, confidence=0.93),
             None,
             VADEvent(
@@ -80,13 +80,31 @@ async def main() -> None:
                 audio_bytes=b"audio-turn-2",
                 duration_ms=1200.0,
             ),
+            # Turn 3 — user says yes, read it
+            VADEvent(type=VADEventType.SPEECH_START, confidence=0.94),
+            None,
+            VADEvent(
+                type=VADEventType.SPEECH_END,
+                audio_bytes=b"audio-turn-3",
+                duration_ms=900.0,
+            ),
+            # Turn 4 — user dictates reply
+            VADEvent(type=VADEventType.SPEECH_START, confidence=0.96),
+            None,
+            VADEvent(
+                type=VADEventType.SPEECH_END,
+                audio_bytes=b"audio-turn-4",
+                duration_ms=2000.0,
+            ),
         ]
     )
 
     stt = MockSTTProvider(
         transcripts=[
             "What's the weather looking like tomorrow?",
+            "Sure, what's up?",
             "Yes please, read it to me.",
+            "Yes, tell her I won't forget, I'll be there for sure.",
         ]
     )
     tts = MockTTSProvider()
@@ -95,8 +113,9 @@ async def main() -> None:
         responses=[
             "Tomorrow looks sunny with a high of 75°F and a gentle breeze. "
             "Perfect day to be outside!",
-            'Sure! The SMS from Mom says: "Don\'t forget dinner tonight at 7!" '
-            "Would you like me to send a reply?",
+            "By the way, you just received an SMS from Mom. Would you like me to read it for you?",
+            'She says: "Don\'t forget dinner tonight at 7!" Would you like to send a reply?',
+            "Done! I've sent your reply to Mom.",
         ]
     )
 
@@ -182,16 +201,20 @@ async def main() -> None:
     )
     voice.bind_session(session, "call-room", binding)
 
-    # -- Phase 1: Normal voice conversation --------------------------------
-
     # 640 bytes = 20 ms of 16 kHz 16-bit mono PCM (standard frame size)
     audio_data = b"\x00" * 640
 
+    async def voice_turn() -> None:
+        """Simulate one voice turn (3 audio frames → VAD → STT → AI)."""
+        for _ in range(3):
+            frame = AudioFrame(data=audio_data, sample_rate=16000)
+            await backend.simulate_audio_received(session, frame)
+        await asyncio.sleep(0.1)
+
+    # -- Phase 1: Normal voice conversation --------------------------------
+
     print("\n--- Phase 1: User asks about the weather ---")
-    for _ in range(3):
-        frame = AudioFrame(data=audio_data, sample_rate=16000)
-        await backend.simulate_audio_received(session, frame)
-    await asyncio.sleep(0.1)
+    await voice_turn()
 
     # -- Phase 2: SMS arrives mid-conversation -----------------------------
 
@@ -205,15 +228,22 @@ async def main() -> None:
     )
     print(f"[result] SMS broadcast blocked: {result.blocked}")
 
-    # -- Phase 3: Next voice turn — AI mentions the SMS --------------------
+    # -- Phase 3: AI mentions the SMS --------------------------------------
 
-    print("\n--- Phase 3: User speaks again, AI mentions the SMS ---")
-    for _ in range(3):
-        frame = AudioFrame(data=audio_data, sample_rate=16000)
-        await backend.simulate_audio_received(session, frame)
-    await asyncio.sleep(0.1)
+    print("\n--- Phase 3: User speaks, AI mentions the SMS ---")
+    await voice_turn()
 
-    # -- Phase 4: Conversation timeline ------------------------------------
+    # -- Phase 4: AI reads the SMS -----------------------------------------
+
+    print("\n--- Phase 4: User asks to read it, AI reads the SMS ---")
+    await voice_turn()
+
+    # -- Phase 5: User replies, AI sends it --------------------------------
+
+    print("\n--- Phase 5: User dictates reply, AI sends SMS ---")
+    await voice_turn()
+
+    # -- Conversation timeline ---------------------------------------------
 
     events = await kit.store.list_events("call-room")
     msg_events = [e for e in events if e.type.value == "message"]
