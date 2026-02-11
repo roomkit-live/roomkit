@@ -103,6 +103,18 @@ class RealtimeAudioTransport(ABC):
     def interrupt(self, session: RealtimeSession) -> None:  # noqa: B027
         """Signal interruption — flush queue, stop playback."""
 
+    def set_input_muted(self, session: RealtimeSession, muted: bool) -> None:  # noqa: B027
+        """Mute or unmute the input (microphone) for a session.
+
+        When muted, the transport should stop sending audio from the
+        client to the provider.  The default implementation is a no-op;
+        transports that support input muting should override this.
+
+        Args:
+            session: The session to mute/unmute.
+            muted: ``True`` to mute, ``False`` to unmute.
+        """
+
     def set_trace_emitter(  # noqa: B027
         self,
         emitter: TraceEmitter | None,

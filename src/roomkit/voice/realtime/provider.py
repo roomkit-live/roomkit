@@ -133,6 +133,23 @@ class RealtimeVoiceProvider(ABC):
         """
         ...
 
+    async def send_event(self, session: RealtimeSession, event: dict[str, Any]) -> None:
+        """Send a raw provider-specific event to the underlying service.
+
+        This is an escape hatch for sending protocol-level messages that
+        are not covered by the standard provider API (e.g. OpenAI's
+        ``session.update`` or ``input_audio_buffer.commit``).
+
+        The default implementation raises :exc:`NotImplementedError`.
+        Providers that support raw events should override this.
+
+        Args:
+            session: The active session.
+            event: A JSON-serializable dict that will be sent verbatim
+                to the provider's underlying connection.
+        """
+        raise NotImplementedError(f"{self.name} does not support send_event()")
+
     async def close(self) -> None:
         """Release all provider resources."""
 

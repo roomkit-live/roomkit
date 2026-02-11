@@ -109,6 +109,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
         # Active sessions
         self._input_streams: dict[str, Any] = {}  # session_id -> RawInputStream
         self._sessions: dict[str, RealtimeSession] = {}
+        self._muted_sessions: set[str] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._closing_event = threading.Event()
 
@@ -206,6 +207,10 @@ class LocalAudioTransport(RealtimeAudioTransport):
                 return
             if status:
                 logger.warning("Mic status: %s", status)
+
+            # Explicit mute via set_input_muted()
+            if session.id in self._muted_sessions:
+                return
 
             # Half-duplex echo suppression: don't send mic audio while
             # the speaker is playing AI audio, otherwise the provider's
@@ -474,6 +479,13 @@ class LocalAudioTransport(RealtimeAudioTransport):
         return result.data
 
     # -- Callback registration --
+
+    def set_input_muted(self, session: RealtimeSession, muted: bool) -> None:
+        if muted:
+            self._muted_sessions.add(session.id)
+        else:
+            self._muted_sessions.discard(session.id)
+        logger.info("Input muted=%s for session %s", muted, session.id)
 
     def on_audio_received(self, callback: TransportAudioCallback) -> None:
         self._audio_callbacks.append(callback)

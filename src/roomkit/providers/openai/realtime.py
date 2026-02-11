@@ -246,6 +246,12 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             return
         await ws.send(json.dumps({"type": "response.cancel"}))
 
+    async def send_event(self, session: RealtimeSession, event: dict[str, Any]) -> None:
+        ws = self._connections.get(session.id)
+        if ws is None:
+            return
+        await ws.send(json.dumps(event))
+
     async def disconnect(self, session: RealtimeSession) -> None:
         import contextlib
 
