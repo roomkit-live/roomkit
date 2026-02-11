@@ -8,10 +8,13 @@ from typing import Any
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
+    AIMessage,
     AIProvider,
     AIResponse,
     AITextPart,
     AIToolCall,
+    AIToolCallPart,
+    AIToolResultPart,
     ProviderError,
 )
 from roomkit.providers.openai.config import OpenAIConfig
@@ -77,13 +80,66 @@ class OpenAIAIProvider(AIProvider):
                 )
         return parts
 
+    def _build_messages(
+        self,
+        messages: list[AIMessage],
+        system_prompt: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Build OpenAI-formatted messages with tool call/result support."""
+        result: list[dict[str, Any]] = []
+        if system_prompt:
+            result.append({"role": "system", "content": system_prompt})
+        for m in messages:
+            if isinstance(m.content, list) and any(
+                isinstance(p, AIToolCallPart) for p in m.content
+            ):
+                # Assistant message with tool calls
+                tool_calls = []
+                content_text = ""
+                for p in m.content:
+                    if isinstance(p, AITextPart):
+                        content_text = p.text
+                    elif isinstance(p, AIToolCallPart):
+                        tool_calls.append(
+                            {
+                                "id": p.id,
+                                "type": "function",
+                                "function": {
+                                    "name": p.name,
+                                    "arguments": json.dumps(p.arguments),
+                                },
+                            }
+                        )
+                msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": content_text or None,
+                    "tool_calls": tool_calls,
+                }
+                result.append(msg)
+            elif isinstance(m.content, list) and any(
+                isinstance(p, AIToolResultPart) for p in m.content
+            ):
+                # Tool results → separate messages with role="tool"
+                for p in m.content:
+                    if isinstance(p, AIToolResultPart):
+                        result.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": p.tool_call_id,
+                                "content": p.result,
+                            }
+                        )
+            else:
+                result.append(
+                    {
+                        "role": m.role,
+                        "content": self._format_content(m.content),
+                    }
+                )
+        return result
+
     async def generate(self, context: AIContext) -> AIResponse:
-        messages: list[dict[str, Any]] = []
-        if context.system_prompt:
-            messages.append({"role": "system", "content": context.system_prompt})
-        messages.extend(
-            {"role": m.role, "content": self._format_content(m.content)} for m in context.messages
-        )
+        messages = self._build_messages(context.messages, context.system_prompt)
 
         kwargs: dict[str, Any] = {
             "model": self._config.model,

@@ -12,6 +12,8 @@ from roomkit.providers.ai.base import (
     AIResponse,
     AITextPart,
     AIToolCall,
+    AIToolCallPart,
+    AIToolResultPart,
     ProviderError,
 )
 from roomkit.providers.anthropic.config import AnthropicConfig
@@ -55,11 +57,12 @@ class AnthropicAIProvider(AIProvider):
         return any(self._config.model.startswith(prefix) for prefix in _VISION_MODELS)
 
     def _format_content(
-        self, content: str | list[AITextPart | AIImagePart]
+        self, content: str | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart]
     ) -> str | list[dict[str, Any]]:
         """Format message content for Anthropic API.
 
-        Converts AITextPart/AIImagePart to Anthropic's content block format.
+        Converts AITextPart/AIImagePart/AIToolCallPart/AIToolResultPart to
+        Anthropic's content block format.
         """
         if isinstance(content, str):
             return content
@@ -78,12 +81,38 @@ class AnthropicAIProvider(AIProvider):
                         },
                     }
                 )
+            elif isinstance(part, AIToolCallPart):
+                parts.append(
+                    {
+                        "type": "tool_use",
+                        "id": part.id,
+                        "name": part.name,
+                        "input": part.arguments,
+                    }
+                )
+            elif isinstance(part, AIToolResultPart):
+                parts.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": part.tool_call_id,
+                        "content": part.result,
+                    }
+                )
         return parts
 
+    def _build_messages(
+        self,
+        messages: list[Any],
+    ) -> list[dict[str, Any]]:
+        """Build Anthropic-formatted messages, mapping tool roles to user."""
+        result: list[dict[str, Any]] = []
+        for m in messages:
+            role = "user" if m.role == "tool" else m.role
+            result.append({"role": role, "content": self._format_content(m.content)})
+        return result
+
     async def generate(self, context: AIContext) -> AIResponse:
-        messages: list[dict[str, Any]] = [
-            {"role": m.role, "content": self._format_content(m.content)} for m in context.messages
-        ]
+        messages = self._build_messages(context.messages)
         kwargs: dict[str, Any] = {
             "model": self._config.model,
             "max_tokens": context.max_tokens or self._config.max_tokens,
@@ -151,9 +180,7 @@ class AnthropicAIProvider(AIProvider):
 
     async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
         """Yield text deltas as they arrive from the Anthropic Messages API."""
-        messages: list[dict[str, Any]] = [
-            {"role": m.role, "content": self._format_content(m.content)} for m in context.messages
-        ]
+        messages = self._build_messages(context.messages)
         kwargs: dict[str, Any] = {
             "model": self._config.model,
             "max_tokens": context.max_tokens or self._config.max_tokens,

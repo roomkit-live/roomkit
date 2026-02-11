@@ -102,6 +102,8 @@ from roomkit.providers.ai.base import (
     AITextPart,
     AITool,
     AIToolCall,
+    AIToolCallPart,
+    AIToolResultPart,
     ProviderError,
 )
 from roomkit.providers.ai.mock import MockAIProvider
@@ -385,6 +387,8 @@ __all__ = [
     "AITextPart",
     "AITool",
     "AIToolCall",
+    "AIToolCallPart",
+    "AIToolResultPart",
     "MockAIProvider",
     # AI – Anthropic
     "AnthropicAIProvider",

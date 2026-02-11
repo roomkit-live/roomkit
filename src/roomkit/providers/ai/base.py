@@ -45,6 +45,24 @@ class AIToolCall(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class AIToolCallPart(BaseModel):
+    """Assistant's tool call in conversation history."""
+
+    type: Literal["tool_call"] = "tool_call"
+    id: str
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class AIToolResultPart(BaseModel):
+    """Tool execution result in conversation history."""
+
+    type: Literal["tool_result"] = "tool_result"
+    tool_call_id: str
+    name: str
+    result: str
+
+
 class ProviderError(Exception):
     """Error from an AI provider SDK call.
 
@@ -71,8 +89,8 @@ class ProviderError(Exception):
 class AIMessage(BaseModel):
     """A message in the AI conversation context."""
 
-    role: str  # "system", "user", "assistant"
-    content: str | list[AITextPart | AIImagePart]
+    role: str  # "system", "user", "assistant", "tool"
+    content: str | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart]
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

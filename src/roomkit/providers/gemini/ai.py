@@ -13,6 +13,8 @@ from roomkit.providers.ai.base import (
     AIResponse,
     AITextPart,
     AIToolCall,
+    AIToolCallPart,
+    AIToolResultPart,
     ProviderError,
 )
 from roomkit.providers.gemini.config import GeminiConfig
@@ -49,9 +51,40 @@ class GeminiAIProvider(AIProvider):
         """Convert AIMessage list to Gemini Content format."""
         contents = []
         for msg in messages:
-            role = "model" if msg.role == "assistant" else "user"
-            parts = self._format_content(msg.content)
-            contents.append(self._types.Content(role=role, parts=parts))
+            if isinstance(msg.content, list) and any(
+                isinstance(p, AIToolCallPart) for p in msg.content
+            ):
+                # Model message with function calls
+                parts = []
+                for p in msg.content:
+                    if isinstance(p, AITextPart):
+                        parts.append(self._types.Part.from_text(text=p.text))
+                    elif isinstance(p, AIToolCallPart):
+                        parts.append(
+                            self._types.Part.from_function_call(
+                                name=p.name,
+                                args=p.arguments,
+                            )
+                        )
+                contents.append(self._types.Content(role="model", parts=parts))
+            elif isinstance(msg.content, list) and any(
+                isinstance(p, AIToolResultPart) for p in msg.content
+            ):
+                # Function responses
+                parts = []
+                for p in msg.content:
+                    if isinstance(p, AIToolResultPart):
+                        parts.append(
+                            self._types.Part.from_function_response(
+                                name=p.name,
+                                response={"result": p.result},
+                            )
+                        )
+                contents.append(self._types.Content(role="user", parts=parts))
+            else:
+                role = "model" if msg.role == "assistant" else "user"
+                parts = self._format_content(msg.content)
+                contents.append(self._types.Content(role=role, parts=parts))
         return contents
 
     def _format_content(self, content: str | list[AITextPart | AIImagePart]) -> list[Any]:

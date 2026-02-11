@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from roomkit.channels.base import Channel
@@ -31,10 +32,15 @@ from roomkit.providers.ai.base import (
     AIImagePart,
     AIMessage,
     AIProvider,
+    AIResponse,
     AITextPart,
     AITool,
+    AIToolCallPart,
+    AIToolResultPart,
     ProviderError,
 )
+
+ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
 
 logger = logging.getLogger("roomkit.channels.ai")
 
@@ -54,6 +60,8 @@ class AIChannel(Channel):
         temperature: float = 0.7,
         max_tokens: int = 1024,
         max_context_events: int = 50,
+        tool_handler: ToolHandler | None = None,
+        max_tool_rounds: int = 10,
     ) -> None:
         super().__init__(channel_id)
         self._provider = provider
@@ -61,6 +69,8 @@ class AIChannel(Channel):
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._max_context_events = max_context_events
+        self._tool_handler = tool_handler
+        self._max_tool_rounds = max_tool_rounds
 
     @property
     def info(self) -> dict[str, Any]:
@@ -116,10 +126,10 @@ class AIChannel(Channel):
     async def _generate_response(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
-        """Generate an AI response for the given event."""
+        """Generate an AI response, executing tool calls if needed."""
         ai_context = self._build_context(event, binding, context)
         try:
-            response = await self._provider.generate(ai_context)
+            response = await self._run_tool_loop(ai_context)
         except ProviderError as exc:
             if exc.status_code == 404:
                 logger.error(
@@ -167,6 +177,48 @@ class AIChannel(Channel):
             responded=True,
             response_events=[response_event],
         )
+
+    async def _run_tool_loop(self, context: AIContext) -> AIResponse:
+        """Generate → execute tools → re-generate until a text response."""
+        response = await self._provider.generate(context)
+
+        for round_idx in range(self._max_tool_rounds):
+            if not response.tool_calls or not self._tool_handler:
+                break
+
+            logger.info(
+                "Tool round %d: %d call(s)",
+                round_idx + 1,
+                len(response.tool_calls),
+            )
+
+            # Append assistant message with tool calls
+            parts: list[AITextPart | AIToolCallPart] = []
+            if response.content:
+                parts.append(AITextPart(text=response.content))
+            for tc in response.tool_calls:
+                parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
+            context.messages.append(AIMessage(role="assistant", content=parts))
+
+            # Execute each tool and collect results
+            result_parts: list[AIToolResultPart] = []
+            for tc in response.tool_calls:
+                logger.info("Executing tool: %s(%s)", tc.name, tc.id)
+                result = await self._tool_handler(tc.name, tc.arguments)
+                result_parts.append(
+                    AIToolResultPart(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        result=result,
+                    )
+                )
+
+            context.messages.append(AIMessage(role="tool", content=result_parts))
+
+            # Re-generate with tool results
+            response = await self._provider.generate(context)
+
+        return response
 
     def _build_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
