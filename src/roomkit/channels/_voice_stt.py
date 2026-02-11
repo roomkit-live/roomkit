@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.enums import HookTrigger
+from roomkit.voice.base import TranscriptionResult
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -41,6 +42,9 @@ class VoiceSTTMixin:
     _last_tts_ended_at: dict[str, float]
     _stt_streams: dict[str, _STTStreamState]
     _continuous_stt: bool
+    _batch_mode: bool
+    _batch_audio_buffers: dict[str, bytearray]
+    _batch_audio_sample_rate: dict[str, int]
     _pending_turns: dict[str, list[TurnEntry]]
     _pending_audio: dict[str, bytearray]
     _debug_frame_count: int
@@ -618,3 +622,132 @@ class VoiceSTTMixin:
                     )
                 except Exception:
                     logger.exception("Error emitting stt_error")
+
+    # -----------------------------------------------------------------
+    # Batch STT (no VAD — caller controls when to transcribe)
+    # -----------------------------------------------------------------
+
+    # ~5 minutes at 16 kHz mono 16-bit PCM
+    _MAX_BATCH_BUFFER_BYTES = 10 * 1024 * 1024
+
+    def _on_processed_frame_for_batch(self, session: VoiceSession, frame: AudioFrame) -> None:
+        """Accumulate processed frame into batch buffer."""
+        buf = self._batch_audio_buffers.get(session.id)
+        if buf is None:
+            return
+        if len(buf) + len(frame.data) > self._MAX_BATCH_BUFFER_BYTES:
+            logger.warning("Batch buffer full for %s, dropping frame", session.id)
+            return
+        buf.extend(frame.data)
+        if session.id not in self._batch_audio_sample_rate:
+            self._batch_audio_sample_rate[session.id] = frame.sample_rate
+
+    async def flush_stt(
+        self,
+        session: VoiceSession,
+        *,
+        route: bool = False,
+    ) -> TranscriptionResult:
+        """Transcribe accumulated batch audio and clear the buffer.
+
+        Args:
+            session: The voice session to flush.
+            route: If ``True``, fire ON_SPEECH_END and ON_TRANSCRIPTION hooks
+                and route the text through the inbound pipeline (same as VAD
+                mode).  If ``False`` (default), return the result directly.
+
+        Returns:
+            The transcription result.
+
+        Raises:
+            RuntimeError: If the channel is not in batch mode.
+        """
+        if not self._batch_mode:
+            raise RuntimeError("flush_stt() requires batch_mode=True")
+
+        buf = self._batch_audio_buffers.get(session.id)
+        sample_rate = self._batch_audio_sample_rate.get(session.id, 16000)
+
+        # Empty or missing buffer → empty result
+        if not buf:
+            return TranscriptionResult(text="", is_final=True)
+
+        # Snapshot and clear buffer
+        audio_data = bytes(buf)
+        buf.clear()
+
+        assert self._stt is not None  # Guaranteed by __init__ validation
+        from roomkit.voice.audio_frame import AudioFrame
+
+        audio_frame = AudioFrame(
+            data=audio_data,
+            sample_rate=sample_rate,
+            channels=1,
+            sample_width=2,
+        )
+        result = await self._stt.transcribe(audio_frame)
+
+        if route and result.text.strip() and self._framework:
+            binding_info = self._session_bindings.get(session.id)
+            if binding_info:
+                room_id, _ = binding_info
+                context = await self._framework._build_context(room_id)
+
+                # Fire ON_SPEECH_END hooks
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_SPEECH_END,
+                    session,
+                    context,
+                    skip_event_filter=True,
+                )
+
+                # Fire ON_TRANSCRIPTION hooks (sync, can modify/block)
+                transcription_result = await self._framework.hook_engine.run_sync_hooks(
+                    room_id,
+                    HookTrigger.ON_TRANSCRIPTION,
+                    result.text,
+                    context,
+                    skip_event_filter=True,
+                )
+
+                if transcription_result.allowed:
+                    final_text = (
+                        transcription_result.event
+                        if isinstance(transcription_result.event, str)
+                        else result.text
+                    )
+                    await self._route_text(session, final_text, room_id)
+
+        return result
+
+    def clear_stt_buffer(self, session: VoiceSession) -> int:
+        """Discard the accumulated batch audio buffer.
+
+        Args:
+            session: The voice session whose buffer to clear.
+
+        Returns:
+            Number of bytes discarded.
+
+        Raises:
+            RuntimeError: If the channel is not in batch mode.
+        """
+        if not self._batch_mode:
+            raise RuntimeError("clear_stt_buffer() requires batch_mode=True")
+
+        buf = self._batch_audio_buffers.get(session.id)
+        if buf is None:
+            return 0
+        count = len(buf)
+        buf.clear()
+        return count
+
+    def stt_buffer_size(self, session: VoiceSession) -> int:
+        """Return the current batch buffer size in bytes.
+
+        Returns 0 if the channel is not in batch mode or the session
+        has no buffer.
+        """
+        buf = self._batch_audio_buffers.get(session.id)
+        return len(buf) if buf is not None else 0

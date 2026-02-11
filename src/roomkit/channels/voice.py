@@ -96,11 +96,14 @@ class TTSPlaybackState:
 class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin, Channel):
     """Real-time voice communication channel.
 
-    Supports two modes:
-    - **Streaming mode** (default): Audio is streamed directly via VoiceBackend.
-      When a backend is configured, deliver() streams TTS audio to the session.
-    - **Store-and-forward mode**: Audio is synthesized and stored for later retrieval.
-      Requires a MediaStore for URL generation (not yet implemented).
+    Supports three STT modes:
+    - **VAD mode** (default): VAD segments speech, streaming STT during speech
+      with batch fallback on SPEECH_END.
+    - **Continuous mode**: No VAD + streaming STT provider — all audio streamed,
+      provider handles endpointing.
+    - **Batch mode** (``batch_mode=True``): No VAD, audio accumulates post-pipeline.
+      Caller controls when to transcribe via :meth:`flush_stt`.  Useful for
+      dictation, voicemail, and audio-file transcription with offline models.
 
     When a VoiceBackend and AudioPipelineConfig are configured, the channel:
     - Registers for raw audio frames from the backend via on_audio_received
@@ -132,6 +135,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         enable_barge_in: bool = True,
         barge_in_threshold_ms: int = 200,
         interruption: InterruptionConfig | None = None,
+        batch_mode: bool = False,
     ) -> None:
         super().__init__(channel_id)
         self._stt = stt
@@ -158,6 +162,14 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._last_tts_ended_at: dict[str, float] = {}
         # Track scheduled fire-and-forget tasks for clean shutdown
         self._scheduled_tasks: set[asyncio.Task[Any]] = set()
+        # Batch STT mode: accumulate audio, caller flushes manually
+        if batch_mode and stt is None:
+            raise ValueError("batch_mode=True requires an STT provider")
+        if batch_mode and pipeline is not None and pipeline.vad is not None:
+            raise ValueError("batch_mode=True is incompatible with VAD")
+        self._batch_mode = batch_mode
+        self._batch_audio_buffers: dict[str, bytearray] = {}
+        self._batch_audio_sample_rate: dict[str, int] = {}
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -214,6 +226,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Pipeline events -> VoiceChannel hooks
         if self._continuous_stt:
             self._pipeline.on_processed_frame(self._on_processed_frame_for_stt)
+        elif self._batch_mode and self._stt is not None:
+            self._pipeline.on_processed_frame(self._on_processed_frame_for_batch)
         else:
             self._pipeline.on_speech_end(self._on_pipeline_speech_end)
             self._pipeline.on_vad_event(self._on_pipeline_vad_event)
@@ -470,6 +484,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Notify pipeline of session activation
         if self._pipeline is not None:
             self._pipeline.on_session_active(session)
+        # Initialize batch buffer for this session
+        if self._batch_mode:
+            self._batch_audio_buffers[session.id] = bytearray()
         # Start continuous STT if enabled (no local VAD)
         if self._continuous_stt:
             self._start_continuous_stt(session)
@@ -511,6 +528,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._pending_turns.pop(session.id, None)
         self._pending_audio.pop(session.id, None)
         self._last_tts_ended_at.pop(session.id, None)
+        # Clear batch buffers
+        self._batch_audio_buffers.pop(session.id, None)
+        self._batch_audio_sample_rate.pop(session.id, None)
         # Emit voice_session_ended framework event
         if binding_info and self._framework:
             room_id, _ = binding_info
@@ -540,6 +560,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             "backend": self._backend.name if self._backend else None,
             "streaming": self._streaming,
             "pipeline": self._pipeline_config is not None,
+            "batch_mode": self._batch_mode,
         }
 
     @property
@@ -714,3 +735,5 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._scheduled_tasks.clear()
         self._session_bindings.clear()
         self._playing_sessions.clear()
+        self._batch_audio_buffers.clear()
+        self._batch_audio_sample_rate.clear()
