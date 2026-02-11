@@ -29,6 +29,9 @@ class SherpaOnnxSTTConfig:
         encoder: Path to encoder ``.onnx`` model.
         decoder: Path to decoder ``.onnx`` model.
         joiner: Path to joiner ``.onnx`` model (transducer only).
+        model_type: Model type hint for sherpa-onnx (e.g.
+            ``"nemo_transducer"`` for NeMo TDT/transducer models).
+            When set, the model is treated as offline-only (no streaming).
         language: Language code (Whisper only).
         sample_rate: Expected audio sample rate.
         num_threads: Number of CPU threads for inference.
@@ -50,6 +53,7 @@ class SherpaOnnxSTTConfig:
     encoder: str = ""
     decoder: str = ""
     joiner: str = ""
+    model_type: str = ""
     language: str = "en"
     sample_rate: int = 16000
     num_threads: int = 2
@@ -93,6 +97,9 @@ class SherpaOnnxSTTProvider(STTProvider):
 
     @property
     def supports_streaming(self) -> bool:
+        # NeMo TDT models are offline-only (no streaming support).
+        if self._config.model_type:
+            return False
         return self._config.mode == "transducer"
 
     def _get_online_recognizer(self) -> Any:
@@ -129,7 +136,7 @@ class SherpaOnnxSTTProvider(STTProvider):
                     provider=cfg.provider,
                 )
             else:
-                self._offline_recognizer = self._sherpa.OfflineRecognizer.from_transducer(
+                kwargs: dict[str, Any] = dict(
                     encoder=cfg.encoder,
                     decoder=cfg.decoder,
                     joiner=cfg.joiner,
@@ -139,11 +146,14 @@ class SherpaOnnxSTTProvider(STTProvider):
                     feature_dim=80,
                     provider=cfg.provider,
                 )
+                if cfg.model_type:
+                    kwargs["model_type"] = cfg.model_type
+                self._offline_recognizer = self._sherpa.OfflineRecognizer.from_transducer(**kwargs)
         return self._offline_recognizer
 
     async def warmup(self) -> None:
         """Pre-load the recognizer model (CUDA init can be slow)."""
-        if self._config.mode == "transducer":
+        if self._config.mode == "transducer" and not self._config.model_type:
             await asyncio.to_thread(self._get_online_recognizer)
         else:
             await asyncio.to_thread(self._get_offline_recognizer)
@@ -172,7 +182,7 @@ class SherpaOnnxSTTProvider(STTProvider):
         samples = _pcm_s16le_to_float32(audio.data)
         sample_rate = getattr(audio, "sample_rate", self._config.sample_rate)
 
-        if self._config.mode == "transducer":
+        if self._config.mode == "transducer" and not self._config.model_type:
             recognizer = self._get_online_recognizer()
 
             def _run() -> str:
