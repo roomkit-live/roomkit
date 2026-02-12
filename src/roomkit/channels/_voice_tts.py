@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.enums import HookTrigger
+from roomkit.voice.utils import rms_db
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -44,12 +46,41 @@ class VoiceTTSMixin:
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
     _playing_sessions: dict[str, TTSPlaybackState]
     _last_tts_ended_at: dict[str, float]
+    _last_output_level_at: float
     _debug_frame_count: int
 
     # -- methods provided by other mixins / main class (TYPE_CHECKING only) --
     if TYPE_CHECKING:
 
         def _schedule(self, coro: Coroutine[Any, Any, Any], *, name: str) -> None: ...
+
+        async def _fire_audio_level_hook(
+            self,
+            session: VoiceSession,
+            level_db: float,
+            room_id: str,
+            trigger: HookTrigger,
+        ) -> None: ...
+
+    def _fire_output_level(self, session: VoiceSession, data: bytes) -> None:
+        """Fire ON_OUTPUT_AUDIO_LEVEL hook from the outbound pipeline, throttled."""
+        now = time.monotonic()
+        if now - self._last_output_level_at < 0.1:
+            return
+        self._last_output_level_at = now
+        binding_info = self._session_bindings.get(session.id)
+        if not binding_info or not self._framework:
+            return
+        room_id, _ = binding_info
+        self._schedule(
+            self._fire_audio_level_hook(
+                session,
+                rms_db(data),
+                room_id,
+                HookTrigger.ON_OUTPUT_AUDIO_LEVEL,
+            ),
+            name=f"output_audio_level:{session.id}",
+        )
 
     async def _wrap_outbound(
         self, session: VoiceSession, chunks: AsyncIterator[AudioChunk]
@@ -91,6 +122,9 @@ class VoiceTTSMixin:
                     processed.sample_rate,
                 )
             chunk_idx += 1
+            # Fire ON_OUTPUT_AUDIO_LEVEL from the outbound pipeline path.
+            # This works regardless of backend playback-callback support.
+            self._fire_output_level(session, processed.data)
             yield OutChunk(
                 data=processed.data,
                 sample_rate=processed.sample_rate,

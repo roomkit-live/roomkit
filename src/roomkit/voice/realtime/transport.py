@@ -97,6 +97,26 @@ class RealtimeAudioTransport(ABC):
             callback: Called with (session) when the client disconnects.
         """
 
+    @property
+    def supports_playback_callback(self) -> bool:
+        """Whether this transport fires :meth:`on_audio_played` callbacks.
+
+        Returns ``True`` when the transport has access to actual speaker
+        output timing (e.g. LocalAudioTransport).  Remote transports
+        (WebSocket, WebRTC) return ``False``.
+        """
+        return False
+
+    def on_audio_played(self, callback: TransportAudioCallback) -> None:  # noqa: B027
+        """Register callback for audio actually played through the speaker.
+
+        Fires from the audio output thread at real playback pace.
+        Only available when :attr:`supports_playback_callback` is ``True``.
+
+        Args:
+            callback: Called with (session, audio_bytes) per output block.
+        """
+
     def end_of_response(self, session: RealtimeSession) -> None:  # noqa: B027
         """Signal end of AI response (for transports with pacing)."""
 

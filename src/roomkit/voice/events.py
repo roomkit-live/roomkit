@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from roomkit.voice.base import VoiceSession
+    from roomkit.voice.realtime.base import RealtimeSession
 
 
 def _utcnow() -> datetime:
@@ -148,8 +149,8 @@ class AudioLevelEvent:
     regardless of whether VAD is enabled.  Use for VU meters.
     """
 
-    session: VoiceSession
-    """The voice session."""
+    session: VoiceSession | RealtimeSession
+    """The voice session (VoiceSession or RealtimeSession)."""
 
     level_db: float
     """Audio level in dB (typically -60 to 0, where 0 is max)."""

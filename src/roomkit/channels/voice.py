@@ -252,7 +252,11 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             self._pipeline.on_recording_started(self._on_pipeline_recording_started)
             self._pipeline.on_recording_stopped(self._on_pipeline_recording_stopped)
 
-        # Audio level hooks: always register to fire ON_INPUT/OUTPUT_AUDIO_LEVEL
+        # Audio level hooks:
+        # - Input: fires from pipeline processed-frame callback.
+        # - Output: fires from _wrap_outbound() in the TTS mixin (all backends),
+        #   AND from on_audio_played at real playback pace (backends that support it).
+        #   Both share _last_output_level_at so they naturally deduplicate.
         self._pipeline.on_processed_frame(self._on_processed_frame_for_level)
         if backend.supports_playback_callback:
             backend.on_audio_played(self._on_audio_played_for_level)
@@ -407,7 +411,11 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         )
 
     def _on_audio_played_for_level(self, session: VoiceSession, frame: AudioFrame) -> None:
-        """Fire ON_OUTPUT_AUDIO_LEVEL hook, throttled to ~10/sec."""
+        """Fire ON_OUTPUT_AUDIO_LEVEL at real playback pace (PortAudio callback).
+
+        Shares ``_last_output_level_at`` with ``_fire_output_level`` in the
+        TTS mixin so they naturally deduplicate.
+        """
         now = time.monotonic()
         if now - self._last_output_level_at < 0.1:
             return
@@ -492,9 +500,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             loop = asyncio.get_running_loop()
         except RuntimeError:
             # Foreign thread — dispatch via cached event loop.
-            loop = self._event_loop
-            if loop is not None and loop.is_running():
-                loop.call_soon_threadsafe(self._create_task, coro, name)
+            cached = self._event_loop
+            if cached is not None and cached.is_running():
+                cached.call_soon_threadsafe(self._create_task, coro, name)
             else:
                 coro.close()
             return

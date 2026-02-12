@@ -148,6 +148,8 @@ class RealtimeVoiceChannel(Channel):
         # Throttle audio level hooks to ~10/sec per direction
         self._last_input_level_at: float = 0.0
         self._last_output_level_at: float = 0.0
+        # Cached event loop for cross-thread scheduling (e.g. PortAudio callback)
+        self._event_loop: asyncio.AbstractEventLoop | None = None
 
         # Wire internal callbacks
         provider.on_audio(self._on_provider_audio)
@@ -161,6 +163,8 @@ class RealtimeVoiceChannel(Channel):
 
         transport.on_audio_received(self._on_client_audio)
         transport.on_client_disconnected(self._on_client_disconnected)
+        if transport.supports_playback_callback:
+            transport.on_audio_played(self._on_transport_audio_played)
 
     def set_framework(self, framework: RoomKit) -> None:
         """Set the framework reference for event routing.
@@ -548,11 +552,6 @@ class RealtimeVoiceChannel(Channel):
         created before an interrupt are silently discarded.
         """
         self._audio_forward_count[session.id] = self._audio_forward_count.get(session.id, 0) + 1
-        self._fire_audio_level_task(
-            session,
-            rms_db(audio),
-            HookTrigger.ON_OUTPUT_AUDIO_LEVEL,
-        )
         audio = self._resample_outbound(session, audio)
         if not audio:
             return
@@ -571,6 +570,24 @@ class RealtimeVoiceChannel(Channel):
         if self._audio_generation.get(session.id, 0) != gen:
             return
         await self._transport.send_audio(session, audio)
+        # Fallback: fire output level at queue-insertion time for transports
+        # without playback callbacks (WebSocket, WebRTC).  For transports
+        # with playback callbacks (LocalAudioTransport), the level fires
+        # at real playback pace from _on_transport_audio_played instead.
+        if not self._transport.supports_playback_callback:
+            self._fire_audio_level_task(
+                session,
+                rms_db(audio),
+                HookTrigger.ON_OUTPUT_AUDIO_LEVEL,
+            )
+
+    def _on_transport_audio_played(self, session: RealtimeSession, audio: bytes) -> None:
+        """Fire ON_OUTPUT_AUDIO_LEVEL at real playback pace (PortAudio callback).
+
+        Called from the transport's speaker thread via ``on_audio_played``.
+        This provides time-aligned output levels when the transport supports it.
+        """
+        self._fire_audio_level_task(session, rms_db(audio), HookTrigger.ON_OUTPUT_AUDIO_LEVEL)
 
     def _resample_outbound(self, session: RealtimeSession, audio: bytes) -> bytes:
         """Resample outbound audio from provider rate to transport rate."""
@@ -986,7 +1003,11 @@ class RealtimeVoiceChannel(Channel):
     def _fire_audio_level_task(
         self, session: RealtimeSession, level_db: float, trigger: HookTrigger
     ) -> None:
-        """Schedule a task to fire an audio level hook, throttled to ~10/sec."""
+        """Schedule a task to fire an audio level hook, throttled to ~10/sec.
+
+        Works from both the event-loop thread and foreign threads (e.g.
+        PortAudio speaker callback).
+        """
         now = time.monotonic()
         if trigger == HookTrigger.ON_INPUT_AUDIO_LEVEL:
             if now - self._last_input_level_at < 0.1:
@@ -1004,8 +1025,26 @@ class RealtimeVoiceChannel(Channel):
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
+            # Foreign thread — dispatch via cached event loop.
+            cached = self._event_loop
+            if cached is not None and cached.is_running():
+                cached.call_soon_threadsafe(
+                    self._create_audio_level_task, session, level_db, room_id, trigger
+                )
             return
-        loop.create_task(
+        # Cache the loop for future cross-thread calls.
+        self._event_loop = loop
+        self._create_audio_level_task(session, level_db, room_id, trigger)
+
+    def _create_audio_level_task(
+        self,
+        session: RealtimeSession,
+        level_db: float,
+        room_id: str,
+        trigger: HookTrigger,
+    ) -> None:
+        """Create the audio level hook task (must be called on the event loop thread)."""
+        asyncio.get_running_loop().create_task(
             self._fire_audio_level(session, level_db, room_id, trigger),
             name=f"rt_audio_level:{session.id}",
         )

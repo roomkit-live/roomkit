@@ -20,6 +20,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sys
 import threading
@@ -104,6 +105,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
 
         # Callbacks
         self._audio_callbacks: list[TransportAudioCallback] = []
+        self._audio_played_callbacks: list[TransportAudioCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
 
         # Active sessions
@@ -378,6 +380,15 @@ class LocalAudioTransport(RealtimeAudioTransport):
                 # Partial fill = we ran out of data mid-callback
                 self._cb_underruns += 1
 
+        # Fire on_audio_played callbacks when we wrote actual audio data
+        # (not just silence).  This gives real playback-paced output levels.
+        if written > 0 and self._audio_played_callbacks:
+            played = bytes(outdata[:bytes_needed])
+            for session in self._sessions.values():
+                for cb in self._audio_played_callbacks:
+                    with contextlib.suppress(Exception):
+                        cb(session, played)
+
         # AEC: feed the COMPLETE output frame (audio + silence) as
         # reference.  The SpeexDSP split API requires playback() for
         # every output frame — skipping silence frames causes the
@@ -486,6 +497,13 @@ class LocalAudioTransport(RealtimeAudioTransport):
         else:
             self._muted_sessions.discard(session.id)
         logger.info("Input muted=%s for session %s", muted, session.id)
+
+    @property
+    def supports_playback_callback(self) -> bool:
+        return True
+
+    def on_audio_played(self, callback: TransportAudioCallback) -> None:
+        self._audio_played_callbacks.append(callback)
 
     def on_audio_received(self, callback: TransportAudioCallback) -> None:
         self._audio_callbacks.append(callback)
