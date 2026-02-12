@@ -176,6 +176,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Throttle audio level hooks to ~10/sec per direction
         self._last_input_level_at: float = 0.0
         self._last_output_level_at: float = 0.0
+        # Cached event loop for cross-thread scheduling (e.g. PortAudio callback)
+        self._event_loop: asyncio.AbstractEventLoop | None = None
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -480,12 +482,29 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
     # -------------------------------------------------------------------------
 
     def _schedule(self, coro: Coroutine[Any, Any, Any], *, name: str) -> None:
-        """Schedule *coro* as a fire-and-forget task if an event loop is running."""
+        """Schedule *coro* as a fire-and-forget task.
+
+        Works from both the event-loop thread and foreign threads (e.g.
+        PortAudio audio callbacks).  On foreign threads we use
+        ``call_soon_threadsafe`` to dispatch to the cached event loop.
+        """
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
+            # Foreign thread — dispatch via cached event loop.
+            loop = self._event_loop
+            if loop is not None and loop.is_running():
+                loop.call_soon_threadsafe(self._create_task, coro, name)
+            else:
+                coro.close()
             return
-        task = loop.create_task(coro, name=name)
+        # Cache the loop for future cross-thread calls.
+        self._event_loop = loop
+        self._create_task(coro, name)
+
+    def _create_task(self, coro: Coroutine[Any, Any, Any], name: str) -> None:
+        """Create and track an asyncio task (must be called on the event loop thread)."""
+        task = asyncio.get_running_loop().create_task(coro, name=name)
         self._scheduled_tasks.add(task)
         task.add_done_callback(self._task_done)
 
