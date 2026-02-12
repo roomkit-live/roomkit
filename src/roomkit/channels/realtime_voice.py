@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -23,6 +24,7 @@ from roomkit.models.enums import (
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.voice.realtime.base import RealtimeSession, RealtimeSessionState
+from roomkit.voice.utils import rms_db
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -143,6 +145,9 @@ class RealtimeVoiceChannel(Channel):
         # Per-session generation counter: bumped on interrupt so pending
         # send_audio tasks created before the interrupt become stale and skip.
         self._audio_generation: dict[str, int] = {}
+        # Throttle audio level hooks to ~10/sec per direction
+        self._last_input_level_at: float = 0.0
+        self._last_output_level_at: float = 0.0
 
         # Wire internal callbacks
         provider.on_audio(self._on_provider_audio)
@@ -522,6 +527,11 @@ class RealtimeVoiceChannel(Channel):
                 )
                 frame = resamplers[0].resample(frame, self._input_sample_rate, 1, 2)
                 audio = frame.data
+            self._fire_audio_level_task(
+                session,
+                rms_db(audio),
+                HookTrigger.ON_INPUT_AUDIO_LEVEL,
+            )
             await self._provider.send_audio(session, audio)
         except Exception:
             if session.state == RealtimeSessionState.ACTIVE:
@@ -538,6 +548,11 @@ class RealtimeVoiceChannel(Channel):
         created before an interrupt are silently discarded.
         """
         self._audio_forward_count[session.id] = self._audio_forward_count.get(session.id, 0) + 1
+        self._fire_audio_level_task(
+            session,
+            rms_db(audio),
+            HookTrigger.ON_OUTPUT_AUDIO_LEVEL,
+        )
         audio = self._resample_outbound(session, audio)
         if not audio:
             return
@@ -965,6 +980,60 @@ class RealtimeVoiceChannel(Channel):
         """Clean up after client disconnects."""
         if session.id in self._sessions:
             await self.end_session(session)
+
+    # -- Audio level hooks --
+
+    def _fire_audio_level_task(
+        self, session: RealtimeSession, level_db: float, trigger: HookTrigger
+    ) -> None:
+        """Schedule a task to fire an audio level hook, throttled to ~10/sec."""
+        now = time.monotonic()
+        if trigger == HookTrigger.ON_INPUT_AUDIO_LEVEL:
+            if now - self._last_input_level_at < 0.1:
+                return
+            self._last_input_level_at = now
+        else:
+            if now - self._last_output_level_at < 0.1:
+                return
+            self._last_output_level_at = now
+        if not self._framework:
+            return
+        room_id = self._session_rooms.get(session.id)
+        if not room_id:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(
+            self._fire_audio_level(session, level_db, room_id, trigger),
+            name=f"rt_audio_level:{session.id}",
+        )
+
+    async def _fire_audio_level(
+        self,
+        session: RealtimeSession,
+        level_db: float,
+        room_id: str,
+        trigger: HookTrigger,
+    ) -> None:
+        """Fire an ON_INPUT_AUDIO_LEVEL or ON_OUTPUT_AUDIO_LEVEL hook."""
+        if not self._framework:
+            return
+        try:
+            from roomkit.voice.events import AudioLevelEvent
+
+            context = await self._framework._build_context(room_id)
+            event = AudioLevelEvent(session=session, level_db=level_db)
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                trigger,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+        except Exception:
+            logger.exception("Error firing %s hook", trigger)
 
     # -- Helpers --
 

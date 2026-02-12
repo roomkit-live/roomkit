@@ -188,6 +188,8 @@ class HookTrigger(StrEnum):
     ON_PARTIAL_TRANSCRIPTION = "on_partial_transcription"
     ON_VAD_SILENCE = "on_vad_silence"
     ON_VAD_AUDIO_LEVEL = "on_vad_audio_level"
+    ON_INPUT_AUDIO_LEVEL = "on_input_audio_level"
+    ON_OUTPUT_AUDIO_LEVEL = "on_output_audio_level"
     ON_SPEAKER_CHANGE = "on_speaker_change"
     # Voice - Pipeline
     ON_DTMF = "on_dtmf"

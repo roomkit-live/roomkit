@@ -146,8 +146,8 @@ class TestHookTrigger:
         assert HookTrigger.ON_DELIVERY_STATUS == "on_delivery_status"
 
     def test_count(self) -> None:
-        # 11 voice hooks (RFC §18 + §19 + §12.3) + 2 realtime + 1 trace
-        assert len(HookTrigger) == 34
+        # 11 voice hooks (RFC §18 + §19 + §12.3) + 2 realtime + 1 trace + 2 audio level
+        assert len(HookTrigger) == 36
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):

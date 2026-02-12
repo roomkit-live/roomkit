@@ -141,6 +141,24 @@ class VADAudioLevelEvent:
 
 
 @dataclass(frozen=True)
+class AudioLevelEvent:
+    """Audio level update for input or output.
+
+    Fired per audio frame from the pipeline (input) or backend (output),
+    regardless of whether VAD is enabled.  Use for VU meters.
+    """
+
+    session: VoiceSession
+    """The voice session."""
+
+    level_db: float
+    """Audio level in dB (typically -60 to 0, where 0 is max)."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When this measurement was taken."""
+
+
+@dataclass(frozen=True)
 class SpeakerChangeEvent:
     """Speaker change detected by diarization.
 

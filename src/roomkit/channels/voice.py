@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -25,6 +26,7 @@ from roomkit.models.enums import (
 )
 from roomkit.voice.base import VoiceCapability
 from roomkit.voice.interruption import InterruptionConfig
+from roomkit.voice.utils import rms_db
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -171,6 +173,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._batch_mode = batch_mode
         self._batch_audio_buffers: dict[str, bytearray] = {}
         self._batch_audio_sample_rate: dict[str, int] = {}
+        # Throttle audio level hooks to ~10/sec per direction
+        self._last_input_level_at: float = 0.0
+        self._last_output_level_at: float = 0.0
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -244,6 +249,11 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         if config.recorder is not None:
             self._pipeline.on_recording_started(self._on_pipeline_recording_started)
             self._pipeline.on_recording_stopped(self._on_pipeline_recording_stopped)
+
+        # Audio level hooks: always register to fire ON_INPUT/OUTPUT_AUDIO_LEVEL
+        self._pipeline.on_processed_frame(self._on_processed_frame_for_level)
+        if backend.supports_playback_callback:
+            backend.on_audio_played(self._on_audio_played_for_level)
 
         # Wire speaker output to pipeline AEC for time-aligned reference.
         # Only when the backend doesn't already feed AEC reference at
@@ -373,6 +383,46 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                 ),
                 name=f"vad_audio_level:{session.id}",
             )
+
+    def _on_processed_frame_for_level(self, session: VoiceSession, frame: AudioFrame) -> None:
+        """Fire ON_INPUT_AUDIO_LEVEL hook, throttled to ~10/sec."""
+        now = time.monotonic()
+        if now - self._last_input_level_at < 0.1:
+            return
+        self._last_input_level_at = now
+        binding_info = self._session_bindings.get(session.id)
+        if not binding_info or not self._framework:
+            return
+        room_id, _ = binding_info
+        self._schedule(
+            self._fire_audio_level_hook(
+                session,
+                rms_db(frame.data),
+                room_id,
+                HookTrigger.ON_INPUT_AUDIO_LEVEL,
+            ),
+            name=f"input_audio_level:{session.id}",
+        )
+
+    def _on_audio_played_for_level(self, session: VoiceSession, frame: AudioFrame) -> None:
+        """Fire ON_OUTPUT_AUDIO_LEVEL hook, throttled to ~10/sec."""
+        now = time.monotonic()
+        if now - self._last_output_level_at < 0.1:
+            return
+        self._last_output_level_at = now
+        binding_info = self._session_bindings.get(session.id)
+        if not binding_info or not self._framework:
+            return
+        room_id, _ = binding_info
+        self._schedule(
+            self._fire_audio_level_hook(
+                session,
+                rms_db(frame.data),
+                room_id,
+                HookTrigger.ON_OUTPUT_AUDIO_LEVEL,
+            ),
+            name=f"output_audio_level:{session.id}",
+        )
 
     def _on_pipeline_speaker_change(
         self, session: VoiceSession, result: DiarizationResult

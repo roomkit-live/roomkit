@@ -56,6 +56,10 @@ class _MockBackend:
     def feeds_aec_reference(self):
         return False
 
+    @property
+    def supports_playback_callback(self):
+        return False
+
     def on_audio_received(self, cb):
         self._audio_cbs.append(cb)
 

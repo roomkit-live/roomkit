@@ -201,6 +201,30 @@ class VoiceHooksMixin:
         except Exception:
             logger.exception("Error firing ON_VAD_AUDIO_LEVEL hook")
 
+    async def _fire_audio_level_hook(
+        self,
+        session: VoiceSession,
+        level_db: float,
+        room_id: str,
+        trigger: HookTrigger,
+    ) -> None:
+        if not self._framework:
+            return
+        try:
+            from roomkit.voice.events import AudioLevelEvent
+
+            context = await self._framework._build_context(room_id)
+            event = AudioLevelEvent(session=session, level_db=level_db)
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                trigger,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+        except Exception:
+            logger.exception("Error firing %s hook", trigger)
+
     async def _fire_speaker_change_hook(
         self, session: VoiceSession, result: DiarizationResult, room_id: str
     ) -> None:
