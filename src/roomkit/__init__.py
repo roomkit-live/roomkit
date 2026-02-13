@@ -187,6 +187,15 @@ from roomkit.realtime.base import (
     RealtimeBackend,
 )
 from roomkit.realtime.memory import InMemoryRealtime
+from roomkit.skills import (
+    ScriptExecutor,
+    ScriptResult,
+    Skill,
+    SkillMetadata,
+    SkillParseError,
+    SkillRegistry,
+    SkillValidationError,
+)
 from roomkit.sources.base import (
     BaseSourceProvider,
     EmitCallback,
@@ -525,6 +534,14 @@ __all__ = [
     "RealtimeToolCallEvent",
     "RealtimeTranscriptionEvent",
     "RealtimeVoiceProvider",
+    # Skills
+    "ScriptExecutor",
+    "ScriptResult",
+    "Skill",
+    "SkillMetadata",
+    "SkillParseError",
+    "SkillRegistry",
+    "SkillValidationError",
     # AI Docs
     "get_agents_md",
     "get_ai_context",

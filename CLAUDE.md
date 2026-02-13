@@ -206,11 +206,17 @@ Each of the 10 pipeline stages lives in `voice/pipeline/<stage>/`:
 
 ### Adding New Components
 
-**New provider**: config in `providers/<name>/config.py`, implementation in `providers/<name>/<type>.py`, export from `__init__.py` and `roomkit/__init__.py`, add tests.
+Every new feature, provider, or channel type **must** include:
 
-**New pipeline stage**: implement ABC in `voice/pipeline/<stage>/`, add mock, export from subdirectory and `voice/pipeline/__init__.py`, add tests.
+1. **Tests** — unit tests + integration tests where applicable
+2. **Documentation** — update or add a guide in `../roomkit-docs/docs/guides/`, add a section to `../roomkit-docs/docs/features.md`, and update `../roomkit-docs/mkdocs.yml` nav if adding a new guide page
+3. **Example** — add a runnable example in `examples/` demonstrating the feature end-to-end
 
-**New channel type**: add to `ChannelType` enum, extend `TransportChannel` or `Channel`, export from `channels/__init__.py`.
+**New provider**: config in `providers/<name>/config.py`, implementation in `providers/<name>/<type>.py`, export from `__init__.py` and `roomkit/__init__.py`, add tests, add example in `examples/`, add to docs.
+
+**New pipeline stage**: implement ABC in `voice/pipeline/<stage>/`, add mock, export from subdirectory and `voice/pipeline/__init__.py`, add tests, add guide in `../roomkit-docs/docs/guides/`, add example.
+
+**New channel type**: add to `ChannelType` enum, extend `TransportChannel` or `Channel`, export from `channels/__init__.py`, add tests, add example, update `features.md`.
 
 ## Boundaries
 
@@ -218,6 +224,7 @@ Each of the 10 pipeline stages lives in `voice/pipeline/<stage>/`:
 
 - Run `make all` before committing
 - Add tests for new features
+- Add documentation and a runnable example for new features/providers
 - Export new public classes from `roomkit/__init__.py`
 - Use `model_copy(update={...})` for Pydantic model updates
 

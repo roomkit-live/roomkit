@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from roomkit.channels.base import Channel
 from roomkit.models.channel import (
@@ -40,9 +41,26 @@ from roomkit.providers.ai.base import (
     ProviderError,
 )
 
+if TYPE_CHECKING:
+    from roomkit.skills.executor import ScriptExecutor
+    from roomkit.skills.registry import SkillRegistry
+
 ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
 
 logger = logging.getLogger("roomkit.channels.ai")
+
+# Skill tool names
+_TOOL_ACTIVATE_SKILL = "activate_skill"
+_TOOL_READ_REFERENCE = "read_skill_reference"
+_TOOL_RUN_SCRIPT = "run_skill_script"
+
+_SKILLS_PREAMBLE = (
+    "You have access to Agent Skills — specialized knowledge packages. "
+    "Use the activate_skill tool to load a skill's full instructions before "
+    "using it. Available skills are listed below."
+)
+
+_SKILLS_NO_SCRIPTS_NOTE = " Note: Script execution is not available in this environment."
 
 
 class AIChannel(Channel):
@@ -62,6 +80,8 @@ class AIChannel(Channel):
         max_context_events: int = 50,
         tool_handler: ToolHandler | None = None,
         max_tool_rounds: int = 10,
+        skills: SkillRegistry | None = None,
+        script_executor: ScriptExecutor | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._provider = provider
@@ -69,8 +89,16 @@ class AIChannel(Channel):
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._max_context_events = max_context_events
-        self._tool_handler = tool_handler
         self._max_tool_rounds = max_tool_rounds
+        self._skills = skills
+        self._script_executor = script_executor
+
+        # Wrap the user's tool handler with skill-aware dispatch
+        self._user_tool_handler = tool_handler
+        if skills and skills.skill_count > 0:
+            self._tool_handler = self._skill_aware_tool_handler
+        else:
+            self._tool_handler = tool_handler
 
     @property
     def info(self) -> dict[str, Any]:
@@ -102,7 +130,8 @@ class AIChannel(Channel):
             return ChannelOutput.empty()
 
         raw_tools = binding.metadata.get("tools", [])
-        if self._provider.supports_streaming and not raw_tools:
+        has_tools = bool(raw_tools) or (self._skills is not None and self._skills.skill_count > 0)
+        if self._provider.supports_streaming and not has_tools:
             return self._start_streaming_response(event, binding, context)
 
         return await self._generate_response(event, binding, context)
@@ -247,6 +276,16 @@ class AIChannel(Channel):
             for t in raw_tools
         ]
 
+        # Inject skill tools and prompt
+        if self._skills and self._skills.skill_count > 0:
+            tools.extend(self._skill_tools())
+            preamble = _SKILLS_PREAMBLE
+            if not self._script_executor:
+                preamble += _SKILLS_NO_SCRIPTS_NOTE
+            skills_xml = self._skills.to_prompt_xml()
+            skill_block = f"\n\n{preamble}\n\n{skills_xml}"
+            system_prompt = (system_prompt or "") + skill_block
+
         messages: list[AIMessage] = []
 
         for past_event in context.recent_events[-self._max_context_events :]:
@@ -333,3 +372,151 @@ class AIChannel(Channel):
         if isinstance(event.content, TextContent):
             return event.content.body
         return ""
+
+    # -- Skill integration --------------------------------------------------
+
+    def _skill_tools(self) -> list[AITool]:
+        """Build the list of AITool definitions for skill operations."""
+        tools = [
+            AITool(
+                name=_TOOL_ACTIVATE_SKILL,
+                description=(
+                    "Activate a skill to get its full instructions, "
+                    "available scripts, and reference files."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the skill to activate.",
+                        },
+                    },
+                    "required": ["name"],
+                },
+            ),
+            AITool(
+                name=_TOOL_READ_REFERENCE,
+                description="Read a reference file from a skill.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "skill_name": {
+                            "type": "string",
+                            "description": "Name of the skill.",
+                        },
+                        "filename": {
+                            "type": "string",
+                            "description": "Reference filename to read.",
+                        },
+                    },
+                    "required": ["skill_name", "filename"],
+                },
+            ),
+        ]
+        if self._script_executor:
+            tools.append(
+                AITool(
+                    name=_TOOL_RUN_SCRIPT,
+                    description="Run a script from a skill's scripts/ directory.",
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "skill_name": {
+                                "type": "string",
+                                "description": "Name of the skill.",
+                            },
+                            "script_name": {
+                                "type": "string",
+                                "description": "Script filename to run.",
+                            },
+                            "arguments": {
+                                "type": "object",
+                                "description": "Optional key-value arguments.",
+                                "additionalProperties": {"type": "string"},
+                            },
+                        },
+                        "required": ["skill_name", "script_name"],
+                    },
+                )
+            )
+        return tools
+
+    async def _skill_aware_tool_handler(self, name: str, arguments: dict[str, Any]) -> str:
+        """Intercept skill tool calls; delegate the rest to user handler."""
+        if name == _TOOL_ACTIVATE_SKILL:
+            return await self._handle_activate_skill(arguments)
+        if name == _TOOL_READ_REFERENCE:
+            return await self._handle_read_reference(arguments)
+        if name == _TOOL_RUN_SCRIPT:
+            return await self._handle_run_script(arguments)
+        if self._user_tool_handler:
+            return await self._user_tool_handler(name, arguments)
+        return json.dumps({"error": f"Unknown tool: {name}"})
+
+    async def _handle_activate_skill(self, arguments: dict[str, Any]) -> str:
+        """Load and return full skill instructions."""
+        skill_name = arguments.get("name", "")
+        if not self._skills:
+            return json.dumps({"error": "No skills registry configured"})
+
+        skill = self._skills.get_skill(skill_name)
+        if skill is None:
+            available = self._skills.skill_names
+            return json.dumps(
+                {
+                    "error": f"Skill {skill_name!r} not found",
+                    "available_skills": available,
+                }
+            )
+
+        result: dict[str, Any] = {
+            "name": skill.name,
+            "description": skill.description,
+            "instructions": skill.instructions,
+        }
+        scripts = skill.list_scripts()
+        if scripts:
+            result["scripts"] = scripts
+        refs = skill.list_references()
+        if refs:
+            result["references"] = refs
+        return json.dumps(result)
+
+    async def _handle_read_reference(self, arguments: dict[str, Any]) -> str:
+        """Read a reference file from a skill."""
+        skill_name = arguments.get("skill_name", "")
+        filename = arguments.get("filename", "")
+        if not self._skills:
+            return json.dumps({"error": "No skills registry configured"})
+
+        skill = self._skills.get_skill(skill_name)
+        if skill is None:
+            return json.dumps({"error": f"Skill {skill_name!r} not found"})
+
+        try:
+            content = skill.read_reference(filename)
+            return json.dumps({"filename": filename, "content": content})
+        except (ValueError, FileNotFoundError) as exc:
+            return json.dumps({"error": str(exc)})
+
+    async def _handle_run_script(self, arguments: dict[str, Any]) -> str:
+        """Execute a script via the configured ScriptExecutor."""
+        skill_name = arguments.get("skill_name", "")
+        script_name = arguments.get("script_name", "")
+        script_args = arguments.get("arguments")
+        if not self._skills:
+            return json.dumps({"error": "No skills registry configured"})
+        if not self._script_executor:
+            return json.dumps({"error": "Script execution is not available"})
+
+        skill = self._skills.get_skill(skill_name)
+        if skill is None:
+            return json.dumps({"error": f"Skill {skill_name!r} not found"})
+
+        try:
+            result = await self._script_executor.execute(skill, script_name, arguments=script_args)
+            return result.model_dump_json()
+        except Exception as exc:
+            logger.exception("Script execution failed: %s/%s", skill_name, script_name)
+            return json.dumps({"error": f"Script execution failed: {exc}"})
