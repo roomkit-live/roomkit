@@ -307,6 +307,8 @@ class ElevenLabsTTSProvider(TTSProvider):
         fmt = self._config.output_format
         if "44100" in fmt:
             return 44100
+        elif "24000" in fmt:
+            return 24000
         elif "22050" in fmt:
             return 22050
         elif "16000" in fmt:
