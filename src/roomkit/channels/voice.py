@@ -690,10 +690,10 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
     ) -> None:
         if not self._framework:
             return
-        # Cancel streaming STT on barge-in (skip in continuous mode —
-        # the long-lived stream must stay open)
-        if not self._continuous_stt:
-            self._cancel_stt_stream(session.id)
+        # NOTE: do NOT cancel STT here.  _on_pipeline_vad_event already
+        # called _start_stt_stream (which cancels + replaces the old one)
+        # before scheduling this barge-in task.  Cancelling again would
+        # destroy the *new* stream that's collecting the user's utterance.
         try:
             from roomkit.voice.events import BargeInEvent
 
