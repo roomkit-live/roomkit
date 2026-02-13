@@ -151,6 +151,10 @@ module = ["qwen_tts", "qwen_tts.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["neutts", "neutts.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["torch", "torch.*"]
 ignore_missing_imports = true
 
@@ -256,3 +260,8 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 fail_under = 80
+
+[dependency-groups]
+dev = [
+    "setuptools<81",
+]

@@ -26,6 +26,11 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.voice.realtime.base import RealtimeSession, RealtimeSessionState
 from roomkit.voice.utils import rms_db
 
+try:
+    from websockets.exceptions import ConnectionClosed as _ConnectionClosed
+except ImportError:  # websockets not installed
+    _ConnectionClosed = ConnectionError  # type: ignore[assignment,misc]
+
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
@@ -87,6 +92,7 @@ class RealtimeVoiceChannel(Channel):
         emit_transcription_events: bool = True,
         tool_handler: ToolHandler | None = None,
         mute_on_tool_call: bool = False,
+        tool_result_max_length: int = 16384,
     ) -> None:
         """Initialize realtime voice channel.
 
@@ -114,6 +120,9 @@ class RealtimeVoiceChannel(Channel):
                 tool execution to prevent barge-in that causes providers
                 (e.g. Gemini) to silently drop the tool result.  Defaults
                 to False — use ``set_access()`` for fine-grained control.
+            tool_result_max_length: Maximum character length of tool results
+                before truncation.  Large results (e.g. SVG payloads) can
+                overflow the provider's context window.  Defaults to 16384.
         """
         super().__init__(channel_id)
         self._provider = provider
@@ -128,6 +137,7 @@ class RealtimeVoiceChannel(Channel):
         self._emit_transcription_events = emit_transcription_events
         self._tool_handler = tool_handler
         self._mute_on_tool_call = mute_on_tool_call
+        self._tool_result_max_length = tool_result_max_length
         self._framework: RoomKit | None = None
 
         # Active sessions: session_id -> (session, room_id, binding)
@@ -537,6 +547,15 @@ class RealtimeVoiceChannel(Channel):
                 HookTrigger.ON_INPUT_AUDIO_LEVEL,
             )
             await self._provider.send_audio(session, audio)
+        except (ConnectionError, _ConnectionClosed):
+            # WebSocket or TCP connection dropped — mark session so
+            # subsequent audio chunks are silently discarded.
+            if session.state == RealtimeSessionState.ACTIVE:
+                logger.warning(
+                    "Connection lost for session %s, stopping audio forwarding",
+                    session.id,
+                )
+                session.state = RealtimeSessionState.ENDED
         except Exception:
             if session.state == RealtimeSessionState.ACTIVE:
                 logger.exception("Error forwarding client audio for session %s", session.id)
@@ -870,6 +889,25 @@ class RealtimeVoiceChannel(Channel):
                     )
             else:
                 result_str = json.dumps({"error": f"No handler for tool {name}"})
+
+            if len(result_str) > self._tool_result_max_length:
+                original_len = len(result_str)
+                logger.warning(
+                    "Tool result for %s(%s) truncated from %d to %d chars (session %s)",
+                    name,
+                    call_id,
+                    original_len,
+                    self._tool_result_max_length,
+                    session.id,
+                )
+                # Reserve space for the truncation notice so the AI model
+                # knows the output was cut and may have been rendered
+                # elsewhere (e.g. via an MCP extension app).
+                notice = (
+                    f"\n... [truncated — original result was {original_len} chars. "
+                    "The full content has been delivered to the client.]"
+                )
+                result_str = result_str[: self._tool_result_max_length - len(notice)] + notice
 
             await self._provider.submit_tool_result(session, call_id, result_str)
 

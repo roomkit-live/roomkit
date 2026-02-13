@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -17,7 +20,7 @@ from roomkit import (
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent
-from roomkit.voice.realtime.base import RealtimeSessionState
+from roomkit.voice.realtime.base import RealtimeSession, RealtimeSessionState
 from roomkit.voice.realtime.events import RealtimeTranscriptionEvent
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 
@@ -291,6 +294,73 @@ class TestToolCalls:
         # Verify tool result was submitted back to provider
         assert len(provider.tool_results) == 1
         assert provider.tool_results[0][1] == "call-123"
+
+    async def test_tool_result_truncated_when_exceeding_max_length(
+        self,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """Tool handler returning a huge string gets truncated before submission."""
+        max_len = 500
+
+        async def big_handler(session: object, name: str, arguments: dict[str, Any]) -> str:
+            return "x" * 100_000
+
+        ch = RealtimeVoiceChannel(
+            "rt-trunc",
+            provider=provider,
+            transport=transport,
+            tool_handler=big_handler,
+            tool_result_max_length=max_len,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-trunc")
+
+        session = await ch.start_session(room.id, "user-1", "fake-ws")
+
+        await provider.simulate_tool_call(session, "call-big", "big_tool", {})
+        await asyncio.sleep(0.1)
+
+        assert len(provider.tool_results) == 1
+        _session_id, _call_id, submitted = provider.tool_results[0]
+        # Total should equal the max length (truncated content + notice)
+        assert len(submitted) == max_len
+        assert "truncated" in submitted
+        assert "100000 chars" in submitted
+        assert "delivered to the client" in submitted
+
+    async def test_tool_result_under_limit_not_truncated(
+        self,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """Normal-sized tool results pass through unchanged."""
+        small_result = '{"status": "ok", "data": "hello"}'
+
+        async def small_handler(session: object, name: str, arguments: dict[str, Any]) -> str:
+            return small_result
+
+        ch = RealtimeVoiceChannel(
+            "rt-small",
+            provider=provider,
+            transport=transport,
+            tool_handler=small_handler,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-small")
+
+        session = await ch.start_session(room.id, "user-1", "fake-ws")
+
+        await provider.simulate_tool_call(session, "call-sm", "small_tool", {})
+        await asyncio.sleep(0.1)
+
+        assert len(provider.tool_results) == 1
+        _session_id, _call_id, submitted = provider.tool_results[0]
+        assert submitted == small_result
 
 
 class TestSpeakingIndicators:
@@ -745,3 +815,195 @@ class TestResamplingMatchingRates:
 
         session = await ch.start_session(room.id, "user-1", "fake-ws")
         assert session.id not in ch._session_resamplers
+
+
+# ---------------------------------------------------------------------------
+# GeminiLiveProvider: audio buffering during reconnection
+# ---------------------------------------------------------------------------
+
+genai = pytest.importorskip("google.genai", reason="google-genai not installed")
+
+
+def _make_gemini_provider() -> Any:
+    """Create a GeminiLiveProvider with mocked client."""
+    from roomkit.providers.gemini.realtime import GeminiLiveProvider
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "roomkit.providers.gemini.realtime.GeminiLiveProvider.__init__",
+            lambda self, **kw: None,
+        )
+        p = GeminiLiveProvider.__new__(GeminiLiveProvider)
+
+    # Initialize fields normally set in __init__
+    p._live_sessions = {}
+    p._live_ctxmgrs = {}
+    p._live_configs = {}
+    p._receive_tasks = {}
+    p._sessions = {}
+    p._transcription_buffers = {}
+    p._audio_chunk_count = {}
+    p._audio_buffers = {}
+    p._error_suppressed = set()
+    p._session_telemetry = {}
+    p._audio_callbacks = []
+    p._transcription_callbacks = []
+    p._speech_start_callbacks = []
+    p._speech_end_callbacks = []
+    p._tool_call_callbacks = []
+    p._response_start_callbacks = []
+    p._response_end_callbacks = []
+    p._error_callbacks = []
+    return p
+
+
+def _make_session(session_id: str = "sess-1") -> RealtimeSession:
+    return RealtimeSession(
+        id=session_id,
+        room_id="room-1",
+        participant_id="user-1",
+        channel_id="rt-1",
+        state=RealtimeSessionState.ACTIVE,
+    )
+
+
+class TestAudioBufferingDuringReconnect:
+    """Audio chunks sent while state==CONNECTING are buffered, not dropped."""
+
+    async def test_audio_buffered_when_connecting(self) -> None:
+        provider = _make_gemini_provider()
+        session = _make_session()
+        session.state = RealtimeSessionState.CONNECTING
+
+        # Set up a mock live session and buffer
+        mock_live = MagicMock()
+        provider._live_sessions[session.id] = mock_live
+        provider._audio_buffers[session.id] = deque(maxlen=100)
+
+        await provider.send_audio(session, b"chunk-1")
+        await provider.send_audio(session, b"chunk-2")
+        await provider.send_audio(session, b"chunk-3")
+
+        # Audio should be in the buffer, not sent to the live session
+        mock_live.send_realtime_input.assert_not_called()
+        assert list(provider._audio_buffers[session.id]) == [
+            b"chunk-1",
+            b"chunk-2",
+            b"chunk-3",
+        ]
+
+    async def test_buffer_bounded_at_100_frames(self) -> None:
+        provider = _make_gemini_provider()
+        session = _make_session()
+        session.state = RealtimeSessionState.CONNECTING
+
+        mock_live = MagicMock()
+        provider._live_sessions[session.id] = mock_live
+        provider._audio_buffers[session.id] = deque(maxlen=100)
+
+        # Send 110 chunks — oldest 10 should be evicted
+        for i in range(110):
+            await provider.send_audio(session, f"chunk-{i}".encode())
+
+        buf = provider._audio_buffers[session.id]
+        assert len(buf) == 100
+        assert buf[0] == b"chunk-10"  # oldest surviving
+        assert buf[-1] == b"chunk-109"  # newest
+
+    async def test_audio_sent_normally_when_active(self) -> None:
+        provider = _make_gemini_provider()
+        session = _make_session()
+        session.state = RealtimeSessionState.ACTIVE
+
+        mock_live = AsyncMock()
+        provider._live_sessions[session.id] = mock_live
+        provider._audio_buffers[session.id] = deque(maxlen=100)
+
+        await provider.send_audio(session, b"chunk-1")
+
+        mock_live.send_realtime_input.assert_called_once()
+        assert len(provider._audio_buffers[session.id]) == 0
+
+
+class TestErrorDeduplication:
+    """Only one send_audio_failed error fires per reconnection cycle."""
+
+    async def test_first_error_fires_callback(self) -> None:
+        provider = _make_gemini_provider()
+        session = _make_session()
+        session.state = RealtimeSessionState.ACTIVE
+
+        mock_live = AsyncMock()
+        mock_live.send_realtime_input.side_effect = ConnectionError("ws closed")
+        provider._live_sessions[session.id] = mock_live
+        provider._audio_buffers[session.id] = deque(maxlen=100)
+
+        errors: list[tuple[str, str]] = []
+        provider.on_error(lambda s, code, msg: errors.append((code, msg)))
+
+        await provider.send_audio(session, b"chunk-1")
+
+        assert len(errors) == 1
+        assert errors[0][0] == "send_audio_failed"
+
+    async def test_subsequent_errors_suppressed(self) -> None:
+        provider = _make_gemini_provider()
+        session = _make_session()
+        session.state = RealtimeSessionState.ACTIVE
+
+        mock_live = AsyncMock()
+        mock_live.send_realtime_input.side_effect = ConnectionError("ws closed")
+        provider._live_sessions[session.id] = mock_live
+        provider._audio_buffers[session.id] = deque(maxlen=100)
+
+        errors: list[tuple[str, str]] = []
+        provider.on_error(lambda s, code, msg: errors.append((code, msg)))
+
+        # First call fires the error and sets state to CONNECTING
+        await provider.send_audio(session, b"chunk-1")
+        assert len(errors) == 1
+
+        # Subsequent calls while CONNECTING go to buffer, no more errors
+        await provider.send_audio(session, b"chunk-2")
+        await provider.send_audio(session, b"chunk-3")
+        assert len(errors) == 1  # still just 1
+
+    async def test_error_suppression_cleared_after_reconnect_cycle(self) -> None:
+        provider = _make_gemini_provider()
+        session = _make_session()
+
+        # Simulate a completed reconnect cycle
+        provider._error_suppressed.add(session.id)
+        provider._error_suppressed.discard(session.id)
+
+        # Now a new error should fire
+        session.state = RealtimeSessionState.ACTIVE
+        mock_live = AsyncMock()
+        mock_live.send_realtime_input.side_effect = ConnectionError("ws closed again")
+        provider._live_sessions[session.id] = mock_live
+        provider._audio_buffers[session.id] = deque(maxlen=100)
+
+        errors: list[tuple[str, str]] = []
+        provider.on_error(lambda s, code, msg: errors.append((code, msg)))
+
+        await provider.send_audio(session, b"chunk-1")
+        assert len(errors) == 1
+
+    async def test_disconnect_cleans_up_suppression(self) -> None:
+        provider = _make_gemini_provider()
+        session = _make_session()
+
+        provider._sessions[session.id] = session
+        provider._audio_buffers[session.id] = deque(maxlen=100)
+        provider._error_suppressed.add(session.id)
+        provider._session_telemetry[session.id] = {
+            "started_at": 0,
+            "turn_count": 0,
+            "tool_result_bytes": 0,
+        }
+
+        await provider.disconnect(session)
+
+        assert session.id not in provider._error_suppressed
+        assert session.id not in provider._audio_buffers
+        assert session.id not in provider._session_telemetry

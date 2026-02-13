@@ -326,6 +326,27 @@ def get_qwen3_voice_clone_config() -> type:
     return VoiceCloneConfig
 
 
+def get_neutts_provider() -> type:
+    """Get NeuTTSProvider class (requires neutts)."""
+    from roomkit.voice.tts.neutts import NeuTTSProvider
+
+    return NeuTTSProvider
+
+
+def get_neutts_config() -> type:
+    """Get NeuTTSConfig class."""
+    from roomkit.voice.tts.neutts import NeuTTSConfig
+
+    return NeuTTSConfig
+
+
+def get_neutts_voice_config() -> type:
+    """Get NeuTTSVoiceConfig class for NeuTTS."""
+    from roomkit.voice.tts.neutts import NeuTTSVoiceConfig
+
+    return NeuTTSVoiceConfig
+
+
 def get_openai_realtime_provider() -> type:
     """Get OpenAIRealtimeProvider class (requires openai, websockets)."""
     from roomkit.providers.openai.realtime import OpenAIRealtimeProvider

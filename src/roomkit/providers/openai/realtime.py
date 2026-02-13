@@ -382,8 +382,24 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             await self._fire_callbacks(self._response_start_callbacks, session)
 
         elif event_type == "response.done":
-            status = event.get("response", {}).get("status", "")
-            logger.info("[OpenAI] response_done status=%s (session %s)", status, session.id)
+            response = event.get("response", {})
+            status = response.get("status", "")
+            if status == "failed":
+                details = response.get("status_details", {})
+                err = details.get("error", {})
+                err_type = err.get("type", "unknown")
+                err_code = err.get("code", "")
+                err_message = err.get("message", "Unknown error")
+                logger.error(
+                    "[OpenAI] response FAILED: type=%s code=%s message=%s (session %s)",
+                    err_type,
+                    err_code,
+                    err_message,
+                    session.id,
+                )
+                await self._fire_error_callbacks(session, err_code or err_type, err_message)
+            else:
+                logger.info("[OpenAI] response_done status=%s (session %s)", status, session.id)
             await self._fire_callbacks(self._response_end_callbacks, session)
 
         elif event_type == "session.created":
