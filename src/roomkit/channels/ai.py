@@ -95,6 +95,7 @@ class AIChannel(Channel):
 
         # Wrap the user's tool handler with skill-aware dispatch
         self._user_tool_handler = tool_handler
+        self._tool_handler: ToolHandler | None
         if skills and skills.skill_count > 0:
             self._tool_handler = self._skill_aware_tool_handler
         else:
@@ -212,7 +213,7 @@ class AIChannel(Channel):
         response: AIResponse = await self._provider.generate(context)
 
         for round_idx in range(self._max_tool_rounds):
-            if not response.tool_calls or not self._tool_handler:
+            if not response.tool_calls or self._tool_handler is None:
                 break
 
             logger.info(
