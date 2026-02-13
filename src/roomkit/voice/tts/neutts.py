@@ -265,19 +265,30 @@ class NeuTTSProvider(TTSProvider):
         loop = asyncio.get_running_loop()
 
         def _stream() -> None:
-            for chunk_samples in model.infer_stream(
-                text=text,
-                ref_codes=ref_codes,
-                ref_text=voice_cfg.ref_text,
-            ):
-                pcm = _numpy_to_pcm_s16le(chunk_samples)
-                audio_chunk = AudioChunk(
-                    data=pcm,
-                    sample_rate=_SAMPLE_RATE,
-                    format="pcm_s16le",
-                    is_final=False,
-                )
-                loop.call_soon_threadsafe(queue.put_nowait, audio_chunk)
+            # Disable Perth watermarking during streaming: it's applied per-chunk
+            # before overlap-add, so adjacent chunks get incompatible watermarks
+            # that interfere in the overlap region → crackling artifacts.
+            # Non-streaming infer() watermarks the full audio at once (no issue).
+            watermarker = getattr(model, "watermarker", None)
+            if watermarker is not None:
+                model.watermarker = None
+            try:
+                for chunk_samples in model.infer_stream(
+                    text=text,
+                    ref_codes=ref_codes,
+                    ref_text=voice_cfg.ref_text,
+                ):
+                    pcm = _numpy_to_pcm_s16le(chunk_samples)
+                    audio_chunk = AudioChunk(
+                        data=pcm,
+                        sample_rate=_SAMPLE_RATE,
+                        format="pcm_s16le",
+                        is_final=False,
+                    )
+                    loop.call_soon_threadsafe(queue.put_nowait, audio_chunk)
+            finally:
+                if watermarker is not None:
+                    model.watermarker = watermarker
             # Signal completion
             loop.call_soon_threadsafe(queue.put_nowait, None)
 

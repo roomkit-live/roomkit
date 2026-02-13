@@ -348,6 +348,25 @@ class TestSynthesizeStream:
         for c in chunks[:-1]:
             assert len(c.data) > 0
 
+    async def test_stream_disables_watermarker(self):
+        """Streaming should disable Perth watermarker to avoid per-chunk artifacts."""
+        cfg = NeuTTSConfig(
+            voices={"marie": NeuTTSVoiceConfig(ref_audio="a.wav", ref_text="hi")},
+            streaming_pre_buffer=0,
+        )
+        provider = NeuTTSProvider(cfg)
+        await provider.warmup()
+
+        # Simulate a watermarker being present
+        sentinel = object()
+        provider._model.watermarker = sentinel
+
+        async for _ in provider.synthesize_stream("Bonjour"):
+            pass
+
+        # Watermarker should be restored after streaming completes
+        assert provider._model.watermarker is sentinel
+
 
 # ---------------------------------------------------------------------------
 # Close
