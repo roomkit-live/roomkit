@@ -98,15 +98,47 @@ class NeuTTSProvider(TTSProvider):
     """
 
     def __init__(self, config: NeuTTSConfig) -> None:
+        self._patch_perth()
         try:
             import neutts  # noqa: F401
         except ImportError as exc:
             raise ImportError(
-                "neutts is required for NeuTTSProvider. Install it with: pip install neutts"
+                "neutts is required for NeuTTSProvider. "
+                "Install it with: pip install roomkit[neutts]"
             ) from exc
         self._config = config
         self._model: Any = None
         self._cached_refs: dict[str, Any] = {}
+
+    @staticmethod
+    def _patch_perth() -> None:
+        """Work around a neutts bug with broken Perth watermarking.
+
+        neutts catches ``ImportError``/``AttributeError`` from
+        ``perth.PerthImplicitWatermarker()`` but not ``TypeError``.  When perth
+        is installed with setuptools>=81 (which dropped ``pkg_resources``),
+        ``PerthImplicitWatermarker`` can end up as ``None``.  Calling ``None()``
+        raises ``TypeError`` and crashes ``NeuTTS.__init__``.
+
+        We remove the broken attribute so neutts sees an ``AttributeError``
+        (which it already handles) instead.
+
+        Note: even if ``import perth`` fails, Python may cache a partially-loaded
+        module in ``sys.modules`` — we must check that too.
+        """
+        import contextlib
+        import sys
+
+        with contextlib.suppress(Exception):
+            import perth  # noqa: F401
+
+        perth_mod = sys.modules.get("perth")
+        if (
+            perth_mod is not None
+            and hasattr(perth_mod, "PerthImplicitWatermarker")
+            and not callable(perth_mod.PerthImplicitWatermarker)
+        ):
+            delattr(perth_mod, "PerthImplicitWatermarker")
 
     @property
     def name(self) -> str:

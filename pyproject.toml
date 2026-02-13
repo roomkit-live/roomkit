@@ -33,6 +33,7 @@ vllm = ["openai>=1.30"]
 gemini = ["google-genai>=1.0.0"]
 sherpa-onnx = ["sherpa-onnx>=1.10"]
 qwen-tts = ["qwen-tts>=0.1"]
+neutts = ["neutts>=0.1"]
 fastrtc = ["fastrtc", "numpy"]
 webrtc-aec = ["aec-audio-processing>=0.1"]
 local-audio = ["sounddevice", "numpy"]
@@ -213,6 +214,15 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["roomkit.sources.neonize"]
 disallow_untyped_decorators = false
+
+[tool.uv]
+# neutts and qwen-tts pin incompatible transformers versions
+conflicts = [
+    [
+        { extra = "neutts" },
+        { extra = "qwen-tts" },
+    ],
+]
 
 [tool.ruff]
 target-version = "py312"
