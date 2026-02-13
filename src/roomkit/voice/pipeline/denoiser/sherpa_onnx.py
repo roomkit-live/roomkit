@@ -35,14 +35,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _pcm_s16le_to_float32(data: bytes) -> np.ndarray:
+def _pcm_s16le_to_float32(data: bytes) -> np.ndarray[Any, Any]:
     """Convert PCM signed 16-bit little-endian bytes to float32 array in [-1, 1]."""
     import numpy as np
 
     return np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
 
 
-def _float32_to_pcm_s16le(samples: np.ndarray | list[float]) -> bytes:
+def _float32_to_pcm_s16le(samples: np.ndarray[Any, Any] | list[float]) -> bytes:
     """Convert float32 array in [-1, 1] to PCM signed 16-bit little-endian bytes."""
     import numpy as np
 
@@ -50,7 +50,9 @@ def _float32_to_pcm_s16le(samples: np.ndarray | list[float]) -> bytes:
     return bytes(np.clip(arr * 32767, -32767, 32767).astype(np.int16).tobytes())
 
 
-def _resample_linear(samples: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
+def _resample_linear(
+    samples: np.ndarray[Any, Any], src_rate: int, dst_rate: int
+) -> np.ndarray[Any, Any]:
     """Resample float32 samples using numpy linear interpolation."""
     import numpy as np
 
@@ -62,7 +64,7 @@ def _resample_linear(samples: np.ndarray, src_rate: int, dst_rate: int) -> np.nd
         return np.array([], dtype=np.float32)
     x_old = np.arange(len(samples), dtype=np.float64)
     x_new = np.linspace(0, len(samples) - 1, n_out, dtype=np.float64)
-    result: np.ndarray = np.interp(x_new, x_old, samples).astype(np.float32)
+    result: np.ndarray[Any, Any] = np.interp(x_new, x_old, samples).astype(np.float32)
     return result
 
 
@@ -119,7 +121,7 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
         self._sherpa: Any = __import__("sherpa_onnx")
         self._denoiser: Any = None
         self._native_rate: int = 0  # Set on first _ensure_denoiser()
-        self._context: np.ndarray = np.array([], dtype=np.float32)
+        self._context: np.ndarray[Any, Any] = np.array([], dtype=np.float32)
 
     @property
     def name(self) -> str:

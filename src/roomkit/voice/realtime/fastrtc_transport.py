@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.voice.realtime.fastrtc_transport")
 
 # Type alias for emit return: (sample_rate, ndarray) or None
-EmitType = tuple[int, "np.ndarray"] | None
+EmitType = tuple[int, "np.ndarray[Any, Any]"] | None
 
 
 class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
@@ -106,7 +106,7 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
             self._transport._register_handler(self._webrtc_id, self)
             logger.info("WebRTC handler started: webrtc_id=%s", self._webrtc_id)
 
-    async def receive(self, frame: tuple[int, np.ndarray]) -> None:
+    async def receive(self, frame: tuple[int, np.ndarray[Any, Any]]) -> None:
         """Process incoming audio from the WebRTC client.
 
         Converts the numpy audio array to PCM16 LE bytes and fires

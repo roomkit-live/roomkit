@@ -296,7 +296,7 @@ class FastRTCVoiceBackend(VoiceBackend):
     # -------------------------------------------------------------------------
 
     def _handle_audio_frame(
-        self, websocket_id: str, audio_data: np.ndarray, sample_rate: int
+        self, websocket_id: str, audio_data: np.ndarray[Any, Any], sample_rate: int
     ) -> None:
         """Called by FastRTC handler with raw audio data.
 
