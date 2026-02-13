@@ -24,6 +24,10 @@ from roomkit.voice.realtime.provider import (
 logger = logging.getLogger("roomkit.providers.gemini.realtime")
 
 
+class _GoAwayError(Exception):
+    """Raised when the server sends a GoAway signal to trigger proactive reconnection."""
+
+
 class GeminiLiveProvider(RealtimeVoiceProvider):
     """Realtime voice provider using the Google Gemini Live API.
 
@@ -49,13 +53,24 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     ) -> None:
         try:
             from google import genai as _genai
+            from google.genai import types as _types
         except ImportError as exc:
             raise ImportError(
                 "google-genai is required for GeminiLiveProvider. "
                 "Install with: pip install 'roomkit[realtime-gemini]'"
             ) from exc
 
-        self._client = _genai.Client(api_key=api_key)
+        # Tighter WebSocket keepalive to detect dead connections faster
+        # (defaults are 20s interval / 20s timeout — too slow for realtime audio)
+        self._client = _genai.Client(
+            api_key=api_key,
+            http_options=_types.HttpOptions(
+                async_client_args={
+                    "ping_interval": 10,
+                    "ping_timeout": 5,
+                }
+            ),
+        )
         self._model = model
 
         # Active sessions: session_id -> genai live session
@@ -64,6 +79,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self._live_configs: dict[str, Any] = {}  # session_id -> LiveConnectConfig
         self._receive_tasks: dict[str, asyncio.Task[None]] = {}
         self._sessions: dict[str, RealtimeSession] = {}
+
+        # Session resumption handles: session_id -> latest opaque handle
+        self._resumption_handles: dict[str, str | None] = {}
 
         # Transcription buffers: accumulate chunks until finished=True
         # Key: (session_id, role) -> list of text chunks
@@ -212,6 +230,17 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 )
             config["tools"] = genai_tools
 
+        # --- Session resilience ---
+        # Session resumption: allows reconnecting without losing conversation
+        # context.  The server sends periodic handle updates; we store the
+        # latest and pass it back on reconnect.
+        config["session_resumption"] = types.SessionResumptionConfig(handle=None)
+        # Context window compression: sliding window keeps sessions alive
+        # beyond the 15-minute audio limit by pruning old turns.
+        config["context_window_compression"] = types.ContextWindowCompressionConfig(
+            sliding_window=types.SlidingWindow(),
+        )
+
         live_config = types.LiveConnectConfig(**config)
 
         # Store config for potential reconnection
@@ -227,6 +256,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self._live_sessions[session.id] = live_session
         self._sessions[session.id] = session
         self._audio_buffers[session.id] = deque(maxlen=100)
+        self._resumption_handles[session.id] = None
         # Session-level telemetry — NOT reset on reconnect so uptime
         # reflects total session duration including disconnected periods.
         self._session_telemetry[session.id] = {
@@ -367,6 +397,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self._audio_buffers.pop(session.id, None)
         self._error_suppressed.discard(session.id)
         self._session_telemetry.pop(session.id, None)
+        self._resumption_handles.pop(session.id, None)
         if ctxmgr is not None:
             with contextlib.suppress(Exception):
                 await ctxmgr.__aexit__(None, None, None)
@@ -446,6 +477,32 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
             except asyncio.CancelledError:
                 raise
+            except _GoAwayError:
+                # Server warned it's about to disconnect — proactive reconnect.
+                # This does NOT count against the reconnect limit.
+                logger.info(
+                    "Proactive reconnect (GoAway) for session %s",
+                    session.id,
+                )
+                try:
+                    await self._reconnect(session)
+                    reconnect_count = 0
+                except Exception:
+                    logger.exception(
+                        "Proactive reconnect failed for session %s",
+                        session.id,
+                    )
+                    buf = self._audio_buffers.get(session.id)
+                    if buf:
+                        buf.clear()
+                    session.state = RealtimeSessionState.ENDED
+                    await self._fire_error_callbacks(
+                        session,
+                        "reconnect_failed",
+                        f"Proactive reconnect failed for session {session.id}",
+                    )
+                    return
+                continue
             except Exception:
                 if session.state == RealtimeSessionState.ENDED:
                     return
@@ -565,6 +622,18 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if not live_config:
             raise RuntimeError("No stored config for reconnection")
 
+        # Use stored resumption handle to preserve conversation context
+        handle = self._resumption_handles.get(session.id)
+        if handle and live_config.session_resumption is not None:
+            live_config.session_resumption.handle = handle
+            logger.info(
+                "Reconnecting session %s with resumption handle",
+                session.id,
+            )
+        elif live_config.session_resumption is not None:
+            # No handle available — reset to None for a fresh session
+            live_config.session_resumption.handle = None
+
         ctxmgr = self._client.aio.live.connect(
             model=self._model,
             config=live_config,
@@ -603,6 +672,17 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     async def _handle_server_response(self, session: RealtimeSession, response: Any) -> None:
         """Map Gemini Live responses to callbacks."""
+        # Handle session resumption updates — store the latest handle
+        if hasattr(response, "session_resumption_update") and response.session_resumption_update:
+            update = response.session_resumption_update
+            if update.resumable and update.new_handle:
+                self._resumption_handles[session.id] = update.new_handle
+                logger.debug(
+                    "Session resumption handle updated for %s (resumable=%s)",
+                    session.id,
+                    update.resumable,
+                )
+
         # Handle audio data
         if hasattr(response, "data") and response.data:
             count = self._audio_chunk_count.get(session.id, 0) + 1
@@ -702,6 +782,18 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 await self._flush_transcription_buffer(session, "assistant")
                 session._response_started = False  # type: ignore[attr-defined]
                 await self._fire_callbacks(self._response_end_callbacks, session)
+
+        # Handle GoAway LAST — after processing all other data in this message.
+        # Raising here breaks out of the receive loop and triggers proactive
+        # reconnection with the session resumption handle.
+        if hasattr(response, "go_away") and response.go_away:
+            time_left = getattr(response.go_away, "time_left", "unknown")
+            logger.warning(
+                "Gemini GoAway received for session %s (time_left=%s)",
+                session.id,
+                time_left,
+            )
+            raise _GoAwayError()
 
     async def _handle_transcription_chunk(
         self, session: RealtimeSession, text: str, role: str, finished: bool
