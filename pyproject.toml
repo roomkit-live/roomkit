@@ -156,6 +156,10 @@ module = ["neutts", "neutts.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["perth", "perth.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["torch", "torch.*"]
 ignore_missing_imports = true
 
