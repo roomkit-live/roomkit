@@ -846,6 +846,7 @@ def _make_gemini_provider() -> Any:
     p._audio_buffers = {}
     p._error_suppressed = set()
     p._session_telemetry = {}
+    p._resumption_handles = {}
     p._audio_callbacks = []
     p._transcription_callbacks = []
     p._speech_start_callbacks = []
