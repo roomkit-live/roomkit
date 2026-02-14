@@ -323,6 +323,14 @@ class AudioPipeline:
                 except Exception:
                     logger.exception("Speech frame callback error")
 
+        # Bridge VAD state into flat metadata keys for diarization.
+        # vad_is_speech is True for all frames during speech (including the
+        # SPEECH_START frame).  vad_speech_end marks the boundary frame.
+        if session.id in self._in_speech_sessions:
+            current_frame.metadata["vad_is_speech"] = True
+        if vad_event is not None and vad_event.type == VADEventType.SPEECH_END:
+            current_frame.metadata["vad_speech_end"] = True
+
         # Stage 6: Diarization
         if self._config.diarization is not None:
             try:

@@ -33,6 +33,7 @@ vllm = ["openai>=1.30"]
 gemini = ["google-genai>=1.0.0"]
 sherpa-onnx = ["sherpa-onnx>=1.10"]
 qwen-tts = ["qwen-tts>=0.1"]
+qwen-asr = ["qwen-asr>=0.0.4"]
 neutts = ["neutts>=0.1"]
 fastrtc = ["fastrtc", "numpy"]
 webrtc-aec = ["aec-audio-processing>=0.1"]
@@ -152,6 +153,10 @@ module = ["qwen_tts", "qwen_tts.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["qwen_asr", "qwen_asr.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["neutts", "neutts.*"]
 ignore_missing_imports = true
 
@@ -220,11 +225,12 @@ module = ["roomkit.sources.neonize"]
 disallow_untyped_decorators = false
 
 [tool.uv]
-# neutts and qwen-tts pin incompatible transformers versions
+# neutts, qwen-tts and qwen-asr pin incompatible transformers versions
 conflicts = [
     [
         { extra = "neutts" },
         { extra = "qwen-tts" },
+        { extra = "qwen-asr" },
     ],
 ]
 
@@ -263,6 +269,7 @@ omit = [
     "src/roomkit/voice/tts/elevenlabs.py",
     "src/roomkit/voice/tts/gradium.py",
     "src/roomkit/voice/tts/qwen3.py",
+    "src/roomkit/voice/stt/qwen3.py",
     "src/roomkit/providers/openai/realtime.py",
     "src/roomkit/providers/gemini/realtime.py",
     "src/roomkit/providers/pydantic_ai/*.py",

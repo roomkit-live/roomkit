@@ -135,6 +135,27 @@ class RealtimeAudioTransport(ABC):
             muted: ``True`` to mute, ``False`` to unmute.
         """
 
+    def on_speaker_change(self, callback: TransportAudioCallback) -> None:  # noqa: B027
+        """Register callback for speaker change events from the audio pipeline.
+
+        Only fires when the transport has a pipeline with diarization configured.
+
+        Args:
+            callback: Called with (session, diarization_result).
+        """
+
+    def set_input_gated(self, session: RealtimeSession, gated: bool) -> None:  # noqa: B027
+        """Gate or un-gate audio input for primary speaker mode.
+
+        When gated, the transport stops sending audio to provider callbacks
+        but continues feeding the pipeline so diarization can detect when
+        the primary speaker returns.
+
+        Args:
+            session: The session to gate/un-gate.
+            gated: ``True`` to gate, ``False`` to un-gate.
+        """
+
     def set_trace_emitter(  # noqa: B027
         self,
         emitter: TraceEmitter | None,

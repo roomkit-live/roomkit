@@ -6,12 +6,11 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
-from roomkit.voice.base import TranscriptionResult
+from roomkit.voice.base import AudioChunk, TranscriptionResult
 
 if TYPE_CHECKING:
     from roomkit.models.event import AudioContent
     from roomkit.voice.audio_frame import AudioFrame
-    from roomkit.voice.base import AudioChunk
 
 
 class STTProvider(ABC):

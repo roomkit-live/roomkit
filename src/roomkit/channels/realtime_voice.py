@@ -541,6 +541,7 @@ class RealtimeVoiceChannel(Channel):
                 )
                 frame = resamplers[0].resample(frame, self._input_sample_rate, 1, 2)
                 audio = frame.data
+
             self._fire_audio_level_task(
                 session,
                 rms_db(audio),

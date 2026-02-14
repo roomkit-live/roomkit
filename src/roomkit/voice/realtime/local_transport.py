@@ -26,7 +26,9 @@ import sys
 import threading
 import time
 from collections import deque
-from typing import Any
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.pipeline.aec.base import AECProvider
@@ -37,6 +39,13 @@ from roomkit.voice.realtime.transport import (
     TransportAudioCallback,
     TransportDisconnectCallback,
 )
+
+if TYPE_CHECKING:
+    from roomkit.voice.pipeline.config import AudioPipelineConfig
+    from roomkit.voice.pipeline.diarization.base import DiarizationResult
+
+# Callback type for speaker change events: (session, result) -> Any
+SpeakerChangeTransportCallback = Callable[[RealtimeSession, "DiarizationResult"], Any]
 
 logger = logging.getLogger("roomkit.voice.realtime.local_transport")
 
@@ -86,6 +95,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
         mute_mic_during_playback: bool = True,
         aec: AECProvider | None = None,
         denoiser: DenoiserProvider | None = None,
+        pipeline: AudioPipelineConfig | None = None,
     ) -> None:
         self._sd = _import_sounddevice()
 
@@ -148,9 +158,47 @@ class LocalAudioTransport(RealtimeAudioTransport):
         # --- Denoiser ---
         self._denoiser = denoiser
 
+        # --- Audio pipeline (diarization sidecar) ---
+        self._pipeline_config = pipeline
+        self._pipeline: Any = None  # AudioPipeline, created lazily in accept()
+        self._pipeline_executor: ThreadPoolExecutor | None = None
+        self._pipeline_loop: asyncio.AbstractEventLoop | None = None
+        self._gated_sessions: set[str] = set()
+        self._speaker_change_callbacks: list[SpeakerChangeTransportCallback] = []
+
     @property
     def name(self) -> str:
         return "LocalAudioTransport"
+
+    def _setup_pipeline(self, config: AudioPipelineConfig) -> None:
+        """Create AudioPipeline and wire analysis callbacks.
+
+        The pipeline runs as an analysis sidecar — audio is fed to it via
+        a single-thread executor for VAD/diarization analysis without adding
+        latency to the audio path.
+        """
+        from roomkit.voice.pipeline.engine import AudioPipeline
+
+        self._pipeline = AudioPipeline(config)
+        self._pipeline_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="tp-pipeline"
+        )
+        self._pipeline_loop = asyncio.get_running_loop()
+
+        if config.diarization is not None:
+            self._pipeline.on_speaker_change(self._on_pipeline_speaker_change)
+
+    def _on_pipeline_speaker_change(self, session: Any, result: DiarizationResult) -> None:
+        """Handle speaker change from pipeline — dispatch to registered callbacks.
+
+        Called from the pipeline executor thread, so we use call_soon_threadsafe
+        to schedule callbacks on the event loop.
+        """
+        loop = self._pipeline_loop
+        if loop is None:
+            return
+        for cb in self._speaker_change_callbacks:
+            loop.call_soon_threadsafe(cb, session, result)
 
     async def accept(self, session: RealtimeSession, connection: Any) -> None:
         """Start mic capture and speaker output for the session.
@@ -162,6 +210,10 @@ class LocalAudioTransport(RealtimeAudioTransport):
             self._loop = asyncio.get_running_loop()
         except RuntimeError:
             self._loop = None
+
+        # Set up pipeline on first session (needs event loop)
+        if self._pipeline_config is not None and self._pipeline is None:
+            self._setup_pipeline(self._pipeline_config)
 
         self._sessions[session.id] = session
         self._last_stats_time = time.monotonic()
@@ -233,6 +285,25 @@ class LocalAudioTransport(RealtimeAudioTransport):
                     audio_bytes = self._denoise_process(audio_bytes)
                 except Exception:
                     logger.exception("Denoiser error — passing audio through")
+
+            # Feed pipeline for analysis (fire-and-forget in executor).
+            # Always fed even when gated so diarization can detect when
+            # the primary speaker returns.
+            if self._pipeline is not None and self._pipeline_executor is not None:
+                frame = AudioFrame(
+                    data=bytes(audio_bytes),
+                    sample_rate=self._input_sample_rate,
+                    channels=self._channels,
+                    sample_width=2,
+                )
+                self._pipeline_executor.submit(
+                    self._pipeline.process_frame, session, frame
+                )
+
+            # Gated by primary-speaker mode: skip audio callbacks but
+            # keep feeding pipeline above.
+            if session.id in self._gated_sessions:
+                return
 
             for cb in self._audio_callbacks:
                 if self._loop is not None and self._loop.is_running():
@@ -312,12 +383,17 @@ class LocalAudioTransport(RealtimeAudioTransport):
         self._log_stats(time.monotonic(), final=True)
         self._stop_output()
 
+        # Notify pipeline of session end
+        if self._pipeline is not None:
+            self._pipeline.on_session_ended(session)
+
         stream = self._input_streams.pop(session.id, None)
         if stream is not None:
             stream.abort()
             stream.close()
 
         self._sessions.pop(session.id, None)
+        self._gated_sessions.discard(session.id)
         logger.info("Local audio stopped: session=%s", session.id)
 
     async def close(self) -> None:
@@ -331,6 +407,11 @@ class LocalAudioTransport(RealtimeAudioTransport):
             stream.abort()
             stream.close()
         self._sessions.clear()
+
+        if self._pipeline is not None:
+            self._pipeline.close()
+        if self._pipeline_executor is not None:
+            self._pipeline_executor.shutdown(wait=False)
 
         if self._aec is not None:
             self._aec.close()
@@ -510,6 +591,16 @@ class LocalAudioTransport(RealtimeAudioTransport):
 
     def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
         self._disconnect_callbacks.append(callback)
+
+    def on_speaker_change(self, callback: SpeakerChangeTransportCallback) -> None:
+        self._speaker_change_callbacks.append(callback)
+
+    def set_input_gated(self, session: RealtimeSession, gated: bool) -> None:
+        if gated:
+            self._gated_sessions.add(session.id)
+        else:
+            self._gated_sessions.discard(session.id)
+        logger.info("Input gated=%s for session %s", gated, session.id)
 
 
 def _import_sounddevice() -> Any:

@@ -326,6 +326,20 @@ def get_qwen3_voice_clone_config() -> type:
     return VoiceCloneConfig
 
 
+def get_qwen3_asr_provider() -> type:
+    """Get Qwen3ASRProvider class (requires qwen-asr)."""
+    from roomkit.voice.stt.qwen3 import Qwen3ASRProvider
+
+    return Qwen3ASRProvider
+
+
+def get_qwen3_asr_config() -> type:
+    """Get Qwen3ASRConfig class."""
+    from roomkit.voice.stt.qwen3 import Qwen3ASRConfig
+
+    return Qwen3ASRConfig
+
+
 def get_neutts_provider() -> type:
     """Get NeuTTSProvider class (requires neutts)."""
     from roomkit.voice.tts.neutts import NeuTTSProvider
