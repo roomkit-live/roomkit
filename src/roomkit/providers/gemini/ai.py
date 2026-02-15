@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, cast
 
 from roomkit.providers.ai.base import (
@@ -152,6 +153,7 @@ class GeminiAIProvider(AIProvider):
         # Format messages
         contents = self._format_messages(context.messages)
 
+        t0 = time.monotonic()
         try:
             # Generate (sync API, wrap in executor for async)
             response = await asyncio.to_thread(
@@ -172,6 +174,17 @@ class GeminiAIProvider(AIProvider):
                 provider="gemini",
                 status_code=None,
             ) from exc
+
+        ttfb_ms = (time.monotonic() - t0) * 1000
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        telemetry.record_metric(
+            "roomkit.llm.ttfb_ms",
+            ttfb_ms,
+            unit="ms",
+            attributes={"provider": "gemini", "model": self._config.model},
+        )
 
         # Extract usage metadata
         usage: dict[str, int] = {}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -208,7 +209,19 @@ class SherpaOnnxSTTProvider(STTProvider):
                 recognizer.decode_stream(stream)
                 return str(stream.result.text.strip())
 
+        t0 = time.monotonic()
         text = await asyncio.to_thread(_run)
+        inference_ms = (time.monotonic() - t0) * 1000
+
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        telemetry.record_metric(
+            "roomkit.stt.inference_ms",
+            inference_ms,
+            unit="ms",
+            attributes={"provider": "sherpa_onnx", "mode": self._config.mode},
+        )
         return TranscriptionResult(text=text)
 
     async def transcribe_stream(

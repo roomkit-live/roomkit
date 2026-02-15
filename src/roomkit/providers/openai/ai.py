@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from roomkit.providers.ai.base import (
@@ -164,6 +165,7 @@ class OpenAIAIProvider(AIProvider):
                 for t in context.tools
             ]
 
+        t0 = time.monotonic()
         try:
             response = await self._client.chat.completions.create(**kwargs)
         except ProviderError:
@@ -183,6 +185,17 @@ class OpenAIAIProvider(AIProvider):
                 provider="openai",
                 status_code=None,
             ) from exc
+
+        ttfb_ms = (time.monotonic() - t0) * 1000
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        telemetry.record_metric(
+            "roomkit.llm.ttfb_ms",
+            ttfb_ms,
+            unit="ms",
+            attributes={"provider": "openai", "model": self._config.model},
+        )
 
         choice = response.choices[0]
         usage: dict[str, int] = {}

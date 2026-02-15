@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -122,6 +123,7 @@ class ElevenLabsTTSProvider(TTSProvider):
         voice_id = voice or self._config.voice_id
         client = self._get_client()
 
+        t0 = time.monotonic()
         response = await client.post(
             f"/text-to-speech/{voice_id}",
             json={
@@ -132,6 +134,17 @@ class ElevenLabsTTSProvider(TTSProvider):
             params={"output_format": self._config.output_format},
         )
         response.raise_for_status()
+
+        ttfb_ms = (time.monotonic() - t0) * 1000
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        telemetry.record_metric(
+            "roomkit.tts.ttfb_ms",
+            ttfb_ms,
+            unit="ms",
+            attributes={"provider": "elevenlabs", "model": self._config.model_id},
+        )
 
         # ElevenLabs returns raw audio bytes
         # We need to save/upload this somewhere to get a URL

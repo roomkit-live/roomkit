@@ -86,12 +86,14 @@ class EventRouter:
         transcoder: DefaultContentTranscoder | None = None,
         max_chain_depth: int = 5,
         rate_limiter: TokenBucketRateLimiter | None = None,
+        telemetry: Any = None,
     ) -> None:
         self._channels = channels
         self._transcoder = transcoder or DefaultContentTranscoder()
         self._max_chain_depth = max_chain_depth
         self._rate_limiter = rate_limiter or TokenBucketRateLimiter()
         self._circuit_breakers: dict[str, CircuitBreaker] = {}
+        self._telemetry = telemetry
 
     def _get_breaker(self, channel_id: str) -> CircuitBreaker:
         """Get or create a circuit breaker for a channel."""
@@ -121,6 +123,17 @@ class EventRouter:
             exclude_delivery: Channel IDs to skip delivery for (already
                 received content via streaming).
         """
+        from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = self._telemetry or NoopTelemetryProvider()
+        span_id = telemetry.start_span(
+            SpanKind.BROADCAST,
+            "framework.broadcast",
+            room_id=event.room_id,
+            attributes={Attr.CHANNEL_ID: source_binding.channel_id},
+        )
+
         result = BroadcastResult()
 
         # Check source can write
@@ -130,6 +143,7 @@ class EventRouter:
                 source_binding.channel_id,
                 extra={"room_id": event.room_id, "channel_id": source_binding.channel_id},
             )
+            telemetry.end_span(span_id, attributes={"target_count": 0})
             return result
 
         # Check source is not muted
@@ -139,6 +153,7 @@ class EventRouter:
                 source_binding.channel_id,
                 extra={"room_id": event.room_id, "channel_id": source_binding.channel_id},
             )
+            telemetry.end_span(span_id, attributes={"target_count": 0})
             return result
 
         # Stamp visibility from source binding
@@ -149,6 +164,7 @@ class EventRouter:
         targets = self._filter_targets(event, source_binding, context.bindings)
 
         if not targets:
+            telemetry.end_span(span_id, attributes={"target_count": 0})
             return result
 
         # Collect per-target results to avoid concurrent mutation
@@ -350,6 +366,15 @@ class EventRouter:
             result.reentry_events.extend(tr.reentry_events)
             result.blocked_events.extend(tr.blocked_events)
             result.observations.extend(tr.observations)
+
+        telemetry.end_span(
+            span_id,
+            attributes={
+                "target_count": len(targets),
+                "delivered_count": len(result.delivery_outputs),
+                "failed_count": len(result.errors),
+            },
+        )
 
         return result
 

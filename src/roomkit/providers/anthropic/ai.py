@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -134,6 +135,7 @@ class AnthropicAIProvider(AIProvider):
                 for t in context.tools
             ]
 
+        t0 = time.monotonic()
         try:
             response = await self._client.messages.create(**kwargs)
         except self._api_status_error as exc:
@@ -151,6 +153,17 @@ class AnthropicAIProvider(AIProvider):
                 provider="anthropic",
                 status_code=None,
             ) from exc
+
+        ttfb_ms = (time.monotonic() - t0) * 1000
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        telemetry.record_metric(
+            "roomkit.llm.ttfb_ms",
+            ttfb_ms,
+            unit="ms",
+            attributes={"provider": "anthropic", "model": self._config.model},
+        )
 
         # Extract text content and tool calls from response
         text_content = ""

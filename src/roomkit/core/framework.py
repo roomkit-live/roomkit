@@ -201,6 +201,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         else:
             self._telemetry = NoopTelemetryProvider()
         self._hook_engine._telemetry = self._telemetry
+        self._store._telemetry = self._telemetry  # type: ignore[attr-defined]
 
     @property
     def store(self) -> ConversationStore:
@@ -434,6 +435,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 channels=self._channels,
                 transcoder=self._transcoder,
                 max_chain_depth=self._max_chain_depth,
+                telemetry=self._telemetry,
             )
         return self._event_router
 

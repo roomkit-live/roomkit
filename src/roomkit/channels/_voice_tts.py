@@ -202,6 +202,7 @@ class VoiceTTSMixin:
         if not self._tts or not self._backend:
             return ChannelOutputModel.empty()
 
+        tts_name = self._tts.name  # capture before async yields (may become None)
         room_id = event.room_id
         target_sessions = self._find_sessions(room_id, binding)
 
@@ -232,7 +233,7 @@ class VoiceTTSMixin:
                     room_id=room_id,
                     session_id=session.id,
                     channel_id=self.channel_id,
-                    attributes={Attr.PROVIDER: self._tts.name},
+                    attributes={Attr.PROVIDER: tts_name},
                 )
 
             try:
@@ -260,7 +261,7 @@ class VoiceTTSMixin:
                         "roomkit.tts.duration_ms",
                         duration_ms,
                         unit="ms",
-                        attributes={Attr.PROVIDER: self._tts.name},
+                        attributes={Attr.PROVIDER: tts_name},
                     )
                 logger.debug(
                     "Streaming TTS send_audio returned for session %s (%.1fs), draining",
@@ -308,6 +309,8 @@ class VoiceTTSMixin:
         assert self._tts is not None  # caller must guard  # noqa: S101
         assert self._backend is not None  # noqa: S101
 
+        tts_name = self._tts.name  # capture before async yields (may become None)
+
         await self._backend.send_transcription(session, text, "assistant")
 
         self._playing_sessions[session.id] = TTSPlaybackState(
@@ -331,7 +334,7 @@ class VoiceTTSMixin:
                 session_id=session.id,
                 channel_id=self.channel_id,
                 attributes={
-                    Attr.PROVIDER: self._tts.name,
+                    Attr.PROVIDER: tts_name,
                     Attr.TTS_CHAR_COUNT: len(text),
                     Attr.TTS_TEXT_LENGTH: len(text),
                 },
@@ -347,7 +350,7 @@ class VoiceTTSMixin:
             await self._backend.send_audio(session, audio_stream)
         except NotImplementedError:
             await self._tts.synthesize(text, voice=voice)
-            logger.warning("TTS provider %s doesn't support streaming", self._tts.name)
+            logger.warning("TTS provider %s doesn't support streaming", tts_name)
         except Exception:
             if telemetry is not None and span_id is not None:
                 telemetry.end_span(span_id, status="error", error_message="TTS failed")
@@ -364,7 +367,7 @@ class VoiceTTSMixin:
                     "roomkit.tts.duration_ms",
                     duration_ms,
                     unit="ms",
-                    attributes={Attr.PROVIDER: self._tts.name},
+                    attributes={Attr.PROVIDER: tts_name},
                 )
             self._schedule(
                 self._finish_playback(session.id),

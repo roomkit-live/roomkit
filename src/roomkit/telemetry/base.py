@@ -29,6 +29,10 @@ class SpanKind(StrEnum):
     HOOK_ASYNC = "hook.async"
     INBOUND_PIPELINE = "framework.inbound"
     BROADCAST = "framework.broadcast"
+    DELIVERY = "framework.delivery"
+    VOICE_SESSION = "voice.session"
+    STORE_QUERY = "store.query"
+    BACKEND_CONNECT = "backend.connect"
     CUSTOM = "custom"
 
 
@@ -76,6 +80,17 @@ class Attr:
     # Realtime
     REALTIME_PROVIDER = "realtime.provider"
     REALTIME_TOOL_NAME = "realtime.tool_name"
+
+    # Delivery
+    DELIVERY_CHANNEL_TYPE = "delivery.channel_type"
+    DELIVERY_RECIPIENT = "delivery.recipient"
+
+    # Store
+    STORE_OPERATION = "store.operation"
+    STORE_TABLE = "store.table"
+
+    # Backend
+    BACKEND_TYPE = "backend.type"
 
 
 @dataclass

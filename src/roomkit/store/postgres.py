@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any
 
 from roomkit.models.channel import ChannelBinding
@@ -120,6 +122,28 @@ class PostgresStore(ConversationStore):
             raise RuntimeError("PostgresStore.init() must be called before use")
         return self._pool
 
+    @contextmanager
+    def _query_span(self, operation: str, table: str) -> Generator[str, None, None]:
+        """Context manager for STORE_QUERY telemetry spans."""
+        from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        span_id = telemetry.start_span(
+            SpanKind.STORE_QUERY,
+            f"store.{operation}",
+            attributes={
+                Attr.STORE_OPERATION: operation,
+                Attr.STORE_TABLE: table,
+            },
+        )
+        try:
+            yield span_id
+            telemetry.end_span(span_id)
+        except Exception as exc:
+            telemetry.end_span(span_id, status="error", error_message=str(exc))
+            raise
+
     async def init(self, min_size: int = 2, max_size: int = 10) -> None:
         """Create the connection pool (if needed) and ensure schema exists."""
         if self._pool is None:
@@ -147,21 +171,23 @@ class PostgresStore(ConversationStore):
     # ── Room operations ──────────────────────────────────────────
 
     async def create_room(self, room: Room) -> Room:
-        async with self._ensure_pool().acquire() as conn:
-            await conn.execute(
-                "INSERT INTO rooms (id, organization_id, status, created_at, data) "
-                "VALUES ($1, $2, $3, $4, $5)",
-                room.id,
-                room.organization_id,
-                room.status.value,
-                room.created_at,
-                _dump(room),
-            )
+        with self._query_span("create_room", "rooms"):
+            async with self._ensure_pool().acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO rooms (id, organization_id, status, created_at, data) "
+                    "VALUES ($1, $2, $3, $4, $5)",
+                    room.id,
+                    room.organization_id,
+                    room.status.value,
+                    room.created_at,
+                    _dump(room),
+                )
         return room
 
     async def get_room(self, room_id: str) -> Room | None:
-        async with self._ensure_pool().acquire() as conn:
-            row = await conn.fetchrow("SELECT data FROM rooms WHERE id = $1", room_id)
+        with self._query_span("get_room", "rooms"):
+            async with self._ensure_pool().acquire() as conn:
+                row = await conn.fetchrow("SELECT data FROM rooms WHERE id = $1", room_id)
         if row is None:
             return None
         return Room.model_validate_json(row["data"])
@@ -216,8 +242,9 @@ class PostgresStore(ConversationStore):
             idx += 1
 
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
-        async with self._ensure_pool().acquire() as conn:
-            rows = await conn.fetch(f"SELECT data FROM rooms {where}", *params)  # nosec B608 — parameterized query
+        with self._query_span("find_rooms", "rooms"):
+            async with self._ensure_pool().acquire() as conn:
+                rows = await conn.fetch(f"SELECT data FROM rooms {where}", *params)  # nosec B608 — parameterized query
         return [Room.model_validate_json(r["data"]) for r in rows]
 
     async def find_latest_room(
@@ -281,17 +308,19 @@ class PostgresStore(ConversationStore):
     # ── Event operations ─────────────────────────────────────────
 
     async def add_event(self, event: RoomEvent) -> RoomEvent:
-        async with self._ensure_pool().acquire() as conn:
-            await conn.execute(
-                "INSERT INTO events (id, room_id, idempotency_key, visibility, created_at, data) "
-                "VALUES ($1, $2, $3, $4, $5, $6)",
-                event.id,
-                event.room_id,
-                event.idempotency_key,
-                event.visibility,
-                event.created_at,
-                _dump(event),
-            )
+        with self._query_span("add_event", "events"):
+            async with self._ensure_pool().acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO events (id, room_id, idempotency_key, visibility, "
+                    "created_at, data) "
+                    "VALUES ($1, $2, $3, $4, $5, $6)",
+                    event.id,
+                    event.room_id,
+                    event.idempotency_key,
+                    event.visibility,
+                    event.created_at,
+                    _dump(event),
+                )
         return event
 
     async def get_event(self, event_id: str) -> RoomEvent | None:
@@ -403,11 +432,12 @@ class PostgresStore(ConversationStore):
         return bool(tag == "DELETE 1")
 
     async def list_bindings(self, room_id: str) -> list[ChannelBinding]:
-        async with self._ensure_pool().acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT data FROM bindings WHERE room_id = $1",
-                room_id,
-            )
+        with self._query_span("list_bindings", "bindings"):
+            async with self._ensure_pool().acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT data FROM bindings WHERE room_id = $1",
+                    room_id,
+                )
         return [ChannelBinding.model_validate_json(r["data"]) for r in rows]
 
     # ── Participant operations ───────────────────────────────────

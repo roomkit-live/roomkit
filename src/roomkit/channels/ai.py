@@ -103,6 +103,12 @@ class AIChannel(Channel):
         else:
             self._tool_handler = tool_handler
 
+    def _propagate_telemetry(self) -> None:
+        """Propagate telemetry to AI provider."""
+        telemetry = getattr(self, "_telemetry", None)
+        if telemetry is not None:
+            self._provider._telemetry = telemetry
+
     @property
     def info(self) -> dict[str, Any]:
         return {"provider": type(self._provider).__name__}

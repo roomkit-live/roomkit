@@ -187,6 +187,12 @@ class RealtimeVoiceChannel(Channel):
         """Access telemetry provider (set by register_channel)."""
         return getattr(self, "_telemetry", None) or NoopTelemetryProvider()
 
+    def _propagate_telemetry(self) -> None:
+        """Propagate telemetry to realtime provider."""
+        telemetry = getattr(self, "_telemetry", None)
+        if telemetry is not None:
+            self._provider._telemetry = telemetry
+
     def set_framework(self, framework: RoomKit) -> None:
         """Set the framework reference for event routing.
 

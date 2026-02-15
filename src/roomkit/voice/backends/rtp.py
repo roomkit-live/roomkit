@@ -175,6 +175,18 @@ class RTPVoiceBackend(VoiceBackend):
             metadata=session_metadata,
         )
 
+        from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        span_id = telemetry.start_span(
+            SpanKind.BACKEND_CONNECT,
+            "backend.connect",
+            room_id=room_id,
+            session_id=session_id,
+            attributes={Attr.BACKEND_TYPE: "RTP"},
+        )
+
         self._sessions[session_id] = session
         self._rtp_sessions[session_id] = rtp_session
         self._send_timestamps[session_id] = 0
@@ -184,6 +196,8 @@ class RTPVoiceBackend(VoiceBackend):
 
         # Wire inbound DTMF callback
         rtp_session.on_dtmf = self._make_dtmf_handler(session)
+
+        telemetry.end_span(span_id)
 
         logger.info(
             "RTP session created: session=%s, room=%s, participant=%s, remote=%s, pt=%d",

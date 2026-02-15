@@ -95,8 +95,11 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self._send_audio_count: dict[str, int] = {}
         # Suppress duplicate send_audio_failed errors during reconnection
         self._error_suppressed: set[str] = set()
-        # Session telemetry for disconnect debugging
-        self._session_telemetry: dict[str, dict[str, Any]] = {}
+        # Session start times for disconnect debugging / uptime metrics
+        self._session_started_at: dict[str, float] = {}
+        # Per-session turn + tool_result counters for debugging
+        self._session_turn_count: dict[str, int] = {}
+        self._session_tool_result_bytes: dict[str, int] = {}
 
         # Callbacks
         self._audio_callbacks: list[RealtimeAudioCallback] = []
@@ -259,13 +262,11 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self._sessions[session.id] = session
         self._audio_buffers[session.id] = deque(maxlen=100)
         self._resumption_handles[session.id] = None
-        # Session-level telemetry — NOT reset on reconnect so uptime
+        # Session-level counters — NOT reset on reconnect so uptime
         # reflects total session duration including disconnected periods.
-        self._session_telemetry[session.id] = {
-            "started_at": time.monotonic(),
-            "turn_count": 0,
-            "tool_result_bytes": 0,
-        }
+        self._session_started_at[session.id] = time.monotonic()
+        self._session_turn_count[session.id] = 0
+        self._session_tool_result_bytes[session.id] = 0
 
         session.state = RealtimeSessionState.ACTIVE
         session.provider_session_id = session.id
@@ -364,10 +365,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if live is None:
             return
 
-        # Track tool result bytes for telemetry
-        telemetry = self._session_telemetry.get(session.id)
-        if telemetry is not None:
-            telemetry["tool_result_bytes"] += len(result)
+        # Track tool result bytes for debugging
+        if session.id in self._session_tool_result_bytes:
+            self._session_tool_result_bytes[session.id] += len(result)
 
         if len(result) > 16384:
             logger.warning(
@@ -421,8 +421,34 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self._live_configs.pop(session.id, None)
         self._audio_buffers.pop(session.id, None)
         self._error_suppressed.discard(session.id)
-        self._session_telemetry.pop(session.id, None)
         self._resumption_handles.pop(session.id, None)
+
+        # Record session metrics before cleanup
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        started_at = self._session_started_at.pop(session.id, None)
+        turn_count = self._session_turn_count.pop(session.id, 0)
+        tool_bytes = self._session_tool_result_bytes.pop(session.id, 0)
+        if started_at is not None:
+            uptime_s = time.monotonic() - started_at
+            telemetry.record_metric(
+                "roomkit.realtime.uptime_s",
+                uptime_s,
+                unit="s",
+                attributes={"provider": "gemini", "session_id": session.id},
+            )
+        telemetry.record_metric(
+            "roomkit.realtime.turn_count",
+            float(turn_count),
+            attributes={"provider": "gemini", "session_id": session.id},
+        )
+        if tool_bytes:
+            telemetry.record_metric(
+                "roomkit.realtime.tool_result_bytes",
+                float(tool_bytes),
+                attributes={"provider": "gemini", "session_id": session.id},
+            )
         if ctxmgr is not None:
             with contextlib.suppress(Exception):
                 await ctxmgr.__aexit__(None, None, None)
@@ -544,17 +570,17 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 # Suppress duplicate send_audio_failed errors during reconnect
                 self._error_suppressed.add(session.id)
 
-                # Log telemetry for disconnect debugging
-                telemetry = self._session_telemetry.get(session.id)
-                if telemetry:
-                    uptime = time.monotonic() - telemetry["started_at"]
+                # Log disconnect debugging info
+                started_at = self._session_started_at.get(session.id)
+                if started_at:
+                    uptime = time.monotonic() - started_at
                     logger.warning(
                         "Gemini session %s disconnected — uptime=%.1fs, "
                         "turns=%d, tool_result_bytes=%d",
                         session.id,
                         uptime,
-                        telemetry["turn_count"],
-                        telemetry["tool_result_bytes"],
+                        self._session_turn_count.get(session.id, 0),
+                        self._session_tool_result_bytes.get(session.id, 0),
                     )
 
                 audio_chunks = self._audio_chunk_count.get(session.id, 0)
@@ -829,10 +855,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
             # Turn complete
             if hasattr(content, "turn_complete") and content.turn_complete:
-                # Track turn count for telemetry
-                telemetry = self._session_telemetry.get(session.id)
-                if telemetry is not None:
-                    telemetry["turn_count"] += 1
+                # Track turn count
+                if session.id in self._session_turn_count:
+                    self._session_turn_count[session.id] += 1
                 # Flush both transcription buffers — turn ended.
                 # User buffer may not have been flushed by ACTIVITY_END
                 # (some models don't send voice_activity events, or

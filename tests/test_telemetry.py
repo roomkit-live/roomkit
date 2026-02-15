@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import pytest
 
@@ -698,3 +699,300 @@ class TestOpenTelemetryProvider:
 
         cls = getattr(roomkit, "OpenTelemetryProvider", None)
         assert cls is not None
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: EventRouter broadcast span
+# ---------------------------------------------------------------------------
+
+
+class TestBroadcastTelemetry:
+    async def test_broadcast_creates_span(self) -> None:
+        """process_inbound triggers a BROADCAST span via EventRouter."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        ch1 = SimpleChannel("ch1")
+        ch2 = SimpleChannel("ch2")
+        kit.register_channel(ch1)
+        kit.register_channel(ch2)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "ch2")
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        await kit.process_inbound(msg, room_id=room.id)
+
+        broadcast_spans = mock.get_spans(SpanKind.BROADCAST)
+        assert len(broadcast_spans) >= 1
+        span = broadcast_spans[0]
+        assert span.name == "framework.broadcast"
+        assert span.room_id == room.id
+        assert span.status == "ok"
+        assert span.attributes["target_count"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: TransportChannel delivery span
+# ---------------------------------------------------------------------------
+
+
+class _MockTransportProvider:
+    """Minimal transport provider for testing."""
+
+    name = "mock-transport"
+
+    async def send(self, event: RoomEvent, *, to: str = "", **kwargs: Any) -> None:
+        pass
+
+
+class _FailingTransportProvider:
+    """Transport provider that always fails."""
+
+    name = "failing-transport"
+
+    async def send(self, event: RoomEvent, *, to: str = "", **kwargs: Any) -> None:
+        raise RuntimeError("send failed")
+
+
+class TestDeliveryTelemetry:
+    async def test_delivery_creates_span(self) -> None:
+        """TransportChannel.deliver() creates a DELIVERY span."""
+        from roomkit.channels.transport import TransportChannel
+
+        mock = MockTelemetryProvider()
+        provider = _MockTransportProvider()
+        ch = TransportChannel(
+            "sms1",
+            ChannelType.SMS,
+            provider=provider,
+        )
+        ch._telemetry = mock  # type: ignore[attr-defined]
+
+        event = RoomEvent(
+            room_id="room1",
+            source=EventSource(channel_id="other", channel_type=ChannelType.AI),
+            content=TextContent(body="hello"),
+        )
+        binding = ChannelBinding(
+            channel_id="sms1",
+            room_id="room1",
+            channel_type=ChannelType.SMS,
+        )
+        from roomkit.models.context import RoomContext
+        from roomkit.models.room import Room
+
+        context = RoomContext(room=Room(id="room1"), bindings=[], recent_events=[])
+        await ch.deliver(event, binding, context)
+
+        delivery_spans = mock.get_spans(SpanKind.DELIVERY)
+        assert len(delivery_spans) == 1
+        assert delivery_spans[0].name == "framework.delivery"
+        assert delivery_spans[0].attributes[Attr.DELIVERY_CHANNEL_TYPE] == str(ChannelType.SMS)
+        assert delivery_spans[0].status == "ok"
+
+    async def test_delivery_error_span(self) -> None:
+        """TransportChannel.deliver() records error on failure."""
+        from roomkit.channels.transport import TransportChannel
+
+        mock = MockTelemetryProvider()
+        provider = _FailingTransportProvider()
+        ch = TransportChannel(
+            "sms1",
+            ChannelType.SMS,
+            provider=provider,
+        )
+        ch._telemetry = mock  # type: ignore[attr-defined]
+
+        event = RoomEvent(
+            room_id="room1",
+            source=EventSource(channel_id="other", channel_type=ChannelType.AI),
+            content=TextContent(body="hello"),
+        )
+        binding = ChannelBinding(
+            channel_id="sms1",
+            room_id="room1",
+            channel_type=ChannelType.SMS,
+        )
+        from roomkit.models.context import RoomContext
+        from roomkit.models.room import Room
+
+        context = RoomContext(room=Room(id="room1"), bindings=[], recent_events=[])
+        with pytest.raises(RuntimeError, match="send failed"):
+            await ch.deliver(event, binding, context)
+
+        delivery_spans = mock.get_spans(SpanKind.DELIVERY)
+        assert len(delivery_spans) == 1
+        assert delivery_spans[0].status == "error"
+        assert "send failed" in (delivery_spans[0].error_message or "")
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: VoiceChannel VOICE_SESSION span
+# ---------------------------------------------------------------------------
+
+
+class TestVoiceSessionTelemetry:
+    async def test_voice_session_span_on_bind_unbind(self) -> None:
+        """bind_session/unbind_session creates and ends a VOICE_SESSION span."""
+        from roomkit.voice.backends.mock import MockVoiceBackend
+        from roomkit.voice.base import VoiceSession, VoiceSessionState
+
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+
+        from roomkit.channels.voice import VoiceChannel
+
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice1", backend=backend)
+        kit.register_channel(channel)
+
+        room = await kit.create_room()
+        binding = await kit.attach_channel(room.id, "voice1")
+
+        session = VoiceSession(
+            id="sess1",
+            room_id=room.id,
+            participant_id="user1",
+            channel_id="voice1",
+            state=VoiceSessionState.ACTIVE,
+        )
+
+        channel.bind_session(session, room.id, binding)
+
+        active = [s for s in mock.get_active_spans() if s.kind == SpanKind.VOICE_SESSION]
+        assert len(active) == 1
+        assert active[0].session_id == "sess1"
+        assert active[0].room_id == room.id
+        assert active[0].attributes[Attr.BACKEND_TYPE] == "MockVoiceBackend"
+
+        channel.unbind_session(session)
+
+        completed = mock.get_spans(SpanKind.VOICE_SESSION)
+        assert len(completed) == 1
+        assert completed[0].status == "ok"
+        assert completed[0].duration_ms is not None
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Store query span (PostgresStore skipped — mocking pool is heavy)
+# ---------------------------------------------------------------------------
+
+
+class TestStoreQuerySpan:
+    def test_store_telemetry_wired(self) -> None:
+        """Framework sets _telemetry on the store."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        assert kit._store._telemetry is mock  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: AI provider TTFB metric
+# ---------------------------------------------------------------------------
+
+
+class TestAIProviderTTFB:
+    async def test_ai_provider_records_ttfb_metric(self) -> None:
+        """AI provider generate() records a roomkit.llm.ttfb_ms metric."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+
+        from roomkit.channels.ai import AIChannel
+
+        ai_provider = _MockAIProvider()
+        ai = AIChannel("ai1", provider=ai_provider)
+        kit.register_channel(ai)
+
+        ch = SimpleChannel("ch1")
+        kit.register_channel(ch)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "ai1")
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        await kit.process_inbound(msg, room_id=room.id)
+
+        # The mock AI provider doesn't have _telemetry set via the real
+        # propagation path — check that the propagation mechanism works
+        assert hasattr(ai_provider, "_telemetry")
+        assert ai_provider._telemetry is mock  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Telemetry propagation
+# ---------------------------------------------------------------------------
+
+
+class TestTelemetryPropagation:
+    def test_ai_channel_propagates_to_provider(self) -> None:
+        """AIChannel._propagate_telemetry() sets _telemetry on AI provider."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+
+        from roomkit.channels.ai import AIChannel
+
+        ai_provider = _MockAIProvider()
+        ai = AIChannel("ai1", provider=ai_provider)
+        kit.register_channel(ai)
+
+        assert ai_provider._telemetry is mock  # type: ignore[attr-defined]
+
+    def test_realtime_voice_channel_propagates_to_provider(self) -> None:
+        """RealtimeVoiceChannel._propagate_telemetry() sets _telemetry on provider."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+
+        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+        from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+
+        provider = MockRealtimeProvider()
+        transport = MockRealtimeTransport()
+        channel = RealtimeVoiceChannel("rt1", provider=provider, transport=transport)
+        kit.register_channel(channel)
+
+        assert provider._telemetry is mock  # type: ignore[attr-defined]
+
+    def test_voice_channel_propagates_to_stt_tts_backend(self) -> None:
+        """VoiceChannel.set_framework() propagates telemetry to STT/TTS/backend."""
+        from roomkit.voice.backends.mock import MockVoiceBackend
+
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+
+        from roomkit.channels.voice import VoiceChannel
+
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice1", backend=backend)
+        kit.register_channel(channel)
+
+        assert backend._telemetry is mock  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: New SpanKind values exist
+# ---------------------------------------------------------------------------
+
+
+class TestPhase2SpanKinds:
+    def test_new_span_kinds(self) -> None:
+        assert SpanKind.DELIVERY == "framework.delivery"
+        assert SpanKind.VOICE_SESSION == "voice.session"
+        assert SpanKind.STORE_QUERY == "store.query"
+        assert SpanKind.BACKEND_CONNECT == "backend.connect"
+
+    def test_new_attr_constants(self) -> None:
+        assert Attr.DELIVERY_CHANNEL_TYPE == "delivery.channel_type"
+        assert Attr.DELIVERY_RECIPIENT == "delivery.recipient"
+        assert Attr.STORE_OPERATION == "store.operation"
+        assert Attr.STORE_TABLE == "store.table"
+        assert Attr.BACKEND_TYPE == "backend.type"

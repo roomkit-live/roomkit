@@ -453,6 +453,20 @@ class SIPVoiceBackend(VoiceBackend):
             session = self._sessions[session_id]
             session.room_id = room_id
             session.channel_id = channel_id
+
+            from roomkit.telemetry.base import Attr, SpanKind
+            from roomkit.telemetry.noop import NoopTelemetryProvider
+
+            telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+            with telemetry.span(
+                SpanKind.BACKEND_CONNECT,
+                "backend.connect",
+                room_id=room_id,
+                session_id=session_id,
+                attributes={Attr.BACKEND_TYPE: "SIP"},
+            ):
+                pass  # SIP session pre-created during INVITE
+
             return session
 
         raise ValueError(

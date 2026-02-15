@@ -540,6 +540,15 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         Called automatically when the channel is registered with RoomKit.
         """
         self._framework = framework
+        # Propagate telemetry to STT, TTS providers and backend
+        telemetry = getattr(self, "_telemetry", None)
+        if telemetry is not None:
+            if self._stt is not None:
+                self._stt._telemetry = telemetry  # type: ignore[attr-defined]
+            if self._tts is not None:
+                self._tts._telemetry = telemetry  # type: ignore[attr-defined]
+            if self._backend is not None:
+                self._backend._telemetry = telemetry  # type: ignore[attr-defined]
         # Bridge trace emitter to backend when framework wiring enables it
         self._sync_trace_emitter()
 
@@ -581,6 +590,26 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Start continuous STT if enabled (no local VAD)
         if self._continuous_stt:
             self._start_continuous_stt(session)
+        # Start VOICE_SESSION telemetry span
+        from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        span_id = telemetry.start_span(
+            SpanKind.VOICE_SESSION,
+            "voice.session",
+            room_id=room_id,
+            session_id=session.id,
+            channel_id=self.channel_id,
+            attributes={
+                Attr.BACKEND_TYPE: self._backend.name if self._backend else "none",
+                Attr.PROVIDER: self._stt.name if self._stt else "none",
+                "tts_provider": self._tts.name if self._tts else "none",
+            },
+        )
+        if not hasattr(self, "_voice_session_spans"):
+            self._voice_session_spans: dict[str, str] = {}
+        self._voice_session_spans[session.id] = span_id
         # Emit voice_session_started framework event
         if self._framework:
             self._schedule(
@@ -632,6 +661,14 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Clear batch buffers
         self._batch_audio_buffers.pop(session.id, None)
         self._batch_audio_sample_rate.pop(session.id, None)
+        # End VOICE_SESSION telemetry span
+        voice_spans = getattr(self, "_voice_session_spans", {})
+        span_id = voice_spans.pop(session.id, None)
+        if span_id:
+            from roomkit.telemetry.noop import NoopTelemetryProvider
+
+            telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+            telemetry.end_span(span_id)
         # Emit voice_session_ended framework event
         if binding_info and self._framework:
             room_id, _ = binding_info

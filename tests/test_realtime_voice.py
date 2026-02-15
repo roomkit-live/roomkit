@@ -846,7 +846,9 @@ def _make_gemini_provider() -> Any:
     p._audio_buffers = {}
     p._send_audio_count = {}
     p._error_suppressed = set()
-    p._session_telemetry = {}
+    p._session_started_at = {}
+    p._session_turn_count = {}
+    p._session_tool_result_bytes = {}
     p._resumption_handles = {}
     p._audio_callbacks = []
     p._transcription_callbacks = []
@@ -998,14 +1000,12 @@ class TestErrorDeduplication:
         provider._sessions[session.id] = session
         provider._audio_buffers[session.id] = deque(maxlen=100)
         provider._error_suppressed.add(session.id)
-        provider._session_telemetry[session.id] = {
-            "started_at": 0,
-            "turn_count": 0,
-            "tool_result_bytes": 0,
-        }
+        provider._session_started_at[session.id] = 0.0
+        provider._session_turn_count[session.id] = 0
+        provider._session_tool_result_bytes[session.id] = 0
 
         await provider.disconnect(session)
 
         assert session.id not in provider._error_suppressed
         assert session.id not in provider._audio_buffers
-        assert session.id not in provider._session_telemetry
+        assert session.id not in provider._session_started_at

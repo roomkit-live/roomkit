@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -184,6 +185,7 @@ class DeepgramSTTProvider(STTProvider):
                 content_type = f"audio/{audio_format}"
 
         # Call Deepgram API
+        t0 = time.monotonic()
         response = await client.post(
             "/listen",
             params=params,
@@ -192,6 +194,17 @@ class DeepgramSTTProvider(STTProvider):
         )
         response.raise_for_status()
         result = response.json()
+
+        ttfb_ms = (time.monotonic() - t0) * 1000
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        telemetry.record_metric(
+            "roomkit.stt.ttfb_ms",
+            ttfb_ms,
+            unit="ms",
+            attributes={"provider": "deepgram", "model": self._config.model},
+        )
 
         # Extract transcript
         try:

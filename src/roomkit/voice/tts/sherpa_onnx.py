@@ -7,6 +7,7 @@ import base64
 import logging
 import re
 import struct
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -233,8 +234,20 @@ class SherpaOnnxTTSProvider(TTSProvider):
                 all_samples.extend(audio.samples)
             return all_samples
 
+        t0 = time.monotonic()
         samples = await asyncio.to_thread(_run)
+        synthesis_ms = (time.monotonic() - t0) * 1000
         sample_rate = tts.sample_rate
+
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        telemetry.record_metric(
+            "roomkit.tts.synthesis_ms",
+            synthesis_ms,
+            unit="ms",
+            attributes={"provider": "sherpa_onnx"},
+        )
 
         pcm_data = _float32_to_pcm_s16le(samples)
         wav_data = _wrap_wav(pcm_data, sample_rate)

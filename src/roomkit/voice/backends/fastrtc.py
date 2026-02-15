@@ -175,6 +175,20 @@ class FastRTCVoiceBackend(VoiceBackend):
         )
         self._sessions[session_id] = session
         self._audio_queues[session_id] = asyncio.Queue(maxsize=self._audio_queue_maxsize)
+
+        from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        with telemetry.span(
+            SpanKind.BACKEND_CONNECT,
+            "backend.connect",
+            room_id=room_id,
+            session_id=session_id,
+            attributes={Attr.BACKEND_TYPE: "FastRTC"},
+        ):
+            pass  # connection is synchronous for FastRTC
+
         logger.info(
             "Voice session created: session=%s, room=%s, participant=%s",
             session_id,

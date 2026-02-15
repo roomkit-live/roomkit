@@ -110,9 +110,30 @@ class TransportChannel(Channel):
             logger.debug("No provider configured for %s, skipping delivery", self.channel_id)
             return ChannelOutput.empty()
 
+        from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+
         to = binding.metadata.get(self._recipient_key, "")
         kwargs: dict[str, Any] = {}
         for key, value in self._defaults.items():
             kwargs[key] = binding.metadata.get(key, value) if value is None else value
-        await self._provider.send(event, to=to, **kwargs)
+
+        span_id = telemetry.start_span(
+            SpanKind.DELIVERY,
+            "framework.delivery",
+            room_id=event.room_id,
+            channel_id=self.channel_id,
+            attributes={
+                Attr.DELIVERY_CHANNEL_TYPE: str(self.channel_type),
+                Attr.PROVIDER: getattr(self._provider, "name", type(self._provider).__name__),
+            },
+        )
+        try:
+            await self._provider.send(event, to=to, **kwargs)
+            telemetry.end_span(span_id)
+        except Exception as exc:
+            telemetry.end_span(span_id, status="error", error_message=str(exc))
+            raise
         return ChannelOutput.empty()

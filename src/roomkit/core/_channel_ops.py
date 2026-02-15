@@ -43,6 +43,10 @@ class ChannelOpsMixin(HelpersMixin):
         # Propagate telemetry to all channels
         channel._telemetry = self._telemetry  # type: ignore[attr-defined]
 
+        # Propagate telemetry to channel's sub-providers (AI, STT, TTS, etc.)
+        if hasattr(channel, "_propagate_telemetry"):
+            channel._propagate_telemetry()
+
         # Set framework reference on voice channels for inbound routing
         if isinstance(channel, (VoiceChannel, RealtimeVoiceChannel)):
             channel.set_framework(self)  # type: ignore[arg-type]
