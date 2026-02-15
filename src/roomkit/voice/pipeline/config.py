@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from roomkit.telemetry.base import TelemetryProvider
     from roomkit.voice.interruption import InterruptionConfig
     from roomkit.voice.pipeline.aec.base import AECProvider
     from roomkit.voice.pipeline.agc.base import AGCConfig, AGCProvider
@@ -135,3 +136,6 @@ class AudioPipelineConfig:
 
     debug_taps: PipelineDebugTaps | None = None
     """Optional diagnostic audio capture at pipeline stage boundaries."""
+
+    telemetry: TelemetryProvider | None = None
+    """Optional telemetry provider for pipeline metrics."""

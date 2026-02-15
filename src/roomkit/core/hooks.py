@@ -87,6 +87,7 @@ class HookEngine:
     def __init__(self) -> None:
         self._global_hooks: list[HookRegistration] = []
         self._room_hooks: dict[str, list[HookRegistration]] = {}
+        self._telemetry: Any = None  # Set by RoomKit after init
 
     def register(self, hook: HookRegistration) -> None:
         """Register a global hook."""
@@ -176,6 +177,19 @@ class HookEngine:
         result = SyncPipelineResult(event=event)
 
         for hook in hooks:
+            span_id = None
+            if self._telemetry is not None:
+                from roomkit.telemetry.base import Attr, SpanKind
+
+                span_id = self._telemetry.start_span(
+                    SpanKind.HOOK_SYNC,
+                    f"hook.sync.{hook.name or 'unnamed'}",
+                    room_id=room_id,
+                    attributes={
+                        Attr.HOOK_NAME: hook.name or "unnamed",
+                        Attr.HOOK_TRIGGER: str(trigger),
+                    },
+                )
             try:
                 current_event = result.event or event
                 fn = cast(SyncHookFn, hook.fn)
@@ -192,10 +206,14 @@ class HookEngine:
                 result.hook_errors.append(
                     {"hook": hook.name, "error": f"timeout ({hook.timeout}s)"}
                 )
+                if span_id is not None:
+                    self._telemetry.end_span(span_id, status="error", error_message="timeout")
                 continue
             except Exception as exc:
                 logger.exception("Sync hook %s failed", hook.name, extra={"room_id": room_id})
                 result.hook_errors.append({"hook": hook.name, "error": str(exc)})
+                if span_id is not None:
+                    self._telemetry.end_span(span_id, status="error", error_message=str(exc))
                 continue
 
             if not isinstance(hook_result, HookResult):
@@ -211,7 +229,17 @@ class HookEngine:
                         "error": f"expected HookResult, got {type(hook_result).__name__}",
                     }
                 )
+                if span_id is not None:
+                    self._telemetry.end_span(
+                        span_id, status="error", error_message="invalid return type"
+                    )
                 continue
+
+            if span_id is not None:
+                self._telemetry.end_span(
+                    span_id,
+                    attributes={Attr.HOOK_RESULT: hook_result.action},
+                )
 
             result.injected_events.extend(hook_result.injected_events)
             result.tasks.extend(hook_result.tasks)
@@ -259,11 +287,26 @@ class HookEngine:
             return
 
         async def _run_one(hook: HookRegistration) -> None:
+            span_id = None
+            if self._telemetry is not None:
+                from roomkit.telemetry.base import Attr, SpanKind
+
+                span_id = self._telemetry.start_span(
+                    SpanKind.HOOK_ASYNC,
+                    f"hook.async.{hook.name or 'unnamed'}",
+                    room_id=room_id,
+                    attributes={
+                        Attr.HOOK_NAME: hook.name or "unnamed",
+                        Attr.HOOK_TRIGGER: str(trigger),
+                    },
+                )
             try:
                 await asyncio.wait_for(
                     hook.fn(event, context),
                     timeout=hook.timeout,
                 )
+                if span_id is not None:
+                    self._telemetry.end_span(span_id)
             except TimeoutError:
                 logger.warning(
                     "Async hook %s timed out after %.1fs",
@@ -271,11 +314,15 @@ class HookEngine:
                     hook.timeout,
                     extra={"room_id": room_id},
                 )
+                if span_id is not None:
+                    self._telemetry.end_span(span_id, status="error", error_message="timeout")
             except Exception:
                 logger.exception(
                     "Async hook %s failed",
                     hook.name,
                     extra={"room_id": room_id},
                 )
+                if span_id is not None:
+                    self._telemetry.end_span(span_id, status="error", error_message="failed")
 
         await asyncio.gather(*[_run_one(hook) for hook in hooks], return_exceptions=True)

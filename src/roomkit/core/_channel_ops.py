@@ -40,6 +40,9 @@ class ChannelOpsMixin(HelpersMixin):
         # Wire protocol trace framework handler on all channels
         channel._trace_framework_handler = self._on_channel_trace
 
+        # Propagate telemetry to all channels
+        channel._telemetry = self._telemetry  # type: ignore[attr-defined]
+
         # Set framework reference on voice channels for inbound routing
         if isinstance(channel, (VoiceChannel, RealtimeVoiceChannel)):
             channel.set_framework(self)  # type: ignore[arg-type]

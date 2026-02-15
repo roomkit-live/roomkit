@@ -23,6 +23,8 @@ from roomkit.models.enums import (
     HookTrigger,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.telemetry.base import Attr, SpanKind
+from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.voice.realtime.base import RealtimeSession, RealtimeSessionState
 from roomkit.voice.utils import rms_db
 
@@ -161,6 +163,10 @@ class RealtimeVoiceChannel(Channel):
         # Cached event loop for cross-thread scheduling (e.g. PortAudio callback)
         self._event_loop: asyncio.AbstractEventLoop | None = None
 
+        # Telemetry span tracking: session_id -> span_id
+        self._session_spans: dict[str, str] = {}
+        self._turn_spans: dict[str, str] = {}
+
         # Wire internal callbacks
         provider.on_audio(self._on_provider_audio)
         provider.on_transcription(self._on_provider_transcription)
@@ -175,6 +181,11 @@ class RealtimeVoiceChannel(Channel):
         transport.on_client_disconnected(self._on_client_disconnected)
         if transport.supports_playback_callback:
             transport.on_audio_played(self._on_transport_audio_played)
+
+    @property
+    def _telemetry_provider(self) -> NoopTelemetryProvider:
+        """Access telemetry provider (set by register_channel)."""
+        return getattr(self, "_telemetry", None) or NoopTelemetryProvider()
 
     def set_framework(self, framework: RoomKit) -> None:
         """Set the framework reference for event routing.
@@ -320,6 +331,21 @@ class RealtimeVoiceChannel(Channel):
                 },
             )
 
+        # Start telemetry session span
+        telemetry = self._telemetry_provider
+        session_span_id = telemetry.start_span(
+            SpanKind.REALTIME_SESSION,
+            "realtime_session",
+            attributes={
+                Attr.REALTIME_PROVIDER: self._provider.name,
+                "participant_id": participant_id,
+            },
+            room_id=room_id,
+            session_id=session.id,
+            channel_id=self.channel_id,
+        )
+        self._session_spans[session.id] = session_span_id
+
         logger.info(
             "Realtime session %s started: room=%s, participant=%s, provider=%s",
             session.id,
@@ -358,6 +384,15 @@ class RealtimeVoiceChannel(Channel):
         self._session_transport_rates.pop(session.id, None)
         self._audio_forward_count.pop(session.id, None)
         self._audio_generation.pop(session.id, None)
+
+        # End any active turn span, then the session span
+        telemetry = self._telemetry_provider
+        turn_span_id = self._turn_spans.pop(session.id, None)
+        if turn_span_id:
+            telemetry.end_span(turn_span_id)
+        session_span_id = self._session_spans.pop(session.id, None)
+        if session_span_id:
+            telemetry.end_span(session_span_id)
 
         resamplers = self._session_resamplers.pop(session.id, None)
         if resamplers:
@@ -837,6 +872,19 @@ class RealtimeVoiceChannel(Channel):
         """
         room_id = self._session_rooms.get(session.id)
 
+        # Telemetry: tool call span (child of current turn span)
+        telemetry = self._telemetry_provider
+        parent = self._turn_spans.get(session.id) or self._session_spans.get(session.id)
+        tool_span_id = telemetry.start_span(
+            SpanKind.REALTIME_TOOL_CALL,
+            f"realtime_tool:{name}",
+            parent_id=parent,
+            attributes={Attr.REALTIME_TOOL_NAME: name},
+            room_id=room_id,
+            session_id=session.id,
+            channel_id=self.channel_id,
+        )
+
         # Optionally mute mic during tool execution to prevent barge-in
         # that causes providers (e.g. Gemini) to silently drop the tool
         # result.  Off by default — use set_access() for fine-grained
@@ -912,6 +960,7 @@ class RealtimeVoiceChannel(Channel):
 
             await self._provider.submit_tool_result(session, call_id, result_str)
 
+            telemetry.end_span(tool_span_id)
             logger.info(
                 "Tool call %s(%s) handled for session %s",
                 name,
@@ -920,6 +969,7 @@ class RealtimeVoiceChannel(Channel):
             )
 
         except Exception:
+            telemetry.end_span(tool_span_id, status="error", error_message=f"tool {name} failed")
             logger.exception("Error handling tool call %s for session %s", call_id, session.id)
             try:
                 await self._provider.submit_tool_result(
@@ -978,6 +1028,7 @@ class RealtimeVoiceChannel(Channel):
         self, session: RealtimeSession, *, is_speaking: bool
     ) -> None:
         """Publish ephemeral speaking indicator for the AI."""
+        telemetry = self._telemetry_provider
         if not is_speaking:
             forwarded = self._audio_forward_count.pop(session.id, 0)
             if forwarded:
@@ -986,8 +1037,28 @@ class RealtimeVoiceChannel(Channel):
                     forwarded,
                     session.id,
                 )
+            # End turn span
+            turn_span_id = self._turn_spans.pop(session.id, None)
+            if turn_span_id:
+                telemetry.end_span(
+                    turn_span_id,
+                    attributes={"audio_chunks_forwarded": forwarded},
+                )
         elif is_speaking:
             self._audio_forward_count[session.id] = 0
+            # Start turn span (child of session span)
+            parent = self._session_spans.get(session.id)
+            room_id = self._session_rooms.get(session.id)
+            turn_span_id = telemetry.start_span(
+                SpanKind.REALTIME_TURN,
+                "realtime_turn",
+                parent_id=parent,
+                attributes={Attr.REALTIME_PROVIDER: self._provider.name},
+                room_id=room_id,
+                session_id=session.id,
+                channel_id=self.channel_id,
+            )
+            self._turn_spans[session.id] = turn_span_id
         try:
             await self._transport.send_message(
                 session,

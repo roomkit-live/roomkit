@@ -9,7 +9,11 @@ from collections.abc import AsyncIterator, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.enums import HookTrigger
+from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
+from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.voice.utils import rms_db
+
+_NOOP = NoopTelemetryProvider()
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -210,19 +214,54 @@ class VoiceTTSMixin:
 
         import time as _time
 
+        _t = getattr(self._framework, "_telemetry", None) if self._framework else None
+        telemetry: TelemetryProvider | None = _t if isinstance(_t, TelemetryProvider) else None
+
         for session in target_sessions:
             self._playing_sessions[session.id] = TTSPlaybackState(
                 session_id=session.id, text="(streaming)"
             )
             t0 = _time.monotonic()
             logger.info("Streaming TTS playback started for session %s", session.id)
+
+            span_id = None
+            if telemetry is not None:
+                span_id = telemetry.start_span(
+                    SpanKind.TTS_SYNTHESIZE,
+                    "tts.stream",
+                    room_id=room_id,
+                    session_id=session.id,
+                    channel_id=self.channel_id,
+                    attributes={Attr.PROVIDER: self._tts.name},
+                )
+
             try:
                 sentences = split_sentences(tracking_stream())
                 audio = self._tts.synthesize_stream_input(sentences)
                 if self._pipeline is not None:
                     audio = self._wrap_outbound(session, audio)
                 await self._backend.send_audio(session, audio)
+            except Exception:
+                if telemetry is not None and span_id is not None:
+                    telemetry.end_span(span_id, status="error", error_message="stream TTS failed")
+                    span_id = None
+                raise
             finally:
+                duration_ms = (_time.monotonic() - t0) * 1000
+                if telemetry is not None and span_id is not None:
+                    telemetry.end_span(
+                        span_id,
+                        attributes={
+                            Attr.DURATION_MS: round(duration_ms, 1),
+                            Attr.TTS_CHAR_COUNT: len("".join(accumulated)),
+                        },
+                    )
+                    telemetry.record_metric(
+                        "roomkit.tts.duration_ms",
+                        duration_ms,
+                        unit="ms",
+                        attributes={Attr.PROVIDER: self._tts.name},
+                    )
                 logger.debug(
                     "Streaming TTS send_audio returned for session %s (%.1fs), draining",
                     session.id,
@@ -262,6 +301,8 @@ class VoiceTTSMixin:
         Handles transcription, playback state tracking, streaming synthesis
         with pipeline wrapping, and fallback to batch synthesis.
         """
+        import time as _time
+
         from .voice import TTSPlaybackState
 
         assert self._tts is not None  # caller must guard  # noqa: S101
@@ -274,6 +315,31 @@ class VoiceTTSMixin:
             text=text,
         )
 
+        # Resolve telemetry provider
+        _t = getattr(self._framework, "_telemetry", None) if self._framework else None
+        telemetry: TelemetryProvider | None = _t if isinstance(_t, TelemetryProvider) else None
+
+        binding_info = self._session_bindings.get(session.id)
+        room_id = binding_info[0] if binding_info else None
+
+        span_id = None
+        if telemetry is not None:
+            span_id = telemetry.start_span(
+                SpanKind.TTS_SYNTHESIZE,
+                "tts.synthesize",
+                room_id=room_id,
+                session_id=session.id,
+                channel_id=self.channel_id,
+                attributes={
+                    Attr.PROVIDER: self._tts.name,
+                    Attr.TTS_CHAR_COUNT: len(text),
+                    Attr.TTS_TEXT_LENGTH: len(text),
+                },
+            )
+            if voice:
+                telemetry.set_attribute(span_id, Attr.TTS_VOICE, voice)
+
+        t0 = _time.monotonic()
         try:
             audio_stream = self._tts.synthesize_stream(text, voice=voice)
             if self._pipeline is not None:
@@ -282,7 +348,24 @@ class VoiceTTSMixin:
         except NotImplementedError:
             await self._tts.synthesize(text, voice=voice)
             logger.warning("TTS provider %s doesn't support streaming", self._tts.name)
+        except Exception:
+            if telemetry is not None and span_id is not None:
+                telemetry.end_span(span_id, status="error", error_message="TTS failed")
+                span_id = None  # prevent double-end
+            raise
         finally:
+            duration_ms = (_time.monotonic() - t0) * 1000
+            if telemetry is not None and span_id is not None:
+                telemetry.end_span(
+                    span_id,
+                    attributes={Attr.DURATION_MS: round(duration_ms, 1)},
+                )
+                telemetry.record_metric(
+                    "roomkit.tts.duration_ms",
+                    duration_ms,
+                    unit="ms",
+                    attributes={Attr.PROVIDER: self._tts.name},
+                )
             self._schedule(
                 self._finish_playback(session.id),
                 name=f"finish_playback:{session.id}",

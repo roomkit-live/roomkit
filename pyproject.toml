@@ -48,6 +48,7 @@ realtime-gemini = ["google-genai>=1.0.0"]
 websocket = ["websockets>=13.0"]
 sse = ["httpx>=0.27", "httpx-sse>=0.4"]
 gradium = ["gradium>=0.5.7"]
+opentelemetry = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
 smart-turn = ["numpy", "onnxruntime", "transformers"]
 telegram = ["httpx>=0.27"]
 teams = ["botbuilder-core>=4.14"]
@@ -139,6 +140,10 @@ python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["opentelemetry", "opentelemetry.*"]
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["google", "google.genai", "google.genai.*"]

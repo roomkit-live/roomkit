@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.enums import HookTrigger
+from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
+from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.voice.base import TranscriptionResult
+
+_NOOP = NoopTelemetryProvider()
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -568,8 +573,52 @@ class VoiceSTTMixin:
                     channels=1,
                     sample_width=2,
                 )
-                stt_result = await self._stt.transcribe(audio_frame)
-                text = stt_result.text
+                _t = getattr(self._framework, "_telemetry", None)
+                telemetry = _t if isinstance(_t, TelemetryProvider) else _NOOP
+                t0 = time.monotonic()
+                span_id = telemetry.start_span(
+                    SpanKind.STT_TRANSCRIBE,
+                    "stt.batch",
+                    room_id=room_id,
+                    session_id=session.id,
+                    channel_id=self.channel_id,
+                    attributes={Attr.PROVIDER: self._stt.name, Attr.STT_MODE: "batch"},
+                )
+                try:
+                    stt_result = await self._stt.transcribe(audio_frame)
+                    text = stt_result.text
+                    ttfb_ms = (time.monotonic() - t0) * 1000
+                    telemetry.end_span(
+                        span_id,
+                        attributes={
+                            Attr.STT_TEXT_LENGTH: len(text) if text else 0,
+                            Attr.TTFB_MS: round(ttfb_ms, 1),
+                            Attr.DURATION_MS: round(ttfb_ms, 1),
+                        },
+                    )
+                    telemetry.record_metric(
+                        "roomkit.stt.duration_ms",
+                        ttfb_ms,
+                        unit="ms",
+                        attributes={Attr.PROVIDER: self._stt.name},
+                    )
+                except Exception:
+                    telemetry.end_span(span_id, status="error", error_message="batch STT failed")
+                    raise
+            elif stream_state is not None:
+                # Record streaming STT metrics
+                _t = getattr(self._framework, "_telemetry", None)
+                telemetry = _t if isinstance(_t, TelemetryProvider) else _NOOP
+                telemetry.record_metric(
+                    "roomkit.stt.duration_ms",
+                    0,
+                    unit="ms",
+                    attributes={
+                        Attr.PROVIDER: self._stt.name,
+                        Attr.STT_MODE: "stream",
+                        Attr.STT_TEXT_LENGTH: len(text),
+                    },
+                )
 
             if not text.strip():
                 logger.debug("Empty transcription, skipping")

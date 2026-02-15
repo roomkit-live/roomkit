@@ -205,6 +205,16 @@ from roomkit.sources.base import (
 )
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
+from roomkit.telemetry import (
+    Attr,
+    ConsoleTelemetryProvider,
+    MockTelemetryProvider,
+    NoopTelemetryProvider,
+    Span,
+    SpanKind,
+    TelemetryConfig,
+    TelemetryProvider,
+)
 from roomkit.voice import (
     AudioChunk,
     AudioFrame,
@@ -542,6 +552,16 @@ __all__ = [
     "SkillParseError",
     "SkillRegistry",
     "SkillValidationError",
+    # Telemetry
+    "Attr",
+    "ConsoleTelemetryProvider",
+    "MockTelemetryProvider",
+    "NoopTelemetryProvider",
+    "OpenTelemetryProvider",
+    "Span",
+    "SpanKind",
+    "TelemetryConfig",
+    "TelemetryProvider",
     # AI Docs
     "get_agents_md",
     "get_ai_context",
@@ -554,4 +574,8 @@ def __getattr__(name: str) -> object:
         from roomkit.store.postgres import PostgresStore
 
         return PostgresStore
+    if name == "OpenTelemetryProvider":
+        from roomkit.telemetry.opentelemetry import OpenTelemetryProvider
+
+        return OpenTelemetryProvider
     raise AttributeError(f"module 'roomkit' has no attribute {name}")

@@ -40,6 +40,8 @@ from roomkit.providers.ai.base import (
     AIToolResultPart,
     ProviderError,
 )
+from roomkit.telemetry.base import Attr, SpanKind
+from roomkit.telemetry.noop import NoopTelemetryProvider
 
 if TYPE_CHECKING:
     from roomkit.skills.executor import ScriptExecutor
@@ -153,14 +155,31 @@ class AIChannel(Channel):
             response_stream=self._provider.generate_stream(ai_context),
         )
 
+    @property
+    def _telemetry_provider(self) -> NoopTelemetryProvider:
+        """Access telemetry provider (set by register_channel)."""
+        return getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+
     async def _generate_response(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
         """Generate an AI response, executing tool calls if needed."""
         ai_context = self._build_context(event, binding, context)
+        telemetry = self._telemetry_provider
+        span_id = telemetry.start_span(
+            SpanKind.LLM_GENERATE,
+            "llm.generate",
+            room_id=event.room_id,
+            channel_id=self.channel_id,
+            attributes={
+                Attr.PROVIDER: type(self._provider).__name__,
+                Attr.LLM_STREAMING: False,
+            },
+        )
         try:
-            response = await self._run_tool_loop(ai_context)
+            response = await self._run_tool_loop(ai_context, parent_span_id=span_id)
         except ProviderError as exc:
+            telemetry.end_span(span_id, status="error", error_message=str(exc))
             if exc.status_code == 404:
                 logger.error(
                     "AI model not found (channel=%s, provider=%s): %s",
@@ -188,8 +207,20 @@ class AIChannel(Channel):
                 )
             return ChannelOutput.empty()
         except Exception:
+            telemetry.end_span(span_id, status="error", error_message="AI provider failed")
             logger.exception("AI provider failed for channel %s", self.channel_id)
             return ChannelOutput.empty()
+
+        # End LLM span with usage attributes
+        usage = response.usage or {}
+        telemetry.end_span(
+            span_id,
+            attributes={
+                Attr.LLM_INPUT_TOKENS: usage.get("input_tokens", 0),
+                Attr.LLM_OUTPUT_TOKENS: usage.get("output_tokens", 0),
+                Attr.LLM_TOOL_COUNT: len(response.tool_calls) if response.tool_calls else 0,
+            },
+        )
 
         response_event = RoomEvent(
             room_id=event.room_id,
@@ -208,9 +239,12 @@ class AIChannel(Channel):
             response_events=[response_event],
         )
 
-    async def _run_tool_loop(self, context: AIContext) -> AIResponse:
+    async def _run_tool_loop(
+        self, context: AIContext, *, parent_span_id: str | None = None
+    ) -> AIResponse:
         """Generate → execute tools → re-generate until a text response."""
         response: AIResponse = await self._provider.generate(context)
+        telemetry = self._telemetry_provider
 
         for round_idx in range(self._max_tool_rounds):
             if not response.tool_calls or self._tool_handler is None:
@@ -234,7 +268,18 @@ class AIChannel(Channel):
             result_parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
             for tc in response.tool_calls:
                 logger.info("Executing tool: %s(%s)", tc.name, tc.id)
-                result = await self._tool_handler(tc.name, tc.arguments)
+                tool_span_id = telemetry.start_span(
+                    SpanKind.LLM_TOOL_CALL,
+                    f"tool.{tc.name}",
+                    parent_id=parent_span_id,
+                    attributes={"tool.name": tc.name, "tool.id": tc.id},
+                )
+                try:
+                    result = await self._tool_handler(tc.name, tc.arguments)
+                    telemetry.end_span(tool_span_id)
+                except Exception as exc:
+                    telemetry.end_span(tool_span_id, status="error", error_message=str(exc))
+                    raise
                 result_parts.append(
                     AIToolResultPart(
                         tool_call_id=tc.id,

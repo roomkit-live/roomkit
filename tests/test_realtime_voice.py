@@ -844,6 +844,7 @@ def _make_gemini_provider() -> Any:
     p._transcription_buffers = {}
     p._audio_chunk_count = {}
     p._audio_buffers = {}
+    p._send_audio_count = {}
     p._error_suppressed = set()
     p._session_telemetry = {}
     p._resumption_handles = {}

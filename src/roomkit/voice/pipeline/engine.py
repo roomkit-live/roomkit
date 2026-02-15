@@ -95,6 +95,11 @@ class AudioPipeline:
         self._playback_aec_wired = False
         # Separate resampler for playback AEC path (may run on audio thread)
         self._playback_aec_resampler: ResamplerProvider | None = None
+        # Telemetry counters (lightweight, emitted periodically)
+        self._telemetry = config.telemetry
+        self._frame_count: int = 0
+        self._bytes_processed: int = 0
+        self._metric_interval: int = 500  # emit metrics every N frames
         # Resolve effective resampler (auto-default when contract is set)
         self._resampler: ResamplerProvider | None
         if config.resampler is not None:
@@ -359,6 +364,22 @@ class AudioPipeline:
                     _maybe_schedule(result)
                 except Exception:
                     logger.exception("Processed frame callback error")
+
+        # Telemetry metrics (lightweight, periodic)
+        self._frame_count += 1
+        self._bytes_processed += len(frame.data)
+        if self._telemetry is not None and self._frame_count % self._metric_interval == 0:
+            self._telemetry.record_metric(
+                "roomkit.pipeline.frame_count",
+                float(self._frame_count),
+                attributes={"session_id": session.id},
+            )
+            self._telemetry.record_metric(
+                "roomkit.pipeline.bytes_processed",
+                float(self._bytes_processed),
+                unit="bytes",
+                attributes={"session_id": session.id},
+            )
 
     # -----------------------------------------------------------------
     # Outbound processing

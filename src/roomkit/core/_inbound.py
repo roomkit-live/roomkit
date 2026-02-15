@@ -68,11 +68,44 @@ class InboundMixin(HelpersMixin):
                 Useful for shared channels attached to multiple rooms.
         """
         from roomkit.core.framework import ChannelNotRegisteredError
+        from roomkit.telemetry.base import SpanKind
 
         channel = self._channels.get(message.channel_id)
         if channel is None:
             raise ChannelNotRegisteredError(f"Channel {message.channel_id} not registered")
 
+        telemetry = self._telemetry  # type: ignore[attr-defined]
+        inbound_span_id = telemetry.start_span(
+            SpanKind.INBOUND_PIPELINE,
+            "framework.inbound",
+            channel_id=message.channel_id,
+            attributes={"sender_id": message.sender_id or ""},
+        )
+        _inbound_result: InboundResult | None = None
+        try:
+            _inbound_result = await self._process_inbound_inner(
+                message, channel, room_id, telemetry, inbound_span_id
+            )
+            return _inbound_result
+        except Exception as exc:
+            telemetry.end_span(inbound_span_id, status="error", error_message=str(exc))
+            raise
+        finally:
+            if _inbound_result is not None:
+                telemetry.end_span(
+                    inbound_span_id,
+                    attributes={"blocked": _inbound_result.blocked},
+                )
+
+    async def _process_inbound_inner(
+        self,
+        message: InboundMessage,
+        channel: Channel,
+        room_id: str | None,
+        telemetry: Any,
+        inbound_span_id: str,
+    ) -> InboundResult:
+        """Inner inbound processing (extracted for telemetry wrapping)."""
         # Route to room (or auto-create)
         if room_id is None:
             room_id = await self._inbound_router.route(

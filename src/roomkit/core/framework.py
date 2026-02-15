@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from roomkit.models.delivery import InboundMessage, InboundResult
     from roomkit.models.event import AudioContent
     from roomkit.providers.sms.meta import WebhookMeta
+    from roomkit.telemetry.base import TelemetryProvider
+    from roomkit.telemetry.config import TelemetryConfig
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import TranscriptionResult, VoiceSession
     from roomkit.voice.stt.base import STTProvider
@@ -135,6 +137,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         stt: STTProvider | None = None,
         tts: TTSProvider | None = None,
         voice: VoiceBackend | None = None,
+        telemetry: TelemetryConfig | TelemetryProvider | None = None,
     ) -> None:
         """Initialise the RoomKit orchestrator.
 
@@ -158,7 +161,14 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             stt: Optional speech-to-text provider for transcription.
             tts: Optional text-to-speech provider for synthesis.
             voice: Optional voice backend for real-time audio transport.
+            telemetry: Optional telemetry provider or config for span/metric
+                collection. Accepts a ``TelemetryProvider`` instance or a
+                ``TelemetryConfig``. Defaults to ``NoopTelemetryProvider``.
         """
+        from roomkit.telemetry.base import TelemetryProvider as _TelemetryProviderCls
+        from roomkit.telemetry.config import TelemetryConfig as _TelemetryConfigCls
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
         self._store = store or InMemoryStore()
         self._identity_resolver = identity_resolver
         self._identity_channel_types = identity_channel_types
@@ -183,6 +193,14 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         self._voice = voice
         # Traces received before the room exists (flushed on attach_channel)
         self._pending_traces: dict[str, list[object]] = {}
+        # Telemetry
+        if isinstance(telemetry, _TelemetryProviderCls):
+            self._telemetry: _TelemetryProviderCls = telemetry
+        elif isinstance(telemetry, _TelemetryConfigCls):
+            self._telemetry = telemetry.provider or NoopTelemetryProvider()
+        else:
+            self._telemetry = NoopTelemetryProvider()
+        self._hook_engine._telemetry = self._telemetry
 
     @property
     def store(self) -> ConversationStore:
@@ -213,6 +231,11 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
     def voice(self) -> VoiceBackend | None:
         """Voice backend for real-time audio (optional)."""
         return self._voice
+
+    @property
+    def telemetry(self) -> TelemetryProvider:
+        """The telemetry provider for span and metric collection."""
+        return self._telemetry
 
     async def connect_voice(
         self,
