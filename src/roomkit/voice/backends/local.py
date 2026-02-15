@@ -32,6 +32,7 @@ import asyncio
 import contextlib
 import logging
 import struct
+import sys
 import threading
 import uuid
 from collections.abc import AsyncIterator
@@ -446,17 +447,24 @@ class LocalAudioBackend(VoiceBackend):
             if stop:
                 raise sd.CallbackStop
 
+        # Low latency when AEC is active — minimizes the time gap between
+        # when reference audio is fed and when the speaker actually plays it.
+        # Exception: on macOS CoreAudio, "low" yields tiny hardware buffers
+        # that underrun from Python callback jitter → audible crackling.
+        if sys.platform == "darwin":
+            out_latency = "high"
+        elif self._aec is not None:
+            out_latency = "low"
+        else:
+            out_latency = "high"
+
         stream = sd.RawOutputStream(
             samplerate=self._output_sample_rate,
             channels=self._channels,
             dtype="int16",
             callback=_output_callback,
             device=self._output_device,
-            # Low latency when AEC is active — minimizes the time gap
-            # between when reference audio is fed and when the speaker
-            # actually plays it.  Without this, PortAudio buffers hundreds
-            # of ms and the AEC's ring buffer drifts out of sync.
-            latency="low" if self._aec is not None else "high",
+            latency=out_latency,
         )
         self._output_streams[session.id] = stream
         stream.start()
