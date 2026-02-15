@@ -171,6 +171,13 @@ class ElevenLabsTTSProvider(TTSProvider):
         client = self._get_client()
 
         # Use streaming endpoint
+        params: dict[str, str | int] = {
+            "output_format": self._config.output_format,
+        }
+        # optimize_streaming_latency is not supported by all models (e.g. v3)
+        if not self._config.model_id.endswith("_v3"):
+            params["optimize_streaming_latency"] = self._config.optimize_streaming_latency
+
         async with client.stream(
             "POST",
             f"/text-to-speech/{voice_id}/stream",
@@ -179,12 +186,12 @@ class ElevenLabsTTSProvider(TTSProvider):
                 "model_id": self._config.model_id,
                 "voice_settings": self._build_voice_settings(),
             },
-            params={
-                "output_format": self._config.output_format,
-                "optimize_streaming_latency": self._config.optimize_streaming_latency,
-            },
+            params=params,
         ) as response:
-            response.raise_for_status()
+            if response.status_code >= 400:
+                body = await response.aread()
+                logger.error("ElevenLabs stream error %d: %s", response.status_code, body.decode())
+                response.raise_for_status()
 
             chunk_index = 0
             async for chunk in response.aiter_bytes(chunk_size=4096):
@@ -231,8 +238,9 @@ class ElevenLabsTTSProvider(TTSProvider):
             f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input"
             f"?model_id={model_id}"
             f"&output_format={self._config.output_format}"
-            f"&optimize_streaming_latency={self._config.optimize_streaming_latency}"
         )
+        if not model_id.endswith("_v3"):
+            ws_url += f"&optimize_streaming_latency={self._config.optimize_streaming_latency}"
 
         async with websockets.connect(
             ws_url,

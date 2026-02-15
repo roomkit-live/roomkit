@@ -91,6 +91,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         # Audio buffering during reconnection (~2s at 20ms/frame = 100 frames)
         self._audio_buffers: dict[str, deque[bytes]] = {}
+        # Send-audio counter per session (for debug logging)
+        self._send_audio_count: dict[str, int] = {}
         # Suppress duplicate send_audio_failed errors during reconnection
         self._error_suppressed: set[str] = set()
         # Session telemetry for disconnect debugging
@@ -282,6 +284,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         live = self._live_sessions.get(session.id)
         if live is None:
+            logger.debug("[Gemini] send_audio: no live session for %s", session.id)
             return
 
         # Buffer audio while reconnecting instead of dropping it
@@ -293,7 +296,28 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         # Skip if connection is already closed
         if session.state != RealtimeSessionState.ACTIVE:
+            logger.debug(
+                "[Gemini] send_audio: skipping, state=%s for %s",
+                session.state,
+                session.id,
+            )
             return
+
+        # Log first audio send and then periodically
+        count = self._send_audio_count.get(session.id, 0) + 1
+        self._send_audio_count[session.id] = count
+        if count == 1:
+            logger.info(
+                "[Gemini] send_audio: first chunk (%d bytes) for %s",
+                len(audio),
+                session.id,
+            )
+        elif count % 100 == 0:
+            logger.debug(
+                "[Gemini] send_audio: %d chunks sent for %s",
+                count,
+                session.id,
+            )
 
         try:
             await live.send_realtime_input(
@@ -393,6 +417,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         # Clean up transcription buffers, audio counters, and stored config
         self._clear_transcription_buffers(session.id)
         self._audio_chunk_count.pop(session.id, None)
+        self._send_audio_count.pop(session.id, None)
         self._live_configs.pop(session.id, None)
         self._audio_buffers.pop(session.id, None)
         self._error_suppressed.discard(session.id)
@@ -405,6 +430,14 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             with contextlib.suppress(Exception):
                 await live.close()
 
+        sent = self._send_audio_count.pop(session.id, 0)
+        received = self._audio_chunk_count.get(session.id, 0)
+        logger.info(
+            "Gemini session %s disconnected: sent=%d audio chunks, received=%d audio chunks",
+            session.id,
+            sent,
+            received,
+        )
         session.state = RealtimeSessionState.ENDED
 
     async def close(self) -> None:
@@ -672,6 +705,36 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     async def _handle_server_response(self, session: RealtimeSession, response: Any) -> None:
         """Map Gemini Live responses to callbacks."""
+        # Log every server message for debugging
+        parts = []
+        if hasattr(response, "data") and response.data:
+            parts.append(f"audio={len(response.data)}B")
+        if hasattr(response, "server_content") and response.server_content:
+            sc = response.server_content
+            if hasattr(sc, "model_turn") and sc.model_turn:
+                parts.append("model_turn")
+            if hasattr(sc, "turn_complete") and sc.turn_complete:
+                parts.append("turn_complete")
+            if hasattr(sc, "interrupted") and sc.interrupted:
+                parts.append("interrupted")
+            if hasattr(sc, "input_transcription") and sc.input_transcription:
+                parts.append(f"input_tx={sc.input_transcription.text!r}")
+            if hasattr(sc, "output_transcription") and sc.output_transcription:
+                parts.append(f"output_tx={sc.output_transcription.text!r}")
+        if hasattr(response, "tool_call") and response.tool_call:
+            parts.append("tool_call")
+        if hasattr(response, "voice_activity") and response.voice_activity:
+            va = response.voice_activity
+            vtype = getattr(va, "voice_activity_type", "?")
+            parts.append(f"vad={vtype}")
+        if hasattr(response, "go_away") and response.go_away:
+            parts.append("go_away")
+        if hasattr(response, "session_resumption_update") and response.session_resumption_update:
+            parts.append("resumption_update")
+        if not parts:
+            parts.append(f"unknown_keys={[k for k in dir(response) if not k.startswith('_')]}")
+        logger.debug("[Gemini] recv: %s (session %s)", ", ".join(parts), session.id)
+
         # Handle session resumption updates — store the latest handle
         if hasattr(response, "session_resumption_update") and response.session_resumption_update:
             update = response.session_resumption_update
