@@ -14,6 +14,7 @@ TraceEmitter = Callable[..., Any]
 # Callback type aliases
 TransportAudioCallback = Callable[[RealtimeSession, bytes], Any]
 TransportDisconnectCallback = Callable[[RealtimeSession], Any]
+SpeakerChangeCallback = Callable[[RealtimeSession, Any], Any]
 
 
 class RealtimeAudioTransport(ABC):
@@ -135,7 +136,7 @@ class RealtimeAudioTransport(ABC):
             muted: ``True`` to mute, ``False`` to unmute.
         """
 
-    def on_speaker_change(self, callback: TransportAudioCallback) -> None:  # noqa: B027
+    def on_speaker_change(self, callback: SpeakerChangeCallback) -> None:  # noqa: B027
         """Register callback for speaker change events from the audio pipeline.
 
         Only fires when the transport has a pipeline with diarization configured.

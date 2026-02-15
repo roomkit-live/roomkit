@@ -296,9 +296,7 @@ class LocalAudioTransport(RealtimeAudioTransport):
                     channels=self._channels,
                     sample_width=2,
                 )
-                self._pipeline_executor.submit(
-                    self._pipeline.process_frame, session, frame
-                )
+                self._pipeline_executor.submit(self._pipeline.process_frame, session, frame)
 
             # Gated by primary-speaker mode: skip audio callbacks but
             # keep feeding pipeline above.

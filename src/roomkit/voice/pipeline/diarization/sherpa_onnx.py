@@ -111,7 +111,7 @@ class SherpaOnnxDiarizationProvider(DiarizationProvider):
             for spk in all_speakers:
                 if spk in self._enrolled_embeddings:
                     ref = self._enrolled_embeddings[spk]
-                    dot = sum(a * b for a, b in zip(embedding, ref))
+                    dot = sum(a * b for a, b in zip(embedding, ref, strict=True))
                     norm_a = sum(a * a for a in embedding) ** 0.5
                     norm_b = sum(b * b for b in ref) ** 0.5
                     scores[spk] = dot / (norm_a * norm_b) if norm_a and norm_b else 0.0
@@ -143,7 +143,7 @@ class SherpaOnnxDiarizationProvider(DiarizationProvider):
 
     def enroll_speaker(self, name: str, embedding: list[float]) -> bool:
         """Register a single speaker embedding under *name*."""
-        ok = self._manager.add(name, embedding)
+        ok: bool = self._manager.add(name, embedding)
         if ok:
             self._enrolled_embeddings[name] = embedding
         return ok
@@ -161,14 +161,15 @@ class SherpaOnnxDiarizationProvider(DiarizationProvider):
             dim = len(embeddings[0])
             n = len(embeddings)
             avg = [sum(e[i] for e in embeddings) / n for i in range(dim)]
-        ok = self._manager.add(name, avg)
+        ok: bool = self._manager.add(name, avg)
         if ok:
             self._enrolled_embeddings[name] = avg
         return ok
 
     def remove_speaker(self, name: str) -> bool:
         """Remove a speaker by name."""
-        return self._manager.remove(name)
+        result: bool = self._manager.remove(name)
+        return result
 
     def extract_embedding(self, pcm_bytes: bytes, sample_rate: int) -> list[float]:
         """Extract a speaker embedding from raw PCM audio."""

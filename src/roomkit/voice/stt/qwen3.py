@@ -206,9 +206,7 @@ class Qwen3ASRProvider(STTProvider):
                 samples = _pcm_s16le_to_float32_np(chunk.data)
                 sample_rate = chunk.sample_rate or 16000
 
-                def _feed(
-                    s: Any = state, a: Any = samples, sr: int = sample_rate
-                ) -> str:
+                def _feed(s: Any = state, a: Any = samples, sr: int = sample_rate) -> str:
                     kwargs: dict[str, Any] = {"state": s, "audio": a, "sr": sr}
                     if cfg.language is not None:
                         kwargs["language"] = cfg.language
