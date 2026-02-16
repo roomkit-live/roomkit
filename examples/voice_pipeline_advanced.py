@@ -66,7 +66,7 @@ async def main() -> None:
             None,
             VADEvent(
                 type=VADEventType.SPEECH_END,
-                audio_bytes=b"first-utterance",
+                audio_bytes=b"\x00\x00" * 160,
                 duration_ms=800.0,
             ),
             # Second utterance
@@ -74,7 +74,7 @@ async def main() -> None:
             None,
             VADEvent(
                 type=VADEventType.SPEECH_END,
-                audio_bytes=b"second-utterance",
+                audio_bytes=b"\x00\x00" * 160,
                 duration_ms=600.0,
             ),
         ]
@@ -194,8 +194,8 @@ async def main() -> None:
     voice.bind_session(session, "demo", binding)
 
     # Send 6 frames: two 3-frame utterances
-    for i in range(6):
-        frame = AudioFrame(data=f"audio-{i}".encode(), sample_rate=16000)
+    for _i in range(6):
+        frame = AudioFrame(data=b"\x00\x00" * 160, sample_rate=16000)
         await backend.simulate_audio_received(session, frame)
 
     await asyncio.sleep(0.2)

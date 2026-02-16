@@ -189,8 +189,8 @@ async def main() -> None:
     #   [AEC] -> [AGC] -> Denoiser -> VAD -> Diarization + DTMF
     # The mock VAD returns SPEECH_START on frame 1, nothing on frame 2,
     # and SPEECH_END on frame 3 -- triggering STT transcription.
-    for i in range(3):
-        frame = AudioFrame(data=f"audio-chunk-{i}".encode(), sample_rate=16000)
+    for _i in range(3):
+        frame = AudioFrame(data=b"\x00\x00" * 160, sample_rate=16000)
         await backend.simulate_audio_received(session, frame)
 
     # Give async hooks time to fire
