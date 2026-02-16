@@ -24,6 +24,12 @@ AudioReceivedCallback = Callable[["VoiceSession", "AudioFrame"], Any]
 # can use the reference to cancel echo accurately.
 AudioPlayedCallback = Callable[["VoiceSession", "AudioFrame"], Any]
 
+# Callback for client disconnection
+TransportDisconnectCallback = Callable[["VoiceSession"], Any]
+
+# Callback for speaker change (diarization) events
+SpeakerChangeCallback = Callable[["VoiceSession", Any], Any]
+
 
 class VoiceBackend(ABC):
     """Abstract base class for voice transport backends.
@@ -59,7 +65,6 @@ class VoiceBackend(ABC):
         """Backend name (e.g., 'webrtc', 'websocket', 'livekit')."""
         ...
 
-    @abstractmethod
     async def connect(
         self,
         room_id: str,
@@ -70,6 +75,10 @@ class VoiceBackend(ABC):
     ) -> VoiceSession:
         """Create a new voice session for a participant.
 
+        Backends that initiate connections (VoiceChannel path) override
+        this.  Backends that receive external connections (realtime
+        transport path) override :meth:`accept` instead.
+
         Args:
             room_id: The room to join.
             participant_id: The participant's ID.
@@ -79,7 +88,7 @@ class VoiceBackend(ABC):
         Returns:
             A VoiceSession representing the connection.
         """
-        ...
+        raise NotImplementedError(f"{self.name} does not implement connect()")
 
     @abstractmethod
     async def disconnect(self, session: VoiceSession) -> None:
@@ -197,8 +206,8 @@ class VoiceBackend(ABC):
     async def cancel_audio(self, session: VoiceSession) -> bool:
         """Cancel ongoing audio playback for a session.
 
-        Only works if capabilities includes INTERRUPTION.
-        Used for barge-in handling to stop TTS playback.
+        Delegates to :meth:`interrupt` and returns ``True``.
+        Subclasses may override for more nuanced behaviour.
 
         Args:
             session: The session to cancel audio for.
@@ -206,7 +215,65 @@ class VoiceBackend(ABC):
         Returns:
             True if audio was cancelled, False if nothing was playing.
         """
-        return False  # Default no-op, override if supported
+        self.interrupt(session)
+        return True
+
+    # -------------------------------------------------------------------------
+    # Realtime transport methods
+    # -------------------------------------------------------------------------
+
+    async def accept(self, session: VoiceSession, connection: Any) -> None:
+        """Bind an external connection to a session.
+
+        Backends that receive connections from external sources (e.g.
+        WebSocket, WebRTC, SIP) override this.  Backends that create
+        their own connections override :meth:`connect` instead.
+
+        Args:
+            session: The voice session to bind.
+            connection: Protocol-specific connection object.
+        """
+        raise NotImplementedError(f"{self.name} does not implement accept()")
+
+    def interrupt(self, session: VoiceSession) -> None:  # noqa: B027
+        """Signal interruption — flush outbound queue, stop playback."""
+
+    def set_input_muted(self, session: VoiceSession, muted: bool) -> None:  # noqa: B027
+        """Mute or unmute the input (microphone) for a session.
+
+        Args:
+            session: The session to mute/unmute.
+            muted: ``True`` to mute, ``False`` to unmute.
+        """
+
+    def set_input_gated(self, session: VoiceSession, gated: bool) -> None:  # noqa: B027
+        """Gate or un-gate audio input for primary speaker mode.
+
+        When gated, audio is not forwarded to provider callbacks but
+        may still be fed to a pipeline for diarization analysis.
+
+        Args:
+            session: The session to gate/un-gate.
+            gated: ``True`` to gate, ``False`` to un-gate.
+        """
+
+    def on_client_disconnected(  # noqa: B027
+        self, callback: TransportDisconnectCallback
+    ) -> None:
+        """Register callback for client disconnection.
+
+        Args:
+            callback: Called with (session) when the client disconnects.
+        """
+
+    def on_speaker_change(  # noqa: B027
+        self, callback: SpeakerChangeCallback
+    ) -> None:
+        """Register callback for speaker change events.
+
+        Args:
+            callback: Called with (session, diarization_result).
+        """
 
     def end_of_response(self, session: VoiceSession) -> None:  # noqa: B027
         """Signal end of an AI response for outbound pacing."""

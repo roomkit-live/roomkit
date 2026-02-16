@@ -20,7 +20,7 @@ from roomkit import (
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent
-from roomkit.voice.realtime.base import RealtimeSession, RealtimeSessionState
+from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.events import RealtimeTranscriptionEvent
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 
@@ -73,7 +73,7 @@ class TestSessionLifecycle:
     ) -> None:
         session = await channel.start_session(room_id, "user-1", "fake-ws-connection")
 
-        assert session.state == RealtimeSessionState.ACTIVE
+        assert session.state == VoiceSessionState.ACTIVE
         assert session.room_id == room_id
         assert session.participant_id == "user-1"
         assert session.channel_id == "rt-voice-1"
@@ -101,7 +101,7 @@ class TestSessionLifecycle:
 
         await channel.end_session(session)
 
-        assert session.state == RealtimeSessionState.ENDED
+        assert session.state == VoiceSessionState.ENDED
 
         # Verify provider and transport were disconnected
         disconnect_provider = [c for c in provider.calls if c.method == "disconnect"]
@@ -583,7 +583,7 @@ class TestCloseCleanup:
         assert len(close_transport) == 1
 
         # Session should be ended
-        assert session.state == RealtimeSessionState.ENDED
+        assert session.state == VoiceSessionState.ENDED
 
 
 # ---------------------------------------------------------------------------
@@ -861,13 +861,13 @@ def _make_gemini_provider() -> Any:
     return p
 
 
-def _make_session(session_id: str = "sess-1") -> RealtimeSession:
-    return RealtimeSession(
+def _make_session(session_id: str = "sess-1") -> VoiceSession:
+    return VoiceSession(
         id=session_id,
         room_id="room-1",
         participant_id="user-1",
         channel_id="rt-1",
-        state=RealtimeSessionState.ACTIVE,
+        state=VoiceSessionState.ACTIVE,
     )
 
 
@@ -877,7 +877,7 @@ class TestAudioBufferingDuringReconnect:
     async def test_audio_buffered_when_connecting(self) -> None:
         provider = _make_gemini_provider()
         session = _make_session()
-        session.state = RealtimeSessionState.CONNECTING
+        session.state = VoiceSessionState.CONNECTING
 
         # Set up a mock live session and buffer
         mock_live = MagicMock()
@@ -899,7 +899,7 @@ class TestAudioBufferingDuringReconnect:
     async def test_buffer_bounded_at_100_frames(self) -> None:
         provider = _make_gemini_provider()
         session = _make_session()
-        session.state = RealtimeSessionState.CONNECTING
+        session.state = VoiceSessionState.CONNECTING
 
         mock_live = MagicMock()
         provider._live_sessions[session.id] = mock_live
@@ -917,7 +917,7 @@ class TestAudioBufferingDuringReconnect:
     async def test_audio_sent_normally_when_active(self) -> None:
         provider = _make_gemini_provider()
         session = _make_session()
-        session.state = RealtimeSessionState.ACTIVE
+        session.state = VoiceSessionState.ACTIVE
 
         mock_live = AsyncMock()
         provider._live_sessions[session.id] = mock_live
@@ -935,7 +935,7 @@ class TestErrorDeduplication:
     async def test_first_error_fires_callback(self) -> None:
         provider = _make_gemini_provider()
         session = _make_session()
-        session.state = RealtimeSessionState.ACTIVE
+        session.state = VoiceSessionState.ACTIVE
 
         mock_live = AsyncMock()
         mock_live.send_realtime_input.side_effect = ConnectionError("ws closed")
@@ -953,7 +953,7 @@ class TestErrorDeduplication:
     async def test_subsequent_errors_suppressed(self) -> None:
         provider = _make_gemini_provider()
         session = _make_session()
-        session.state = RealtimeSessionState.ACTIVE
+        session.state = VoiceSessionState.ACTIVE
 
         mock_live = AsyncMock()
         mock_live.send_realtime_input.side_effect = ConnectionError("ws closed")
@@ -981,7 +981,7 @@ class TestErrorDeduplication:
         provider._error_suppressed.discard(session.id)
 
         # Now a new error should fire
-        session.state = RealtimeSessionState.ACTIVE
+        session.state = VoiceSessionState.ACTIVE
         mock_live = AsyncMock()
         mock_live.send_realtime_input.side_effect = ConnectionError("ws closed again")
         provider._live_sessions[session.id] = mock_live

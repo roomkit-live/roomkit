@@ -8,7 +8,7 @@ import time
 from collections import deque
 from typing import Any
 
-from roomkit.voice.realtime.base import RealtimeSession, RealtimeSessionState
+from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import (
     RealtimeAudioCallback,
     RealtimeErrorCallback,
@@ -78,7 +78,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self._live_ctxmgrs: dict[str, Any] = {}  # session_id -> context manager
         self._live_configs: dict[str, Any] = {}  # session_id -> LiveConnectConfig
         self._receive_tasks: dict[str, asyncio.Task[None]] = {}
-        self._sessions: dict[str, RealtimeSession] = {}
+        self._sessions: dict[str, VoiceSession] = {}
 
         # Session resumption handles: session_id -> latest opaque handle
         self._resumption_handles: dict[str, str | None] = {}
@@ -117,7 +117,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     async def connect(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         *,
         system_prompt: str | None = None,
         voice: str | None = None,
@@ -268,7 +268,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self._session_turn_count[session.id] = 0
         self._session_tool_result_bytes[session.id] = 0
 
-        session.state = RealtimeSessionState.ACTIVE
+        session.state = VoiceSessionState.ACTIVE
         session.provider_session_id = session.id
         session._response_started = False  # type: ignore[attr-defined]
 
@@ -280,7 +280,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         logger.info("Gemini Live session connected: %s", session.id)
 
-    async def send_audio(self, session: RealtimeSession, audio: bytes) -> None:
+    async def send_audio(self, session: VoiceSession, audio: bytes) -> None:
         from google.genai import types
 
         live = self._live_sessions.get(session.id)
@@ -289,14 +289,14 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             return
 
         # Buffer audio while reconnecting instead of dropping it
-        if session.state == RealtimeSessionState.CONNECTING:
+        if session.state == VoiceSessionState.CONNECTING:
             buf = self._audio_buffers.get(session.id)
             if buf is not None:
                 buf.append(audio)
             return
 
         # Skip if connection is already closed
-        if session.state != RealtimeSessionState.ACTIVE:
+        if session.state != VoiceSessionState.ACTIVE:
             logger.debug(
                 "[Gemini] send_audio: skipping, state=%s for %s",
                 session.state,
@@ -329,17 +329,15 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         except Exception as exc:
             # Connection lost — the receive loop will handle reconnection.
             # Don't mark ENDED here; just suppress further sends.
-            if session.state == RealtimeSessionState.ACTIVE:
-                session.state = RealtimeSessionState.CONNECTING
+            if session.state == VoiceSessionState.ACTIVE:
+                session.state = VoiceSessionState.CONNECTING
             # Fire error callback only once per reconnection cycle
             if session.id not in self._error_suppressed:
                 self._error_suppressed.add(session.id)
                 await self._fire_error_callbacks(session, "send_audio_failed", str(exc))
             return
 
-    async def inject_text(
-        self, session: RealtimeSession, text: str, *, role: str = "user"
-    ) -> None:
+    async def inject_text(self, session: VoiceSession, text: str, *, role: str = "user") -> None:
         from google.genai import types
 
         live = self._live_sessions.get(session.id)
@@ -354,9 +352,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             turn_complete=True,
         )
 
-    async def submit_tool_result(
-        self, session: RealtimeSession, call_id: str, result: str
-    ) -> None:
+    async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
         import json
 
         from google.genai import types
@@ -393,14 +389,14 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             ],
         )
 
-    async def interrupt(self, session: RealtimeSession) -> None:
+    async def interrupt(self, session: VoiceSession) -> None:
         # Gemini doesn't have a direct cancel; send empty to reset
         live = self._live_sessions.get(session.id)
         if live is None:
             return
         logger.debug("Interrupt requested for Gemini session %s (no-op)", session.id)
 
-    async def disconnect(self, session: RealtimeSession) -> None:
+    async def disconnect(self, session: VoiceSession) -> None:
         import contextlib
 
         # Cancel receive task
@@ -464,7 +460,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             sent,
             received,
         )
-        session.state = RealtimeSessionState.ENDED
+        session.state = VoiceSessionState.ENDED
 
     async def close(self) -> None:
         for session_id in list(self._sessions.keys()):
@@ -502,7 +498,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     _MAX_RECONNECTS = 3
 
-    async def _receive_loop(self, session: RealtimeSession) -> None:
+    async def _receive_loop(self, session: VoiceSession) -> None:
         """Process server events from Gemini Live API.
 
         ``live.receive()`` is an async generator that yields messages for
@@ -554,7 +550,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     buf = self._audio_buffers.get(session.id)
                     if buf:
                         buf.clear()
-                    session.state = RealtimeSessionState.ENDED
+                    session.state = VoiceSessionState.ENDED
                     await self._fire_error_callbacks(
                         session,
                         "reconnect_failed",
@@ -563,7 +559,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     return
                 continue
             except Exception:
-                if session.state == RealtimeSessionState.ENDED:
+                if session.state == VoiceSessionState.ENDED:
                     return
 
                 reconnect_count += 1
@@ -602,7 +598,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     buf = self._audio_buffers.get(session.id)
                     if buf:
                         buf.clear()
-                    session.state = RealtimeSessionState.ENDED
+                    session.state = VoiceSessionState.ENDED
                     await self._fire_error_callbacks(
                         session,
                         "max_reconnects",
@@ -644,7 +640,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     buf = self._audio_buffers.get(session.id)
                     if buf:
                         buf.clear()
-                    session.state = RealtimeSessionState.ENDED
+                    session.state = VoiceSessionState.ENDED
                     await self._fire_error_callbacks(
                         session,
                         "reconnect_failed",
@@ -658,14 +654,14 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             if key[0] == session_id:
                 del self._transcription_buffers[key]
 
-    async def _reconnect(self, session: RealtimeSession) -> None:
+    async def _reconnect(self, session: VoiceSession) -> None:
         """Reconnect to Gemini Live using the stored config."""
         import contextlib
 
         from google.genai import types
 
         # Suppress audio sends during reconnection
-        session.state = RealtimeSessionState.CONNECTING
+        session.state = VoiceSessionState.CONNECTING
 
         # Tear down old connection
         old_ctxmgr = self._live_ctxmgrs.pop(session.id, None)
@@ -722,14 +718,14 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 buf.clear()
 
         # Now safe to accept new audio directly
-        session.state = RealtimeSessionState.ACTIVE
+        session.state = VoiceSessionState.ACTIVE
 
         # Re-enable error callbacks for the next reconnection cycle
         self._error_suppressed.discard(session.id)
 
         logger.info("Gemini Live session %s reconnected", session.id)
 
-    async def _handle_server_response(self, session: RealtimeSession, response: Any) -> None:
+    async def _handle_server_response(self, session: VoiceSession, response: Any) -> None:
         """Map Gemini Live responses to callbacks."""
         # Log every server message for debugging
         parts = []
@@ -884,7 +880,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             raise _GoAwayError()
 
     async def _handle_transcription_chunk(
-        self, session: RealtimeSession, text: str, role: str, finished: bool
+        self, session: VoiceSession, text: str, role: str, finished: bool
     ) -> None:
         """Accumulate transcription chunks and fire callback when complete.
 
@@ -903,7 +899,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             # Send non-final for real-time display in the voice modal
             await self._fire_transcription_callbacks(session, text, role, False)
 
-    async def _flush_transcription_buffer(self, session: RealtimeSession, role: str) -> None:
+    async def _flush_transcription_buffer(self, session: VoiceSession, role: str) -> None:
         """Flush accumulated transcription buffer as a final transcription.
 
         Called at lifecycle boundaries (turn_complete, speech end) to ensure
@@ -924,7 +920,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     # -- Callback helpers --
 
-    async def _fire_callbacks(self, callbacks: list[Any], session: RealtimeSession) -> None:
+    async def _fire_callbacks(self, callbacks: list[Any], session: VoiceSession) -> None:
         for cb in callbacks:
             try:
                 result = cb(session)
@@ -933,7 +929,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             except Exception:
                 logger.exception("Error in callback for session %s", session.id)
 
-    async def _fire_audio_callbacks(self, session: RealtimeSession, audio: bytes) -> None:
+    async def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
         for cb in self._audio_callbacks:
             try:
                 result = cb(session, audio)
@@ -943,7 +939,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 logger.exception("Error in audio callback for session %s", session.id)
 
     async def _fire_transcription_callbacks(
-        self, session: RealtimeSession, text: str, role: str, is_final: bool
+        self, session: VoiceSession, text: str, role: str, is_final: bool
     ) -> None:
         for cb in self._transcription_callbacks:
             try:
@@ -953,9 +949,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             except Exception:
                 logger.exception("Error in transcription callback for session %s", session.id)
 
-    async def _fire_error_callbacks(
-        self, session: RealtimeSession, code: str, message: str
-    ) -> None:
+    async def _fire_error_callbacks(self, session: VoiceSession, code: str, message: str) -> None:
         for cb in self._error_callbacks:
             try:
                 result = cb(session, code, message)
@@ -966,7 +960,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     async def _fire_tool_call_callbacks(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         call_id: str,
         name: str,
         arguments: dict[str, Any],

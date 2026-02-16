@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from roomkit.voice.realtime.base import RealtimeSession, RealtimeSessionState
+from roomkit.voice.backends.base import (
+    TransportDisconnectCallback,
+    VoiceBackend,
+)
+from roomkit.voice.base import (
+    AudioChunk,
+    VoiceSession,
+    VoiceSessionState,
+)
 from roomkit.voice.realtime.provider import (
     RealtimeAudioCallback,
     RealtimeErrorCallback,
@@ -17,11 +26,9 @@ from roomkit.voice.realtime.provider import (
     RealtimeTranscriptionCallback,
     RealtimeVoiceProvider,
 )
-from roomkit.voice.realtime.transport import (
-    RealtimeAudioTransport,
-    TransportAudioCallback,
-    TransportDisconnectCallback,
-)
+
+# Transport audio callback: (session, audio_bytes) -> Any
+TransportAudioCallback = Callable[["VoiceSession", bytes], Any]
 
 
 @dataclass
@@ -56,7 +63,7 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
         self.sent_audio: list[tuple[str, bytes]] = []
         self.injected_texts: list[tuple[str, str, str]] = []  # (session_id, text, role)
         self.tool_results: list[tuple[str, str, str]] = []  # (session_id, call_id, result)
-        self._sessions: dict[str, RealtimeSession] = {}
+        self._sessions: dict[str, VoiceSession] = {}
         # Callbacks
         self._audio_callbacks: list[RealtimeAudioCallback] = []
         self._transcription_callbacks: list[RealtimeTranscriptionCallback] = []
@@ -73,7 +80,7 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
 
     async def connect(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         *,
         system_prompt: str | None = None,
         voice: str | None = None,
@@ -84,7 +91,7 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
         server_vad: bool = True,
         provider_config: dict[str, Any] | None = None,
     ) -> None:
-        session.state = RealtimeSessionState.ACTIVE
+        session.state = VoiceSessionState.ACTIVE
         session.provider_session_id = f"mock-{session.id}"
         self._sessions[session.id] = session
         self.calls.append(
@@ -103,15 +110,13 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
             )
         )
 
-    async def send_audio(self, session: RealtimeSession, audio: bytes) -> None:
+    async def send_audio(self, session: VoiceSession, audio: bytes) -> None:
         self.sent_audio.append((session.id, audio))
         self.calls.append(
             MockCall(method="send_audio", args={"session_id": session.id, "size": len(audio)})
         )
 
-    async def inject_text(
-        self, session: RealtimeSession, text: str, *, role: str = "user"
-    ) -> None:
+    async def inject_text(self, session: VoiceSession, text: str, *, role: str = "user") -> None:
         self.injected_texts.append((session.id, text, role))
         self.calls.append(
             MockCall(
@@ -120,9 +125,7 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
             )
         )
 
-    async def submit_tool_result(
-        self, session: RealtimeSession, call_id: str, result: str
-    ) -> None:
+    async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
         self.tool_results.append((session.id, call_id, result))
         self.calls.append(
             MockCall(
@@ -131,11 +134,11 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
             )
         )
 
-    async def interrupt(self, session: RealtimeSession) -> None:
+    async def interrupt(self, session: VoiceSession) -> None:
         self.calls.append(MockCall(method="interrupt", args={"session_id": session.id}))
 
-    async def disconnect(self, session: RealtimeSession) -> None:
-        session.state = RealtimeSessionState.ENDED
+    async def disconnect(self, session: VoiceSession) -> None:
+        session.state = VoiceSessionState.ENDED
         self._sessions.pop(session.id, None)
         self.calls.append(MockCall(method="disconnect", args={"session_id": session.id}))
 
@@ -171,7 +174,7 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
 
     # -- Test helpers: simulate provider events --
 
-    async def simulate_audio(self, session: RealtimeSession, audio: bytes) -> None:
+    async def simulate_audio(self, session: VoiceSession, audio: bytes) -> None:
         """Simulate audio output from the provider."""
         for cb in self._audio_callbacks:
             result = cb(session, audio)
@@ -180,7 +183,7 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
 
     async def simulate_transcription(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         text: str,
         role: str = "assistant",
         is_final: bool = True,
@@ -191,14 +194,14 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
             if hasattr(result, "__await__"):
                 await result
 
-    async def simulate_speech_start(self, session: RealtimeSession) -> None:
+    async def simulate_speech_start(self, session: VoiceSession) -> None:
         """Simulate speech start detection."""
         for cb in self._speech_start_callbacks:
             result = cb(session)
             if hasattr(result, "__await__"):
                 await result
 
-    async def simulate_speech_end(self, session: RealtimeSession) -> None:
+    async def simulate_speech_end(self, session: VoiceSession) -> None:
         """Simulate speech end detection."""
         for cb in self._speech_end_callbacks:
             result = cb(session)
@@ -207,7 +210,7 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
 
     async def simulate_tool_call(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         call_id: str,
         name: str,
         arguments: dict[str, Any] | None = None,
@@ -219,21 +222,21 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
             if hasattr(result, "__await__"):
                 await result
 
-    async def simulate_response_start(self, session: RealtimeSession) -> None:
+    async def simulate_response_start(self, session: VoiceSession) -> None:
         """Simulate response generation starting."""
         for cb in self._response_start_callbacks:
             result = cb(session)
             if hasattr(result, "__await__"):
                 await result
 
-    async def simulate_response_end(self, session: RealtimeSession) -> None:
+    async def simulate_response_end(self, session: VoiceSession) -> None:
         """Simulate response generation ending."""
         for cb in self._response_end_callbacks:
             result = cb(session)
             if hasattr(result, "__await__"):
                 await result
 
-    async def simulate_error(self, session: RealtimeSession, code: str, message: str) -> None:
+    async def simulate_error(self, session: VoiceSession, code: str, message: str) -> None:
         """Simulate a provider error."""
         for cb in self._error_callbacks:
             result = cb(session, code, message)
@@ -241,7 +244,7 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
                 await result
 
 
-class MockRealtimeTransport(RealtimeAudioTransport):
+class MockRealtimeTransport(VoiceBackend):
     """Mock realtime audio transport for testing.
 
     Tracks all method calls and provides helpers to simulate
@@ -270,17 +273,26 @@ class MockRealtimeTransport(RealtimeAudioTransport):
     def name(self) -> str:
         return "MockRealtimeTransport"
 
-    async def accept(self, session: RealtimeSession, connection: Any) -> None:
+    async def accept(self, session: VoiceSession, connection: Any) -> None:
         self._connections[session.id] = connection
         self.calls.append(MockCall(method="accept", args={"session_id": session.id}))
 
-    async def send_audio(self, session: RealtimeSession, audio: bytes) -> None:
-        self.sent_audio.append((session.id, audio))
-        self.calls.append(
-            MockCall(method="send_audio", args={"session_id": session.id, "size": len(audio)})
-        )
+    async def send_audio(
+        self,
+        session: VoiceSession,
+        audio: bytes | AsyncIterator[AudioChunk],
+    ) -> None:
+        if isinstance(audio, bytes):
+            self.sent_audio.append((session.id, audio))
+            self.calls.append(
+                MockCall(
+                    method="send_audio",
+                    args={"session_id": session.id, "size": len(audio)},
+                )
+            )
 
-    async def send_message(self, session: RealtimeSession, message: dict[str, Any]) -> None:
+    async def send_message(self, session: VoiceSession, message: dict[str, Any]) -> None:
+        """Send a JSON message (not part of VoiceBackend ABC, used by tests)."""
         self.sent_messages.append((session.id, message))
         self.calls.append(
             MockCall(
@@ -289,7 +301,7 @@ class MockRealtimeTransport(RealtimeAudioTransport):
             )
         )
 
-    async def disconnect(self, session: RealtimeSession) -> None:
+    async def disconnect(self, session: VoiceSession) -> None:
         self._connections.pop(session.id, None)
         self.calls.append(MockCall(method="disconnect", args={"session_id": session.id}))
 
@@ -297,7 +309,7 @@ class MockRealtimeTransport(RealtimeAudioTransport):
         self._connections.clear()
         self.calls.append(MockCall(method="close"))
 
-    def set_input_muted(self, session: RealtimeSession, muted: bool) -> None:
+    def set_input_muted(self, session: VoiceSession, muted: bool) -> None:
         self.calls.append(
             MockCall(
                 method="set_input_muted",
@@ -307,7 +319,7 @@ class MockRealtimeTransport(RealtimeAudioTransport):
 
     # -- Callback registration --
 
-    def on_audio_received(self, callback: TransportAudioCallback) -> None:
+    def on_audio_received(self, callback: TransportAudioCallback) -> None:  # type: ignore[override]
         self._audio_callbacks.append(callback)
 
     def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
@@ -315,14 +327,14 @@ class MockRealtimeTransport(RealtimeAudioTransport):
 
     # -- Test helpers --
 
-    async def simulate_client_audio(self, session: RealtimeSession, audio: bytes) -> None:
+    async def simulate_client_audio(self, session: VoiceSession, audio: bytes) -> None:
         """Simulate audio received from the client browser."""
         for cb in self._audio_callbacks:
             result = cb(session, audio)
             if hasattr(result, "__await__"):
                 await result
 
-    async def simulate_client_disconnect(self, session: RealtimeSession) -> None:
+    async def simulate_client_disconnect(self, session: VoiceSession) -> None:
         """Simulate the client disconnecting."""
         self._connections.pop(session.id, None)
         for cb in self._disconnect_callbacks:

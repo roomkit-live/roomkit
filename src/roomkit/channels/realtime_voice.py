@@ -25,7 +25,8 @@ from roomkit.models.enums import (
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.noop import NoopTelemetryProvider
-from roomkit.voice.realtime.base import RealtimeSession, RealtimeSessionState
+from roomkit.voice.backends.base import VoiceBackend
+from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.utils import rms_db
 
 try:
@@ -36,11 +37,10 @@ except ImportError:  # websockets not installed
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
-    from roomkit.voice.realtime.transport import RealtimeAudioTransport
 
 # Tool handler: async callable (session, name, arguments) -> result dict or str
 ToolHandler = Callable[
-    ["RealtimeSession", str, dict[str, Any]],
+    ["VoiceSession", str, dict[str, Any]],
     Awaitable[dict[str, Any] | str],
 ]
 
@@ -83,7 +83,7 @@ class RealtimeVoiceChannel(Channel):
         channel_id: str,
         *,
         provider: RealtimeVoiceProvider,
-        transport: RealtimeAudioTransport,
+        transport: VoiceBackend,
         system_prompt: str | None = None,
         voice: str | None = None,
         tools: list[dict[str, Any]] | None = None,
@@ -143,7 +143,7 @@ class RealtimeVoiceChannel(Channel):
         self._framework: RoomKit | None = None
 
         # Active sessions: session_id -> (session, room_id, binding)
-        self._sessions: dict[str, RealtimeSession] = {}
+        self._sessions: dict[str, VoiceSession] = {}
         self._session_rooms: dict[str, str] = {}  # session_id -> room_id
         # Cached bindings for audio gating (access/muted enforcement)
         self._session_bindings: dict[str, ChannelBinding] = {}
@@ -186,6 +186,18 @@ class RealtimeVoiceChannel(Channel):
     def _telemetry_provider(self) -> NoopTelemetryProvider:
         """Access telemetry provider (set by register_channel)."""
         return getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+
+    def _rt_span_ctx(self, session_id: str) -> tuple[str | None, object | None]:
+        """Set the realtime session span as current for child spans.
+
+        Returns (parent_id, token) — caller must reset via ``reset_span(token)``
+        in a finally block.
+        """
+        from roomkit.telemetry.context import set_current_span
+
+        parent = self._session_spans.get(session_id)
+        token = set_current_span(parent) if parent else None
+        return parent, token
 
     def _propagate_telemetry(self) -> None:
         """Propagate telemetry to realtime provider."""
@@ -246,7 +258,7 @@ class RealtimeVoiceChannel(Channel):
         connection: Any,
         *,
         metadata: dict[str, Any] | None = None,
-    ) -> RealtimeSession:
+    ) -> VoiceSession:
         """Start a new realtime voice session.
 
         Connects both the transport (client audio) and the provider
@@ -260,18 +272,34 @@ class RealtimeVoiceChannel(Channel):
                 for system_prompt, voice, tools, temperature.
 
         Returns:
-            The created RealtimeSession.
+            The created VoiceSession.
         """
         meta = metadata or {}
 
-        session = RealtimeSession(
+        session = VoiceSession(
             id=uuid4().hex,
             room_id=room_id,
             participant_id=participant_id,
             channel_id=self.channel_id,
-            state=RealtimeSessionState.CONNECTING,
+            state=VoiceSessionState.CONNECTING,
             metadata=meta,
         )
+
+        # Start telemetry session span early so transport/provider connect
+        # phases appear as children in Jaeger.
+        telemetry = self._telemetry_provider
+        session_span_id = telemetry.start_span(
+            SpanKind.REALTIME_SESSION,
+            "realtime_session",
+            attributes={
+                Attr.REALTIME_PROVIDER: self._provider.name,
+                "participant_id": participant_id,
+            },
+            room_id=room_id,
+            session_id=session.id,
+            channel_id=self.channel_id,
+        )
+        self._session_spans[session.id] = session_span_id
 
         # Per-room config overrides from metadata
         system_prompt = meta.get("system_prompt", self._system_prompt)
@@ -280,8 +308,15 @@ class RealtimeVoiceChannel(Channel):
         temperature = meta.get("temperature", self._temperature)
         provider_config = meta.get("provider_config")
 
-        # Accept client connection
-        await self._transport.accept(session, connection)
+        # Accept client connection (with telemetry span)
+        with telemetry.span(
+            SpanKind.BACKEND_CONNECT,
+            "transport.accept",
+            parent_id=session_span_id,
+            session_id=session.id,
+            attributes={Attr.BACKEND_TYPE: self._transport.name},
+        ):
+            await self._transport.accept(session, connection)
 
         # Determine transport sample rate: prefer per-session (set by
         # transport during accept, e.g. SIP codec negotiation) over the
@@ -301,19 +336,26 @@ class RealtimeVoiceChannel(Channel):
                     SincResamplerProvider(),  # outbound: provider → transport
                 )
 
-        # Connect to provider
-        await self._provider.connect(
-            session,
-            system_prompt=system_prompt,
-            voice=voice,
-            tools=tools,
-            temperature=temperature,
-            input_sample_rate=self._input_sample_rate,
-            output_sample_rate=self._output_sample_rate,
-            provider_config=provider_config,
-        )
+        # Connect to provider (with telemetry span)
+        with telemetry.span(
+            SpanKind.BACKEND_CONNECT,
+            "provider.connect",
+            parent_id=session_span_id,
+            session_id=session.id,
+            attributes={Attr.BACKEND_TYPE: self._provider.name},
+        ):
+            await self._provider.connect(
+                session,
+                system_prompt=system_prompt,
+                voice=voice,
+                tools=tools,
+                temperature=temperature,
+                input_sample_rate=self._input_sample_rate,
+                output_sample_rate=self._output_sample_rate,
+                provider_config=provider_config,
+            )
 
-        session.state = RealtimeSessionState.ACTIVE
+        session.state = VoiceSessionState.ACTIVE
         self._sessions[session.id] = session
         self._session_rooms[session.id] = room_id
 
@@ -337,21 +379,6 @@ class RealtimeVoiceChannel(Channel):
                 },
             )
 
-        # Start telemetry session span
-        telemetry = self._telemetry_provider
-        session_span_id = telemetry.start_span(
-            SpanKind.REALTIME_SESSION,
-            "realtime_session",
-            attributes={
-                Attr.REALTIME_PROVIDER: self._provider.name,
-                "participant_id": participant_id,
-            },
-            room_id=room_id,
-            session_id=session.id,
-            channel_id=self.channel_id,
-        )
-        self._session_spans[session.id] = session_span_id
-
         logger.info(
             "Realtime session %s started: room=%s, participant=%s, provider=%s",
             session.id,
@@ -362,7 +389,7 @@ class RealtimeVoiceChannel(Channel):
 
         return session
 
-    async def end_session(self, session: RealtimeSession) -> None:
+    async def end_session(self, session: VoiceSession) -> None:
         """End a realtime voice session.
 
         Disconnects both provider and transport, fires framework event.
@@ -383,7 +410,7 @@ class RealtimeVoiceChannel(Channel):
         except Exception:
             logger.exception("Error disconnecting transport for session %s", session.id)
 
-        session.state = RealtimeSessionState.ENDED
+        session.state = VoiceSessionState.ENDED
         self._sessions.pop(session.id, None)
         self._session_rooms.pop(session.id, None)
         self._session_bindings.pop(session.id, None)
@@ -399,6 +426,7 @@ class RealtimeVoiceChannel(Channel):
         session_span_id = self._session_spans.pop(session.id, None)
         if session_span_id:
             telemetry.end_span(session_span_id)
+            telemetry.flush()
 
         resamplers = self._session_resamplers.pop(session.id, None)
         if resamplers:
@@ -499,13 +527,20 @@ class RealtimeVoiceChannel(Channel):
 
                 # Fire ON_REALTIME_TEXT_INJECTED hook (async)
                 if self._framework:
-                    await self._framework.hook_engine.run_async_hooks(
-                        room_id,
-                        HookTrigger.ON_REALTIME_TEXT_INJECTED,
-                        event,
-                        context,
-                        skip_event_filter=True,
-                    )
+                    from roomkit.telemetry.context import reset_span
+
+                    _, _tok = self._rt_span_ctx(session.id)
+                    try:
+                        await self._framework.hook_engine.run_async_hooks(
+                            room_id,
+                            HookTrigger.ON_REALTIME_TEXT_INJECTED,
+                            event,
+                            context,
+                            skip_event_filter=True,
+                        )
+                    finally:
+                        if _tok is not None:
+                            reset_span(_tok)
 
                 logger.info(
                     "Injected text into session %s from channel %s: %.50s",
@@ -546,9 +581,22 @@ class RealtimeVoiceChannel(Channel):
         await self._provider.close()
         await self._transport.close()
 
+    # -- Client messaging --
+
+    async def _send_client_message(self, session: VoiceSession, message: dict[str, Any]) -> None:
+        """Send a JSON message to the client via the transport.
+
+        Uses ``getattr`` because ``send_message`` is not part of the
+        VoiceBackend ABC — it's a concrete method on transports that
+        support it (WebSocket, FastRTC, Local, Mock).
+        """
+        send = getattr(self._transport, "send_message", None)
+        if send is not None:
+            await send(session, message)
+
     # -- Internal callbacks --
 
-    def _on_client_audio(self, session: RealtimeSession, audio: bytes) -> Any:
+    def _on_client_audio(self, session: VoiceSession, audio: bytes) -> Any:
         """Forward client audio to provider."""
         try:
             loop = asyncio.get_running_loop()
@@ -559,8 +607,8 @@ class RealtimeVoiceChannel(Channel):
             name=f"rt_client_audio:{session.id}",
         )
 
-    async def _forward_client_audio(self, session: RealtimeSession, audio: bytes) -> None:
-        if session.state != RealtimeSessionState.ACTIVE:
+    async def _forward_client_audio(self, session: VoiceSession, audio: bytes) -> None:
+        if session.state != VoiceSessionState.ACTIVE:
             return
         # Enforce ChannelBinding.access and muted per RFC §7.5
         binding = self._session_bindings.get(session.id)
@@ -592,18 +640,18 @@ class RealtimeVoiceChannel(Channel):
         except (ConnectionError, _ConnectionClosed):
             # WebSocket or TCP connection dropped — mark session so
             # subsequent audio chunks are silently discarded.
-            if session.state == RealtimeSessionState.ACTIVE:
+            if session.state == VoiceSessionState.ACTIVE:
                 logger.warning(
                     "Connection lost for session %s, stopping audio forwarding",
                     session.id,
                 )
-                session.state = RealtimeSessionState.ENDED
+                session.state = VoiceSessionState.ENDED
         except Exception:
-            if session.state == RealtimeSessionState.ACTIVE:
+            if session.state == VoiceSessionState.ACTIVE:
                 logger.exception("Error forwarding client audio for session %s", session.id)
             # Don't log again — provider already marked session as ended
 
-    def _on_provider_audio(self, session: RealtimeSession, audio: bytes) -> None:
+    def _on_provider_audio(self, session: VoiceSession, audio: bytes) -> None:
         """Resample + forward provider audio to transport.
 
         Returns ``None`` so the provider's ``_fire_audio_callbacks`` does not
@@ -626,14 +674,14 @@ class RealtimeVoiceChannel(Channel):
             name=f"rt_send_audio:{session.id}",
         )
 
-    async def _send_outbound_audio(self, session: RealtimeSession, audio: bytes, gen: int) -> None:
+    async def _send_outbound_audio(self, session: VoiceSession, audio: bytes, gen: int) -> None:
         """Send audio to transport, skipping if the generation is stale."""
         if self._audio_generation.get(session.id, 0) != gen:
             return
         await self._transport.send_audio(session, audio)
         # Fallback: fire output level at queue-insertion time for transports
         # without playback callbacks (WebSocket, WebRTC).  For transports
-        # with playback callbacks (LocalAudioTransport), the level fires
+        # with playback callbacks (LocalAudioBackend), the level fires
         # at real playback pace from _on_transport_audio_played instead.
         if not self._transport.supports_playback_callback:
             self._fire_audio_level_task(
@@ -642,7 +690,7 @@ class RealtimeVoiceChannel(Channel):
                 HookTrigger.ON_OUTPUT_AUDIO_LEVEL,
             )
 
-    def _on_transport_audio_played(self, session: RealtimeSession, audio: bytes) -> None:
+    def _on_transport_audio_played(self, session: VoiceSession, audio: bytes) -> None:
         """Fire ON_OUTPUT_AUDIO_LEVEL at real playback pace (PortAudio callback).
 
         Called from the transport's speaker thread via ``on_audio_played``.
@@ -650,7 +698,7 @@ class RealtimeVoiceChannel(Channel):
         """
         self._fire_audio_level_task(session, rms_db(audio), HookTrigger.ON_OUTPUT_AUDIO_LEVEL)
 
-    def _resample_outbound(self, session: RealtimeSession, audio: bytes) -> bytes:
+    def _resample_outbound(self, session: VoiceSession, audio: bytes) -> bytes:
         """Resample outbound audio from provider rate to transport rate."""
         resamplers = self._session_resamplers.get(session.id)
         transport_rate = self._session_transport_rates.get(session.id)
@@ -668,7 +716,7 @@ class RealtimeVoiceChannel(Channel):
         return audio
 
     def _on_provider_transcription(
-        self, session: RealtimeSession, text: str, role: str, is_final: bool
+        self, session: VoiceSession, text: str, role: str, is_final: bool
     ) -> Any:
         """Handle transcription from provider."""
         try:
@@ -681,9 +729,14 @@ class RealtimeVoiceChannel(Channel):
         )
 
     async def _process_transcription(
-        self, session: RealtimeSession, text: str, role: str, is_final: bool
+        self, session: VoiceSession, text: str, role: str, is_final: bool
     ) -> None:
-        """Process a transcription: fire hooks, emit event, send to client."""
+        """Process a transcription: fire hooks, emit event, send to client.
+
+        Partial transcriptions skip hooks and telemetry spans — they are
+        forwarded to the client UI only.  Final transcriptions go through
+        the full pipeline: hooks, client UI, and RoomEvent emission.
+        """
         if not self._framework:
             return
 
@@ -691,6 +744,25 @@ class RealtimeVoiceChannel(Channel):
         if not room_id:
             return
 
+        # Partial transcriptions: send to client UI only, no hooks/telemetry
+        if not is_final:
+            try:
+                await self._send_client_message(
+                    session,
+                    {
+                        "type": "transcription",
+                        "text": text,
+                        "role": role,
+                        "is_final": False,
+                    },
+                )
+            except Exception:
+                logger.exception("Error sending partial transcription for session %s", session.id)
+            return
+
+        from roomkit.telemetry.context import reset_span
+
+        _, _tok = self._rt_span_ctx(session.id)
         try:
             context = await self._framework._build_context(room_id)
 
@@ -726,7 +798,7 @@ class RealtimeVoiceChannel(Channel):
                 final_text = hook_result.event
 
             # Send transcription to client UI
-            await self._transport.send_message(
+            await self._send_client_message(
                 session,
                 {
                     "type": "transcription",
@@ -737,7 +809,7 @@ class RealtimeVoiceChannel(Channel):
             )
 
             # Emit final transcriptions as RoomEvents
-            if is_final and self._emit_transcription_events and final_text.strip():
+            if self._emit_transcription_events and final_text.strip():
                 participant_id = session.participant_id if role == "user" else None
                 logger.info(
                     "Emitting transcription as RoomEvent: role=%s, text=%s",
@@ -764,8 +836,11 @@ class RealtimeVoiceChannel(Channel):
                 room_id,
                 is_final,
             )
+        finally:
+            if _tok is not None:
+                reset_span(_tok)
 
-    def _on_provider_speech_start(self, session: RealtimeSession) -> Any:
+    def _on_provider_speech_start(self, session: VoiceSession) -> Any:
         """Handle speech start from provider's server-side VAD.
 
         Bumps the generation counter so pending send_audio tasks become
@@ -791,7 +866,7 @@ class RealtimeVoiceChannel(Channel):
             name=f"rt_speech_start:{session.id}",
         )
 
-    def _on_provider_speech_end(self, session: RealtimeSession) -> Any:
+    def _on_provider_speech_end(self, session: VoiceSession) -> Any:
         """Handle speech end from provider's server-side VAD."""
         try:
             loop = asyncio.get_running_loop()
@@ -802,7 +877,7 @@ class RealtimeVoiceChannel(Channel):
             name=f"rt_speech_end:{session.id}",
         )
 
-    async def _handle_speech_event(self, session: RealtimeSession, event_type: str) -> None:
+    async def _handle_speech_event(self, session: VoiceSession, event_type: str) -> None:
         """Fire speech hooks and publish ephemeral indicator."""
         if not self._framework:
             return
@@ -811,6 +886,9 @@ class RealtimeVoiceChannel(Channel):
         if not room_id:
             return
 
+        from roomkit.telemetry.context import reset_span
+
+        _, _tok = self._rt_span_ctx(session.id)
         try:
             context = await self._framework._build_context(room_id)
             trigger = (
@@ -826,7 +904,7 @@ class RealtimeVoiceChannel(Channel):
             )
 
             # Send speaking indicator to client
-            await self._transport.send_message(
+            await self._send_client_message(
                 session,
                 {
                     "type": "speaking",
@@ -837,7 +915,7 @@ class RealtimeVoiceChannel(Channel):
 
             # On speech start, tell client to flush audio queue (barge-in)
             if event_type == "start":
-                await self._transport.send_message(
+                await self._send_client_message(
                     session,
                     {
                         "type": "clear_audio",
@@ -846,10 +924,13 @@ class RealtimeVoiceChannel(Channel):
 
         except Exception:
             logger.exception("Error handling speech %s for session %s", event_type, session.id)
+        finally:
+            if _tok is not None:
+                reset_span(_tok)
 
     def _on_provider_tool_call(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         call_id: str,
         name: str,
         arguments: dict[str, Any],
@@ -866,7 +947,7 @@ class RealtimeVoiceChannel(Channel):
 
     async def _handle_tool_call(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         call_id: str,
         name: str,
         arguments: dict[str, Any],
@@ -877,6 +958,12 @@ class RealtimeVoiceChannel(Channel):
         Otherwise, the ``ON_REALTIME_TOOL_CALL`` hook is fired.
         """
         room_id = self._session_rooms.get(session.id)
+
+        from roomkit.telemetry.context import reset_span, set_current_span
+
+        # Set session span context so hooks inside are parented correctly
+        _rt_parent = self._session_spans.get(session.id)
+        _rt_tok = set_current_span(_rt_parent) if _rt_parent else None
 
         # Telemetry: tool call span (child of current turn span)
         telemetry = self._telemetry_provider
@@ -988,8 +1075,10 @@ class RealtimeVoiceChannel(Channel):
         finally:
             if self._mute_on_tool_call and self._transport is not None:
                 self._transport.set_input_muted(session, False)
+            if _rt_tok is not None:
+                reset_span(_rt_tok)
 
-    def _on_provider_response_start(self, session: RealtimeSession) -> Any:
+    def _on_provider_response_start(self, session: VoiceSession) -> Any:
         """Handle AI response start — publish typing indicator."""
         try:
             loop = asyncio.get_running_loop()
@@ -1000,7 +1089,7 @@ class RealtimeVoiceChannel(Channel):
             name=f"rt_response_start:{session.id}",
         )
 
-    def _on_provider_response_end(self, session: RealtimeSession) -> Any:
+    def _on_provider_response_end(self, session: VoiceSession) -> Any:
         """Handle AI response end — flush resampler, signal transport, clear indicator."""
         # Flush the outbound resampler's pending frame (sinc one-frame delay)
         resamplers = self._session_resamplers.get(session.id)
@@ -1031,7 +1120,7 @@ class RealtimeVoiceChannel(Channel):
         )
 
     async def _handle_response_indicator(
-        self, session: RealtimeSession, *, is_speaking: bool
+        self, session: VoiceSession, *, is_speaking: bool
     ) -> None:
         """Publish ephemeral speaking indicator for the AI."""
         telemetry = self._telemetry_provider
@@ -1066,7 +1155,7 @@ class RealtimeVoiceChannel(Channel):
             )
             self._turn_spans[session.id] = turn_span_id
         try:
-            await self._transport.send_message(
+            await self._send_client_message(
                 session,
                 {
                     "type": "speaking",
@@ -1089,7 +1178,7 @@ class RealtimeVoiceChannel(Channel):
         except Exception:
             logger.exception("Error publishing response indicator for session %s", session.id)
 
-    def _on_provider_error(self, session: RealtimeSession, code: str, message: str) -> Any:
+    def _on_provider_error(self, session: VoiceSession, code: str, message: str) -> Any:
         """Handle provider error."""
         logger.error(
             "Realtime provider error for session %s: [%s] %s",
@@ -1098,7 +1187,7 @@ class RealtimeVoiceChannel(Channel):
             message,
         )
 
-    def _on_client_disconnected(self, session: RealtimeSession) -> Any:
+    def _on_client_disconnected(self, session: VoiceSession) -> Any:
         """Handle client disconnection — end the session."""
         try:
             loop = asyncio.get_running_loop()
@@ -1109,7 +1198,7 @@ class RealtimeVoiceChannel(Channel):
             name=f"rt_client_disconnect:{session.id}",
         )
 
-    async def _handle_client_disconnect(self, session: RealtimeSession) -> None:
+    async def _handle_client_disconnect(self, session: VoiceSession) -> None:
         """Clean up after client disconnects."""
         if session.id in self._sessions:
             await self.end_session(session)
@@ -1117,7 +1206,7 @@ class RealtimeVoiceChannel(Channel):
     # -- Audio level hooks --
 
     def _fire_audio_level_task(
-        self, session: RealtimeSession, level_db: float, trigger: HookTrigger
+        self, session: VoiceSession, level_db: float, trigger: HookTrigger
     ) -> None:
         """Schedule a task to fire an audio level hook, throttled to ~10/sec.
 
@@ -1154,7 +1243,7 @@ class RealtimeVoiceChannel(Channel):
 
     def _create_audio_level_task(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         level_db: float,
         room_id: str,
         trigger: HookTrigger,
@@ -1167,7 +1256,7 @@ class RealtimeVoiceChannel(Channel):
 
     async def _fire_audio_level(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         level_db: float,
         room_id: str,
         trigger: HookTrigger,
@@ -1175,6 +1264,9 @@ class RealtimeVoiceChannel(Channel):
         """Fire an ON_INPUT_AUDIO_LEVEL or ON_OUTPUT_AUDIO_LEVEL hook."""
         if not self._framework:
             return
+        from roomkit.telemetry.context import reset_span
+
+        _, _tok = self._rt_span_ctx(session.id)
         try:
             from roomkit.voice.events import AudioLevelEvent
 
@@ -1189,9 +1281,12 @@ class RealtimeVoiceChannel(Channel):
             )
         except Exception:
             logger.exception("Error firing %s hook", trigger)
+        finally:
+            if _tok is not None:
+                reset_span(_tok)
 
     # -- Helpers --
 
-    def _get_room_sessions(self, room_id: str) -> list[RealtimeSession]:
+    def _get_room_sessions(self, room_id: str) -> list[VoiceSession]:
         """Get all active sessions for a room."""
         return [s for s in self._sessions.values() if self._session_rooms.get(s.id) == room_id]

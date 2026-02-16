@@ -35,11 +35,17 @@ import struct
 import sys
 import threading
 import uuid
-from collections.abc import AsyncIterator
+from collections import deque
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.backends.base import AudioPlayedCallback, AudioReceivedCallback, VoiceBackend
+from roomkit.voice.backends.base import (
+    AudioPlayedCallback,
+    AudioReceivedCallback,
+    SpeakerChangeCallback,
+    TransportDisconnectCallback,
+    VoiceBackend,
+)
 from roomkit.voice.base import (
     AudioChunk,
     BargeInCallback,
@@ -49,9 +55,12 @@ from roomkit.voice.base import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     import sounddevice as sd
 
     from roomkit.voice.pipeline.aec.base import AECProvider
+    from roomkit.voice.pipeline.config import AudioPipelineConfig
     from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
 
 logger = logging.getLogger("roomkit.voice.local")
@@ -77,9 +86,15 @@ class LocalAudioBackend(VoiceBackend):
     via the ``on_audio_received`` callback.  Outbound audio (TTS) is played
     through the default output device.
 
-    The backend supports one active listening session at a time.  Call
-    :meth:`start_listening` after :meth:`connect` to begin mic capture, and
-    :meth:`stop_listening` to end it.
+    Works in two modes:
+
+    - **VoiceChannel mode** (STT/TTS): call :meth:`connect` then
+      :meth:`start_listening`.  The VoiceChannel's AudioPipeline handles
+      all audio processing.
+    - **RealtimeVoiceChannel mode** (speech-to-speech): call :meth:`accept`.
+      Pass a ``pipeline`` to apply AEC / AGC / denoising inline — mic
+      audio is processed through the pipeline before being forwarded to
+      the realtime provider.
 
     Args:
         input_sample_rate: Mic capture sample rate (Hz).
@@ -89,9 +104,12 @@ class LocalAudioBackend(VoiceBackend):
             Controls how often ``on_audio_received`` fires.
         input_device: Sounddevice input device index or name (None = default).
         output_device: Sounddevice output device index or name (None = default).
-        aec: Optional AEC provider for echo cancellation.  When set,
-            speaker audio is fed as reference via ``aec.feed_reference()``
-            from the output callback.  Requires matching sample rates.
+        aec: Optional AEC provider for transport-level echo cancellation.
+            Speaker audio is fed as reference via ``aec.feed_reference()``
+            from the output callback.
+        pipeline: Optional :class:`AudioPipelineConfig` for the realtime
+            path.  When set, mic audio is processed through the pipeline
+            (AEC, denoiser, diarization) before being forwarded.
         mute_mic_during_playback: If True (default), suppress mic frames
             while the speaker is playing (half-duplex).  Prevents echo
             from triggering VAD and false barge-ins when using speakers
@@ -108,6 +126,7 @@ class LocalAudioBackend(VoiceBackend):
         input_device: int | str | None = None,
         output_device: int | str | None = None,
         aec: AECProvider | None = None,
+        pipeline: AudioPipelineConfig | None = None,
         mute_mic_during_playback: bool = True,
     ) -> None:
         self._sd = _import_sounddevice()
@@ -141,7 +160,29 @@ class LocalAudioBackend(VoiceBackend):
         # Half-duplex echo suppression
         self._mute_mic_during_playback = mute_mic_during_playback
 
-        # --- AEC ---
+        # Realtime transport state
+        self._muted_sessions: set[str] = set()
+        self._gated_sessions: set[str] = set()
+        self._disconnect_callbacks: list[TransportDisconnectCallback] = []
+        self._speaker_change_callbacks: list[SpeakerChangeCallback] = []
+
+        # Realtime mode flag — set by accept(), controls mic dispatch
+        self._realtime_mode = False
+
+        # Realtime speaker output: persistent callback-driven stream
+        # with a chunk queue.  Created once in accept(), shared across
+        # all send_audio() calls.
+        self._rt_output_stream: Any = None  # sd.RawOutputStream
+        self._rt_output_buffer: deque[bytes] = deque()
+        self._rt_buf_offset = 0  # bytes consumed in the front chunk
+        self._rt_buf_lock = threading.Lock()
+        self._rt_closing = threading.Event()
+
+        # --- Audio pipeline (inline processing for realtime path) ---
+        self._pipeline_config = pipeline
+        self._pipeline: Any = None  # AudioPipeline, created lazily in accept()
+
+        # --- AEC (transport-level reference feeding) ---
         self._aec = aec
         self._aec_needs_resample = aec is not None and output_sample_rate != input_sample_rate
         if aec is not None:
@@ -224,10 +265,16 @@ class LocalAudioBackend(VoiceBackend):
         return session
 
     async def disconnect(self, session: VoiceSession) -> None:
+        self._rt_closing.set()
         await self.stop_listening(session)
+        self._stop_rt_output()
         session.state = VoiceSessionState.ENDED
         self._sessions.pop(session.id, None)
         self._playing_sessions.discard(session.id)
+        self._gated_sessions.discard(session.id)
+        self._muted_sessions.discard(session.id)
+        if self._pipeline is not None:
+            self._pipeline.on_session_ended(session)
         logger.info("Local audio session ended: session=%s", session.id)
 
     def get_session(self, session_id: str) -> VoiceSession | None:
@@ -237,8 +284,14 @@ class LocalAudioBackend(VoiceBackend):
         return [s for s in self._sessions.values() if s.room_id == room_id]
 
     async def close(self) -> None:
+        self._rt_closing.set()
         for session in list(self._sessions.values()):
             await self.disconnect(session)
+        self._stop_rt_output()
+        if self._pipeline is not None:
+            self._pipeline.close()
+        if self._aec is not None:
+            self._aec.close()
 
     # -------------------------------------------------------------------------
     # Microphone capture
@@ -267,11 +320,17 @@ class LocalAudioBackend(VoiceBackend):
         # reads stable snapshots instead of mutable instance attributes.
         callback_ref = self._audio_received_callback
         loop_ref = self._loop
+        realtime_mode = self._realtime_mode
+        pipeline_ref = self._pipeline
 
         def _audio_callback(indata: bytes, frames: int, time_info: Any, status: Any) -> None:
             if status:
                 logger.warning("Mic status: %s", status)
             if not callback_ref:
+                return
+
+            # Explicit mute via set_input_muted()
+            if session.id in self._muted_sessions:
                 return
 
             # Half-duplex echo suppression: suppress mic frames while the
@@ -280,17 +339,42 @@ class LocalAudioBackend(VoiceBackend):
             if self._mute_mic_during_playback and self._playing_sessions:
                 return
 
-            frame = AudioFrame(
-                data=bytes(indata),
-                sample_rate=self._input_sample_rate,
-                channels=self._channels,
-                sample_width=2,
-            )
+            audio_bytes = bytes(indata)
 
-            if loop_ref is not None and loop_ref.is_running():
-                loop_ref.call_soon_threadsafe(callback_ref, session, frame)
+            if realtime_mode:
+                # Realtime path: run pipeline inline (AEC, AGC, denoiser)
+                # then forward the *processed* audio to the provider.
+                if pipeline_ref is not None:
+                    frame = AudioFrame(
+                        data=audio_bytes,
+                        sample_rate=self._input_sample_rate,
+                        channels=self._channels,
+                        sample_width=2,
+                    )
+                    processed = self._process_pipeline_inline(session, frame)
+                    audio_bytes = processed.data
+
+                # Gated by primary-speaker mode
+                if session.id in self._gated_sessions:
+                    return
+
+                if loop_ref is not None and loop_ref.is_running():
+                    loop_ref.call_soon_threadsafe(callback_ref, session, audio_bytes)
+                else:
+                    callback_ref(session, audio_bytes)
             else:
-                callback_ref(session, frame)
+                # VoiceChannel path: deliver AudioFrame (pipeline is
+                # handled by VoiceChannel's own AudioPipeline)
+                frame = AudioFrame(
+                    data=audio_bytes,
+                    sample_rate=self._input_sample_rate,
+                    channels=self._channels,
+                    sample_width=2,
+                )
+                if loop_ref is not None and loop_ref.is_running():
+                    loop_ref.call_soon_threadsafe(callback_ref, session, frame)
+                else:
+                    callback_ref(session, frame)
 
         stream = self._sd.RawInputStream(
             samplerate=self._input_sample_rate,
@@ -336,10 +420,25 @@ class LocalAudioBackend(VoiceBackend):
     ) -> None:
         """Play audio through the system speakers.
 
+        In realtime mode, bytes are queued into a persistent output buffer
+        that a callback-driven PortAudio stream drains continuously.
+
+        In VoiceChannel mode, streaming chunks use a per-session output
+        stream, and raw bytes fall back to ``sd.play()``.
+
         Args:
             session: The target session.
             audio: Raw PCM-16 LE bytes or an async iterator of AudioChunks.
         """
+        if self._realtime_mode:
+            # Realtime path: queue bytes into persistent output buffer
+            if isinstance(audio, bytes) and audio and not self._rt_closing.is_set():
+                self._playing_sessions.add(session.id)
+                with self._rt_buf_lock:
+                    self._rt_output_buffer.append(audio)
+            return
+
+        # VoiceChannel path
         self._playing_sessions.add(session.id)
         try:
             if isinstance(audio, bytes):
@@ -510,8 +609,16 @@ class LocalAudioBackend(VoiceBackend):
     # Callbacks
     # -------------------------------------------------------------------------
 
-    def on_audio_received(self, callback: AudioReceivedCallback) -> None:
-        self._audio_received_callback = callback
+    def on_audio_received(self, callback: AudioReceivedCallback) -> None:  # type: ignore[override]
+        """Register callback for audio received from the microphone.
+
+        Accepts both ``(session, AudioFrame)`` callbacks (VoiceChannel path)
+        and ``(session, bytes)`` callbacks (RealtimeVoiceChannel path).
+        The mic callback dispatches to the right type based on whether
+        :meth:`accept` was called (realtime mode → bytes) or not
+        (VoiceChannel mode → AudioFrame).
+        """
+        self._audio_received_callback = callback  # type: ignore[assignment]
 
     def on_barge_in(self, callback: BargeInCallback) -> None:
         self._barge_in_callbacks.append(callback)
@@ -539,6 +646,204 @@ class LocalAudioBackend(VoiceBackend):
 
     def is_playing(self, session: VoiceSession) -> bool:
         return session.id in self._playing_sessions
+
+    # -------------------------------------------------------------------------
+    # Realtime transport methods (merged from LocalAudioTransport)
+    # -------------------------------------------------------------------------
+
+    async def accept(self, session: VoiceSession, connection: Any) -> None:
+        """Accept a session for realtime use (start mic + speaker).
+
+        Creates a persistent callback-driven speaker output stream and
+        starts mic capture.  When a ``pipeline`` was provided at
+        construction, it is set up here for inline audio processing.
+        """
+        self._realtime_mode = True
+        self._sessions[session.id] = session
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
+
+        # Set up pipeline on first session (needs event loop)
+        if self._pipeline_config is not None and self._pipeline is None:
+            self._setup_pipeline(self._pipeline_config)
+
+        # Create persistent speaker output stream (callback-driven)
+        if self._rt_output_stream is None:
+            self._start_rt_output()
+
+        await self.start_listening(session)
+
+    def interrupt(self, session: VoiceSession) -> None:
+        """Flush outbound queue, stop playback (sync)."""
+        self._playing_sessions.discard(session.id)
+        # Realtime path: flush the persistent output buffer
+        with self._rt_buf_lock:
+            self._rt_output_buffer.clear()
+            self._rt_buf_offset = 0
+        # VoiceChannel path: cancel the playback task
+        task = self._playback_tasks.pop(session.id, None)
+        if task is not None:
+            task.cancel()
+
+    def set_input_muted(self, session: VoiceSession, muted: bool) -> None:
+        """Mute/unmute the microphone input for a session."""
+        if muted:
+            self._muted_sessions.add(session.id)
+        else:
+            self._muted_sessions.discard(session.id)
+        logger.info("Input muted=%s for session %s", muted, session.id)
+
+    def set_input_gated(self, session: VoiceSession, gated: bool) -> None:
+        """Gate/un-gate audio input for primary speaker mode."""
+        if gated:
+            self._gated_sessions.add(session.id)
+        else:
+            self._gated_sessions.discard(session.id)
+        logger.info("Input gated=%s for session %s", gated, session.id)
+
+    def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
+        self._disconnect_callbacks.append(callback)
+
+    def on_speaker_change(self, callback: SpeakerChangeCallback) -> None:
+        self._speaker_change_callbacks.append(callback)
+
+    # -------------------------------------------------------------------------
+    # Realtime speaker output (persistent callback-driven stream)
+    # -------------------------------------------------------------------------
+
+    def _start_rt_output(self) -> None:
+        """Create a persistent callback-driven speaker output stream.
+
+        PortAudio's audio thread pulls PCM data from the chunk deque.
+        When no AI audio is queued the callback feeds silence, keeping
+        the stream alive and latency-free.
+        """
+        sd = self._sd
+        output_blocksize = int(self._output_sample_rate * self._block_duration_ms / 1000)
+        if sys.platform == "darwin":
+            out_latency: str = "high"
+        elif self._aec is not None:
+            out_latency = "low"
+        else:
+            out_latency = "high"
+
+        out = sd.RawOutputStream(
+            samplerate=self._output_sample_rate,
+            blocksize=output_blocksize,
+            channels=self._channels,
+            dtype="int16",
+            device=self._output_device,
+            latency=out_latency,
+            callback=self._rt_speaker_callback,
+        )
+        out.start()
+        self._rt_output_stream = out
+        logger.info(
+            "Realtime speaker stream: rate=%dHz blocksize=%d device=%s",
+            self._output_sample_rate,
+            output_blocksize,
+            self._output_device or "default",
+        )
+
+    def _rt_speaker_callback(self, outdata: Any, frames: int, time_info: Any, status: Any) -> None:
+        """Pull queued audio into the output buffer; fill gaps with silence."""
+        if status:
+            logger.warning("Speaker callback status: %s", status)
+
+        bytes_needed = frames * self._channels * 2
+        written = 0
+
+        with self._rt_buf_lock:
+            buf = self._rt_output_buffer
+            while written < bytes_needed and buf:
+                chunk = buf[0]
+                avail = len(chunk) - self._rt_buf_offset
+                n = min(avail, bytes_needed - written)
+                src_start = self._rt_buf_offset
+                outdata[written : written + n] = chunk[src_start : src_start + n]
+                written += n
+                self._rt_buf_offset += n
+                if self._rt_buf_offset >= len(chunk):
+                    buf.popleft()
+                    self._rt_buf_offset = 0
+
+        # Fill remaining with silence
+        if written < bytes_needed:
+            outdata[written:] = b"\x00" * (bytes_needed - written)
+
+        # AEC: feed the complete output frame as reference
+        if self._aec is not None:
+            self._aec_feed_played(bytearray(bytes(outdata)))
+
+        # Notify listeners about played audio
+        if self._audio_played_callbacks and written > 0:
+            played_frame = AudioFrame(
+                data=bytes(outdata),
+                sample_rate=self._output_sample_rate,
+                channels=self._channels,
+                sample_width=2,
+            )
+            for cb in self._audio_played_callbacks:
+                with contextlib.suppress(Exception):
+                    cb(list(self._sessions.values())[0], played_frame)
+
+        # Track playing state based on buffer content
+        if written > 0:
+            for sid in self._sessions:
+                self._playing_sessions.add(sid)
+        elif not buf:
+            for sid in list(self._playing_sessions):
+                self._playing_sessions.discard(sid)
+
+    def _stop_rt_output(self) -> None:
+        """Close the persistent realtime speaker stream."""
+        with self._rt_buf_lock:
+            self._rt_output_buffer.clear()
+            self._rt_buf_offset = 0
+        out = self._rt_output_stream
+        if out is not None:
+            self._rt_output_stream = None
+            try:
+                out.abort()
+                out.close()
+            except Exception:  # noqa: S110
+                logger.debug("Error closing realtime output stream", exc_info=True)
+
+    # -------------------------------------------------------------------------
+    # Audio pipeline (inline processing for realtime path)
+    # -------------------------------------------------------------------------
+
+    def _setup_pipeline(self, config: AudioPipelineConfig) -> None:
+        """Create AudioPipeline for inline mic audio processing.
+
+        The pipeline runs synchronously in the PortAudio mic callback.
+        Audio goes through AEC → AGC → denoiser stages; the processed
+        result is what gets forwarded to the realtime provider.
+
+        A ``on_processed_frame`` callback captures the pipeline output
+        into ``_pipeline_result`` so the mic callback can read it.
+        """
+        from roomkit.voice.pipeline.engine import AudioPipeline
+
+        self._pipeline = AudioPipeline(config)
+        self._pipeline_result: AudioFrame | None = None
+        self._pipeline.on_processed_frame(self._on_pipeline_processed)
+
+    def _on_pipeline_processed(self, session: VoiceSession, frame: AudioFrame) -> None:
+        """Capture the processed frame from the pipeline."""
+        self._pipeline_result = frame
+
+    def _process_pipeline_inline(self, session: VoiceSession, frame: AudioFrame) -> AudioFrame:
+        """Run a frame through the pipeline and return the processed result."""
+        self._pipeline_result = None
+        try:
+            self._pipeline.process_inbound(session, frame)
+        except Exception:
+            logger.exception("Pipeline processing error — passing audio through")
+            return frame
+        return self._pipeline_result if self._pipeline_result is not None else frame
 
     # -------------------------------------------------------------------------
     # AEC helpers

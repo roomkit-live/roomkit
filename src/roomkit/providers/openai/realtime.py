@@ -8,7 +8,7 @@ import json
 import logging
 from typing import Any
 
-from roomkit.voice.realtime.base import RealtimeSession, RealtimeSessionState
+from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import (
     RealtimeAudioCallback,
     RealtimeErrorCallback,
@@ -59,7 +59,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         # Active WebSocket connections: session_id -> ws
         self._connections: dict[str, Any] = {}
         self._receive_tasks: dict[str, asyncio.Task[None]] = {}
-        self._sessions: dict[str, RealtimeSession] = {}
+        self._sessions: dict[str, VoiceSession] = {}
 
         # Callbacks
         self._audio_callbacks: list[RealtimeAudioCallback] = []
@@ -77,7 +77,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
 
     async def connect(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         *,
         system_prompt: str | None = None,
         voice: str | None = None,
@@ -169,7 +169,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             )
         )
 
-        session.state = RealtimeSessionState.ACTIVE
+        session.state = VoiceSessionState.ACTIVE
         session.provider_session_id = session.id
 
         # Start receive loop
@@ -180,7 +180,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
 
         logger.info("OpenAI Realtime session connected: %s", session.id)
 
-    async def send_audio(self, session: RealtimeSession, audio: bytes) -> None:
+    async def send_audio(self, session: VoiceSession, audio: bytes) -> None:
         ws = self._connections.get(session.id)
         if ws is None:
             return
@@ -193,9 +193,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             )
         )
 
-    async def inject_text(
-        self, session: RealtimeSession, text: str, *, role: str = "user"
-    ) -> None:
+    async def inject_text(self, session: VoiceSession, text: str, *, role: str = "user") -> None:
         ws = self._connections.get(session.id)
         if ws is None:
             return
@@ -217,9 +215,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         # Trigger a response
         await ws.send(json.dumps({"type": "response.create"}))
 
-    async def submit_tool_result(
-        self, session: RealtimeSession, call_id: str, result: str
-    ) -> None:
+    async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
         ws = self._connections.get(session.id)
         if ws is None:
             return
@@ -240,19 +236,19 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         # Trigger a response after tool result
         await ws.send(json.dumps({"type": "response.create"}))
 
-    async def interrupt(self, session: RealtimeSession) -> None:
+    async def interrupt(self, session: VoiceSession) -> None:
         ws = self._connections.get(session.id)
         if ws is None:
             return
         await ws.send(json.dumps({"type": "response.cancel"}))
 
-    async def send_event(self, session: RealtimeSession, event: dict[str, Any]) -> None:
+    async def send_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
         ws = self._connections.get(session.id)
         if ws is None:
             return
         await ws.send(json.dumps(event))
 
-    async def disconnect(self, session: RealtimeSession) -> None:
+    async def disconnect(self, session: VoiceSession) -> None:
         import contextlib
 
         # Cancel receive task
@@ -269,7 +265,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             with contextlib.suppress(Exception):
                 await ws.close()
 
-        session.state = RealtimeSessionState.ENDED
+        session.state = VoiceSessionState.ENDED
 
     async def close(self) -> None:
         for session_id in list(self._sessions.keys()):
@@ -305,7 +301,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
 
     # -- Receive loop --
 
-    async def _receive_loop(self, session: RealtimeSession) -> None:
+    async def _receive_loop(self, session: VoiceSession) -> None:
         """Process server events from OpenAI Realtime API."""
         ws = self._connections.get(session.id)
         if ws is None:
@@ -323,9 +319,9 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         except asyncio.CancelledError:
             raise
         except Exception:
-            if session.state == RealtimeSessionState.ACTIVE:
+            if session.state == VoiceSessionState.ACTIVE:
                 logger.warning("OpenAI WebSocket closed unexpectedly for session %s", session.id)
-                session.state = RealtimeSessionState.ENDED
+                session.state = VoiceSessionState.ENDED
                 await self._fire_error_callbacks(
                     session,
                     "connection_closed",
@@ -334,7 +330,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             else:
                 logger.debug("OpenAI WebSocket closed for session %s", session.id)
 
-    async def _handle_server_event(self, session: RealtimeSession, event: dict[str, Any]) -> None:
+    async def _handle_server_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
         """Map OpenAI server events to callbacks."""
         event_type = event.get("type", "")
 
@@ -433,7 +429,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
     async def _fire_callbacks(
         self,
         callbacks: list[Any],
-        session: RealtimeSession,
+        session: VoiceSession,
     ) -> None:
         for cb in callbacks:
             try:
@@ -443,7 +439,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             except Exception:
                 logger.exception("Error in callback for session %s", session.id)
 
-    async def _fire_audio_callbacks(self, session: RealtimeSession, audio: bytes) -> None:
+    async def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
         for cb in self._audio_callbacks:
             try:
                 result = cb(session, audio)
@@ -453,7 +449,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
                 logger.exception("Error in audio callback for session %s", session.id)
 
     async def _fire_transcription_callbacks(
-        self, session: RealtimeSession, text: str, role: str, is_final: bool
+        self, session: VoiceSession, text: str, role: str, is_final: bool
     ) -> None:
         for cb in self._transcription_callbacks:
             try:
@@ -465,7 +461,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
 
     async def _fire_tool_call_callbacks(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         call_id: str,
         name: str,
         arguments: dict[str, Any],
@@ -478,9 +474,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             except Exception:
                 logger.exception("Error in tool call callback for session %s", session.id)
 
-    async def _fire_error_callbacks(
-        self, session: RealtimeSession, code: str, message: str
-    ) -> None:
+    async def _fire_error_callbacks(self, session: VoiceSession, code: str, message: str) -> None:
         for cb in self._error_callbacks:
             try:
                 result = cb(session, code, message)

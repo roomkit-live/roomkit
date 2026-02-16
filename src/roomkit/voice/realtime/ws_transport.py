@@ -6,19 +6,22 @@ import asyncio
 import base64
 import json
 import logging
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-from roomkit.voice.realtime.base import RealtimeSession
-from roomkit.voice.realtime.transport import (
-    RealtimeAudioTransport,
-    TransportAudioCallback,
+from roomkit.voice.backends.base import (
     TransportDisconnectCallback,
+    VoiceBackend,
 )
+from roomkit.voice.base import AudioChunk, VoiceSession
 
 logger = logging.getLogger("roomkit.voice.realtime.ws_transport")
 
+# Transport audio callback: (session, audio_bytes) -> Any
+TransportAudioCallback = Callable[["VoiceSession", bytes], Any]
 
-class WebSocketRealtimeTransport(RealtimeAudioTransport):
+
+class WebSocketRealtimeTransport(VoiceBackend):
     """Concrete WebSocket-based audio transport.
 
     Protocol:
@@ -38,13 +41,13 @@ class WebSocketRealtimeTransport(RealtimeAudioTransport):
         self._receive_tasks: dict[str, asyncio.Task[None]] = {}
         self._audio_callbacks: list[TransportAudioCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
-        self._sessions: dict[str, RealtimeSession] = {}  # session_id -> session
+        self._sessions: dict[str, VoiceSession] = {}  # session_id -> session
 
     @property
     def name(self) -> str:
         return "WebSocketRealtimeTransport"
 
-    async def accept(self, session: RealtimeSession, connection: Any) -> None:
+    async def accept(self, session: VoiceSession, connection: Any) -> None:
         """Accept a WebSocket connection for the given session.
 
         Starts a background receive loop to process incoming messages.
@@ -60,14 +63,22 @@ class WebSocketRealtimeTransport(RealtimeAudioTransport):
             name=f"ws_rt_recv:{session.id}",
         )
 
-    async def send_audio(self, session: RealtimeSession, audio: bytes) -> None:
+    async def send_audio(
+        self,
+        session: VoiceSession,
+        audio: bytes | AsyncIterator[AudioChunk],
+    ) -> None:
+        if isinstance(audio, bytes):
+            raw = audio
+        else:
+            return  # Streaming not supported in WS transport
         ws = self._websockets.get(session.id)
         if ws is None:
             return
         message = json.dumps(
             {
                 "type": "audio",
-                "data": base64.b64encode(audio).decode("ascii"),
+                "data": base64.b64encode(raw).decode("ascii"),
             }
         )
         try:
@@ -75,7 +86,11 @@ class WebSocketRealtimeTransport(RealtimeAudioTransport):
         except Exception:
             logger.exception("Error sending audio to session %s", session.id)
 
-    async def send_message(self, session: RealtimeSession, message: dict[str, Any]) -> None:
+    async def send_message(self, session: VoiceSession, message: dict[str, Any]) -> None:
+        """Send a JSON message to the connected client.
+
+        Not part of the VoiceBackend ABC — accessed via getattr by the channel.
+        """
         ws = self._websockets.get(session.id)
         if ws is None:
             return
@@ -84,7 +99,7 @@ class WebSocketRealtimeTransport(RealtimeAudioTransport):
         except Exception:
             logger.exception("Error sending message to session %s", session.id)
 
-    async def disconnect(self, session: RealtimeSession) -> None:
+    async def disconnect(self, session: VoiceSession) -> None:
         import contextlib
 
         # Cancel receive task
@@ -101,7 +116,7 @@ class WebSocketRealtimeTransport(RealtimeAudioTransport):
             with contextlib.suppress(Exception):
                 await ws.close()
 
-    def on_audio_received(self, callback: TransportAudioCallback) -> None:
+    def on_audio_received(self, callback: TransportAudioCallback) -> None:  # type: ignore[override]
         self._audio_callbacks.append(callback)
 
     def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
@@ -114,7 +129,7 @@ class WebSocketRealtimeTransport(RealtimeAudioTransport):
             if session:
                 await self.disconnect(session)
 
-    async def _receive_loop(self, session: RealtimeSession) -> None:
+    async def _receive_loop(self, session: VoiceSession) -> None:
         """Background loop reading messages from the client WebSocket."""
         ws = self._websockets.get(session.id)
         if ws is None:
@@ -155,7 +170,7 @@ class WebSocketRealtimeTransport(RealtimeAudioTransport):
                 except Exception:
                     logger.exception("Error in disconnect callback for session %s", session.id)
 
-    async def _fire_audio_callbacks(self, session: RealtimeSession, audio: bytes) -> None:
+    async def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
         """Fire all registered audio callbacks."""
         for cb in self._audio_callbacks:
             try:

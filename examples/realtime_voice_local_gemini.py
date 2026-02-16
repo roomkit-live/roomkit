@@ -34,7 +34,7 @@ import signal
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
-from roomkit.voice.realtime.local_transport import LocalAudioTransport
+from roomkit.voice.backends.local import LocalAudioBackend
 
 logging.basicConfig(
     level=logging.INFO,
@@ -96,19 +96,24 @@ async def main() -> None:
 
         denoiser = RNNoiseDenoiserProvider(sample_rate=sample_rate)
 
+    # --- Audio pipeline (sidecar for AEC + denoiser processing) ---
+    from roomkit.voice.pipeline.config import AudioPipelineConfig
+
+    pipeline = AudioPipelineConfig(aec=aec, denoiser=denoiser) if (aec or denoiser) else None
+
     # When AEC is active it removes speaker echo from the mic signal, so we
     # can keep the mic open during playback.  Without AEC the mic is muted
     # during playback to prevent feedback loops.
     mute_env = os.environ.get("MUTE_MIC")
     mute_mic = mute_env != "0" if mute_env is not None else aec is None
 
-    transport = LocalAudioTransport(
+    transport = LocalAudioBackend(
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
         block_duration_ms=block_ms,
         mute_mic_during_playback=mute_mic,
         aec=aec,
-        denoiser=denoiser,
+        pipeline=pipeline,
     )
 
     # --- Realtime voice channel ---

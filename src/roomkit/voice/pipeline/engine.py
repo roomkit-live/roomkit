@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -97,6 +98,14 @@ class AudioPipeline:
         self._playback_aec_resampler: ResamplerProvider | None = None
         # Telemetry counters (lightweight, emitted periodically)
         self._telemetry = config.telemetry
+        # Speech segment telemetry spans (session_id -> span_id)
+        self._segment_spans: dict[str, str] = {}
+        # Per-stage cumulative timing in nanoseconds (session_id -> {stage: ns})
+        self._segment_stage_timings: dict[str, dict[str, int]] = {}
+        # Frame count per segment (session_id -> count)
+        self._segment_frame_counts: dict[str, int] = {}
+        # Parent span for pipeline (session_id -> voice_session_span_id)
+        self._parent_spans: dict[str, str] = {}
         self._frame_count: int = 0
         self._bytes_processed: int = 0
         self._metric_interval: int = 500  # emit metrics every N frames
@@ -153,6 +162,39 @@ class AudioPipeline:
         self._recording_stopped_callbacks.append(callback)
 
     # -----------------------------------------------------------------
+    # Telemetry helpers
+    # -----------------------------------------------------------------
+
+    def set_parent_span(self, session_id: str, span_id: str) -> None:
+        """Set the parent span (VOICE_SESSION) for pipeline spans."""
+        self._parent_spans[session_id] = span_id
+
+    def _active_stages_str(self) -> str:
+        """Return comma-separated list of active pipeline stages."""
+        stages: list[str] = []
+        if self._resampler is not None and self._config.contract is not None:
+            stages.append("resampler")
+        if self._config.dtmf is not None:
+            stages.append("dtmf")
+        if (
+            self._config.aec is not None
+            and VoiceCapability.NATIVE_AEC not in self._backend_capabilities
+        ):
+            stages.append("aec")
+        if (
+            self._config.agc is not None
+            and VoiceCapability.NATIVE_AGC not in self._backend_capabilities
+        ):
+            stages.append("agc")
+        if self._config.denoiser is not None:
+            stages.append("denoiser")
+        if self._config.vad is not None:
+            stages.append("vad")
+        if self._config.diarization is not None:
+            stages.append("diarization")
+        return ",".join(stages)
+
+    # -----------------------------------------------------------------
     # Inbound processing
     # -----------------------------------------------------------------
 
@@ -169,6 +211,20 @@ class AudioPipeline:
         if dt is not None:
             dt.tap(stage, frame)
 
+    def _end_segment_span(self, session_id: str) -> None:
+        """End an active speech segment span with accumulated timings."""
+        seg_span = self._segment_spans.pop(session_id, None)
+        if seg_span and self._telemetry is not None:
+            from roomkit.telemetry.base import Attr
+
+            attrs: dict[str, Any] = {
+                Attr.PIPELINE_FRAMES: self._segment_frame_counts.get(session_id, 0),
+            }
+            for stage, ns in self._segment_stage_timings.pop(session_id, {}).items():
+                attrs[f"pipeline.{stage}_ms"] = round(ns / 1_000_000, 2)
+            self._segment_frame_counts.pop(session_id, None)
+            self._telemetry.end_span(seg_span, attributes=attrs)
+
     def process_inbound(self, session: VoiceSession, frame: AudioFrame) -> None:
         """Process a single inbound audio frame through the pipeline.
 
@@ -176,16 +232,24 @@ class AudioPipeline:
                [Denoiser] -> [VAD] -> [Diarization]
         """
         current_frame = frame
+        in_segment = session.id in self._segment_spans
 
         # Track inbound sample rate for AEC reference resampling
         if self._inbound_sample_rate is None:
             self._inbound_sample_rate = frame.sample_rate
+
+        # Increment frame count for active speech segment
+        if in_segment:
+            self._segment_frame_counts[session.id] = (
+                self._segment_frame_counts.get(session.id, 0) + 1
+            )
 
         # Stage 0: Inbound resampler (transport → internal format)
         if self._resampler is not None and self._config.contract is not None:
             int_fmt = self._config.contract.internal_format
             current_frame.metadata["original_sample_rate"] = current_frame.sample_rate
             current_frame.metadata["original_channels"] = current_frame.channels
+            t0 = time.perf_counter_ns() if in_segment else 0
             try:
                 current_frame = self._resampler.resample(
                     current_frame,
@@ -195,6 +259,12 @@ class AudioPipeline:
                 )
             except Exception:
                 logger.exception("Inbound resampler error")
+            if in_segment:
+                self._segment_stage_timings[session.id]["resampler"] = (
+                    self._segment_stage_timings[session.id].get("resampler", 0)
+                    + time.perf_counter_ns()
+                    - t0
+                )
 
         # Stage 1: Recorder inbound tap
         handle = self._recording_handles.get(session.id)
@@ -217,6 +287,7 @@ class AudioPipeline:
 
         # Stage 1.5: DTMF detection (before AEC/denoiser to preserve tones)
         if self._config.dtmf is not None:
+            t0 = time.perf_counter_ns() if in_segment else 0
             try:
                 dtmf_event = self._config.dtmf.process(current_frame)
                 if dtmf_event is not None:
@@ -232,17 +303,30 @@ class AudioPipeline:
                             logger.exception("DTMF callback error")
             except Exception:
                 logger.exception("DTMF detection error")
+            if in_segment:
+                self._segment_stage_timings[session.id]["dtmf"] = (
+                    self._segment_stage_timings[session.id].get("dtmf", 0)
+                    + time.perf_counter_ns()
+                    - t0
+                )
 
         # Stage 2: AEC (skip if backend has NATIVE_AEC)
         if (
             self._config.aec is not None
             and VoiceCapability.NATIVE_AEC not in self._backend_capabilities
         ):
+            t0 = time.perf_counter_ns() if in_segment else 0
             try:
                 current_frame = self._config.aec.process(current_frame)
                 current_frame.metadata["aec"] = self._config.aec.name
             except Exception:
                 logger.exception("AEC error")
+            if in_segment:
+                self._segment_stage_timings[session.id]["aec"] = (
+                    self._segment_stage_timings[session.id].get("aec", 0)
+                    + time.perf_counter_ns()
+                    - t0
+                )
 
         # Debug tap: post_aec
         self._debug_tap(session.id, "post_aec", current_frame)
@@ -252,22 +336,36 @@ class AudioPipeline:
             self._config.agc is not None
             and VoiceCapability.NATIVE_AGC not in self._backend_capabilities
         ):
+            t0 = time.perf_counter_ns() if in_segment else 0
             try:
                 current_frame = self._config.agc.process(current_frame)
                 current_frame.metadata["agc"] = self._config.agc.name
             except Exception:
                 logger.exception("AGC error")
+            if in_segment:
+                self._segment_stage_timings[session.id]["agc"] = (
+                    self._segment_stage_timings[session.id].get("agc", 0)
+                    + time.perf_counter_ns()
+                    - t0
+                )
 
         # Debug tap: post_agc
         self._debug_tap(session.id, "post_agc", current_frame)
 
         # Stage 4: Denoiser
         if self._config.denoiser is not None:
+            t0 = time.perf_counter_ns() if in_segment else 0
             try:
                 current_frame = self._config.denoiser.process(current_frame)
                 current_frame.metadata["denoiser"] = self._config.denoiser.name
             except Exception:
                 logger.exception("Denoiser error")
+            if in_segment:
+                self._segment_stage_timings[session.id]["denoiser"] = (
+                    self._segment_stage_timings[session.id].get("denoiser", 0)
+                    + time.perf_counter_ns()
+                    - t0
+                )
 
         # Debug tap: post_denoiser
         self._debug_tap(session.id, "post_denoiser", current_frame)
@@ -275,10 +373,17 @@ class AudioPipeline:
         # Stage 5: VAD
         vad_event: VADEvent | None = None
         if self._config.vad is not None:
+            t0 = time.perf_counter_ns() if in_segment else 0
             try:
                 vad_event = self._config.vad.process(current_frame)
             except Exception:
                 logger.exception("VAD error")
+            if in_segment:
+                self._segment_stage_timings[session.id]["vad"] = (
+                    self._segment_stage_timings[session.id].get("vad", 0)
+                    + time.perf_counter_ns()
+                    - t0
+                )
 
         if vad_event is not None:
             current_frame.metadata["vad"] = {
@@ -289,8 +394,27 @@ class AudioPipeline:
             # Track per-session speech state for speech_frame callbacks
             if vad_event.type == VADEventType.SPEECH_START:
                 self._in_speech_sessions.add(session.id)
+                # Start speech segment telemetry span
+                if self._telemetry is not None:
+                    from roomkit.telemetry.base import Attr, SpanKind
+
+                    parent = self._parent_spans.get(session.id)
+                    seg_span = self._telemetry.start_span(
+                        SpanKind.PIPELINE_SPEECH_SEGMENT,
+                        "pipeline.speech_segment",
+                        parent_id=parent,
+                        session_id=session.id,
+                        attributes={
+                            Attr.PIPELINE_STAGES: self._active_stages_str(),
+                        },
+                    )
+                    self._segment_spans[session.id] = seg_span
+                    self._segment_stage_timings[session.id] = {}
+                    self._segment_frame_counts[session.id] = 0
             elif vad_event.type == VADEventType.SPEECH_END:
                 self._in_speech_sessions.discard(session.id)
+                # End speech segment telemetry span with accumulated timings
+                self._end_segment_span(session.id)
 
             # Fire VAD event callbacks
             for vad_cb in self._vad_event_callbacks:
@@ -338,6 +462,9 @@ class AudioPipeline:
 
         # Stage 6: Diarization
         if self._config.diarization is not None:
+            # Re-check in_segment since SPEECH_START may have just created it
+            timing_segment = session.id in self._segment_spans
+            t0 = time.perf_counter_ns() if timing_segment else 0
             try:
                 diarization_result = self._config.diarization.process(current_frame)
                 if diarization_result is not None:
@@ -355,6 +482,12 @@ class AudioPipeline:
                                 logger.exception("Speaker change callback error")
             except Exception:
                 logger.exception("Diarization error")
+            if timing_segment:
+                self._segment_stage_timings[session.id]["diarization"] = (
+                    self._segment_stage_timings[session.id].get("diarization", 0)
+                    + time.perf_counter_ns()
+                    - t0
+                )
 
         # Fire processed_frame callbacks for every frame (regardless of speech).
         if self._processed_frame_callbacks:
@@ -554,6 +687,10 @@ class AudioPipeline:
         """
         self._in_speech_sessions.discard(session.id)
 
+        # End any active speech segment span (session ended mid-speech)
+        self._end_segment_span(session.id)
+        self._parent_spans.pop(session.id, None)
+
         # Close debug taps
         dt = self._debug_tap_sessions.pop(session.id, None)
         if dt is not None:
@@ -579,6 +716,10 @@ class AudioPipeline:
     def reset(self) -> None:
         """Reset all pipeline stage state."""
         self._in_speech_sessions.clear()
+        self._segment_spans.clear()
+        self._segment_stage_timings.clear()
+        self._segment_frame_counts.clear()
+        self._parent_spans.clear()
         self._inbound_sample_rate = None
         if self._aec_resampler is not None:
             self._aec_resampler.reset()

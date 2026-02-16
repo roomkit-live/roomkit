@@ -1,7 +1,7 @@
 """SIP-based realtime audio transport.
 
 Bridges a :class:`~roomkit.voice.backends.sip.SIPVoiceBackend` to the
-:class:`RealtimeAudioTransport` interface so that incoming SIP calls can
+:class:`~roomkit.voice.backends.base.VoiceBackend` interface so that incoming SIP calls can
 be wired to a :class:`~roomkit.channels.realtime_voice.RealtimeVoiceChannel`
 (e.g. Gemini Live, OpenAI Realtime).
 
@@ -16,19 +16,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-from roomkit.voice.realtime.base import RealtimeSession
-from roomkit.voice.realtime.transport import (
-    RealtimeAudioTransport,
-    TransportAudioCallback,
+from roomkit.voice.backends.base import (
     TransportDisconnectCallback,
+    VoiceBackend,
 )
+from roomkit.voice.base import AudioChunk, VoiceSession
 
 logger = logging.getLogger("roomkit.voice.realtime.sip_transport")
 
+TransportAudioCallback = Callable[["VoiceSession", bytes], Any]
 
-class SIPRealtimeTransport(RealtimeAudioTransport):
+
+class SIPRealtimeTransport(VoiceBackend):
     """Audio transport bridging SIP calls to a realtime voice provider.
 
     Accepts a :class:`~roomkit.voice.backends.sip.SIPVoiceBackend` and
@@ -63,8 +65,8 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
 
         # Mapping: realtime_session_id -> VoiceSession (SIP session)
         self._voice_sessions: dict[str, Any] = {}
-        # Mapping: realtime_session_id -> RealtimeSession
-        self._rt_sessions: dict[str, RealtimeSession] = {}
+        # Mapping: realtime_session_id -> VoiceSession
+        self._rt_sessions: dict[str, VoiceSession] = {}
         # Reverse mapping: voice_session_id -> realtime_session_id
         self._voice_to_rt: dict[str, str] = {}
 
@@ -79,11 +81,11 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
     def name(self) -> str:
         return "SIPRealtimeTransport"
 
-    async def accept(self, session: RealtimeSession, connection: Any) -> None:
+    async def accept(self, session: VoiceSession, connection: Any) -> None:
         """Accept a SIP call as a realtime session.
 
         Args:
-            session: The :class:`RealtimeSession` created by the channel.
+            session: The :class:`VoiceSession` created by the channel.
             connection: The :class:`VoiceSession` from the SIP backend.
         """
         voice_session = connection
@@ -104,28 +106,32 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
             codec_rate,
         )
 
-    async def send_audio(self, session: RealtimeSession, audio: bytes) -> None:
+    async def send_audio(
+        self, session: VoiceSession, audio: bytes | AsyncIterator[AudioChunk]
+    ) -> None:
         """Delegate audio delivery to the SIP backend's session pacer."""
+        if not isinstance(audio, bytes):
+            return
         voice_session = self._voice_sessions.get(session.id)
         if voice_session is not None:
             await self._backend.send_audio(voice_session, audio)
 
-    async def send_message(self, session: RealtimeSession, message: dict[str, Any]) -> None:
+    async def send_message(self, session: VoiceSession, message: dict[str, Any]) -> None:
         """No-op — SIP has no metadata/signaling channel for JSON messages."""
 
-    def end_of_response(self, session: RealtimeSession) -> None:
+    def end_of_response(self, session: VoiceSession) -> None:
         """Signal end of AI response to the backend pacer."""
         voice_session = self._voice_sessions.get(session.id)
         if voice_session is not None:
             self._backend.end_of_response(voice_session)
 
-    def interrupt(self, session: RealtimeSession) -> None:
+    def interrupt(self, session: VoiceSession) -> None:
         """Signal interruption — delegate to backend cancel_audio."""
         voice_session = self._voice_sessions.get(session.id)
         if voice_session is not None:
             asyncio.get_running_loop().create_task(self._backend.cancel_audio(voice_session))
 
-    async def disconnect(self, session: RealtimeSession) -> None:
+    async def disconnect(self, session: VoiceSession) -> None:
         """Disconnect a realtime session (does not send SIP BYE)."""
         voice_session = self._voice_sessions.pop(session.id, None)
         self._rt_sessions.pop(session.id, None)
@@ -165,7 +171,7 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
         if frame.data:
             self._fire_audio_callbacks(rt_session, frame.data)
 
-    def _fire_audio_callbacks(self, session: RealtimeSession, audio: bytes) -> None:
+    def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
         """Fire all registered audio callbacks (sync)."""
         for cb in self._audio_callbacks:
             try:
@@ -180,7 +186,7 @@ class SIPRealtimeTransport(RealtimeAudioTransport):
             except Exception:
                 logger.exception("Error in audio callback for session %s", session.id)
 
-    def _fire_disconnect_callbacks(self, session: RealtimeSession) -> None:
+    def _fire_disconnect_callbacks(self, session: VoiceSession) -> None:
         """Fire all registered disconnect callbacks."""
         for cb in self._disconnect_callbacks:
             try:

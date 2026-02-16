@@ -383,10 +383,16 @@ def get_websocket_realtime_transport() -> type:
 
 
 def get_local_audio_transport() -> type:
-    """Get LocalAudioTransport class (requires sounddevice, numpy)."""
-    from roomkit.voice.realtime.local_transport import LocalAudioTransport
+    """Get LocalAudioBackend class (requires sounddevice, numpy).
 
-    return LocalAudioTransport
+    LocalAudioTransport was merged into LocalAudioBackend — this
+    function now returns the unified backend which supports both
+    the VoiceChannel (connect/start_listening) and RealtimeVoiceChannel
+    (accept) paths.
+    """
+    from roomkit.voice.backends.local import LocalAudioBackend
+
+    return LocalAudioBackend
 
 
 def get_fastrtc_realtime_transport() -> type:

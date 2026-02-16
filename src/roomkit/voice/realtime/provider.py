@@ -6,19 +6,19 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
-from roomkit.voice.realtime.base import RealtimeSession
+from roomkit.voice.base import VoiceSession
 
 # Callback type aliases
-RealtimeAudioCallback = Callable[[RealtimeSession, bytes], Any]
-RealtimeTranscriptionCallback = Callable[[RealtimeSession, str, str, bool], Any]
+RealtimeAudioCallback = Callable[[VoiceSession, bytes], Any]
+RealtimeTranscriptionCallback = Callable[[VoiceSession, str, str, bool], Any]
 """(session, text, role, is_final)"""
-RealtimeSpeechStartCallback = Callable[[RealtimeSession], Any]
-RealtimeSpeechEndCallback = Callable[[RealtimeSession], Any]
-RealtimeToolCallCallback = Callable[[RealtimeSession, str, str, dict[str, Any]], Any]
+RealtimeSpeechStartCallback = Callable[[VoiceSession], Any]
+RealtimeSpeechEndCallback = Callable[[VoiceSession], Any]
+RealtimeToolCallCallback = Callable[[VoiceSession, str, str, dict[str, Any]], Any]
 """(session, call_id, name, arguments)"""
-RealtimeResponseStartCallback = Callable[[RealtimeSession], Any]
-RealtimeResponseEndCallback = Callable[[RealtimeSession], Any]
-RealtimeErrorCallback = Callable[[RealtimeSession, str, str], Any]
+RealtimeResponseStartCallback = Callable[[VoiceSession], Any]
+RealtimeResponseEndCallback = Callable[[VoiceSession], Any]
+RealtimeErrorCallback = Callable[[VoiceSession, str, str], Any]
 """(session, code, message)"""
 
 
@@ -52,7 +52,7 @@ class RealtimeVoiceProvider(ABC):
     @abstractmethod
     async def connect(
         self,
-        session: RealtimeSession,
+        session: VoiceSession,
         *,
         system_prompt: str | None = None,
         voice: str | None = None,
@@ -80,7 +80,7 @@ class RealtimeVoiceProvider(ABC):
         ...
 
     @abstractmethod
-    async def send_audio(self, session: RealtimeSession, audio: bytes) -> None:
+    async def send_audio(self, session: VoiceSession, audio: bytes) -> None:
         """Send audio data to the provider for processing.
 
         Args:
@@ -90,9 +90,7 @@ class RealtimeVoiceProvider(ABC):
         ...
 
     @abstractmethod
-    async def inject_text(
-        self, session: RealtimeSession, text: str, *, role: str = "user"
-    ) -> None:
+    async def inject_text(self, session: VoiceSession, text: str, *, role: str = "user") -> None:
         """Inject text into the conversation (e.g. supervisor guidance).
 
         Args:
@@ -103,9 +101,7 @@ class RealtimeVoiceProvider(ABC):
         ...
 
     @abstractmethod
-    async def submit_tool_result(
-        self, session: RealtimeSession, call_id: str, result: str
-    ) -> None:
+    async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
         """Submit a tool call result back to the provider.
 
         Args:
@@ -116,7 +112,7 @@ class RealtimeVoiceProvider(ABC):
         ...
 
     @abstractmethod
-    async def interrupt(self, session: RealtimeSession) -> None:
+    async def interrupt(self, session: VoiceSession) -> None:
         """Interrupt the current AI response.
 
         Args:
@@ -125,7 +121,7 @@ class RealtimeVoiceProvider(ABC):
         ...
 
     @abstractmethod
-    async def disconnect(self, session: RealtimeSession) -> None:
+    async def disconnect(self, session: VoiceSession) -> None:
         """Disconnect a session from the provider.
 
         Args:
@@ -133,7 +129,7 @@ class RealtimeVoiceProvider(ABC):
         """
         ...
 
-    async def send_event(self, session: RealtimeSession, event: dict[str, Any]) -> None:
+    async def send_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
         """Send a raw provider-specific event to the underlying service.
 
         This is an escape hatch for sending protocol-level messages that

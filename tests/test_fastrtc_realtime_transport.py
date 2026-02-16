@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("fastrtc", reason="fastrtc not installed")
 
-from roomkit.voice.realtime.base import RealtimeSession
+from roomkit.voice.base import VoiceSession
 
 
 def _make_session(
@@ -17,8 +17,8 @@ def _make_session(
     room_id: str = "room-1",
     participant_id: str = "user-1",
     channel_id: str = "voice",
-) -> RealtimeSession:
-    return RealtimeSession(
+) -> VoiceSession:
+    return VoiceSession(
         id=session_id,
         room_id=room_id,
         participant_id=participant_id,
@@ -125,7 +125,7 @@ class TestFastRTCRealtimeTransport:
 
         received: list[tuple[str, bytes]] = []
 
-        def audio_cb(sess: RealtimeSession, audio: bytes) -> None:
+        def audio_cb(sess: VoiceSession, audio: bytes) -> None:
             received.append((sess.id, audio))
 
         transport.on_audio_received(audio_cb)
@@ -263,7 +263,7 @@ class TestFastRTCRealtimeTransport:
 
         disconnected: list[str] = []
 
-        async def on_disconnect(sess: RealtimeSession) -> None:
+        async def on_disconnect(sess: VoiceSession) -> None:
             disconnected.append(sess.id)
 
         transport.on_client_disconnected(on_disconnect)

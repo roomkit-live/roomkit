@@ -1,6 +1,6 @@
 """FastRTC WebRTC-based realtime audio transport.
 
-This module provides a RealtimeAudioTransport that uses FastRTC for WebRTC
+This module provides a VoiceBackend that uses FastRTC for WebRTC
 audio transport in **passthrough mode** (no VAD). Raw audio flows
 bidirectionally between the browser and the speech-to-speech AI provider,
 which handles its own server-side VAD.
@@ -33,17 +33,16 @@ import asyncio
 import base64
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
 from fastrtc import AsyncStreamHandler
 
-from roomkit.voice.realtime.base import RealtimeSession
-from roomkit.voice.realtime.transport import (
-    RealtimeAudioTransport,
-    TransportAudioCallback,
+from roomkit.voice.backends.base import (
     TransportDisconnectCallback,
+    VoiceBackend,
 )
+from roomkit.voice.base import AudioChunk, VoiceSession
 
 if TYPE_CHECKING:
     import numpy as np
@@ -51,6 +50,9 @@ if TYPE_CHECKING:
     from fastrtc import Stream
 
 logger = logging.getLogger("roomkit.voice.realtime.fastrtc_transport")
+
+# Callback type for raw audio received from the transport
+TransportAudioCallback = Callable[["VoiceSession", bytes], Any]
 
 # Type alias for emit return: (sample_rate, ndarray) or None
 EmitType = tuple[int, "np.ndarray[Any, Any]"] | None
@@ -83,7 +85,7 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
 
         self._transport = transport
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-        self._session: RealtimeSession | None = None
+        self._session: VoiceSession | None = None
         self._webrtc_id: str | None = None
 
         self._np = _np
@@ -160,7 +162,7 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
         )
 
 
-class FastRTCRealtimeTransport(RealtimeAudioTransport):
+class FastRTCRealtimeTransport(VoiceBackend):
     """WebRTC-based realtime audio transport using FastRTC.
 
     Uses FastRTC in passthrough mode (no VAD) for speech-to-speech AI
@@ -189,11 +191,11 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
         # webrtc_id -> handler instance
         self._handlers: dict[str, _PassthroughHandler] = {}
         # session_id -> session
-        self._sessions: dict[str, RealtimeSession] = {}
+        self._sessions: dict[str, VoiceSession] = {}
         # session_id -> webrtc_id
         self._session_handlers: dict[str, str] = {}
         # webrtc_id -> session
-        self._webrtc_sessions: dict[str, RealtimeSession] = {}
+        self._webrtc_sessions: dict[str, VoiceSession] = {}
 
         # Callbacks
         self._audio_callbacks: list[TransportAudioCallback] = []
@@ -207,7 +209,7 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
     def name(self) -> str:
         return "FastRTCRealtimeTransport"
 
-    async def accept(self, session: RealtimeSession, connection: Any) -> None:
+    async def accept(self, session: VoiceSession, connection: Any) -> None:
         """Accept a WebRTC connection for the given session.
 
         Args:
@@ -224,7 +226,9 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
             webrtc_id,
         )
 
-    async def send_audio(self, session: RealtimeSession, audio: bytes) -> None:
+    async def send_audio(
+        self, session: VoiceSession, audio: bytes | AsyncIterator[AudioChunk]
+    ) -> None:
         """Send audio data to the connected WebRTC client.
 
         Sends directly on the WebSocket, bypassing FastRTC's emit queue
@@ -232,8 +236,10 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
 
         Args:
             session: The session to send audio to.
-            audio: Raw PCM16 LE audio bytes.
+            audio: Raw PCM16 LE audio bytes or an async iterator of AudioChunks.
         """
+        if not isinstance(audio, bytes):
+            return
         webrtc_id = self._session_handlers.get(session.id)
         if webrtc_id is None:
             return
@@ -241,7 +247,7 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
         if handler is not None:
             handler.send_audio_direct(audio)
 
-    async def send_message(self, session: RealtimeSession, message: dict[str, Any]) -> None:
+    async def send_message(self, session: VoiceSession, message: dict[str, Any]) -> None:
         """Send a JSON message via the WebRTC DataChannel.
 
         Args:
@@ -255,7 +261,7 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
         if handler is not None and handler.channel:
             handler.send_message(json.dumps(message))
 
-    async def disconnect(self, session: RealtimeSession) -> None:
+    async def disconnect(self, session: VoiceSession) -> None:
         """Disconnect the client for the given session.
 
         Removes all mappings and sends a None sentinel to the handler's
@@ -328,13 +334,13 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
             self._sessions.pop(session.id, None)
             asyncio.ensure_future(self._fire_disconnect_callbacks(session))
 
-    def _get_session(self, webrtc_id: str | None) -> RealtimeSession | None:
+    def _get_session(self, webrtc_id: str | None) -> VoiceSession | None:
         """Get the session bound to a WebRTC connection."""
         if webrtc_id is None:
             return None
         return self._webrtc_sessions.get(webrtc_id)
 
-    async def _fire_audio_callbacks(self, session: RealtimeSession, audio: bytes) -> None:
+    async def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
         """Fire all registered audio callbacks."""
         for cb in self._audio_callbacks:
             try:
@@ -344,7 +350,7 @@ class FastRTCRealtimeTransport(RealtimeAudioTransport):
             except Exception:
                 logger.exception("Error in audio callback for session %s", session.id)
 
-    async def _fire_disconnect_callbacks(self, session: RealtimeSession) -> None:
+    async def _fire_disconnect_callbacks(self, session: VoiceSession) -> None:
         """Fire all registered disconnect callbacks."""
         for cb in self._disconnect_callbacks:
             try:

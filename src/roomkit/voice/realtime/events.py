@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
-    from roomkit.voice.realtime.base import RealtimeSession
+    from roomkit.voice.base import VoiceSession
 
 
 def _utcnow() -> datetime:
@@ -23,7 +23,7 @@ class RealtimeTranscriptionEvent:
     the channel emits a RoomEvent so other channels see the conversation.
     """
 
-    session: RealtimeSession
+    session: VoiceSession
     """The realtime session that produced this transcription."""
 
     text: str
@@ -50,7 +50,7 @@ class RealtimeToolCallEvent:
     must return a result that gets submitted back to the provider.
     """
 
-    session: RealtimeSession
+    session: VoiceSession
     """The realtime session requesting the tool call."""
 
     tool_call_id: str
@@ -70,7 +70,7 @@ class RealtimeToolCallEvent:
 class RealtimeSpeechEvent:
     """Speech activity detected by the realtime provider's server-side VAD."""
 
-    session: RealtimeSession
+    session: VoiceSession
     """The realtime session where speech activity changed."""
 
     type: Literal["start", "end"]
@@ -84,7 +84,7 @@ class RealtimeSpeechEvent:
 class RealtimeErrorEvent:
     """Error from the realtime provider."""
 
-    session: RealtimeSession
+    session: VoiceSession
     """The realtime session that encountered the error."""
 
     code: str

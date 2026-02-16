@@ -267,7 +267,6 @@ source = ["roomkit"]
 omit = [
     "src/roomkit/store/postgres.py",
     "src/roomkit/voice/realtime/fastrtc_transport.py",
-    "src/roomkit/voice/realtime/local_transport.py",
     "src/roomkit/voice/realtime/ws_transport.py",
     "src/roomkit/voice/stt/deepgram.py",
     "src/roomkit/voice/stt/gradium.py",

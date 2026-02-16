@@ -581,16 +581,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
     def bind_session(self, session: VoiceSession, room_id: str, binding: ChannelBinding) -> None:
         """Bind a voice session to a room for message routing."""
         self._session_bindings[session.id] = (room_id, binding)
-        # Notify pipeline of session activation
-        if self._pipeline is not None:
-            self._pipeline.on_session_active(session)
-        # Initialize batch buffer for this session
-        if self._batch_mode:
-            self._batch_audio_buffers[session.id] = bytearray()
-        # Start continuous STT if enabled (no local VAD)
-        if self._continuous_stt:
-            self._start_continuous_stt(session)
-        # Start VOICE_SESSION telemetry span
+        # Start VOICE_SESSION telemetry span early so pipeline activation
+        # and subsequent operations appear as children in traces.
         from roomkit.telemetry.base import Attr, SpanKind
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
@@ -610,6 +602,18 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         if not hasattr(self, "_voice_session_spans"):
             self._voice_session_spans: dict[str, str] = {}
         self._voice_session_spans[session.id] = span_id
+        # Tell the pipeline about the parent span for speech segment spans
+        if self._pipeline is not None:
+            self._pipeline.set_parent_span(session.id, span_id)
+        # Notify pipeline of session activation
+        if self._pipeline is not None:
+            self._pipeline.on_session_active(session)
+        # Initialize batch buffer for this session
+        if self._batch_mode:
+            self._batch_audio_buffers[session.id] = bytearray()
+        # Start continuous STT if enabled (no local VAD)
+        if self._continuous_stt:
+            self._start_continuous_stt(session)
         # Emit voice_session_started framework event
         if self._framework:
             self._schedule(
@@ -669,6 +673,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
             telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
             telemetry.end_span(span_id)
+            # Flush immediately — VOICE_SESSION is the trace root and long-lived;
+            # without this, BatchSpanProcessor may not export it before shutdown.
+            telemetry.flush()
         # Emit voice_session_ended framework event
         if binding_info and self._framework:
             room_id, _ = binding_info

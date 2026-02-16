@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from roomkit.voice.realtime.base import RealtimeSession, RealtimeSessionState
+from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.sip_transport import SIPRealtimeTransport
 
 # ---------------------------------------------------------------------------
@@ -53,13 +53,13 @@ def _make_sip_backend() -> MagicMock:
     return backend
 
 
-def _make_rt_session(session_id: str = "rt-1", room_id: str = "room-1") -> RealtimeSession:
-    return RealtimeSession(
+def _make_rt_session(session_id: str = "rt-1", room_id: str = "room-1") -> VoiceSession:
+    return VoiceSession(
         id=session_id,
         room_id=room_id,
         participant_id="caller-1",
         channel_id="realtime-voice",
-        state=RealtimeSessionState.ACTIVE,
+        state=VoiceSessionState.ACTIVE,
     )
 
 
@@ -169,7 +169,7 @@ class TestInboundAudio:
 
         received: list[tuple[str, bytes]] = []
 
-        def on_audio(session: RealtimeSession, audio: bytes) -> None:
+        def on_audio(session: VoiceSession, audio: bytes) -> None:
             received.append((session.id, audio))
 
         transport.on_audio_received(on_audio)

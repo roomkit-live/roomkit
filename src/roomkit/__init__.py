@@ -252,10 +252,7 @@ from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.realtime import (
     MockRealtimeProvider,
     MockRealtimeTransport,
-    RealtimeAudioTransport,
     RealtimeErrorEvent,
-    RealtimeSession,
-    RealtimeSessionState,
     RealtimeSpeechEvent,
     RealtimeToolCallEvent,
     RealtimeTranscriptionEvent,
@@ -542,10 +539,7 @@ __all__ = [
     # Realtime Voice
     "MockRealtimeProvider",
     "MockRealtimeTransport",
-    "RealtimeAudioTransport",
     "RealtimeErrorEvent",
-    "RealtimeSession",
-    "RealtimeSessionState",
     "RealtimeSpeechEvent",
     "RealtimeToolCallEvent",
     "RealtimeTranscriptionEvent",
