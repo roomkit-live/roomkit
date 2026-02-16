@@ -129,9 +129,23 @@ class TelnyxRCSProvider(RCSProvider):
             payload["auto_detect"] = False
 
         try:
+            import time
+
+            t0 = time.monotonic()
             resp = await self._client.post(_API_URL, headers=headers, json=payload)
             resp.raise_for_status()
+            send_ms = (time.monotonic() - t0) * 1000
             data = resp.json()
+
+            from roomkit.telemetry.noop import NoopTelemetryProvider
+
+            _tel = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+            _tel.record_metric(
+                "roomkit.delivery.send_ms",
+                send_ms,
+                unit="ms",
+                attributes={"provider": "TelnyxRCSProvider"},
+            )
         except self._httpx.TimeoutException:
             return RCSDeliveryResult(success=False, error="timeout")
         except self._httpx.HTTPStatusError as exc:

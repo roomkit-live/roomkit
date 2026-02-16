@@ -41,6 +41,7 @@ class OpenTelemetryProvider(TelemetryProvider):
         tracer_provider: Any = None,
         meter_provider: Any = None,
         service_name: str = "roomkit",
+        metadata: dict[str, str] | None = None,
     ) -> None:
         try:
             from opentelemetry import trace
@@ -53,11 +54,13 @@ class OpenTelemetryProvider(TelemetryProvider):
 
         self._StatusCode = StatusCode
 
+        self._tracer_provider = tracer_provider
         if tracer_provider is not None:
             self._tracer = tracer_provider.get_tracer(service_name)
         else:
             self._tracer = trace.get_tracer(service_name)
 
+        self._meter_provider = meter_provider
         self._meter: Any = None
         if meter_provider is not None:
             self._meter = meter_provider.get_meter(service_name)
@@ -70,6 +73,10 @@ class OpenTelemetryProvider(TelemetryProvider):
                 pass
 
         self._active_spans: dict[str, Any] = {}
+        # Ended spans kept briefly so late children can still reference them
+        # as parents (e.g. AFTER_TTS hook fires after VOICE_SESSION ends).
+        self._ended_spans: dict[str, Any] = {}
+        self._metadata: dict[str, str] = metadata or {}
 
     @property
     def name(self) -> str:
@@ -86,13 +93,17 @@ class OpenTelemetryProvider(TelemetryProvider):
         session_id: str | None = None,
         channel_id: str | None = None,
     ) -> str:
-        from opentelemetry import context, trace
+        from opentelemetry import trace
 
-        # Build context with parent if provided
+        # Build context with explicit parent — do NOT use context.attach/detach
+        # because async spans end out of order, corrupting the OTel context stack.
+        # Check both active and recently-ended spans (a child may fire after
+        # its parent was ended, e.g. AFTER_TTS hook after session close).
         ctx = None
-        if parent_id and parent_id in self._active_spans:
-            parent_span = self._active_spans[parent_id]
-            ctx = trace.set_span_in_context(parent_span)
+        if parent_id:
+            parent_span = self._active_spans.get(parent_id) or self._ended_spans.get(parent_id)
+            if parent_span is not None:
+                ctx = trace.set_span_in_context(parent_span)
 
         otel_span = self._tracer.start_span(
             name=f"roomkit.{name}",
@@ -105,10 +116,6 @@ class OpenTelemetryProvider(TelemetryProvider):
         span_id = format(span_ctx.span_id, "016x")
         self._active_spans[span_id] = otel_span
 
-        # Activate the span in OTel context
-        token = context.attach(trace.set_span_in_context(otel_span))
-        otel_span._roomkit_token = token  # noqa: SLF001
-
         return span_id
 
     def end_span(
@@ -119,11 +126,11 @@ class OpenTelemetryProvider(TelemetryProvider):
         error_message: str | None = None,
         attributes: dict[str, Any] | None = None,
     ) -> None:
-        from opentelemetry import context
-
         otel_span = self._active_spans.pop(span_id, None)
         if otel_span is None:
             return
+        # Keep for late parent lookups (e.g. AFTER_TTS hook after session end)
+        self._ended_spans[span_id] = otel_span
 
         if attributes:
             for k, v in attributes.items():
@@ -135,11 +142,6 @@ class OpenTelemetryProvider(TelemetryProvider):
                 otel_span.record_exception(Exception(error_message))
         else:
             otel_span.set_status(self._StatusCode.OK)
-
-        # Detach context token
-        token = getattr(otel_span, "_roomkit_token", None)
-        if token is not None:
-            context.detach(token)
 
         otel_span.end()
 
@@ -177,14 +179,31 @@ class OpenTelemetryProvider(TelemetryProvider):
         except Exception:
             logger.debug("Failed to record OTel metric %s", name, exc_info=True)
 
+    def flush(self) -> None:
+        if self._tracer_provider is not None:
+            try:
+                self._tracer_provider.force_flush()
+            except Exception:
+                logger.debug("Failed to flush OTel tracer provider", exc_info=True)
+
     def close(self) -> None:
-        # End any remaining active spans
+        # End any remaining active spans gracefully (shutdown, not error)
         for span_id in list(self._active_spans):
-            self.end_span(span_id, status="error", error_message="provider closed")
+            self.end_span(span_id)
         self._active_spans.clear()
+        # Keep _ended_spans — late async tasks (e.g. AFTER_TTS hook fired
+        # during shutdown) may still need parent lookup.  The dict will be
+        # garbage-collected with the provider instance.
+        # Flush pending spans so nothing is lost on shutdown
+        if self._tracer_provider is not None:
+            try:
+                self._tracer_provider.force_flush()
+            except Exception:
+                logger.debug("Failed to flush OTel tracer provider", exc_info=True)
 
     def reset(self) -> None:
         self._active_spans.clear()
+        self._ended_spans.clear()
 
     def _build_attributes(
         self,
@@ -195,6 +214,9 @@ class OpenTelemetryProvider(TelemetryProvider):
         channel_id: str | None,
     ) -> dict[str, Any]:
         attrs: dict[str, Any] = {"roomkit.span_kind": str(kind)}
+        # Global metadata tags (searchable in Jaeger)
+        for k, v in self._metadata.items():
+            attrs[f"roomkit.{k}"] = v
         if room_id:
             attrs["roomkit.room_id"] = room_id
         if session_id:

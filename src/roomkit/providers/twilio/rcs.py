@@ -101,13 +101,27 @@ class TwilioRCSProvider(RCSProvider):
             data[f"MediaUrl{i}"] = url
 
         try:
+            import time
+
+            t0 = time.monotonic()
             resp = await self._client.post(
                 self._config.api_url,
                 auth=auth,
                 data=data,
             )
             resp.raise_for_status()
+            send_ms = (time.monotonic() - t0) * 1000
             response_data = resp.json()
+
+            from roomkit.telemetry.noop import NoopTelemetryProvider
+
+            _tel = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+            _tel.record_metric(
+                "roomkit.delivery.send_ms",
+                send_ms,
+                unit="ms",
+                attributes={"provider": "TwilioRCSProvider"},
+            )
         except self._httpx.TimeoutException:
             return RCSDeliveryResult(success=False, error="timeout")
         except self._httpx.HTTPStatusError as exc:

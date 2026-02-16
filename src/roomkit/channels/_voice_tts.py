@@ -218,6 +218,11 @@ class VoiceTTSMixin:
         _t = getattr(self._framework, "_telemetry", None) if self._framework else None
         telemetry: TelemetryProvider | None = _t if isinstance(_t, TelemetryProvider) else None
 
+        # Capture parent span BEFORE playback — session may be unbound during TTS.
+        _vs_parent = getattr(self, "_voice_session_spans", {}).get(
+            target_sessions[0].id if target_sessions else ""
+        )
+
         for session in target_sessions:
             self._playing_sessions[session.id] = TTSPlaybackState(
                 session_id=session.id, text="(streaming)"
@@ -227,9 +232,11 @@ class VoiceTTSMixin:
 
             span_id = None
             if telemetry is not None:
+                parent = getattr(self, "_voice_session_spans", {}).get(session.id)
                 span_id = telemetry.start_span(
                     SpanKind.TTS_SYNTHESIZE,
                     "tts.stream",
+                    parent_id=parent,
                     room_id=room_id,
                     session_id=session.id,
                     channel_id=self.channel_id,
@@ -284,13 +291,20 @@ class VoiceTTSMixin:
 
         # Fire AFTER_TTS hooks (BEFORE_TTS skipped — can't block mid-stream)
         if self._framework and full_text:
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.AFTER_TTS,
-                full_text,
-                context,
-                skip_event_filter=True,
-            )
+            from roomkit.telemetry.context import reset_span, set_current_span
+
+            _tok = set_current_span(_vs_parent) if _vs_parent else None
+            try:
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.AFTER_TTS,
+                    full_text,
+                    context,
+                    skip_event_filter=True,
+                )
+            finally:
+                if _tok is not None:
+                    reset_span(_tok)
 
         return ChannelOutputModel.empty()
 
@@ -327,9 +341,11 @@ class VoiceTTSMixin:
 
         span_id = None
         if telemetry is not None:
+            parent = getattr(self, "_voice_session_spans", {}).get(session.id)
             span_id = telemetry.start_span(
                 SpanKind.TTS_SYNTHESIZE,
                 "tts.synthesize",
+                parent_id=parent,
                 room_id=room_id,
                 session_id=session.id,
                 channel_id=self.channel_id,
@@ -407,16 +423,29 @@ class VoiceTTSMixin:
 
             target_sessions = self._find_sessions(room_id, binding)
 
+            # Capture parent span BEFORE _send_tts — session may be unbound
+            # during playback, removing it from _voice_session_spans.
+            from roomkit.telemetry.context import reset_span, set_current_span
+
+            _parent = getattr(self, "_voice_session_spans", {}).get(
+                target_sessions[0].id if target_sessions else ""
+            )
+
             for session in target_sessions:
                 await self._send_tts(session, final_text)
 
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.AFTER_TTS,
-                final_text,
-                context,
-                skip_event_filter=True,
-            )
+            _tok = set_current_span(_parent) if _parent else None
+            try:
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.AFTER_TTS,
+                    final_text,
+                    context,
+                    skip_event_filter=True,
+                )
+            finally:
+                if _tok is not None:
+                    reset_span(_tok)
 
         except Exception as exc:
             logger.exception("Error delivering voice audio")
@@ -458,6 +487,10 @@ class VoiceTTSMixin:
         binding_info = self._session_bindings.get(session.id)
         room_id = binding_info[0] if binding_info else None
 
+        from roomkit.telemetry.context import reset_span, set_current_span
+
+        _parent = getattr(self, "_voice_session_spans", {}).get(session.id)
+        _tok = set_current_span(_parent) if _parent else None
         try:
             final_text = text
 
@@ -505,6 +538,9 @@ class VoiceTTSMixin:
                     )
                 except Exception:
                     logger.exception("Error emitting tts_error")
+        finally:
+            if _tok is not None:
+                reset_span(_tok)
 
     async def play(
         self,

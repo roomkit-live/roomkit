@@ -130,6 +130,7 @@ class VoiceTurnMixin:
             return
         from roomkit.models.delivery import InboundMessage
         from roomkit.models.event import TextContent
+        from roomkit.telemetry.context import reset_span, set_current_span
 
         inbound = InboundMessage(
             channel_id=self.channel_id,
@@ -137,4 +138,11 @@ class VoiceTurnMixin:
             content=TextContent(body=text),
             metadata={"voice_session_id": session.id, "source": "voice"},
         )
-        await self._framework.process_inbound(inbound)
+        # Set voice session span as parent so INBOUND_PIPELINE is a child
+        session_span = getattr(self, "_voice_session_spans", {}).get(session.id)
+        token = set_current_span(session_span) if session_span else None
+        try:
+            await self._framework.process_inbound(inbound, room_id=room_id)
+        finally:
+            if token is not None:
+                reset_span(token)

@@ -201,6 +201,11 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         else:
             self._telemetry = NoopTelemetryProvider()
         self._hook_engine._telemetry = self._telemetry
+        if isinstance(telemetry, _TelemetryConfigCls):
+            self._hook_engine._suppressed_triggers = telemetry.suppressed_hook_triggers
+            # Propagate global metadata to the provider for searchable tags
+            if telemetry.metadata and hasattr(self._telemetry, "_metadata"):
+                self._telemetry._metadata = telemetry.metadata
         self._store._telemetry = self._telemetry  # type: ignore[attr-defined]
 
     @property
@@ -355,7 +360,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 for system_prompt, voice, tools, temperature).
 
         Returns:
-            A RealtimeSession representing the connection.
+            A VoiceSession representing the connection.
 
         Raises:
             ChannelNotRegisteredError: If the channel is not a RealtimeVoiceChannel.
@@ -385,7 +390,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         """Disconnect a realtime voice session.
 
         Args:
-            session: The RealtimeSession to disconnect.
+            session: The VoiceSession to disconnect.
 
         Raises:
             ChannelNotRegisteredError: If the channel is not found.
@@ -451,6 +456,8 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         if self._voice:
             await self._voice.close()
         await self._realtime.close()
+        # Flush telemetry (ends active spans, flushes exporter)
+        self._telemetry.close()
 
     async def __aenter__(self) -> RoomKit:
         return self

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.enums import HookTrigger
+from roomkit.telemetry.context import reset_span, set_current_span
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -23,6 +26,17 @@ class VoiceHooksMixin:
     channel_id: str
     _framework: RoomKit | None
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
+
+    @contextmanager
+    def _voice_span_ctx(self, session: VoiceSession) -> Generator[None, None, None]:
+        """Set the voice session span as current for child spans."""
+        parent = getattr(self, "_voice_session_spans", {}).get(session.id)
+        token = set_current_span(parent) if parent else None
+        try:
+            yield
+        finally:
+            if token is not None:
+                reset_span(token)
 
     # -------------------------------------------------------------------------
     # Framework event emitters (session lifecycle, errors)
@@ -103,14 +117,15 @@ class VoiceHooksMixin:
         if not self._framework:
             return
         try:
-            context = await self._framework._build_context(room_id)
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_SPEECH_START,
-                session,
-                context,
-                skip_event_filter=True,
-            )
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_SPEECH_START,
+                    session,
+                    context,
+                    skip_event_filter=True,
+                )
         except Exception:
             logger.exception("Error firing ON_SPEECH_START hooks")
 
@@ -122,20 +137,21 @@ class VoiceHooksMixin:
         try:
             from roomkit.voice.events import PartialTranscriptionEvent
 
-            context = await self._framework._build_context(room_id)
-            event = PartialTranscriptionEvent(
-                session=session,
-                text=result.text,
-                confidence=result.confidence or 0.0,
-                is_stable=result.is_final,
-            )
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_PARTIAL_TRANSCRIPTION,
-                event,
-                context,
-                skip_event_filter=True,
-            )
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                event = PartialTranscriptionEvent(
+                    session=session,
+                    text=result.text,
+                    confidence=result.confidence or 0.0,
+                    is_stable=result.is_final,
+                )
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_PARTIAL_TRANSCRIPTION,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                )
         except Exception:
             logger.exception("Error firing ON_PARTIAL_TRANSCRIPTION hook")
 
@@ -143,14 +159,15 @@ class VoiceHooksMixin:
         if not self._framework:
             return
         try:
-            context = await self._framework._build_context(room_id)
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_SPEECH_END,
-                session,
-                context,
-                skip_event_filter=True,
-            )
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_SPEECH_END,
+                    session,
+                    context,
+                    skip_event_filter=True,
+                )
         except Exception:
             logger.exception("Error firing ON_SPEECH_END hooks")
 
@@ -162,18 +179,19 @@ class VoiceHooksMixin:
         try:
             from roomkit.voice.events import VADSilenceEvent
 
-            context = await self._framework._build_context(room_id)
-            event = VADSilenceEvent(
-                session=session,
-                silence_duration_ms=silence_duration_ms,
-            )
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_VAD_SILENCE,
-                event,
-                context,
-                skip_event_filter=True,
-            )
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                event = VADSilenceEvent(
+                    session=session,
+                    silence_duration_ms=silence_duration_ms,
+                )
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_VAD_SILENCE,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                )
         except Exception:
             logger.exception("Error firing ON_VAD_SILENCE hook")
 
@@ -185,19 +203,20 @@ class VoiceHooksMixin:
         try:
             from roomkit.voice.events import VADAudioLevelEvent
 
-            context = await self._framework._build_context(room_id)
-            event = VADAudioLevelEvent(
-                session=session,
-                level_db=level_db,
-                is_speech=is_speech,
-            )
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_VAD_AUDIO_LEVEL,
-                event,
-                context,
-                skip_event_filter=True,
-            )
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                event = VADAudioLevelEvent(
+                    session=session,
+                    level_db=level_db,
+                    is_speech=is_speech,
+                )
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_VAD_AUDIO_LEVEL,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                )
         except Exception:
             logger.exception("Error firing ON_VAD_AUDIO_LEVEL hook")
 
@@ -213,15 +232,16 @@ class VoiceHooksMixin:
         try:
             from roomkit.voice.events import AudioLevelEvent
 
-            context = await self._framework._build_context(room_id)
-            event = AudioLevelEvent(session=session, level_db=level_db)
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                trigger,
-                event,
-                context,
-                skip_event_filter=True,
-            )
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                event = AudioLevelEvent(session=session, level_db=level_db)
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    trigger,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                )
         except Exception:
             logger.exception("Error firing %s hook", trigger)
 
@@ -233,20 +253,21 @@ class VoiceHooksMixin:
         try:
             from roomkit.voice.events import SpeakerChangeEvent
 
-            context = await self._framework._build_context(room_id)
-            event = SpeakerChangeEvent(
-                session=session,
-                speaker_id=result.speaker_id,
-                confidence=result.confidence,
-                is_new_speaker=result.is_new_speaker,
-            )
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_SPEAKER_CHANGE,
-                event,
-                context,
-                skip_event_filter=True,
-            )
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                event = SpeakerChangeEvent(
+                    session=session,
+                    speaker_id=result.speaker_id,
+                    confidence=result.confidence,
+                    is_new_speaker=result.is_new_speaker,
+                )
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_SPEAKER_CHANGE,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                )
         except Exception:
             logger.exception("Error firing ON_SPEAKER_CHANGE hook")
 
@@ -256,18 +277,19 @@ class VoiceHooksMixin:
         try:
             from roomkit.voice.events import BackchannelEvent
 
-            context = await self._framework._build_context(room_id)
-            event = BackchannelEvent(
-                session=session,
-                text=text,
-            )
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_BACKCHANNEL,
-                event,
-                context,
-                skip_event_filter=True,
-            )
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                event = BackchannelEvent(
+                    session=session,
+                    text=text,
+                )
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_BACKCHANNEL,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                )
         except Exception:
             logger.exception("Error firing ON_BACKCHANNEL hook")
 
@@ -277,20 +299,21 @@ class VoiceHooksMixin:
         try:
             from roomkit.voice.events import DTMFDetectedEvent
 
-            context = await self._framework._build_context(room_id)
-            event = DTMFDetectedEvent(
-                session=session,
-                digit=dtmf_event.digit,
-                duration_ms=dtmf_event.duration_ms,
-                confidence=dtmf_event.confidence,
-            )
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_DTMF,
-                event,
-                context,
-                skip_event_filter=True,
-            )
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                event = DTMFDetectedEvent(
+                    session=session,
+                    digit=dtmf_event.digit,
+                    duration_ms=dtmf_event.duration_ms,
+                    confidence=dtmf_event.confidence,
+                )
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_DTMF,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                )
         except Exception:
             logger.exception("Error firing ON_DTMF hook")
 
@@ -302,19 +325,20 @@ class VoiceHooksMixin:
         try:
             from roomkit.voice.events import RecordingStartedEvent
 
-            context = await self._framework._build_context(room_id)
-            event = RecordingStartedEvent(
-                session=session,
-                id=handle.id,
-            )
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_RECORDING_STARTED,
-                event,
-                context,
-                skip_event_filter=True,
-            )
-            await self._emit_recording_started(session, handle.id, room_id)
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                event = RecordingStartedEvent(
+                    session=session,
+                    id=handle.id,
+                )
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_RECORDING_STARTED,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                )
+                await self._emit_recording_started(session, handle.id, room_id)
         except Exception:
             logger.exception("Error firing ON_RECORDING_STARTED hook")
 
@@ -326,22 +350,23 @@ class VoiceHooksMixin:
         try:
             from roomkit.voice.events import RecordingStoppedEvent
 
-            context = await self._framework._build_context(room_id)
-            event = RecordingStoppedEvent(
-                session=session,
-                id=result.id,
-                urls=tuple(result.urls),
-                duration_seconds=result.duration_seconds,
-            )
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                HookTrigger.ON_RECORDING_STOPPED,
-                event,
-                context,
-                skip_event_filter=True,
-            )
-            await self._emit_recording_stopped(
-                session, result.id, room_id, duration_seconds=result.duration_seconds
-            )
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                event = RecordingStoppedEvent(
+                    session=session,
+                    id=result.id,
+                    urls=tuple(result.urls),
+                    duration_seconds=result.duration_seconds,
+                )
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_RECORDING_STOPPED,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                )
+                await self._emit_recording_stopped(
+                    session, result.id, room_id, duration_seconds=result.duration_seconds
+                )
         except Exception:
             logger.exception("Error firing ON_RECORDING_STOPPED hook")

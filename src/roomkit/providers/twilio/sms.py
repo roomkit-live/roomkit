@@ -72,13 +72,27 @@ class TwilioSMSProvider(SMSProvider):
             data["From"] = from_number
 
         try:
+            import time
+
+            t0 = time.monotonic()
             resp = await self._client.post(
                 self._config.api_url,
                 auth=auth,
                 data=data,
             )
             resp.raise_for_status()
+            send_ms = (time.monotonic() - t0) * 1000
             response_data = resp.json()
+
+            from roomkit.telemetry.noop import NoopTelemetryProvider
+
+            _tel = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+            _tel.record_metric(
+                "roomkit.delivery.send_ms",
+                send_ms,
+                unit="ms",
+                attributes={"provider": "TwilioSMSProvider"},
+            )
         except self._httpx.TimeoutException:
             return ProviderResult(success=False, error="timeout")
         except self._httpx.HTTPStatusError as exc:

@@ -11,7 +11,7 @@ from roomkit.channels.base import Channel
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
-from roomkit.models.delivery import InboundMessage
+from roomkit.models.delivery import InboundMessage, ProviderResult
 from roomkit.models.enums import (
     ChannelType,
     HookTrigger,
@@ -47,6 +47,7 @@ class SimpleChannel(Channel):
                 channel_type=self.channel_type,
             ),
             content=message.content,
+            metadata=message.metadata,
         )
 
     async def deliver(
@@ -746,8 +747,8 @@ class _MockTransportProvider:
 
     name = "mock-transport"
 
-    async def send(self, event: RoomEvent, *, to: str = "", **kwargs: Any) -> None:
-        pass
+    async def send(self, event: RoomEvent, *, to: str = "", **kwargs: Any) -> ProviderResult:
+        return ProviderResult(success=True, provider_message_id="msg-123")
 
 
 class _FailingTransportProvider:
@@ -755,8 +756,17 @@ class _FailingTransportProvider:
 
     name = "failing-transport"
 
-    async def send(self, event: RoomEvent, *, to: str = "", **kwargs: Any) -> None:
+    async def send(self, event: RoomEvent, *, to: str = "", **kwargs: Any) -> ProviderResult:
         raise RuntimeError("send failed")
+
+
+class _SoftFailTransportProvider:
+    """Transport provider that returns failure without raising."""
+
+    name = "soft-fail-transport"
+
+    async def send(self, event: RoomEvent, *, to: str = "", **kwargs: Any) -> ProviderResult:
+        return ProviderResult(success=False, error="rate_limit")
 
 
 class TestDeliveryTelemetry:
@@ -996,3 +1006,654 @@ class TestPhase2SpanKinds:
         assert Attr.STORE_OPERATION == "store.operation"
         assert Attr.STORE_TABLE == "store.table"
         assert Attr.BACKEND_TYPE == "backend.type"
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Delivery telemetry — ProviderResult capture, duration metric
+# ---------------------------------------------------------------------------
+
+
+class TestDeliveryTelemetryPhase3:
+    async def test_delivery_span_captures_provider_result(self) -> None:
+        """Successful ProviderResult sets DELIVERY_SUCCESS attribute."""
+        from roomkit.channels.transport import TransportChannel
+        from roomkit.models.room import Room
+
+        mock = MockTelemetryProvider()
+        provider = _MockTransportProvider()
+        ch = TransportChannel("sms1", ChannelType.SMS, provider=provider)
+        ch._telemetry = mock  # type: ignore[attr-defined]
+
+        event = RoomEvent(
+            room_id="room1",
+            source=EventSource(channel_id="other", channel_type=ChannelType.AI),
+            content=TextContent(body="hello"),
+        )
+        binding = ChannelBinding(channel_id="sms1", room_id="room1", channel_type=ChannelType.SMS)
+        context = RoomContext(room=Room(id="room1"), bindings=[], recent_events=[])
+        await ch.deliver(event, binding, context)
+
+        spans = mock.get_spans(SpanKind.DELIVERY)
+        assert len(spans) == 1
+        assert spans[0].attributes[Attr.DELIVERY_SUCCESS] is True
+        assert spans[0].attributes[Attr.DELIVERY_MESSAGE_ID] == "msg-123"
+        assert spans[0].status == "ok"
+
+    async def test_delivery_span_error_on_failed_result(self) -> None:
+        """ProviderResult(success=False) sets span status='error'."""
+        from roomkit.channels.transport import TransportChannel
+        from roomkit.models.room import Room
+
+        mock = MockTelemetryProvider()
+        provider = _SoftFailTransportProvider()
+        ch = TransportChannel("sms1", ChannelType.SMS, provider=provider)
+        ch._telemetry = mock  # type: ignore[attr-defined]
+
+        event = RoomEvent(
+            room_id="room1",
+            source=EventSource(channel_id="other", channel_type=ChannelType.AI),
+            content=TextContent(body="hello"),
+        )
+        binding = ChannelBinding(channel_id="sms1", room_id="room1", channel_type=ChannelType.SMS)
+        context = RoomContext(room=Room(id="room1"), bindings=[], recent_events=[])
+        await ch.deliver(event, binding, context)
+
+        spans = mock.get_spans(SpanKind.DELIVERY)
+        assert len(spans) == 1
+        assert spans[0].status == "error"
+        assert spans[0].error_message == "rate_limit"
+        assert spans[0].attributes[Attr.DELIVERY_SUCCESS] is False
+        assert spans[0].attributes[Attr.DELIVERY_ERROR] == "rate_limit"
+
+    async def test_delivery_records_duration_metric(self) -> None:
+        """deliver() records a roomkit.delivery.duration_ms metric."""
+        from roomkit.channels.transport import TransportChannel
+        from roomkit.models.room import Room
+
+        mock = MockTelemetryProvider()
+        provider = _MockTransportProvider()
+        ch = TransportChannel("sms1", ChannelType.SMS, provider=provider)
+        ch._telemetry = mock  # type: ignore[attr-defined]
+
+        event = RoomEvent(
+            room_id="room1",
+            source=EventSource(channel_id="other", channel_type=ChannelType.AI),
+            content=TextContent(body="hello"),
+        )
+        binding = ChannelBinding(channel_id="sms1", room_id="room1", channel_type=ChannelType.SMS)
+        context = RoomContext(room=Room(id="room1"), bindings=[], recent_events=[])
+        await ch.deliver(event, binding, context)
+
+        duration_metrics = [m for m in mock.metrics if m["name"] == "roomkit.delivery.duration_ms"]
+        assert len(duration_metrics) == 1
+        assert duration_metrics[0]["unit"] == "ms"
+        assert duration_metrics[0]["value"] >= 0
+        assert duration_metrics[0]["attributes"][Attr.PROVIDER] == "mock-transport"
+
+    async def test_delivery_span_has_recipient(self) -> None:
+        """DELIVERY span includes delivery.recipient attribute."""
+        from roomkit.channels.transport import TransportChannel
+        from roomkit.models.room import Room
+
+        mock = MockTelemetryProvider()
+        provider = _MockTransportProvider()
+        ch = TransportChannel("sms1", ChannelType.SMS, provider=provider)
+        ch._telemetry = mock  # type: ignore[attr-defined]
+
+        event = RoomEvent(
+            room_id="room1",
+            source=EventSource(channel_id="other", channel_type=ChannelType.AI),
+            content=TextContent(body="hello"),
+        )
+        binding = ChannelBinding(
+            channel_id="sms1",
+            room_id="room1",
+            channel_type=ChannelType.SMS,
+            metadata={"recipient_id": "+15551234567"},
+        )
+        context = RoomContext(room=Room(id="room1"), bindings=[], recent_events=[])
+        await ch.deliver(event, binding, context)
+
+        spans = mock.get_spans(SpanKind.DELIVERY)
+        assert spans[0].attributes[Attr.DELIVERY_RECIPIENT] == "+15551234567"
+
+    def test_transport_propagates_telemetry_to_provider(self) -> None:
+        """_propagate_telemetry() sets _telemetry on transport provider."""
+        from roomkit.channels.transport import TransportChannel
+
+        mock = MockTelemetryProvider()
+        provider = _MockTransportProvider()
+        ch = TransportChannel("sms1", ChannelType.SMS, provider=provider)
+        kit = RoomKit(telemetry=mock)
+        kit.register_channel(ch)
+
+        assert provider._telemetry is mock  # type: ignore[attr-defined]
+
+    def test_phase3_attr_constants(self) -> None:
+        """New Phase 3 Attr constants exist."""
+        assert Attr.DELIVERY_SUCCESS == "delivery.success"
+        assert Attr.DELIVERY_ERROR == "delivery.error"
+        assert Attr.DELIVERY_MESSAGE_ID == "delivery.message_id"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Noise reduction, span hierarchy, session correlation
+# ---------------------------------------------------------------------------
+
+
+class TestTelemetryPhase4:
+    """Phase 4 telemetry tests: suppression, hierarchy, correlation."""
+
+    # -- Part A: Hook span suppression --
+
+    async def test_suppressed_hook_triggers_skip_spans(self) -> None:
+        """Hooks with suppressed triggers should not create spans."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        ch = SimpleChannel("ch1")
+        kit.register_channel(ch)
+
+        @kit.hook(HookTrigger.ON_INPUT_AUDIO_LEVEL, name="audio_level_hook")
+        async def audio_level(event: Any, context: RoomContext) -> HookResult:
+            return HookResult(action="allow")
+
+        # Manually invoke the hook engine for a suppressed trigger
+        from roomkit.models.context import RoomContext as RC
+        from roomkit.models.room import Room
+
+        ctx = RC(room=Room(id="room1"), bindings=[], recent_events=[])
+        await kit.hook_engine.run_sync_hooks(
+            "room1", HookTrigger.ON_INPUT_AUDIO_LEVEL, "dummy", ctx, skip_event_filter=True
+        )
+
+        # No HOOK_SYNC spans should be created for suppressed trigger
+        hook_spans = mock.get_spans(SpanKind.HOOK_SYNC)
+        assert len(hook_spans) == 0
+
+    async def test_non_suppressed_hooks_still_create_spans(self) -> None:
+        """Non-suppressed hook triggers should still create spans."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        ch = SimpleChannel("ch1")
+        kit.register_channel(ch)
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="my_hook")
+        async def my_hook(event: RoomEvent, context: RoomContext) -> HookResult:
+            return HookResult(action="allow")
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        await kit.process_inbound(msg)
+
+        hook_spans = mock.get_spans(SpanKind.HOOK_SYNC)
+        assert len(hook_spans) >= 1
+
+    def test_default_suppression_includes_audio_levels(self) -> None:
+        """Default suppression set includes the three audio level triggers."""
+        config = TelemetryConfig()
+        assert "on_input_audio_level" in config.suppressed_hook_triggers
+        assert "on_output_audio_level" in config.suppressed_hook_triggers
+        assert "on_vad_audio_level" in config.suppressed_hook_triggers
+
+    def test_custom_suppressed_triggers(self) -> None:
+        """User can pass custom suppressed triggers via TelemetryConfig."""
+        config = TelemetryConfig(suppressed_hook_triggers={"on_speech_start"})
+        kit = RoomKit(telemetry=config)
+        assert "on_speech_start" in kit.hook_engine._suppressed_triggers
+        # Default audio level triggers should NOT be present
+        assert "on_input_audio_level" not in kit.hook_engine._suppressed_triggers
+
+    async def test_suppressed_async_hooks_skip_spans(self) -> None:
+        """Async hooks with suppressed triggers skip span creation."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+
+        @kit.hook(
+            HookTrigger.ON_OUTPUT_AUDIO_LEVEL,
+            name="output_level",
+        )
+        async def output_hook(event: Any, context: RoomContext) -> None:
+            pass
+
+        from roomkit.models.context import RoomContext as RC
+        from roomkit.models.room import Room
+
+        ctx = RC(room=Room(id="room1"), bindings=[], recent_events=[])
+        await kit.hook_engine.run_async_hooks(
+            "room1", HookTrigger.ON_OUTPUT_AUDIO_LEVEL, "dummy", ctx, skip_event_filter=True
+        )
+
+        hook_spans = mock.get_spans(SpanKind.HOOK_ASYNC)
+        assert len(hook_spans) == 0
+
+    # -- Part B: Span hierarchy --
+
+    async def test_inbound_broadcast_span_hierarchy(self) -> None:
+        """BROADCAST span should be a child of INBOUND_PIPELINE span."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        ch1 = SimpleChannel("ch1")
+        ch2 = SimpleChannel("ch2")
+        kit.register_channel(ch1)
+        kit.register_channel(ch2)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "ch2")
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        await kit.process_inbound(msg, room_id=room.id)
+
+        inbound_spans = mock.get_spans(SpanKind.INBOUND_PIPELINE)
+        broadcast_spans = mock.get_spans(SpanKind.BROADCAST)
+        assert len(inbound_spans) >= 1
+        assert len(broadcast_spans) >= 1
+        assert broadcast_spans[0].parent_id == inbound_spans[0].id
+
+    async def test_delivery_span_parents_to_broadcast(self) -> None:
+        """DELIVERY span should be a child of BROADCAST span."""
+        from roomkit.channels.transport import TransportChannel
+
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+
+        ch1 = SimpleChannel("ch1")
+        provider = _MockTransportProvider()
+        ch2 = TransportChannel("sms1", ChannelType.SMS, provider=provider)
+        kit.register_channel(ch1)
+        kit.register_channel(ch2)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "sms1", metadata={"recipient_id": "+15551234567"})
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        await kit.process_inbound(msg, room_id=room.id)
+
+        broadcast_spans = mock.get_spans(SpanKind.BROADCAST)
+        delivery_spans = mock.get_spans(SpanKind.DELIVERY)
+        assert len(broadcast_spans) >= 1
+        assert len(delivery_spans) >= 1
+        assert delivery_spans[0].parent_id == broadcast_spans[0].id
+
+    async def test_hook_span_parents_to_inbound(self) -> None:
+        """HOOK_SYNC span should be a child of INBOUND_PIPELINE span."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        ch = SimpleChannel("ch1")
+        kit.register_channel(ch)
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="test_hook")
+        async def my_hook(event: RoomEvent, context: RoomContext) -> HookResult:
+            return HookResult(action="allow")
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        await kit.process_inbound(msg)
+
+        inbound_spans = mock.get_spans(SpanKind.INBOUND_PIPELINE)
+        hook_spans = mock.get_spans(SpanKind.HOOK_SYNC)
+        assert len(inbound_spans) >= 1
+        assert len(hook_spans) >= 1
+        assert hook_spans[0].parent_id == inbound_spans[0].id
+
+    async def test_llm_span_parents_to_broadcast(self) -> None:
+        """LLM_GENERATE span should be a child of BROADCAST span."""
+        from roomkit.channels.ai import AIChannel
+
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+
+        ai_provider = _MockAIProvider()
+        ai = AIChannel("ai1", provider=ai_provider)
+        kit.register_channel(ai)
+
+        ch = SimpleChannel("ch1")
+        kit.register_channel(ch)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "ai1")
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        await kit.process_inbound(msg, room_id=room.id)
+
+        broadcast_spans = mock.get_spans(SpanKind.BROADCAST)
+        llm_spans = mock.get_spans(SpanKind.LLM_GENERATE)
+        assert len(broadcast_spans) >= 1
+        assert len(llm_spans) >= 1
+        assert llm_spans[0].parent_id == broadcast_spans[0].id
+
+    # -- Part C: Session & room correlation --
+
+    async def test_inbound_span_gets_room_id(self) -> None:
+        """INBOUND_PIPELINE span should have room_id set after routing."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        ch = SimpleChannel("ch1")
+        kit.register_channel(ch)
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        await kit.process_inbound(msg)
+
+        inbound_spans = mock.get_spans(SpanKind.INBOUND_PIPELINE)
+        assert len(inbound_spans) >= 1
+        span = inbound_spans[0]
+        # room_id should be set (either on span or in attributes)
+        has_room_id = span.room_id is not None or span.attributes.get("room_id") is not None
+        assert has_room_id
+
+    async def test_inbound_span_gets_session_id(self) -> None:
+        """INBOUND_PIPELINE span should have session_id from voice metadata."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        ch = SimpleChannel("ch1")
+        kit.register_channel(ch)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+            metadata={"voice_session_id": "sess-abc"},
+        )
+        await kit.process_inbound(msg, room_id=room.id)
+
+        inbound_spans = mock.get_spans(SpanKind.INBOUND_PIPELINE)
+        assert len(inbound_spans) >= 1
+        span = inbound_spans[0]
+        # session_id should be set (either on span or in attributes)
+        has_session_id = (
+            span.session_id == "sess-abc" or span.attributes.get("session_id") == "sess-abc"
+        )
+        assert has_session_id
+
+    async def test_broadcast_span_gets_session_id(self) -> None:
+        """BROADCAST span should carry session_id from voice metadata."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        ch1 = SimpleChannel("ch1")
+        ch2 = SimpleChannel("ch2")
+        kit.register_channel(ch1)
+        kit.register_channel(ch2)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "ch2")
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+            metadata={"voice_session_id": "sess-xyz"},
+        )
+        await kit.process_inbound(msg, room_id=room.id)
+
+        broadcast_spans = mock.get_spans(SpanKind.BROADCAST)
+        assert len(broadcast_spans) >= 1
+        assert broadcast_spans[0].session_id == "sess-xyz"
+
+    async def test_context_var_reset_after_inbound(self) -> None:
+        """Context var should be reset after process_inbound completes."""
+        from roomkit.telemetry.context import get_current_span
+
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        ch = SimpleChannel("ch1")
+        kit.register_channel(ch)
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        await kit.process_inbound(msg)
+
+        # After process_inbound returns, context var should be reset
+        assert get_current_span() is None
+
+
+# ---------------------------------------------------------------------------
+# Pipeline speech segment telemetry
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineSpeechSegmentTelemetry:
+    """Test PIPELINE_SPEECH_SEGMENT spans created by AudioPipeline."""
+
+    def _make_pipeline(
+        self,
+        telemetry: MockTelemetryProvider,
+        *,
+        vad_events: list[Any] | None = None,
+        with_denoiser: bool = False,
+    ) -> tuple[Any, Any, Any]:
+        """Create a pipeline with mock providers and return (pipeline, backend, session)."""
+        from roomkit.voice.backends.mock import MockVoiceBackend
+        from roomkit.voice.base import VoiceSession, VoiceSessionState
+        from roomkit.voice.pipeline.config import AudioPipelineConfig
+        from roomkit.voice.pipeline.engine import AudioPipeline
+        from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+        from roomkit.voice.pipeline.vad.mock import MockVADProvider
+
+        events = vad_events
+        if events is None:
+            events = [
+                VADEvent(type=VADEventType.SPEECH_START),
+                None,
+                None,
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
+            ]
+
+        vad = MockVADProvider(events=events)
+
+        denoiser = None
+        if with_denoiser:
+            from roomkit.voice.pipeline.denoiser.mock import MockDenoiserProvider
+
+            denoiser = MockDenoiserProvider()
+
+        config = AudioPipelineConfig(vad=vad, denoiser=denoiser, telemetry=telemetry)
+        pipeline = AudioPipeline(config)
+
+        backend = MockVoiceBackend()
+        session = VoiceSession(
+            id="sess1",
+            room_id="room1",
+            participant_id="user1",
+            channel_id="voice1",
+            state=VoiceSessionState.ACTIVE,
+        )
+
+        return pipeline, backend, session
+
+    def _make_frame(self) -> Any:
+        from roomkit.voice.audio_frame import AudioFrame
+
+        return AudioFrame(data=b"\x00" * 640, sample_rate=16000)
+
+    def test_speech_segment_span_created_on_vad_events(self) -> None:
+        """SPEECH_START/SPEECH_END creates and ends a PIPELINE_SPEECH_SEGMENT span."""
+        mock = MockTelemetryProvider()
+        pipeline, _, session = self._make_pipeline(mock)
+
+        # Process 4 frames: SPEECH_START, None, None, SPEECH_END
+        for _ in range(4):
+            pipeline.process_inbound(session, self._make_frame())
+
+        spans = mock.get_spans(SpanKind.PIPELINE_SPEECH_SEGMENT)
+        assert len(spans) == 1
+        assert spans[0].session_id == "sess1"
+        assert spans[0].status == "ok"
+        assert spans[0].duration_ms is not None
+
+    def test_speech_segment_has_voice_session_parent(self) -> None:
+        """Segment span should have the VOICE_SESSION span as parent."""
+        mock = MockTelemetryProvider()
+        pipeline, _, session = self._make_pipeline(mock)
+
+        # Set parent span (as VoiceChannel.bind_session would do)
+        parent_span_id = mock.start_span(
+            SpanKind.VOICE_SESSION, "voice.session", session_id="sess1"
+        )
+        pipeline.set_parent_span("sess1", parent_span_id)
+
+        for _ in range(4):
+            pipeline.process_inbound(session, self._make_frame())
+
+        spans = mock.get_spans(SpanKind.PIPELINE_SPEECH_SEGMENT)
+        assert len(spans) == 1
+        assert spans[0].parent_id == parent_span_id
+
+    def test_speech_segment_has_stage_timings(self) -> None:
+        """Segment span should have per-stage timing attributes > 0."""
+        mock = MockTelemetryProvider()
+        pipeline, _, session = self._make_pipeline(mock, with_denoiser=True)
+
+        for _ in range(4):
+            pipeline.process_inbound(session, self._make_frame())
+
+        spans = mock.get_spans(SpanKind.PIPELINE_SPEECH_SEGMENT)
+        assert len(spans) == 1
+        attrs = spans[0].attributes
+        # VAD timing should be present (always active in this test)
+        assert "pipeline.vad_ms" in attrs
+        assert attrs["pipeline.vad_ms"] >= 0
+        # Denoiser timing should be present
+        assert "pipeline.denoiser_ms" in attrs
+        assert attrs["pipeline.denoiser_ms"] >= 0
+
+    def test_speech_segment_has_frame_count(self) -> None:
+        """pipeline.frames attribute should match frame count between START and END."""
+        mock = MockTelemetryProvider()
+        pipeline, _, session = self._make_pipeline(mock)
+
+        # 4 frames: SPEECH_START, None, None, SPEECH_END
+        # Frame count should be 3: SPEECH_START creates the span (count=0),
+        # then frames 2, 3, 4 each increment before processing.
+        for _ in range(4):
+            pipeline.process_inbound(session, self._make_frame())
+
+        spans = mock.get_spans(SpanKind.PIPELINE_SPEECH_SEGMENT)
+        assert len(spans) == 1
+        assert spans[0].attributes[Attr.PIPELINE_FRAMES] == 3
+
+    def test_speech_segment_has_active_stages(self) -> None:
+        """pipeline.stages attribute should list the configured stages."""
+        mock = MockTelemetryProvider()
+        pipeline, _, session = self._make_pipeline(mock, with_denoiser=True)
+
+        for _ in range(4):
+            pipeline.process_inbound(session, self._make_frame())
+
+        spans = mock.get_spans(SpanKind.PIPELINE_SPEECH_SEGMENT)
+        assert len(spans) == 1
+        stages = spans[0].attributes[Attr.PIPELINE_STAGES]
+        assert "vad" in stages
+        assert "denoiser" in stages
+
+    def test_no_segment_span_without_vad(self) -> None:
+        """No PIPELINE_SPEECH_SEGMENT spans when VAD is not configured."""
+        from roomkit.voice.base import VoiceSession, VoiceSessionState
+        from roomkit.voice.pipeline.config import AudioPipelineConfig
+        from roomkit.voice.pipeline.engine import AudioPipeline
+
+        mock = MockTelemetryProvider()
+        config = AudioPipelineConfig(telemetry=mock)
+        pipeline = AudioPipeline(config)
+
+        session = VoiceSession(
+            id="sess1",
+            room_id="room1",
+            participant_id="user1",
+            channel_id="voice1",
+            state=VoiceSessionState.ACTIVE,
+        )
+
+        for _ in range(5):
+            pipeline.process_inbound(session, self._make_frame())
+
+        spans = mock.get_spans(SpanKind.PIPELINE_SPEECH_SEGMENT)
+        assert len(spans) == 0
+
+    def test_segment_span_ended_on_session_end(self) -> None:
+        """Session ending mid-speech should gracefully end the active segment span."""
+        from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+
+        mock = MockTelemetryProvider()
+        # Only SPEECH_START, no SPEECH_END — session will end mid-speech
+        events = [
+            VADEvent(type=VADEventType.SPEECH_START),
+            None,
+            None,
+        ]
+        pipeline, _, session = self._make_pipeline(mock, vad_events=events)
+
+        for _ in range(3):
+            pipeline.process_inbound(session, self._make_frame())
+
+        # Segment span should still be active
+        active = [s for s in mock.get_active_spans() if s.kind == SpanKind.PIPELINE_SPEECH_SEGMENT]
+        assert len(active) == 1
+
+        # End session — should close the segment span
+        pipeline.on_session_ended(session)
+
+        completed = mock.get_spans(SpanKind.PIPELINE_SPEECH_SEGMENT)
+        assert len(completed) == 1
+        assert completed[0].duration_ms is not None
+
+    def test_no_spans_without_telemetry(self) -> None:
+        """No errors or overhead when telemetry is None."""
+        from roomkit.voice.base import VoiceSession, VoiceSessionState
+        from roomkit.voice.pipeline.config import AudioPipelineConfig
+        from roomkit.voice.pipeline.engine import AudioPipeline
+        from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+        from roomkit.voice.pipeline.vad.mock import MockVADProvider
+
+        events = [
+            VADEvent(type=VADEventType.SPEECH_START),
+            None,
+            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio"),
+        ]
+        config = AudioPipelineConfig(vad=MockVADProvider(events=events), telemetry=None)
+        pipeline = AudioPipeline(config)
+
+        session = VoiceSession(
+            id="sess1",
+            room_id="room1",
+            participant_id="user1",
+            channel_id="voice1",
+            state=VoiceSessionState.ACTIVE,
+        )
+
+        # Should not raise
+        for _ in range(3):
+            pipeline.process_inbound(session, self._make_frame())
+
+        # No segment spans should exist
+        assert len(pipeline._segment_spans) == 0

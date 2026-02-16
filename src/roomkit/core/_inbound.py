@@ -69,6 +69,7 @@ class InboundMixin(HelpersMixin):
         """
         from roomkit.core.framework import ChannelNotRegisteredError
         from roomkit.telemetry.base import SpanKind
+        from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
 
         channel = self._channels.get(message.channel_id)
         if channel is None:
@@ -78,9 +79,12 @@ class InboundMixin(HelpersMixin):
         inbound_span_id = telemetry.start_span(
             SpanKind.INBOUND_PIPELINE,
             "framework.inbound",
+            parent_id=get_current_span(),
             channel_id=message.channel_id,
+            room_id=room_id,
             attributes={"sender_id": message.sender_id or ""},
         )
+        token = set_current_span(inbound_span_id)
         _inbound_result: InboundResult | None = None
         try:
             _inbound_result = await self._process_inbound_inner(
@@ -91,6 +95,7 @@ class InboundMixin(HelpersMixin):
             telemetry.end_span(inbound_span_id, status="error", error_message=str(exc))
             raise
         finally:
+            reset_span(token)
             if _inbound_result is not None:
                 telemetry.end_span(
                     inbound_span_id,
@@ -130,6 +135,13 @@ class InboundMixin(HelpersMixin):
                 binding = await self._store.get_binding(room_id, message.channel_id)
                 if binding is None:
                     await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
+
+        # Backfill room_id on the INBOUND_PIPELINE span now that routing is done
+        telemetry.set_attribute(inbound_span_id, "room_id", room_id)
+        # Extract session_id from voice metadata if present
+        voice_session_id = (message.metadata or {}).get("voice_session_id")
+        if voice_session_id:
+            telemetry.set_attribute(inbound_span_id, "session_id", voice_session_id)
 
         context = await self._build_context(room_id)
 

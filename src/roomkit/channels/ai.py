@@ -179,11 +179,14 @@ class AIChannel(Channel):
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
         """Generate an AI response, executing tool calls if needed."""
+        from roomkit.telemetry.context import get_current_span
+
         ai_context = await self._build_context(event, binding, context)
         telemetry = self._telemetry_provider
         span_id = telemetry.start_span(
             SpanKind.LLM_GENERATE,
             "llm.generate",
+            parent_id=get_current_span(),
             room_id=event.room_id,
             channel_id=self.channel_id,
             attributes={

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time as _time
 from typing import Any
 
 from roomkit.channels.base import Channel
@@ -56,6 +57,12 @@ class TransportChannel(Channel):
         self._capabilities = capabilities or ChannelCapabilities()
         self._recipient_key = recipient_key
         self._defaults: dict[str, Any] = defaults or {}
+
+    def _propagate_telemetry(self) -> None:
+        """Propagate telemetry to transport provider."""
+        telemetry = getattr(self, "_telemetry", None)
+        if telemetry is not None and self._provider is not None:
+            self._provider._telemetry = telemetry
 
     @property
     def info(self) -> dict[str, Any]:
@@ -111,6 +118,7 @@ class TransportChannel(Channel):
             return ChannelOutput.empty()
 
         from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.context import get_current_span
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
         telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
@@ -120,19 +128,43 @@ class TransportChannel(Channel):
         for key, value in self._defaults.items():
             kwargs[key] = binding.metadata.get(key, value) if value is None else value
 
+        provider_name = getattr(self._provider, "name", type(self._provider).__name__)
         span_id = telemetry.start_span(
             SpanKind.DELIVERY,
             "framework.delivery",
+            parent_id=get_current_span(),
             room_id=event.room_id,
             channel_id=self.channel_id,
             attributes={
                 Attr.DELIVERY_CHANNEL_TYPE: str(self.channel_type),
-                Attr.PROVIDER: getattr(self._provider, "name", type(self._provider).__name__),
+                Attr.DELIVERY_RECIPIENT: to,
+                Attr.PROVIDER: provider_name,
             },
         )
+        t0 = _time.monotonic()
         try:
-            await self._provider.send(event, to=to, **kwargs)
-            telemetry.end_span(span_id)
+            result = await self._provider.send(event, to=to, **kwargs)
+            duration_ms = (_time.monotonic() - t0) * 1000
+            attrs: dict[str, Any] = {Attr.DELIVERY_SUCCESS: result.success}
+            if result.error:
+                attrs[Attr.DELIVERY_ERROR] = result.error
+            if result.provider_message_id:
+                attrs[Attr.DELIVERY_MESSAGE_ID] = result.provider_message_id
+            if result.success:
+                telemetry.end_span(span_id, attributes=attrs)
+            else:
+                telemetry.end_span(
+                    span_id,
+                    status="error",
+                    error_message=result.error or "send_failed",
+                    attributes=attrs,
+                )
+            telemetry.record_metric(
+                "roomkit.delivery.duration_ms",
+                duration_ms,
+                unit="ms",
+                attributes={Attr.PROVIDER: provider_name},
+            )
         except Exception as exc:
             telemetry.end_span(span_id, status="error", error_message=str(exc))
             raise

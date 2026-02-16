@@ -124,15 +124,20 @@ class EventRouter:
                 received content via streaming).
         """
         from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
         telemetry = self._telemetry or NoopTelemetryProvider()
+        session_id = (event.metadata or {}).get("voice_session_id")
         span_id = telemetry.start_span(
             SpanKind.BROADCAST,
             "framework.broadcast",
+            parent_id=get_current_span(),
             room_id=event.room_id,
+            session_id=session_id,
             attributes={Attr.CHANNEL_ID: source_binding.channel_id},
         )
+        broadcast_token = set_current_span(span_id)
 
         result = BroadcastResult()
 
@@ -143,6 +148,7 @@ class EventRouter:
                 source_binding.channel_id,
                 extra={"room_id": event.room_id, "channel_id": source_binding.channel_id},
             )
+            reset_span(broadcast_token)
             telemetry.end_span(span_id, attributes={"target_count": 0})
             return result
 
@@ -153,6 +159,7 @@ class EventRouter:
                 source_binding.channel_id,
                 extra={"room_id": event.room_id, "channel_id": source_binding.channel_id},
             )
+            reset_span(broadcast_token)
             telemetry.end_span(span_id, attributes={"target_count": 0})
             return result
 
@@ -164,6 +171,7 @@ class EventRouter:
         targets = self._filter_targets(event, source_binding, context.bindings)
 
         if not targets:
+            reset_span(broadcast_token)
             telemetry.end_span(span_id, attributes={"target_count": 0})
             return result
 
@@ -367,6 +375,7 @@ class EventRouter:
             result.blocked_events.extend(tr.blocked_events)
             result.observations.extend(tr.observations)
 
+        reset_span(broadcast_token)
         telemetry.end_span(
             span_id,
             attributes={

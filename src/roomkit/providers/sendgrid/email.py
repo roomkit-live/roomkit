@@ -65,11 +65,26 @@ class SendGridProvider(EmailProvider):
         }
 
         try:
+            import time
+
+            t0 = time.monotonic()
             resp = await self._client.post(
                 self._config.base_url,
                 json=payload,
                 headers=headers,
             )
+            send_ms = (time.monotonic() - t0) * 1000
+
+            from roomkit.telemetry.noop import NoopTelemetryProvider
+
+            _tel = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+            _tel.record_metric(
+                "roomkit.delivery.send_ms",
+                send_ms,
+                unit="ms",
+                attributes={"provider": "SendGridProvider"},
+            )
+
             if resp.status_code == 429:
                 return ProviderResult(success=False, error="rate_limited")
             resp.raise_for_status()

@@ -94,6 +94,9 @@ class WhatsAppPersonalProvider(WhatsAppProvider):
         content = event.content
 
         try:
+            import time
+
+            t0 = time.monotonic()
             resp = None
             if isinstance(content, CompositeContent):
                 resp = await self._send_composite(client, jid, content)
@@ -118,6 +121,17 @@ class WhatsAppPersonalProvider(WhatsAppProvider):
                     success=False,
                     error=f"Unsupported content type: {type(content).__name__}",
                 )
+            send_ms = (time.monotonic() - t0) * 1000
+
+            from roomkit.telemetry.noop import NoopTelemetryProvider
+
+            _tel = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+            _tel.record_metric(
+                "roomkit.delivery.send_ms",
+                send_ms,
+                unit="ms",
+                attributes={"provider": "WhatsAppPersonalProvider"},
+            )
 
             wa_msg_id = getattr(resp, "ID", "") if resp else ""
             if wa_msg_id and self.on_sent:

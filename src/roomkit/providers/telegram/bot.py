@@ -105,9 +105,23 @@ class TelegramBotProvider(TelegramProvider):
     async def _api_call(self, method: str, payload: dict[str, Any]) -> ProviderResult:
         url = f"{self._config.base_url}/{method}"
         try:
+            import time
+
+            t0 = time.monotonic()
             resp = await self._client.post(url, json=payload)
             resp.raise_for_status()
+            send_ms = (time.monotonic() - t0) * 1000
             data = resp.json()
+
+            from roomkit.telemetry.noop import NoopTelemetryProvider
+
+            _tel = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+            _tel.record_metric(
+                "roomkit.delivery.send_ms",
+                send_ms,
+                unit="ms",
+                attributes={"provider": "TelegramBotProvider"},
+            )
         except self._httpx.TimeoutException:
             return ProviderResult(success=False, error="timeout")
         except self._httpx.HTTPStatusError as exc:

@@ -70,6 +70,8 @@ class BotFrameworkTeamsProvider(TeamsProvider):
             )
 
         try:
+            import time
+
             from botbuilder.core import TurnContext
             from botbuilder.schema import Activity, ConversationReference
 
@@ -82,10 +84,22 @@ class BotFrameworkTeamsProvider(TeamsProvider):
                 if response and response.id:
                     message_id = response.id
 
+            t0 = time.monotonic()
             await self._adapter.continue_conversation(
                 conv_ref,
                 _send_callback,
                 self._config.app_id,
+            )
+            send_ms = (time.monotonic() - t0) * 1000
+
+            from roomkit.telemetry.noop import NoopTelemetryProvider
+
+            _tel = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+            _tel.record_metric(
+                "roomkit.delivery.send_ms",
+                send_ms,
+                unit="ms",
+                attributes={"provider": "BotFrameworkTeamsProvider"},
             )
         except Exception as exc:
             return ProviderResult(success=False, error=str(exc))

@@ -31,6 +31,7 @@ class SpanKind(StrEnum):
     BROADCAST = "framework.broadcast"
     DELIVERY = "framework.delivery"
     VOICE_SESSION = "voice.session"
+    PIPELINE_SPEECH_SEGMENT = "pipeline.speech_segment"
     STORE_QUERY = "store.query"
     BACKEND_CONNECT = "backend.connect"
     CUSTOM = "custom"
@@ -76,6 +77,8 @@ class Attr:
     # Pipeline
     PIPELINE_FRAME_COUNT = "pipeline.frame_count"
     PIPELINE_BYTES_PROCESSED = "pipeline.bytes_processed"
+    PIPELINE_STAGES = "pipeline.stages"
+    PIPELINE_FRAMES = "pipeline.frames"
 
     # Realtime
     REALTIME_PROVIDER = "realtime.provider"
@@ -84,6 +87,9 @@ class Attr:
     # Delivery
     DELIVERY_CHANNEL_TYPE = "delivery.channel_type"
     DELIVERY_RECIPIENT = "delivery.recipient"
+    DELIVERY_SUCCESS = "delivery.success"
+    DELIVERY_ERROR = "delivery.error"
+    DELIVERY_MESSAGE_ID = "delivery.message_id"
 
     # Store
     STORE_OPERATION = "store.operation"
@@ -179,6 +185,13 @@ class TelemetryProvider(ABC):
     ) -> None:
         """Record a metric value."""
         ...
+
+    def flush(self) -> None:  # noqa: B027
+        """Flush pending spans/metrics without closing the provider.
+
+        Called after ending long-lived spans (e.g. VOICE_SESSION) to ensure
+        they are exported promptly rather than waiting for shutdown.
+        """
 
     def close(self) -> None:  # noqa: B027
         """Close the provider and flush any pending data."""

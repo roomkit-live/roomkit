@@ -88,6 +88,11 @@ class HookEngine:
         self._global_hooks: list[HookRegistration] = []
         self._room_hooks: dict[str, list[HookRegistration]] = {}
         self._telemetry: Any = None  # Set by RoomKit after init
+        self._suppressed_triggers: set[str] = {
+            "on_input_audio_level",
+            "on_output_audio_level",
+            "on_vad_audio_level",
+        }
 
     def register(self, hook: HookRegistration) -> None:
         """Register a global hook."""
@@ -178,12 +183,17 @@ class HookEngine:
 
         for hook in hooks:
             span_id = None
-            if self._telemetry is not None:
+            should_trace = (
+                self._telemetry is not None and str(trigger) not in self._suppressed_triggers
+            )
+            if should_trace:
                 from roomkit.telemetry.base import Attr, SpanKind
+                from roomkit.telemetry.context import get_current_span
 
                 span_id = self._telemetry.start_span(
                     SpanKind.HOOK_SYNC,
                     f"hook.sync.{hook.name or 'unnamed'}",
+                    parent_id=get_current_span(),
                     room_id=room_id,
                     attributes={
                         Attr.HOOK_NAME: hook.name or "unnamed",
@@ -288,12 +298,17 @@ class HookEngine:
 
         async def _run_one(hook: HookRegistration) -> None:
             span_id = None
-            if self._telemetry is not None:
+            should_trace = (
+                self._telemetry is not None and str(trigger) not in self._suppressed_triggers
+            )
+            if should_trace:
                 from roomkit.telemetry.base import Attr, SpanKind
+                from roomkit.telemetry.context import get_current_span
 
                 span_id = self._telemetry.start_span(
                     SpanKind.HOOK_ASYNC,
                     f"hook.async.{hook.name or 'unnamed'}",
+                    parent_id=get_current_span(),
                     room_id=room_id,
                     attributes={
                         Attr.HOOK_NAME: hook.name or "unnamed",

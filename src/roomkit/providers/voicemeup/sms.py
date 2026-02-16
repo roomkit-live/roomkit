@@ -320,9 +320,23 @@ class VoiceMeUpSMSProvider(SMSProvider):
             form_data["attachment"] = attachment
 
         try:
+            import time as _time
+
+            t0 = _time.monotonic()
             resp = await self._client.post(url, params=auth_params, data=form_data)
             resp.raise_for_status()
+            send_ms = (_time.monotonic() - t0) * 1000
             data = resp.json()
+
+            from roomkit.telemetry.noop import NoopTelemetryProvider
+
+            _tel = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+            _tel.record_metric(
+                "roomkit.delivery.send_ms",
+                send_ms,
+                unit="ms",
+                attributes={"provider": "VoiceMeUpSMSProvider"},
+            )
         except self._httpx.TimeoutException:
             return ProviderResult(success=False, error="timeout")
         except self._httpx.HTTPStatusError as exc:

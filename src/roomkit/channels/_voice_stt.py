@@ -425,6 +425,10 @@ class VoiceSTTMixin:
         if not self._framework or not text.strip():
             return
         try:
+            from roomkit.telemetry.context import reset_span, set_current_span
+
+            _vs_parent = getattr(self, "_voice_session_spans", {}).get(session.id)
+            _vs_token = set_current_span(_vs_parent) if _vs_parent else None
             import time as _time
 
             playback = self._playing_sessions.get(session.id)
@@ -484,6 +488,9 @@ class VoiceSTTMixin:
 
         except Exception:
             logger.exception("Error processing continuous STT transcription")
+        finally:
+            if _vs_token is not None:
+                reset_span(_vs_token)
 
     # -----------------------------------------------------------------
     # Speech-end processing (VAD mode)
@@ -510,6 +517,10 @@ class VoiceSTTMixin:
         if not self._framework:
             return
 
+        from roomkit.telemetry.context import reset_span, set_current_span
+
+        _vs_parent = getattr(self, "_voice_session_spans", {}).get(session.id)
+        _vs_token = set_current_span(_vs_parent) if _vs_parent else None
         try:
             context = await self._framework._build_context(room_id)
 
@@ -576,9 +587,11 @@ class VoiceSTTMixin:
                 _t = getattr(self._framework, "_telemetry", None)
                 telemetry = _t if isinstance(_t, TelemetryProvider) else _NOOP
                 t0 = time.monotonic()
+                parent = getattr(self, "_voice_session_spans", {}).get(session.id)
                 span_id = telemetry.start_span(
                     SpanKind.STT_TRANSCRIBE,
                     "stt.batch",
+                    parent_id=parent,
                     room_id=room_id,
                     session_id=session.id,
                     channel_id=self.channel_id,
@@ -671,6 +684,9 @@ class VoiceSTTMixin:
                     )
                 except Exception:
                     logger.exception("Error emitting stt_error")
+        finally:
+            if _vs_token is not None:
+                reset_span(_vs_token)
 
     # -----------------------------------------------------------------
     # Batch STT (no VAD — caller controls when to transcribe)
