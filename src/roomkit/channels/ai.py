@@ -8,6 +8,8 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels.base import Channel
+from roomkit.memory.base import MemoryProvider
+from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.channel import (
     ChannelBinding,
     ChannelCapabilities,
@@ -84,6 +86,7 @@ class AIChannel(Channel):
         max_tool_rounds: int = 10,
         skills: SkillRegistry | None = None,
         script_executor: ScriptExecutor | None = None,
+        memory: MemoryProvider | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._provider = provider
@@ -94,6 +97,7 @@ class AIChannel(Channel):
         self._max_tool_rounds = max_tool_rounds
         self._skills = skills
         self._script_executor = script_executor
+        self._memory = memory or SlidingWindowMemory(max_events=max_context_events)
 
         # Wrap the user's tool handler with skill-aware dispatch
         self._user_tool_handler = tool_handler
@@ -108,6 +112,11 @@ class AIChannel(Channel):
         telemetry = getattr(self, "_telemetry", None)
         if telemetry is not None:
             self._provider._telemetry = telemetry
+
+    async def close(self) -> None:
+        """Close the channel, its provider, and the memory provider."""
+        await super().close()
+        await self._memory.close()
 
     @property
     def info(self) -> dict[str, Any]:
@@ -141,7 +150,7 @@ class AIChannel(Channel):
         raw_tools = binding.metadata.get("tools", [])
         has_tools = bool(raw_tools) or (self._skills is not None and self._skills.skill_count > 0)
         if self._provider.supports_streaming and not has_tools:
-            return self._start_streaming_response(event, binding, context)
+            return await self._start_streaming_response(event, binding, context)
 
         return await self._generate_response(event, binding, context)
 
@@ -151,11 +160,11 @@ class AIChannel(Channel):
         """Intelligence channels are not called via deliver by the router."""
         return ChannelOutput.empty()
 
-    def _start_streaming_response(
+    async def _start_streaming_response(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
         """Return a streaming response handle (generator starts on consumption)."""
-        ai_context = self._build_context(event, binding, context)
+        ai_context = await self._build_context(event, binding, context)
         return ChannelOutput(
             responded=True,
             response_stream=self._provider.generate_stream(ai_context),
@@ -170,7 +179,7 @@ class AIChannel(Channel):
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
         """Generate an AI response, executing tool calls if needed."""
-        ai_context = self._build_context(event, binding, context)
+        ai_context = await self._build_context(event, binding, context)
         telemetry = self._telemetry_provider
         span_id = telemetry.start_span(
             SpanKind.LLM_GENERATE,
@@ -301,7 +310,7 @@ class AIChannel(Channel):
 
         return response
 
-    def _build_context(
+    async def _build_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> AIContext:
         """Build AI context from room events.
@@ -338,9 +347,21 @@ class AIChannel(Channel):
             skill_block = f"\n\n{preamble}\n\n{skills_xml}"
             system_prompt = (system_prompt or "") + skill_block
 
+        # Retrieve memory
+        memory_result = await self._memory.retrieve(
+            event.room_id,
+            event,
+            context,
+            channel_id=self.channel_id,
+        )
+
         messages: list[AIMessage] = []
 
-        for past_event in context.recent_events[-self._max_context_events :]:
+        # Pre-built messages from memory (e.g. summaries)
+        messages.extend(memory_result.messages)
+
+        # Convert memory events using AIChannel content extraction
+        for past_event in memory_result.events:
             role = self._determine_role(past_event)
             content = self._extract_content(past_event)
             if content:

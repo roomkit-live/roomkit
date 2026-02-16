@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from roomkit.channels.ai import AIChannel
+from roomkit.memory.mock import MockMemoryProvider
+from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelMediaType, ChannelType
 from roomkit.models.event import TextContent
 from roomkit.models.room import Room
-from roomkit.providers.ai.base import AIImagePart, AITextPart, AITool
+from roomkit.providers.ai.base import AIImagePart, AIMessage, AITextPart, AITool
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.conftest import make_event, make_media_event
 
@@ -387,3 +389,123 @@ class TestPerRoomConfiguration:
         assert provider.calls[0].system_prompt == "Default"
         assert provider.calls[0].temperature == 0.5
         assert provider.calls[0].max_tokens == 512
+
+
+class TestMemoryIntegration:
+    """Tests for MemoryProvider integration with AIChannel."""
+
+    async def test_default_memory_is_sliding_window(self) -> None:
+        """When no memory is provided, AIChannel creates SlidingWindowMemory."""
+        provider = MockAIProvider(responses=["ok"])
+        ch = AIChannel("ai1", provider=provider)
+        assert isinstance(ch._memory, SlidingWindowMemory)
+
+    async def test_max_context_events_configures_default_memory(self) -> None:
+        """max_context_events parameter configures the default SlidingWindowMemory."""
+        provider = MockAIProvider(responses=["ok"])
+        ch = AIChannel("ai1", provider=provider, max_context_events=25)
+        assert isinstance(ch._memory, SlidingWindowMemory)
+        assert ch._memory._max_events == 25
+
+    async def test_custom_memory_provider_is_used(self) -> None:
+        """Custom MemoryProvider is called during on_event."""
+        mock_memory = MockMemoryProvider()
+        provider = MockAIProvider(responses=["ok"])
+        ch = AIChannel("ai1", provider=provider, memory=mock_memory)
+        binding = ChannelBinding(
+            channel_id="ai1",
+            room_id="r1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+        )
+        ctx = RoomContext(room=Room(id="r1"))
+        event = make_event(body="hello", channel_id="sms1", room_id="r1")
+
+        await ch.on_event(event, binding, ctx)
+
+        assert len(mock_memory.retrieve_calls) == 1
+        assert mock_memory.retrieve_calls[0].room_id == "r1"
+        assert mock_memory.retrieve_calls[0].channel_id == "ai1"
+
+    async def test_memory_messages_appear_in_context(self) -> None:
+        """Pre-built messages from memory appear before event-converted messages."""
+        summary_msg = AIMessage(role="system", content="Previous conversation summary")
+        mock_memory = MockMemoryProvider(messages=[summary_msg])
+        provider = MockAIProvider(responses=["ok"])
+        ch = AIChannel("ai1", provider=provider, memory=mock_memory)
+        binding = ChannelBinding(
+            channel_id="ai1",
+            room_id="r1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+        )
+        ctx = RoomContext(room=Room(id="r1"))
+        event = make_event(body="hello", channel_id="sms1")
+
+        await ch.on_event(event, binding, ctx)
+
+        assert len(provider.calls) == 1
+        messages = provider.calls[0].messages
+        # First message is the summary, second is the current event
+        assert len(messages) == 2
+        assert messages[0].role == "system"
+        assert messages[0].content == "Previous conversation summary"
+        assert messages[1].role == "user"
+        assert messages[1].content == "hello"
+
+    async def test_memory_events_converted_by_channel(self) -> None:
+        """Events from memory are converted using AIChannel's content extraction."""
+        past_event = make_event(body="past message", channel_id="sms1")
+        mock_memory = MockMemoryProvider(events=[past_event])
+        provider = MockAIProvider(responses=["ok"])
+        ch = AIChannel("ai1", provider=provider, memory=mock_memory)
+        binding = ChannelBinding(
+            channel_id="ai1",
+            room_id="r1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+        )
+        ctx = RoomContext(room=Room(id="r1"))
+        event = make_event(body="current", channel_id="sms1")
+
+        await ch.on_event(event, binding, ctx)
+
+        messages = provider.calls[0].messages
+        assert len(messages) == 2
+        assert messages[0].content == "past message"
+        assert messages[1].content == "current"
+
+    async def test_memory_both_messages_and_events(self) -> None:
+        """Both messages and events from memory appear in correct order."""
+        summary_msg = AIMessage(role="assistant", content="Summary")
+        past_event = make_event(body="recent msg", channel_id="sms1")
+        mock_memory = MockMemoryProvider(messages=[summary_msg], events=[past_event])
+        provider = MockAIProvider(responses=["ok"])
+        ch = AIChannel("ai1", provider=provider, memory=mock_memory)
+        binding = ChannelBinding(
+            channel_id="ai1",
+            room_id="r1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+        )
+        ctx = RoomContext(room=Room(id="r1"))
+        event = make_event(body="current", channel_id="sms1")
+
+        await ch.on_event(event, binding, ctx)
+
+        messages = provider.calls[0].messages
+        # Order: summary message, then converted event, then current event
+        assert len(messages) == 3
+        assert messages[0].content == "Summary"
+        assert messages[1].content == "recent msg"
+        assert messages[2].content == "current"
+
+    async def test_close_closes_memory_provider(self) -> None:
+        """AIChannel.close() closes the memory provider."""
+        mock_memory = MockMemoryProvider()
+        provider = MockAIProvider(responses=["ok"])
+        ch = AIChannel("ai1", provider=provider, memory=mock_memory)
+
+        await ch.close()
+
+        assert mock_memory.closed is True

@@ -37,6 +37,7 @@ from roomkit.core.inbound_router import DefaultInboundRoomRouter, InboundRoomRou
 from roomkit.core.locks import InMemoryLockManager, RoomLockManager
 from roomkit.identity.base import IdentityResolver
 from roomkit.identity.mock import MockIdentityResolver
+from roomkit.memory import MemoryProvider, MemoryResult, MockMemoryProvider, SlidingWindowMemory
 from roomkit.models.channel import (
     ChannelBinding,
     ChannelCapabilities,
@@ -489,6 +490,11 @@ __all__ = [
     # Identity
     "IdentityResolver",
     "MockIdentityResolver",
+    # Memory
+    "MemoryProvider",
+    "MemoryResult",
+    "MockMemoryProvider",
+    "SlidingWindowMemory",
     # Store
     "ConversationStore",
     "InMemoryStore",
