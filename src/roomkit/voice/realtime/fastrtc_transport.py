@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any
 from fastrtc import AsyncStreamHandler
 
 from roomkit.voice.backends.base import (
+    AudioReceivedCallback,
     TransportDisconnectCallback,
     VoiceBackend,
 )
@@ -50,9 +51,6 @@ if TYPE_CHECKING:
     from fastrtc import Stream
 
 logger = logging.getLogger("roomkit.voice.realtime.fastrtc_transport")
-
-# Callback type for raw audio received from the transport
-TransportAudioCallback = Callable[["VoiceSession", bytes], Any]
 
 # Type alias for emit return: (sample_rate, ndarray) or None
 EmitType = tuple[int, "np.ndarray[Any, Any]"] | None
@@ -198,7 +196,7 @@ class FastRTCRealtimeTransport(VoiceBackend):
         self._webrtc_sessions: dict[str, VoiceSession] = {}
 
         # Callbacks
-        self._audio_callbacks: list[TransportAudioCallback] = []
+        self._audio_callbacks: list[AudioReceivedCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
         self._connected_callback: Callable[[str], Any] | None = None
 
@@ -279,7 +277,7 @@ class FastRTCRealtimeTransport(VoiceBackend):
                 handler._audio_queue.put_nowait(None)  # Signal end
         logger.info("Session disconnected: session=%s", session.id)
 
-    def on_audio_received(self, callback: TransportAudioCallback) -> None:
+    def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         """Register callback for audio received from the client.
 
         Args:

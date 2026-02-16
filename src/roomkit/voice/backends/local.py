@@ -609,7 +609,7 @@ class LocalAudioBackend(VoiceBackend):
     # Callbacks
     # -------------------------------------------------------------------------
 
-    def on_audio_received(self, callback: AudioReceivedCallback) -> None:  # type: ignore[override]
+    def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         """Register callback for audio received from the microphone.
 
         Accepts both ``(session, AudioFrame)`` callbacks (VoiceChannel path)
@@ -618,7 +618,7 @@ class LocalAudioBackend(VoiceBackend):
         :meth:`accept` was called (realtime mode → bytes) or not
         (VoiceChannel mode → AudioFrame).
         """
-        self._audio_received_callback = callback  # type: ignore[assignment]
+        self._audio_received_callback = callback
 
     def on_barge_in(self, callback: BargeInCallback) -> None:
         self._barge_in_callbacks.append(callback)

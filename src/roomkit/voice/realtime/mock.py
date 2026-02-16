@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
 from roomkit.voice.backends.base import (
+    AudioReceivedCallback,
     TransportDisconnectCallback,
     VoiceBackend,
 )
@@ -26,9 +27,6 @@ from roomkit.voice.realtime.provider import (
     RealtimeTranscriptionCallback,
     RealtimeVoiceProvider,
 )
-
-# Transport audio callback: (session, audio_bytes) -> Any
-TransportAudioCallback = Callable[["VoiceSession", bytes], Any]
 
 
 @dataclass
@@ -266,7 +264,7 @@ class MockRealtimeTransport(VoiceBackend):
         self.sent_messages: list[tuple[str, dict[str, Any]]] = []
         self._connections: dict[str, Any] = {}
         # Callbacks
-        self._audio_callbacks: list[TransportAudioCallback] = []
+        self._audio_callbacks: list[AudioReceivedCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
 
     @property
@@ -319,7 +317,7 @@ class MockRealtimeTransport(VoiceBackend):
 
     # -- Callback registration --
 
-    def on_audio_received(self, callback: TransportAudioCallback) -> None:  # type: ignore[override]
+    def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         self._audio_callbacks.append(callback)
 
     def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:

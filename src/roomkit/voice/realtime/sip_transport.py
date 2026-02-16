@@ -16,18 +16,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from typing import Any
 
 from roomkit.voice.backends.base import (
+    AudioReceivedCallback,
     TransportDisconnectCallback,
     VoiceBackend,
 )
 from roomkit.voice.base import AudioChunk, VoiceSession
 
 logger = logging.getLogger("roomkit.voice.realtime.sip_transport")
-
-TransportAudioCallback = Callable[["VoiceSession", bytes], Any]
 
 
 class SIPRealtimeTransport(VoiceBackend):
@@ -70,7 +69,7 @@ class SIPRealtimeTransport(VoiceBackend):
         # Reverse mapping: voice_session_id -> realtime_session_id
         self._voice_to_rt: dict[str, str] = {}
 
-        self._audio_callbacks: list[TransportAudioCallback] = []
+        self._audio_callbacks: list[AudioReceivedCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
 
         # Wire into the SIP backend's audio callback
@@ -139,7 +138,7 @@ class SIPRealtimeTransport(VoiceBackend):
             self._voice_to_rt.pop(voice_session.id, None)
         logger.info("SIP realtime transport: disconnected session %s", session.id)
 
-    def on_audio_received(self, callback: TransportAudioCallback) -> None:
+    def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         self._audio_callbacks.append(callback)
 
     def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:

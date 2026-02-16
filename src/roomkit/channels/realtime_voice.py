@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 import time
@@ -36,6 +37,7 @@ except ImportError:  # websockets not installed
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
+    from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 # Tool handler: async callable (session, name, arguments) -> result dict or str
@@ -187,7 +189,9 @@ class RealtimeVoiceChannel(Channel):
         """Access telemetry provider (set by register_channel)."""
         return getattr(self, "_telemetry", None) or NoopTelemetryProvider()
 
-    def _rt_span_ctx(self, session_id: str) -> tuple[str | None, object | None]:
+    def _rt_span_ctx(
+        self, session_id: str
+    ) -> tuple[str | None, contextvars.Token[str | None] | None]:
         """Set the realtime session span as current for child spans.
 
         Returns (parent_id, token) — caller must reset via ``reset_span(token)``
@@ -596,8 +600,10 @@ class RealtimeVoiceChannel(Channel):
 
     # -- Internal callbacks --
 
-    def _on_client_audio(self, session: VoiceSession, audio: bytes) -> Any:
+    def _on_client_audio(self, session: VoiceSession, audio: AudioFrame | bytes) -> Any:
         """Forward client audio to provider."""
+        if not isinstance(audio, bytes):
+            audio = audio.data
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -690,13 +696,14 @@ class RealtimeVoiceChannel(Channel):
                 HookTrigger.ON_OUTPUT_AUDIO_LEVEL,
             )
 
-    def _on_transport_audio_played(self, session: VoiceSession, audio: bytes) -> None:
+    def _on_transport_audio_played(self, session: VoiceSession, audio: AudioFrame | bytes) -> None:
         """Fire ON_OUTPUT_AUDIO_LEVEL at real playback pace (PortAudio callback).
 
         Called from the transport's speaker thread via ``on_audio_played``.
         This provides time-aligned output levels when the transport supports it.
         """
-        self._fire_audio_level_task(session, rms_db(audio), HookTrigger.ON_OUTPUT_AUDIO_LEVEL)
+        raw = audio if isinstance(audio, bytes) else audio.data
+        self._fire_audio_level_task(session, rms_db(raw), HookTrigger.ON_OUTPUT_AUDIO_LEVEL)
 
     def _resample_outbound(self, session: VoiceSession, audio: bytes) -> bytes:
         """Resample outbound audio from provider rate to transport rate."""

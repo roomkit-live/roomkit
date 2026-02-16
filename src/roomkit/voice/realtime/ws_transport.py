@@ -6,19 +6,17 @@ import asyncio
 import base64
 import json
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from typing import Any
 
 from roomkit.voice.backends.base import (
+    AudioReceivedCallback,
     TransportDisconnectCallback,
     VoiceBackend,
 )
 from roomkit.voice.base import AudioChunk, VoiceSession
 
 logger = logging.getLogger("roomkit.voice.realtime.ws_transport")
-
-# Transport audio callback: (session, audio_bytes) -> Any
-TransportAudioCallback = Callable[["VoiceSession", bytes], Any]
 
 
 class WebSocketRealtimeTransport(VoiceBackend):
@@ -39,7 +37,7 @@ class WebSocketRealtimeTransport(VoiceBackend):
     def __init__(self) -> None:
         self._websockets: dict[str, Any] = {}  # session_id -> WebSocket
         self._receive_tasks: dict[str, asyncio.Task[None]] = {}
-        self._audio_callbacks: list[TransportAudioCallback] = []
+        self._audio_callbacks: list[AudioReceivedCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
         self._sessions: dict[str, VoiceSession] = {}  # session_id -> session
 
@@ -116,7 +114,7 @@ class WebSocketRealtimeTransport(VoiceBackend):
             with contextlib.suppress(Exception):
                 await ws.close()
 
-    def on_audio_received(self, callback: TransportAudioCallback) -> None:  # type: ignore[override]
+    def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         self._audio_callbacks.append(callback)
 
     def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:

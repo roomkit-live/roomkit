@@ -14,15 +14,16 @@ from roomkit.voice.base import (
 )
 
 if TYPE_CHECKING:
-    from roomkit.voice.audio_frame import AudioFrame
+    pass
 
-# Callback type for raw audio frames from the transport
-AudioReceivedCallback = Callable[["VoiceSession", "AudioFrame"], Any]
+# Callback type for raw audio from the transport.
+# VoiceChannel backends deliver AudioFrame; realtime transports deliver bytes.
+AudioReceivedCallback = Callable[["VoiceSession", Any], Any]
 
-# Callback type for audio frames as they are played through the speaker.
+# Callback type for audio as it is played through the speaker.
 # Fired at playback time (time-aligned with actual speaker output) so AEC
 # can use the reference to cancel echo accurately.
-AudioPlayedCallback = Callable[["VoiceSession", "AudioFrame"], Any]
+AudioPlayedCallback = Callable[["VoiceSession", Any], Any]
 
 # Callback for client disconnection
 TransportDisconnectCallback = Callable[["VoiceSession"], Any]
