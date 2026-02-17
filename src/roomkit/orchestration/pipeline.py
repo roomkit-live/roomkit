@@ -6,9 +6,17 @@ workflows with optional loops (e.g., coder <-> reviewer).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, Field
 
+from roomkit.models.enums import HookExecution, HookTrigger
+from roomkit.orchestration.handoff import HandoffHandler, setup_handoff
 from roomkit.orchestration.router import ConversationRouter, RoutingConditions, RoutingRule
+
+if TYPE_CHECKING:
+    from roomkit.channels.ai import AIChannel
+    from roomkit.core.framework import RoomKit
 
 
 class PipelineStage(BaseModel):
@@ -105,3 +113,40 @@ class ConversationPipeline:
             allowed.update(stage.can_return_to)
             transitions[stage.phase] = allowed
         return transitions
+
+    def install(
+        self,
+        kit: RoomKit,
+        agents: list[AIChannel],
+        *,
+        agent_aliases: dict[str, str] | None = None,
+        hook_priority: int = -100,
+    ) -> tuple[ConversationRouter, HandoffHandler]:
+        """Wire routing and handoff in one call.
+
+        Creates a router from this pipeline, registers it as a
+        ``BEFORE_BROADCAST`` sync hook, builds a ``HandoffHandler``
+        with the pipeline's phase map and transition constraints,
+        and calls ``setup_handoff`` on every agent.
+
+        Returns ``(router, handler)`` for further customisation.
+        """
+        router = self.to_router()
+
+        kit.hook(
+            HookTrigger.BEFORE_BROADCAST,
+            execution=HookExecution.SYNC,
+            priority=hook_priority,
+        )(router.as_hook())
+
+        handler = HandoffHandler(
+            kit=kit,
+            router=router,
+            agent_aliases=agent_aliases,
+            phase_map=self.get_phase_map(),
+            allowed_transitions=self.get_allowed_transitions(),
+        )
+        for agent in agents:
+            setup_handoff(agent, handler)
+
+        return router, handler

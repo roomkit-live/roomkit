@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.models.enums import ChannelCategory, ChannelType, HookExecution, HookTrigger
 from roomkit.models.room import Room
+from roomkit.orchestration.handoff import HandoffHandler
 from roomkit.orchestration.router import (
     ConversationRouter,
     RoutingConditions,
@@ -447,3 +450,80 @@ class TestAsHook:
         assert result.event is not None
         always = result.event.metadata["_always_process"]
         assert isinstance(always, list)
+
+
+# -- install ------------------------------------------------------------------
+
+
+def _mock_agent(channel_id: str) -> MagicMock:
+    agent = MagicMock()
+    agent.channel_id = channel_id
+    agent._extra_tools = []
+    agent._tool_handler = None
+    return agent
+
+
+def _mock_kit() -> MagicMock:
+    kit = MagicMock()
+    hook_decorator = MagicMock()
+    kit.hook.return_value = hook_decorator
+    return kit
+
+
+class TestRouterInstall:
+    def test_install_registers_hook_and_returns_handler(self):
+        router = ConversationRouter(default_agent_id="agent-a")
+        kit = _mock_kit()
+        agents = [_mock_agent("agent-a")]
+
+        handler = router.install(kit, agents)
+
+        assert isinstance(handler, HandoffHandler)
+        kit.hook.assert_called_once_with(
+            HookTrigger.BEFORE_BROADCAST,
+            execution=HookExecution.SYNC,
+            priority=-100,
+        )
+
+    def test_install_with_phase_map(self):
+        router = ConversationRouter(default_agent_id="agent-a")
+        kit = _mock_kit()
+        agents = [_mock_agent("agent-a"), _mock_agent("agent-b")]
+
+        handler = router.install(
+            kit,
+            agents,
+            phase_map={"agent-a": "intake", "agent-b": "handling"},
+        )
+
+        assert handler._phase_map == {"agent-a": "intake", "agent-b": "handling"}
+
+    def test_install_wires_handoff(self):
+        router = ConversationRouter(default_agent_id="agent-a")
+        kit = _mock_kit()
+        agents = [_mock_agent("agent-a"), _mock_agent("agent-b")]
+
+        router.install(kit, agents)
+
+        for agent in agents:
+            assert len(agent._extra_tools) == 1
+            assert agent._extra_tools[0].name == "handoff_conversation"
+
+    def test_install_passes_aliases(self):
+        router = ConversationRouter(default_agent_id="agent-a")
+        kit = _mock_kit()
+        agents = [_mock_agent("agent-a")]
+
+        handler = router.install(kit, agents, agent_aliases={"alias": "agent-a"})
+
+        assert handler._aliases == {"alias": "agent-a"}
+
+    def test_install_no_allowed_transitions(self):
+        """Router install does not set allowed_transitions (pipeline-only)."""
+        router = ConversationRouter(default_agent_id="agent-a")
+        kit = _mock_kit()
+        agents = [_mock_agent("agent-a")]
+
+        handler = router.install(kit, agents)
+
+        assert handler._allowed_transitions is None

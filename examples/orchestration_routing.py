@@ -20,7 +20,6 @@ from roomkit import (
     AIChannel,
     ChannelCategory,
     ConversationRouter,
-    HandoffHandler,
     HandoffMemoryProvider,
     HookExecution,
     HookTrigger,
@@ -32,7 +31,6 @@ from roomkit import (
     TextContent,
     WebSocketChannel,
     get_conversation_state,
-    setup_handoff,
 )
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.mock import MockAIProvider
@@ -125,14 +123,10 @@ async def main() -> None:
         supervisor_id="agent-supervisor",
     )
 
-    kit.hook(HookTrigger.BEFORE_BROADCAST, execution=HookExecution.SYNC, priority=-100)(
-        router.as_hook()
-    )
-
-    # Wire handoff with aliases (friendly names → channel IDs)
-    handoff_handler = HandoffHandler(
-        kit=kit,
-        router=router,
+    # One-liner: registers routing hook + wires handoff on all agents
+    handoff_handler = router.install(
+        kit,
+        [ai_triage, ai_billing, ai_tech],
         agent_aliases={
             "billing": "agent-billing",
             "tech": "agent-tech",
@@ -144,8 +138,6 @@ async def main() -> None:
             "agent-triage": "intake",
         },
     )
-    for ch in [ai_triage, ai_billing, ai_tech]:
-        setup_handoff(ch, handoff_handler)
 
     # --- Track supervisor observations ---------------------------------------
 

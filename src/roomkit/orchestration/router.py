@@ -9,15 +9,20 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.models.enums import ChannelCategory, ChannelType, HookExecution, HookTrigger
 from roomkit.models.event import RoomEvent
 from roomkit.models.hook import HookResult
+from roomkit.orchestration.handoff import HandoffHandler, setup_handoff
 from roomkit.orchestration.state import ConversationState, get_conversation_state
+
+if TYPE_CHECKING:
+    from roomkit.channels.ai import AIChannel
+    from roomkit.core.framework import RoomKit
 
 logger = logging.getLogger("roomkit.orchestration.router")
 
@@ -193,3 +198,37 @@ class ConversationRouter:
 
         conversation_router.__name__ = "conversation_router"
         return conversation_router
+
+    def install(
+        self,
+        kit: RoomKit,
+        agents: list[AIChannel],
+        *,
+        agent_aliases: dict[str, str] | None = None,
+        phase_map: dict[str, str] | None = None,
+        hook_priority: int = -100,
+    ) -> HandoffHandler:
+        """Wire routing and handoff in one call.
+
+        Registers this router as a ``BEFORE_BROADCAST`` sync hook,
+        builds a ``HandoffHandler``, and calls ``setup_handoff``
+        on every agent.
+
+        Returns the ``HandoffHandler`` for further customisation.
+        """
+        kit.hook(
+            HookTrigger.BEFORE_BROADCAST,
+            execution=HookExecution.SYNC,
+            priority=hook_priority,
+        )(self.as_hook())
+
+        handler = HandoffHandler(
+            kit=kit,
+            router=self,
+            agent_aliases=agent_aliases,
+            phase_map=phase_map,
+        )
+        for agent in agents:
+            setup_handoff(agent, handler)
+
+        return handler

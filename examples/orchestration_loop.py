@@ -22,10 +22,7 @@ from roomkit import (
     ChannelCategory,
     ConversationPipeline,
     ConversationState,
-    HandoffHandler,
     HandoffMemoryProvider,
-    HookExecution,
-    HookTrigger,
     InboundMessage,
     PipelineStage,
     RoomKit,
@@ -34,7 +31,6 @@ from roomkit import (
     WebSocketChannel,
     get_conversation_state,
     set_conversation_state,
-    setup_handoff,
 )
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.mock import MockAIProvider
@@ -125,21 +121,8 @@ async def main() -> None:
     for ch in [ai_discuss, ai_coder, ai_reviewer, ai_writer]:
         kit.register_channel(ch)
 
-    # Generate router and install
-    router = pipeline.to_router()
-    kit.hook(HookTrigger.BEFORE_BROADCAST, execution=HookExecution.SYNC, priority=-100)(
-        router.as_hook()
-    )
-
-    # Wire handoff with transition enforcement
-    handoff_handler = HandoffHandler(
-        kit=kit,
-        router=router,
-        phase_map=pipeline.get_phase_map(),
-        allowed_transitions=pipeline.get_allowed_transitions(),
-    )
-    for ch in [ai_discuss, ai_coder, ai_reviewer, ai_writer]:
-        setup_handoff(ch, handoff_handler)
+    # One-liner: registers routing hook + wires handoff on all agents
+    router, handoff_handler = pipeline.install(kit, [ai_discuss, ai_coder, ai_reviewer, ai_writer])
 
     # Create room and attach channels
     await kit.create_room(room_id="dev-room")

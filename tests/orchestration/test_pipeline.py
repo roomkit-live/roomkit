@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.models.enums import ChannelCategory, ChannelType, HookExecution, HookTrigger
 from roomkit.models.room import Room
+from roomkit.orchestration.handoff import HandoffHandler
 from roomkit.orchestration.pipeline import (
     ConversationPipeline,
     PipelineStage,
 )
+from roomkit.orchestration.router import ConversationRouter
 from roomkit.orchestration.state import ConversationState
 from tests.conftest import make_event
 
@@ -262,3 +266,117 @@ class TestPipelineStage:
             can_return_to={"coding", "analysis"},
         )
         assert stage.can_return_to == {"coding", "analysis"}
+
+
+# -- install ------------------------------------------------------------------
+
+
+def _mock_agent(channel_id: str) -> MagicMock:
+    agent = MagicMock()
+    agent.channel_id = channel_id
+    agent._extra_tools = []
+    agent._tool_handler = None
+    return agent
+
+
+def _mock_kit() -> MagicMock:
+    kit = MagicMock()
+    # kit.hook(trigger, ...)(fn) — returns the decorator then calls it
+    hook_decorator = MagicMock()
+    kit.hook.return_value = hook_decorator
+    return kit
+
+
+class TestPipelineInstall:
+    def test_install_registers_hook(self):
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit = _mock_kit()
+        agents = [_mock_agent("agent-a"), _mock_agent("agent-b")]
+
+        pipeline.install(kit, agents)
+
+        kit.hook.assert_called_once_with(
+            HookTrigger.BEFORE_BROADCAST,
+            execution=HookExecution.SYNC,
+            priority=-100,
+        )
+
+    def test_install_wires_handoff_on_all_agents(self):
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit = _mock_kit()
+        agents = [_mock_agent("agent-a"), _mock_agent("agent-b")]
+
+        pipeline.install(kit, agents)
+
+        # Each agent should have the handoff tool injected
+        for agent in agents:
+            assert len(agent._extra_tools) == 1
+            assert agent._extra_tools[0].name == "handoff_conversation"
+
+    def test_install_returns_router_and_handler(self):
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next=None),
+            ],
+        )
+        kit = _mock_kit()
+        agents = [_mock_agent("agent-a")]
+
+        router, handler = pipeline.install(kit, agents)
+
+        assert isinstance(router, ConversationRouter)
+        assert isinstance(handler, HandoffHandler)
+
+    def test_install_passes_aliases(self):
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next=None),
+            ],
+        )
+        kit = _mock_kit()
+        agents = [_mock_agent("agent-a")]
+
+        _, handler = pipeline.install(kit, agents, agent_aliases={"alias-a": "agent-a"})
+
+        assert handler._aliases == {"alias-a": "agent-a"}
+
+    def test_install_enforces_transitions(self):
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit = _mock_kit()
+        agents = [_mock_agent("agent-a"), _mock_agent("agent-b")]
+
+        _, handler = pipeline.install(kit, agents)
+
+        assert handler._allowed_transitions == {"a": {"b"}, "b": set()}
+
+    def test_install_custom_hook_priority(self):
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next=None),
+            ],
+        )
+        kit = _mock_kit()
+        agents = [_mock_agent("agent-a")]
+
+        pipeline.install(kit, agents, hook_priority=-50)
+
+        kit.hook.assert_called_once_with(
+            HookTrigger.BEFORE_BROADCAST,
+            execution=HookExecution.SYNC,
+            priority=-50,
+        )
