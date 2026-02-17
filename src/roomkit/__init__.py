@@ -216,6 +216,7 @@ from roomkit.telemetry import (
     TelemetryConfig,
     TelemetryProvider,
 )
+from roomkit.tools.compose import compose_tool_handlers
 from roomkit.voice import (
     AudioChunk,
     AudioFrame,
@@ -562,6 +563,9 @@ __all__ = [
     "SpanKind",
     "TelemetryConfig",
     "TelemetryProvider",
+    # Tools
+    "MCPToolProvider",
+    "compose_tool_handlers",
     # AI Docs
     "get_agents_md",
     "get_ai_context",
@@ -578,4 +582,8 @@ def __getattr__(name: str) -> object:
         from roomkit.telemetry.opentelemetry import OpenTelemetryProvider
 
         return OpenTelemetryProvider
+    if name == "MCPToolProvider":
+        from roomkit.tools.mcp import MCPToolProvider
+
+        return MCPToolProvider
     raise AttributeError(f"module 'roomkit' has no attribute {name}")

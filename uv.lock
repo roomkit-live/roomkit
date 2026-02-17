@@ -5248,6 +5248,9 @@ local-audio = [
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts' or extra != 'extra-7-roomkit-neutts'" },
     { name = "sounddevice" },
 ]
+mcp = [
+    { name = "mcp" },
+]
 neutts = [
     { name = "neutts" },
 ]
@@ -5382,6 +5385,7 @@ requires-dist = [
     { name = "httpx-sse", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "httpx-sse", marker = "extra == 'sources'", specifier = ">=0.4" },
     { name = "httpx-sse", marker = "extra == 'sse'", specifier = ">=0.4" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
     { name = "mkdocs", marker = "extra == 'dev'", specifier = ">=1.6" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
     { name = "mkdocs-material", marker = "extra == 'dev'", specifier = ">=9.5" },
@@ -5432,7 +5436,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["all", "anthropic", "dev", "docs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "vllm", "webrtc-aec", "websocket", "whatsapp-personal"]
+provides-extras = ["all", "anthropic", "dev", "docs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "mcp", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "vllm", "webrtc-aec", "websocket", "whatsapp-personal"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]
