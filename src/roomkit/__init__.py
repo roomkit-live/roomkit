@@ -101,6 +101,13 @@ from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.task import Observation, Task
 from roomkit.models.trace import ProtocolTrace
+from roomkit.orchestration.state import (
+    ConversationPhase,
+    ConversationState,
+    PhaseTransition,
+    get_conversation_state,
+    set_conversation_state,
+)
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
@@ -360,6 +367,12 @@ __all__ = [
     "ParticipantStatus",
     "RoomStatus",
     "TaskStatus",
+    # Orchestration
+    "ConversationPhase",
+    "ConversationState",
+    "PhaseTransition",
+    "get_conversation_state",
+    "set_conversation_state",
     # Models - Data
     "AudioContent",
     "ChannelBinding",
