@@ -109,6 +109,10 @@ from roomkit.orchestration.handoff import (
     HandoffResult,
     setup_handoff,
 )
+from roomkit.orchestration.pipeline import (
+    ConversationPipeline,
+    PipelineStage,
+)
 from roomkit.orchestration.router import (
     ConversationRouter,
     RoutingConditions,
@@ -395,6 +399,8 @@ __all__ = [
     "get_conversation_state",
     "set_conversation_state",
     "setup_handoff",
+    "ConversationPipeline",
+    "PipelineStage",
     # Models - Data
     "AudioContent",
     "ChannelBinding",
