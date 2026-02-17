@@ -15,9 +15,11 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from roomkit.memory.base import MemoryProvider, MemoryResult
+from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import EventType
-from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.enums import ChannelType, EventStatus, EventType, HookTrigger
+from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.room import Room
 from roomkit.orchestration.state import (
     get_conversation_state,
     set_conversation_state,
@@ -131,11 +133,13 @@ class HandoffHandler:
         router: ConversationRouter,
         agent_aliases: dict[str, str] | None = None,
         phase_map: dict[str, str] | None = None,
+        allowed_transitions: dict[str, set[str]] | None = None,
     ) -> None:
         self._kit = kit
         self._router = router
         self._aliases = agent_aliases or {}
         self._phase_map = phase_map or {}
+        self._allowed_transitions = allowed_transitions
 
     async def handle(
         self,
@@ -161,64 +165,103 @@ class HandoffHandler:
             context=arguments,
         )
 
-        # Validate target agent is attached to room
-        room = await self._kit.get_room(room_id)
-        bindings = await self._kit.store.list_bindings(room_id)
-        target_binding = None
-        for b in bindings:
-            if b.channel_id == request.target_agent_id:
-                target_binding = b
-                break
+        # Validate and update state under room lock to prevent lost updates.
+        # send_event() is called AFTER releasing the lock (it acquires its own).
+        async with self._kit._lock_manager.locked(room_id):
+            room = await self._kit.get_room(room_id)
+            bindings = await self._kit.store.list_bindings(room_id)
+            target_binding = None
+            for b in bindings:
+                if b.channel_id == request.target_agent_id:
+                    target_binding = b
+                    break
 
-        if target_binding is None and request.target_agent_id != "human":
-            logger.warning(
-                "Handoff rejected: agent %s not in room %s",
-                request.target_agent_id,
-                room_id,
+            if target_binding is None and request.target_agent_id != "human":
+                logger.warning(
+                    "Handoff rejected: agent %s not in room %s",
+                    request.target_agent_id,
+                    room_id,
+                )
+                result = HandoffResult(
+                    accepted=False,
+                    reason=f"Agent {request.target_agent_id} not found in room",
+                )
+                await self._fire_hook(
+                    room_id,
+                    room,
+                    bindings,
+                    HookTrigger.ON_HANDOFF_REJECTED,
+                    calling_agent_id,
+                    request,
+                    result,
+                )
+                return result
+
+            # Determine new phase
+            new_phase = (
+                arguments.get("next_phase")
+                or self._phase_map.get(request.target_agent_id)
+                or "handling"
             )
-            return HandoffResult(
-                accepted=False,
-                reason=f"Agent {request.target_agent_id} not found in room",
+
+            # Validate transition if constraints are configured
+            if self._allowed_transitions is not None:
+                state = get_conversation_state(room)
+                allowed = self._allowed_transitions.get(state.phase, set())
+                if new_phase not in allowed:
+                    logger.warning(
+                        "Handoff rejected: transition %s -> %s not allowed",
+                        state.phase,
+                        new_phase,
+                    )
+                    result = HandoffResult(
+                        accepted=False,
+                        reason=(
+                            f"Transition from '{state.phase}' to '{new_phase}' is not allowed"
+                        ),
+                    )
+                    await self._fire_hook(
+                        room_id,
+                        room,
+                        bindings,
+                        HookTrigger.ON_HANDOFF_REJECTED,
+                        calling_agent_id,
+                        request,
+                        result,
+                    )
+                    return result
+
+            # Handle "human" target — set active_agent to None
+            new_agent = None if request.target_agent_id == "human" else request.target_agent_id
+
+            # Update conversation state
+            state = get_conversation_state(room)
+            new_state = state.transition(
+                to_phase=new_phase,
+                to_agent=new_agent,
+                reason=request.reason,
+                metadata={
+                    "summary": request.summary,
+                    "channel_escalation": request.channel_escalation,
+                },
             )
-
-        # Determine new phase
-        new_phase = (
-            arguments.get("next_phase")
-            or self._phase_map.get(request.target_agent_id)
-            or "handling"
-        )
-
-        # Handle "human" target — set active_agent to None
-        new_agent = None if request.target_agent_id == "human" else request.target_agent_id
-
-        # Update conversation state
-        state = get_conversation_state(room)
-        new_state = state.transition(
-            to_phase=new_phase,
-            to_agent=new_agent,
-            reason=request.reason,
-            metadata={
-                "summary": request.summary,
-                "channel_escalation": request.channel_escalation,
-            },
-        )
-        # Preserve handoff summary in state context for memory injection
-        new_state = new_state.model_copy(
-            update={
-                "context": {
-                    **new_state.context,
-                    "handoff_summary": request.summary,
-                    "handoff_from": calling_agent_id,
-                    "handoff_reason": request.reason,
+            # Preserve handoff summary in state context for memory injection
+            new_state = new_state.model_copy(
+                update={
+                    "context": {
+                        **new_state.context,
+                        "handoff_summary": request.summary,
+                        "handoff_from": calling_agent_id,
+                        "handoff_reason": request.reason,
+                    }
                 }
-            }
-        )
+            )
 
-        # Persist
-        updated_room = set_conversation_state(room, new_state)
-        await self._kit.store.update_room(updated_room)
+            # Persist
+            updated_room = set_conversation_state(room, new_state)
+            await self._kit.store.update_room(updated_room)
 
-        # Emit system event in room timeline
+        # Emit system event in room timeline (outside lock — send_event acquires its own)
         await self._kit.send_event(
             room_id=room_id,
             channel_id=calling_agent_id,
@@ -234,6 +277,7 @@ class HandoffHandler:
                 "from_agent": calling_agent_id,
                 "to_agent": request.target_agent_id,
                 "summary": request.summary,
+                "_orchestration_internal": True,
             },
         )
 
@@ -245,12 +289,68 @@ class HandoffHandler:
             room_id,
         )
 
-        return HandoffResult(
+        result = HandoffResult(
             accepted=True,
             new_agent_id=new_agent,
             new_phase=new_phase,
             message=f"Conversation transferred to {request.target_agent_id}",
         )
+
+        # Fire orchestration hooks (async, fire-and-forget)
+        updated_room = await self._kit.get_room(room_id)
+        updated_bindings = await self._kit.store.list_bindings(room_id)
+        await self._fire_hook(
+            room_id,
+            updated_room,
+            updated_bindings,
+            HookTrigger.ON_HANDOFF,
+            calling_agent_id,
+            request,
+            result,
+        )
+        await self._fire_hook(
+            room_id,
+            updated_room,
+            updated_bindings,
+            HookTrigger.ON_PHASE_TRANSITION,
+            calling_agent_id,
+            request,
+            result,
+        )
+
+        return result
+
+    async def _fire_hook(
+        self,
+        room_id: str,
+        room: Room,
+        bindings: list[ChannelBinding],
+        trigger: HookTrigger,
+        calling_agent_id: str,
+        request: HandoffRequest,
+        result: HandoffResult,
+    ) -> None:
+        """Fire an orchestration hook (async, best-effort)."""
+        event = RoomEvent(
+            room_id=room_id,
+            source=EventSource(
+                channel_id=calling_agent_id,
+                channel_type=ChannelType.AI,
+            ),
+            content=TextContent(body=request.reason),
+            type=EventType.SYSTEM,
+            status=EventStatus.DELIVERED,
+            visibility="internal",
+            metadata={
+                "handoff": True,
+                "from_agent": calling_agent_id,
+                "to_agent": request.target_agent_id,
+                "accepted": result.accepted,
+                "new_phase": result.new_phase,
+            },
+        )
+        context = RoomContext(room=room, bindings=bindings)
+        await self._kit._hook_engine.run_async_hooks(room_id, trigger, event, context)
 
     def _resolve_alias(self, target: str) -> str:
         return self._aliases.get(target, target)
@@ -325,6 +425,11 @@ def setup_handoff(
     - Wraps the tool handler to intercept ``handoff_conversation`` calls
     - Uses ``_room_id_var`` ContextVar for room_id (set by routing hook)
     """
+    # Guard against double registration
+    if any(t.name == "handoff_conversation" for t in channel._extra_tools):
+        msg = f"setup_handoff() already called for channel '{channel.channel_id}'"
+        raise RuntimeError(msg)
+
     # Inject the handoff tool definition
     channel._extra_tools.append(HANDOFF_TOOL)
 

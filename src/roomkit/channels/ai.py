@@ -156,7 +156,11 @@ class AIChannel(Channel):
             return ChannelOutput.empty()
 
         raw_tools = binding.metadata.get("tools", [])
-        has_tools = bool(raw_tools) or (self._skills is not None and self._skills.skill_count > 0)
+        has_tools = (
+            bool(raw_tools)
+            or bool(self._extra_tools)
+            or (self._skills is not None and self._skills.skill_count > 0)
+        )
 
         if self._provider.supports_streaming or self._provider.supports_structured_streaming:
             if has_tools:

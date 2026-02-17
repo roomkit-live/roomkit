@@ -213,8 +213,11 @@ class EventRouter:
                         transcoded_event, binding.capabilities.max_length
                     )
 
-                # Orchestration routing: skip non-targeted intelligence channels
+                # Orchestration: skip intelligence channels for internal events
                 if binding.category == ChannelCategory.INTELLIGENCE:
+                    if (transcoded_event.metadata or {}).get("_orchestration_internal"):
+                        target_results.append(tr)
+                        return
                     routed_to = (transcoded_event.metadata or {}).get("_routed_to")
                     if routed_to is not None:
                         always_process = (transcoded_event.metadata or {}).get(

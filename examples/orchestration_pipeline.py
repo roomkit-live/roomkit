@@ -22,6 +22,7 @@ from roomkit import (
     AIChannel,
     ChannelCategory,
     ConversationPipeline,
+    ConversationState,
     HandoffHandler,
     HandoffMemoryProvider,
     HookExecution,
@@ -33,6 +34,7 @@ from roomkit import (
     TextContent,
     WebSocketChannel,
     get_conversation_state,
+    set_conversation_state,
     setup_handoff,
 )
 from roomkit.models.event import RoomEvent
@@ -106,11 +108,12 @@ async def main() -> None:
         router.as_hook()
     )
 
-    # Wire handoff into each agent
+    # Wire handoff into each agent (with transition enforcement from pipeline)
     handoff_handler = HandoffHandler(
         kit=kit,
         router=router,
         phase_map=pipeline.get_phase_map(),
+        allowed_transitions=pipeline.get_allowed_transitions(),
     )
     for ch in [ai_triage, ai_handler, ai_resolver]:
         setup_handoff(ch, handoff_handler)
@@ -120,6 +123,12 @@ async def main() -> None:
     await kit.attach_channel("support-room", "ws-user")
     for agent_id in ["agent-triage", "agent-handler", "agent-resolver"]:
         await kit.attach_channel("support-room", agent_id, category=ChannelCategory.INTELLIGENCE)
+
+    # Initialize conversation state to the pipeline's first stage
+    room = await kit.get_room("support-room")
+    initial_state = ConversationState(phase="triage", active_agent_id="agent-triage")
+    room = set_conversation_state(room, initial_state)
+    await kit.store.update_room(room)
 
     # --- Simulate conversation ------------------------------------------------
 

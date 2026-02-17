@@ -37,7 +37,20 @@ def _make_mock_kit(room: Room, bindings: list[ChannelBinding]) -> MagicMock:
     kit.store.list_bindings = AsyncMock(return_value=bindings)
     kit.store.update_room = AsyncMock()
     kit.send_event = AsyncMock()
+    kit._hook_engine.run_async_hooks = AsyncMock()
+    kit._lock_manager = MagicMock()
+    kit._lock_manager.locked = MagicMock(return_value=_NoopLock())
     return kit
+
+
+class _NoopLock:
+    """Async context manager that does nothing (replaces real room lock in tests)."""
+
+    async def __aenter__(self) -> None:
+        pass
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
 
 
 def _ai_binding(channel_id: str, room_id: str = "r1") -> ChannelBinding:
@@ -246,6 +259,68 @@ class TestHandoffHandler:
         assert new_state.handoff_count == 1
         assert len(new_state.phase_history) == 1
 
+    async def test_allowed_transition_accepted(self):
+        room = Room(id="r1")
+        state = ConversationState(phase="triage")
+        room = set_conversation_state(room, state)
+
+        bindings = [_ai_binding("agent-a"), _ai_binding("agent-b")]
+        kit = _make_mock_kit(room, bindings)
+        router = MagicMock()
+
+        handler = HandoffHandler(
+            kit=kit,
+            router=router,
+            phase_map={"agent-b": "handling"},
+            allowed_transitions={"triage": {"handling"}, "handling": set()},
+        )
+        result = await handler.handle(
+            room_id="r1",
+            calling_agent_id="agent-a",
+            arguments={"target": "agent-b", "reason": "ok", "summary": "s"},
+        )
+        assert result.accepted is True
+        assert result.new_phase == "handling"
+
+    async def test_disallowed_transition_rejected(self):
+        room = Room(id="r1")
+        state = ConversationState(phase="triage")
+        room = set_conversation_state(room, state)
+
+        bindings = [_ai_binding("agent-a"), _ai_binding("agent-b")]
+        kit = _make_mock_kit(room, bindings)
+        router = MagicMock()
+
+        handler = HandoffHandler(
+            kit=kit,
+            router=router,
+            phase_map={"agent-b": "resolution"},
+            # triage can only go to handling, NOT resolution
+            allowed_transitions={"triage": {"handling"}, "handling": {"resolution"}},
+        )
+        result = await handler.handle(
+            room_id="r1",
+            calling_agent_id="agent-a",
+            arguments={"target": "agent-b", "reason": "skip", "summary": "s"},
+        )
+        assert result.accepted is False
+        assert "not allowed" in result.reason
+
+    async def test_no_transition_constraints_allows_anything(self):
+        """Without allowed_transitions, any transition is accepted."""
+        room = Room(id="r1")
+        bindings = [_ai_binding("agent-a"), _ai_binding("agent-b")]
+        kit = _make_mock_kit(room, bindings)
+        router = MagicMock()
+
+        handler = HandoffHandler(kit=kit, router=router)
+        result = await handler.handle(
+            room_id="r1",
+            calling_agent_id="agent-a",
+            arguments={"target": "agent-b", "reason": "ok", "summary": "s"},
+        )
+        assert result.accepted is True
+
 
 # -- HandoffMemoryProvider ----------------------------------------------------
 
@@ -421,3 +496,85 @@ class TestSetupHandoff:
 
         result = json.loads(result_json)
         assert "error" in result
+
+    def test_double_setup_raises(self):
+        channel = MagicMock()
+        channel._extra_tools = []
+        channel._tool_handler = None
+
+        handler = MagicMock(spec=HandoffHandler)
+        setup_handoff(channel, handler)
+
+        import pytest
+
+        with pytest.raises(RuntimeError, match="already called"):
+            setup_handoff(channel, handler)
+
+
+# -- Hook firing --------------------------------------------------------------
+
+
+class TestHandoffHookFiring:
+    async def test_on_handoff_fired_on_success(self):
+        room = Room(id="r1")
+        bindings = [_ai_binding("agent-a"), _ai_binding("agent-b")]
+        kit = _make_mock_kit(room, bindings)
+        router = MagicMock()
+
+        handler = HandoffHandler(kit=kit, router=router)
+        await handler.handle(
+            room_id="r1",
+            calling_agent_id="agent-a",
+            arguments={"target": "agent-b", "reason": "done", "summary": "s"},
+        )
+
+        # ON_HANDOFF and ON_PHASE_TRANSITION should both fire
+        hook_calls = kit._hook_engine.run_async_hooks.call_args_list
+        triggers = [c[0][1] for c in hook_calls]
+        from roomkit.models.enums import HookTrigger
+
+        assert HookTrigger.ON_HANDOFF in triggers
+        assert HookTrigger.ON_PHASE_TRANSITION in triggers
+
+    async def test_on_handoff_rejected_fired(self):
+        room = Room(id="r1")
+        bindings = [_ai_binding("agent-a")]  # agent-b NOT in room
+        kit = _make_mock_kit(room, bindings)
+        router = MagicMock()
+
+        handler = HandoffHandler(kit=kit, router=router)
+        result = await handler.handle(
+            room_id="r1",
+            calling_agent_id="agent-a",
+            arguments={"target": "agent-b", "reason": "done", "summary": "s"},
+        )
+
+        assert result.accepted is False
+
+        hook_calls = kit._hook_engine.run_async_hooks.call_args_list
+        triggers = [c[0][1] for c in hook_calls]
+        from roomkit.models.enums import HookTrigger
+
+        assert HookTrigger.ON_HANDOFF_REJECTED in triggers
+
+
+# -- Orchestration internal flag -----------------------------------------------
+
+
+class TestOrchestrationInternalFlag:
+    async def test_send_event_has_internal_flag(self):
+        room = Room(id="r1")
+        bindings = [_ai_binding("agent-a"), _ai_binding("agent-b")]
+        kit = _make_mock_kit(room, bindings)
+        router = MagicMock()
+
+        handler = HandoffHandler(kit=kit, router=router)
+        await handler.handle(
+            room_id="r1",
+            calling_agent_id="agent-a",
+            arguments={"target": "agent-b", "reason": "test", "summary": "s"},
+        )
+
+        kit.send_event.assert_called_once()
+        call_kwargs = kit.send_event.call_args[1]
+        assert call_kwargs["metadata"]["_orchestration_internal"] is True
