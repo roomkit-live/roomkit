@@ -1,9 +1,17 @@
 """Multi-agent conversation orchestration for RoomKit.
 
-Provides ConversationState, ConversationRouter, and supporting models
-for multi-agent routing, handoff, and pipeline workflows.
+Provides ConversationState, ConversationRouter, HandoffHandler, and
+supporting models for multi-agent routing, handoff, and pipeline workflows.
 """
 
+from roomkit.orchestration.handoff import (
+    HANDOFF_TOOL,
+    HandoffHandler,
+    HandoffMemoryProvider,
+    HandoffRequest,
+    HandoffResult,
+    setup_handoff,
+)
 from roomkit.orchestration.router import (
     ConversationRouter,
     RoutingConditions,
@@ -28,4 +36,11 @@ __all__ = [
     "ConversationRouter",
     "RoutingConditions",
     "RoutingRule",
+    # Handoff
+    "HANDOFF_TOOL",
+    "HandoffHandler",
+    "HandoffMemoryProvider",
+    "HandoffRequest",
+    "HandoffResult",
+    "setup_handoff",
 ]

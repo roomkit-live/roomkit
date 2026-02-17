@@ -109,6 +109,9 @@ class AIChannel(Channel):
         else:
             self._tool_handler = tool_handler
 
+        # Extra tools injected by orchestration (e.g. HANDOFF_TOOL)
+        self._extra_tools: list[AITool] = []
+
     def _propagate_telemetry(self) -> None:
         """Propagate telemetry to AI provider."""
         telemetry = getattr(self, "_telemetry", None)
@@ -423,6 +426,9 @@ class AIChannel(Channel):
             )
             for t in raw_tools
         ]
+
+        # Inject extra tools (orchestration handoff, etc.)
+        tools.extend(self._extra_tools)
 
         # Inject skill tools and prompt
         if self._skills and self._skills.skill_count > 0:

@@ -203,6 +203,10 @@ class HookTrigger(StrEnum):
     ON_REALTIME_TEXT_INJECTED = "on_realtime_text_injected"
     # Protocol observability
     ON_PROTOCOL_TRACE = "on_protocol_trace"
+    # Orchestration (multi-agent)
+    ON_PHASE_TRANSITION = "on_phase_transition"
+    ON_HANDOFF = "on_handoff"
+    ON_HANDOFF_REJECTED = "on_handoff_rejected"
 
 
 @unique

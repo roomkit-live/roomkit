@@ -101,6 +101,14 @@ from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.task import Observation, Task
 from roomkit.models.trace import ProtocolTrace
+from roomkit.orchestration.handoff import (
+    HANDOFF_TOOL,
+    HandoffHandler,
+    HandoffMemoryProvider,
+    HandoffRequest,
+    HandoffResult,
+    setup_handoff,
+)
 from roomkit.orchestration.router import (
     ConversationRouter,
     RoutingConditions,
@@ -376,11 +384,17 @@ __all__ = [
     "ConversationPhase",
     "ConversationRouter",
     "ConversationState",
+    "HANDOFF_TOOL",
+    "HandoffHandler",
+    "HandoffMemoryProvider",
+    "HandoffRequest",
+    "HandoffResult",
     "PhaseTransition",
     "RoutingConditions",
     "RoutingRule",
     "get_conversation_state",
     "set_conversation_state",
+    "setup_handoff",
     # Models - Data
     "AudioContent",
     "ChannelBinding",

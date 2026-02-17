@@ -151,6 +151,12 @@ class ConversationRouter:
         """
 
         async def conversation_router(event: RoomEvent, context: RoomContext) -> HookResult:
+            # Set room_id for handoff tool handler (ContextVar inherited by
+            # asyncio tasks spawned during broadcast).
+            from roomkit.orchestration.handoff import _room_id_var
+
+            _room_id_var.set(event.room_id)
+
             state = get_conversation_state(context.room)
             selected = self.select_agent(event, context, state)
 
