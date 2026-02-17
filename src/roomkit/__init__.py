@@ -18,7 +18,14 @@ from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.channels.realtime_voice import ToolHandler as ToolHandler
 from roomkit.channels.transport import TransportChannel
 from roomkit.channels.voice import VoiceChannel
-from roomkit.channels.websocket import WebSocketChannel
+from roomkit.channels.websocket import (
+    StreamChunk,
+    StreamEnd,
+    StreamMessage,
+    StreamSendFn,
+    StreamStart,
+    WebSocketChannel,
+)
 from roomkit.core.framework import (
     ChannelNotFoundError,
     ChannelNotRegisteredError,
@@ -321,6 +328,12 @@ __all__ = [
     "RealtimeVoiceChannel",
     "VoiceChannel",
     "WebSocketChannel",
+    # WebSocket Streaming
+    "StreamChunk",
+    "StreamEnd",
+    "StreamMessage",
+    "StreamSendFn",
+    "StreamStart",
     "MessengerChannel",
     "TelegramChannel",
     "TeamsChannel",

@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 from roomkit.channels.base import Channel
 from roomkit.channels.voice import VoiceChannel
-from roomkit.channels.websocket import SendFn, WebSocketChannel
+from roomkit.channels.websocket import SendFn, StreamSendFn, WebSocketChannel
 from roomkit.core._channel_ops import ChannelOpsMixin
 from roomkit.core._helpers import FrameworkEventHandler, HelpersMixin, IdentityHookFn
 from roomkit.core._inbound import InboundMixin
@@ -556,7 +556,12 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
     # -- WebSocket lifecycle --
 
     async def connect_websocket(
-        self, channel_id: str, connection_id: str, send_fn: SendFn
+        self,
+        channel_id: str,
+        connection_id: str,
+        send_fn: SendFn,
+        *,
+        stream_send_fn: StreamSendFn | None = None,
     ) -> None:
         """Register a WebSocket connection and emit framework event."""
         channel = self._channels.get(channel_id)
@@ -564,7 +569,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             raise ChannelNotRegisteredError(
                 f"Channel {channel_id} is not a registered WebSocket channel"
             )
-        channel.register_connection(connection_id, send_fn)
+        channel.register_connection(connection_id, send_fn, stream_send_fn=stream_send_fn)
         await self._emit_framework_event(
             "channel_connected",
             channel_id=channel_id,
