@@ -213,6 +213,20 @@ class EventRouter:
                         transcoded_event, binding.capabilities.max_length
                     )
 
+                # Orchestration routing: skip non-targeted intelligence channels
+                if binding.category == ChannelCategory.INTELLIGENCE:
+                    routed_to = (transcoded_event.metadata or {}).get("_routed_to")
+                    if routed_to is not None:
+                        always_process = (transcoded_event.metadata or {}).get(
+                            "_always_process", []
+                        )
+                        if (
+                            binding.channel_id != routed_to
+                            and binding.channel_id not in always_process
+                        ):
+                            target_results.append(tr)
+                            return
+
                 # Step 1: on_event — all channels react
                 output = await channel.on_event(transcoded_event, binding, context)
                 tr.output = output

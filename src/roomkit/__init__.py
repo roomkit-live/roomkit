@@ -101,6 +101,11 @@ from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.task import Observation, Task
 from roomkit.models.trace import ProtocolTrace
+from roomkit.orchestration.router import (
+    ConversationRouter,
+    RoutingConditions,
+    RoutingRule,
+)
 from roomkit.orchestration.state import (
     ConversationPhase,
     ConversationState,
@@ -369,8 +374,11 @@ __all__ = [
     "TaskStatus",
     # Orchestration
     "ConversationPhase",
+    "ConversationRouter",
     "ConversationState",
     "PhaseTransition",
+    "RoutingConditions",
+    "RoutingRule",
     "get_conversation_state",
     "set_conversation_state",
     # Models - Data

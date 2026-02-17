@@ -1,9 +1,14 @@
 """Multi-agent conversation orchestration for RoomKit.
 
-Phase 1 — ConversationState (foundation).
-Router, Handoff, and Pipeline will be added in subsequent phases.
+Provides ConversationState, ConversationRouter, and supporting models
+for multi-agent routing, handoff, and pipeline workflows.
 """
 
+from roomkit.orchestration.router import (
+    ConversationRouter,
+    RoutingConditions,
+    RoutingRule,
+)
 from roomkit.orchestration.state import (
     ConversationPhase,
     ConversationState,
@@ -13,10 +18,14 @@ from roomkit.orchestration.state import (
 )
 
 __all__ = [
-    # State (Phase 1)
+    # State
     "ConversationPhase",
     "ConversationState",
     "PhaseTransition",
     "get_conversation_state",
     "set_conversation_state",
+    # Router
+    "ConversationRouter",
+    "RoutingConditions",
+    "RoutingRule",
 ]
