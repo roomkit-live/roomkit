@@ -122,6 +122,34 @@ class AIResponse(BaseModel):
     tool_calls: list[AIToolCall] = Field(default_factory=list)
 
 
+class StreamTextDelta(BaseModel):
+    """A text delta from a streaming AI response."""
+
+    type: Literal["text_delta"] = "text_delta"
+    text: str
+
+
+class StreamToolCall(BaseModel):
+    """A complete tool call extracted from a streaming AI response."""
+
+    type: Literal["tool_call"] = "tool_call"
+    id: str
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class StreamDone(BaseModel):
+    """Signals the end of a streaming AI response."""
+
+    type: Literal["done"] = "done"
+    finish_reason: str | None = None
+    usage: dict[str, int] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+StreamEvent = StreamTextDelta | StreamToolCall | StreamDone
+
+
 class AIProvider(ABC):
     """AI model provider for generating responses."""
 
@@ -138,6 +166,11 @@ class AIProvider(ABC):
     @property
     def supports_streaming(self) -> bool:
         """Whether this provider supports streaming token generation."""
+        return False
+
+    @property
+    def supports_structured_streaming(self) -> bool:
+        """Whether this provider supports structured streaming with tool calls."""
         return False
 
     @property
@@ -164,6 +197,23 @@ class AIProvider(ABC):
         """Yield text deltas as they arrive. Override for streaming providers."""
         raise NotImplementedError(f"{self.name} does not support streaming generation")
         yield  # pragma: no cover
+
+    async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        """Yield structured events (text deltas, tool calls, done).
+
+        Default implementation wraps ``generate()`` so every provider works
+        without changes.  Override for true streaming support.
+        """
+        response = await self.generate(context)
+        if response.content:
+            yield StreamTextDelta(text=response.content)
+        for tc in response.tool_calls:
+            yield StreamToolCall(id=tc.id, name=tc.name, arguments=tc.arguments)
+        yield StreamDone(
+            finish_reason=response.finish_reason,
+            usage=response.usage,
+            metadata=response.metadata,
+        )
 
     async def close(self) -> None:  # noqa: B027
         """Release resources. Override in subclasses that hold connections."""

@@ -496,19 +496,34 @@ class TestUserToolHandlerDelegation:
 
 
 class TestStreamingGuard:
-    """Skills disable streaming to allow tool loop."""
+    """Skills with streaming provider use the streaming tool loop."""
 
-    async def test_no_streaming_with_skills(self, tmp_path: Path) -> None:
+    async def test_streaming_with_skills_uses_streaming_tool_loop(self, tmp_path: Path) -> None:
         _make_skill_dir(tmp_path, "stream-test")
         registry = SkillRegistry()
         registry.discover(tmp_path)
 
-        provider = MockAIProvider(responses=["ok"])
-        # MockAIProvider.supports_streaming is False by default,
-        # but we verify the logic path via the tool presence check
+        provider = MockAIProvider(responses=["ok"], streaming=True)
         ch = AIChannel("ai1", provider=provider, skills=registry)
         output = await ch.on_event(make_event(body="go", channel_id="sms1"), _binding(), _ctx())
-        # Should have used _generate_response (not streaming)
+        # Streaming provider with tools → streaming tool loop → response_stream
+        assert output.responded is True
+        assert output.response_stream is not None
+
+        # Consume the stream to get the text
+        chunks = [chunk async for chunk in output.response_stream]
+        assert "".join(chunks) == "ok"
+
+    async def test_non_streaming_provider_with_skills_uses_generate(self, tmp_path: Path) -> None:
+        _make_skill_dir(tmp_path, "no-stream")
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+
+        provider = MockAIProvider(responses=["ok"])
+        # MockAIProvider.supports_streaming is False by default
+        ch = AIChannel("ai1", provider=provider, skills=registry)
+        output = await ch.on_event(make_event(body="go", channel_id="sms1"), _binding(), _ctx())
+        # Non-streaming provider → _generate_response path
         assert output.responded is True
         assert output.response_stream is None
 

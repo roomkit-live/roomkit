@@ -285,8 +285,8 @@ class TestAIChannelStreamingResponse:
             tokens.append(delta)
         assert tokens == ["hello ", "world"]
 
-    async def test_falls_back_when_tools_configured(self) -> None:
-        """AIChannel falls back to non-streaming when tools are in binding metadata."""
+    async def test_streams_with_tools_via_streaming_tool_loop(self) -> None:
+        """AIChannel uses streaming tool loop when tools are configured."""
         ai = _StreamingAIProvider(["hello"])
         channel = AIChannel("ai-1", provider=ai, system_prompt="Test")
 
@@ -309,8 +309,10 @@ class TestAIChannelStreamingResponse:
 
         output = await channel.on_event(event, binding, context)
         assert output.responded is True
-        assert output.response_stream is None
-        assert len(output.response_events) == 1
+        # Streaming provider with tools now uses streaming tool loop
+        assert output.response_stream is not None
+        chunks = [chunk async for chunk in output.response_stream]
+        assert "".join(chunks) == "hello"
 
     async def test_falls_back_when_provider_not_streaming(self) -> None:
         """AIChannel uses generate() when provider doesn't support streaming."""

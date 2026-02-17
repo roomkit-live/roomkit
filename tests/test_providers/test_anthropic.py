@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from roomkit.providers.ai.base import AIContext, AIMessage, AITool
+from roomkit.providers.ai.base import AIContext, AIMessage, AITool, StreamDone, StreamTextDelta
 from roomkit.providers.anthropic.config import AnthropicConfig
 
 
@@ -41,7 +41,7 @@ def _mock_response(
     output_tokens: int = 25,
     tool_use: list[dict[str, Any]] | None = None,
 ) -> SimpleNamespace:
-    """Build a fake Anthropic message response."""
+    """Build a fake Anthropic final message response."""
     content = [SimpleNamespace(type="text", text=text)]
     if tool_use:
         for tu in tool_use:
@@ -64,6 +64,70 @@ def _mock_response(
     )
 
 
+class _FakeStream:
+    """Async context manager that mimics the Anthropic messages.stream()."""
+
+    def __init__(
+        self,
+        text_chunks: list[str],
+        final_message: SimpleNamespace,
+    ) -> None:
+        self._text_chunks = text_chunks
+        self._final_message = final_message
+
+    async def __aenter__(self) -> _FakeStream:
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        pass
+
+    @property
+    def text_stream(self) -> _FakeTextStream:
+        return _FakeTextStream(self._text_chunks)
+
+    async def get_final_message(self) -> SimpleNamespace:
+        return self._final_message
+
+
+class _FakeTextStream:
+    """Async iterator over text chunks."""
+
+    def __init__(self, chunks: list[str]) -> None:
+        self._chunks = chunks
+
+    def __aiter__(self) -> _FakeTextStream:
+        self._iter = iter(self._chunks)
+        return self
+
+    async def __anext__(self) -> str:
+        try:
+            return next(self._iter)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+
+def _mock_stream(
+    text: str = "Hello!",
+    stop_reason: str = "end_turn",
+    model: str = "claude-sonnet-4-20250514",
+    input_tokens: int = 10,
+    output_tokens: int = 25,
+    tool_use: list[dict[str, Any]] | None = None,
+) -> _FakeStream:
+    """Build a fake stream that yields text and returns a final message."""
+    final = _mock_response(
+        text=text,
+        stop_reason=stop_reason,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        tool_use=tool_use,
+    )
+    # Split text into character-level chunks for realistic streaming
+    text_chunks = list(text) if text else []
+    return _FakeStream(text_chunks=text_chunks, final_message=final)
+
+
 def _context(**overrides: Any) -> AIContext:
     defaults: dict[str, Any] = {
         "messages": [AIMessage(role="user", content="Hi")],
@@ -80,8 +144,8 @@ class TestAnthropicAIProvider:
 
             provider = AnthropicAIProvider(_config())
             provider._client = MagicMock()
-            provider._client.messages.create = AsyncMock(
-                return_value=_mock_response(text="Hi there!")
+            provider._client.messages.stream = MagicMock(
+                return_value=_mock_stream(text="Hi there!")
             )
 
             result = await provider.generate(_context())
@@ -97,12 +161,12 @@ class TestAnthropicAIProvider:
 
             provider = AnthropicAIProvider(_config())
             provider._client = MagicMock()
-            provider._client.messages.create = AsyncMock(return_value=_mock_response())
+            provider._client.messages.stream = MagicMock(return_value=_mock_stream())
 
             ctx = _context(system_prompt="You are helpful.")
             await provider.generate(ctx)
 
-            call_kwargs = provider._client.messages.create.call_args[1]
+            call_kwargs = provider._client.messages.stream.call_args[1]
             assert call_kwargs["system"] == "You are helpful."
 
     @pytest.mark.asyncio
@@ -112,8 +176,8 @@ class TestAnthropicAIProvider:
 
             provider = AnthropicAIProvider(_config())
             provider._client = MagicMock()
-            provider._client.messages.create = AsyncMock(
-                return_value=_mock_response(input_tokens=42, output_tokens=7)
+            provider._client.messages.stream = MagicMock(
+                return_value=_mock_stream(input_tokens=42, output_tokens=7)
             )
 
             result = await provider.generate(_context())
@@ -127,9 +191,15 @@ class TestAnthropicAIProvider:
 
             provider = AnthropicAIProvider(_config())
             provider._client = MagicMock()
-            provider._client.messages.create = AsyncMock(
-                side_effect=Exception("API rate limit exceeded")
-            )
+
+            class _ErrorStream:
+                async def __aenter__(self) -> _ErrorStream:
+                    raise RuntimeError("API rate limit exceeded")
+
+                async def __aexit__(self, *args: Any) -> None:
+                    pass
+
+            provider._client.messages.stream = MagicMock(return_value=_ErrorStream())
 
             with pytest.raises(Exception, match="API rate limit"):
                 await provider.generate(_context())
@@ -150,7 +220,15 @@ class TestAnthropicAIProvider:
             provider._client = MagicMock()
 
             exc = _FakeAPIStatusError("rate limited", status_code=429)
-            provider._client.messages.create = AsyncMock(side_effect=exc)
+
+            class _ErrorStream:
+                async def __aenter__(self) -> _ErrorStream:
+                    raise exc
+
+                async def __aexit__(self, *args: Any) -> None:
+                    pass
+
+            provider._client.messages.stream = MagicMock(return_value=_ErrorStream())
 
             with pytest.raises(ProviderError) as exc_info:
                 await provider.generate(_context())
@@ -169,7 +247,15 @@ class TestAnthropicAIProvider:
             provider._client = MagicMock()
 
             exc = _FakeAPIStatusError("bad request", status_code=400)
-            provider._client.messages.create = AsyncMock(side_effect=exc)
+
+            class _ErrorStream:
+                async def __aenter__(self) -> _ErrorStream:
+                    raise exc
+
+                async def __aexit__(self, *args: Any) -> None:
+                    pass
+
+            provider._client.messages.stream = MagicMock(return_value=_ErrorStream())
 
             with pytest.raises(ProviderError) as exc_info:
                 await provider.generate(_context())
@@ -185,9 +271,15 @@ class TestAnthropicAIProvider:
 
             provider = AnthropicAIProvider(_config())
             provider._client = MagicMock()
-            provider._client.messages.create = AsyncMock(
-                side_effect=RuntimeError("connection lost")
-            )
+
+            class _ErrorStream:
+                async def __aenter__(self) -> _ErrorStream:
+                    raise RuntimeError("connection lost")
+
+                async def __aexit__(self, *args: Any) -> None:
+                    pass
+
+            provider._client.messages.stream = MagicMock(return_value=_ErrorStream())
 
             with pytest.raises(ProviderError) as exc_info:
                 await provider.generate(_context())
@@ -214,7 +306,7 @@ class TestAnthropicAIProvider:
 
             provider = AnthropicAIProvider(_config())
             provider._client = MagicMock()
-            provider._client.messages.create = AsyncMock(return_value=_mock_response())
+            provider._client.messages.stream = MagicMock(return_value=_mock_stream())
 
             ctx = _context(
                 tools=[
@@ -227,7 +319,7 @@ class TestAnthropicAIProvider:
             )
             await provider.generate(ctx)
 
-            call_kwargs = provider._client.messages.create.call_args[1]
+            call_kwargs = provider._client.messages.stream.call_args[1]
             assert "tools" in call_kwargs
             assert len(call_kwargs["tools"]) == 1
             assert call_kwargs["tools"][0]["name"] == "search"
@@ -240,8 +332,8 @@ class TestAnthropicAIProvider:
 
             provider = AnthropicAIProvider(_config())
             provider._client = MagicMock()
-            provider._client.messages.create = AsyncMock(
-                return_value=_mock_response(
+            provider._client.messages.stream = MagicMock(
+                return_value=_mock_stream(
                     text="",
                     tool_use=[{"id": "call_123", "name": "search", "input": {"query": "cats"}}],
                 )
@@ -253,3 +345,65 @@ class TestAnthropicAIProvider:
             assert result.tool_calls[0].id == "call_123"
             assert result.tool_calls[0].name == "search"
             assert result.tool_calls[0].arguments == {"query": "cats"}
+
+    @pytest.mark.asyncio
+    async def test_structured_stream_yields_events(self) -> None:
+        """generate_structured_stream() yields text deltas, tool calls, and done."""
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.messages.stream = MagicMock(
+                return_value=_mock_stream(
+                    text="Hi",
+                    tool_use=[{"id": "tc1", "name": "get_weather", "input": {"city": "NYC"}}],
+                )
+            )
+
+            events = []
+            async for ev in provider.generate_structured_stream(_context()):
+                events.append(ev)
+
+            # Text deltas (one per char for "Hi")
+            text_events = [e for e in events if isinstance(e, StreamTextDelta)]
+            assert len(text_events) == 2
+            assert "".join(e.text for e in text_events) == "Hi"
+
+            # Tool call
+            from roomkit.providers.ai.base import StreamToolCall
+
+            tool_events = [e for e in events if isinstance(e, StreamToolCall)]
+            assert len(tool_events) == 1
+            assert tool_events[0].name == "get_weather"
+
+            # Done
+            done_events = [e for e in events if isinstance(e, StreamDone)]
+            assert len(done_events) == 1
+            assert done_events[0].finish_reason == "end_turn"
+
+    @pytest.mark.asyncio
+    async def test_generate_stream_yields_text(self) -> None:
+        """generate_stream() yields only text deltas."""
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.messages.stream = MagicMock(
+                return_value=_mock_stream(text="Hello world")
+            )
+
+            chunks = []
+            async for text in provider.generate_stream(_context()):
+                chunks.append(text)
+
+            assert "".join(chunks) == "Hello world"
+
+    def test_supports_structured_streaming(self) -> None:
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            assert provider.supports_structured_streaming is True
+            assert provider.supports_streaming is True

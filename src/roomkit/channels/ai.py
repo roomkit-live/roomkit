@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels.base import Channel
@@ -41,6 +41,8 @@ from roomkit.providers.ai.base import (
     AIToolCallPart,
     AIToolResultPart,
     ProviderError,
+    StreamTextDelta,
+    StreamToolCall,
 )
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.noop import NoopTelemetryProvider
@@ -141,15 +143,21 @@ class AIChannel(Channel):
         """React to an event by generating an AI response.
 
         Skips events from this channel to prevent self-loops.
-        When the provider supports streaming and no tools are configured,
-        returns a streaming response for the framework to pipe to channels.
+        When the provider supports streaming or structured streaming:
+        - With tools: uses the streaming tool loop that executes tool calls
+          between generation rounds while yielding text deltas progressively.
+        - Without tools: returns a plain streaming response.
+        Otherwise falls back to the non-streaming generate path.
         """
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
 
         raw_tools = binding.metadata.get("tools", [])
         has_tools = bool(raw_tools) or (self._skills is not None and self._skills.skill_count > 0)
-        if self._provider.supports_streaming and not has_tools:
+
+        if self._provider.supports_streaming or self._provider.supports_structured_streaming:
+            if has_tools:
+                return await self._start_streaming_tool_response(event, binding, context)
             return await self._start_streaming_response(event, binding, context)
 
         return await self._generate_response(event, binding, context)
@@ -169,6 +177,82 @@ class AIChannel(Channel):
             responded=True,
             response_stream=self._provider.generate_stream(ai_context),
         )
+
+    async def _start_streaming_tool_response(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        """Return a streaming response that handles tool calls between rounds."""
+        ai_context = await self._build_context(event, binding, context)
+        return ChannelOutput(
+            responded=True,
+            response_stream=self._run_streaming_tool_loop(ai_context),
+        )
+
+    async def _run_streaming_tool_loop(self, context: AIContext) -> AsyncIterator[str]:
+        """Stream text deltas, executing tool calls between generation rounds."""
+        telemetry = self._telemetry_provider
+
+        for _round_idx in range(self._max_tool_rounds + 1):
+            text_parts: list[str] = []
+            tool_calls: list[StreamToolCall] = []
+
+            async for event in self._provider.generate_structured_stream(context):
+                if isinstance(event, StreamTextDelta):
+                    text_parts.append(event.text)
+                    yield event.text
+                elif isinstance(event, StreamToolCall):
+                    tool_calls.append(event)
+
+            if not tool_calls or self._tool_handler is None:
+                return
+
+            # Don't execute tools on the final iteration — no generation follows
+            if _round_idx >= self._max_tool_rounds:
+                logger.warning(
+                    "Streaming tool loop reached max_tool_rounds=%d",
+                    self._max_tool_rounds,
+                )
+                return
+
+            logger.info(
+                "Streaming tool round %d: %d call(s)",
+                _round_idx + 1,
+                len(tool_calls),
+            )
+
+            # Append assistant message with text + tool calls
+            parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
+            accumulated_text = "".join(text_parts)
+            if accumulated_text:
+                parts.append(AITextPart(text=accumulated_text))
+            for tc in tool_calls:
+                parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
+            context.messages.append(AIMessage(role="assistant", content=parts))
+
+            # Execute each tool
+            result_parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
+            for tc in tool_calls:
+                logger.info("Executing tool: %s(%s)", tc.name, tc.id)
+                tool_span_id = telemetry.start_span(
+                    SpanKind.LLM_TOOL_CALL,
+                    f"tool.{tc.name}",
+                    attributes={"tool.name": tc.name, "tool.id": tc.id},
+                )
+                try:
+                    result = await self._tool_handler(tc.name, tc.arguments)
+                    telemetry.end_span(tool_span_id)
+                except Exception as exc:
+                    telemetry.end_span(tool_span_id, status="error", error_message=str(exc))
+                    raise
+                result_parts.append(
+                    AIToolResultPart(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        result=result,
+                    )
+                )
+
+            context.messages.append(AIMessage(role="tool", content=result_parts))
 
     @property
     def _telemetry_provider(self) -> NoopTelemetryProvider:

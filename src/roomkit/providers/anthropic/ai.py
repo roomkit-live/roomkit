@@ -16,6 +16,10 @@ from roomkit.providers.ai.base import (
     AIToolCallPart,
     AIToolResultPart,
     ProviderError,
+    StreamDone,
+    StreamEvent,
+    StreamTextDelta,
+    StreamToolCall,
 )
 from roomkit.providers.anthropic.config import AnthropicConfig
 
@@ -50,6 +54,10 @@ class AnthropicAIProvider(AIProvider):
 
     @property
     def supports_streaming(self) -> bool:
+        return True
+
+    @property
+    def supports_structured_streaming(self) -> bool:
         return True
 
     @property
@@ -112,7 +120,8 @@ class AnthropicAIProvider(AIProvider):
             result.append({"role": role, "content": self._format_content(m.content)})
         return result
 
-    async def generate(self, context: AIContext) -> AIResponse:
+    def _build_kwargs(self, context: AIContext) -> dict[str, Any]:
+        """Build kwargs dict shared by generate and streaming paths."""
         messages = self._build_messages(context.messages)
         kwargs: dict[str, Any] = {
             "model": self._config.model,
@@ -123,8 +132,6 @@ class AnthropicAIProvider(AIProvider):
             kwargs["system"] = context.system_prompt
         if context.temperature is not None:
             kwargs["temperature"] = context.temperature
-
-        # Add tools if provided
         if context.tools:
             kwargs["tools"] = [
                 {
@@ -134,10 +141,54 @@ class AnthropicAIProvider(AIProvider):
                 }
                 for t in context.tools
             ]
+        return kwargs
 
+    async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        """Yield structured events from the Anthropic Messages streaming API."""
+        kwargs = self._build_kwargs(context)
         t0 = time.monotonic()
+        first_token = True
+
         try:
-            response = await self._client.messages.create(**kwargs)
+            async with self._client.messages.stream(**kwargs) as stream:
+                async for text in stream.text_stream:
+                    if first_token:
+                        ttfb_ms = (time.monotonic() - t0) * 1000
+                        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+                        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+                        telemetry.record_metric(
+                            "roomkit.llm.ttfb_ms",
+                            ttfb_ms,
+                            unit="ms",
+                            attributes={
+                                "provider": "anthropic",
+                                "model": self._config.model,
+                            },
+                        )
+                        first_token = False
+                    yield StreamTextDelta(text=text)
+
+                # Extract final message for tool calls and usage
+                final = await stream.get_final_message()
+
+            # Yield tool calls from the final message
+            for block in final.content:
+                if block.type == "tool_use":
+                    yield StreamToolCall(
+                        id=block.id,
+                        name=block.name,
+                        arguments=block.input,
+                    )
+
+            yield StreamDone(
+                finish_reason=final.stop_reason,
+                usage={
+                    "input_tokens": final.usage.input_tokens,
+                    "output_tokens": final.usage.output_tokens,
+                },
+                metadata={"model": final.model},
+            )
         except self._api_status_error as exc:
             retryable = exc.status_code in (429, 500, 502, 503, 529)
             raise ProviderError(
@@ -154,72 +205,32 @@ class AnthropicAIProvider(AIProvider):
                 status_code=None,
             ) from exc
 
-        ttfb_ms = (time.monotonic() - t0) * 1000
-        from roomkit.telemetry.noop import NoopTelemetryProvider
-
-        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
-        telemetry.record_metric(
-            "roomkit.llm.ttfb_ms",
-            ttfb_ms,
-            unit="ms",
-            attributes={"provider": "anthropic", "model": self._config.model},
-        )
-
-        # Extract text content and tool calls from response
-        text_content = ""
+    async def generate(self, context: AIContext) -> AIResponse:
+        """Generate by consuming the structured stream."""
+        text_parts: list[str] = []
         tool_calls: list[AIToolCall] = []
-        for block in response.content:
-            if block.type == "text":
-                text_content = block.text
-            elif block.type == "tool_use":
+        done_event: StreamDone | None = None
+
+        async for event in self.generate_structured_stream(context):
+            if isinstance(event, StreamTextDelta):
+                text_parts.append(event.text)
+            elif isinstance(event, StreamToolCall):
                 tool_calls.append(
-                    AIToolCall(
-                        id=block.id,
-                        name=block.name,
-                        arguments=block.input,
-                    )
+                    AIToolCall(id=event.id, name=event.name, arguments=event.arguments)
                 )
+            elif isinstance(event, StreamDone):
+                done_event = event
 
         return AIResponse(
-            content=text_content,
-            finish_reason=response.stop_reason,
-            usage={
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens,
-            },
-            metadata={"model": response.model},
+            content="".join(text_parts),
+            finish_reason=done_event.finish_reason if done_event else None,
+            usage=done_event.usage if done_event else {},
+            metadata=done_event.metadata if done_event else {},
             tool_calls=tool_calls,
         )
 
     async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
         """Yield text deltas as they arrive from the Anthropic Messages API."""
-        messages = self._build_messages(context.messages)
-        kwargs: dict[str, Any] = {
-            "model": self._config.model,
-            "max_tokens": context.max_tokens or self._config.max_tokens,
-            "messages": messages,
-        }
-        if context.system_prompt:
-            kwargs["system"] = context.system_prompt
-        if context.temperature is not None:
-            kwargs["temperature"] = context.temperature
-
-        try:
-            async with self._client.messages.stream(**kwargs) as stream:
-                async for text in stream.text_stream:
-                    yield text
-        except self._api_status_error as exc:
-            retryable = exc.status_code in (429, 500, 502, 503, 529)
-            raise ProviderError(
-                str(exc),
-                retryable=retryable,
-                provider="anthropic",
-                status_code=exc.status_code,
-            ) from exc
-        except Exception as exc:
-            raise ProviderError(
-                str(exc),
-                retryable=False,
-                provider="anthropic",
-                status_code=None,
-            ) from exc
+        async for event in self.generate_structured_stream(context):
+            if isinstance(event, StreamTextDelta):
+                yield event.text
