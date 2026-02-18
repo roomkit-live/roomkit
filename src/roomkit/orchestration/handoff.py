@@ -196,6 +196,10 @@ class HandoffHandler:
         self._known_agents = known_agents or set()
         self._on_handoff_complete = on_handoff_complete
         self._event_channel_id = event_channel_id
+        # Populated by pipeline.install() from Agent fields
+        self._greeting_map: dict[str, str] = {}
+        self._agents: dict[str, Any] = {}  # agent_id -> Agent
+        self._agent_configs: dict[str, dict[str, Any]] = {}  # for realtime reconfigure
 
     async def handle(
         self,
@@ -419,6 +423,140 @@ class HandoffHandler:
         )
         context = RoomContext(room=room, bindings=bindings)
         await self._kit._hook_engine.run_async_hooks(room_id, trigger, event, context)
+
+    async def send_greeting(
+        self,
+        room_id: str,
+        *,
+        channel_id: str | None = None,
+    ) -> None:
+        """Send the initial agent greeting for a room.
+
+        Looks up the current active agent from conversation state and
+        sends its ``greeting``.  For :class:`RealtimeVoiceChannel`,
+        injects text directly into the provider session.  For traditional
+        voice, sends a synthetic inbound message to trigger an AI response.
+
+        Call this after setting the initial conversation state::
+
+            room = set_conversation_state(room, ConversationState(...))
+            await kit.store.update_room(room)
+            await handler.send_greeting(room_id, channel_id="voice")
+
+        Does nothing when the active agent has no greeting configured.
+        """
+        room = await self._kit.get_room(room_id)
+        state = get_conversation_state(room)
+        agent_id = state.active_agent_id
+        if not agent_id:
+            return
+
+        greeting = self._greeting_map.get(agent_id)
+        if not greeting:
+            return
+
+        # Prepend language instruction if set
+        lang = self._get_room_language(room, agent_id)
+        if lang:
+            greeting = f"[Respond in {lang}] {greeting}"
+
+        ch_id = channel_id or self._event_channel_id
+        if not ch_id:
+            return
+
+        channel = self._kit._channels.get(ch_id)
+
+        # RealtimeVoiceChannel: inject text directly into provider session
+        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+        if isinstance(channel, RealtimeVoiceChannel):
+            for session in channel._get_room_sessions(room_id):
+                await channel._provider.inject_text(session, greeting, role="user")
+            return
+
+        # Traditional voice: send synthetic inbound message
+        from roomkit.models.delivery import InboundMessage
+
+        await self._kit.process_inbound(
+            InboundMessage(
+                channel_id=ch_id,
+                sender_id="system",
+                content=TextContent(body=greeting),
+            ),
+            room_id=room_id,
+        )
+
+    async def set_language(
+        self,
+        room_id: str,
+        language: str,
+        *,
+        channel_id: str | None = None,
+    ) -> None:
+        """Change the conversation language for a room.
+
+        Stores the language in conversation state and, for realtime
+        sessions, reconfigures the active agent's session with an
+        updated system prompt that includes the language instruction.
+
+        Args:
+            room_id: The room to update.
+            language: Language name or code (e.g. ``"French"``, ``"fr"``).
+            channel_id: Voice channel ID. Falls back to the event channel
+                configured by ``install()``.
+        """
+        # 1. Persist language in conversation state
+        async with self._kit._lock_manager.locked(room_id):
+            room = await self._kit.get_room(room_id)
+            state = get_conversation_state(room)
+            new_state = state.model_copy(
+                update={"context": {**state.context, "language": language}}
+            )
+            room = set_conversation_state(room, new_state)
+            await self._kit.store.update_room(room)
+
+        agent_id = state.active_agent_id
+        if not agent_id:
+            return
+
+        # 2. For realtime: reconfigure session with language in prompt
+        ch_id = channel_id or self._event_channel_id
+        if not ch_id:
+            return
+
+        channel = self._kit._channels.get(ch_id)
+
+        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+        if not isinstance(channel, RealtimeVoiceChannel):
+            return
+
+        agent = self._agents.get(agent_id)
+        if agent is None:
+            return
+
+        # Rebuild system prompt with new language
+        prompt = getattr(agent, "_system_prompt", None) or ""
+        identity = agent._build_identity_block(language=language)
+        if identity:
+            prompt = prompt + identity
+
+        for session in channel._get_room_sessions(room_id):
+            await channel.reconfigure_session(session, system_prompt=prompt)
+
+        logger.info("Language set to %r for room %s (agent=%s)", language, room_id, agent_id)
+
+    def _get_room_language(self, room: Room, agent_id: str | None) -> str | None:
+        """Get effective language: room override > agent default."""
+        state = get_conversation_state(room)
+        lang = state.context.get("language") if state.context else None
+        if lang:
+            return lang
+        if agent_id:
+            agent = self._agents.get(agent_id)
+            if agent is not None:
+                return getattr(agent, "language", None)
+        return None
 
     def _resolve_alias(self, target: str) -> str:
         return self._aliases.get(target, target)

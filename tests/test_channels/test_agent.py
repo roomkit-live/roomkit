@@ -42,6 +42,8 @@ class TestAgentBasics:
         assert agent.description is None
         assert agent.scope is None
         assert agent.voice is None
+        assert agent.greeting is None
+        assert agent.language is None
 
     def test_fields_stored(self):
         agent = _make_agent(
@@ -49,11 +51,41 @@ class TestAgentBasics:
             description="Routes callers",
             scope="Financial only",
             voice="voice-id-123",
+            greeting="Welcome! How can I help?",
         )
         assert agent.role == "Triage"
         assert agent.description == "Routes callers"
         assert agent.scope == "Financial only"
         assert agent.voice == "voice-id-123"
+        assert agent.greeting == "Welcome! How can I help?"
+
+    def test_greeting_not_in_identity_block(self):
+        agent = _make_agent(greeting="Hello there!")
+        block = agent._build_identity_block()
+        assert block is None  # greeting is not an identity field
+
+
+class TestLanguage:
+    def test_language_in_identity_block(self):
+        agent = _make_agent(role="Triage", language="French")
+        block = agent._build_identity_block()
+        assert "Language: Always respond in French" in block
+
+    def test_language_only_identity_block(self):
+        agent = _make_agent(language="Spanish")
+        block = agent._build_identity_block()
+        assert block is not None
+        assert "Language: Always respond in Spanish" in block
+
+    def test_language_override_in_identity_block(self):
+        agent = _make_agent(role="Triage", language="English")
+        block = agent._build_identity_block(language="French")
+        assert "Language: Always respond in French" in block
+        assert "English" not in block
+
+    def test_language_stored(self):
+        agent = _make_agent(language="fr")
+        assert agent.language == "fr"
 
 
 class TestIdentityBlock:

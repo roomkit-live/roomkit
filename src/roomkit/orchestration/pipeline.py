@@ -176,6 +176,12 @@ class ConversationPipeline:
             event_channel_id=(voice_channel_id if is_realtime else None),
         )
 
+        # Populate agent metadata from Agent fields
+        handler._greeting_map = {
+            a.channel_id: a.greeting for a in agents if getattr(a, "greeting", None)
+        }
+        handler._agents = {a.channel_id: a for a in agents}
+
         if is_realtime:
             self._wire_realtime(
                 kit,
@@ -335,23 +341,33 @@ class ConversationPipeline:
             rtv._voice = initial["voice"]
             rtv._tools = initial["tools"]
 
-        # Per-agent greeting messages (identity-aware to override session history)
+        # Per-agent greeting builder (identity + language aware)
         default_greet = (
             "Handoff complete. You are now the active agent. "
             "Please introduce yourself briefly to the caller."
         )
-        agent_greetings: dict[str, str] = {}
-        for agent in agents:
+
+        def _build_greet(agent_id: str, language: str | None = None) -> str:
+            """Build a greeting message for the given agent and language."""
             if greeting_prompt:
-                agent_greetings[agent.channel_id] = greeting_prompt
-            elif agent.role:
-                agent_greetings[agent.channel_id] = (
-                    f"Handoff complete. You are now the {agent.role}. "
-                    f"Your previous identity in this conversation no longer "
-                    f"applies — introduce yourself in your new role."
-                )
+                msg = greeting_prompt
             else:
-                agent_greetings[agent.channel_id] = default_greet
+                target = agent_map.get(agent_id)
+                role = target.role if target else None
+                if role:
+                    msg = (
+                        f"Handoff complete. You are now the {role}. "
+                        f"Your previous identity in this conversation no longer "
+                        f"applies — introduce yourself in your new role."
+                    )
+                else:
+                    msg = default_greet
+            lang = language
+            if not lang and agent_id in agent_map:
+                lang = getattr(agent_map[agent_id], "language", None)
+            if lang:
+                msg = f"[Respond in {lang}] {msg}"
+            return msg
 
         # Install tool handler that intercepts handoff_conversation
         original_handler = rtv._tool_handler
@@ -387,7 +403,10 @@ class ConversationPipeline:
             output = result.model_dump()
             if result.accepted and greet_on_handoff:
                 target = arguments.get("target", "")
-                output["message"] = agent_greetings.get(target, default_greet)
+                # Re-read room for current language
+                room = await kit.get_room(room_id)
+                lang = handler._get_room_language(room, target)
+                output["message"] = _build_greet(target, language=lang)
             return output
 
         rtv._tool_handler = _realtime_tool_handler
@@ -398,10 +417,24 @@ class ConversationPipeline:
             if not new_id or new_id not in agent_configs:
                 return
             config = agent_configs[new_id]
+
+            # Check for per-room language override
+            room = await kit.get_room(room_id)
+            lang = handler._get_room_language(room, new_id)
+
+            # Rebuild prompt with language if needed
+            prompt = config["system_prompt"]
+            if lang:
+                agent = agent_map.get(new_id)
+                if agent is not None:
+                    base = getattr(agent, "_system_prompt", None) or ""
+                    identity = agent._build_identity_block(language=lang)
+                    prompt = (base + identity) if identity else prompt
+
             for session in rtv._get_room_sessions(room_id):
                 await rtv.reconfigure_session(
                     session,
-                    system_prompt=config["system_prompt"],
+                    system_prompt=prompt,
                     voice=config["voice"],
                     tools=config["tools"],
                 )
@@ -409,9 +442,9 @@ class ConversationPipeline:
                 if greet_on_handoff:
                     # Session resumption doesn't preserve pending function-
                     # call state, so the tool result alone won't trigger a
-                    # response.  Inject an identity-aware message to give
+                    # response.  Inject a language-aware message to give
                     # the new agent a turn to speak in its new role.
-                    msg = agent_greetings.get(new_id, default_greet)
+                    msg = _build_greet(new_id, language=lang)
                     await rtv._provider.inject_text(
                         session,
                         msg,

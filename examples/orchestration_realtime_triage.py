@@ -148,8 +148,9 @@ async def main() -> None:
         description="Routes callers to the right financial specialist",
         scope="Financial advisory services only",
         voice=VOICE_TRIAGE,
+        language="French",
+        greeting="A new caller just connected. Greet them warmly and ask how you can help.",
         system_prompt=(
-            "ALWAYS reply in the same language as the caller. "
             "Greet callers warmly and identify their need. "
             "If the caller's request matches financial advisory, use the "
             "handoff_conversation tool to transfer them. "
@@ -167,8 +168,8 @@ async def main() -> None:
         role="Portfolio advisor",
         description="Provides financial and investment advice",
         voice=VOICE_ADVISOR,
+        language="French",
         system_prompt=(
-            "ALWAYS reply in the same language as the caller. "
             "Give concise, conversational financial advice. "
             "If the caller wants to discuss a different topic or needs to "
             "be re-triaged, use the handoff_conversation tool to transfer "
@@ -227,6 +228,9 @@ async def main() -> None:
             ConversationState(phase="intake", active_agent_id="agent-triage"),
         )
         await kit.store.update_room(room)
+
+        # Trigger the triage agent's initial greeting
+        await _handler.send_greeting(actual_room_id, channel_id="voice")
 
         logger.info(
             "Call connected — session=%s room=%s phase=intake agent=triage",

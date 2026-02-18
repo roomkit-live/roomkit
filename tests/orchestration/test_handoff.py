@@ -734,3 +734,155 @@ class TestOnHandoffComplete:
 
         assert result.accepted is False
         callback.assert_not_called()
+
+
+class TestSendGreeting:
+    async def test_send_greeting_realtime(self):
+        """send_greeting injects text into RealtimeVoiceChannel sessions."""
+        room = Room(id="r1")
+        room = set_conversation_state(
+            room, ConversationState(phase="intake", active_agent_id="agent-triage")
+        )
+        kit = _make_mock_kit(room, [])
+
+        # Mock a RealtimeVoiceChannel — use create_autospec=False
+        # so we can set _provider without spec restrictions
+        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+        mock_session = MagicMock()
+        mock_provider = MagicMock()
+        mock_provider.inject_text = AsyncMock()
+        mock_rtv = MagicMock()
+        mock_rtv.__class__ = RealtimeVoiceChannel
+        mock_rtv._get_room_sessions.return_value = [mock_session]
+        mock_rtv._provider = mock_provider
+        kit._channels = {"voice": mock_rtv}
+
+        handler = HandoffHandler(kit=kit, router=MagicMock())
+        handler._greeting_map = {"agent-triage": "Welcome! How can I help?"}
+
+        await handler.send_greeting("r1", channel_id="voice")
+
+        mock_rtv._provider.inject_text.assert_called_once_with(
+            mock_session, "Welcome! How can I help?", role="user"
+        )
+
+    async def test_send_greeting_traditional_voice(self):
+        """send_greeting sends synthetic inbound for non-realtime channels."""
+        room = Room(id="r1")
+        room = set_conversation_state(
+            room, ConversationState(phase="intake", active_agent_id="agent-triage")
+        )
+        kit = _make_mock_kit(room, [])
+        kit._channels = {"voice": MagicMock()}  # not a RealtimeVoiceChannel
+        kit.process_inbound = AsyncMock()
+
+        handler = HandoffHandler(kit=kit, router=MagicMock())
+        handler._greeting_map = {"agent-triage": "Welcome!"}
+
+        await handler.send_greeting("r1", channel_id="voice")
+
+        kit.process_inbound.assert_called_once()
+        msg = kit.process_inbound.call_args[0][0]
+        assert msg.channel_id == "voice"
+        assert msg.content.body == "Welcome!"
+
+    async def test_send_greeting_no_greeting_configured(self):
+        """send_greeting does nothing when agent has no greeting."""
+        room = Room(id="r1")
+        room = set_conversation_state(
+            room, ConversationState(phase="intake", active_agent_id="agent-triage")
+        )
+        kit = _make_mock_kit(room, [])
+        kit._channels = {"voice": MagicMock()}
+        kit.process_inbound = AsyncMock()
+
+        handler = HandoffHandler(kit=kit, router=MagicMock())
+        handler._greeting_map = {}  # no greetings
+
+        await handler.send_greeting("r1", channel_id="voice")
+
+        kit.process_inbound.assert_not_called()
+
+    async def test_send_greeting_no_active_agent(self):
+        """send_greeting does nothing when no agent is active."""
+        room = Room(id="r1")
+        kit = _make_mock_kit(room, [])
+
+        handler = HandoffHandler(kit=kit, router=MagicMock())
+        handler._greeting_map = {"agent-triage": "Hello"}
+
+        await handler.send_greeting("r1", channel_id="voice")
+        # No crash, no calls
+
+    async def test_send_greeting_with_language(self):
+        """send_greeting prepends language instruction when agent has language."""
+        room = Room(id="r1")
+        room = set_conversation_state(
+            room, ConversationState(phase="intake", active_agent_id="agent-triage")
+        )
+        kit = _make_mock_kit(room, [])
+        kit._channels = {"voice": MagicMock()}
+        kit.process_inbound = AsyncMock()
+
+        # Mock agent with language
+        mock_agent = MagicMock()
+        mock_agent.language = "French"
+
+        handler = HandoffHandler(kit=kit, router=MagicMock())
+        handler._greeting_map = {"agent-triage": "Welcome!"}
+        handler._agents = {"agent-triage": mock_agent}
+
+        await handler.send_greeting("r1", channel_id="voice")
+
+        msg = kit.process_inbound.call_args[0][0]
+        assert msg.content.body == "[Respond in French] Welcome!"
+
+
+class TestSetLanguage:
+    async def test_set_language_stores_in_state(self):
+        """set_language persists language in conversation state."""
+        room = Room(id="r1")
+        room = set_conversation_state(
+            room, ConversationState(phase="intake", active_agent_id="agent-triage")
+        )
+        kit = _make_mock_kit(room, [])
+        kit._channels = {}
+
+        handler = HandoffHandler(kit=kit, router=MagicMock())
+
+        await handler.set_language("r1", "French")
+
+        # Verify update_room was called with language in state
+        updated_room = kit.store.update_room.call_args[0][0]
+        state = get_conversation_state(updated_room)
+        assert state.context["language"] == "French"
+
+    async def test_set_language_reconfigures_realtime(self):
+        """set_language reconfigures realtime session with language in prompt."""
+        room = Room(id="r1")
+        room = set_conversation_state(
+            room, ConversationState(phase="intake", active_agent_id="agent-triage")
+        )
+        kit = _make_mock_kit(room, [])
+
+        from roomkit.channels.agent import Agent
+        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+        mock_session = MagicMock()
+        mock_rtv = MagicMock()
+        mock_rtv.__class__ = RealtimeVoiceChannel
+        mock_rtv._get_room_sessions.return_value = [mock_session]
+        mock_rtv.reconfigure_session = AsyncMock()
+        kit._channels = {"voice": mock_rtv}
+
+        agent = Agent("agent-triage", role="Triage", language="English")
+        handler = HandoffHandler(kit=kit, router=MagicMock(), event_channel_id="voice")
+        handler._agents = {"agent-triage": agent}
+
+        await handler.set_language("r1", "French", channel_id="voice")
+
+        mock_rtv.reconfigure_session.assert_called_once()
+        prompt = mock_rtv.reconfigure_session.call_args[1]["system_prompt"]
+        assert "French" in prompt
+        assert "English" not in prompt
