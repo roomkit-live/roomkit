@@ -22,6 +22,7 @@ from roomkit.models.enums import (
     ChannelDirection,
     ChannelMediaType,
     ChannelType,
+    EventType,
     HookTrigger,
 )
 from roomkit.voice.base import VoiceCapability
@@ -139,6 +140,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         barge_in_threshold_ms: int = 200,
         interruption: InterruptionConfig | None = None,
         batch_mode: bool = False,
+        voice_map: dict[str, str] | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._stt = stt
@@ -178,6 +180,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._last_output_level_at: float = 0.0
         # Cached event loop for cross-thread scheduling (e.g. PortAudio callback)
         self._event_loop: asyncio.AbstractEventLoop | None = None
+        # Per-agent voice mapping: channel_id -> TTS voice override
+        self._voice_map: dict[str, str] = voice_map or {}
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -846,6 +850,12 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
     ) -> ChannelOutput:
         from roomkit.models.channel import ChannelOutput as ChannelOutputModel
         from roomkit.models.event import TextContent
+
+        # Skip system events and internal-visibility events — they carry
+        # orchestration metadata (e.g. handoff notifications) that should
+        # never be spoken aloud via TTS.
+        if event.type == EventType.SYSTEM or event.visibility == "internal":
+            return ChannelOutputModel.empty()
 
         if self._streaming and not self._backend:
             return ChannelOutputModel.empty()

@@ -52,6 +52,7 @@ class VoiceTTSMixin:
     _last_tts_ended_at: dict[str, float]
     _last_output_level_at: float
     _debug_frame_count: int
+    _voice_map: dict[str, str]
 
     # -- methods provided by other mixins / main class (TYPE_CHECKING only) --
     if TYPE_CHECKING:
@@ -85,6 +86,10 @@ class VoiceTTSMixin:
             ),
             name=f"output_audio_level:{session.id}",
         )
+
+    def _resolve_voice(self, channel_id: str) -> str | None:
+        """Look up TTS voice override for *channel_id* via voice_map."""
+        return self._voice_map.get(channel_id) if self._voice_map else None
 
     async def _wrap_outbound(
         self, session: VoiceSession, chunks: AsyncIterator[AudioChunk]
@@ -202,6 +207,12 @@ class VoiceTTSMixin:
         if not self._tts or not self._backend:
             return ChannelOutputModel.empty()
 
+        # Defense-in-depth: skip system/internal events (primary guard is in deliver())
+        from roomkit.models.enums import EventType
+
+        if event.type == EventType.SYSTEM or event.visibility == "internal":
+            return ChannelOutputModel.empty()
+
         tts_name = self._tts.name  # capture before async yields (may become None)
         room_id = event.room_id
         target_sessions = self._find_sessions(room_id, binding)
@@ -244,8 +255,9 @@ class VoiceTTSMixin:
                 )
 
             try:
+                voice = self._resolve_voice(event.source.channel_id)
                 sentences = split_sentences(tracking_stream())
-                audio = self._tts.synthesize_stream_input(sentences)
+                audio = self._tts.synthesize_stream_input(sentences, voice=voice)
                 if self._pipeline is not None:
                     audio = self._wrap_outbound(session, audio)
                 await self._backend.send_audio(session, audio)
@@ -431,8 +443,9 @@ class VoiceTTSMixin:
                 target_sessions[0].id if target_sessions else ""
             )
 
+            voice = self._resolve_voice(event.source.channel_id)
             for session in target_sessions:
-                await self._send_tts(session, final_text)
+                await self._send_tts(session, final_text, voice=voice)
 
             _tok = set_current_span(_parent) if _parent else None
             try:

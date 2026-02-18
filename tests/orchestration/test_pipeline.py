@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType, HookExecution, HookTrigger
+from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.hook import HookResult
 from roomkit.models.room import Room
 from roomkit.orchestration.handoff import HandoffHandler
 from roomkit.orchestration.pipeline import (
@@ -380,3 +383,149 @@ class TestPipelineInstall:
             execution=HookExecution.SYNC,
             priority=-50,
         )
+
+
+# -- greet_on_handoff ---------------------------------------------------------
+
+
+def _mock_kit_capturing_hooks() -> tuple[MagicMock, dict[tuple[str, str], list]]:
+    """Return a mock kit that captures registered hook functions by trigger."""
+    kit = MagicMock()
+    captured: dict[tuple[str, str], list] = {}
+
+    def _hook_side_effect(*args, **kwargs):
+        trigger = args[0] if args else kwargs.get("trigger")
+        execution = kwargs.get("execution", HookExecution.ASYNC)
+
+        def decorator(fn):
+            key = (str(trigger), str(execution))
+            captured.setdefault(key, []).append(fn)
+            return fn
+
+        return decorator
+
+    kit.hook.side_effect = _hook_side_effect
+    return kit, captured
+
+
+class TestGreetOnHandoff:
+    def test_greet_on_handoff_requires_voice_channel_id(self):
+        pipeline = ConversationPipeline(
+            stages=[PipelineStage(phase="a", agent_id="agent-a", next=None)],
+        )
+        kit, _ = _mock_kit_capturing_hooks()
+        agents = [_mock_agent("agent-a")]
+
+        with pytest.raises(ValueError, match="voice_channel_id"):
+            pipeline.install(kit, agents, greet_on_handoff=True)
+
+    def test_greet_on_handoff_registers_hooks(self):
+        pipeline = ConversationPipeline(
+            stages=[PipelineStage(phase="a", agent_id="agent-a", next=None)],
+        )
+        kit, captured = _mock_kit_capturing_hooks()
+        agents = [_mock_agent("agent-a")]
+
+        pipeline.install(kit, agents, greet_on_handoff=True, voice_channel_id="voice")
+
+        # Should have ON_HANDOFF (ASYNC) and BEFORE_TTS (SYNC) hooks
+        on_handoff_key = (str(HookTrigger.ON_HANDOFF), str(HookExecution.ASYNC))
+        before_tts_key = (str(HookTrigger.BEFORE_TTS), str(HookExecution.SYNC))
+
+        assert on_handoff_key in captured, f"ON_HANDOFF not registered: {captured.keys()}"
+        assert before_tts_key in captured, f"BEFORE_TTS not registered: {captured.keys()}"
+
+    async def test_greet_blocks_farewell_then_allows(self):
+        """BEFORE_TTS blocks during handoff, allows after greeting clears flag."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit, captured = _mock_kit_capturing_hooks()
+        kit.process_inbound = AsyncMock()
+        agents = [_mock_agent("agent-a"), _mock_agent("agent-b")]
+
+        pipeline.install(kit, agents, greet_on_handoff=True, voice_channel_id="voice")
+
+        on_handoff_key = (str(HookTrigger.ON_HANDOFF), str(HookExecution.ASYNC))
+        before_tts_key = (str(HookTrigger.BEFORE_TTS), str(HookExecution.SYNC))
+
+        on_handoff_fn = captured[on_handoff_key][0]
+        before_tts_fn = captured[before_tts_key][0]
+
+        # Simulate handoff event
+        handoff_event = RoomEvent(
+            room_id="room-1",
+            source=EventSource(channel_id="agent-a", channel_type=ChannelType.AI),
+            content=TextContent(body="transferring"),
+            metadata={"from_agent": "agent-a", "to_agent": "agent-b"},
+        )
+        ctx = RoomContext(room=Room(id="room-1"), bindings=[])
+
+        # Fire ON_HANDOFF — sets flag
+        await on_handoff_fn(handoff_event, ctx)
+
+        # BEFORE_TTS should block (farewell from old agent)
+        result = await before_tts_fn("Goodbye!", ctx)
+        assert isinstance(result, HookResult)
+        assert result.action == "block"
+
+        # Let background task run (clears flag + triggers greeting)
+        await asyncio.sleep(0.05)
+
+        # BEFORE_TTS should now allow
+        result = await before_tts_fn("Hello, I'm agent B", ctx)
+        assert isinstance(result, HookResult)
+        assert result.action == "allow"
+
+    async def test_greet_triggers_process_inbound(self):
+        """ON_HANDOFF should trigger kit.process_inbound with voice_channel_id."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit, captured = _mock_kit_capturing_hooks()
+        kit.process_inbound = AsyncMock()
+        agents = [_mock_agent("agent-a"), _mock_agent("agent-b")]
+
+        pipeline.install(kit, agents, greet_on_handoff=True, voice_channel_id="voice")
+
+        on_handoff_key = (str(HookTrigger.ON_HANDOFF), str(HookExecution.ASYNC))
+        on_handoff_fn = captured[on_handoff_key][0]
+
+        handoff_event = RoomEvent(
+            room_id="room-1",
+            source=EventSource(channel_id="agent-a", channel_type=ChannelType.AI),
+            content=TextContent(body="transferring"),
+            metadata={"from_agent": "agent-a", "to_agent": "agent-b"},
+        )
+        ctx = RoomContext(room=Room(id="room-1"), bindings=[])
+
+        await on_handoff_fn(handoff_event, ctx)
+        await asyncio.sleep(0.05)
+
+        kit.process_inbound.assert_called_once()
+        call_args = kit.process_inbound.call_args
+        msg = call_args[0][0]
+        assert msg.channel_id == "voice"
+        assert msg.sender_id == "system"
+        assert call_args[1]["room_id"] == "room-1"
+
+    def test_greet_on_handoff_false_no_extra_hooks(self):
+        """Without greet_on_handoff, only BEFORE_BROADCAST hook is registered."""
+        pipeline = ConversationPipeline(
+            stages=[PipelineStage(phase="a", agent_id="agent-a", next=None)],
+        )
+        kit, captured = _mock_kit_capturing_hooks()
+        agents = [_mock_agent("agent-a")]
+
+        pipeline.install(kit, agents)
+
+        # Only BEFORE_BROADCAST should be registered
+        assert len(captured) == 1
+        bb_key = (str(HookTrigger.BEFORE_BROADCAST), str(HookExecution.SYNC))
+        assert bb_key in captured

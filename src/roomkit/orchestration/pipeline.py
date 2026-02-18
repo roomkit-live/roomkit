@@ -6,6 +6,9 @@ workflows with optional loops (e.g., coder <-> reviewer).
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
+import logging
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -17,6 +20,8 @@ from roomkit.orchestration.router import ConversationRouter, RoutingConditions, 
 if TYPE_CHECKING:
     from roomkit.channels.ai import AIChannel
     from roomkit.core.framework import RoomKit
+
+logger = logging.getLogger("roomkit.orchestration")
 
 
 class PipelineStage(BaseModel):
@@ -121,6 +126,9 @@ class ConversationPipeline:
         *,
         agent_aliases: dict[str, str] | None = None,
         hook_priority: int = -100,
+        greet_on_handoff: bool = False,
+        voice_channel_id: str | None = None,
+        greeting_prompt: str | None = None,
     ) -> tuple[ConversationRouter, HandoffHandler]:
         """Wire routing and handoff in one call.
 
@@ -129,8 +137,19 @@ class ConversationPipeline:
         with the pipeline's phase map and transition constraints,
         and calls ``setup_handoff`` on every agent.
 
+        When *greet_on_handoff* is ``True``, two extra hooks are
+        registered:
+
+        - **ON_HANDOFF** (async): blocks the old agent's farewell via
+          a ``BEFORE_TTS`` flag, then sends a synthetic inbound message
+          on *voice_channel_id* to prompt the new agent to greet.
+        - **BEFORE_TTS** (sync): blocks TTS while a handoff is pending.
+
         Returns ``(router, handler)`` for further customisation.
         """
+        if greet_on_handoff and not voice_channel_id:
+            raise ValueError("greet_on_handoff=True requires voice_channel_id")
+
         router = self.to_router()
 
         kit.hook(
@@ -149,4 +168,69 @@ class ConversationPipeline:
         for agent in agents:
             setup_handoff(agent, handler)
 
+        if greet_on_handoff:
+            self._register_greet_hooks(
+                kit,
+                voice_channel_id=voice_channel_id,  # type: ignore[arg-type]
+                greeting_prompt=greeting_prompt,
+                hook_priority=hook_priority,
+            )
+
         return router, handler
+
+    def _register_greet_hooks(
+        self,
+        kit: RoomKit,
+        *,
+        voice_channel_id: str,
+        greeting_prompt: str | None,
+        hook_priority: int,
+    ) -> None:
+        """Register ON_HANDOFF + BEFORE_TTS hooks for handoff greeting."""
+        from roomkit.models.context import RoomContext
+        from roomkit.models.delivery import InboundMessage
+        from roomkit.models.event import RoomEvent, TextContent
+        from roomkit.models.hook import HookResult
+
+        prompt = greeting_prompt or (
+            "[The caller has just been transferred to you — please introduce yourself briefly]"
+        )
+
+        # Rooms where a handoff is in flight — TTS blocked until greeting fires
+        _handoff_pending: set[str] = set()
+
+        @kit.hook(HookTrigger.ON_HANDOFF, execution=HookExecution.ASYNC)
+        async def _on_handoff(event: RoomEvent, _ctx: RoomContext) -> None:
+            meta = event.metadata or {}
+            to_agent = meta.get("to_agent", "")
+            from_agent = meta.get("from_agent", "")
+            logger.info("greet_on_handoff: %s → %s", from_agent, to_agent)
+
+            _handoff_pending.add(event.room_id)
+
+            async def _trigger_greeting() -> None:
+                _handoff_pending.discard(event.room_id)
+                await kit.process_inbound(
+                    InboundMessage(
+                        channel_id=voice_channel_id,
+                        sender_id="system",
+                        content=TextContent(body=prompt),
+                    ),
+                    room_id=event.room_id,
+                )
+
+            loop = asyncio.get_running_loop()
+            loop.create_task(_trigger_greeting(), context=contextvars.Context())
+
+        @kit.hook(
+            HookTrigger.BEFORE_TTS,
+            execution=HookExecution.SYNC,
+            priority=hook_priority - 1,
+        )
+        async def _block_farewell(
+            text: str,
+            ctx: RoomContext,  # noqa: ARG001
+        ) -> HookResult:
+            if ctx.room.id in _handoff_pending:
+                return HookResult.block("handoff_transition")
+            return HookResult.allow()
