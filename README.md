@@ -4,16 +4,24 @@
 [![Python](https://img.shields.io/pypi/pyversions/roomkit)](https://pypi.org/project/roomkit/)
 [![License](https://img.shields.io/github/license/roomkit-live/roomkit)](LICENSE)
 
-Pure async Python 3.12+ library for multi-channel conversations.
+Pure async Python 3.12+ framework for multi-channel conversation orchestration.
 
-RoomKit gives you a single abstraction — the **room** — to orchestrate messages across SMS, RCS, Email, WhatsApp, Messenger, Voice, WebSocket, HTTP webhooks, and AI channels. Events flow in through any channel, get validated by hooks, and broadcast to every other channel in the room with automatic content transcoding.
+RoomKit gives you a single abstraction — the **room** — to orchestrate conversations across SMS, RCS, Email, WhatsApp, Messenger, Teams, Telegram, Voice, WebSocket, HTTP, and AI channels. Define agents, wire them into pipelines, and let the framework handle routing, handoffs, audio processing, and content transcoding.
 
 ```
-Inbound ──► Hook pipeline ──► Store ──► Broadcast to all channels
-                                             │
-        ┌──────────┬──────────┬────────┬─────┼─────┬────────┬────────┬────────┐
-        ▼          ▼          ▼        ▼     ▼     ▼        ▼        ▼        ▼
-     SMS/RCS   WhatsApp    Email    Teams  Msgr   Voice     WS       AI    Webhook
+                                ┌──────────────────────┐
+                                │        Room          │
+                                │                      │
+Inbound ──► Hook pipeline ──►   │  ConversationRouter   │  ──► Broadcast to all channels
+                                │  ConversationState    │
+                                │  HandoffHandler       │        │
+                                └──────────────────────┘   ┌────┴────┐
+                                                           │         │
+        ┌──────────┬──────────┬────────┬─────┬─────┬───────┤         ├────────┐
+        ▼          ▼          ▼        ▼     ▼     ▼       ▼         ▼        ▼
+     SMS/RCS   WhatsApp    Email    Teams  Msgr   Voice  Realtime    WS    Agents
+                                                  (STT/   Voice            (AI)
+                                                   TTS)  (S2S AI)
 ```
 
 **Website:** [www.roomkit.live](https://www.roomkit.live) | **Docs:** [www.roomkit.live/docs](https://www.roomkit.live/docs/)
@@ -27,42 +35,69 @@ pip install roomkit
 ```python
 import asyncio
 from roomkit import (
-    ChannelCategory, HookResult, HookTrigger,
-    InboundMessage, MockAIProvider, RoomContext,
-    RoomEvent, RoomKit, TextContent, WebSocketChannel,
+    Agent, ChannelCategory, ConversationPipeline, ConversationState,
+    HandoffMemoryProvider, InboundMessage, MockAIProvider, PipelineStage,
+    RoomKit, SlidingWindowMemory, TextContent, WebSocketChannel,
+    set_conversation_state,
 )
-from roomkit.channels.ai import AIChannel
 
 async def main():
     kit = RoomKit()
 
-    # Register channels
+    # Transport channel for user messages
     ws = WebSocketChannel("ws-user")
-    ai = AIChannel("ai-bot", provider=MockAIProvider(responses=["Hello!"]))
     kit.register_channel(ws)
-    kit.register_channel(ai)
 
-    # Create a room and attach channels
+    # AI agents with identity metadata
+    triage = Agent(
+        "agent-triage",
+        provider=MockAIProvider(responses=["I'll transfer you to our specialist."]),
+        role="Triage agent",
+        description="Routes incoming requests",
+        system_prompt="You triage incoming requests.",
+        memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
+    )
+    handler = Agent(
+        "agent-handler",
+        provider=MockAIProvider(responses=["Let me help you with that."]),
+        role="Support specialist",
+        description="Handles customer requests",
+        system_prompt="You handle requests.",
+        memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
+    )
+    kit.register_channel(triage)
+    kit.register_channel(handler)
+
+    # Define a pipeline: triage -> handling
+    pipeline = ConversationPipeline(stages=[
+        PipelineStage(phase="triage", agent_id="agent-triage", next="handling"),
+        PipelineStage(phase="handling", agent_id="agent-handler", next=None),
+    ])
+    router, handoff = pipeline.install(kit, [triage, handler])
+
+    # Create room and attach channels
     await kit.create_room(room_id="room-1")
     await kit.attach_channel("room-1", "ws-user")
-    await kit.attach_channel("room-1", "ai-bot", category=ChannelCategory.INTELLIGENCE)
+    await kit.attach_channel("room-1", "agent-triage", category=ChannelCategory.INTELLIGENCE)
+    await kit.attach_channel("room-1", "agent-handler", category=ChannelCategory.INTELLIGENCE)
 
-    # Add a broadcast hook
-    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="filter")
-    async def block_spam(event: RoomEvent, ctx: RoomContext) -> HookResult:
-        if isinstance(event.content, TextContent) and "spam" in event.content.body:
-            return HookResult.block("spam detected")
-        return HookResult.allow()
+    # Initialize conversation state
+    room = await kit.get_room("room-1")
+    room = set_conversation_state(room, ConversationState(phase="triage", active_agent_id="agent-triage"))
+    await kit.store.update_room(room)
 
-    # Process a message — it gets stored, broadcast, and the AI responds
-    result = await kit.process_inbound(
-        InboundMessage(channel_id="ws-user", sender_id="user-1", content=TextContent(body="Hi"))
+    # Process a message — routed to the active agent
+    await kit.process_inbound(
+        InboundMessage(channel_id="ws-user", sender_id="user-1", content=TextContent(body="I need help"))
     )
-    print(result.blocked)  # False
 
-    # View conversation history
-    for event in await kit.store.list_events("room-1"):
-        print(f"[{event.source.channel_id}] {event.content.body}")
+    # Handoff to the next agent
+    result = await handoff.handle(
+        room_id="room-1",
+        calling_agent_id="agent-triage",
+        arguments={"target": "agent-handler", "reason": "User needs support"},
+    )
+    print(f"Handoff accepted: {result.accepted}")
 
 asyncio.run(main())
 ```
@@ -75,17 +110,42 @@ RoomKit's core has a single dependency (pydantic). Providers that call external 
 
 ```bash
 pip install roomkit                    # core only
+
+# AI providers
+pip install roomkit[anthropic]         # Anthropic Claude
+pip install roomkit[openai]            # OpenAI GPT
+pip install roomkit[gemini]            # Google Gemini
+pip install roomkit[pydantic-ai]       # Pydantic AI
+
+# Voice backends
+pip install roomkit[fastrtc]           # FastRTC WebRTC backend
+pip install roomkit[sip]               # SIP voice backend
+pip install roomkit[rtp]               # RTP voice backend
+pip install roomkit[local-audio]       # Local mic/speaker backend
+
+# Speech-to-speech AI
+pip install roomkit[realtime-gemini]   # Gemini Live
+pip install roomkit[realtime-openai]   # OpenAI Realtime
+
+# STT / TTS providers
+pip install roomkit[deepgram]          # Deepgram STT
+pip install roomkit[elevenlabs]        # ElevenLabs TTS
+pip install roomkit[sherpa-onnx]       # SherpaOnnx (local STT/TTS/VAD/Denoiser)
+pip install roomkit[gradium]           # Gradium STT + TTS
+
+# Communication providers
 pip install roomkit[httpx]             # HTTP-based providers (SMS, RCS, Email)
 pip install roomkit[websocket]         # WebSocket event source
-pip install roomkit[anthropic]         # Anthropic Claude AI
-pip install roomkit[openai]            # OpenAI GPT
-pip install roomkit[gemini]            # Google Gemini AI
-pip install roomkit[teams]             # Microsoft Teams (Bot Framework)
-pip install roomkit[neonize]           # WhatsApp Personal (neonize)
-pip install roomkit[gradium]            # Gradium STT + TTS
-pip install roomkit[fastrtc]           # FastRTC voice backend
-pip install roomkit[realtime-gemini]   # Gemini Live speech-to-speech
-pip install roomkit[realtime-openai]   # OpenAI Realtime speech-to-speech
+pip install roomkit[teams]             # Microsoft Teams
+pip install roomkit[telegram]          # Telegram
+pip install roomkit[neonize]           # WhatsApp Personal
+
+# Infrastructure
+pip install roomkit[postgres]          # PostgreSQL storage
+pip install roomkit[opentelemetry]     # OpenTelemetry tracing
+pip install roomkit[mcp]               # Model Context Protocol tools
+
+# Meta extras
 pip install roomkit[providers]         # all transport providers
 pip install roomkit[all]               # everything
 ```
@@ -101,6 +161,113 @@ make all                               # lint + typecheck + test
 
 Requires **Python 3.12+**.
 
+## Multi-Agent Orchestration
+
+RoomKit's orchestration layer lets you define agents, route conversations through pipelines, and hand off between agents — including mid-call voice handoffs where the caller never hears a disconnect.
+
+### Agent
+
+`Agent` extends `AIChannel` with identity metadata that gets auto-injected into the system prompt:
+
+```python
+from roomkit import Agent, GeminiAIProvider, GeminiConfig
+
+triage = Agent(
+    "agent-triage",
+    provider=GeminiAIProvider(config),
+    role="Triage receptionist",
+    description="Routes callers to the right specialist",
+    scope="Financial advisory services only",
+    voice="21m00Tcm4TlvDq8ikWAM",     # TTS voice ID
+    greeting="Greet the caller warmly and ask how you can help.",
+    language="French",                  # language hint injected into prompt
+    system_prompt="You triage incoming requests.",
+    memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=20)),
+)
+```
+
+For speech-to-speech orchestration (Gemini Live, OpenAI Realtime), agents can be **config-only** — no AI provider needed since the realtime provider handles reasoning:
+
+```python
+triage = Agent(
+    "agent-triage",
+    role="Triage receptionist",
+    voice="Zephyr",
+    system_prompt="Greet callers warmly.",
+)
+```
+
+### ConversationPipeline
+
+Define a multi-stage pipeline and install it with one call:
+
+```python
+from roomkit import ConversationPipeline, PipelineStage
+
+pipeline = ConversationPipeline(stages=[
+    PipelineStage(phase="intake", agent_id="agent-triage", next="handling"),
+    PipelineStage(phase="handling", agent_id="agent-advisor", next=None),
+])
+
+# Wires routing hook + handoff tool on all agents
+router, handler = pipeline.install(
+    kit, [triage, advisor],
+    greet_on_handoff=True,         # send agent greeting on handoff
+    voice_channel_id="voice",      # voice channel for spoken greetings
+)
+```
+
+`install()` auto-wires:
+- A `ConversationRouter` (BEFORE_BROADCAST hook) that routes messages to the active agent
+- A `HandoffHandler` with the `handoff_conversation` tool registered on each agent
+- Voice map from each agent's `voice` field for per-agent TTS voices
+- Greeting injection on handoff (spoken via TTS or injected into realtime sessions)
+- System event filtering to keep orchestration internals out of transcripts
+
+### Voice Orchestration
+
+Agent handoffs work seamlessly on live voice calls. The voice/realtime channel is a transport — swapping the active agent doesn't touch the audio session:
+
+```
+SIP Call → VoiceChannel (STT) → transcript → ConversationRouter → Active Agent
+                                                                       │
+                                                                  text response
+                                                                       │
+                                              VoiceChannel (TTS) ← ────┘
+```
+
+For speech-to-speech mode, the realtime session is reconfigured on handoff (system prompt, voice, tools) using session resumption — the conversation context is preserved with ~200-500ms latency:
+
+```
+SIP Call → RealtimeVoiceChannel → GeminiLiveProvider
+                                        │
+                                  handoff_conversation tool call
+                                        │
+                                  reconfigure_session() (voice, prompt, tools)
+```
+
+### Conversation State
+
+Track conversation phase, active agent, handoff history, and custom context per room:
+
+```python
+from roomkit import ConversationState, get_conversation_state, set_conversation_state
+
+state = get_conversation_state(room)
+print(state.phase, state.active_agent_id, state.handoff_count)
+
+for t in state.phase_history:
+    print(f"{t.from_phase} -> {t.to_phase} ({t.reason})")
+```
+
+### Language-Aware Handoffs
+
+Set a per-room language that gets injected into agent prompts and realtime sessions:
+
+```python
+await handler.set_language("room-1", "French", channel_id="voice")
+```
+
 ## Channels
 
 Each channel is a thin adapter between the room and an external transport. All channels implement the same interface: `handle_inbound()` converts a provider message into a `RoomEvent`, and `deliver()` pushes events out.
@@ -112,19 +279,68 @@ Each channel is a thin adapter between the room and an external transport. All c
 | **Email** | `email` | text, rich, media | Threading support |
 | **WebSocket** | `websocket` | text, rich, media | Real-time with typing, reactions |
 | **Messenger** | `messenger` | text, rich, media, template | Buttons, quick replies |
-| **Teams** | `teams` | text, rich | Bot Framework SDK, proactive messaging, 28K chars |
+| **Teams** | `teams` | text, rich | Bot Framework SDK, proactive messaging |
+| **Telegram** | `telegram` | text, rich, media | Bot API |
 | **WhatsApp** | `whatsapp` | text, rich, media, location, template | Buttons, templates |
-| **WhatsApp Personal** | `whatsapp_personal` | text, media, audio, location | Typing indicators, read receipts, neonize |
-| **Voice** | `voice` | audio, text | STT/TTS, audio pipeline, barge-in, FastRTC streaming |
+| **WhatsApp Personal** | `whatsapp_personal` | text, media, audio, location | Typing indicators, read receipts |
+| **Voice** | `voice` | audio, text | STT/TTS, audio pipeline, barge-in |
 | **Realtime Voice** | `realtime_voice` | audio, text | Speech-to-speech AI (Gemini Live, OpenAI Realtime) |
 | **HTTP** | `webhook` | text, rich | Generic webhook for any system |
-| **AI** | `ai` | text, rich | Intelligence layer (not transport) |
+| **AI / Agent** | `ai` | text, rich | Intelligence layer (not transport) |
 
-Channels have two categories: **transport** (delivers to external systems) and **intelligence** (generates content, like AI). The Voice channel bridges real-time audio with the room-based conversation model.
+Channels have two categories: **transport** (delivers to external systems) and **intelligence** (generates content, like AI). The Voice and Realtime Voice channels bridge real-time audio with the room-based conversation model.
 
 ## Providers
 
 Providers handle the actual API calls. Every provider has a mock counterpart for testing.
+
+### AI Providers
+
+| Provider | Features | Dependency |
+|----------|----------|------------|
+| `AnthropicAIProvider` | Claude, vision, tools, streaming | `roomkit[anthropic]` |
+| `OpenAIAIProvider` | GPT-4, vision, tools, streaming | `roomkit[openai]` |
+| `GeminiAIProvider` | Gemini, vision, tools, streaming | `roomkit[gemini]` |
+| `PydanticAIProvider` | Pydantic AI agent integration | `roomkit[pydantic-ai]` |
+| `create_vllm_provider` | Local LLM, OpenAI-compatible | `roomkit[vllm]` |
+
+### Voice Backends
+
+| Backend | Role | Dependency |
+|---------|------|------------|
+| `FastRTCVoiceBackend` | WebRTC audio transport | `roomkit[fastrtc]` |
+| `SIPVoiceBackend` | SIP/RTP voice transport | `roomkit[sip]` |
+| `RTPBackend` | Raw RTP audio transport | `roomkit[rtp]` |
+| `LocalAudioBackend` | Local mic/speaker for testing | `roomkit[local-audio]` |
+
+### STT Providers
+
+| Provider | Features | Dependency |
+|----------|----------|------------|
+| `DeepgramSTTProvider` | Cloud streaming + batch | `roomkit[deepgram]` |
+| `SherpaOnnxSTTProvider` | Local ONNX (transducer/Whisper) | `roomkit[sherpa-onnx]` |
+| `QwenSTTProvider` | Qwen ASR | `roomkit[qwen-asr]` |
+| `GradiumSTTProvider` | Gradium | `roomkit[gradium]` |
+
+### TTS Providers
+
+| Provider | Features | Dependency |
+|----------|----------|------------|
+| `ElevenLabsTTSProvider` | Cloud streaming, low latency | `roomkit[elevenlabs]` |
+| `SherpaOnnxTTSProvider` | Local ONNX (VITS/Piper) | `roomkit[sherpa-onnx]` |
+| `QwenTTSProvider` | Qwen TTS | `roomkit[qwen-tts]` |
+| `GradiumTTSProvider` | Gradium | `roomkit[gradium]` |
+| `NeuTTSProvider` | Neural TTS | built-in |
+
+### Realtime Voice (Speech-to-Speech)
+
+| Component | Role | Dependency |
+|-----------|------|------------|
+| `GeminiLiveProvider` | Speech-to-speech AI | `roomkit[realtime-gemini]` |
+| `OpenAIRealtimeProvider` | Speech-to-speech AI | `roomkit[realtime-openai]` |
+| `WebSocketRealtimeTransport` | Browser-to-server audio (WS) | `roomkit[websocket]` |
+| `FastRTCRealtimeTransport` | Browser-to-server audio (WebRTC) | `roomkit[fastrtc]` |
+| `SIPRealtimeTransport` | SIP audio to realtime AI | `roomkit[sip]` |
 
 ### SMS Providers
 
@@ -135,57 +351,45 @@ Providers handle the actual API calls. Every provider has a mock counterpart for
 | `SinchSMSProvider` | SMS, delivery status | `roomkit[httpx]` |
 | `VoiceMeUpSMSProvider` | SMS, MMS aggregation | `roomkit[httpx]` |
 
-### RCS Providers
+### Other Providers
 
-| Provider | Features | Dependency |
-|----------|----------|------------|
-| `TwilioRCSProvider` | Rich cards, carousels, actions | `roomkit[httpx]` |
-| `TelnyxRCSProvider` | Rich cards, carousels, actions | `roomkit[httpx]` |
+| Provider | Channel | Dependency |
+|----------|---------|------------|
+| `TwilioRCSProvider` | RCS | `roomkit[httpx]` |
+| `TelnyxRCSProvider` | RCS | `roomkit[httpx]` |
+| `ElasticEmailProvider` | Email | `roomkit[httpx]` |
+| `SendGridProvider` | Email | `roomkit[httpx]` |
+| `FacebookMessengerProvider` | Messenger | `roomkit[httpx]` |
+| `TelegramBotProvider` | Telegram | `roomkit[telegram]` |
+| `BotFrameworkTeamsProvider` | Teams | `roomkit[teams]` |
+| `NeonizeWhatsAppProvider` | WhatsApp Personal | `roomkit[neonize]` |
+| `WebhookHTTPProvider` | HTTP | `roomkit[httpx]` |
 
-### AI Providers
+Each HTTP-based provider lazy-imports `httpx` so the core library stays lightweight.
 
-| Provider | Features | Dependency |
-|----------|----------|------------|
-| `AnthropicAIProvider` | Claude, vision, tools | `roomkit[anthropic]` |
-| `OpenAIAIProvider` | GPT-4, vision, tools | `roomkit[openai]` |
-| `GeminiAIProvider` | Gemini, vision, tools | `roomkit[gemini]` |
-| `create_vllm_provider` | Local LLM, OpenAI-compatible | `roomkit[vllm]` |
+## Audio Pipeline
 
-### Voice Providers
-
-| Provider | Role | Dependency |
-|----------|------|------------|
-| `DeepgramSTTProvider` | Speech-to-text | `roomkit[httpx]` |
-| `ElevenLabsTTSProvider` | Text-to-speech | `roomkit[httpx]` |
-| `GradiumSTTProvider` | Speech-to-text | `roomkit[gradium]` |
-| `GradiumTTSProvider` | Text-to-speech | `roomkit[gradium]` |
-| `SherpaOnnxSTTProvider` | Local STT (transducer/Whisper) | `roomkit[sherpa-onnx]` |
-| `SherpaOnnxTTSProvider` | Local TTS (VITS/Piper) | `roomkit[sherpa-onnx]` |
-| `FastRTCVoiceBackend` | WebRTC audio transport | `roomkit[fastrtc]` |
-
-### Audio Pipeline
-
-The audio pipeline sits between the voice backend (transport) and STT, processing raw audio through pluggable inbound and outbound chains:
+The audio pipeline sits between the voice backend and STT, processing raw audio through pluggable inbound and outbound chains:
 
 ```
-Inbound:   Backend → [Resampler] → [Recorder] → [DTMF] → [AEC] → [AGC] → [Denoiser] → VAD → [Diarization] → STT
+Inbound:   Backend → [Resampler] → [Recorder] → [AEC] → [AGC] → [Denoiser] → VAD → [Diarization] + [DTMF]
 Outbound:  TTS → [PostProcessors] → [Recorder] → AEC.feed_reference → [Resampler] → Backend
 ```
 
 AEC and AGC stages are automatically skipped when the backend declares `NATIVE_AEC` / `NATIVE_AGC` capabilities.
 
-| Component | Role | Required |
-|-----------|------|----------|
-| `VADProvider` | Voice activity detection (speech start/end) | No |
-| `DenoiserProvider` | Noise reduction before VAD | No |
-| `DiarizationProvider` | Speaker identification | No |
-| `AECProvider` | Acoustic Echo Cancellation | No |
-| `AGCProvider` | Automatic Gain Control | No |
-| `DTMFDetector` | DTMF tone detection (parallel with main chain) | No |
-| `AudioRecorder` | Record inbound/outbound audio | No |
-| `AudioPostProcessor` | Custom outbound frame transforms | No |
-| `TurnDetector` | Post-STT turn completion detection | No |
-| `BackchannelDetector` | Distinguish interruptions from acknowledgements | No |
+| Stage | Role | Implementations |
+|-------|------|-----------------|
+| `VADProvider` | Voice activity detection | `SherpaOnnxVADProvider`, `EnergyVADProvider` |
+| `DenoiserProvider` | Noise reduction | `RNNoiseDenoiserProvider`, `SherpaOnnxDenoiserProvider` |
+| `AECProvider` | Acoustic echo cancellation | `SpeexAECProvider` |
+| `AGCProvider` | Automatic gain control | configurable |
+| `DiarizationProvider` | Speaker identification | pluggable |
+| `DTMFDetector` | DTMF tone detection (parallel) | pluggable |
+| `AudioRecorder` | Record inbound/outbound audio | `WavFileRecorder` |
+| `AudioPostProcessor` | Custom outbound transforms | pluggable |
+| `TurnDetector` | Post-STT turn completion | pluggable |
+| `BackchannelDetector` | Distinguish interruptions from "uh-huh" | pluggable |
 
 All stages are optional — configure what you need:
 
@@ -195,66 +399,19 @@ from roomkit.voice.pipeline import AudioPipelineConfig, VADConfig
 from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
 
 pipeline = AudioPipelineConfig(
-    vad=my_vad,
-    denoiser=my_denoiser,
-    diarization=my_diarizer,
-    aec=my_aec,
-    agc=my_agc,
-    dtmf=my_dtmf_detector,
-    recorder=my_recorder,
-    recording_config=my_recording_config,
-    turn_detector=my_turn_detector,
+    vad=my_vad, denoiser=my_denoiser, aec=my_aec,
+    agc=my_agc, diarization=my_diarizer, dtmf=my_dtmf,
+    recorder=my_recorder, turn_detector=my_turn_detector,
     vad_config=VADConfig(silence_threshold_ms=500),
 )
-voice = VoiceChannel("voice", stt=stt, tts=tts, backend=backend, pipeline=pipeline)
-
-# Realtime voice: denoiser + diarization only (AI provider handles VAD)
-preprocess = AudioPipelineConfig(denoiser=my_denoiser, diarization=my_diarizer)
-```
-
-**Interruption strategies** control how user speech during TTS playback is handled:
-
-```python
 voice = VoiceChannel(
-    "voice", stt=stt, tts=tts, backend=backend, pipeline=pipeline,
+    "voice", stt=stt, tts=tts, backend=backend,
+    pipeline=pipeline,
     interruption=InterruptionConfig(strategy=InterruptionStrategy.CONFIRMED, min_speech_ms=300),
 )
 ```
 
-Four strategies: `IMMEDIATE` (interrupt on any speech), `CONFIRMED` (wait for sustained speech), `SEMANTIC` (use backchannel detection to ignore "uh-huh"), `DISABLED` (ignore speech during playback).
-
-The pipeline fires events that the hook system can intercept: `ON_SPEECH_START`, `ON_SPEECH_END`, `ON_VAD_SILENCE`, `ON_VAD_AUDIO_LEVEL`, `ON_SPEAKER_CHANGE`, `ON_DTMF`, `ON_TURN_COMPLETE`, `ON_TURN_INCOMPLETE`, `ON_BACKCHANNEL`, `ON_RECORDING_STARTED`, `ON_RECORDING_STOPPED`. See [`examples/voice_pipeline.py`](examples/voice_pipeline.py) for a complete example.
-
-### Realtime Voice (Speech-to-Speech)
-
-| Component | Role | Dependency |
-|-----------|------|------------|
-| `GeminiLiveProvider` | Speech-to-speech AI provider | `roomkit[realtime-gemini]` |
-| `OpenAIRealtimeProvider` | Speech-to-speech AI provider | `roomkit[realtime-openai]` |
-| `WebSocketRealtimeTransport` | Browser-to-server audio (WebSocket) | `roomkit[websocket]` |
-| `FastRTCRealtimeTransport` | Browser-to-server audio (WebRTC) | `roomkit[fastrtc]` |
-
-### Teams Providers
-
-| Provider | Features | Dependency |
-|----------|----------|------------|
-| `BotFrameworkTeamsProvider` | Proactive messaging, conversation references, bot mention detection | `roomkit[teams]` |
-
-### WhatsApp Personal Providers
-
-| Provider | Features | Dependency |
-|----------|----------|------------|
-| `NeonizeWhatsAppProvider` | Multidevice, typing indicators, read receipts, media | `roomkit[neonize]` |
-
-### Other Providers
-
-| Provider | Channel | Dependency |
-|----------|---------|------------|
-| `ElasticEmailProvider` | Email | `roomkit[httpx]` |
-| `FacebookMessengerProvider` | Messenger | `roomkit[httpx]` |
-| `WebhookHTTPProvider` | HTTP | `roomkit[httpx]` |
-
-Each HTTP-based provider lazy-imports `httpx` so the core library stays lightweight.
+**Interruption strategies** control how user speech during TTS playback is handled: `IMMEDIATE` (interrupt on any speech), `CONFIRMED` (wait for sustained speech), `SEMANTIC` (use backchannel detection to ignore "uh-huh"), `DISABLED` (ignore speech during playback).
 
 ## Hooks
 
@@ -263,31 +420,35 @@ Hooks intercept events at specific points in the pipeline. Sync hooks can block 
 ```python
 @kit.hook(HookTrigger.BEFORE_BROADCAST, name="compliance_check")
 async def check(event: RoomEvent, ctx: RoomContext) -> HookResult:
-    # Block, allow, or modify the event
     return HookResult.allow()
 ```
 
-**Triggers:** `BEFORE_BROADCAST`, `AFTER_BROADCAST`, `ON_ROOM_CREATED`, `ON_ROOM_PAUSED`, `ON_ROOM_CLOSED`, `ON_CHANNEL_ATTACHED`, `ON_CHANNEL_DETACHED`, `ON_CHANNEL_MUTED`, `ON_CHANNEL_UNMUTED`, `ON_IDENTITY_AMBIGUOUS`, `ON_IDENTITY_UNKNOWN`, `ON_PARTICIPANT_IDENTIFIED`, `ON_TASK_CREATED`, `ON_DELIVERY_STATUS`, `ON_ERROR`, `ON_SPEECH_START`, `ON_SPEECH_END`, `ON_TRANSCRIPTION`, `BEFORE_TTS`, `AFTER_TTS`, `ON_TTS_CANCELLED`, `ON_BARGE_IN`, `ON_VAD_SILENCE`, `ON_VAD_AUDIO_LEVEL`, `ON_SPEAKER_CHANGE`, `ON_DTMF`, `ON_TURN_COMPLETE`, `ON_TURN_INCOMPLETE`, `ON_BACKCHANNEL`, `ON_RECORDING_STARTED`, `ON_RECORDING_STOPPED`, `ON_REALTIME_TOOL_CALL`, `ON_REALTIME_TEXT_INJECTED`, `ON_OBSERVATION`.
+**35 hook triggers** covering the full lifecycle:
 
-Hooks support **filtering** by channel type, channel ID, and direction:
+| Category | Triggers |
+|----------|----------|
+| Event pipeline | `BEFORE_BROADCAST`, `AFTER_BROADCAST` |
+| Room lifecycle | `ON_ROOM_CREATED`, `ON_ROOM_PAUSED`, `ON_ROOM_CLOSED` |
+| Channel lifecycle | `ON_CHANNEL_ATTACHED`, `ON_CHANNEL_DETACHED`, `ON_CHANNEL_MUTED`, `ON_CHANNEL_UNMUTED` |
+| Identity | `ON_IDENTITY_AMBIGUOUS`, `ON_IDENTITY_UNKNOWN`, `ON_PARTICIPANT_IDENTIFIED` |
+| Voice (audio) | `ON_SPEECH_START`, `ON_SPEECH_END`, `ON_TRANSCRIPTION`, `ON_PARTIAL_TRANSCRIPTION`, `ON_VAD_SILENCE`, `ON_VAD_AUDIO_LEVEL`, `ON_INPUT_AUDIO_LEVEL`, `ON_OUTPUT_AUDIO_LEVEL` |
+| Voice (TTS) | `BEFORE_TTS`, `AFTER_TTS`, `ON_TTS_CANCELLED`, `ON_BARGE_IN` |
+| Voice (pipeline) | `ON_SPEAKER_CHANGE`, `ON_DTMF`, `ON_TURN_COMPLETE`, `ON_TURN_INCOMPLETE`, `ON_BACKCHANNEL`, `ON_RECORDING_STARTED`, `ON_RECORDING_STOPPED` |
+| Realtime voice | `ON_REALTIME_TOOL_CALL`, `ON_REALTIME_TEXT_INJECTED` |
+| Orchestration | `ON_PHASE_TRANSITION`, `ON_HANDOFF`, `ON_HANDOFF_REJECTED` |
+| Side effects | `ON_TASK_CREATED`, `ON_DELIVERY_STATUS`, `ON_ERROR`, `ON_OBSERVATION`, `ON_PROTOCOL_TRACE` |
+
+Hooks support filtering by channel type, channel ID, and direction:
 
 ```python
-@kit.hook(
-    HookTrigger.BEFORE_BROADCAST,
-    channel_types={ChannelType.SMS},
-    directions={ChannelDirection.INBOUND},
-)
+@kit.hook(HookTrigger.BEFORE_BROADCAST, channel_types={ChannelType.SMS}, directions={ChannelDirection.INBOUND})
 async def sms_only_hook(event, ctx):
     return HookResult.allow()
 ```
 
-Hooks can also inject side-effect events, create tasks, and record observations.
-
 ## AI Integration
 
 ### Per-Room AI Configuration
-
-Configure AI behavior per room with custom system prompts, temperature, and tools:
 
 ```python
 from roomkit import AIConfig, AITool
@@ -297,15 +458,25 @@ room = await kit.create_room(
     ai_config=AIConfig(
         system_prompt="You are a helpful support agent.",
         temperature=0.7,
-        tools=[
-            AITool(
-                name="lookup_order",
-                description="Look up order status",
-                parameters={"type": "object", "properties": {"order_id": {"type": "string"}}}
-            )
-        ],
+        tools=[AITool(name="lookup_order", description="Look up order status", parameters={...})],
     ),
 )
+```
+
+### Memory Providers
+
+Control what context the AI sees with pluggable memory:
+
+```python
+from roomkit import SlidingWindowMemory, HandoffMemoryProvider
+
+# Recent N messages
+memory = SlidingWindowMemory(max_events=50)
+
+# Handoff-aware: injects handoff context (reason, summary) from previous agent
+memory = HandoffMemoryProvider(SlidingWindowMemory(max_events=50))
+
+agent = Agent("agent", provider=my_provider, memory=memory, system_prompt="...")
 ```
 
 ### Function Calling
@@ -317,7 +488,17 @@ response = await ai_provider.generate(context)
 if response.tool_calls:
     for call in response.tool_calls:
         result = await execute_tool(call.name, call.arguments)
-        # Feed result back to AI
+```
+
+### MCP Tools
+
+Integrate Model Context Protocol tools into AI agents:
+
+```python
+from roomkit import MCPToolProvider, compose_tool_handlers
+
+mcp = MCPToolProvider(server_url="http://localhost:3000")
+handler = compose_tool_handlers(mcp.handler, my_custom_handler)
 ```
 
 ## Realtime Events
@@ -327,20 +508,13 @@ Handle ephemeral events like typing indicators, presence, and read receipts:
 ```python
 from roomkit import EphemeralEvent, EphemeralEventType
 
-# Subscribe to realtime events
 async def handle_realtime(event: EphemeralEvent):
     if event.type == EphemeralEventType.TYPING_START:
         print(f"{event.user_id} is typing...")
 
 sub_id = await kit.subscribe_room("room-1", handle_realtime)
-
-# Publish typing indicator
 await kit.publish_typing("room-1", "user-1")
-
-# Publish presence
 await kit.publish_presence("room-1", "user-1", "online")
-
-# Publish read receipt
 await kit.publish_read_receipt("room-1", "user-1", "event-123")
 ```
 
@@ -357,44 +531,10 @@ class MyResolver(IdentityResolver):
     async def resolve(self, message, context):
         user = await lookup(message.sender_id)
         if user:
-            return IdentityResult(
-                status=IdentificationStatus.IDENTIFIED,
-                identity=Identity(id=user.id, display_name=user.name),
-            )
+            return IdentityResult(status=IdentificationStatus.IDENTIFIED, identity=Identity(id=user.id, display_name=user.name))
         return IdentityResult(status=IdentificationStatus.UNKNOWN)
 
 kit = RoomKit(identity_resolver=MyResolver())
-```
-
-### Channel Type Filtering
-
-Restrict identity resolution to specific channel types:
-
-```python
-kit = RoomKit(
-    identity_resolver=MyResolver(),
-    identity_channel_types={ChannelType.SMS},  # Only resolve for SMS
-)
-```
-
-Supports identified, pending, ambiguous, challenge, and rejected outcomes with hook-based customization.
-
-## Webhook Processing
-
-Process provider webhooks with automatic parsing and delivery status tracking:
-
-```python
-# Generic webhook processing
-result = await kit.process_webhook(
-    channel_id="sms-channel",
-    raw_payload=request_body,
-    headers=request_headers,
-)
-
-# Handle delivery status updates
-@kit.on_delivery_status
-async def handle_status(status: DeliveryStatus):
-    print(f"Message {status.provider_message_id}: {status.status}")
 ```
 
 ## Event-Driven Sources
@@ -402,58 +542,14 @@ async def handle_status(status: DeliveryStatus):
 For persistent connections (WebSocket, NATS, SSE), use **SourceProviders** instead of webhooks:
 
 ```python
-from roomkit import RoomKit, BaseSourceProvider, SourceStatus
 from roomkit.sources import WebSocketSource
 
-kit = RoomKit()
+source = WebSocketSource(url="wss://chat.example.com/events", channel_id="websocket-chat")
+await kit.attach_source("websocket-chat", source, auto_restart=True, max_restart_attempts=10)
 
-# Built-in WebSocket source
-source = WebSocketSource(
-    url="wss://chat.example.com/events",
-    channel_id="websocket-chat",
-)
-
-# Attach with resilience options
-await kit.attach_source(
-    "websocket-chat",
-    source,
-    auto_restart=True,           # Restart on failure
-    max_restart_attempts=10,     # Give up after 10 failures
-    max_concurrent_emits=20,     # Backpressure control
-)
-
-# Monitor health
 health = await kit.source_health("websocket-chat")
 print(f"Status: {health.status}, Messages: {health.messages_received}")
-
-# Detach when done
-await kit.detach_source("websocket-chat")
 ```
-
-**Webhook vs Event-Driven:**
-
-| Aspect | Webhooks | Event Sources |
-|--------|----------|---------------|
-| Connection | Stateless HTTP | Persistent (WS, TCP, etc.) |
-| Initiative | External system pushes | RoomKit subscribes |
-| Use cases | Twilio, SendGrid | WebSocket, NATS, SSE |
-
-Create custom sources by extending `BaseSourceProvider`:
-
-```python
-class NATSSource(BaseSourceProvider):
-    @property
-    def name(self) -> str:
-        return "nats:events"
-
-    async def start(self, emit) -> None:
-        self._set_status(SourceStatus.CONNECTED)
-        async for msg in self.subscribe():
-            await emit(parse_message(msg))
-            self._record_message()
-```
-
-Features: exponential backoff, max restart attempts, backpressure control, health monitoring.
 
 ## Resilience
 
@@ -462,16 +558,14 @@ Built-in patterns for production reliability:
 - **Retry with backoff** — configurable per-channel retry policy with exponential backoff
 - **Circuit breaker** — isolates failing providers so one broken channel doesn't bring down the room
 - **Rate limiting** — token bucket limiter with per-second/minute/hour limits per channel
-- **Content transcoding** — automatic conversion between channel capabilities (e.g. rich to text fallback)
-- **Chain depth tracking** — prevents infinite event loops between channels
-
-Configure per binding:
+- **Content transcoding** — automatic conversion between channel capabilities (rich to text fallback)
+- **Chain depth tracking** — prevents infinite event loops between channels (default max=5)
+- **Idempotency** — idempotency keys prevent duplicate event processing
 
 ```python
 from roomkit import RetryPolicy, RateLimit
 
 await kit.attach_channel("room-1", "sms-out",
-    metadata={"phone_number": "+15551234567"},
     retry_policy=RetryPolicy(max_retries=3, base_delay_seconds=1.0),
     rate_limit=RateLimit(max_per_second=5.0),
 )
@@ -481,37 +575,14 @@ await kit.attach_channel("room-1", "sms-out",
 
 ### Per-room locking
 
-RoomKit serializes event processing per room using a `RoomLockManager`. The default `InMemoryLockManager` works for single-process deployments. For multi-process or distributed setups, subclass `RoomLockManager` with a distributed lock (Redis, Postgres advisory locks, etc.):
+RoomKit serializes event processing per room using a `RoomLockManager`. The default `InMemoryLockManager` works for single-process deployments. For distributed setups, subclass with a distributed lock:
 
 ```python
-from roomkit import RoomKit, RoomLockManager
-
-# Single process (default)
-kit = RoomKit()
-
-# Distributed
-kit = RoomKit(lock_manager=MyRedisLockManager())
+kit = RoomKit()                                    # default in-memory
+kit = RoomKit(lock_manager=MyRedisLockManager())   # distributed
 ```
 
-### Backpressure
-
-RoomKit does not enforce a global concurrency limit on `process_inbound` calls. Each call acquires a per-room lock internally, but across different rooms, processing is fully concurrent.
-
-To prevent resource exhaustion, add concurrency control upstream:
-
-```python
-import asyncio
-from roomkit import RoomKit, InboundMessage, InboundResult
-
-kit = RoomKit()
-semaphore = asyncio.Semaphore(100)  # max 100 concurrent rooms processing
-
-async def handle_webhook(message: InboundMessage) -> InboundResult:
-    async with semaphore:
-        return await kit.process_inbound(message)
-```
-
-## Room Lifecycle
+### Room Lifecycle
 
 Rooms transition through states automatically based on activity timers:
 
@@ -526,60 +597,95 @@ await kit.create_room(
     room_id="support-123",
     timers=RoomTimers(inactive_after_seconds=300, closed_after_seconds=3600),
 )
-
-# Check and apply timer transitions
 transitioned = await kit.sweep_room_timers()
 ```
 
 ## Storage
 
-The `ConversationStore` ABC defines the persistence interface. `InMemoryStore` is included for development and testing. Implement the ABC to use any database.
+The `ConversationStore` ABC defines the persistence interface. `InMemoryStore` is included for development; `PostgresStore` for production.
 
 ```python
 kit = RoomKit()                          # uses InMemoryStore by default
-kit = RoomKit(store=MyPostgresStore())   # plug in your own
+kit = RoomKit(store=PostgresStore(...))   # PostgreSQL
 ```
 
 The store handles rooms, events, bindings, participants, identities, tasks, and observations.
+
+## Telemetry
+
+Built-in tracing with pluggable backends:
+
+```python
+from roomkit import TelemetryConfig, ConsoleTelemetryProvider
+
+kit = RoomKit(telemetry=TelemetryConfig(provider=ConsoleTelemetryProvider()))
+
+# Or use OpenTelemetry for production
+from roomkit import OpenTelemetryProvider
+kit = RoomKit(telemetry=TelemetryConfig(provider=OpenTelemetryProvider()))
+```
+
+## Skills
+
+Extensible AI capabilities via a skill registry:
+
+```python
+from roomkit import Skill, SkillMetadata, SkillRegistry
+
+registry = SkillRegistry()
+registry.register(Skill(
+    metadata=SkillMetadata(name="weather", description="Get weather forecasts"),
+    handler=my_weather_handler,
+))
+```
 
 ## AI Assistant Support
 
 RoomKit includes files to help AI coding assistants understand the library:
 
-- **[llms.txt](https://www.roomkit.live/llms.txt)** — Structured documentation for LLM context windows
-- **[AGENTS.md](AGENTS.md)** — Coding guidelines and patterns for AI assistants
+- **[llms.txt](https://www.roomkit.live/llms.txt)** — structured documentation for LLM context windows
+- **[AGENTS.md](AGENTS.md)** — coding guidelines and patterns for AI assistants
 - **[MCP Integration](https://www.roomkit.live/docs/mcp/)** — Model Context Protocol support
 
-Access programmatically:
-
 ```python
-from roomkit import get_llms_txt, get_agents_md
+from roomkit import get_llms_txt, get_agents_md, get_ai_context
 
 llms_content = get_llms_txt()
 agents_content = get_agents_md()
+combined = get_ai_context()
 ```
 
 ## Project Structure
 
 ```
 src/roomkit/
-  channels/        Channel implementations (sms, rcs, email, websocket, ai, ...)
   core/            Framework, hooks, routing, retry, circuit breaker
-  identity/        Identity resolution pipeline
+  channels/        Channel implementations (Voice, AI, Agent, WebSocket, etc.)
+  orchestration/   Multi-agent routing, handoff, pipeline, conversation state
+  providers/       Provider implementations (AI, SMS, Email, Teams, etc.)
+  voice/           Voice subsystem
+    backends/        Audio transports (FastRTC, RTP, SIP, Local)
+    stt/             Speech-to-text (Deepgram, SherpaOnnx, Qwen, Gradium)
+    tts/             Text-to-speech (ElevenLabs, SherpaOnnx, Qwen, Gradium, Neu)
+    pipeline/        10 audio processing stages (VAD, AEC, AGC, Denoiser, etc.)
+    realtime/        Speech-to-speech (Gemini Live, OpenAI Realtime)
   models/          Pydantic data models and enums
-  providers/       Provider implementations (sms/, rcs/, email/, teams/, messenger/, ...)
-  realtime/        Ephemeral events (typing, presence, read receipts)
-  sources/         Event-driven sources (WebSocket, neonize, custom)
-  store/           Storage abstraction and in-memory implementation
-  voice/           Voice subsystem (stt/, tts/, backends/, pipeline/, realtime/)
+  memory/          AI context construction (SlidingWindow, Handoff-aware)
+  skills/          Extensible AI capabilities
+  tools/           MCP tool integration
+  store/           Conversation persistence (Memory, Postgres)
+  identity/        User identification resolution
+  realtime/        Ephemeral events (typing, presence, reactions)
+  sources/         Event-driven sources (WebSocket, SSE, Neonize)
+  telemetry/       Tracing (Console, OpenTelemetry)
 ```
 
 ## Documentation
 
-- **[Website](https://www.roomkit.live)** — Landing page and overview
-- **[Documentation](https://www.roomkit.live/docs/)** — Full documentation
-- **[API Reference](https://www.roomkit.live/docs/api/)** — Complete API docs
-- **[RFC](https://www.roomkit.live/docs/roomkit-rfc/)** — Design document
+- **[Website](https://www.roomkit.live)** — landing page and overview
+- **[Documentation](https://www.roomkit.live/docs/)** — full documentation
+- **[API Reference](https://www.roomkit.live/docs/api/)** — complete API docs
+- **[RFC](https://www.roomkit.live/docs/roomkit-rfc/)** — design document
 
 ## Contributing
 
