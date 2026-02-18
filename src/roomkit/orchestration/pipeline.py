@@ -335,11 +335,23 @@ class ConversationPipeline:
             rtv._voice = initial["voice"]
             rtv._tools = initial["tools"]
 
-        # Greeting message included in tool result on handoff
-        greet_msg = greeting_prompt or (
+        # Per-agent greeting messages (identity-aware to override session history)
+        default_greet = (
             "Handoff complete. You are now the active agent. "
             "Please introduce yourself briefly to the caller."
         )
+        agent_greetings: dict[str, str] = {}
+        for agent in agents:
+            if greeting_prompt:
+                agent_greetings[agent.channel_id] = greeting_prompt
+            elif agent.role:
+                agent_greetings[agent.channel_id] = (
+                    f"Handoff complete. You are now the {agent.role}. "
+                    f"Your previous identity in this conversation no longer "
+                    f"applies — introduce yourself in your new role."
+                )
+            else:
+                agent_greetings[agent.channel_id] = default_greet
 
         # Install tool handler that intercepts handoff_conversation
         original_handler = rtv._tool_handler
@@ -374,7 +386,8 @@ class ConversationPipeline:
 
             output = result.model_dump()
             if result.accepted and greet_on_handoff:
-                output["message"] = greet_msg
+                target = arguments.get("target", "")
+                output["message"] = agent_greetings.get(target, default_greet)
             return output
 
         rtv._tool_handler = _realtime_tool_handler
@@ -396,11 +409,12 @@ class ConversationPipeline:
                 if greet_on_handoff:
                     # Session resumption doesn't preserve pending function-
                     # call state, so the tool result alone won't trigger a
-                    # response.  Inject a brief user-role message to give
-                    # the new agent a turn to speak.
+                    # response.  Inject an identity-aware message to give
+                    # the new agent a turn to speak in its new role.
+                    msg = agent_greetings.get(new_id, default_greet)
                     await rtv._provider.inject_text(
                         session,
-                        greet_msg,
+                        msg,
                         role="user",
                     )
 
