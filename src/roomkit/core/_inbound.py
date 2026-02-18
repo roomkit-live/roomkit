@@ -574,6 +574,18 @@ class InboundMixin(HelpersMixin):
                 reentry_ctx = context.model_copy(
                     update={"recent_events": [*context.recent_events[-49:], reentry]}
                 )
+
+                # Run BEFORE_BROADCAST sync hooks on reentry events so that
+                # orchestration routing (ConversationRouter) can stamp
+                # _routed_to metadata and prevent AI-to-AI loops.
+                reentry_sync = await self._hook_engine.run_sync_hooks(
+                    room_id, HookTrigger.BEFORE_BROADCAST, reentry, reentry_ctx
+                )
+                if not reentry_sync.allowed:
+                    # Hook blocked this reentry event — skip broadcast
+                    continue
+                reentry = reentry_sync.event or reentry
+
                 reentry_result = await router.broadcast(
                     reentry,
                     reentry_binding,

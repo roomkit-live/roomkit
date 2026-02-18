@@ -129,6 +129,41 @@ class RealtimeVoiceProvider(ABC):
         """
         ...
 
+    async def reconfigure(
+        self,
+        session: VoiceSession,
+        *,
+        system_prompt: str | None = None,
+        voice: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float | None = None,
+        provider_config: dict[str, Any] | None = None,
+    ) -> None:
+        """Reconfigure a session with new parameters.
+
+        Used during agent handoff to switch the AI personality, voice,
+        and tools.  The default implementation disconnects and reconnects;
+        providers with session resumption (e.g. Gemini Live) should
+        override to preserve conversation context.
+
+        Args:
+            session: The active session to reconfigure.
+            system_prompt: New system instructions.
+            voice: New voice ID.
+            tools: New tool/function definitions.
+            temperature: New sampling temperature.
+            provider_config: Provider-specific configuration overrides.
+        """
+        await self.disconnect(session)
+        await self.connect(
+            session,
+            system_prompt=system_prompt,
+            voice=voice,
+            tools=tools,
+            temperature=temperature,
+            provider_config=provider_config,
+        )
+
     async def send_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
         """Send a raw provider-specific event to the underlying service.
 

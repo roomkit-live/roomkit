@@ -115,19 +115,19 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     def name(self) -> str:
         return "GeminiLiveProvider"
 
-    async def connect(
+    def _build_config(
         self,
-        session: VoiceSession,
         *,
         system_prompt: str | None = None,
         voice: str | None = None,
         tools: list[dict[str, Any]] | None = None,
         temperature: float | None = None,
-        input_sample_rate: int = 16000,
-        output_sample_rate: int = 24000,
-        server_vad: bool = True,
         provider_config: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> Any:
+        """Build a LiveConnectConfig from parameters.
+
+        Shared by :meth:`connect` and :meth:`reconfigure`.
+        """
         from google.genai import types
 
         pc = provider_config or {}
@@ -236,17 +236,33 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             config["tools"] = genai_tools
 
         # --- Session resilience ---
-        # Session resumption: allows reconnecting without losing conversation
-        # context.  The server sends periodic handle updates; we store the
-        # latest and pass it back on reconnect.
         config["session_resumption"] = types.SessionResumptionConfig(handle=None)
-        # Context window compression: sliding window keeps sessions alive
-        # beyond the 15-minute audio limit by pruning old turns.
         config["context_window_compression"] = types.ContextWindowCompressionConfig(
             sliding_window=types.SlidingWindow(),
         )
 
-        live_config = types.LiveConnectConfig(**config)
+        return types.LiveConnectConfig(**config)
+
+    async def connect(
+        self,
+        session: VoiceSession,
+        *,
+        system_prompt: str | None = None,
+        voice: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float | None = None,
+        input_sample_rate: int = 16000,
+        output_sample_rate: int = 24000,
+        server_vad: bool = True,
+        provider_config: dict[str, Any] | None = None,
+    ) -> None:
+        live_config = self._build_config(
+            system_prompt=system_prompt,
+            voice=voice,
+            tools=tools,
+            temperature=temperature,
+            provider_config=provider_config,
+        )
 
         # Store config for potential reconnection
         self._live_configs[session.id] = live_config
@@ -462,6 +478,54 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         )
         session.state = VoiceSessionState.ENDED
 
+    async def reconfigure(
+        self,
+        session: VoiceSession,
+        *,
+        system_prompt: str | None = None,
+        voice: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float | None = None,
+        provider_config: dict[str, Any] | None = None,
+    ) -> None:
+        """Reconfigure a session by rebuilding config and reconnecting.
+
+        Uses Gemini's session resumption to preserve conversation
+        history while switching system prompt, voice, and tools.
+        """
+        import contextlib
+
+        new_config = self._build_config(
+            system_prompt=system_prompt,
+            voice=voice,
+            tools=tools,
+            temperature=temperature,
+            provider_config=provider_config,
+        )
+        self._live_configs[session.id] = new_config
+        logger.info(
+            "Reconfiguring Gemini session %s (voice=%s)",
+            session.id,
+            voice,
+        )
+
+        # Cancel the old receive task BEFORE reconnecting to prevent it
+        # from detecting the disconnection and triggering a second
+        # auto-reconnect (double-reconnect bug).
+        task = self._receive_tasks.pop(session.id, None)
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+
+        await self._reconnect(session)
+
+        # Start a fresh receive loop for the new connection.
+        self._receive_tasks[session.id] = asyncio.create_task(
+            self._receive_loop(session),
+            name=f"gemini_live_recv:{session.id}",
+        )
+
     async def close(self) -> None:
         for session_id in list(self._sessions.keys()):
             session = self._sessions.get(session_id)
@@ -558,7 +622,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     )
                     return
                 continue
-            except Exception:
+            except Exception as exc:
                 if session.state == VoiceSessionState.ENDED:
                     return
 
@@ -566,28 +630,26 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 # Suppress duplicate send_audio_failed errors during reconnect
                 self._error_suppressed.add(session.id)
 
-                # Log disconnect debugging info
+                # Log disconnect debugging info — include exception details
                 started_at = self._session_started_at.get(session.id)
-                if started_at:
-                    uptime = time.monotonic() - started_at
-                    logger.warning(
-                        "Gemini session %s disconnected — uptime=%.1fs, "
-                        "turns=%d, tool_result_bytes=%d",
-                        session.id,
-                        uptime,
-                        self._session_turn_count.get(session.id, 0),
-                        self._session_tool_result_bytes.get(session.id, 0),
-                    )
-
+                uptime = time.monotonic() - started_at if started_at else 0.0
                 audio_chunks = self._audio_chunk_count.get(session.id, 0)
                 was_streaming = session._response_started  # type: ignore[attr-defined]
-                if was_streaming:
-                    logger.warning(
-                        "Gemini connection lost DURING active response "
-                        "(session %s, %d audio chunks sent so far)",
-                        session.id,
-                        audio_chunks,
-                    )
+
+                logger.warning(
+                    "Gemini session %s disconnected — "
+                    "uptime=%.1fs, turns=%d, tool_result_bytes=%d, "
+                    "streaming=%s, audio_chunks=%d, "
+                    "error=%s: %s",
+                    session.id,
+                    uptime,
+                    self._session_turn_count.get(session.id, 0),
+                    self._session_tool_result_bytes.get(session.id, 0),
+                    was_streaming,
+                    audio_chunks,
+                    type(exc).__name__,
+                    exc,
+                )
                 if reconnect_count > self._MAX_RECONNECTS:
                     logger.error(
                         "Gemini Live session %s: connection lost, max reconnects (%d) reached",

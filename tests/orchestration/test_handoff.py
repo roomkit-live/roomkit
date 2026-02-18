@@ -17,6 +17,7 @@ from roomkit.orchestration.handoff import (
     HandoffRequest,
     HandoffResult,
     _room_id_var,
+    build_handoff_tool,
     setup_handoff,
 )
 from roomkit.orchestration.state import (
@@ -578,3 +579,158 @@ class TestOrchestrationInternalFlag:
         kit.send_event.assert_called_once()
         call_kwargs = kit.send_event.call_args[1]
         assert call_kwargs["metadata"]["_orchestration_internal"] is True
+
+
+# -- build_handoff_tool -------------------------------------------------------
+
+
+class TestBuildHandoffTool:
+    def test_with_targets(self):
+        tool = build_handoff_tool(
+            [
+                ("agent-advisor", "Gives financial advice"),
+                ("agent-support", "Handles support tickets"),
+            ]
+        )
+        assert tool.name == "handoff_conversation"
+        target_prop = tool.parameters["properties"]["target"]
+        assert target_prop["enum"] == ["agent-advisor", "agent-support"]
+
+    def test_includes_descriptions(self):
+        tool = build_handoff_tool(
+            [
+                ("agent-advisor", "Gives financial advice"),
+            ]
+        )
+        assert "agent-advisor: Gives financial advice" in tool.description
+
+    def test_empty_returns_generic(self):
+        tool = build_handoff_tool([])
+        assert tool is HANDOFF_TOOL
+
+    def test_target_without_description(self):
+        tool = build_handoff_tool([("agent-x", None)])
+        assert "agent-x" in tool.description
+        target_prop = tool.parameters["properties"]["target"]
+        assert target_prop["enum"] == ["agent-x"]
+
+    def test_preserves_other_parameters(self):
+        tool = build_handoff_tool([("agent-a", "desc")])
+        assert "reason" in tool.parameters["properties"]
+        assert "summary" in tool.parameters["properties"]
+        assert tool.parameters["required"] == ["target", "reason", "summary"]
+
+
+class TestSetupHandoffCustomTool:
+    def test_custom_tool_injected(self):
+        channel = MagicMock()
+        channel._extra_tools = []
+        channel._tool_handler = None
+
+        custom_tool = build_handoff_tool([("agent-b", "specialist")])
+        handler = MagicMock(spec=HandoffHandler)
+        setup_handoff(channel, handler, tool=custom_tool)
+
+        assert len(channel._extra_tools) == 1
+        assert channel._extra_tools[0] is custom_tool
+
+    def test_default_tool_when_none(self):
+        channel = MagicMock()
+        channel._extra_tools = []
+        channel._tool_handler = None
+
+        handler = MagicMock(spec=HandoffHandler)
+        setup_handoff(channel, handler)
+
+        assert channel._extra_tools[0] is HANDOFF_TOOL
+
+
+# -- known_agents + on_handoff_complete ---------------------------------------
+
+
+class TestKnownAgents:
+    async def test_known_agent_bypasses_binding_check(self):
+        """Handoff to a known agent succeeds even without a room binding."""
+        room = Room(id="r1")
+        # agent-b is NOT in bindings but IS in known_agents
+        bindings = [_ai_binding("agent-a")]
+        kit = _make_mock_kit(room, bindings)
+        router = MagicMock()
+
+        handler = HandoffHandler(
+            kit=kit,
+            router=router,
+            known_agents={"agent-b"},
+        )
+        result = await handler.handle(
+            room_id="r1",
+            calling_agent_id="agent-a",
+            arguments={"target": "agent-b", "reason": "test", "summary": "s"},
+        )
+
+        assert result.accepted is True
+        assert result.new_agent_id == "agent-b"
+
+    async def test_unknown_agent_still_rejected(self):
+        """Agents not in known_agents nor bindings are still rejected."""
+        room = Room(id="r1")
+        bindings = [_ai_binding("agent-a")]
+        kit = _make_mock_kit(room, bindings)
+        router = MagicMock()
+
+        handler = HandoffHandler(
+            kit=kit,
+            router=router,
+            known_agents={"agent-b"},
+        )
+        result = await handler.handle(
+            room_id="r1",
+            calling_agent_id="agent-a",
+            arguments={"target": "agent-c", "reason": "t", "summary": "s"},
+        )
+
+        assert result.accepted is False
+
+
+class TestOnHandoffComplete:
+    async def test_callback_called_on_success(self):
+        room = Room(id="r1")
+        bindings = [_ai_binding("agent-a"), _ai_binding("agent-b")]
+        kit = _make_mock_kit(room, bindings)
+        router = MagicMock()
+
+        callback = AsyncMock()
+        handler = HandoffHandler(
+            kit=kit,
+            router=router,
+            on_handoff_complete=callback,
+        )
+        result = await handler.handle(
+            room_id="r1",
+            calling_agent_id="agent-a",
+            arguments={"target": "agent-b", "reason": "ok", "summary": "s"},
+        )
+
+        assert result.accepted is True
+        callback.assert_called_once_with("r1", result)
+
+    async def test_callback_not_called_on_rejection(self):
+        room = Room(id="r1")
+        bindings = [_ai_binding("agent-a")]  # agent-b NOT in room
+        kit = _make_mock_kit(room, bindings)
+        router = MagicMock()
+
+        callback = AsyncMock()
+        handler = HandoffHandler(
+            kit=kit,
+            router=router,
+            on_handoff_complete=callback,
+        )
+        result = await handler.handle(
+            room_id="r1",
+            calling_agent_id="agent-a",
+            arguments={"target": "agent-b", "reason": "t", "summary": "s"},
+        )
+
+        assert result.accepted is False
+        callback.assert_not_called()

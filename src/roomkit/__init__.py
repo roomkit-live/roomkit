@@ -12,6 +12,7 @@ from roomkit.channels import (
     WhatsAppChannel,
     WhatsAppPersonalChannel,
 )
+from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.base import Channel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
@@ -107,6 +108,7 @@ from roomkit.orchestration.handoff import (
     HandoffMemoryProvider,
     HandoffRequest,
     HandoffResult,
+    build_handoff_tool,
     setup_handoff,
 )
 from roomkit.orchestration.pipeline import (
@@ -347,6 +349,7 @@ __all__ = [
     "InboundRoomRouter",
     "DefaultInboundRoomRouter",
     # Channels
+    "Agent",
     "Channel",
     "TransportChannel",
     "AIChannel",
@@ -390,6 +393,7 @@ __all__ = [
     "ConversationState",
     "HANDOFF_TOOL",
     "HandoffHandler",
+    "build_handoff_tool",
     "HandoffMemoryProvider",
     "HandoffRequest",
     "HandoffResult",

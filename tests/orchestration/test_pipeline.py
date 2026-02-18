@@ -7,22 +7,35 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from roomkit.channels.agent import Agent
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType, HookExecution, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.hook import HookResult
 from roomkit.models.room import Room
-from roomkit.orchestration.handoff import HandoffHandler
+from roomkit.orchestration.handoff import HANDOFF_TOOL, HandoffHandler
 from roomkit.orchestration.pipeline import (
     ConversationPipeline,
     PipelineStage,
 )
 from roomkit.orchestration.router import ConversationRouter
-from roomkit.orchestration.state import ConversationState
+from roomkit.orchestration.state import ConversationState, set_conversation_state
+from roomkit.voice.base import VoiceSession, VoiceSessionState
 from tests.conftest import make_event
 
 # -- Helpers ------------------------------------------------------------------
+
+
+class _NoopLock:
+    """Async context manager that does nothing (replaces real room lock in tests)."""
+
+    async def __aenter__(self) -> None:
+        pass
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
 
 
 def _ai_binding(channel_id: str, room_id: str = "r1") -> ChannelBinding:
@@ -274,12 +287,10 @@ class TestPipelineStage:
 # -- install ------------------------------------------------------------------
 
 
-def _mock_agent(channel_id: str) -> MagicMock:
-    agent = MagicMock()
-    agent.channel_id = channel_id
-    agent._extra_tools = []
-    agent._tool_handler = None
-    return agent
+def _mock_agent(channel_id: str, **kwargs) -> Agent:
+    from roomkit.providers.ai.mock import MockAIProvider
+
+    return Agent(channel_id, provider=MockAIProvider(responses=["ok"]), **kwargs)
 
 
 def _mock_kit() -> MagicMock:
@@ -529,3 +540,519 @@ class TestGreetOnHandoff:
         assert len(captured) == 1
         bb_key = (str(HookTrigger.BEFORE_BROADCAST), str(HookExecution.SYNC))
         assert bb_key in captured
+
+
+# -- Agent-aware install ------------------------------------------------------
+
+
+class TestAgentAwareInstall:
+    def test_install_per_agent_tool_with_targets(self):
+        """Agent instances get a handoff tool with enum-constrained targets."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="intake", agent_id="agent-triage", next="handling"),
+                PipelineStage(phase="handling", agent_id="agent-advisor", next="intake"),
+            ],
+        )
+        kit = _mock_kit()
+        triage = _mock_agent("agent-triage", role="Triage", description="Routes callers")
+        advisor = _mock_agent("agent-advisor", role="Advisor", description="Gives advice")
+
+        pipeline.install(kit, [triage, advisor])
+
+        # triage should have tool with enum=["agent-advisor"]
+        assert len(triage._extra_tools) == 1
+        tool = triage._extra_tools[0]
+        target_prop = tool.parameters["properties"]["target"]
+        assert target_prop["enum"] == ["agent-advisor"]
+
+        # advisor should have tool with enum=["agent-triage"]
+        assert len(advisor._extra_tools) == 1
+        tool = advisor._extra_tools[0]
+        target_prop = tool.parameters["properties"]["target"]
+        assert target_prop["enum"] == ["agent-triage"]
+
+    def test_install_uses_agent_description(self):
+        """Agent.description appears in the handoff tool description."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit = _mock_kit()
+        agent_a = _mock_agent("agent-a", description="Does A things")
+        agent_b = _mock_agent("agent-b", description="Does B things")
+
+        pipeline.install(kit, [agent_a, agent_b])
+
+        # agent-a's tool should mention agent-b's description
+        tool = agent_a._extra_tools[0]
+        assert "Does B things" in tool.description
+
+    def test_install_uses_stage_description_fallback(self):
+        """PipelineStage.description used when Agent has no description."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(
+                    phase="b",
+                    agent_id="agent-b",
+                    description="Stage B desc",
+                ),
+            ],
+        )
+        kit = _mock_kit()
+        agent_a = _mock_agent("agent-a", role="A")
+        agent_b = _mock_agent("agent-b", role="B")
+
+        pipeline.install(kit, [agent_a, agent_b])
+
+        # agent-a's tool should use PipelineStage.description for agent-b
+        tool = agent_a._extra_tools[0]
+        assert "Stage B desc" in tool.description
+
+    def test_install_auto_wires_voice_map(self):
+        """Agent.voice fields are auto-wired into VoiceChannel._voice_map."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit = _mock_kit()
+        from roomkit.channels.voice import VoiceChannel
+
+        vc = MagicMock(spec=VoiceChannel)
+        vc.update_voice_map = MagicMock()
+        kit._channels = {"voice": vc}
+
+        agent_a = _mock_agent("agent-a", voice="voice-a")
+        agent_b = _mock_agent("agent-b", voice="voice-b")
+
+        pipeline.install(kit, [agent_a, agent_b], voice_channel_id="voice")
+
+        vc.update_voice_map.assert_called_once_with(
+            {
+                "agent-a": "voice-a",
+                "agent-b": "voice-b",
+            }
+        )
+
+    def test_install_no_voice_wiring_without_agent_voices(self):
+        """No voice map wiring when no Agent has voice set."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next=None),
+            ],
+        )
+        kit = _mock_kit()
+        vc = MagicMock()
+        vc.update_voice_map = MagicMock()
+        kit._channels = {"voice": vc}
+
+        agent_a = _mock_agent("agent-a", role="A")
+
+        pipeline.install(kit, [agent_a], voice_channel_id="voice")
+
+        vc.update_voice_map.assert_not_called()
+
+    def test_install_terminal_agent_gets_empty_enum(self):
+        """Agent at terminal stage (next=None, no can_return_to) gets generic tool."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit = _mock_kit()
+        agent_a = _mock_agent("agent-a", description="first")
+        agent_b = _mock_agent("agent-b", description="last")
+
+        pipeline.install(kit, [agent_a, agent_b])
+
+        # agent-b has no reachable targets → empty targets → generic tool
+        assert agent_b._extra_tools[0] is HANDOFF_TOOL
+
+
+# -- Realtime (speech-to-speech) install ------------------------------------
+
+
+def _make_rtv(channel_id: str = "rtv") -> RealtimeVoiceChannel:
+    """Create a real RealtimeVoiceChannel with mock provider + transport."""
+    from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+
+    return RealtimeVoiceChannel(
+        channel_id,
+        provider=MockRealtimeProvider(),
+        transport=MockRealtimeTransport(),
+    )
+
+
+def _mock_kit_with_rtv(rtv_channel_id: str = "rtv"):
+    """Return a mock kit that has a real RealtimeVoiceChannel registered."""
+    kit = MagicMock()
+    hook_decorator = MagicMock()
+    kit.hook.return_value = hook_decorator
+    rtv = _make_rtv(rtv_channel_id)
+    kit._channels = {rtv_channel_id: rtv}
+    return kit, rtv
+
+
+class TestRealtimeInstall:
+    def test_install_detects_realtime_channel(self):
+        """install() detects RealtimeVoiceChannel and uses _wire_realtime."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit, rtv = _mock_kit_with_rtv()
+        # Config-only agents (no provider)
+        a = Agent("agent-a", role="A", description="Does A", voice="v-a", system_prompt="Be A.")
+        b = Agent("agent-b", role="B", description="Does B", voice="v-b", system_prompt="Be B.")
+
+        pipeline.install(kit, [a, b], voice_channel_id="rtv")
+
+        # Agents should NOT have handoff tools injected directly
+        # (they're config-only, wiring goes through the RTV tool handler)
+        assert len(a._extra_tools) == 0
+        assert len(b._extra_tools) == 0
+
+        # RTV should have a tool handler installed
+        assert rtv._tool_handler is not None
+
+    def test_wire_realtime_sets_initial_config(self):
+        """Initial agent's config is applied to the RTV channel."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="triage", agent_id="agent-triage", next="handling"),
+                PipelineStage(phase="handling", agent_id="agent-advisor", next=None),
+            ],
+        )
+        kit, rtv = _mock_kit_with_rtv()
+        triage = Agent(
+            "agent-triage",
+            role="Triage",
+            voice="v-triage",
+            system_prompt="Greet callers.",
+        )
+        advisor = Agent(
+            "agent-advisor",
+            role="Advisor",
+            voice="v-advisor",
+            system_prompt="Give advice.",
+        )
+
+        pipeline.install(kit, [triage, advisor], voice_channel_id="rtv")
+
+        # Initial config should be the first stage (triage)
+        assert rtv._voice == "v-triage"
+        assert rtv._system_prompt is not None
+        assert "Greet callers." in rtv._system_prompt
+        assert "Role: Triage" in rtv._system_prompt
+
+        # Tools should contain the handoff tool
+        assert rtv._tools is not None
+        assert len(rtv._tools) == 1
+        assert rtv._tools[0]["name"] == "handoff_conversation"
+
+    def test_wire_realtime_per_agent_tool_has_enum(self):
+        """Per-agent handoff tool has enum-constrained targets."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="triage", agent_id="agent-triage", next="handling"),
+                PipelineStage(
+                    phase="handling",
+                    agent_id="agent-advisor",
+                    next="triage",
+                    can_return_to={"triage"},
+                ),
+            ],
+        )
+        kit, rtv = _mock_kit_with_rtv()
+        triage = Agent(
+            "agent-triage",
+            role="Triage",
+            description="Routes callers",
+            voice="v-t",
+            system_prompt="Hi.",
+        )
+        advisor = Agent(
+            "agent-advisor",
+            role="Advisor",
+            description="Gives advice",
+            voice="v-a",
+            system_prompt="Help.",
+        )
+
+        pipeline.install(kit, [triage, advisor], voice_channel_id="rtv")
+
+        # Initial tool (triage) should have enum=["agent-advisor"]
+        tool = rtv._tools[0]
+        assert tool["parameters"]["properties"]["target"]["enum"] == ["agent-advisor"]
+
+    def test_wire_realtime_known_agents_on_handler(self):
+        """Handler should have known_agents set for realtime mode."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit, rtv = _mock_kit_with_rtv()
+        a = Agent("agent-a", role="A", system_prompt="A.")
+        b = Agent("agent-b", role="B", system_prompt="B.")
+
+        _, handler = pipeline.install(kit, [a, b], voice_channel_id="rtv")
+
+        assert handler._known_agents == {"agent-a", "agent-b"}
+
+    async def test_wire_realtime_tool_handler_handoff(self):
+        """Tool handler intercepts handoff_conversation and calls handler."""
+        from roomkit.orchestration.state import ConversationState
+        from roomkit.voice.base import VoiceSession
+
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="triage", agent_id="agent-triage", next="handling"),
+                PipelineStage(phase="handling", agent_id="agent-advisor", next=None),
+            ],
+        )
+        kit, rtv = _mock_kit_with_rtv()
+        triage = Agent(
+            "agent-triage",
+            role="Triage",
+            description="Routes callers",
+            voice="v-t",
+            system_prompt="Hi.",
+        )
+        advisor = Agent(
+            "agent-advisor",
+            role="Advisor",
+            description="Gives advice",
+            voice="v-a",
+            system_prompt="Help.",
+        )
+
+        # Set up room with conversation state
+        room = Room(id="r1")
+        state = ConversationState(active_agent_id="agent-triage", phase="triage")
+        room = set_conversation_state(room, state)
+
+        # Mock kit methods needed by handler
+        kit.get_room = AsyncMock(return_value=room)
+        kit.store.list_bindings = AsyncMock(return_value=[])
+        kit.store.update_room = AsyncMock()
+        kit.send_event = AsyncMock()
+        kit._hook_engine.run_async_hooks = AsyncMock()
+        kit._lock_manager = MagicMock()
+        kit._lock_manager.locked = MagicMock(return_value=_NoopLock())
+
+        pipeline.install(kit, [triage, advisor], voice_channel_id="rtv")
+
+        # Simulate a session in the RTV
+        session = VoiceSession(
+            id="s1",
+            room_id="r1",
+            participant_id="user1",
+            channel_id="rtv",
+        )
+        rtv._sessions["s1"] = session
+        rtv._session_rooms["s1"] = "r1"
+
+        # Call the tool handler
+        result = await rtv._tool_handler(
+            session,
+            "handoff_conversation",
+            {"target": "agent-advisor", "reason": "needs help", "summary": "context"},
+        )
+
+        assert isinstance(result, dict)
+        assert result["accepted"] is True
+        assert result["new_agent_id"] == "agent-advisor"
+
+    async def test_wire_realtime_reconfigures_on_handoff(self):
+        """on_handoff_complete reconfigures the RTV session."""
+        from roomkit.orchestration.state import ConversationState
+        from roomkit.voice.base import VoiceSession
+
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="triage", agent_id="agent-triage", next="handling"),
+                PipelineStage(phase="handling", agent_id="agent-advisor", next=None),
+            ],
+        )
+        kit, rtv = _mock_kit_with_rtv()
+        triage = Agent(
+            "agent-triage",
+            role="Triage",
+            voice="v-t",
+            system_prompt="Hi.",
+        )
+        advisor = Agent(
+            "agent-advisor",
+            role="Advisor",
+            voice="v-a",
+            system_prompt="Help.",
+        )
+
+        room = Room(id="r1")
+        state = ConversationState(active_agent_id="agent-triage", phase="triage")
+        room = set_conversation_state(room, state)
+
+        kit.get_room = AsyncMock(return_value=room)
+        kit.store.list_bindings = AsyncMock(return_value=[])
+        kit.store.update_room = AsyncMock()
+        kit.send_event = AsyncMock()
+        kit._hook_engine.run_async_hooks = AsyncMock()
+        kit._lock_manager = MagicMock()
+        kit._lock_manager.locked = MagicMock(return_value=_NoopLock())
+
+        _, handler = pipeline.install(
+            kit,
+            [triage, advisor],
+            voice_channel_id="rtv",
+        )
+
+        session = VoiceSession(
+            id="s1",
+            room_id="r1",
+            participant_id="user1",
+            channel_id="rtv",
+        )
+        session.state = VoiceSessionState.ACTIVE
+        rtv._sessions["s1"] = session
+        rtv._session_rooms["s1"] = "r1"
+
+        # Trigger handoff via tool handler
+        await rtv._tool_handler(
+            session,
+            "handoff_conversation",
+            {"target": "agent-advisor", "reason": "help", "summary": "ctx"},
+        )
+
+        # Provider should have been reconfigured (disconnect + reconnect)
+        provider = rtv._provider
+        reconfig_calls = [c for c in provider.calls if c.method == "disconnect"]
+        assert len(reconfig_calls) >= 1  # reconfigure disconnects the old session
+
+    async def test_wire_realtime_greet_on_handoff(self):
+        """When greet_on_handoff=True, tool result includes greeting message."""
+        from roomkit.orchestration.state import ConversationState
+        from roomkit.voice.base import VoiceSession
+
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="triage", agent_id="agent-triage", next="handling"),
+                PipelineStage(phase="handling", agent_id="agent-advisor", next=None),
+            ],
+        )
+        kit, rtv = _mock_kit_with_rtv()
+        triage = Agent(
+            "agent-triage",
+            role="Triage",
+            voice="v-t",
+            system_prompt="Hi.",
+        )
+        advisor = Agent(
+            "agent-advisor",
+            role="Advisor",
+            voice="v-a",
+            system_prompt="Help.",
+        )
+
+        room = Room(id="r1")
+        state = ConversationState(active_agent_id="agent-triage", phase="triage")
+        room = set_conversation_state(room, state)
+
+        kit.get_room = AsyncMock(return_value=room)
+        kit.store.list_bindings = AsyncMock(return_value=[])
+        kit.store.update_room = AsyncMock()
+        kit.send_event = AsyncMock()
+        kit._hook_engine.run_async_hooks = AsyncMock()
+        kit._lock_manager = MagicMock()
+        kit._lock_manager.locked = MagicMock(return_value=_NoopLock())
+
+        pipeline.install(
+            kit,
+            [triage, advisor],
+            voice_channel_id="rtv",
+            greet_on_handoff=True,
+        )
+
+        session = VoiceSession(
+            id="s1",
+            room_id="r1",
+            participant_id="user1",
+            channel_id="rtv",
+        )
+        rtv._sessions["s1"] = session
+        rtv._session_rooms["s1"] = "r1"
+
+        result = await rtv._tool_handler(
+            session,
+            "handoff_conversation",
+            {"target": "agent-advisor", "reason": "help", "summary": "ctx"},
+        )
+
+        assert "introduce yourself" in result["message"].lower()
+
+    async def test_wire_realtime_non_handoff_tool_delegates(self):
+        """Non-handoff tools are delegated to the original handler."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next=None),
+            ],
+        )
+        kit, rtv = _mock_kit_with_rtv()
+        a = Agent("agent-a", role="A", system_prompt="A.")
+
+        # Set up an original tool handler
+        original_called = {}
+
+        async def original_handler(session, name, args):
+            original_called["name"] = name
+            return {"result": "from_original"}
+
+        rtv._tool_handler = original_handler
+
+        pipeline.install(kit, [a], voice_channel_id="rtv")
+
+        session = VoiceSession(
+            id="s1",
+            room_id="r1",
+            participant_id="user1",
+            channel_id="rtv",
+        )
+
+        result = await rtv._tool_handler(session, "get_weather", {"city": "NYC"})
+
+        assert original_called["name"] == "get_weather"
+        assert result == {"result": "from_original"}
+
+    def test_traditional_mode_not_affected(self):
+        """When voice_channel_id points to VoiceChannel (not RTV), traditional wiring."""
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit = _mock_kit()
+        from roomkit.channels.voice import VoiceChannel
+
+        vc = MagicMock(spec=VoiceChannel)
+        vc.update_voice_map = MagicMock()
+        kit._channels = {"voice": vc}
+
+        agent_a = _mock_agent("agent-a", voice="v-a")
+        agent_b = _mock_agent("agent-b", voice="v-b")
+
+        pipeline.install(kit, [agent_a, agent_b], voice_channel_id="voice")
+
+        # Traditional: agents get handoff tools directly
+        assert len(agent_a._extra_tools) == 1
+        assert len(agent_b._extra_tools) == 1
+        vc.update_voice_map.assert_called_once()

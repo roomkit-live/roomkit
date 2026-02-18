@@ -87,7 +87,7 @@ logger = logging.getLogger("voice_triage")
 logging.getLogger("roomkit.core.event_router").setLevel(logging.ERROR)
 
 from roomkit import (
-    AIChannel,
+    Agent,
     ChannelCategory,
     ConversationPipeline,
     ConversationState,
@@ -203,7 +203,6 @@ async def main() -> None:
         tts=tts,
         backend=sip,
         pipeline=AudioPipelineConfig(vad=vad),
-        voice_map={"agent-triage": VOICE_TRIAGE, "agent-advisor": VOICE_ADVISOR},
     )
     kit.register_channel(voice)
 
@@ -215,37 +214,49 @@ async def main() -> None:
         max_tokens=150,
     )
 
-    triage = AIChannel(
+    triage = Agent(
         "agent-triage",
         provider=GeminiAIProvider(gemini_config),
+        role="Triage receptionist",
+        description="Routes callers to the right financial specialist",
+        scope="Financial advisory services only",
+        voice=VOICE_TRIAGE,
         system_prompt=(
-            "You are a voice triage agent for a financial advisory firm. "
             "ALWAYS reply in the same language as the caller. "
-            "Greet callers warmly, identify their need, then use the "
-            "handoff_conversation tool to transfer them to agent-advisor. "
+            "Greet callers warmly and identify their need. "
+            "If the caller's request matches financial advisory, use the "
+            "handoff_conversation tool to transfer them. "
+            "If it does NOT match (e.g. mechanical parts, IT support, "
+            "medical, legal), politely explain that this firm only handles "
+            "financial matters and you cannot help with their request. "
+            "Do NOT transfer callers whose needs don't match any available agent. "
             "Keep responses under 30 words — they will be spoken aloud. "
+            "NEVER write handoff instructions as text — always use the tool. "
+            "Your spoken responses must ONLY contain words meant for the caller. "
             "Never use markdown, bullet points, or special formatting."
         ),
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=20)),
     )
 
-    advisor = AIChannel(
+    advisor = Agent(
         "agent-advisor",
         provider=GeminiAIProvider(gemini_config),
+        role="Portfolio advisor",
+        description="Provides financial and investment advice",
+        voice=VOICE_ADVISOR,
         system_prompt=(
-            "You are a portfolio advisor. You receive context from the "
-            "triage agent about what the caller needs. "
             "ALWAYS reply in the same language as the caller. "
             "When you first join a call after a transfer, introduce yourself "
             "briefly and warmly — the caller is waiting. "
             "Give concise, conversational financial advice. "
-            "No tables, no bullet points, no file references. "
-            "Speak naturally, under 50 words per response. "
-            "Never use markdown or special formatting. "
-            "If the caller's request is outside your expertise, use the "
-            "handoff_conversation tool to transfer them back to agent-triage. "
+            "If the caller wants to discuss a different topic or needs to "
+            "be re-triaged, use the handoff_conversation tool to transfer "
+            "them back. "
             "NEVER write handoff instructions as text — always use the tool. "
-            "Your spoken responses must ONLY contain words meant for the caller."
+            "Your spoken responses must ONLY contain words meant for the caller. "
+            "Speak naturally, under 50 words per response. "
+            "No tables, no bullet points, no file references. "
+            "Never use markdown or special formatting."
         ),
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=20)),
     )

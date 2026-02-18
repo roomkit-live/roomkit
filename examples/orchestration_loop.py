@@ -18,7 +18,7 @@ import logging
 logging.getLogger("roomkit").setLevel(logging.ERROR)
 
 from roomkit import (
-    AIChannel,
+    Agent,
     ChannelCategory,
     ConversationPipeline,
     ConversationState,
@@ -81,15 +81,17 @@ async def main() -> None:
     kit.register_channel(ws)
 
     # AI agents — each with multiple mock responses for the loop
-    ai_discuss = AIChannel(
+    ai_discuss = Agent(
         "agent-discuss",
         provider=MockAIProvider(
             responses=["I've identified the root cause: PR #847 added auth middleware."]
         ),
+        role="Bug analyst",
+        description="Analyzes bugs and identifies root causes",
         system_prompt="You analyze bugs and identify root causes.",
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
     )
-    ai_coder = AIChannel(
+    ai_coder = Agent(
         "agent-coder",
         provider=MockAIProvider(
             responses=[
@@ -97,10 +99,12 @@ async def main() -> None:
                 "Fixed both issues: added IP allowlist and test coverage.",
             ]
         ),
+        role="Code author",
+        description="Writes code fixes based on analysis",
         system_prompt="You write code fixes.",
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
     )
-    ai_reviewer = AIChannel(
+    ai_reviewer = Agent(
         "agent-reviewer",
         provider=MockAIProvider(
             responses=[
@@ -108,12 +112,16 @@ async def main() -> None:
                 "Code approved. All issues resolved.",
             ]
         ),
+        role="Code reviewer",
+        description="Reviews code changes for quality and correctness",
         system_prompt="You review code changes.",
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
     )
-    ai_writer = AIChannel(
+    ai_writer = Agent(
         "agent-writer",
         provider=MockAIProvider(responses=["Bug report published. JIRA: DEV-1234."]),
+        role="Technical writer",
+        description="Writes documentation and creates tickets",
         system_prompt="You write documentation and create tickets.",
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
     )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from roomkit.channels.agent import Agent
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType, HookExecution, HookTrigger
@@ -354,7 +355,7 @@ class TestIntelligenceSourceSkipped:
 
 
 class TestAsHook:
-    async def test_hook_returns_allow_when_no_routing(self):
+    async def test_hook_returns_allow_when_no_routing_from_transport(self):
         router = ConversationRouter()  # no rules, no default
         hook = router.as_hook()
         event = make_event(room_id="r1", channel_id="sms1")
@@ -362,6 +363,43 @@ class TestAsHook:
 
         result = await hook(event, ctx)
         assert result.action == "allow"
+
+    async def test_hook_blocks_intelligence_source_reentry(self):
+        """Events FROM an AI agent should not trigger other AI agents."""
+        router = ConversationRouter(default_agent_id="agent-a")
+        hook = router.as_hook()
+        event = make_event(room_id="r1", channel_id="agent-a", channel_type=ChannelType.AI)
+        ctx = _context(
+            bindings=[
+                _ai_binding("agent-a"),
+                _ai_binding("agent-b"),
+            ]
+        )
+
+        result = await hook(event, ctx)
+        assert result.action == "modify"
+        assert result.event is not None
+        assert result.event.metadata["_routed_to"] == "_none_"
+
+    async def test_hook_intelligence_source_includes_supervisor(self):
+        """Supervisor still in _always_process even for intelligence-sourced events."""
+        router = ConversationRouter(
+            default_agent_id="agent-a",
+            supervisor_id="agent-sup",
+        )
+        hook = router.as_hook()
+        event = make_event(room_id="r1", channel_id="agent-a", channel_type=ChannelType.AI)
+        ctx = _context(
+            bindings=[
+                _ai_binding("agent-a"),
+                _ai_binding("agent-sup"),
+            ]
+        )
+
+        result = await hook(event, ctx)
+        assert result.event is not None
+        assert result.event.metadata["_routed_to"] == "_none_"
+        assert "agent-sup" in result.event.metadata["_always_process"]
 
     async def test_hook_stamps_routed_to_metadata(self):
         router = ConversationRouter(default_agent_id="agent-a")
@@ -455,12 +493,10 @@ class TestAsHook:
 # -- install ------------------------------------------------------------------
 
 
-def _mock_agent(channel_id: str) -> MagicMock:
-    agent = MagicMock()
-    agent.channel_id = channel_id
-    agent._extra_tools = []
-    agent._tool_handler = None
-    return agent
+def _mock_agent(channel_id: str) -> Agent:
+    from roomkit.providers.ai.mock import MockAIProvider
+
+    return Agent(channel_id, provider=MockAIProvider(responses=["ok"]))
 
 
 def _mock_kit() -> MagicMock:

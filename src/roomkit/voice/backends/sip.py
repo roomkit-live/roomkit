@@ -28,6 +28,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import socket
 from collections.abc import AsyncIterator, Callable
@@ -395,6 +396,12 @@ class SIPVoiceBackend(VoiceBackend):
         pacer = self._session_pacers.pop(session_id, None)
         if pacer is not None:
             pacer.interrupt()
+            # Schedule proper shutdown so the background task exits cleanly
+            with contextlib.suppress(RuntimeError):
+                asyncio.get_running_loop().create_task(
+                    pacer.stop(),
+                    name=f"pacer_stop:{session_id}",
+                )
         if session is not None:
             session.state = VoiceSessionState.ENDED
 
@@ -745,9 +752,10 @@ class SIPVoiceBackend(VoiceBackend):
         was_playing = session.id in self._playing_sessions
         if was_playing:
             self._playing_sessions.discard(session.id)
-            # Interrupt the pacer first (drains its queue immediately),
-            # then cancel the feeder task that iterates over TTS chunks.
-            pacer = self._session_pacers.pop(session.id, None)
+            # Interrupt the pacer (drains its queue immediately) but keep
+            # it in the dict so it is reused for the next response.
+            # Popping it would orphan the background _run() task.
+            pacer = self._session_pacers.get(session.id)
             if pacer is not None:
                 pacer.interrupt()
             task = self._playback_tasks.pop(session.id, None)

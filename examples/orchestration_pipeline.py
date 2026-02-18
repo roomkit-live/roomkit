@@ -19,7 +19,7 @@ import logging
 logging.getLogger("roomkit").setLevel(logging.ERROR)
 
 from roomkit import (
-    AIChannel,
+    Agent,
     ChannelCategory,
     ConversationPipeline,
     ConversationState,
@@ -76,21 +76,27 @@ async def main() -> None:
     kit.register_channel(ws)
 
     # AI agents — each with a distinct mock response
-    ai_triage = AIChannel(
+    ai_triage = Agent(
         "agent-triage",
         provider=MockAIProvider(responses=["I'll transfer you to our specialist."]),
+        role="Triage agent",
+        description="Routes incoming requests to the right specialist",
         system_prompt="You triage incoming requests.",
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
     )
-    ai_handler = AIChannel(
+    ai_handler = Agent(
         "agent-handler",
         provider=MockAIProvider(responses=["Let me resolve this for you."]),
+        role="Request handler",
+        description="Handles and resolves customer requests",
         system_prompt="You handle requests.",
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
     )
-    ai_resolver = AIChannel(
+    ai_resolver = Agent(
         "agent-resolver",
         provider=MockAIProvider(responses=["All done! Issue resolved."]),
+        role="Resolution specialist",
+        description="Confirms resolution and closes requests",
         system_prompt="You resolve and close requests.",
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
     )

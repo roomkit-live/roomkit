@@ -17,7 +17,7 @@ import logging
 logging.getLogger("roomkit").setLevel(logging.ERROR)
 
 from roomkit import (
-    AIChannel,
+    Agent,
     ChannelCategory,
     ConversationRouter,
     HandoffMemoryProvider,
@@ -63,27 +63,35 @@ async def main() -> None:
     kit.register_channel(ws)
 
     # AI agents — each specialized for a domain
-    ai_triage = AIChannel(
+    ai_triage = Agent(
         "agent-triage",
         provider=MockAIProvider(responses=["Let me route you to the right team."]),
+        role="Triage agent",
+        description="Routes incoming requests to billing or tech support",
         system_prompt="You triage incoming requests.",
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
     )
-    ai_billing = AIChannel(
+    ai_billing = Agent(
         "agent-billing",
         provider=MockAIProvider(responses=["I can help with your invoice."]),
+        role="Billing specialist",
+        description="Handles billing and invoice questions",
         system_prompt="You handle billing questions.",
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
     )
-    ai_tech = AIChannel(
+    ai_tech = Agent(
         "agent-tech",
         provider=MockAIProvider(responses=["Let me troubleshoot that for you."]),
+        role="Tech support",
+        description="Handles technical issues and troubleshooting",
         system_prompt="You handle technical issues.",
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=50)),
     )
-    ai_supervisor = AIChannel(
+    ai_supervisor = Agent(
         "agent-supervisor",
         provider=MockAIProvider(responses=["[Supervisor note: monitoring.]"]),
+        role="Supervisor",
+        description="Monitors conversations for quality assurance",
         system_prompt="You monitor conversations for quality.",
     )
 

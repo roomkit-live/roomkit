@@ -452,6 +452,49 @@ class RealtimeVoiceChannel(Channel):
 
         logger.info("Realtime session %s ended", session.id)
 
+    async def reconfigure_session(
+        self,
+        session: VoiceSession,
+        *,
+        system_prompt: str | None = None,
+        voice: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float | None = None,
+        provider_config: dict[str, Any] | None = None,
+    ) -> None:
+        """Reconfigure an active session with new agent parameters.
+
+        Used during agent handoff to switch the AI personality, voice,
+        and tools.  Providers with session resumption (e.g. Gemini Live)
+        preserve conversation history across the reconfiguration.
+
+        Args:
+            session: The active session to reconfigure.
+            system_prompt: New system instructions for the AI.
+            voice: New voice ID for audio output.
+            tools: New tool/function definitions.
+            temperature: New sampling temperature.
+            provider_config: Provider-specific configuration overrides.
+        """
+        await self._provider.reconfigure(
+            session,
+            system_prompt=system_prompt,
+            voice=voice,
+            tools=tools,
+            temperature=temperature,
+            provider_config=provider_config,
+        )
+
+        # Update channel defaults so new sessions use the current config
+        if system_prompt is not None:
+            self._system_prompt = system_prompt
+        if voice is not None:
+            self._voice = voice
+        if tools is not None:
+            self._tools = tools
+
+        logger.info("Realtime session %s reconfigured", session.id)
+
     async def connect_session(
         self,
         session: Any,

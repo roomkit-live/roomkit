@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from roomkit.core.locks import InMemoryLockManager
+from roomkit.core.locks import InMemoryLockManager, _held_rooms
 
 
 class TestInMemoryLockManager:
@@ -51,3 +51,46 @@ class TestInMemoryLockManager:
             assert "r1" in mgr._locks
         finally:
             lock1.release()
+
+    async def test_reentrant_same_context(self) -> None:
+        """Same context can re-acquire the same room lock without deadlocking."""
+        mgr = InMemoryLockManager()
+        async with mgr.locked("r1"):
+            assert "r1" in _held_rooms.get()
+            # Inner acquisition should succeed immediately (reentrant)
+            async with mgr.locked("r1"):
+                assert "r1" in _held_rooms.get()
+            assert "r1" in _held_rooms.get()
+        assert "r1" not in _held_rooms.get()
+
+    async def test_reentrant_three_deep(self) -> None:
+        mgr = InMemoryLockManager()
+        async with mgr.locked("r1"):  # noqa: SIM117
+            async with mgr.locked("r1"):  # noqa: SIM117
+                async with mgr.locked("r1"):
+                    assert "r1" in _held_rooms.get()
+        assert "r1" not in _held_rooms.get()
+
+    async def test_reentrant_different_rooms_independent(self) -> None:
+        """Reentrancy tracking is per-room."""
+        mgr = InMemoryLockManager()
+        async with mgr.locked("r1"), mgr.locked("r2"):
+            held = _held_rooms.get()
+            assert "r1" in held
+            assert "r2" in held
+
+    async def test_reentrant_via_gather(self) -> None:
+        """Child tasks from asyncio.gather inherit the held set via ContextVar."""
+        mgr = InMemoryLockManager()
+        acquired_in_child = False
+
+        async def child() -> None:
+            nonlocal acquired_in_child
+            # This runs in a child task that inherited the ContextVar
+            async with mgr.locked("r1"):
+                acquired_in_child = True
+
+        async with mgr.locked("r1"):
+            await asyncio.gather(child())
+
+        assert acquired_in_child

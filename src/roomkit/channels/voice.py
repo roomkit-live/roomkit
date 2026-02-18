@@ -729,6 +729,14 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             max_audio_duration_seconds=3600,
         )
 
+    def update_voice_map(self, entries: dict[str, str]) -> None:
+        """Merge entries into the per-agent voice map.
+
+        Called by :meth:`ConversationPipeline.install` to auto-wire
+        voice IDs from :class:`Agent` instances.
+        """
+        self._voice_map.update(entries)
+
     # -------------------------------------------------------------------------
     # Barge-in handling
     # -------------------------------------------------------------------------

@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+
+# ContextVar tracking which rooms the current execution context holds locks
+# for.  asyncio.gather() copies the parent context to child tasks, so
+# children see the parent's held set and can re-enter without deadlocking.
+_held_rooms: contextvars.ContextVar[frozenset[str]] = contextvars.ContextVar(
+    "_room_locks_held", default=frozenset()
+)
 
 
 class RoomLockManager(ABC):
@@ -15,6 +23,14 @@ class RoomLockManager(ABC):
     Implement this to plug in any locking backend (Redis, Postgres
     advisory locks, etc.).  The library ships with ``InMemoryLockManager``
     for single-process deployments.
+
+    Implementations should be **reentrant** within the same execution
+    context (including child tasks spawned by ``asyncio.gather``): if
+    a coroutine already holds the lock for a room and awaits code that
+    tries to acquire the same room lock, the inner acquisition must
+    succeed without deadlocking.  This is required because tool handlers
+    (e.g. handoff) may update room state while the inbound pipeline
+    already holds the room lock.
     """
 
     @abstractmethod
@@ -26,6 +42,11 @@ class RoomLockManager(ABC):
 
 class InMemoryLockManager(RoomLockManager):
     """In-process per-room asyncio locks with LRU eviction.
+
+    Reentrant within the same execution context: if the current context
+    already holds the lock for a given room (including child tasks
+    spawned by ``asyncio.gather``), ``locked()`` yields immediately
+    instead of deadlocking.
 
     Suitable for single-process deployments.  For multi-process or
     distributed setups, provide a custom ``RoomLockManager`` backed by
@@ -60,10 +81,20 @@ class InMemoryLockManager(RoomLockManager):
 
     @asynccontextmanager
     async def locked(self, room_id: str) -> AsyncIterator[None]:
-        """Acquire the lock for a room."""
+        """Acquire the lock for a room (reentrant via ContextVar)."""
+        held = _held_rooms.get()
+        if room_id in held:
+            # Reentrant: this execution context already holds the lock.
+            yield
+            return
+
         lock = self._get_lock(room_id)
         async with lock:
-            yield
+            token = _held_rooms.set(held | frozenset({room_id}))
+            try:
+                yield
+            finally:
+                _held_rooms.reset(token)
 
     @property
     def size(self) -> int:

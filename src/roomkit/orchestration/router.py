@@ -21,7 +21,7 @@ from roomkit.orchestration.handoff import HandoffHandler, setup_handoff
 from roomkit.orchestration.state import ConversationState, get_conversation_state
 
 if TYPE_CHECKING:
-    from roomkit.channels.ai import AIChannel
+    from roomkit.channels.agent import Agent
     from roomkit.core.framework import RoomKit
 
 logger = logging.getLogger("roomkit.orchestration.router")
@@ -166,7 +166,25 @@ class ConversationRouter:
             selected = self.select_agent(event, context, state)
 
             if selected is None:
-                # No routing — all agents process (backward compatible)
+                # Intelligence-sourced events: block other agents to prevent
+                # AI-to-AI reentry loops (agent A responds → agent B responds
+                # → agent A …). Transport channels still receive the event
+                # (e.g. VoiceChannel for TTS).
+                source_binding = context.get_binding(event.source.channel_id)
+                if source_binding and source_binding.category == ChannelCategory.INTELLIGENCE:
+                    always_process: list[str] = []
+                    if self._supervisor_id:
+                        always_process.append(self._supervisor_id)
+                    updated_metadata = {
+                        **(event.metadata or {}),
+                        "_routed_to": "_none_",
+                        "_always_process": always_process,
+                    }
+                    modified_event = event.model_copy(update={"metadata": updated_metadata})
+                    return HookResult.modify(modified_event)
+
+                # No routing for transport-sourced events — all agents process
+                # (backward compatible with no-rules routers).
                 return HookResult.allow()
 
             # Build always-process list (supervisor, etc.)
@@ -202,7 +220,7 @@ class ConversationRouter:
     def install(
         self,
         kit: RoomKit,
-        agents: list[AIChannel],
+        agents: list[Agent],
         *,
         agent_aliases: dict[str, str] | None = None,
         phase_map: dict[str, str] | None = None,

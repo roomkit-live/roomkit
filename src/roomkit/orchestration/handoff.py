@@ -27,6 +27,8 @@ from roomkit.orchestration.state import (
 from roomkit.providers.ai.base import AIMessage, AITool
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from roomkit.channels.ai import AIChannel
     from roomkit.core.framework import RoomKit
     from roomkit.orchestration.router import ConversationRouter
@@ -72,9 +74,10 @@ HANDOFF_TOOL = AITool(
     name="handoff_conversation",
     description=(
         "Transfer this conversation to another agent or specialist. "
-        "Use when: the conversation needs expertise you don't have, "
-        "the user requests escalation, or your task is complete "
-        "and the next step requires a different agent. "
+        "Use when: the user asks to speak with someone else, "
+        "the user wants to be transferred or go back to a previous agent, "
+        "the conversation needs expertise you don't have, "
+        "or your task is complete and the next step requires a different agent. "
         "Always provide a clear summary of the conversation so far."
     ),
     parameters={
@@ -117,6 +120,53 @@ HANDOFF_TOOL = AITool(
 )
 
 
+def build_handoff_tool(targets: list[tuple[str, str | None]]) -> AITool:
+    """Build a handoff tool with constrained target enum.
+
+    Args:
+        targets: List of ``(agent_id, description_or_none)`` pairs.
+            When empty, returns the generic :data:`HANDOFF_TOOL`.
+
+    Returns:
+        An :class:`AITool` whose ``target`` parameter has an ``enum``
+        restricting the AI to only the listed agent IDs.
+    """
+    if not targets:
+        return HANDOFF_TOOL
+
+    target_ids = [t[0] for t in targets]
+    target_lines = []
+    for agent_id, desc in targets:
+        if desc:
+            target_lines.append(f"  - {agent_id}: {desc}")
+        else:
+            target_lines.append(f"  - {agent_id}")
+
+    description = "Transfer this conversation to another agent.\nAvailable targets:\n" + "\n".join(
+        target_lines
+    )
+
+    # Clone the base parameters and constrain the target field
+    params = {
+        "type": "object",
+        "properties": {
+            **HANDOFF_TOOL.parameters["properties"],
+            "target": {
+                "type": "string",
+                "enum": target_ids,
+                "description": "Target agent ID to transfer to",
+            },
+        },
+        "required": HANDOFF_TOOL.parameters["required"],
+    }
+
+    return AITool(
+        name="handoff_conversation",
+        description=description,
+        parameters=params,
+    )
+
+
 # -- HandoffHandler -----------------------------------------------------------
 
 
@@ -134,12 +184,18 @@ class HandoffHandler:
         agent_aliases: dict[str, str] | None = None,
         phase_map: dict[str, str] | None = None,
         allowed_transitions: dict[str, set[str]] | None = None,
+        known_agents: set[str] | None = None,
+        on_handoff_complete: (Callable[[str, HandoffResult], Awaitable[None]] | None) = None,
+        event_channel_id: str | None = None,
     ) -> None:
         self._kit = kit
         self._router = router
         self._aliases = agent_aliases or {}
         self._phase_map = phase_map or {}
         self._allowed_transitions = allowed_transitions
+        self._known_agents = known_agents or set()
+        self._on_handoff_complete = on_handoff_complete
+        self._event_channel_id = event_channel_id
 
     async def handle(
         self,
@@ -176,7 +232,11 @@ class HandoffHandler:
                     target_binding = b
                     break
 
-            if target_binding is None and request.target_agent_id != "human":
+            if (
+                target_binding is None
+                and request.target_agent_id != "human"
+                and request.target_agent_id not in self._known_agents
+            ):
                 logger.warning(
                     "Handoff rejected: agent %s not in room %s",
                     request.target_agent_id,
@@ -262,9 +322,11 @@ class HandoffHandler:
             await self._kit.store.update_room(updated_room)
 
         # Emit system event in room timeline (outside lock — send_event acquires its own)
+        # In speech-to-speech mode, config-only agents aren't bound to the room,
+        # so use the event_channel_id (the RealtimeVoiceChannel) as source.
         await self._kit.send_event(
             room_id=room_id,
-            channel_id=calling_agent_id,
+            channel_id=self._event_channel_id or calling_agent_id,
             content=TextContent(
                 body=(
                     f"[Handoff: {calling_agent_id} -> {request.target_agent_id}] {request.reason}"
@@ -293,7 +355,10 @@ class HandoffHandler:
             accepted=True,
             new_agent_id=new_agent,
             new_phase=new_phase,
-            message=f"Conversation transferred to {request.target_agent_id}",
+            message=(
+                f"Conversation transferred to {request.target_agent_id}. "
+                "Do not respond — the receiving agent will greet the user."
+            ),
         )
 
         # Fire orchestration hooks (async, fire-and-forget)
@@ -317,6 +382,9 @@ class HandoffHandler:
             request,
             result,
         )
+
+        if self._on_handoff_complete:
+            await self._on_handoff_complete(room_id, result)
 
         return result
 
@@ -418,12 +486,20 @@ class HandoffMemoryProvider(MemoryProvider):
 def setup_handoff(
     channel: AIChannel,
     handler: HandoffHandler,
+    *,
+    tool: AITool | None = None,
 ) -> None:
     """Wire handoff into an AIChannel's tool chain.
 
-    - Injects HANDOFF_TOOL into the channel's tool definitions
+    - Injects the handoff tool into the channel's tool definitions
     - Wraps the tool handler to intercept ``handoff_conversation`` calls
     - Uses ``_room_id_var`` ContextVar for room_id (set by routing hook)
+
+    Args:
+        channel: The AI channel to wire handoff into.
+        handler: The handoff handler that processes tool calls.
+        tool: Optional custom handoff tool (e.g. from :func:`build_handoff_tool`).
+            Defaults to the generic :data:`HANDOFF_TOOL`.
     """
     # Guard against double registration
     if any(t.name == "handoff_conversation" for t in channel._extra_tools):
@@ -431,7 +507,7 @@ def setup_handoff(
         raise RuntimeError(msg)
 
     # Inject the handoff tool definition
-    channel._extra_tools.append(HANDOFF_TOOL)
+    channel._extra_tools.append(tool or HANDOFF_TOOL)
 
     # Wrap the tool handler chain
     original = channel._tool_handler
