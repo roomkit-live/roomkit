@@ -181,6 +181,9 @@ class VoiceSTTMixin:
         state.cancelled = True
         import contextlib
 
+        # Send sentinel to the current queue.  In continuous mode the queue
+        # may be replaced on each reconnect cycle, so we must signal the
+        # queue that ``run_continuous`` is actually reading from *right now*.
         with contextlib.suppress(asyncio.QueueFull):
             state.queue.put_nowait(None)
         if state.task is not None:

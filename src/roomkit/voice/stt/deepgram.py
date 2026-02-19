@@ -255,6 +255,8 @@ class DeepgramSTTProvider(STTProvider):
         headers = [("Authorization", f"Token {self._config.api_key}")]
 
         async with websockets.connect(ws_url, additional_headers=headers) as ws:
+            sender_done = asyncio.Event()
+
             # Start sender task
             async def send_audio() -> None:
                 try:
@@ -265,10 +267,28 @@ class DeepgramSTTProvider(STTProvider):
                             break
                     # Tell Deepgram to flush remaining audio and close
                     await ws.send(json.dumps({"type": "CloseStream"}))
+                except asyncio.CancelledError:
+                    return
                 except Exception as e:
                     logger.error("Error sending audio to Deepgram: %s", e)
+                finally:
+                    sender_done.set()
+
+            # Close the WebSocket after a grace period once the sender
+            # finishes.  This prevents the receiver loop from hanging
+            # indefinitely when Deepgram doesn't close the connection
+            # promptly after CloseStream (e.g. after a call ends and
+            # audio stops flowing).
+            async def _close_after_grace() -> None:
+                await sender_done.wait()
+                await asyncio.sleep(5.0)
+                import contextlib
+
+                with contextlib.suppress(Exception):
+                    await ws.close()
 
             sender_task = asyncio.create_task(send_audio())
+            close_timer = asyncio.create_task(_close_after_grace())
 
             try:
                 async for message in ws:
@@ -304,11 +324,14 @@ class DeepgramSTTProvider(STTProvider):
                         logger.debug("Utterance ended")
 
             finally:
+                close_timer.cancel()
                 sender_task.cancel()
                 import contextlib
 
                 with contextlib.suppress(asyncio.CancelledError):
                     await sender_task
+                with contextlib.suppress(asyncio.CancelledError):
+                    await close_timer
 
     async def close(self) -> None:  # noqa: B027
         """Release resources."""
