@@ -3565,7 +3565,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "2.15.0"
+version = "2.21.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -3577,9 +3577,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/94/f4/4690ecb5d70023ce6bfcfeabfe717020f654bde59a775058ec6ac4692463/openai-2.15.0.tar.gz", hash = "sha256:42eb8cbb407d84770633f31bf727d4ffb4138711c670565a41663d9439174fba", size = 627383, upload-time = "2026-01-09T22:10:08.603Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/92/e5/3d197a0947a166649f566706d7a4c8f7fe38f1fa7b24c9bcffe4c7591d44/openai-2.21.0.tar.gz", hash = "sha256:81b48ce4b8bbb2cc3af02047ceb19561f7b1dc0d4e52d1de7f02abfd15aa59b7", size = 644374, upload-time = "2026-02-14T00:12:01.577Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b5/df/c306f7375d42bafb379934c2df4c2fa3964656c8c782bac75ee10c102818/openai-2.15.0-py3-none-any.whl", hash = "sha256:6ae23b932cd7230f7244e52954daa6602716d6b9bf235401a107af731baea6c3", size = 1067879, upload-time = "2026-01-09T22:10:06.446Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/56/0a89092a453bb2c676d66abee44f863e742b2110d4dbb1dbcca3f7e5fc33/openai-2.21.0-py3-none-any.whl", hash = "sha256:0bc1c775e5b1536c294eded39ee08f8407656537ccc71b1004104fe1602e267c", size = 1103065, upload-time = "2026-02-14T00:11:59.603Z" },
 ]
 
 [[package]]
@@ -5199,6 +5199,9 @@ all = [
 anthropic = [
     { name = "anthropic" },
 ]
+azure = [
+    { name = "openai" },
+]
 dev = [
     { name = "anthropic" },
     { name = "asyncpg" },
@@ -5402,12 +5405,13 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'local-audio'" },
     { name = "numpy", marker = "extra == 'smart-turn'" },
     { name = "onnxruntime", marker = "extra == 'smart-turn'" },
-    { name = "openai", marker = "extra == 'all'", specifier = ">=1.30" },
-    { name = "openai", marker = "extra == 'dev'", specifier = ">=1.30" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.30" },
-    { name = "openai", marker = "extra == 'providers'", specifier = ">=1.30" },
-    { name = "openai", marker = "extra == 'realtime-openai'", specifier = ">=1.30" },
-    { name = "openai", marker = "extra == 'vllm'", specifier = ">=1.30" },
+    { name = "openai", marker = "extra == 'all'", specifier = ">=2.21" },
+    { name = "openai", marker = "extra == 'azure'", specifier = ">=2.21" },
+    { name = "openai", marker = "extra == 'dev'", specifier = ">=2.21" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=2.21" },
+    { name = "openai", marker = "extra == 'providers'", specifier = ">=2.21" },
+    { name = "openai", marker = "extra == 'realtime-openai'", specifier = ">=2.21" },
+    { name = "openai", marker = "extra == 'vllm'", specifier = ">=2.21" },
     { name = "opentelemetry-api", marker = "extra == 'opentelemetry'", specifier = ">=1.20" },
     { name = "opentelemetry-sdk", marker = "extra == 'opentelemetry'", specifier = ">=1.20" },
     { name = "phonenumbers", marker = "extra == 'dev'", specifier = ">=8.13" },
@@ -5436,7 +5440,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["all", "anthropic", "dev", "docs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "mcp", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "vllm", "webrtc-aec", "websocket", "whatsapp-personal"]
+provides-extras = ["all", "anthropic", "azure", "dev", "docs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "mcp", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pydantic-ai", "pynacl", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "vllm", "webrtc-aec", "websocket", "whatsapp-personal"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]

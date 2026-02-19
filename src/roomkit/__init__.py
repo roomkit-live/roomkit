@@ -147,6 +147,8 @@ from roomkit.providers.ai.base import (
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
+from roomkit.providers.azure.ai import AzureAIProvider
+from roomkit.providers.azure.config import AzureAIConfig
 from roomkit.providers.elasticemail.config import ElasticEmailConfig
 from roomkit.providers.elasticemail.email import ElasticEmailProvider
 from roomkit.providers.email.base import EmailProvider
@@ -496,6 +498,9 @@ __all__ = [
     # AI – Anthropic
     "AnthropicAIProvider",
     "AnthropicConfig",
+    # AI – Azure
+    "AzureAIConfig",
+    "AzureAIProvider",
     # AI – Gemini
     "GeminiAIProvider",
     "GeminiConfig",

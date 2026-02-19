@@ -50,6 +50,11 @@ class OpenAIAIProvider(AIProvider):
         )
 
     @property
+    def _provider_name(self) -> str:
+        """Provider identifier used in error messages and telemetry."""
+        return "openai"
+
+    @property
     def model_name(self) -> str:
         return self._config.model
 
@@ -175,14 +180,14 @@ class OpenAIAIProvider(AIProvider):
             raise ProviderError(
                 str(exc),
                 retryable=retryable,
-                provider="openai",
+                provider=self._provider_name,
                 status_code=exc.status_code,
             ) from exc
         except Exception as exc:
             raise ProviderError(
                 str(exc),
                 retryable=False,
-                provider="openai",
+                provider=self._provider_name,
                 status_code=None,
             ) from exc
 
@@ -194,7 +199,7 @@ class OpenAIAIProvider(AIProvider):
             "roomkit.llm.ttfb_ms",
             ttfb_ms,
             unit="ms",
-            attributes={"provider": "openai", "model": self._config.model},
+            attributes={"provider": self._provider_name, "model": self._config.model},
         )
 
         choice = response.choices[0]
