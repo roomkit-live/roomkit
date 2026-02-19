@@ -52,6 +52,13 @@ PT_PCMU = 0  # G.711 µ-law, 8 kHz
 PT_PCMA = 8  # G.711 A-law, 8 kHz
 PT_G722 = 9  # G.722, 16 kHz audio (8 kHz RTP clock)
 
+# Codec info: payload_type → (name, rtp_clock_rate, audio_sample_rate)
+_CODEC_INFO: dict[int, tuple[str, int, int]] = {
+    PT_PCMU: ("PCMU", 8000, 8000),
+    PT_PCMA: ("PCMA", 8000, 8000),
+    PT_G722: ("G722", 8000, 16000),  # RTP clock 8000, audio rate 16000
+}
+
 # Callback types
 DTMFReceivedCallback = Callable[["VoiceSession", DTMFEvent], Any]
 CallCallback = Callable[["VoiceSession"], Any]
@@ -151,6 +158,7 @@ class SIPVoiceBackend(VoiceBackend):
         self._sessions: dict[str, VoiceSession] = {}
         self._call_sessions: dict[str, Any] = {}  # session_id -> CallSession
         self._incoming_calls: dict[str, Any] = {}  # session_id -> IncomingCall
+        self._outgoing_calls: dict[str, Any] = {}  # session_id -> OutgoingCall
         self._call_to_session: dict[str, str] = {}  # call_id -> session_id
 
         # Per-session codec info (populated after call_session.start())
@@ -199,8 +207,8 @@ class SIPVoiceBackend(VoiceBackend):
         uac_cls = self._aiosipua.SipUAC
 
         self._transport = transport_cls(local_addr=self._local_sip_addr)
-        self._uas = uas_cls(self._transport, user_agent=self._user_agent)
         self._uac = uac_cls(self._transport)
+        self._uas = uas_cls(self._transport, user_agent=self._user_agent, uac=self._uac)
 
         self._uas.on_invite = lambda call: asyncio.get_running_loop().create_task(
             self._handle_invite(call)
@@ -375,13 +383,200 @@ class SIPVoiceBackend(VoiceBackend):
             if self._on_disconnect_callback is not None:
                 self._on_disconnect_callback(session)
 
+    # -------------------------------------------------------------------------
+    # Outbound calling
+    # -------------------------------------------------------------------------
+
+    async def dial(
+        self,
+        to_uri: str,
+        from_uri: str,
+        proxy_addr: tuple[str, int],
+        *,
+        room_id: str | None = None,
+        channel_id: str = "voice",
+        codec: int = PT_PCMU,
+        auth: Any | None = None,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float = 30.0,
+    ) -> VoiceSession:
+        """Initiate an outbound SIP call.
+
+        Builds an SDP offer, sends INVITE via the UAC, waits for the
+        remote party to answer (200 OK), then sets up an RTP session and
+        returns a :class:`VoiceSession`.
+
+        Args:
+            to_uri: SIP URI of the callee (e.g. ``"sip:alice@example.com"``).
+            from_uri: SIP URI of the caller (e.g. ``"sip:bot@example.com"``).
+            proxy_addr: ``(host, port)`` of the outbound SIP proxy.
+            room_id: Room ID for the session (defaults to the call ID).
+            channel_id: Channel ID for the session.
+            codec: RTP payload type number (default :data:`PT_PCMU`).
+            auth: Optional :class:`~aiosipua.SipDigestAuth` for 401/407 retry.
+            extra_headers: Extra SIP headers to include in the INVITE.
+            timeout: Seconds to wait for the call to be answered.
+
+        Returns:
+            An active :class:`VoiceSession` for the established call.
+
+        Raises:
+            RuntimeError: If the call is rejected or the backend is not started.
+            TimeoutError: If the call is not answered within *timeout* seconds.
+        """
+        if self._uac is None or self._transport is None:
+            raise RuntimeError("SIPVoiceBackend.start() must be called before dial()")
+
+        codec_info = _CODEC_INFO.get(codec)
+        if codec_info is None:
+            raise ValueError(f"Unsupported codec payload type: {codec}")
+        codec_name, clock_rate, codec_rate = codec_info
+
+        rtp_port = self._allocate_rtp_port()
+        local_ip = self._resolve_local_ip(proxy_addr)
+
+        # Build SDP offer
+        from aiosipua import build_sdp
+
+        sdp_offer = build_sdp(
+            local_ip=local_ip,
+            rtp_port=rtp_port,
+            payload_type=codec,
+            codec_name=codec_name,
+            sample_rate=clock_rate,
+            dtmf_payload_type=self._dtmf_payload_type,
+        )
+
+        # Send INVITE
+        out_call = self._uac.send_invite(
+            from_uri=from_uri,
+            to_uri=to_uri,
+            remote_addr=proxy_addr,
+            sdp_offer=sdp_offer,
+            extra_headers=extra_headers,
+            auth=auth,
+        )
+
+        # Emit INVITE trace
+        if self._trace_emitter is not None:
+            from roomkit.models.trace import ProtocolTrace
+
+            self._trace_emitter(
+                ProtocolTrace(
+                    channel_id=channel_id,
+                    direction="outbound",
+                    protocol="sip",
+                    summary=f"INVITE from {from_uri} to {to_uri}",
+                    raw=None,
+                    metadata={
+                        "call_id": out_call.call_id,
+                        "from_uri": from_uri,
+                        "to_uri": to_uri,
+                    },
+                    session_id=None,
+                    room_id=room_id,
+                )
+            )
+
+        # Wait for answer or rejection
+        try:
+            await out_call.wait_answered(timeout=timeout)
+        except (TimeoutError, RuntimeError):
+            self._uac.remove_call(out_call.call_id)
+            raise
+
+        # 200 OK received — set up RTP session using answer SDP
+        call_session = self._rtp_bridge.CallSession(
+            local_ip=local_ip,
+            rtp_port=rtp_port,
+            offer=out_call.sdp_answer,
+            supported_codecs=[codec],
+            dtmf_payload_type=self._dtmf_payload_type,
+            session_name=self._server_name,
+        )
+        await call_session.start()
+
+        actual_codec_rate = call_session.codec_sample_rate
+        actual_clock_rate = call_session.clock_rate
+
+        session_id = out_call.call_id
+        effective_room_id = room_id or session_id
+        session = VoiceSession(
+            id=session_id,
+            room_id=effective_room_id,
+            participant_id=to_uri,
+            channel_id=channel_id,
+            state=VoiceSessionState.ACTIVE,
+            metadata={
+                "backend": "sip",
+                "call_id": out_call.call_id,
+                "caller": from_uri,
+                "callee": to_uri,
+                "room_id": effective_room_id,
+                "direction": "outbound",
+            },
+        )
+
+        # Wire audio/DTMF callbacks
+        call_session.on_audio = self._make_audio_handler(session)
+        call_session.on_dtmf = self._make_dtmf_handler(session)
+
+        # Store all mappings
+        self._sessions[session.id] = session
+        self._call_sessions[session.id] = call_session
+        self._outgoing_calls[session.id] = out_call
+        self._call_to_session[out_call.call_id] = session.id
+        self._send_timestamps[session.id] = 0
+        self._send_frame_count[session.id] = 0
+        self._codec_rates[session.id] = actual_codec_rate
+        self._clock_rates[session.id] = actual_clock_rate
+
+        logger.info(
+            "SIP outbound call established: session=%s, to=%s, call_id=%s",
+            session.id,
+            to_uri,
+            out_call.call_id,
+        )
+
+        # Emit 200 OK trace
+        if self._trace_emitter is not None:
+            from roomkit.models.trace import ProtocolTrace
+
+            self._trace_emitter(
+                ProtocolTrace(
+                    channel_id=channel_id,
+                    direction="inbound",
+                    protocol="sip",
+                    summary=f"200 OK (codec={actual_codec_rate}Hz, "
+                    f"rtp_clock={actual_clock_rate}Hz)",
+                    raw=None,
+                    metadata={
+                        "call_id": out_call.call_id,
+                        "codec_sample_rate": actual_codec_rate,
+                        "clock_rate": actual_clock_rate,
+                        "rtp_port": rtp_port,
+                    },
+                    session_id=session.id,
+                    room_id=effective_room_id,
+                )
+            )
+
+        # Fire on_call callback
+        if self._on_call_callback is not None:
+            self._on_call_callback(session)
+
+        return session
+
     def _cleanup_session(self, session_id: str) -> None:
         """Remove all tracking state for a session."""
         session = self._sessions.pop(session_id, None)
         self._call_sessions.pop(session_id, None)
         call = self._incoming_calls.pop(session_id, None)
+        out_call = self._outgoing_calls.pop(session_id, None)
         if call is not None:
             self._call_to_session.pop(call.call_id, None)
+        if out_call is not None:
+            self._call_to_session.pop(out_call.call_id, None)
         frames_sent = self._send_frame_count.pop(session_id, 0)
         if frames_sent:
             logger.info("SIP session %s: sent %d RTP frames total", session_id, frames_sent)
@@ -486,9 +681,10 @@ class SIPVoiceBackend(VoiceBackend):
         await self.cancel_audio(session)
 
         call = self._incoming_calls.get(session.id)
+        out_call = self._outgoing_calls.get(session.id)
         call_session = self._call_sessions.get(session.id)
 
-        # Send BYE if dialog is still confirmed
+        # Send BYE for incoming call
         if call is not None and self._uac is not None:
             try:
                 from aiosipua import DialogState
@@ -511,6 +707,29 @@ class SIPVoiceBackend(VoiceBackend):
                                 room_id=session.metadata.get("room_id"),
                             )
                         )
+            except Exception:
+                logger.exception("Failed to send BYE for session %s", session.id)
+
+        # Send BYE for outgoing call
+        if out_call is not None and self._uac is not None:
+            try:
+                out_call.hangup(self._uac)
+
+                if self._trace_emitter is not None:
+                    from roomkit.models.trace import ProtocolTrace
+
+                    self._trace_emitter(
+                        ProtocolTrace(
+                            channel_id=session.channel_id,
+                            direction="outbound",
+                            protocol="sip",
+                            summary="BYE (local hangup)",
+                            raw=None,
+                            metadata={"call_id": out_call.call_id},
+                            session_id=session.id,
+                            room_id=session.metadata.get("room_id"),
+                        )
+                    )
             except Exception:
                 logger.exception("Failed to send BYE for session %s", session.id)
 

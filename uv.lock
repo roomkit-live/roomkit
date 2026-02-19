@@ -216,11 +216,11 @@ wheels = [
 
 [[package]]
 name = "aiosipua"
-version = "0.1.2"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e6/f4/6f1b263c47a2a4d3db61721ca3202a05860b0f624fc3ba133220308e94b0/aiosipua-0.1.2.tar.gz", hash = "sha256:4e1a519eaa5bc74319c7e07e1a2de20b2ff471b319743987083e3dc4ba4f5027", size = 63370, upload-time = "2026-02-10T03:07:47.78Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/01/ca/5bb77e02a7d2b9420deb5e7bfb92546d315b181e0fcf72dbad5f05d2eb2f/aiosipua-0.2.0.tar.gz", hash = "sha256:e5fe05406a3f999bd77eb3f38304a232352f276f079429ea2b0331181750ff6a", size = 71246, upload-time = "2026-02-19T04:22:12.557Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/52/8bd4b336ea94641272847df272ba77696bfc2f6d6a3073b8cdbd8b4e9d4e/aiosipua-0.1.2-py3-none-any.whl", hash = "sha256:b49b493091f45b791c80041b3cd302cafae0a7d2403f4fb99b7df0c4c9e35147", size = 33929, upload-time = "2026-02-10T03:07:46.467Z" },
+    { url = "https://files.pythonhosted.org/packages/02/fa/80011f616da67bebb07146b62f7ee18b7551789b9383f8d38d7bba124a62/aiosipua-0.2.0-py3-none-any.whl", hash = "sha256:63ad873a1092ffdea433b8aa3bbf9a2ed00eadee3a64df985359bd9c3bd279c1", size = 37599, upload-time = "2026-02-19T04:22:13.961Z" },
 ]
 
 [package.optional-dependencies]
@@ -5353,7 +5353,7 @@ dev = [
 requires-dist = [
     { name = "aec-audio-processing", marker = "extra == 'webrtc-aec'", specifier = ">=0.1" },
     { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.1.0" },
-    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.1.2" },
+    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.2.0" },
     { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'dev'", specifier = ">=0.30" },
