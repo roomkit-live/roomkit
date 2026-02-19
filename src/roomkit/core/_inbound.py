@@ -622,7 +622,7 @@ class InboundMixin(HelpersMixin):
         if room is not None:
             updates: dict[str, object] = {
                 "latest_index": event.index,
-                "event_count": room.event_count + 1,
+                "event_count": await self._store.get_event_count(room_id),
             }
             if room.timers:
                 updates["timers"] = room.timers.model_copy(

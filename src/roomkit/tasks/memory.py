@@ -73,6 +73,13 @@ class InMemoryTaskRunner(TaskRunner):
 
         # Update child room status
         room = await kit.get_room(task.child_room_id)
+        if room is None:
+            logger.warning(
+                "Task %s: child room %s not found, skipping status update",
+                task.id,
+                task.child_room_id,
+            )
+            return
         await kit.store.update_room(
             room.model_copy(
                 update={
@@ -106,17 +113,18 @@ class InMemoryTaskRunner(TaskRunner):
 
         # Update child room metadata
         room = await kit.get_room(task.child_room_id)
-        await kit.store.update_room(
-            room.model_copy(
-                update={
-                    "metadata": {
-                        **room.metadata,
-                        "task_status": status,
-                        "task_result": agent_response,
-                    },
-                }
+        if room is not None:
+            await kit.store.update_room(
+                room.model_copy(
+                    update={
+                        "metadata": {
+                            **room.metadata,
+                            "task_status": status,
+                            "task_result": agent_response,
+                        },
+                    }
+                )
             )
-        )
 
         # Run on_complete BEFORE setting result so hooks fire before waiters unblock
         if on_complete:

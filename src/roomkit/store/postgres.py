@@ -333,9 +333,11 @@ class PostgresStore(ConversationStore):
     async def update_event(self, event: RoomEvent) -> RoomEvent:
         async with self._ensure_pool().acquire() as conn:
             await conn.execute(
-                "UPDATE events SET data = $2 WHERE id = $1",
+                "UPDATE events SET data = $2, visibility = $3, idempotency_key = $4 WHERE id = $1",
                 event.id,
                 _dump(event),
+                event.visibility,
+                event.idempotency_key,
             )
         return event
 

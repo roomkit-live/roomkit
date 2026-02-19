@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import json
 import logging
@@ -347,24 +348,36 @@ class RealtimeVoiceChannel(Channel):
                     SincResamplerProvider(),  # outbound: provider → transport
                 )
 
-        # Connect to provider (with telemetry span)
-        with telemetry.span(
-            SpanKind.BACKEND_CONNECT,
-            "provider.connect",
-            parent_id=session_span_id,
-            session_id=session.id,
-            attributes={Attr.BACKEND_TYPE: self._provider.name},
-        ):
-            await self._provider.connect(
-                session,
-                system_prompt=system_prompt,
-                voice=voice,
-                tools=tools,
-                temperature=temperature,
-                input_sample_rate=self._input_sample_rate,
-                output_sample_rate=self._output_sample_rate,
-                provider_config=provider_config,
+        # Connect to provider (with telemetry span).
+        # If provider.connect fails, clean up the already-accepted transport
+        # session to avoid leaking the connection.
+        try:
+            with telemetry.span(
+                SpanKind.BACKEND_CONNECT,
+                "provider.connect",
+                parent_id=session_span_id,
+                session_id=session.id,
+                attributes={Attr.BACKEND_TYPE: self._provider.name},
+            ):
+                await self._provider.connect(
+                    session,
+                    system_prompt=system_prompt,
+                    voice=voice,
+                    tools=tools,
+                    temperature=temperature,
+                    input_sample_rate=self._input_sample_rate,
+                    output_sample_rate=self._output_sample_rate,
+                    provider_config=provider_config,
+                )
+        except Exception:
+            logger.exception(
+                "provider.connect failed for session %s; cleaning up transport", session.id
             )
+            self._session_resamplers.pop(session.id, None)
+            self._session_transport_rates.pop(session.id, None)
+            with contextlib.suppress(Exception):
+                await self._transport.disconnect(session)
+            raise
 
         session.state = VoiceSessionState.ACTIVE
         with self._state_lock:

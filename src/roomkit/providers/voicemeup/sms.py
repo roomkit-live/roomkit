@@ -266,6 +266,10 @@ class VoiceMeUpSMSProvider(SMSProvider):
         self._config = config
         self._httpx = _httpx
         self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=config.timeout)
+        # Per-instance MMS aggregation state (avoids module-level shared globals)
+        self._mms_buffer: dict[str, _PendingMMS] = {}
+        self._mms_timeout_seconds: float = 5.0
+        self._mms_on_timeout: Callable[[InboundMessage], Awaitable[None] | None] | None = None
 
     @property
     def from_number(self) -> str:
@@ -386,3 +390,66 @@ class VoiceMeUpSMSProvider(SMSProvider):
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    def configure_mms(
+        self,
+        *,
+        timeout_seconds: float = 5.0,
+        on_timeout: Callable[[InboundMessage], Awaitable[None] | None] | None = None,
+    ) -> None:
+        """Configure MMS aggregation behavior for this provider instance."""
+        self._mms_timeout_seconds = timeout_seconds
+        self._mms_on_timeout = on_timeout
+
+    def parse_mms_webhook(
+        self,
+        payload: dict[str, Any],
+        channel_id: str,
+    ) -> InboundMessage | None:
+        """Parse a VoiceMeUp webhook using per-instance MMS state."""
+        attachment_url = payload.get("attachment") or payload.get("attachment_url")
+        attachment_mime = payload.get("attachment_mime_type") or payload.get("attachment_type")
+
+        if _is_mms_metadata_wrapper(attachment_url, attachment_mime):
+            key = _make_correlation_key(payload)
+            text = payload.get("message", "")
+            self._mms_buffer[key] = _PendingMMS(
+                payload=payload,
+                text=text,
+                timestamp=time.time(),
+                channel_id=channel_id,
+            )
+
+            async def _timeout() -> None:
+                await asyncio.sleep(self._mms_timeout_seconds)
+                if key not in self._mms_buffer:
+                    return
+                pending = self._mms_buffer.pop(key)
+                payload_copy = dict(pending.payload)
+                keys = ("attachment", "attachment_url", "attachment_mime_type", "attachment_type")
+                for k in keys:
+                    payload_copy.pop(k, None)
+                message = _build_inbound_message(payload_copy, pending.channel_id)
+                if self._mms_on_timeout:
+                    result = self._mms_on_timeout(message)
+                    if asyncio.iscoroutine(result):
+                        await result
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_timeout())
+            except RuntimeError:
+                pass
+            return None
+
+        key = _make_correlation_key(payload)
+        if key in self._mms_buffer:
+            pending = self._mms_buffer.pop(key)
+            merged_payload = dict(payload)
+            merged_payload["message"] = pending.text
+            first_hash = pending.payload.get("sms_hash", "")
+            second_hash = payload.get("sms_hash", "")
+            merged_payload["sms_hash"] = f"{first_hash}+{second_hash}"
+            return _build_inbound_message(merged_payload, channel_id)
+
+        return _build_inbound_message(payload, channel_id)

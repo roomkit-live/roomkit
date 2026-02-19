@@ -337,10 +337,12 @@ class RTPVoiceBackend(VoiceBackend):
                     rtp_session.send_audio_pcm(frame_data, ts)
                     ts += samples_per_frame
 
-            # Flush remaining data (may be a partial frame)
+            # Flush remaining data — pad partial frame with silence to avoid codec artifacts
             if buf and session.id in self._playing_sessions:
-                rtp_session.send_audio_pcm(bytes(buf), ts)
-                ts += len(buf) // 2
+                if len(buf) < bytes_per_frame:
+                    buf.extend(b"\x00" * (bytes_per_frame - len(buf)))
+                rtp_session.send_audio_pcm(bytes(buf[:bytes_per_frame]), ts)
+                ts += samples_per_frame
 
         task = asyncio.create_task(_run())
         self._playback_tasks[session.id] = task

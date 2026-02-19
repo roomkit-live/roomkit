@@ -490,15 +490,19 @@ class ConversationPipeline:
             _handoff_pending.add(event.room_id)
 
             async def _trigger_greeting() -> None:
-                _handoff_pending.discard(event.room_id)
-                await kit.process_inbound(
-                    InboundMessage(
-                        channel_id=voice_channel_id,
-                        sender_id="system",
-                        content=TextContent(body=prompt),
-                    ),
-                    room_id=event.room_id,
-                )
+                try:
+                    await kit.process_inbound(
+                        InboundMessage(
+                            channel_id=voice_channel_id,
+                            sender_id="system",
+                            content=TextContent(body=prompt),
+                        ),
+                        room_id=event.room_id,
+                    )
+                except Exception:
+                    logger.exception("Handoff greeting failed for room %s", event.room_id)
+                finally:
+                    _handoff_pending.discard(event.room_id)
 
             loop = asyncio.get_running_loop()
             loop.create_task(_trigger_greeting(), context=contextvars.Context())

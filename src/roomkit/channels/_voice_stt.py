@@ -260,7 +260,15 @@ class VoiceSTTMixin:
                 # Keep frame_buffer intact — audio arriving during the
                 # reconnection gap (sleep + WebSocket connect) is preserved
                 # and will be flushed to the new queue on the next frame.
+                old_queue = state.queue
                 state.queue = asyncio.Queue[Any](maxsize=500)
+                # Drain frames from old queue into new queue so they are not lost
+                while not old_queue.empty():
+                    try:
+                        frame = old_queue.get_nowait()
+                        state.queue.put_nowait(frame)
+                    except (asyncio.QueueEmpty, asyncio.QueueFull):
+                        break
                 cur_queue = state.queue
 
                 async def audio_gen(
@@ -623,6 +631,10 @@ class VoiceSTTMixin:
                 except Exception:
                     telemetry.end_span(span_id, status="error", error_message="batch STT failed")
                     raise
+
+            if text is None:
+                return
+
             elif stream_state is not None:
                 # Record streaming STT metrics
                 _t = getattr(self._framework, "_telemetry", None)

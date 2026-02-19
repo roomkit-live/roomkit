@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 
 from roomkit.providers.ai.base import (
@@ -62,6 +63,10 @@ class OpenAIAIProvider(AIProvider):
     def supports_vision(self) -> bool:
         """GPT-4o and GPT-4-turbo models support vision."""
         return any(self._config.model.startswith(prefix) for prefix in _VISION_MODELS)
+
+    @property
+    def supports_streaming(self) -> bool:
+        return True
 
     def _format_content(
         self,
@@ -214,11 +219,15 @@ class OpenAIAIProvider(AIProvider):
         tool_calls: list[AIToolCall] = []
         if choice.message.tool_calls:
             for tc in choice.message.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError):
+                    args = {"raw": tc.function.arguments}
                 tool_calls.append(
                     AIToolCall(
                         id=tc.id,
                         name=tc.function.name,
-                        arguments=json.loads(tc.function.arguments),
+                        arguments=args,
                     )
                 )
 
@@ -229,3 +238,41 @@ class OpenAIAIProvider(AIProvider):
             metadata={"model": response.model},
             tool_calls=tool_calls,
         )
+
+    async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
+        """Yield text deltas as they arrive from the OpenAI Chat Completions API."""
+        messages = self._build_messages(context.messages, context.system_prompt)
+        kwargs: dict[str, Any] = {
+            "model": self._config.model,
+            "messages": messages,
+            "stream": True,
+        }
+        if context.temperature is not None:
+            kwargs["temperature"] = context.temperature
+        if context.max_tokens is not None:
+            kwargs["max_tokens"] = context.max_tokens
+        if context.tools:
+            kwargs["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    },
+                }
+                for t in context.tools
+            ]
+
+        try:
+            response = await self._client.chat.completions.create(**kwargs)
+            async for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except self._api_status_error as exc:
+            raise ProviderError(
+                str(exc),
+                retryable=exc.status_code in {429, 500, 502, 503},
+                provider="openai",
+                status_code=exc.status_code,
+            ) from exc

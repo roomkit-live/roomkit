@@ -178,9 +178,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._batch_mode = batch_mode
         self._batch_audio_buffers: dict[str, bytearray] = {}
         self._batch_audio_sample_rate: dict[str, int] = {}
-        # Throttle audio level hooks to ~10/sec per direction
-        self._last_input_level_at: float = 0.0
-        self._last_output_level_at: float = 0.0
+        # Throttle audio level hooks to ~10/sec per direction per session
+        self._last_input_level_at: dict[str, float] = {}
+        self._last_output_level_at: dict[str, float] = {}
         # Cached event loop for cross-thread scheduling (e.g. PortAudio callback)
         self._event_loop: asyncio.AbstractEventLoop | None = None
         # Per-agent voice mapping: channel_id -> TTS voice override
@@ -401,11 +401,11 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             )
 
     def _on_processed_frame_for_level(self, session: VoiceSession, frame: AudioFrame) -> None:
-        """Fire ON_INPUT_AUDIO_LEVEL hook, throttled to ~10/sec."""
+        """Fire ON_INPUT_AUDIO_LEVEL hook, throttled to ~10/sec per session."""
         now = time.monotonic()
-        if now - self._last_input_level_at < 0.1:
+        if now - self._last_input_level_at.get(session.id, 0.0) < 0.1:
             return
-        self._last_input_level_at = now
+        self._last_input_level_at[session.id] = now
         with self._state_lock:
             binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
@@ -428,9 +428,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         TTS mixin so they naturally deduplicate.
         """
         now = time.monotonic()
-        if now - self._last_output_level_at < 0.1:
+        if now - self._last_output_level_at.get(session.id, 0.0) < 0.1:
             return
-        self._last_output_level_at = now
+        self._last_output_level_at[session.id] = now
         with self._state_lock:
             binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
@@ -681,6 +681,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._pending_turns.pop(session.id, None)
         self._pending_audio.pop(session.id, None)
         self._last_tts_ended_at.pop(session.id, None)
+        # Clear per-session audio level timestamps
+        self._last_input_level_at.pop(session.id, None)
+        self._last_output_level_at.pop(session.id, None)
         # Clear batch buffers
         self._batch_audio_buffers.pop(session.id, None)
         self._batch_audio_sample_rate.pop(session.id, None)
@@ -898,20 +901,26 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         return ChannelOutputModel.empty()
 
     async def close(self) -> None:
+        # 1. Cancel STT streams first (stops feeding audio)
+        for sid in list(self._stt_streams):
+            self._cancel_stt_stream(sid)
+        # 2. Cancel scheduled fire-and-forget tasks and await completion
+        for task in self._scheduled_tasks:
+            task.cancel()
+        if self._scheduled_tasks:
+            await asyncio.gather(*self._scheduled_tasks, return_exceptions=True)
+        self._scheduled_tasks.clear()
+        # 3. Close pipeline (stops audio processing)
+        if self._pipeline is not None:
+            self._pipeline.close()
+        # 4. Close STT/TTS providers
         if self._stt:
             await self._stt.close()
         if self._tts:
             await self._tts.close()
-        if self._pipeline is not None:
-            self._pipeline.close()
+        # 5. Close backend last (transport layer)
         if self._backend:
             await self._backend.close()
-        for sid in list(self._stt_streams):
-            self._cancel_stt_stream(sid)
-        # Cancel all outstanding scheduled tasks
-        for task in self._scheduled_tasks:
-            task.cancel()
-        self._scheduled_tasks.clear()
         self._session_bindings.clear()
         self._playing_sessions.clear()
         self._batch_audio_buffers.clear()

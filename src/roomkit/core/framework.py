@@ -202,6 +202,8 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         self._task_runner: TaskRunner = task_runner or InMemoryTaskRunner()
         # Traces received before the room exists (flushed on attach_channel)
         self._pending_traces: dict[str, list[object]] = {}
+        # Track fire-and-forget trace hook tasks to prevent GC
+        self._pending_hook_tasks: set[asyncio.Task[Any]] = set()
         # Telemetry
         if isinstance(telemetry, _TelemetryProviderCls):
             self._telemetry: _TelemetryProviderCls = telemetry
@@ -641,6 +643,12 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         """Close all sources, channels, voice backend, and the realtime backend."""
         # Cancel in-flight background tasks first
         await self._task_runner.close()
+        # Cancel pending trace hook tasks
+        for task in self._pending_hook_tasks:
+            task.cancel()
+        if self._pending_hook_tasks:
+            await asyncio.gather(*self._pending_hook_tasks, return_exceptions=True)
+            self._pending_hook_tasks.clear()
         # Stop all event sources
         for channel_id in list(self._sources.keys()):
             await self.detach_source(channel_id)
@@ -1004,19 +1012,19 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         Raises:
             SourceNotFoundError: If no source is attached to this channel_id.
         """
-        if channel_id not in self._sources:
+        source = self._sources.pop(channel_id, None)
+        task = self._source_tasks.pop(channel_id, None)
+        if source is None:
             raise SourceNotFoundError(f"No source attached to channel {channel_id}")
-
-        source = self._sources.pop(channel_id)
-        task = self._source_tasks.pop(channel_id)
 
         # Stop the source
         await source.stop()
 
         # Cancel the runner task and await its completion
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await task
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
 
         await self._emit_framework_event(
             "source_detached",

@@ -44,6 +44,7 @@ class HelpersMixin:
     _event_handlers: list[tuple[str, FrameworkEventHandler]]
     _identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]]
     _pending_traces: dict[str, list[object]]  # room_id -> [ProtocolTrace, ...]
+    _pending_hook_tasks: set[asyncio.Task[Any]]
 
     # -- Internal helpers --
 
@@ -286,7 +287,9 @@ class HelpersMixin:
             return
 
         with contextlib.suppress(RuntimeError):
-            asyncio.get_running_loop().create_task(self._fire_trace_hook(trace, room_id))
+            task = asyncio.get_running_loop().create_task(self._fire_trace_hook(trace, room_id))
+            self._pending_hook_tasks.add(task)
+            task.add_done_callback(self._pending_hook_tasks.discard)
 
     def _resolve_trace_room(self, trace: object) -> str | None:
         """Try to resolve a room_id for a trace via the originating channel."""

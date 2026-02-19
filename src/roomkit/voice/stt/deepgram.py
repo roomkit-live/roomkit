@@ -268,15 +268,10 @@ class DeepgramSTTProvider(STTProvider):
                 except Exception as e:
                     logger.error("Error sending audio to Deepgram: %s", e)
 
-                # Initiate WebSocket close handshake.  Deepgram can still
-                # send final results during the handshake — the receiver
-                # loop sees them before the connection closes.  Without
-                # this, the receiver hangs until Deepgram's own inactivity
-                # timeout (~12s) fires with error 1011.
-                import contextlib
-
-                with contextlib.suppress(Exception):
-                    await ws.close()
+                # NOTE: Do NOT call ws.close() here — let Deepgram close
+                # from its side after flushing final results.  Calling
+                # ws.close() races with the receiver loop and can drop
+                # final transcriptions.
 
             sender_task = asyncio.create_task(send_audio())
 

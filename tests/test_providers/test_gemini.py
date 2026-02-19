@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -27,8 +27,13 @@ def _mock_genai_module() -> MagicMock:
     types.Tool = MagicMock(side_effect=lambda **kw: SimpleNamespace(**kw))
     mod.types = types
 
-    # Mock Client
-    mod.Client = MagicMock()
+    # Mock Client with async generate_content (aio.models.generate_content)
+    client_instance = MagicMock()
+    client_instance.aio.models.generate_content = AsyncMock()
+    mod.Client.return_value = client_instance
+
+    # Attach types to the module so 'from google.genai import types' works
+    mod.types = types
 
     return mod
 
@@ -83,19 +88,25 @@ def _context(**overrides: Any) -> AIContext:
     return AIContext(**defaults)
 
 
+def _genai_modules(mock_genai: MagicMock) -> dict[str, Any]:
+    """Build sys.modules patch dict for Gemini tests."""
+    return {
+        "google": MagicMock(genai=mock_genai),
+        "google.genai": mock_genai,
+    }
+
+
 class TestGeminiAIProvider:
     @pytest.mark.asyncio
     async def test_generate_success(self) -> None:
         mock_genai = _mock_genai_module()
-        with (
-            patch.dict("sys.modules", {"google": MagicMock(), "google.genai": mock_genai}),
-            patch("roomkit.providers.gemini.ai.asyncio.to_thread") as mock_to_thread,
-        ):
-            mock_to_thread.return_value = _mock_response(text="Hi there!")
-
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content.return_value = _mock_response(
+                text="Hi there!"
+            )
             result = await provider.generate(_context())
 
             assert result.content == "Hi there!"
@@ -104,33 +115,26 @@ class TestGeminiAIProvider:
     @pytest.mark.asyncio
     async def test_generate_with_system_prompt(self) -> None:
         mock_genai = _mock_genai_module()
-        with (
-            patch.dict("sys.modules", {"google": MagicMock(), "google.genai": mock_genai}),
-            patch("roomkit.providers.gemini.ai.asyncio.to_thread") as mock_to_thread,
-        ):
-            mock_to_thread.return_value = _mock_response()
-
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content.return_value = _mock_response()
             ctx = _context(system_prompt="You are helpful.")
             await provider.generate(ctx)
 
-            # generate_content should have been called with config containing system_instruction
-            assert mock_to_thread.called
+            assert provider._client.aio.models.generate_content.called
 
     @pytest.mark.asyncio
     async def test_generate_maps_usage(self) -> None:
         mock_genai = _mock_genai_module()
-        with (
-            patch.dict("sys.modules", {"google": MagicMock(), "google.genai": mock_genai}),
-            patch("roomkit.providers.gemini.ai.asyncio.to_thread") as mock_to_thread,
-        ):
-            mock_to_thread.return_value = _mock_response(prompt_tokens=42, completion_tokens=7)
-
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content.return_value = _mock_response(
+                prompt_tokens=42, completion_tokens=7
+            )
             result = await provider.generate(_context())
 
             assert result.usage == {"prompt_tokens": 42, "completion_tokens": 7}
@@ -138,18 +142,14 @@ class TestGeminiAIProvider:
     @pytest.mark.asyncio
     async def test_generate_with_tools(self) -> None:
         mock_genai = _mock_genai_module()
-        with (
-            patch.dict("sys.modules", {"google": MagicMock(), "google.genai": mock_genai}),
-            patch("roomkit.providers.gemini.ai.asyncio.to_thread") as mock_to_thread,
-        ):
-            mock_to_thread.return_value = _mock_response(
-                text="",
-                tool_calls=[{"name": "search", "args": {"query": "test"}}],
-            )
-
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content.return_value = _mock_response(
+                text="",
+                tool_calls=[{"name": "search", "args": {"query": "test"}}],
+            )
             ctx = _context(
                 tools=[
                     AITool(
@@ -168,16 +168,12 @@ class TestGeminiAIProvider:
     @pytest.mark.asyncio
     async def test_generate_api_error(self) -> None:
         mock_genai = _mock_genai_module()
-        with (
-            patch.dict("sys.modules", {"google": MagicMock(), "google.genai": mock_genai}),
-            patch("roomkit.providers.gemini.ai.asyncio.to_thread") as mock_to_thread,
-        ):
-            mock_to_thread.side_effect = Exception("API error")
-
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.ai.base import ProviderError
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content.side_effect = Exception("API error")
 
             with pytest.raises(ProviderError) as exc_info:
                 await provider.generate(_context())
@@ -188,16 +184,14 @@ class TestGeminiAIProvider:
     @pytest.mark.asyncio
     async def test_rate_limit_error_is_retryable(self) -> None:
         mock_genai = _mock_genai_module()
-        with (
-            patch.dict("sys.modules", {"google": MagicMock(), "google.genai": mock_genai}),
-            patch("roomkit.providers.gemini.ai.asyncio.to_thread") as mock_to_thread,
-        ):
-            mock_to_thread.side_effect = Exception("Rate limit exceeded 429")
-
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.ai.base import ProviderError
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content.side_effect = Exception(
+                "Rate limit exceeded 429"
+            )
 
             with pytest.raises(ProviderError) as exc_info:
                 await provider.generate(_context())
@@ -212,7 +206,7 @@ class TestGeminiAIProvider:
 
     def test_supports_vision(self) -> None:
         mock_genai = _mock_genai_module()
-        with patch.dict("sys.modules", {"google": MagicMock(), "google.genai": mock_genai}):
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
@@ -220,7 +214,7 @@ class TestGeminiAIProvider:
 
     def test_model_name(self) -> None:
         mock_genai = _mock_genai_module()
-        with patch.dict("sys.modules", {"google": MagicMock(), "google.genai": mock_genai}):
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config(model="gemini-1.5-pro"))

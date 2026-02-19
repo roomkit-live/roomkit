@@ -243,6 +243,29 @@ class SherpaOnnxVADProvider(VADProvider):
             self._speech_buf.extend(frame.data)
             self._speech_ms += duration_ms
 
+            # Force SPEECH_END if buffer exceeds max duration (safety cap)
+            max_ms = self._config.max_speech_duration * 1000
+            if self._speech_ms >= max_ms:
+                logger.warning(
+                    "Speech duration %.0fms exceeded max (%.0fms); forcing SPEECH_END",
+                    self._speech_ms,
+                    max_ms,
+                )
+                audio = bytes(self._speech_buf)
+                duration = self._speech_ms
+                self._speaking = False
+                self._silence_ms = 0.0
+                self._energy_silence_ms = 0.0
+                self._speech_buf = bytearray()
+                if self._detector is not None:
+                    self._detector.reset()
+                return VADEvent(
+                    type=VADEventType.SPEECH_END,
+                    confidence=1.0,
+                    audio_bytes=audio,
+                    duration_ms=duration,
+                )
+
             if is_speech:
                 self._silence_ms = 0.0
             else:

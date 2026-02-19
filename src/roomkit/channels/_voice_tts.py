@@ -51,7 +51,7 @@ class VoiceTTSMixin:
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
     _playing_sessions: dict[str, TTSPlaybackState]
     _last_tts_ended_at: dict[str, float]
-    _last_output_level_at: float
+    _last_output_level_at: dict[str, float]
     _debug_frame_count: int
     _voice_map: dict[str, str]
 
@@ -71,9 +71,9 @@ class VoiceTTSMixin:
     def _fire_output_level(self, session: VoiceSession, data: bytes) -> None:
         """Fire ON_OUTPUT_AUDIO_LEVEL hook from the outbound pipeline, throttled."""
         now = time.monotonic()
-        if now - self._last_output_level_at < 0.1:
+        if now - self._last_output_level_at.get(session.id, 0.0) < 0.1:
             return
-        self._last_output_level_at = now
+        self._last_output_level_at[session.id] = now
         binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any, cast
 
@@ -155,9 +154,7 @@ class GeminiAIProvider(AIProvider):
 
         t0 = time.monotonic()
         try:
-            # Generate (sync API, wrap in executor for async)
-            response = await asyncio.to_thread(
-                self._client.models.generate_content,
+            response = await self._client.aio.models.generate_content(
                 model=self._config.model,
                 contents=contents,
                 config=gen_config,
