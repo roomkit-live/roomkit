@@ -517,24 +517,33 @@ class TestCancelAudio:
 
 
 class TestPortAllocation:
-    def test_sequential_port_allocation(self, backend: Any) -> None:
+    def test_unique_port_allocation(self, backend: Any) -> None:
         p1 = backend._allocate_rtp_port()
         p2 = backend._allocate_rtp_port()
         p3 = backend._allocate_rtp_port()
 
-        assert p1 == 10000
-        assert p2 == 10002
-        assert p3 == 10004
+        # Ports must be unique even-numbered values in the configured range
+        assert len({p1, p2, p3}) == 3
+        for p in (p1, p2, p3):
+            assert 10000 <= p < 20000
+            assert p % 2 == 0
 
-    def test_port_wraparound(self, backend: Any) -> None:
-        backend._next_rtp_port = 19998
+    def test_exhaustion_raises(self, backend: Any) -> None:
+        # Exhaust all available ports
+        allocated = []
+        while backend._available_ports:
+            allocated.append(backend._allocate_rtp_port())
+        import pytest
+
+        with pytest.raises(RuntimeError, match="No RTP ports available"):
+            backend._allocate_rtp_port()
+
+    def test_release_allows_reuse(self, backend: Any) -> None:
         p1 = backend._allocate_rtp_port()
-        p2 = backend._allocate_rtp_port()
-
-        assert p1 == 19998
-        # After allocating 19998, next_rtp_port = 20000 >= rtp_port_end(20000)
-        # so it wraps to rtp_port_start
-        assert p2 == 10000
+        backend._release_rtp_port(p1)
+        # After release, the port should be available again
+        assert p1 in backend._available_ports
+        assert p1 not in backend._allocated_ports
 
 
 class TestSessionQueries:

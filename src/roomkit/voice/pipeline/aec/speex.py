@@ -228,15 +228,15 @@ class SpeexAECProvider(AECProvider):
             )
             return frame
 
-        ctypes.memmove(self._in_buf, pcm_in, self._frame_bytes)
-
-        if self._playback_fed:
-            self._ref_hits += 1
-        else:
-            self._ref_misses += 1
-        self._playback_fed = False
-
         with self._lock:
+            ctypes.memmove(self._in_buf, pcm_in, self._frame_bytes)
+
+            if self._playback_fed:
+                self._ref_hits += 1
+            else:
+                self._ref_misses += 1
+            self._playback_fed = False
+
             # Suppress C stderr — SpeexDSP prints "No playback frame
             # available" when the ring buffer is empty (expected during
             # silence).
@@ -250,8 +250,10 @@ class SpeexAECProvider(AECProvider):
             self._total_in_energy += in_energy
             self._total_out_energy += out_energy
 
-        self._process_count += 1
-        if self._process_count % _LOG_INTERVAL == 0:
+            self._process_count += 1
+            should_log = self._process_count % _LOG_INTERVAL == 0
+
+        if should_log:
             self._log_stats()
 
         return AudioFrame(
@@ -284,11 +286,12 @@ class SpeexAECProvider(AECProvider):
             )
             return
 
-        ctypes.memmove(self._ref_buf, pcm, n_bytes)
-        with self._lock, self._stderr:
-            self._lib.speex_echo_playback(self._state, self._ref_buf)
-        self._playback_fed = True
-        self._refs_fed += 1
+        with self._lock:
+            ctypes.memmove(self._ref_buf, pcm, n_bytes)
+            with self._stderr:
+                self._lib.speex_echo_playback(self._state, self._ref_buf)
+            self._playback_fed = True
+            self._refs_fed += 1
 
     def reset(self) -> None:
         """Reset the adaptive filter state."""

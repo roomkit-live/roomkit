@@ -381,6 +381,29 @@ class PostgresStore(ConversationStore):
             )
         return row["cnt"] if row else 0
 
+    async def add_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent:
+        """Atomically assign the next index and store the event in one transaction."""
+        with self._query_span("add_event_auto_index", "events"):
+            async with self._ensure_pool().acquire() as conn, conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT count(*) AS cnt FROM events WHERE room_id = $1",
+                    room_id,
+                )
+                idx = row["cnt"] if row else 0
+                indexed = event.model_copy(update={"index": idx})
+                await conn.execute(
+                    "INSERT INTO events (id, room_id, idempotency_key, visibility, "
+                    "created_at, data) "
+                    "VALUES ($1, $2, $3, $4, $5, $6)",
+                    indexed.id,
+                    indexed.room_id,
+                    indexed.idempotency_key,
+                    indexed.visibility,
+                    indexed.created_at,
+                    _dump(indexed),
+                )
+        return indexed
+
     # ── Binding operations ───────────────────────────────────────
 
     async def add_binding(self, binding: ChannelBinding) -> ChannelBinding:
@@ -583,9 +606,9 @@ class PostgresStore(ConversationStore):
         return Identity.model_validate_json(row["data"])
 
     async def link_address(self, identity_id: str, channel_type: str, address: str) -> None:
-        async with self._ensure_pool().acquire() as conn:
+        async with self._ensure_pool().acquire() as conn, conn.transaction():
             row = await conn.fetchrow(
-                "SELECT data FROM identities WHERE id = $1",
+                "SELECT data FROM identities WHERE id = $1 FOR UPDATE",
                 identity_id,
             )
             if row is None:
@@ -598,29 +621,19 @@ class PostgresStore(ConversationStore):
                     channel_type: [*current, address],
                 }
                 updated = identity.model_copy(update={"channel_addresses": new_addresses})
-                async with conn.transaction():
-                    await conn.execute(
-                        "UPDATE identities SET data = $2 WHERE id = $1",
-                        identity_id,
-                        _dump(updated),
-                    )
-                    await conn.execute(
-                        "INSERT INTO identity_addresses (channel_type, address, identity_id) "
-                        "VALUES ($1, $2, $3) "
-                        "ON CONFLICT (channel_type, address) DO UPDATE SET identity_id = $3",
-                        channel_type,
-                        address,
-                        identity_id,
-                    )
-            else:
                 await conn.execute(
-                    "INSERT INTO identity_addresses (channel_type, address, identity_id) "
-                    "VALUES ($1, $2, $3) "
-                    "ON CONFLICT (channel_type, address) DO UPDATE SET identity_id = $3",
-                    channel_type,
-                    address,
+                    "UPDATE identities SET data = $2 WHERE id = $1",
                     identity_id,
+                    _dump(updated),
                 )
+            await conn.execute(
+                "INSERT INTO identity_addresses (channel_type, address, identity_id) "
+                "VALUES ($1, $2, $3) "
+                "ON CONFLICT (channel_type, address) DO UPDATE SET identity_id = $3",
+                channel_type,
+                address,
+                identity_id,
+            )
 
     # ── Task operations ──────────────────────────────────────────
 

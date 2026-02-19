@@ -112,6 +112,17 @@ class ConversationStore(ABC):
         """Return the total number of events in a room."""
         ...
 
+    async def add_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent:
+        """Atomically assign the next index and store the event.
+
+        The default implementation reads the count and writes in two steps.
+        Backends should override this with an atomic implementation (e.g.
+        a single SQL transaction) to prevent race conditions on the index.
+        """
+        count = await self.get_event_count(room_id)
+        indexed = event.model_copy(update={"index": count})
+        return await self.add_event(indexed)
+
     # Binding operations
 
     @abstractmethod

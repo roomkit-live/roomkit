@@ -8,6 +8,8 @@ import time
 from collections import deque
 from typing import Any
 
+from pydantic import SecretStr
+
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import (
     RealtimeAudioCallback,
@@ -48,7 +50,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     def __init__(
         self,
         *,
-        api_key: str,
+        api_key: str | SecretStr,
         model: str = "gemini-2.5-flash-native-audio-preview-12-2025",
     ) -> None:
         try:
@@ -60,10 +62,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 "Install with: pip install 'roomkit[realtime-gemini]'"
             ) from exc
 
+        self._api_key = SecretStr(api_key) if isinstance(api_key, str) else api_key
+
         # Tighter WebSocket keepalive to detect dead connections faster
         # (defaults are 20s interval / 20s timeout — too slow for realtime audio)
         self._client = _genai.Client(
-            api_key=api_key,
+            api_key=self._api_key.get_secret_value(),
             http_options=_types.HttpOptions(
                 async_client_args={
                     "ping_interval": 10,

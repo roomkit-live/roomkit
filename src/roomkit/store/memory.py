@@ -169,6 +169,16 @@ class InMemoryStore(ConversationStore):
     async def get_event_count(self, room_id: str) -> int:
         return len(self._room_events.get(room_id, []))
 
+    async def add_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent:
+        """Atomically assign index = len(room_events) and append."""
+        events = self._room_events.setdefault(room_id, [])
+        indexed = event.model_copy(update={"index": len(events)})
+        self._events[indexed.id] = indexed
+        events.append(indexed.id)
+        if indexed.idempotency_key:
+            self._idempotency.setdefault(room_id, set()).add(indexed.idempotency_key)
+        return indexed
+
     # Binding operations
 
     async def add_binding(self, binding: ChannelBinding) -> ChannelBinding:

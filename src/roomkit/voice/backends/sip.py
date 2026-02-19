@@ -228,8 +228,11 @@ class SIPVoiceBackend(VoiceBackend):
         # Protocol trace emitter (set by channel when trace is enabled)
         self._trace_emitter: Callable[..., Any] | None = None
 
-        # Port allocator
-        self._next_rtp_port = rtp_port_start
+        # Port allocator — set-based to prevent reuse of active ports
+        self._available_ports: set[int] = set(range(rtp_port_start, rtp_port_end, 2))
+        self._allocated_ports: set[int] = set()
+        # Track which RTP port each session uses for release on cleanup
+        self._session_ports: dict[str, int] = {}
 
     @property
     def name(self) -> str:
@@ -350,6 +353,7 @@ class SIPVoiceBackend(VoiceBackend):
         self._send_frame_count[session.id] = 0
         self._codec_rates[session.id] = codec_rate
         self._clock_rates[session.id] = clock_rate
+        self._session_ports[session.id] = rtp_port
 
         logger.info(
             "SIP call accepted: session=%s, room=%s, call_id=%s",
@@ -661,6 +665,7 @@ class SIPVoiceBackend(VoiceBackend):
         self._send_frame_count[session.id] = 0
         self._codec_rates[session.id] = actual_codec_rate
         self._clock_rates[session.id] = actual_clock_rate
+        self._session_ports[session.id] = rtp_port
 
         # Apply any re-INVITE SDP that arrived during RTP setup
         pending_sdp = self._pending_reinvite_sdp.pop(session.id, None)
@@ -721,6 +726,10 @@ class SIPVoiceBackend(VoiceBackend):
 
     def _cleanup_session(self, session_id: str) -> None:
         """Remove all tracking state for a session."""
+        # Release RTP port back to the available pool
+        port = self._session_ports.pop(session_id, None)
+        if port is not None:
+            self._release_rtp_port(port)
         session = self._sessions.pop(session_id, None)
         self._call_sessions.pop(session_id, None)
         call = self._incoming_calls.pop(session_id, None)
@@ -769,12 +778,19 @@ class SIPVoiceBackend(VoiceBackend):
             session.state = VoiceSessionState.ENDED
 
     def _allocate_rtp_port(self) -> int:
-        """Allocate the next even RTP port (RTP + RTCP pair)."""
-        port = self._next_rtp_port
-        self._next_rtp_port += 2
-        if self._next_rtp_port >= self._rtp_port_end:
-            self._next_rtp_port = self._rtp_port_start
+        """Allocate an even RTP port from the available pool."""
+        if not self._available_ports:
+            raise RuntimeError(
+                f"No RTP ports available (all {len(self._allocated_ports)} ports in use)"
+            )
+        port = self._available_ports.pop()
+        self._allocated_ports.add(port)
         return port
+
+    def _release_rtp_port(self, port: int) -> None:
+        """Return an RTP port to the available pool."""
+        self._allocated_ports.discard(port)
+        self._available_ports.add(port)
 
     def _resolve_local_ip(self, remote_addr: tuple[str, int]) -> str:
         """Return the local IP to advertise in SDP.

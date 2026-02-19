@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from collections.abc import Coroutine
 from dataclasses import dataclass, field
@@ -149,6 +150,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._pipeline_config = pipeline
         self._streaming = streaming
         self._framework: RoomKit | None = None
+        # Lock for shared state accessed from both asyncio and audio threads
+        self._state_lock = threading.Lock()
         # Map session_id -> (room_id, binding) for routing
         self._session_bindings: dict[str, tuple[str, ChannelBinding]] = {}
         # Track TTS playback for barge-in detection
@@ -302,7 +305,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         Enforces ``ChannelBinding.access`` and ``muted`` per RFC §7.5:
         audio is dropped when the binding is READ_ONLY, NONE, or muted.
         """
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:
+            binding_info = self._session_bindings.get(session.id)
         if binding_info is not None:
             binding = binding_info[1]
             if binding.access in (Access.READ_ONLY, Access.NONE) or binding.muted:
@@ -325,7 +329,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             except asyncio.QueueFull:
                 logger.warning("STT stream queue full on sentinel for %s", session.id)
 
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:
+            binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
 
@@ -340,7 +345,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         """Handle VAD events from pipeline — fire corresponding hooks."""
         from roomkit.voice.pipeline.vad.base import VADEventType
 
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:
+            binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
 
@@ -400,7 +406,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         if now - self._last_input_level_at < 0.1:
             return
         self._last_input_level_at = now
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:
+            binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
         room_id, _ = binding_info
@@ -424,7 +431,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         if now - self._last_output_level_at < 0.1:
             return
         self._last_output_level_at = now
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:
+            binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
         room_id, _ = binding_info
@@ -442,7 +450,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self, session: VoiceSession, result: DiarizationResult
     ) -> None:
         """Handle speaker change from pipeline — fire ON_SPEAKER_CHANGE hook."""
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:
+            binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
 
@@ -455,7 +464,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
     def _on_pipeline_dtmf(self, session: VoiceSession, dtmf_event: Any) -> None:
         """Handle DTMF event from pipeline — fire ON_DTMF hook."""
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:
+            binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
 
@@ -467,7 +477,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
     def _on_pipeline_recording_started(self, session: VoiceSession, handle: Any) -> None:
         """Handle recording started from pipeline — fire hook."""
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:
+            binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
 
@@ -479,7 +490,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
     def _on_pipeline_recording_stopped(self, session: VoiceSession, result: Any) -> None:
         """Handle recording stopped from pipeline — fire hook."""
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:
+            binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
 
@@ -584,7 +596,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
     def bind_session(self, session: VoiceSession, room_id: str, binding: ChannelBinding) -> None:
         """Bind a voice session to a room for message routing."""
-        self._session_bindings[session.id] = (room_id, binding)
+        with self._state_lock:
+            self._session_bindings[session.id] = (room_id, binding)
         # Start VOICE_SESSION telemetry span early so pipeline activation
         # and subsequent operations appear as children in traces.
         from roomkit.telemetry.base import Attr, SpanKind
@@ -650,15 +663,17 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         Called by the framework after mute/unmute/set_access so the
         audio gate in ``_on_audio_received`` sees the new state.
         """
-        for sid, (rid, _old) in self._session_bindings.items():
-            if rid == room_id:
-                self._session_bindings[sid] = (rid, binding)
+        with self._state_lock:
+            for sid, (rid, _old) in self._session_bindings.items():
+                if rid == room_id:
+                    self._session_bindings[sid] = (rid, binding)
 
     def unbind_session(self, session: VoiceSession) -> None:
         """Remove session binding."""
         # Cancel any active streaming STT
         self._cancel_stt_stream(session.id)
-        binding_info = self._session_bindings.pop(session.id, None)
+        with self._state_lock:
+            binding_info = self._session_bindings.pop(session.id, None)
         # Notify pipeline of session end
         if self._pipeline is not None:
             self._pipeline.on_session_ended(session)
@@ -817,7 +832,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
     def _on_backend_barge_in(self, session: VoiceSession) -> None:
         """Handle barge-in detected by backend."""
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:
+            binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
 

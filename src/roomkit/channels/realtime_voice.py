@@ -6,6 +6,7 @@ import asyncio
 import contextvars
 import json
 import logging
+import threading
 import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -144,6 +145,9 @@ class RealtimeVoiceChannel(Channel):
         self._tool_result_max_length = tool_result_max_length
         self._framework: RoomKit | None = None
 
+        # Lock for shared state accessed from both asyncio and audio threads
+        self._state_lock = threading.Lock()
+
         # Active sessions: session_id -> (session, room_id, binding)
         self._sessions: dict[str, VoiceSession] = {}
         self._session_rooms: dict[str, str] = {}  # session_id -> room_id
@@ -164,6 +168,9 @@ class RealtimeVoiceChannel(Channel):
         self._last_output_level_at: float = 0.0
         # Cached event loop for cross-thread scheduling (e.g. PortAudio callback)
         self._event_loop: asyncio.AbstractEventLoop | None = None
+
+        # Track fire-and-forget tasks for clean shutdown
+        self._scheduled_tasks: set[asyncio.Task[Any]] = set()
 
         # Telemetry span tracking: session_id -> span_id
         self._session_spans: dict[str, str] = {}
@@ -360,14 +367,16 @@ class RealtimeVoiceChannel(Channel):
             )
 
         session.state = VoiceSessionState.ACTIVE
-        self._sessions[session.id] = session
-        self._session_rooms[session.id] = room_id
+        with self._state_lock:
+            self._sessions[session.id] = session
+            self._session_rooms[session.id] = room_id
 
         # Cache the channel binding for audio gating
         if self._framework:
             stored_binding = await self._framework._store.get_binding(room_id, self.channel_id)
             if stored_binding is not None:
-                self._session_bindings[session.id] = stored_binding
+                with self._state_lock:
+                    self._session_bindings[session.id] = stored_binding
 
         # Fire framework event
         if self._framework:
@@ -415,12 +424,13 @@ class RealtimeVoiceChannel(Channel):
             logger.exception("Error disconnecting transport for session %s", session.id)
 
         session.state = VoiceSessionState.ENDED
-        self._sessions.pop(session.id, None)
-        self._session_rooms.pop(session.id, None)
-        self._session_bindings.pop(session.id, None)
+        with self._state_lock:
+            self._sessions.pop(session.id, None)
+            self._session_rooms.pop(session.id, None)
+            self._session_bindings.pop(session.id, None)
+            self._audio_generation.pop(session.id, None)
         self._session_transport_rates.pop(session.id, None)
         self._audio_forward_count.pop(session.id, None)
-        self._audio_generation.pop(session.id, None)
 
         # End any active turn span, then the session span
         telemetry = self._telemetry_provider
@@ -524,9 +534,10 @@ class RealtimeVoiceChannel(Channel):
         Called by the framework after mute/unmute/set_access so the
         audio gate in ``_forward_client_audio`` sees the new state.
         """
-        for sid, rid in self._session_rooms.items():
-            if rid == room_id:
-                self._session_bindings[sid] = binding
+        with self._state_lock:
+            for sid, rid in self._session_rooms.items():
+                if rid == room_id:
+                    self._session_bindings[sid] = binding
 
     # -- Channel ABC --
 
@@ -625,6 +636,14 @@ class RealtimeVoiceChannel(Channel):
             except Exception:
                 logger.exception("Error ending session %s during close", session.id)
 
+        # Cancel all outstanding scheduled tasks
+        tasks = list(self._scheduled_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._scheduled_tasks.clear()
+
         await self._provider.close()
         await self._transport.close()
 
@@ -641,6 +660,31 @@ class RealtimeVoiceChannel(Channel):
         if send is not None:
             await send(session, message)
 
+    # -- Task tracking --
+
+    def _track_task(
+        self, loop: asyncio.AbstractEventLoop, coro: Any, *, name: str,
+    ) -> asyncio.Task[Any]:
+        """Create a tracked asyncio task with automatic cleanup and error logging."""
+        task = loop.create_task(coro, name=name)
+        self._scheduled_tasks.add(task)
+        task.add_done_callback(self._task_done)
+        return task
+
+    def _task_done(self, task: asyncio.Task[Any]) -> None:
+        """Done-callback: log exceptions and remove from tracked set."""
+        self._scheduled_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error(
+                "Unhandled exception in task %s: %s",
+                task.get_name(),
+                exc,
+                exc_info=exc,
+            )
+
     # -- Internal callbacks --
 
     def _on_client_audio(self, session: VoiceSession, audio: AudioFrame | bytes) -> Any:
@@ -651,7 +695,8 @@ class RealtimeVoiceChannel(Channel):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(
+        self._track_task(
+            loop,
             self._forward_client_audio(session, audio),
             name=f"rt_client_audio:{session.id}",
         )
@@ -713,12 +758,14 @@ class RealtimeVoiceChannel(Channel):
         audio = self._resample_outbound(session, audio)
         if not audio:
             return
-        gen = self._audio_generation.get(session.id, 0)
+        with self._state_lock:
+            gen = self._audio_generation.get(session.id, 0)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(
+        self._track_task(
+            loop,
             self._send_outbound_audio(session, audio, gen),
             name=f"rt_send_audio:{session.id}",
         )
@@ -773,7 +820,8 @@ class RealtimeVoiceChannel(Channel):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(
+        self._track_task(
+            loop,
             self._process_transcription(session, text, role, is_final),
             name=f"rt_transcription:{session.id}",
         )
@@ -898,7 +946,8 @@ class RealtimeVoiceChannel(Channel):
         and signals the transport to interrupt outbound audio.
         """
         # Bump generation — pending tasks with the old generation will skip
-        self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
+        with self._state_lock:
+            self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
 
         # Discard outbound resampler state so stale audio doesn't leak
         resamplers = self._session_resamplers.get(session.id)
@@ -911,7 +960,8 @@ class RealtimeVoiceChannel(Channel):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(
+        self._track_task(
+            loop,
             self._handle_speech_event(session, "start"),
             name=f"rt_speech_start:{session.id}",
         )
@@ -922,7 +972,8 @@ class RealtimeVoiceChannel(Channel):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(
+        self._track_task(
+            loop,
             self._handle_speech_event(session, "end"),
             name=f"rt_speech_end:{session.id}",
         )
@@ -990,7 +1041,8 @@ class RealtimeVoiceChannel(Channel):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(
+        self._track_task(
+            loop,
             self._handle_tool_call(session, call_id, name, arguments),
             name=f"rt_tool_call:{session.id}:{call_id}",
         )
@@ -1134,7 +1186,8 @@ class RealtimeVoiceChannel(Channel):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(
+        self._track_task(
+            loop,
             self._handle_response_indicator(session, is_speaking=True),
             name=f"rt_response_start:{session.id}",
         )
@@ -1162,7 +1215,8 @@ class RealtimeVoiceChannel(Channel):
                 except RuntimeError:
                     pass
                 else:
-                    loop.create_task(
+                    self._track_task(
+                        loop,
                         self._transport.send_audio(session, flushed.data),
                         name=f"rt_flush_audio:{session.id}",
                     )
@@ -1173,11 +1227,13 @@ class RealtimeVoiceChannel(Channel):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(
+        self._track_task(
+            loop,
             self._signal_end_of_response(session),
             name=f"rt_signal_eor:{session.id}",
         )
-        loop.create_task(
+        self._track_task(
+            loop,
             self._handle_response_indicator(session, is_speaking=False),
             name=f"rt_response_end:{session.id}",
         )
@@ -1265,7 +1321,8 @@ class RealtimeVoiceChannel(Channel):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(
+        self._track_task(
+            loop,
             self._handle_client_disconnect(session),
             name=f"rt_client_disconnect:{session.id}",
         )
@@ -1296,7 +1353,8 @@ class RealtimeVoiceChannel(Channel):
             self._last_output_level_at = now
         if not self._framework:
             return
-        room_id = self._session_rooms.get(session.id)
+        with self._state_lock:
+            room_id = self._session_rooms.get(session.id)
         if not room_id:
             return
         try:
@@ -1321,7 +1379,8 @@ class RealtimeVoiceChannel(Channel):
         trigger: HookTrigger,
     ) -> None:
         """Create the audio level hook task (must be called on the event loop thread)."""
-        asyncio.get_running_loop().create_task(
+        self._track_task(
+            asyncio.get_running_loop(),
             self._fire_audio_level(session, level_db, room_id, trigger),
             name=f"rt_audio_level:{session.id}",
         )

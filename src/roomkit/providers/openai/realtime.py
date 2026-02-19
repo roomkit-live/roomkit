@@ -8,6 +8,8 @@ import json
 import logging
 from typing import Any
 
+from pydantic import SecretStr
+
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import (
     RealtimeAudioCallback,
@@ -48,11 +50,11 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
     def __init__(
         self,
         *,
-        api_key: str,
+        api_key: str | SecretStr,
         model: str = "gpt-4o-realtime-preview",
         base_url: str | None = None,
     ) -> None:
-        self._api_key = api_key
+        self._api_key = SecretStr(api_key) if isinstance(api_key, str) else api_key
         self._model = model
         self._base_url = base_url or _DEFAULT_BASE_URL
 
@@ -98,7 +100,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
 
         url = f"{self._base_url}?model={self._model}"
         headers = {
-            "Authorization": f"Bearer {self._api_key}",
+            "Authorization": f"Bearer {self._api_key.get_secret_value()}",
             "OpenAI-Beta": "realtime=v1",
         }
 

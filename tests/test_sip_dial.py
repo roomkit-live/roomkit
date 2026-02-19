@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import sys
+import types
 from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# Ensure a fake aiosipua module exists so tests can patch build_sdp
+if "aiosipua" not in sys.modules:
+    _fake_aiosipua = types.ModuleType("aiosipua")
+    _fake_aiosipua.build_sdp = lambda **kwargs: None  # type: ignore[attr-defined]
+    sys.modules["aiosipua"] = _fake_aiosipua
 
 from roomkit.voice.backends.sip import (
     PT_G722,
@@ -197,7 +205,9 @@ def backend() -> SIPVoiceBackend:
     b._on_call_callback = None
     b._on_disconnect_callback = None
     b._trace_emitter = None
-    b._next_rtp_port = 10000
+    b._available_ports = set(range(10000, 20000, 2))
+    b._allocated_ports: set[int] = set()
+    b._session_ports: dict[str, int] = {}
     b._audio_stats = {}
     b._stats_task = None
 

@@ -730,7 +730,7 @@ class InboundMixin(HelpersMixin):
             content=TextContent(body=full_text),
             chain_depth=sr.trigger_event.chain_depth + 1,
         )
-        await self._store.add_event(response_event)
+        response_event = await self._store.add_event_auto_index(room_id, response_event)
 
         return _StreamingResult(event=response_event, delivered_to=delivered_to)
 

@@ -378,8 +378,11 @@ class VoiceTTSMixin:
                 audio_stream = self._wrap_outbound(session, audio_stream)
             await self._backend.send_audio(session, audio_stream)
         except NotImplementedError:
-            await self._tts.synthesize(text, voice=voice)
-            logger.warning("TTS provider %s doesn't support streaming", tts_name)
+            logger.error(
+                "TTS provider %s does not support streaming synthesis; "
+                "voice channels require synthesize_stream(). No audio sent.",
+                tts_name,
+            )
         except Exception:
             if telemetry is not None and span_id is not None:
                 telemetry.end_span(span_id, status="error", error_message="TTS failed")

@@ -821,29 +821,35 @@ class LocalAudioBackend(VoiceBackend):
         The pipeline runs synchronously in the PortAudio mic callback.
         Audio goes through AEC → AGC → denoiser stages; the processed
         result is what gets forwarded to the realtime provider.
-
-        A ``on_processed_frame`` callback captures the pipeline output
-        into ``_pipeline_result`` so the mic callback can read it.
         """
         from roomkit.voice.pipeline.engine import AudioPipeline
 
         self._pipeline = AudioPipeline(config)
-        self._pipeline_result: AudioFrame | None = None
-        self._pipeline.on_processed_frame(self._on_pipeline_processed)
-
-    def _on_pipeline_processed(self, session: VoiceSession, frame: AudioFrame) -> None:
-        """Capture the processed frame from the pipeline."""
-        self._pipeline_result = frame
+        self._pipeline_lock = threading.Lock()
 
     def _process_pipeline_inline(self, session: VoiceSession, frame: AudioFrame) -> AudioFrame:
-        """Run a frame through the pipeline and return the processed result."""
-        self._pipeline_result = None
-        try:
-            self._pipeline.process_inbound(session, frame)
-        except Exception:
-            logger.exception("Pipeline processing error — passing audio through")
-            return frame
-        return self._pipeline_result if self._pipeline_result is not None else frame
+        """Run a frame through the pipeline and return the processed result.
+
+        Uses a per-call local variable and a threading lock to avoid
+        shared mutable state across PortAudio callback threads.
+        """
+        result: list[AudioFrame | None] = [None]
+
+        def capture(s: Any, f: AudioFrame) -> None:
+            result[0] = f
+
+        with self._pipeline_lock:
+            old_cbs = self._pipeline._processed_frame_callbacks
+            self._pipeline._processed_frame_callbacks = [capture]
+            try:
+                self._pipeline.process_inbound(session, frame)
+            except Exception:
+                logger.exception("Pipeline processing error — passing audio through")
+                return frame
+            finally:
+                self._pipeline._processed_frame_callbacks = old_cbs
+
+        return result[0] if result[0] is not None else frame
 
     # -------------------------------------------------------------------------
     # AEC helpers

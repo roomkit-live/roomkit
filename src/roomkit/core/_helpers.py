@@ -243,7 +243,6 @@ class HelpersMixin:
         data: dict[str, Any] | None = None,
     ) -> None:
         """Emit a system event to the room timeline (internal/audit)."""
-        count = await self._store.get_event_count(room_id)
         event = RoomEvent(
             room_id=room_id,
             type=event_type,
@@ -251,9 +250,8 @@ class HelpersMixin:
             content=SystemContent(body=message, code=code, data=data or {}),
             status=EventStatus.DELIVERED,
             visibility="internal",
-            index=count,
         )
-        await self._store.add_event(event)
+        await self._store.add_event_auto_index(room_id, event)
 
     async def _build_context(self, room_id: str) -> RoomContext:
         """Build a RoomContext for the given room."""

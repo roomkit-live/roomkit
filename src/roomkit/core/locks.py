@@ -55,17 +55,28 @@ class InMemoryLockManager(RoomLockManager):
 
     def __init__(self, max_locks: int = 1024) -> None:
         self._locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
+        self._refcounts: dict[str, int] = {}
         self._max_locks = max_locks
 
     def _get_lock(self, room_id: str) -> asyncio.Lock:
         if room_id in self._locks:
             self._locks.move_to_end(room_id)
+            self._refcounts[room_id] = self._refcounts.get(room_id, 0) + 1
             return self._locks[room_id]
 
         lock = asyncio.Lock()
         self._locks[room_id] = lock
+        self._refcounts[room_id] = 1
         self._evict()
         return lock
+
+    def _release_ref(self, room_id: str) -> None:
+        """Decrement the reference count for a room lock."""
+        count = self._refcounts.get(room_id, 0) - 1
+        if count <= 0:
+            self._refcounts.pop(room_id, None)
+        else:
+            self._refcounts[room_id] = count
 
     def _evict(self) -> None:
         if len(self._locks) <= self._max_locks:
@@ -74,10 +85,11 @@ class InMemoryLockManager(RoomLockManager):
         for key, lock in self._locks.items():
             if len(self._locks) - len(to_remove) <= self._max_locks:
                 break
-            if not lock.locked():
+            if not lock.locked() and self._refcounts.get(key, 0) <= 0:
                 to_remove.append(key)
         for key in to_remove:
             self._locks.pop(key)
+            self._refcounts.pop(key, None)
 
     @asynccontextmanager
     async def locked(self, room_id: str) -> AsyncIterator[None]:
@@ -89,12 +101,15 @@ class InMemoryLockManager(RoomLockManager):
             return
 
         lock = self._get_lock(room_id)
-        async with lock:
-            token = _held_rooms.set(held | frozenset({room_id}))
-            try:
-                yield
-            finally:
-                _held_rooms.reset(token)
+        try:
+            async with lock:
+                token = _held_rooms.set(held | frozenset({room_id}))
+                try:
+                    yield
+                finally:
+                    _held_rooms.reset(token)
+        finally:
+            self._release_ref(room_id)
 
     @property
     def size(self) -> int:

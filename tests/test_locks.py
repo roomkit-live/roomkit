@@ -35,7 +35,9 @@ class TestInMemoryLockManager:
     async def test_lru_eviction(self) -> None:
         mgr = InMemoryLockManager(max_locks=2)
         mgr._get_lock("r1")
+        mgr._release_ref("r1")
         mgr._get_lock("r2")
+        mgr._release_ref("r2")
         mgr._get_lock("r3")
         assert mgr.size == 2
         assert "r1" not in mgr._locks
