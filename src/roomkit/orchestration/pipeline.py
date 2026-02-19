@@ -178,7 +178,7 @@ class ConversationPipeline:
 
         # Populate agent metadata from Agent fields
         handler._greeting_map = {
-            a.channel_id: a.greeting for a in agents if getattr(a, "greeting", None)
+            a.channel_id: g for a in agents if (g := getattr(a, "greeting", None)) is not None
         }
         handler._agents = {a.channel_id: a for a in agents}
 

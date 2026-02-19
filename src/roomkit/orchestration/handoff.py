@@ -549,7 +549,7 @@ class HandoffHandler:
     def _get_room_language(self, room: Room, agent_id: str | None) -> str | None:
         """Get effective language: room override > agent default."""
         state = get_conversation_state(room)
-        lang = state.context.get("language") if state.context else None
+        lang: str | None = state.context.get("language") if state.context else None
         if lang:
             return lang
         if agent_id:

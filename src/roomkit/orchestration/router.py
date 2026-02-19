@@ -189,15 +189,15 @@ class ConversationRouter:
 
             # Build always-process list (supervisor, etc.)
             # Uses list (not set) — survives JSON serialization cleanly.
-            always_process: list[str] = []
+            always_process_ids: list[str] = []
             if self._supervisor_id:
-                always_process.append(self._supervisor_id)
+                always_process_ids.append(self._supervisor_id)
 
             # Stamp routing metadata on the event
             updated_metadata = {
                 **(event.metadata or {}),
                 "_routed_to": selected,
-                "_always_process": always_process,
+                "_always_process": always_process_ids,
             }
             modified_event = event.model_copy(update={"metadata": updated_metadata})
 

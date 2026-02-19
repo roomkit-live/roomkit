@@ -565,9 +565,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 await on_complete(result)
 
         # Submit to task runner
-        await self._task_runner.submit(
-            self, handle, context=context, on_complete=_on_complete
-        )
+        await self._task_runner.submit(self, handle, context=context, on_complete=_on_complete)
 
         return handle
 

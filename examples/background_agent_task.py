@@ -65,62 +65,67 @@ async def main() -> None:
 
     backend = MockVoiceBackend()
 
-    vad = MockVADProvider(events=[
-        # Turn 1 — user asks for PR review
-        VADEvent(type=VADEventType.SPEECH_START, confidence=0.95),
-        None,
-        VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio-1", duration_ms=2000.0),
-        # Turn 2 — user chats while task runs
-        VADEvent(type=VADEventType.SPEECH_START, confidence=0.93),
-        None,
-        VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio-2", duration_ms=1500.0),
-        # Turn 3 — agent delivers the result
-        VADEvent(type=VADEventType.SPEECH_START, confidence=0.94),
-        None,
-        VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio-3", duration_ms=1000.0),
-    ])
+    vad = MockVADProvider(
+        events=[
+            # Turn 1 — user asks for PR review
+            VADEvent(type=VADEventType.SPEECH_START, confidence=0.95),
+            None,
+            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio-1", duration_ms=2000.0),
+            # Turn 2 — user chats while task runs
+            VADEvent(type=VADEventType.SPEECH_START, confidence=0.93),
+            None,
+            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio-2", duration_ms=1500.0),
+            # Turn 3 — agent delivers the result
+            VADEvent(type=VADEventType.SPEECH_START, confidence=0.94),
+            None,
+            VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"audio-3", duration_ms=1000.0),
+        ]
+    )
 
-    stt = MockSTTProvider(transcripts=[
-        "Can you review the latest PR on roomkit and email me the summary?",
-        "Sure, while we wait, what's on my calendar today?",
-        "Great, thanks for the update!",
-    ])
+    stt = MockSTTProvider(
+        transcripts=[
+            "Can you review the latest PR on roomkit and email me the summary?",
+            "Sure, while we wait, what's on my calendar today?",
+            "Great, thanks for the update!",
+        ]
+    )
     tts = MockTTSProvider()
 
     # Voice assistant — front-facing, talks to the user
-    voice_ai = MockAIProvider(responses=[
-        (
-            "I'll review the latest PR on roomkit for you right away. "
-            "I'm delegating this to the PR reviewer — you'll have the "
-            "summary shortly. What else can I help with?"
-        ),
-        (
-            "You have a team standup at 10am and a 1-on-1 with Sarah at 2pm. "
-            "Anything else?"
-        ),
-        (
-            "Great news — the PR review just came back! "
-            "PR #42 adds a TaskExecutor ABC with InMemory implementation: "
-            "340 additions, 45 deletions across 8 files, 12 unit tests. "
-            "Assessment: clean implementation, ready to merge. "
-            "I've emailed you the full summary."
-        ),
-    ])
+    voice_ai = MockAIProvider(
+        responses=[
+            (
+                "I'll review the latest PR on roomkit for you right away. "
+                "I'm delegating this to the PR reviewer — you'll have the "
+                "summary shortly. What else can I help with?"
+            ),
+            ("You have a team standup at 10am and a 1-on-1 with Sarah at 2pm. Anything else?"),
+            (
+                "Great news — the PR review just came back! "
+                "PR #42 adds a TaskExecutor ABC with InMemory implementation: "
+                "340 additions, 45 deletions across 8 files, 12 unit tests. "
+                "Assessment: clean implementation, ready to merge. "
+                "I've emailed you the full summary."
+            ),
+        ]
+    )
 
     # PR reviewer — background agent, works in a child room
-    pr_reviewer_ai = MockAIProvider(responses=[
-        (
-            "## PR #42: Add background task executor\n\n"
-            "**Author:** quintana | **Files:** 8 | **+340 / -45**\n\n"
-            "### Summary\n"
-            "Adds `TaskExecutor` ABC with `InMemoryTaskExecutor`. "
-            "Introduces child-room pattern for background agent work. "
-            "Includes 12 unit tests covering lifecycle, cancellation, errors.\n\n"
-            "### Assessment\n"
-            "Clean implementation following RoomKit patterns. Good coverage. "
-            "Ready to merge."
-        ),
-    ])
+    pr_reviewer_ai = MockAIProvider(
+        responses=[
+            (
+                "## PR #42: Add background task executor\n\n"
+                "**Author:** quintana | **Files:** 8 | **+340 / -45**\n\n"
+                "### Summary\n"
+                "Adds `TaskExecutor` ABC with `InMemoryTaskExecutor`. "
+                "Introduces child-room pattern for background agent work. "
+                "Includes 12 unit tests covering lifecycle, cancellation, errors.\n\n"
+                "### Assessment\n"
+                "Clean implementation following RoomKit patterns. Good coverage. "
+                "Ready to merge."
+            ),
+        ]
+    )
 
     email_provider = MockEmailProvider()
 
@@ -238,8 +243,7 @@ async def main() -> None:
         room_id="call-room",
         agent_id="pr-reviewer",
         task=(
-            "Review the latest PR on the 'roomkit' repository. "
-            "Produce a summary with assessment."
+            "Review the latest PR on the 'roomkit' repository. Produce a summary with assessment."
         ),
         context={
             "requester": "quintana",
