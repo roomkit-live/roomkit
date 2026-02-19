@@ -25,13 +25,11 @@ def create_vllm_provider(config: VLLMConfig) -> OpenAIAIProvider:
     Returns:
         An :class:`OpenAIAIProvider` configured for the local vLLM server.
     """
-    from pydantic import SecretStr
-
     from roomkit.providers.openai.ai import OpenAIAIProvider
     from roomkit.providers.openai.config import OpenAIConfig
 
     openai_config = OpenAIConfig(
-        api_key=SecretStr(config.api_key),
+        api_key=config.api_key,
         base_url=config.base_url,
         model=config.model,
         max_tokens=config.max_tokens,

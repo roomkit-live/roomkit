@@ -250,7 +250,8 @@ line-length = 99
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "PT", "ASYNC"]
+ignore = ["ASYNC109", "ASYNC110"]  # timeout params and sleep-loops are intentional patterns
 
 [tool.ruff.lint.isort]
 known-first-party = ["roomkit"]
@@ -261,7 +262,7 @@ known-first-party = ["roomkit"]
 "src/roomkit/voice/realtime/provider.py" = ["B027"]  # Optional callback hooks with default no-ops
 "src/roomkit/voice/realtime/transport.py" = ["B027"]  # Optional callback hooks with default no-ops
 "examples/*.py" = ["E402"]  # Logging config before imports is intentional
-"tests/*.py" = ["N817"]  # Allow short aliases in tests
+"tests/*.py" = ["N817", "PT011", "PT012", "PT018", "PT019"]  # Allow short aliases + relaxed pytest style
 
 [tool.bandit]
 exclude_dirs = ["tests", "examples"]

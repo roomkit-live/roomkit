@@ -45,5 +45,6 @@ async def retry_with_backoff[T](
             )
             await asyncio.sleep(delay)
 
-    assert last_exc is not None
+    if last_exc is None:
+        raise RuntimeError("retry_with_backoff completed without result or exception")
     raise last_exc

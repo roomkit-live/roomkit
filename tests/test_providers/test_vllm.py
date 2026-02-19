@@ -24,14 +24,16 @@ def _mock_openai_module() -> MagicMock:
 
 class TestVLLMConfig:
     def test_required_model(self) -> None:
-        with pytest.raises(TypeError):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
             VLLMConfig()  # type: ignore[call-arg]
 
     def test_defaults(self) -> None:
         cfg = VLLMConfig(model="meta-llama/Llama-3-8B")
         assert cfg.model == "meta-llama/Llama-3-8B"
         assert cfg.base_url == "http://localhost:8000/v1"
-        assert cfg.api_key == "none"
+        assert cfg.api_key.get_secret_value() == "none"
         assert cfg.max_tokens == 1024
         assert cfg.temperature == 0.7
 
@@ -44,7 +46,7 @@ class TestVLLMConfig:
             temperature=0.3,
         )
         assert cfg.base_url == "http://gpu-server:9000/v1"
-        assert cfg.api_key == "secret"
+        assert cfg.api_key.get_secret_value() == "secret"
         assert cfg.max_tokens == 2048
         assert cfg.temperature == 0.3
 

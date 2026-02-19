@@ -5,10 +5,12 @@ from roomkit.models.channel import (
     ChannelCapabilities,
     ChannelOutput,
     RateLimit,
+    RetryPolicy,
 )
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import (
     DeliveryResult,
+    DeliveryStatus,
     InboundMessage,
     InboundResult,
     ProviderResult,
@@ -72,6 +74,7 @@ __all__ = [
     "DeleteType",
     "DeliveryMode",
     "DeliveryResult",
+    "DeliveryStatus",
     "EditContent",
     "EventContent",
     "EventSource",
@@ -97,6 +100,7 @@ __all__ = [
     "ParticipantStatus",
     "ProviderResult",
     "RateLimit",
+    "RetryPolicy",
     "RichContent",
     "Room",
     "RoomContext",

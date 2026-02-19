@@ -94,8 +94,8 @@ class VideoContent(BaseModel):
     @field_validator("url", "thumbnail_url")
     @classmethod
     def _validate_url(cls, v: str | None) -> str | None:
-        if v is not None and not v.startswith(("http://", "https://")):
-            raise ValueError("URL must start with http:// or https://")
+        if v is not None and not v.startswith(("http://", "https://", "data:")):
+            raise ValueError("URL must start with http://, https://, or data:")
         return v
 
 

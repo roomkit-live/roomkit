@@ -186,7 +186,7 @@ def parse_twilio_webhook(
     body = payload.get("Body", "")
 
     media: list[dict[str, str | None]] = []
-    num_media = int(payload.get("NumMedia", "0"))
+    num_media = min(int(payload.get("NumMedia", "0")), 20)
     for i in range(num_media):
         url = payload.get(f"MediaUrl{i}")
         if url:

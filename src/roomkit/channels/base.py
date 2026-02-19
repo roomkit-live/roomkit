@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable
@@ -33,7 +34,7 @@ def _safe_invoke(cb: TraceCallback, trace: ProtocolTrace) -> None:
     """Invoke a trace callback, scheduling coroutines as tasks."""
     try:
         result = cb(trace)
-        if asyncio.coroutines.iscoroutine(result):
+        if inspect.iscoroutine(result):
             with contextlib.suppress(RuntimeError):
                 asyncio.get_running_loop().create_task(result)
     except Exception:

@@ -152,7 +152,7 @@ class FakeSdpMessage:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def backend() -> SIPVoiceBackend:
     """Return a SIPVoiceBackend with mocked aiosipua imports."""
     with (

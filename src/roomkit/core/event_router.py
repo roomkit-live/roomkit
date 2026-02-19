@@ -467,7 +467,7 @@ class EventRouter:
 
         # Comma-separated list of channel IDs
         if "," in vis:
-            allowed = {cid.strip() for cid in vis.split(",")}
+            allowed = {cid.strip() for cid in vis.split(",") if cid.strip()}
             return target_binding.channel_id in allowed
 
         # Single channel ID
@@ -532,6 +532,7 @@ class EventRouter:
     @staticmethod
     def _enforce_max_length(event: RoomEvent, max_length: int) -> RoomEvent:
         """Truncate text content if it exceeds the channel's max_length."""
+        max_length = max(3, max_length)
         content = event.content
         if isinstance(content, TextContent) and len(content.body) > max_length:
             truncated = content.body[: max_length - 3] + "..."

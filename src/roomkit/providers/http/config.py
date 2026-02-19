@@ -5,7 +5,7 @@ from __future__ import annotations
 import ipaddress
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 
 class HTTPProviderConfig(BaseModel):
@@ -14,7 +14,7 @@ class HTTPProviderConfig(BaseModel):
     webhook_url: str
     secret: SecretStr | None = None
     timeout: float = 30.0
-    headers: dict[str, str] = {}
+    headers: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("webhook_url")
     @classmethod

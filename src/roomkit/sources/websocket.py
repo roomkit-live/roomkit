@@ -172,19 +172,21 @@ class WebSocketSource(BaseSourceProvider):
         self._reset_stop()
         self._set_status(SourceStatus.CONNECTING)
 
-        # Build connection kwargs
+        # Build connection kwargs — only include optional keys when explicitly set
         connect_kwargs: dict[str, Any] = {
             "uri": self._url,
-            "additional_headers": self._headers if self._headers else None,
-            "subprotocols": self._subprotocols,
             "ping_interval": self._ping_interval,
             "ping_timeout": self._ping_timeout,
             "close_timeout": self._close_timeout,
             "max_size": self._max_size,
-            "origin": self._origin,
         }
-        # Remove None values
-        connect_kwargs = {k: v for k, v in connect_kwargs.items() if v is not None}
+        # Only include optional keys when a value was provided
+        if self._headers:
+            connect_kwargs["additional_headers"] = self._headers
+        if self._subprotocols is not None:
+            connect_kwargs["subprotocols"] = self._subprotocols
+        if self._origin is not None:
+            connect_kwargs["origin"] = self._origin
 
         try:
             async with websockets.connect(**connect_kwargs) as ws:

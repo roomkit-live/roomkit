@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from roomkit.models.enums import EventType
 from roomkit.models.event import EventContent, RoomEvent
@@ -83,5 +84,14 @@ class DeliveryStatus(BaseModel):
     sender: str = ""
     error_code: str | None = None
     error_message: str | None = None
-    timestamp: str | None = None
+    timestamp: datetime | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def _parse_timestamp(cls, v: str | datetime | None) -> datetime | None:
+        if v is None or isinstance(v, datetime):
+            return v
+        if isinstance(v, str):
+            return datetime.fromisoformat(v)
+        raise ValueError(f"Cannot parse timestamp from {type(v).__name__}")
