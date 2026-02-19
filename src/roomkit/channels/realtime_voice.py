@@ -672,12 +672,20 @@ class RealtimeVoiceChannel(Channel):
             except Exception:
                 logger.exception("Error ending session %s during close", session.id)
 
-        # Cancel all outstanding scheduled tasks
+        # Cancel all outstanding scheduled tasks with timeout
         tasks = list(self._scheduled_tasks)
         for task in tasks:
             task.cancel()
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=5.0,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "Timed out waiting for %d tasks during close", len(tasks)
+                )
         self._scheduled_tasks.clear()
 
         await self._provider.close()
