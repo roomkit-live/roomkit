@@ -93,6 +93,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         # Audio chunk counter per session (for debug logging)
         self._audio_chunk_count: dict[str, int] = {}
 
+        # Per-session flag: True while model is actively generating a response
+        self._response_started: dict[str, bool] = {}
         # Audio buffering during reconnection (~2s at 20ms/frame = 100 frames)
         self._audio_buffers: dict[str, deque[bytes]] = {}
         # Send-audio counter per session (for debug logging)
@@ -290,7 +292,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         session.state = VoiceSessionState.ACTIVE
         session.provider_session_id = session.id
-        session._response_started = False  # type: ignore[attr-defined]
+        self._response_started[session.id] = False
 
         # Start receive loop
         self._receive_tasks[session.id] = asyncio.create_task(
@@ -638,7 +640,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 started_at = self._session_started_at.get(session.id)
                 uptime = time.monotonic() - started_at if started_at else 0.0
                 audio_chunks = self._audio_chunk_count.get(session.id, 0)
-                was_streaming = session._response_started  # type: ignore[attr-defined]
+                was_streaming = self._response_started.get(session.id, False)
 
                 logger.warning(
                     "Gemini session %s disconnected — "
@@ -763,7 +765,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         self._live_ctxmgrs[session.id] = ctxmgr
         self._live_sessions[session.id] = live_session
-        session._response_started = False  # type: ignore[attr-defined]
+        self._response_started[session.id] = False
 
         # Replay buffered audio BEFORE marking ACTIVE — new audio arriving
         # via send_audio() must keep buffering until replay is done,
@@ -894,12 +896,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             if (
                 hasattr(content, "model_turn")
                 and content.model_turn
-                and not session._response_started  # type: ignore[attr-defined]
+                and not self._response_started.get(session.id, False)
             ):
                 # Flush user transcription — model responding means user
                 # speech is done and transcription should be complete.
                 await self._flush_transcription_buffer(session, "user")
-                session._response_started = True  # type: ignore[attr-defined]
+                self._response_started[session.id] = True
                 self._audio_chunk_count[session.id] = 0
                 logger.info("[Gemini] response_start (session %s)", session.id)
                 await self._fire_callbacks(self._response_start_callbacks, session)
@@ -911,7 +913,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     session.id,
                 )
                 await self._flush_transcription_buffer(session, "assistant")
-                session._response_started = False  # type: ignore[attr-defined]
+                self._response_started[session.id] = False
                 await self._fire_callbacks(self._speech_start_callbacks, session)
                 await self._fire_callbacks(self._response_end_callbacks, session)
 
@@ -930,7 +932,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 )
                 await self._flush_transcription_buffer(session, "user")
                 await self._flush_transcription_buffer(session, "assistant")
-                session._response_started = False  # type: ignore[attr-defined]
+                self._response_started[session.id] = False
                 await self._fire_callbacks(self._response_end_callbacks, session)
 
         # Handle GoAway LAST — after processing all other data in this message.

@@ -503,7 +503,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         if agent_id not in self._channels:
             raise ChannelNotRegisteredError(f"Agent channel '{agent_id}' not registered")
 
-        child_room_id = f"{room_id}::task-{uuid4().hex[:8]}"
+        child_room_id = f"{room_id}::task-{uuid4().hex[:12]}"
 
         # Create child room
         await self.create_room(
@@ -539,7 +539,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
 
         # Create task handle
         handle = DelegatedTask(
-            id=f"task-{uuid4().hex[:8]}",
+            id=f"task-{uuid4().hex[:12]}",
             child_room_id=child_room_id,
             parent_room_id=room_id,
             agent_id=agent_id,

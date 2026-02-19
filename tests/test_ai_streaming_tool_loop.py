@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext

@@ -159,19 +159,30 @@ class MCPToolProvider:
         self._ensure_connected()
         return [t.name for t in self._tools]
 
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        timeout: float = 30.0,
+    ) -> str:
         """Call a tool on the MCP server and return the result as a string.
 
         Args:
             name: Tool name.
             arguments: Tool arguments dict.
+            timeout: Maximum seconds to wait for a response.
 
         Returns:
             Result string. Single TextContent → plain text; multi-part → JSON array;
             error results → ``{"error": "..."}``.
         """
+        import asyncio
+
         self._ensure_connected()
-        result = await self._session.call_tool(name, arguments)
+        result = await asyncio.wait_for(
+            self._session.call_tool(name, arguments), timeout=timeout
+        )
 
         if result.isError:
             parts = [getattr(c, "text", str(c)) for c in result.content]
