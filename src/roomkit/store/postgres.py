@@ -260,7 +260,10 @@ class PostgresStore(ConversationStore):
             idx += 1
 
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
-        query = f"SELECT data FROM rooms {where} ORDER BY created_at LIMIT ${idx} OFFSET ${idx + 1}"  # nosec B608 — parameterized query
+        query = (
+            f"SELECT data FROM rooms {where}"  # nosec B608
+            f" ORDER BY created_at LIMIT ${idx} OFFSET ${idx + 1}"
+        )
         params.extend([limit, offset])
         with self._query_span("find_rooms", "rooms"):
             async with self._acquire() as conn:
