@@ -699,7 +699,11 @@ class RealtimeVoiceChannel(Channel):
     # -- Task tracking --
 
     def _track_task(
-        self, loop: asyncio.AbstractEventLoop, coro: Any, *, name: str,
+        self,
+        loop: asyncio.AbstractEventLoop,
+        coro: Any,
+        *,
+        name: str,
     ) -> asyncio.Task[Any]:
         """Create a tracked asyncio task with automatic cleanup and error logging."""
         task = loop.create_task(coro, name=name)

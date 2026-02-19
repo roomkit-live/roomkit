@@ -154,6 +154,7 @@ def _make_client_mock() -> AsyncMock:
 # =============================================================================
 
 
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
 class TestDefaultMessageParser:
     async def test_parses_text_conversation(self) -> None:
         from roomkit.sources.neonize import default_message_parser

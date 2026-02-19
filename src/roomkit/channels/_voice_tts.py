@@ -596,17 +596,11 @@ class VoiceTTSMixin:
 
         with wave.open(src, "rb") as wf:
             if wf.getsampwidth() != 2:
-                raise ValueError(
-                    f"WAV must be 16-bit PCM (got {wf.getsampwidth() * 8}-bit)"
-                )
+                raise ValueError(f"WAV must be 16-bit PCM (got {wf.getsampwidth() * 8}-bit)")
             if wf.getnchannels() != 1:
-                raise ValueError(
-                    f"WAV must be mono (got {wf.getnchannels()} channels)"
-                )
+                raise ValueError(f"WAV must be mono (got {wf.getnchannels()} channels)")
             if wf.getcomptype() != "NONE":
-                raise ValueError(
-                    f"WAV must be uncompressed PCM (got {wf.getcompname()})"
-                )
+                raise ValueError(f"WAV must be uncompressed PCM (got {wf.getcompname()})")
             sample_rate = wf.getframerate()
             pcm_data = wf.readframes(wf.getnframes())
 

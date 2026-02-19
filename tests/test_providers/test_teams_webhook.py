@@ -32,11 +32,14 @@ def _make_provider(config: TeamsConfig | None = None) -> Any:
     mock_core = MagicMock()
     mock_schema = MagicMock()
 
-    with patch.dict(sys.modules, {
-        "botbuilder": MagicMock(),
-        "botbuilder.core": mock_core,
-        "botbuilder.schema": mock_schema,
-    }):
+    with patch.dict(
+        sys.modules,
+        {
+            "botbuilder": MagicMock(),
+            "botbuilder.core": mock_core,
+            "botbuilder.schema": mock_schema,
+        },
+    ):
         from roomkit.providers.teams.bot_framework import BotFrameworkTeamsProvider
 
         provider = BotFrameworkTeamsProvider(cfg)
@@ -82,10 +85,12 @@ class TestTeamsSignatureVerification:
     def test_verify_strips_bearer_prefix(self) -> None:
         provider = _make_provider()
 
-        mock_jwt = _mock_jwt_module(decode_return={
-            "iss": "https://api.botframework.com",
-            "aud": "test-app-id",
-        })
+        mock_jwt = _mock_jwt_module(
+            decode_return={
+                "iss": "https://api.botframework.com",
+                "aud": "test-app-id",
+            }
+        )
 
         with patch.dict(sys.modules, {"jwt": mock_jwt}):
             result = provider.verify_signature(b"ignored", "Bearer some.jwt.token")

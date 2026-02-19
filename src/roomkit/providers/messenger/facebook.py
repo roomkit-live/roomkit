@@ -135,7 +135,7 @@ class FacebookMessengerProvider(MessengerProvider):
             hashlib.sha256,
         ).hexdigest()
 
-        return hmac.compare_digest(expected, signature[len(prefix):])
+        return hmac.compare_digest(expected, signature[len(prefix) :])
 
     @staticmethod
     def _extract_text(event: RoomEvent) -> str:
