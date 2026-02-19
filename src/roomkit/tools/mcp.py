@@ -180,9 +180,7 @@ class MCPToolProvider:
         import asyncio
 
         self._ensure_connected()
-        result = await asyncio.wait_for(
-            self._session.call_tool(name, arguments), timeout=timeout
-        )
+        result = await asyncio.wait_for(self._session.call_tool(name, arguments), timeout=timeout)
 
         if result.isError:
             parts = [getattr(c, "text", str(c)) for c in result.content]

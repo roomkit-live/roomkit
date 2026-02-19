@@ -312,16 +312,13 @@ class HandoffHandler:
                         rejected_result = HandoffResult(
                             accepted=False,
                             reason=(
-                                f"Transition from '{state.phase}' to "
-                                f"'{new_phase}' is not allowed"
+                                f"Transition from '{state.phase}' to '{new_phase}' is not allowed"
                             ),
                         )
 
             if rejected_result is None:
                 # Handle "human" target — set active_agent to None
-                new_agent = (
-                    None if request.target_agent_id == "human" else request.target_agent_id
-                )
+                new_agent = None if request.target_agent_id == "human" else request.target_agent_id
 
                 # Update conversation state
                 state = get_conversation_state(room)

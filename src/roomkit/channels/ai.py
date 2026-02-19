@@ -504,16 +504,28 @@ class AIChannel(Channel):
             for b in transport_bindings[1:]:
                 other = b.capabilities
                 for field_name in (
-                    "supports_threading", "supports_reactions", "supports_edit",
-                    "supports_delete", "supports_read_receipts", "supports_typing",
-                    "supports_templates", "supports_rich_text", "supports_buttons",
-                    "supports_cards", "supports_quick_replies", "supports_media",
-                    "supports_audio", "supports_video",
+                    "supports_threading",
+                    "supports_reactions",
+                    "supports_edit",
+                    "supports_delete",
+                    "supports_read_receipts",
+                    "supports_typing",
+                    "supports_templates",
+                    "supports_rich_text",
+                    "supports_buttons",
+                    "supports_cards",
+                    "supports_quick_replies",
+                    "supports_media",
+                    "supports_audio",
+                    "supports_video",
                 ):
                     merged[field_name] = merged[field_name] and getattr(other, field_name)
                 for field_name in (
-                    "max_length", "max_buttons", "max_media_size_bytes",
-                    "max_audio_duration_seconds", "max_video_duration_seconds",
+                    "max_length",
+                    "max_buttons",
+                    "max_media_size_bytes",
+                    "max_audio_duration_seconds",
+                    "max_video_duration_seconds",
                 ):
                     a, b_val = merged[field_name], getattr(other, field_name)
                     if a is not None and b_val is not None:
@@ -521,6 +533,7 @@ class AIChannel(Channel):
                     elif b_val is not None:
                         merged[field_name] = b_val
             from roomkit.models.channel import ChannelCapabilities
+
             target_caps = ChannelCapabilities(**merged)
         else:
             target_media = []

@@ -683,9 +683,7 @@ class RealtimeVoiceChannel(Channel):
                     timeout=5.0,
                 )
             except TimeoutError:
-                logger.warning(
-                    "Timed out waiting for %d tasks during close", len(tasks)
-                )
+                logger.warning("Timed out waiting for %d tasks during close", len(tasks))
         self._scheduled_tasks.clear()
 
         await self._provider.close()

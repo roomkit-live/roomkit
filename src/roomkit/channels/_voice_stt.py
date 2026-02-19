@@ -117,9 +117,7 @@ class VoiceSTTMixin:
                 state.queue.get_nowait()
             with contextlib.suppress(asyncio.QueueFull):
                 state.queue.put_nowait(chunk)
-            logger.warning(
-                "STT queue full for session %s, dropped oldest chunk", session_id
-            )
+            logger.warning("STT queue full for session %s, dropped oldest chunk", session_id)
 
     def _start_stt_stream(
         self,
