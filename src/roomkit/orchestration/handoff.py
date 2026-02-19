@@ -262,7 +262,11 @@ class HandoffHandler:
         )
 
         # Validate and update state under room lock to prevent lost updates.
-        # send_event() is called AFTER releasing the lock (it acquires its own).
+        # Hooks and send_event() run AFTER the lock is released to avoid
+        # blocking concurrent operations during slow I/O.
+        rejected_result: HandoffResult | None = None
+        new_phase: str = "handling"
+        new_agent: str | None = None
         async with self._kit.lock_manager.locked(room_id):
             room = await self._kit.get_room(room_id)
             bindings = await self._kit.store.list_bindings(room_id)
@@ -282,84 +286,82 @@ class HandoffHandler:
                     request.target_agent_id,
                     room_id,
                 )
-                result = HandoffResult(
+                rejected_result = HandoffResult(
                     accepted=False,
                     reason=f"Agent {request.target_agent_id} not found in room",
                 )
-                await self._fire_hook(
-                    room_id,
-                    room,
-                    bindings,
-                    HookTrigger.ON_HANDOFF_REJECTED,
-                    calling_agent_id,
-                    request,
-                    result,
+
+            if rejected_result is None:
+                # Determine new phase
+                new_phase = (
+                    arguments.get("next_phase")
+                    or self._phase_map.get(request.target_agent_id)
+                    or "handling"
                 )
-                return result
 
-            # Determine new phase
-            new_phase = (
-                arguments.get("next_phase")
-                or self._phase_map.get(request.target_agent_id)
-                or "handling"
-            )
+                # Validate transition if constraints are configured
+                if self._allowed_transitions is not None:
+                    state = get_conversation_state(room)
+                    allowed = self._allowed_transitions.get(state.phase, set())
+                    if new_phase not in allowed:
+                        logger.warning(
+                            "Handoff rejected: transition %s -> %s not allowed",
+                            state.phase,
+                            new_phase,
+                        )
+                        rejected_result = HandoffResult(
+                            accepted=False,
+                            reason=(
+                                f"Transition from '{state.phase}' to "
+                                f"'{new_phase}' is not allowed"
+                            ),
+                        )
 
-            # Validate transition if constraints are configured
-            if self._allowed_transitions is not None:
+            if rejected_result is None:
+                # Handle "human" target — set active_agent to None
+                new_agent = (
+                    None if request.target_agent_id == "human" else request.target_agent_id
+                )
+
+                # Update conversation state
                 state = get_conversation_state(room)
-                allowed = self._allowed_transitions.get(state.phase, set())
-                if new_phase not in allowed:
-                    logger.warning(
-                        "Handoff rejected: transition %s -> %s not allowed",
-                        state.phase,
-                        new_phase,
-                    )
-                    result = HandoffResult(
-                        accepted=False,
-                        reason=(
-                            f"Transition from '{state.phase}' to '{new_phase}' is not allowed"
-                        ),
-                    )
-                    await self._fire_hook(
-                        room_id,
-                        room,
-                        bindings,
-                        HookTrigger.ON_HANDOFF_REJECTED,
-                        calling_agent_id,
-                        request,
-                        result,
-                    )
-                    return result
-
-            # Handle "human" target — set active_agent to None
-            new_agent = None if request.target_agent_id == "human" else request.target_agent_id
-
-            # Update conversation state
-            state = get_conversation_state(room)
-            new_state = state.transition(
-                to_phase=new_phase,
-                to_agent=new_agent,
-                reason=request.reason,
-                metadata={
-                    "summary": request.summary,
-                    "channel_escalation": request.channel_escalation,
-                },
-            )
-            # Preserve handoff summary in state context for memory injection
-            new_state = new_state.model_copy(
-                update={
-                    "context": {
-                        **new_state.context,
-                        "handoff_summary": request.summary,
-                        "handoff_from": calling_agent_id,
-                        "handoff_reason": request.reason,
+                new_state = state.transition(
+                    to_phase=new_phase,
+                    to_agent=new_agent,
+                    reason=request.reason,
+                    metadata={
+                        "summary": request.summary,
+                        "channel_escalation": request.channel_escalation,
+                    },
+                )
+                # Preserve handoff summary in state context for memory injection
+                new_state = new_state.model_copy(
+                    update={
+                        "context": {
+                            **new_state.context,
+                            "handoff_summary": request.summary,
+                            "handoff_from": calling_agent_id,
+                            "handoff_reason": request.reason,
+                        }
                     }
-                }
-            )
+                )
 
-            # Persist
-            updated_room = set_conversation_state(room, new_state)
-            await self._kit.store.update_room(updated_room)
+                # Persist
+                updated_room = set_conversation_state(room, new_state)
+                await self._kit.store.update_room(updated_room)
+
+        # Fire rejection hook outside the lock
+        if rejected_result is not None:
+            await self._fire_hook(
+                room_id,
+                room,
+                bindings,
+                HookTrigger.ON_HANDOFF_REJECTED,
+                calling_agent_id,
+                request,
+                rejected_result,
+            )
+            return rejected_result
 
         # Emit system event in room timeline (outside lock — send_event acquires its own)
         # In speech-to-speech mode, config-only agents aren't bound to the room,

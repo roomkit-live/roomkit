@@ -587,24 +587,30 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         notify_channel_id: str,
     ) -> None:
         """Handle delegation completion: update notified agent + fire hook."""
-        # Inject result into the notified agent's system prompt
+        # Inject result into the notified agent's system prompt.
+        # Cap total prompt size to prevent unbounded growth from many delegations.
+        max_delegation_prompt = 4000
         binding = await self._store.get_binding(result.parent_room_id, notify_channel_id)
         if binding:
             current_prompt = binding.metadata.get("system_prompt", "")
+            appendix = (
+                "\n\n--- BACKGROUND TASK COMPLETED ---\n"
+                + f"Task ID: {result.task_id}\n"
+                + f"Agent: {result.agent_id}\n"
+                + f"Status: {result.status}\n"
+                + f"Result:\n{result.output or result.error or 'No output'}\n"
+                + "--- END ---\n"
+                + "Inform the user naturally about this result."
+            )
+            new_prompt = current_prompt + appendix
+            # Sliding window: keep only the tail when prompt exceeds cap
+            if len(new_prompt) > max_delegation_prompt:
+                new_prompt = "...\n" + new_prompt[-max_delegation_prompt:]
             updated = binding.model_copy(
                 update={
                     "metadata": {
                         **binding.metadata,
-                        "system_prompt": (
-                            current_prompt
-                            + "\n\n--- BACKGROUND TASK COMPLETED ---\n"
-                            + f"Task ID: {result.task_id}\n"
-                            + f"Agent: {result.agent_id}\n"
-                            + f"Status: {result.status}\n"
-                            + f"Result:\n{result.output or result.error or 'No output'}\n"
-                            + "--- END ---\n"
-                            + "Inform the user naturally about this result."
-                        ),
+                        "system_prompt": new_prompt,
                     }
                 }
             )

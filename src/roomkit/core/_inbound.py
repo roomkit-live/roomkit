@@ -548,6 +548,8 @@ class InboundMixin(HelpersMixin):
         pending_reentries = deque(broadcast_result.reentry_events)
         max_reentries = self._max_chain_depth * 10
         reentry_count = 0
+        reentry_tasks: list[Any] = []
+        reentry_observations: list[Any] = []
         while pending_reentries:
             if reentry_count >= max_reentries:
                 logger.warning(
@@ -581,6 +583,9 @@ class InboundMixin(HelpersMixin):
                 reentry_sync = await self._hook_engine.run_sync_hooks(
                     room_id, HookTrigger.BEFORE_BROADCAST, reentry, reentry_ctx
                 )
+                # Collect side effects even if the hook blocks this event
+                reentry_tasks.extend(reentry_sync.tasks)
+                reentry_observations.extend(reentry_sync.observations)
                 if not reentry_sync.allowed:
                     # Hook blocked this reentry event — skip broadcast
                     continue
@@ -591,6 +596,9 @@ class InboundMixin(HelpersMixin):
                     reentry_binding,
                     reentry_ctx,
                 )
+                # Collect tasks/observations from reentry broadcast
+                reentry_tasks.extend(reentry_result.tasks)
+                reentry_observations.extend(reentry_result.observations)
                 # Store reentry's blocked events
                 for blocked in reentry_result.blocked_events:
                     await self._store.add_event(blocked)
@@ -601,9 +609,11 @@ class InboundMixin(HelpersMixin):
                     room_id, HookTrigger.AFTER_BROADCAST, reentry, reentry_ctx
                 )
 
-        # Persist side effects from hooks and broadcast
-        all_tasks = sync_result.tasks + broadcast_result.tasks
-        all_observations = sync_result.observations + broadcast_result.observations
+        # Persist side effects from hooks and broadcast (including reentry)
+        all_tasks = sync_result.tasks + broadcast_result.tasks + reentry_tasks
+        all_observations = (
+            sync_result.observations + broadcast_result.observations + reentry_observations
+        )
         await self._persist_side_effects(
             room_id,
             all_tasks,
