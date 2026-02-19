@@ -45,11 +45,17 @@ class RoutingConditions(BaseModel):
 
 
 class RoutingRule(BaseModel):
-    """A routing rule mapping conditions to an agent."""
+    """A routing rule mapping conditions to an agent.
+
+    Rules are evaluated in ascending ``priority`` order (lower values first).
+    The first matching rule wins.  Use negative priorities to ensure a rule
+    is evaluated before the default ``0``, or positive values to defer it.
+    """
 
     agent_id: str
     conditions: RoutingConditions
     priority: int = 0
+    """Evaluation order — lower values are checked first (default 0)."""
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -82,6 +88,14 @@ class ConversationRouter:
         default_agent_id: str | None = None,
         supervisor_id: str | None = None,
     ) -> None:
+        """Initialize the router.
+
+        Args:
+            rules: Routing rules evaluated in ascending priority order
+                (lower number = evaluated first, i.e. higher precedence).
+            default_agent_id: Fallback agent when no rule matches.
+            supervisor_id: Agent that receives escalations.
+        """
         self._rules = sorted(rules or [], key=lambda r: r.priority)
         self._default_agent_id = default_agent_id
         self._supervisor_id = supervisor_id
