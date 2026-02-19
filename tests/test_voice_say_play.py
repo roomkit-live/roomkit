@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import io
+import wave
 
 import pytest
 
@@ -16,7 +17,7 @@ from roomkit import (
 )
 from roomkit.models.enums import HookTrigger
 from roomkit.models.hook import HookResult
-from roomkit.voice.base import AudioChunk, VoiceSession
+from roomkit.voice.base import VoiceSession
 
 
 def _make_session(
@@ -32,13 +33,21 @@ def _make_session(
     )
 
 
-async def _chunks(*words: str) -> AsyncIterator[AudioChunk]:
-    for i, word in enumerate(words):
-        yield AudioChunk(
-            data=f"audio-{word}".encode(),
-            sample_rate=16000,
-            is_final=(i == len(words) - 1),
-        )
+def _wav_bytes(
+    *,
+    num_frames: int = 160,
+    sample_rate: int = 16000,
+    channels: int = 1,
+    sampwidth: int = 2,
+) -> bytes:
+    """Build a valid in-memory WAV file (16-bit PCM mono by default)."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(sampwidth)
+        wf.setframerate(sample_rate)
+        wf.writeframes(b"\x00\x00" * num_frames * channels)
+    return buf.getvalue()
 
 
 class TestSay:
@@ -185,26 +194,44 @@ class TestSay:
 
 
 class TestPlay:
-    async def test_play_sends_audio_chunks(self) -> None:
+    async def test_play_wav_bytes(self) -> None:
         backend = MockVoiceBackend()
         channel = VoiceChannel("voice-1", backend=backend)
 
         session = await backend.connect("room-1", "user-1", "voice-1")
 
-        await channel.play(session, _chunks("hello", "world"))
+        await channel.play(session, _wav_bytes())
 
         assert len(backend.sent_audio) == 1
+        # Backend receives raw PCM, not WAV container
+        _, pcm = backend.sent_audio[0]
+        assert not pcm.startswith(b"RIFF")
 
-    async def test_play_sends_raw_bytes(self) -> None:
+    async def test_play_wav_file_path(self, tmp_path) -> None:
         backend = MockVoiceBackend()
         channel = VoiceChannel("voice-1", backend=backend)
 
         session = await backend.connect("room-1", "user-1", "voice-1")
 
-        await channel.play(session, b"raw-audio-data")
+        wav_path = tmp_path / "test.wav"
+        wav_path.write_bytes(_wav_bytes())
+
+        await channel.play(session, str(wav_path))
 
         assert len(backend.sent_audio) == 1
-        assert backend.sent_audio[0] == (session.id, b"raw-audio-data")
+
+    async def test_play_wav_pathlib(self, tmp_path) -> None:
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend)
+
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        wav_path = tmp_path / "test.wav"
+        wav_path.write_bytes(_wav_bytes())
+
+        await channel.play(session, wav_path)
+
+        assert len(backend.sent_audio) == 1
 
     async def test_play_with_text_sends_transcription(self) -> None:
         backend = MockVoiceBackend()
@@ -212,7 +239,7 @@ class TestPlay:
 
         session = await backend.connect("room-1", "user-1", "voice-1")
 
-        await channel.play(session, b"audio-data", text="Hello there")
+        await channel.play(session, _wav_bytes(), text="Hello there")
 
         assert len(backend.sent_transcriptions) == 1
         assert backend.sent_transcriptions[0] == (session.id, "Hello there", "assistant")
@@ -223,7 +250,7 @@ class TestPlay:
 
         session = await backend.connect("room-1", "user-1", "voice-1")
 
-        await channel.play(session, b"audio-data")
+        await channel.play(session, _wav_bytes())
 
         assert len(backend.sent_transcriptions) == 0
 
@@ -233,7 +260,7 @@ class TestPlay:
         session = _make_session()
 
         with pytest.raises(VoiceBackendNotConfiguredError, match="No voice backend"):
-            await channel.play(session, b"audio-data")
+            await channel.play(session, _wav_bytes())
 
     async def test_play_does_not_require_tts(self) -> None:
         """play() works without a TTS provider — only backend is needed."""
@@ -242,7 +269,7 @@ class TestPlay:
 
         session = await backend.connect("room-1", "user-1", "voice-1")
 
-        await channel.play(session, b"pre-rendered")
+        await channel.play(session, _wav_bytes())
 
         assert len(backend.sent_audio) == 1
 
@@ -252,38 +279,34 @@ class TestPlay:
 
         session = await backend.connect("room-1", "user-1", "voice-1")
 
-        await channel.play(session, b"audio-data")
+        await channel.play(session, _wav_bytes())
 
         # _finish_playback was scheduled
         assert len(channel._scheduled_tasks) >= 1
 
-    async def test_play_wraps_through_pipeline(self) -> None:
-        from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
-
+    async def test_play_rejects_stereo_wav(self) -> None:
         backend = MockVoiceBackend()
-        vad = MockVADProvider()
-        config = AudioPipelineConfig(vad=vad)
-        channel = VoiceChannel("voice-1", backend=backend, pipeline=config)
+        channel = VoiceChannel("voice-1", backend=backend)
 
         session = await backend.connect("room-1", "user-1", "voice-1")
 
-        # play() with an async iterator should wrap through pipeline outbound
-        await channel.play(session, _chunks("test"))
+        with pytest.raises(ValueError, match="mono"):
+            await channel.play(session, _wav_bytes(channels=2))
 
-        assert len(backend.sent_audio) == 1
-
-    async def test_play_bytes_skip_pipeline(self) -> None:
-        """Raw bytes are not wrapped through the pipeline (no framing info)."""
-        from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
-
+    async def test_play_rejects_8bit_wav(self) -> None:
         backend = MockVoiceBackend()
-        vad = MockVADProvider()
-        config = AudioPipelineConfig(vad=vad)
-        channel = VoiceChannel("voice-1", backend=backend, pipeline=config)
+        channel = VoiceChannel("voice-1", backend=backend)
 
         session = await backend.connect("room-1", "user-1", "voice-1")
 
-        await channel.play(session, b"raw-bytes")
+        with pytest.raises(ValueError, match="16-bit"):
+            await channel.play(session, _wav_bytes(sampwidth=1))
 
-        assert len(backend.sent_audio) == 1
-        assert backend.sent_audio[0] == (session.id, b"raw-bytes")
+    async def test_play_rejects_non_wav_bytes(self) -> None:
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend)
+
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        with pytest.raises((wave.Error, EOFError)):
+            await channel.play(session, b"not-a-wav-file")

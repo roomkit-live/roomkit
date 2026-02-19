@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from collections.abc import AsyncIterator, Coroutine
 from typing import TYPE_CHECKING, Any
@@ -558,26 +559,53 @@ class VoiceTTSMixin:
     async def play(
         self,
         session: VoiceSession,
-        audio: bytes | AsyncIterator[AudioChunk],
+        audio: str | bytes,
         *,
         text: str | None = None,
     ) -> None:
-        """Play pre-rendered audio to the participant.
+        """Play a WAV file to the participant.
 
         Args:
             session: The voice session to play into.
-            audio: Raw bytes or an async iterator of AudioChunk.
+            audio: Path to a WAV file (str / pathlib.Path) or raw WAV
+                bytes already loaded into memory.
             text: Optional transcript text to send for UI display.
 
         Raises:
             VoiceBackendNotConfiguredError: If no voice backend is configured.
+            ValueError: If the WAV file is not 16-bit PCM mono.
         """
+        import io
+        import wave
+
         from roomkit.core.framework import VoiceBackendNotConfiguredError
 
         from .voice import TTSPlaybackState
 
         if not self._backend:
             raise VoiceBackendNotConfiguredError("No voice backend configured")
+
+        # Read and validate WAV
+        if isinstance(audio, (str, os.PathLike)):
+            src: str | io.BytesIO = str(audio)
+        else:
+            src = io.BytesIO(audio)
+
+        with wave.open(src, "rb") as wf:
+            if wf.getsampwidth() != 2:
+                raise ValueError(
+                    f"WAV must be 16-bit PCM (got {wf.getsampwidth() * 8}-bit)"
+                )
+            if wf.getnchannels() != 1:
+                raise ValueError(
+                    f"WAV must be mono (got {wf.getnchannels()} channels)"
+                )
+            if wf.getcomptype() != "NONE":
+                raise ValueError(
+                    f"WAV must be uncompressed PCM (got {wf.getcompname()})"
+                )
+            sample_rate = wf.getframerate()
+            pcm_data = wf.readframes(wf.getnframes())
 
         if text is not None:
             await self._backend.send_transcription(session, text, "assistant")
@@ -588,9 +616,22 @@ class VoiceTTSMixin:
         )
 
         try:
-            if not isinstance(audio, bytes) and self._pipeline is not None:
-                audio = self._wrap_outbound(session, audio)
-            await self._backend.send_audio(session, audio)
+            # Wrap PCM as an AudioChunk stream so the outbound pipeline can
+            # resample from the WAV sample rate to the backend's codec rate.
+            from roomkit.voice.base import AudioChunk as OutChunk
+
+            async def _pcm_stream() -> AsyncIterator[OutChunk]:
+                yield OutChunk(
+                    data=pcm_data,
+                    sample_rate=sample_rate,
+                    channels=1,
+                    is_final=True,
+                )
+
+            audio_stream: AsyncIterator[OutChunk] = _pcm_stream()
+            if self._pipeline is not None:
+                audio_stream = self._wrap_outbound(session, audio_stream)
+            await self._backend.send_audio(session, audio_stream)
         finally:
             self._schedule(
                 self._finish_playback(session.id),

@@ -9,7 +9,7 @@ Use cases:
 - Deliver system messages without going through the AI pipeline
 
 say()  — synthesizes text via TTS and sends to the participant.
-play() — sends pre-rendered audio (bytes or async chunks) directly.
+play() — sends a WAV file (bytes or file path) directly, bypassing TTS.
 
 Both methods support barge-in (the participant can interrupt) and
 integrate with the audio pipeline (AEC reference, outbound processing).
@@ -23,7 +23,9 @@ Run with:
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
+import wave
 
 from roomkit import (
     HookExecution,
@@ -32,12 +34,22 @@ from roomkit import (
     VoiceChannel,
 )
 from roomkit.voice.backends.mock import MockVoiceBackend
-from roomkit.voice.base import AudioChunk
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voice_say_play")
+
+
+def _make_wav(*, num_frames: int = 8000, sample_rate: int = 16000) -> bytes:
+    """Build a valid in-memory WAV file (16-bit PCM mono silence)."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(b"\x00\x00" * num_frames)
+    return buf.getvalue()
 
 
 async def main() -> None:
@@ -87,30 +99,18 @@ async def main() -> None:
     print(f"  Voice used: {tts.calls[-1]['voice']}")
 
     # =========================================================================
-    # play() — pre-rendered audio
+    # play() — WAV audio
     # =========================================================================
-    print("\n--- play(): raw bytes ---")
-    await voice.play(session, b"\x00\x00" * 8000)  # 0.5s of silence at 16kHz
+    wav_data = _make_wav()
+
+    print("\n--- play(): WAV bytes ---")
+    await voice.play(session, wav_data)
     print(f"  Audio sent: {len(backend.sent_audio)} stream(s)")
 
     # play() with a transcript for UI display
-    print("\n--- play(): bytes with transcript ---")
-    await voice.play(session, b"\x00\x00" * 8000, text="[pre-recorded greeting]")
+    print("\n--- play(): WAV with transcript ---")
+    await voice.play(session, wav_data, text="[pre-recorded greeting]")
     print(f"  Transcriptions: {backend.sent_transcriptions[-1]}")
-
-    # play() with an async chunk iterator (wraps through pipeline if configured)
-    async def announcement_chunks():
-        """Simulate pre-rendered audio arriving in chunks."""
-        for i in range(3):
-            data = f"chunk-{i}".encode()
-            # Pad to even length for PCM alignment
-            if len(data) % 2:
-                data += b"\x00"
-            yield AudioChunk(data=data, sample_rate=16000, is_final=(i == 2))
-
-    print("\n--- play(): async chunk iterator ---")
-    await voice.play(session, announcement_chunks(), text="Attention please")
-    print(f"  Audio sent: {len(backend.sent_audio)} stream(s)")
 
     # =========================================================================
     # Summary
