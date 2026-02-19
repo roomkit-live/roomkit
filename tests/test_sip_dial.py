@@ -60,6 +60,7 @@ class FakeCallSession:
     sdp_answer: str = "v=0\r\n"
     codec_sample_rate: int = 8000
     clock_rate: int = 8000
+    remote_addr: tuple[str, int] = ("10.0.0.1", 20000)
     on_audio: Any = None
     on_dtmf: Any = None
 
@@ -180,11 +181,13 @@ def backend() -> SIPVoiceBackend:
     b._incoming_calls = {}
     b._outgoing_calls = {}
     b._call_to_session = {}
+    b._pending_reinvite_sdp = {}
     b._codec_rates = {}
     b._clock_rates = {}
     b._send_timestamps = {}
     b._send_buffers = {}
     b._send_frame_count = {}
+    b._last_rtp_send_time = {}
     b._playing_sessions = set()
     b._playback_tasks = {}
     b._session_pacers = {}
@@ -195,6 +198,8 @@ def backend() -> SIPVoiceBackend:
     b._on_disconnect_callback = None
     b._trace_emitter = None
     b._next_rtp_port = 10000
+    b._audio_stats = {}
+    b._stats_task = None
 
     return b
 
@@ -543,3 +548,89 @@ class TestDialRoomId:
             )
 
         assert session.room_id == session.metadata["call_id"]
+
+
+class TestReinviteHandler:
+    async def test_reinvite_accepts_with_existing_sdp(self, backend: SIPVoiceBackend) -> None:
+        """re-INVITE is accepted with the existing SDP answer."""
+        with patch("aiosipua.build_sdp", return_value=FakeSdpMessage()):
+            session = await backend.dial(
+                to_uri=TO_URI,
+                from_uri=FROM_URI,
+                proxy_addr=PROXY_ADDR,
+            )
+
+        # Create a fake re-INVITE call object
+        call_session = backend._call_sessions[session.id]
+        reinvite_call = MagicMock()
+        reinvite_call.call_id = session.metadata["call_id"]
+        reinvite_call.caller = TO_URI
+        reinvite_call.sdp_offer = None
+        reinvite_call.accept = MagicMock()
+
+        backend._handle_reinvite(reinvite_call)
+
+        reinvite_call.accept.assert_called_once_with(call_session.sdp_answer)
+
+    async def test_reinvite_updates_remote_rtp_address(self, backend: SIPVoiceBackend) -> None:
+        """re-INVITE with new SDP updates the RTP remote address."""
+        with patch("aiosipua.build_sdp", return_value=FakeSdpMessage()):
+            session = await backend.dial(
+                to_uri=TO_URI,
+                from_uri=FROM_URI,
+                proxy_addr=PROXY_ADDR,
+            )
+
+        call_session = backend._call_sessions[session.id]
+        call_session.update_remote = MagicMock()
+        # Fake the remote_addr property for comparison
+        call_session.remote_addr = ("10.0.0.1", 30000)
+
+        new_sdp = MagicMock()
+        new_sdp.rtp_address = ("10.0.0.2", 40000)
+
+        reinvite_call = MagicMock()
+        reinvite_call.call_id = session.metadata["call_id"]
+        reinvite_call.caller = TO_URI
+        reinvite_call.sdp_offer = new_sdp
+        reinvite_call.accept = MagicMock()
+
+        backend._handle_reinvite(reinvite_call)
+
+        call_session.update_remote.assert_called_once_with(("10.0.0.2", 40000))
+
+    async def test_reinvite_unknown_call_ignored(self, backend: SIPVoiceBackend) -> None:
+        """re-INVITE for unknown call_id is silently ignored."""
+        reinvite_call = MagicMock()
+        reinvite_call.call_id = "unknown-call-id"
+
+        # Should not raise
+        backend._handle_reinvite(reinvite_call)
+
+    async def test_invite_for_outbound_call_routes_to_reinvite(
+        self, backend: SIPVoiceBackend
+    ) -> None:
+        """An INVITE with a Call-ID matching an outbound call is treated as re-INVITE."""
+        with patch("aiosipua.build_sdp", return_value=FakeSdpMessage()):
+            session = await backend.dial(
+                to_uri=TO_URI,
+                from_uri=FROM_URI,
+                proxy_addr=PROXY_ADDR,
+            )
+
+        call_session = backend._call_sessions[session.id]
+        initial_session_count = len(backend._sessions)
+
+        # Simulate Asterisk sending a re-INVITE via on_invite (not on_reinvite)
+        reinvite_call = MagicMock()
+        reinvite_call.call_id = session.metadata["call_id"]
+        reinvite_call.caller = TO_URI
+        reinvite_call.sdp_offer = None
+        reinvite_call.source_addr = PROXY_ADDR
+        reinvite_call.accept = MagicMock()
+
+        await backend._handle_invite(reinvite_call)
+
+        # Should NOT create a new session — routed to _handle_reinvite
+        assert len(backend._sessions) == initial_session_count
+        reinvite_call.accept.assert_called_once_with(call_session.sdp_answer)

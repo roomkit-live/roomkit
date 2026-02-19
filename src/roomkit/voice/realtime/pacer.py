@@ -1,8 +1,19 @@
 """OutboundAudioPacer — wall-clock pacing for RTP-based transports.
 
 Absorbs jitter from AI providers that stream audio faster than real-time.
-Pre-buffers ~150 ms at the start of each response, then paces subsequent
-chunks to wall-clock rate with interruptible sleeps.
+Pre-buffers ~80 ms at the start of each response, then paces subsequent
+chunks slightly ahead of wall-clock rate with interruptible sleeps.
+
+The pacer maintains a configurable *jitter headroom* — audio is sent a
+fixed amount ahead of real-time so the remote endpoint's jitter buffer
+always has a safety margin.  Without headroom, asyncio scheduling jitter
+can cause the remote jitter buffer to underrun, producing choppy audio.
+
+Pacing sleeps use ``asyncio.sleep()`` (a single ``call_later``) rather
+than ``asyncio.wait_for(event.wait(), timeout)`` which creates and
+cancels a Task per sleep.  At 50 frames/second the overhead difference
+is significant — ``sleep()`` is ~10× lighter.  Interrupts are detected
+at frame boundaries (≤ 20 ms latency), which is acceptable for barge-in.
 
 Reusable by any transport that needs outbound pacing (SIP, WebRTC, etc.).
 """
@@ -34,6 +45,10 @@ class OutboundAudioPacer:
         channels: Number of audio channels (default 1).
         sample_width: Bytes per sample (default 2 for 16-bit PCM).
         prebuffer_ms: Milliseconds of audio to accumulate before first send.
+        jitter_headroom_ms: Milliseconds of lead to maintain over wall-clock.
+            The pacer sends audio this far ahead of real-time so the remote
+            endpoint's jitter buffer always has a safety margin.  Set to 0
+            for strict wall-clock pacing (not recommended for RTP).
     """
 
     def __init__(
@@ -42,7 +57,8 @@ class OutboundAudioPacer:
         sample_rate: int,
         channels: int = 1,
         sample_width: int = 2,
-        prebuffer_ms: float = 150,
+        prebuffer_ms: float = 80,
+        jitter_headroom_ms: float = 60,
     ) -> None:
         self._send_fn = send_fn
         self._sample_rate = sample_rate
@@ -50,6 +66,10 @@ class OutboundAudioPacer:
         self._sample_width = sample_width
         self._prebuffer_bytes = int(sample_rate * channels * sample_width * prebuffer_ms / 1000)
         self._bytes_per_second = sample_rate * channels * sample_width
+        # 20 ms frame — the smallest chunk we pace individually
+        self._frame_bytes = int(sample_rate * channels * sample_width * 0.02)
+        # Jitter buffer headroom — audio stays this far ahead of wall-clock
+        self._jitter_headroom = jitter_headroom_ms / 1000
 
         self._queue: asyncio.Queue[bytes | str] = asyncio.Queue()
         self._interrupt_event = asyncio.Event()
@@ -103,6 +123,52 @@ class OutboundAudioPacer:
 
     # -- Internal sender loop --
 
+    async def _interruptible_sleep(self, seconds: float) -> bool:
+        """Sleep for *seconds*, returning True if interrupted.
+
+        Uses ``asyncio.sleep()`` (single ``call_later``) instead of
+        ``asyncio.wait_for(event.wait(), timeout)`` which creates and
+        cancels a Task per call — ~10× lighter at 50 frames/sec.
+
+        Interrupt is detected after waking, so worst-case latency is
+        one sleep duration (~20 ms for frame pacing).
+        """
+        await asyncio.sleep(seconds)
+        return self._interrupt_event.is_set()
+
+    async def _send_paced(
+        self,
+        data: bytes,
+        pace_start: float,
+        cumulative: float,
+    ) -> tuple[float, bool]:
+        """Send *data* in frame-sized chunks with wall-clock pacing.
+
+        Maintains ``_jitter_headroom`` seconds of lead over wall-clock so
+        the remote jitter buffer always has a safety margin.
+
+        Returns ``(updated_cumulative, interrupted)``.
+        """
+        headroom = self._jitter_headroom
+        offset = 0
+        while offset < len(data):
+            if self._interrupt_event.is_set():
+                return cumulative, True
+            end = min(offset + self._frame_bytes, len(data))
+            chunk = data[offset:end]
+            offset = end
+            try:
+                await self._send_fn(chunk)
+            except Exception:
+                logger.exception("Error sending paced audio chunk")
+                continue
+            cumulative += len(chunk) / self._bytes_per_second
+            ahead = cumulative - (time.monotonic() - pace_start)
+            sleep_time = ahead - headroom
+            if sleep_time > 0.002 and await self._interruptible_sleep(sleep_time):
+                return cumulative, True
+        return cumulative, False
+
     async def _run(self) -> None:
         """Background task: pre-buffer → burst → pace to wall-clock."""
         while True:
@@ -155,34 +221,77 @@ class OutboundAudioPacer:
                 self._interrupt_event.clear()
                 continue
 
-            # Send the pre-buffered burst
-            if buf:
+            # --- Send the pre-buffer burst (capped) then pace the overflow ---
+            burst_end = min(len(buf), self._prebuffer_bytes)
+            burst = bytes(buf[:burst_end])
+            overflow = bytes(buf[burst_end:])
+
+            if burst:
                 try:
-                    await self._send_fn(bytes(buf))
+                    await self._send_fn(burst)
                 except Exception:
                     logger.exception("Error sending pre-buffered audio")
                     continue
 
-            # If we broke out due to RESPONSE_END, loop back for next response
+            burst_ms = len(burst) * 1000 / self._bytes_per_second
+            overflow_ms = len(overflow) * 1000 / self._bytes_per_second
+            logger.debug(
+                "Pacer: prebuffer burst=%.0fms, overflow=%.0fms",
+                burst_ms,
+                overflow_ms,
+            )
+
+            # If we broke out due to RESPONSE_END, send overflow and loop back
             if next_item == _RESPONSE_END:
+                if overflow:
+                    with contextlib.suppress(Exception):
+                        await self._send_fn(overflow)
                 self._response_done.set()
                 continue
 
             # Start wall-clock pacing from after the burst
             pace_start = time.monotonic()
-            cumulative = len(buf) / self._bytes_per_second
+            cumulative = len(burst) / self._bytes_per_second
 
-            # --- Paced sending phase ---
+            # Pace any overflow from the pre-buffer (large initial chunk)
+            if overflow:
+                cumulative, was_interrupted = await self._send_paced(
+                    overflow, pace_start, cumulative
+                )
+                if was_interrupted:
+                    self._interrupt_event.clear()
+                    continue
+
+            # --- Paced sending phase: process queue items ---
+            underruns = 0
             while True:
+                # Check how far ahead of wall-clock we are
+                ahead = cumulative - (time.monotonic() - pace_start)
+                # Wait for the next chunk with a timeout slightly beyond
+                # our lead time.  If the queue runs dry, that's an underrun.
+                wait_timeout = max(ahead + 0.1, 0.1)
                 try:
-                    next_item = await self._queue.get()
+                    next_item = await asyncio.wait_for(self._queue.get(), timeout=wait_timeout)
                 except asyncio.CancelledError:
                     return
+                except TimeoutError:
+                    # Queue ran dry — TTS/provider not streaming fast enough
+                    underruns += 1
+                    if underruns <= 5:
+                        behind = -(cumulative - (time.monotonic() - pace_start))
+                        logger.warning(
+                            "Pacer underrun #%d: queue empty, %.0fms behind",
+                            underruns,
+                            behind * 1000,
+                        )
+                    continue
 
                 if isinstance(next_item, str):
                     if next_item == _STOP:
                         return
                     if next_item == _RESPONSE_END:
+                        if underruns:
+                            logger.info("Pacer: response done, %d underruns", underruns)
                         self._response_done.set()
                         break  # back to outer loop for next response
                     continue
@@ -197,21 +306,26 @@ class OutboundAudioPacer:
                 if not audio:
                     continue
 
-                try:
-                    await self._send_fn(audio)
-                except Exception:
-                    logger.exception("Error sending paced audio")
-                    continue
-
-                # Wall-clock pacing — interruptible via the event
-                chunk_s = len(audio) / self._bytes_per_second
-                cumulative += chunk_s
-                ahead = cumulative - (time.monotonic() - pace_start)
-                if ahead > 0.005:
+                # Pace large items frame-by-frame, small items in one shot
+                if len(audio) > self._frame_bytes * 2:
+                    cumulative, was_interrupted = await self._send_paced(
+                        audio, pace_start, cumulative
+                    )
+                    if was_interrupted:
+                        self._interrupt_event.clear()
+                        break
+                else:
                     try:
-                        await asyncio.wait_for(self._interrupt_event.wait(), timeout=ahead)
-                        # Event fired → interrupted
+                        await self._send_fn(audio)
+                    except Exception:
+                        logger.exception("Error sending paced audio")
+                        continue
+
+                    # Wall-clock pacing
+                    chunk_s = len(audio) / self._bytes_per_second
+                    cumulative += chunk_s
+                    ahead = cumulative - (time.monotonic() - pace_start)
+                    sleep_time = ahead - self._jitter_headroom
+                    if sleep_time > 0.002 and await self._interruptible_sleep(sleep_time):
                         self._interrupt_event.clear()
                         break  # back to outer loop
-                    except TimeoutError:
-                        pass  # normal pacing timeout

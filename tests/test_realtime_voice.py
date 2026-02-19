@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -1009,3 +1010,59 @@ class TestErrorDeduplication:
         assert session.id not in provider._error_suppressed
         assert session.id not in provider._audio_buffers
         assert session.id not in provider._session_started_at
+
+
+class TestEndOfResponseOrdering:
+    """Verify end_of_response reaches transport AFTER all audio chunks."""
+
+    async def test_end_of_response_after_audio_tasks(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        room_id: str,
+    ) -> None:
+        """end_of_response must arrive at the transport after all audio.
+
+        _on_provider_audio schedules send tasks via loop.create_task().
+        _on_provider_response_end must schedule end_of_response as a task
+        too, so asyncio's FIFO ordering ensures it runs after all pending
+        audio tasks — not synchronously before them.
+        """
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        # Track the order of operations on the transport
+        call_log: list[str] = []
+        orig_send_audio = transport.send_audio
+        orig_end_of_response = transport.end_of_response
+
+        async def tracking_send_audio(s: VoiceSession, audio: bytes | AsyncIterator[Any]) -> None:
+            call_log.append("audio")
+            await orig_send_audio(s, audio)
+
+        def tracking_end_of_response(s: VoiceSession) -> None:
+            call_log.append("end_of_response")
+            orig_end_of_response(s)
+
+        transport.send_audio = tracking_send_audio  # type: ignore[assignment]
+        transport.end_of_response = tracking_end_of_response  # type: ignore[assignment]
+
+        # Simulate: provider sends multiple audio chunks then response_end
+        # (all in one synchronous callback burst — no event loop yields)
+        await provider.simulate_response_start(session)
+        for i in range(5):
+            await provider.simulate_audio(session, f"chunk-{i}".encode())
+        await provider.simulate_response_end(session)
+
+        # Let all tasks complete
+        await asyncio.sleep(0.1)
+
+        # All audio calls must appear before end_of_response
+        assert "end_of_response" in call_log
+        eor_index = call_log.index("end_of_response")
+        audio_indices = [i for i, v in enumerate(call_log) if v == "audio"]
+        assert len(audio_indices) == 5
+        assert all(ai < eor_index for ai in audio_indices), (
+            f"Audio after end_of_response: {call_log}"
+        )

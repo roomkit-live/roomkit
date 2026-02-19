@@ -31,6 +31,7 @@ import asyncio
 import contextlib
 import logging
 import socket
+import time
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -59,9 +60,45 @@ _CODEC_INFO: dict[int, tuple[str, int, int]] = {
     PT_G722: ("G722", 8000, 16000),  # RTP clock 8000, audio rate 16000
 }
 
+# Audio diagnostics interval (seconds)
+_STATS_INTERVAL = 5.0
+
 # Callback types
 DTMFReceivedCallback = Callable[["VoiceSession", DTMFEvent], Any]
 CallCallback = Callable[["VoiceSession"], Any]
+
+
+class _AudioStats:
+    """Per-session audio diagnostics counters."""
+
+    __slots__ = (
+        "inbound_packets",
+        "inbound_bytes",
+        "inbound_first_ts",
+        "inbound_last_ts",
+        "inbound_gaps",
+        "inbound_max_gap_ms",
+        "outbound_frames",
+        "outbound_bytes",
+        "outbound_first_ts",
+        "outbound_last_ts",
+        "outbound_max_burst",
+        "outbound_calls",
+    )
+
+    def __init__(self) -> None:
+        self.inbound_packets = 0
+        self.inbound_bytes = 0
+        self.inbound_first_ts: float = 0.0
+        self.inbound_last_ts: float = 0.0
+        self.inbound_gaps = 0
+        self.inbound_max_gap_ms: float = 0.0
+        self.outbound_frames = 0
+        self.outbound_bytes = 0
+        self.outbound_first_ts: float = 0.0
+        self.outbound_last_ts: float = 0.0
+        self.outbound_max_burst = 0  # max frames in a single _send_pcm_bytes call
+        self.outbound_calls = 0  # number of _send_pcm_bytes calls
 
 
 def _wrap_async(callback: Callable[..., Any]) -> Callable[..., Any]:
@@ -160,6 +197,7 @@ class SIPVoiceBackend(VoiceBackend):
         self._incoming_calls: dict[str, Any] = {}  # session_id -> IncomingCall
         self._outgoing_calls: dict[str, Any] = {}  # session_id -> OutgoingCall
         self._call_to_session: dict[str, str] = {}  # call_id -> session_id
+        self._pending_reinvite_sdp: dict[str, Any] = {}  # session_id -> SdpMessage
 
         # Per-session codec info (populated after call_session.start())
         self._codec_rates: dict[str, int] = {}  # actual audio sample rate
@@ -169,6 +207,7 @@ class SIPVoiceBackend(VoiceBackend):
         self._send_timestamps: dict[str, int] = {}
         self._send_buffers: dict[str, bytearray] = {}
         self._send_frame_count: dict[str, int] = {}  # RTP frames sent per session
+        self._last_rtp_send_time: dict[str, float] = {}  # wall-clock of last RTP send
 
         # Playback tracking for interruption support
         self._playing_sessions: set[str] = set()
@@ -181,6 +220,10 @@ class SIPVoiceBackend(VoiceBackend):
         self._dtmf_callbacks: list[DTMFReceivedCallback] = []
         self._on_call_callback: CallCallback | None = None
         self._on_disconnect_callback: CallCallback | None = None
+
+        # Audio diagnostics
+        self._audio_stats: dict[str, _AudioStats] = {}
+        self._stats_task: asyncio.Task[None] | None = None
 
         # Protocol trace emitter (set by channel when trace is enabled)
         self._trace_emitter: Callable[..., Any] | None = None
@@ -213,9 +256,13 @@ class SIPVoiceBackend(VoiceBackend):
         self._uas.on_invite = lambda call: asyncio.get_running_loop().create_task(
             self._handle_invite(call)
         )
+        self._uas.on_reinvite = self._handle_reinvite
         self._uas.on_bye = self._handle_bye
 
         await self._uas.start()
+        self._stats_task = asyncio.get_running_loop().create_task(
+            self._audio_stats_loop(), name="sip_audio_stats"
+        )
         logger.info(
             "SIP backend listening on %s:%d",
             self._local_sip_addr[0],
@@ -224,6 +271,14 @@ class SIPVoiceBackend(VoiceBackend):
 
     async def _handle_invite(self, call: Any) -> None:
         """Handle an incoming SIP INVITE."""
+        # Detect re-INVITE for an outbound call: the UAS only checks its
+        # own _calls for existing dialogs, but outbound calls live in the
+        # UAC.  If the Call-ID already maps to a session, route to the
+        # re-INVITE handler instead of creating a duplicate session.
+        if call.call_id in self._call_to_session:
+            self._handle_reinvite(call)
+            return
+
         if call.sdp_offer is None:
             call.reject(488, "Not Acceptable Here")
             return
@@ -244,6 +299,9 @@ class SIPVoiceBackend(VoiceBackend):
                 supported_codecs=self._supported_codecs,
                 dtmf_payload_type=self._dtmf_payload_type,
                 session_name=self._server_name,
+                jitter_capacity=32,
+                jitter_prefetch=0,
+                skip_audio_gaps=True,
             )
         except Exception:
             logger.exception("SDP negotiation failed for call %s", call.call_id)
@@ -344,6 +402,67 @@ class SIPVoiceBackend(VoiceBackend):
         if self._on_call_callback is not None:
             self._on_call_callback(session)
 
+    def _handle_reinvite(self, call: Any) -> None:
+        """Handle a re-INVITE (session timer refresh or media update).
+
+        Asterisk and other PBXes send re-INVITEs for session timer
+        refresh (RFC 4028) or to update the media path.  We accept
+        with the existing SDP answer.  If the re-INVITE contains a
+        new SDP offer with an updated RTP address, we update the
+        CallSession's remote address accordingly.
+        """
+        session_id = self._call_to_session.get(call.call_id)
+        if session_id is None:
+            logger.warning("re-INVITE for unknown call_id: %s", call.call_id)
+            return
+
+        call_session = self._call_sessions.get(session_id)
+        if call_session is None:
+            # CallSession not created yet (race: re-INVITE arrived before
+            # dial() finished RTP setup).  Queue the SDP so we can apply
+            # the remote address update once the CallSession is ready.
+            if call.sdp_offer is not None:
+                self._pending_reinvite_sdp[session_id] = call.sdp_offer
+            # Accept with our original SDP offer (stored as pending)
+            # We need to build a minimal response — the remote expects 200 OK.
+            logger.info("re-INVITE queued for session %s (CallSession pending)", session_id)
+            return
+
+        # Accept with the existing SDP answer
+        call.accept(call_session.sdp_answer)
+
+        # If the re-INVITE updated the remote RTP address, apply it
+        if call.sdp_offer is not None:
+            rtp_addr = call.sdp_offer.rtp_address
+            if rtp_addr is not None and rtp_addr != call_session.remote_addr:
+                logger.info(
+                    "re-INVITE updated RTP target: %s → %s (session=%s)",
+                    call_session.remote_addr,
+                    rtp_addr,
+                    session_id,
+                )
+                call_session.update_remote(rtp_addr)
+
+        logger.info("re-INVITE accepted for session %s", session_id)
+
+        if self._trace_emitter is not None:
+            session = self._sessions.get(session_id)
+            if session is not None:
+                from roomkit.models.trace import ProtocolTrace
+
+                self._trace_emitter(
+                    ProtocolTrace(
+                        channel_id=session.channel_id,
+                        direction="inbound",
+                        protocol="sip",
+                        summary=f"re-INVITE from {call.caller} (session refresh)",
+                        raw=None,
+                        metadata={"call_id": call.call_id},
+                        session_id=session.id,
+                        room_id=session.metadata.get("room_id"),
+                    )
+                )
+
     def _handle_bye(self, call: Any, request: Any) -> None:
         """Handle a remote BYE (call hangup)."""
         session_id = self._call_to_session.get(call.call_id)
@@ -435,6 +554,11 @@ class SIPVoiceBackend(VoiceBackend):
         rtp_port = self._allocate_rtp_port()
         local_ip = self._resolve_local_ip(proxy_addr)
 
+        # Fix SIP Contact/Via: if transport is bound to 0.0.0.0,
+        # replace with the resolved IP so INVITE uses a routable address.
+        if self._transport.local_addr[0] in ("0.0.0.0", ""):  # nosec B104
+            self._transport.local_addr = (local_ip, self._transport.local_addr[1])
+
         # Build SDP offer
         from aiosipua import build_sdp
 
@@ -485,6 +609,10 @@ class SIPVoiceBackend(VoiceBackend):
             self._uac.remove_call(out_call.call_id)
             raise
 
+        # Store call_id → session_id mapping immediately so that
+        # re-INVITEs arriving before full session setup are not ignored.
+        self._call_to_session[out_call.call_id] = out_call.call_id
+
         # 200 OK received — set up RTP session using answer SDP
         call_session = self._rtp_bridge.CallSession(
             local_ip=local_ip,
@@ -493,6 +621,9 @@ class SIPVoiceBackend(VoiceBackend):
             supported_codecs=[codec],
             dtmf_payload_type=self._dtmf_payload_type,
             session_name=self._server_name,
+            jitter_capacity=32,
+            jitter_prefetch=0,
+            skip_audio_gaps=True,
         )
         await call_session.start()
 
@@ -531,11 +662,32 @@ class SIPVoiceBackend(VoiceBackend):
         self._codec_rates[session.id] = actual_codec_rate
         self._clock_rates[session.id] = actual_clock_rate
 
+        # Apply any re-INVITE SDP that arrived during RTP setup
+        pending_sdp = self._pending_reinvite_sdp.pop(session.id, None)
+        if pending_sdp is not None:
+            rtp_addr = pending_sdp.rtp_address
+            if rtp_addr is not None and rtp_addr != call_session.remote_addr:
+                logger.info(
+                    "Applying queued re-INVITE RTP target: %s → %s (session=%s)",
+                    call_session.remote_addr,
+                    rtp_addr,
+                    session.id,
+                )
+                call_session.update_remote(rtp_addr)
+
         logger.info(
-            "SIP outbound call established: session=%s, to=%s, call_id=%s",
+            "SIP outbound call established: session=%s, to=%s, call_id=%s, "
+            "local_rtp=%s:%d, remote_rtp=%s:%d, codec=%s(%dHz), clock=%dHz",
             session.id,
             to_uri,
             out_call.call_id,
+            local_ip,
+            rtp_port,
+            call_session.remote_addr[0],
+            call_session.remote_addr[1],
+            codec_name,
+            actual_codec_rate,
+            actual_clock_rate,
         )
 
         # Emit 200 OK trace
@@ -577,11 +729,27 @@ class SIPVoiceBackend(VoiceBackend):
             self._call_to_session.pop(call.call_id, None)
         if out_call is not None:
             self._call_to_session.pop(out_call.call_id, None)
+        self._pending_reinvite_sdp.pop(session_id, None)
+        # Log final audio stats for this session
+        stats = self._audio_stats.pop(session_id, None)
+        if stats is not None:
+            logger.info(
+                "SIP session %s final stats: IN pkts=%d bytes=%d gaps=%d"
+                " max_gap=%.0fms | OUT frames=%d bytes=%d",
+                session_id[:8],
+                stats.inbound_packets,
+                stats.inbound_bytes,
+                stats.inbound_gaps,
+                stats.inbound_max_gap_ms,
+                stats.outbound_frames,
+                stats.outbound_bytes,
+            )
         frames_sent = self._send_frame_count.pop(session_id, 0)
         if frames_sent:
             logger.info("SIP session %s: sent %d RTP frames total", session_id, frames_sent)
         self._send_timestamps.pop(session_id, None)
         self._send_buffers.pop(session_id, None)
+        self._last_rtp_send_time.pop(session_id, None)
         self._codec_rates.pop(session_id, None)
         self._clock_rates.pop(session_id, None)
         self._playing_sessions.discard(session_id)
@@ -749,6 +917,12 @@ class SIPVoiceBackend(VoiceBackend):
 
     async def close(self) -> None:
         """Disconnect all sessions, stop UAS and transport."""
+        if self._stats_task is not None:
+            self._stats_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._stats_task
+            self._stats_task = None
+
         for session in list(self._sessions.values()):
             await self.disconnect(session)
 
@@ -757,13 +931,79 @@ class SIPVoiceBackend(VoiceBackend):
         logger.info("SIP backend closed")
 
     # -------------------------------------------------------------------------
+    # Audio diagnostics
+    # -------------------------------------------------------------------------
+
+    async def _audio_stats_loop(self) -> None:
+        """Periodically log per-session audio diagnostics."""
+        try:
+            while True:
+                await asyncio.sleep(_STATS_INTERVAL)
+                for sid, stats in list(self._audio_stats.items()):
+                    # Gather RTP-level stats from call session
+                    rtp_info = ""
+                    cs = self._call_sessions.get(sid)
+                    if cs is not None:
+                        rtp_stats = cs.stats
+                        if rtp_stats:
+                            recv = rtp_stats.get("packets_received", 0)
+                            lost = rtp_stats.get("packets_lost", 0)
+                            jitter = rtp_stats.get("jitter", 0.0)
+                            rtp_info = f" rtp_recv={recv} rtp_lost={lost} jitter={jitter:.1f}"
+
+                    in_dur = 0.0
+                    if stats.inbound_packets > 1:
+                        in_dur = stats.inbound_last_ts - stats.inbound_first_ts
+
+                    out_dur = 0.0
+                    if stats.outbound_frames > 1:
+                        out_dur = stats.outbound_last_ts - stats.outbound_first_ts
+
+                    logger.info(
+                        "SIP audio [%s] IN: pkts=%d bytes=%d gaps=%d"
+                        " max_gap=%.0fms dur=%.1fs |"
+                        " OUT: frames=%d bytes=%d dur=%.1fs"
+                        " max_burst=%d calls=%d%s",
+                        sid[:8],
+                        stats.inbound_packets,
+                        stats.inbound_bytes,
+                        stats.inbound_gaps,
+                        stats.inbound_max_gap_ms,
+                        in_dur,
+                        stats.outbound_frames,
+                        stats.outbound_bytes,
+                        out_dur,
+                        stats.outbound_max_burst,
+                        stats.outbound_calls,
+                        rtp_info,
+                    )
+        except asyncio.CancelledError:
+            pass
+
+    # -------------------------------------------------------------------------
     # Inbound audio / DTMF handlers
     # -------------------------------------------------------------------------
 
     def _make_audio_handler(self, session: VoiceSession) -> Any:
         """Create an on_audio callback bound to *session*."""
+        stats = _AudioStats()
+        self._audio_stats[session.id] = stats
 
         def _on_audio(pcm_data: bytes, timestamp: int) -> None:
+            now = time.monotonic()
+            # Track inter-packet gap
+            if stats.inbound_packets > 0:
+                gap_ms = (now - stats.inbound_last_ts) * 1000
+                if gap_ms > 40:  # >2x expected 20ms ptime
+                    stats.inbound_gaps += 1
+                if gap_ms > stats.inbound_max_gap_ms:
+                    stats.inbound_max_gap_ms = gap_ms
+            else:
+                stats.inbound_first_ts = now
+            stats.inbound_last_ts = now
+            stats.inbound_packets += 1
+            stats.inbound_bytes += len(pcm_data)
+
             if self._audio_received_callback is None:
                 return
             frame = AudioFrame(
@@ -849,6 +1089,11 @@ class SIPVoiceBackend(VoiceBackend):
         Buffers partial frames across calls so that only complete 20 ms
         frames are sent.  This avoids codec encoding artifacts and RTP
         timestamp jumps that confuse the remote jitter buffer.
+
+        Between TTS responses there is a silence gap where no audio is
+        sent.  The RTP timestamp must still advance during these gaps so
+        the remote jitter buffer does not see stale timestamps and drop
+        or delay the new audio.
         """
         codec_rate = self._codec_rates.get(session.id, 8000)
         clock_rate = self._clock_rates.get(session.id, 8000)
@@ -863,15 +1108,51 @@ class SIPVoiceBackend(VoiceBackend):
         buf.extend(pcm_data)
 
         ts = self._send_timestamps.get(session.id, 0)
+
+        # Advance timestamp across silence gaps so the remote jitter
+        # buffer sees monotonically increasing timestamps.  Normal
+        # pacing sends one frame every ~20 ms; anything beyond 100 ms
+        # indicates a silence gap between TTS responses.
+        now = time.monotonic()
+        last_send = self._last_rtp_send_time.get(session.id)
+        if last_send is not None:
+            gap = now - last_send
+            if gap > 0.100:
+                gap_ticks = int(gap * clock_rate)
+                ts += gap_ticks
+                logger.debug(
+                    "RTP timestamp gap: %.0fms → +%d ticks (session %s)",
+                    gap * 1000,
+                    gap_ticks,
+                    session.id[:8],
+                )
+
         frame_count = self._send_frame_count.get(session.id, 0)
+        frames_this_call = 0
         while len(buf) >= bytes_per_frame:
             call_session.send_audio_pcm(bytes(buf[:bytes_per_frame]), ts)
             del buf[:bytes_per_frame]
             ts += ts_increment
             frame_count += 1
+            frames_this_call += 1
 
         self._send_timestamps[session.id] = ts
         self._send_frame_count[session.id] = frame_count
+        if frames_this_call > 0:
+            self._last_rtp_send_time[session.id] = now
+
+        # Track outbound stats
+        stats = self._audio_stats.get(session.id)
+        if stats is not None:
+            stats.outbound_calls += 1
+            if frames_this_call > 0:
+                if stats.outbound_frames == 0:
+                    stats.outbound_first_ts = now
+                stats.outbound_last_ts = now
+                stats.outbound_frames += frames_this_call
+                stats.outbound_bytes += frames_this_call * bytes_per_frame
+                if frames_this_call > stats.outbound_max_burst:
+                    stats.outbound_max_burst = frames_this_call
 
     async def _feed_stream(
         self,
@@ -881,11 +1162,39 @@ class SIPVoiceBackend(VoiceBackend):
     ) -> None:
         """Iterate TTS chunks, push to the session pacer, await flush."""
         try:
+            chunk_count = 0
+            total_bytes = 0
+            max_gap_ms = 0.0
+            t_start = time.monotonic()
+            t_last = t_start
+
             async for chunk in chunks:
                 if session.id not in self._playing_sessions:
                     break
                 if chunk.data:
+                    now = time.monotonic()
+                    if chunk_count > 0:
+                        gap_ms = (now - t_last) * 1000
+                        if gap_ms > max_gap_ms:
+                            max_gap_ms = gap_ms
+                    t_last = now
+                    chunk_count += 1
+                    total_bytes += len(chunk.data)
                     pacer.push(chunk.data)
+
+            dur = time.monotonic() - t_start
+            codec_rate = self._codec_rates.get(session.id, 8000)
+            audio_ms = total_bytes / (codec_rate * 2) * 1000
+            logger.info(
+                "TTS stream [%s]: %d chunks, %d bytes (%.0fms audio) in %.1fs, max_gap=%.0fms",
+                session.id[:8],
+                chunk_count,
+                total_bytes,
+                audio_ms,
+                dur,
+                max_gap_ms,
+            )
+
             pacer.end_of_response()
             await pacer.wait_for_response_done()
         except asyncio.CancelledError:

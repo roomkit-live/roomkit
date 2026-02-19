@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Voice orchestration: SIP call with multi-agent handoff.
+"""Voice orchestration: SIP call with multi-agent handoff + background delegation.
 
 A SIP call arrives, gets triaged by a voice AI agent, then hands off to
 an advisor — all on the same SIP session. The caller never hears a
 disconnect.
 
-This is impossible in frameworks that have no concept of a live audio
-session surviving an agent handoff. In RoomKit, the SIP session is a
-VoiceChannel (TRANSPORT) and the agents are AIChannels (INTELLIGENCE).
-Swapping which AIChannel is active doesn't touch the SIP session.
+When the caller asks about insurance details, the advisor delegates the
+lookup to a background agent via ``kit.delegate()``. The voice conversation
+continues while the insurance agent works in a child room. Once the result
+is ready, it's injected into the advisor's context and shared on the next turn.
 
 Architecture:
 
@@ -26,6 +26,16 @@ Architecture:
                                    text response (RoomEvent)
                                           │
                               VoiceChannel (TTS) → SIP audio out
+
+    Background delegation (kit.delegate):
+
+        agent-advisor ──delegate_task──→ child room
+                                            │
+                                      agent-insurance
+                                      (background lookup)
+                                            │
+                                      result → injected into
+                                      agent-advisor context
 
 Requirements:
     pip install roomkit[sip,gemini,deepgram,elevenlabs,sherpa-onnx]
@@ -76,6 +86,7 @@ import asyncio
 import logging
 import os
 import sys
+import time
 
 logging.basicConfig(
     level=logging.INFO,
@@ -91,17 +102,21 @@ from roomkit import (
     ChannelCategory,
     ConversationPipeline,
     ConversationState,
+    DelegateHandler,
     GeminiAIProvider,
     GeminiConfig,
     HandoffMemoryProvider,
+    HookExecution,
     HookResult,
     HookTrigger,
     PipelineStage,
     RoomKit,
     SlidingWindowMemory,
     VoiceChannel,
+    build_delegate_tool,
     get_conversation_state,
     set_conversation_state,
+    setup_delegation,
 )
 from roomkit.models.context import RoomContext
 from roomkit.voice import parse_voice_session
@@ -253,10 +268,15 @@ async def main() -> None:
             "When you first join a call after a transfer, introduce yourself "
             "briefly and warmly — the caller is waiting. "
             "Give concise, conversational financial advice. "
+            "When a caller asks about insurance details, policy information, "
+            "or coverage, use the delegate_task tool to delegate the lookup "
+            "to agent-insurance. Tell the caller you're checking and keep "
+            "chatting. When the result appears in your context, share it. "
             "If the caller wants to discuss a different topic or needs to "
             "be re-triaged, use the handoff_conversation tool to transfer "
             "them back. "
-            "NEVER write handoff instructions as text — always use the tool. "
+            "NEVER write handoff or delegation instructions as text — "
+            "always use the appropriate tool. "
             "Your spoken responses must ONLY contain words meant for the caller. "
             "Speak naturally, under 50 words per response. "
             "No tables, no bullet points, no file references. "
@@ -265,7 +285,23 @@ async def main() -> None:
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=20)),
     )
 
-    for ch in [triage, advisor]:
+    # --- Background agent (insurance lookup) ---------------------------------
+    insurance = Agent(
+        "agent-insurance",
+        provider=GeminiAIProvider(gemini_config),
+        role="Insurance data specialist",
+        description="Looks up client insurance policy details",
+        scope="Insurance policy lookups only",
+        system_prompt=(
+            "You are a background insurance lookup agent. When given a client "
+            "query, simulate looking up their insurance policy and return "
+            "realistic fake data. Include: policy number, coverage type, "
+            "monthly premium, deductible, and next renewal date. "
+            "Keep it concise — under 50 words. No markdown or formatting."
+        ),
+    )
+
+    for ch in [triage, advisor, insurance]:
         kit.register_channel(ch)
 
     # --- Orchestration -------------------------------------------------------
@@ -276,12 +312,78 @@ async def main() -> None:
         voice_channel_id="voice",
     )
 
+    # --- Delegation (background agent tasks) ---------------------------------
+    delegate_tool = build_delegate_tool(
+        [
+            ("agent-insurance", "Looks up client insurance policy details"),
+        ]
+    )
+    delegate_handler = DelegateHandler(kit)
+    setup_delegation(advisor, delegate_handler, tool=delegate_tool)
+
     # --- Hooks ---------------------------------------------------------------
+
+    # Latency tracker: room_id → monotonic timestamp of last user transcription
+    _last_transcription_ts: dict[str, float] = {}
+
+    @kit.hook(HookTrigger.ON_SPEECH_START, execution=HookExecution.ASYNC, name="log_speech")
+    async def on_speech_start(event, ctx):
+        logger.info("[VAD] speech_start — room=%s", ctx.room.id)
+
+    @kit.hook(HookTrigger.ON_SPEECH_END, execution=HookExecution.ASYNC, name="log_speech_end")
+    async def on_speech_end(event, ctx):
+        logger.info("[VAD] speech_end — room=%s", ctx.room.id)
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
     async def on_transcription(text: str, ctx: RoomContext) -> HookResult:
-        logger.info("Caller: %s", text)
+        _last_transcription_ts[ctx.room.id] = time.monotonic()
+        logger.info("[STT] Caller: %s", text)
         return HookResult.allow()
+
+    @kit.hook(HookTrigger.BEFORE_TTS)
+    async def before_tts(text, ctx: RoomContext) -> HookResult:
+        t0 = _last_transcription_ts.get(ctx.room.id)
+        latency_msg = ""
+        if t0:
+            ai_ms = (time.monotonic() - t0) * 1000
+            latency_msg = f" (AI latency: {ai_ms:.0f}ms since STT)"
+        agent = get_conversation_state(ctx.room).active_agent_id or "?"
+        logger.info("[TTS] start — agent=%s text=%.60s...%s", agent, text, latency_msg)
+        return HookResult.allow()
+
+    @kit.hook(HookTrigger.AFTER_TTS, execution=HookExecution.ASYNC, name="log_after_tts")
+    async def after_tts(event, ctx):
+        t0 = _last_transcription_ts.pop(ctx.room.id, None)
+        e2e_msg = ""
+        if t0:
+            e2e_ms = (time.monotonic() - t0) * 1000
+            e2e_msg = f" (e2e: {e2e_ms:.0f}ms since STT)"
+        logger.info("[TTS] done — room=%s%s", ctx.room.id, e2e_msg)
+
+    @kit.hook(HookTrigger.ON_TASK_DELEGATED, execution=HookExecution.ASYNC)
+    async def on_task_delegated(event, ctx):
+        logger.info(
+            "Task delegated → agent=%s child_room=%s",
+            event.metadata.get("agent_id"),
+            event.metadata.get("child_room_id"),
+        )
+
+    @kit.hook(HookTrigger.ON_TASK_COMPLETED, execution=HookExecution.ASYNC)
+    async def on_task_completed(event, ctx):
+        logger.info(
+            "Task completed → %s (%.0fms)",
+            event.metadata.get("task_id"),
+            event.metadata.get("duration_ms", 0),
+        )
+
+    @kit.hook(HookTrigger.ON_DTMF, execution=HookExecution.ASYNC, name="log_dtmf")
+    async def on_dtmf(event, ctx):
+        logger.info("[DTMF] digit=%s", event.digit)
+        voice_channel = kit.get_channel("voice")
+        if event.digit == "1":
+            await voice_channel.play(event.session, "../../olivia.wav")
+        else:
+            await voice_channel.say(event.session, f"You pressed {event.digit}")
 
     # --- Incoming call handler -----------------------------------------------
 
@@ -359,13 +461,14 @@ async def main() -> None:
     )
     logger.info("AI: Gemini — STT: Deepgram — TTS: ElevenLabs — VAD: sherpa-onnx")
     logger.info("Pipeline: intake (triage) -> handling (advisor)")
+    logger.info("Delegation: advisor -> agent-insurance (background lookup)")
     logger.info("Waiting for incoming SIP calls...")
 
     try:
         await asyncio.Event().wait()
     finally:
         await sip.close()
-        for ch in [triage, advisor]:
+        for ch in [triage, advisor, insurance]:
             await ch.close()
         await kit.close()
 

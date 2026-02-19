@@ -1140,7 +1140,17 @@ class RealtimeVoiceChannel(Channel):
         )
 
     def _on_provider_response_end(self, session: VoiceSession) -> Any:
-        """Handle AI response end — flush resampler, signal transport, clear indicator."""
+        """Handle AI response end — flush resampler, signal transport, clear indicator.
+
+        IMPORTANT: end_of_response is scheduled as a task (not called
+        synchronously) so it runs AFTER all pending ``_send_outbound_audio``
+        tasks.  Those tasks were created via ``loop.create_task()`` in
+        ``_on_provider_audio`` and asyncio processes ready tasks in FIFO
+        creation order.  A synchronous call here would put RESPONSE_END on
+        the pacer queue *before* the last audio chunks, causing the pacer
+        to split one response into a truncated response + an orphan tail
+        that never gets its own end marker.
+        """
         # Flush the outbound resampler's pending frame (sinc one-frame delay)
         resamplers = self._session_resamplers.get(session.id)
         transport_rate = self._session_transport_rates.get(session.id)
@@ -1157,17 +1167,29 @@ class RealtimeVoiceChannel(Channel):
                         name=f"rt_flush_audio:{session.id}",
                     )
 
-        # Signal the transport that this response is done (resets pacing)
-        self._transport.end_of_response(session)
-
+        # Schedule end_of_response as a task so it runs AFTER all pending
+        # audio tasks (flush above + any _send_outbound_audio still queued).
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
         loop.create_task(
+            self._signal_end_of_response(session),
+            name=f"rt_signal_eor:{session.id}",
+        )
+        loop.create_task(
             self._handle_response_indicator(session, is_speaking=False),
             name=f"rt_response_end:{session.id}",
         )
+
+    async def _signal_end_of_response(self, session: VoiceSession) -> None:
+        """Signal end-of-response to the transport.
+
+        Runs as an asyncio task so it executes AFTER all pending
+        ``_send_outbound_audio`` tasks, preserving audio→RESPONSE_END
+        ordering on the pacer queue.
+        """
+        self._transport.end_of_response(session)
 
     async def _handle_response_indicator(
         self, session: VoiceSession, *, is_speaking: bool
