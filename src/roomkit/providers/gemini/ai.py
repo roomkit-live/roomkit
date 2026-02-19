@@ -161,15 +161,15 @@ class GeminiAIProvider(AIProvider):
             )
         except Exception as exc:
             # Check for rate limit or server errors
-            exc_str = str(exc).lower()
-            retryable = any(
-                term in exc_str for term in ["rate", "limit", "429", "500", "502", "503"]
+            status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+            retryable = status_code in (429, 500, 502, 503) if status_code else any(
+                term in str(exc).lower() for term in ["rate", "limit", "429", "500", "502", "503"]
             )
             raise ProviderError(
                 str(exc),
                 retryable=retryable,
                 provider="gemini",
-                status_code=None,
+                status_code=status_code,
             ) from exc
 
         ttfb_ms = (time.monotonic() - t0) * 1000

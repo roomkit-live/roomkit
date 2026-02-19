@@ -1322,7 +1322,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
 
         try:
             context = await self._build_context(room_id)
-        except Exception:
+        except (RoomNotFoundError, KeyError, ValueError):
             room = await self._store.get_room(room_id)
             if room is None:
                 return

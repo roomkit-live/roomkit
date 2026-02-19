@@ -265,7 +265,6 @@ class ElevenLabsTTSProvider(TTSProvider):
                     {
                         "text": " ",
                         "voice_settings": self._build_voice_settings(),
-                        "xi_api_key": self._config.api_key,
                     }
                 )
             )

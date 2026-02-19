@@ -53,7 +53,10 @@ class WebhookHTTPProvider(HTTPProvider):
             )
             resp.raise_for_status()
             send_ms = (time.monotonic() - t0) * 1000
-            data: dict[str, Any] = resp.json()
+            try:
+                data: dict[str, Any] = resp.json()
+            except (ValueError, TypeError):
+                data = {"message_id": None, "raw_text": resp.text}
 
             from roomkit.telemetry.noop import NoopTelemetryProvider
 

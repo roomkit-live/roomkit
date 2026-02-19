@@ -207,6 +207,9 @@ class OpenAIAIProvider(AIProvider):
             attributes={"provider": self._provider_name, "model": self._config.model},
         )
 
+        if not response.choices:
+            return AIResponse(text="", tool_calls=[], usage={}, provider="openai")
+
         choice = response.choices[0]
         usage: dict[str, int] = {}
         if response.usage:
