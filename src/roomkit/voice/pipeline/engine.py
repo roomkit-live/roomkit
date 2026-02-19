@@ -81,7 +81,7 @@ class AudioPipeline:
         self._dtmf_callbacks: list[DTMFCallback] = []
         self._recording_started_callbacks: list[RecordingStartedCallback] = []
         self._recording_stopped_callbacks: list[RecordingStoppedCallback] = []
-        self._last_speaker_id: str | None = None
+        self._last_speaker_id: dict[str, str | None] = {}
         # Inbound sample rate — tracked from first frame, used to resample
         # AEC reference (outbound) to match inbound processing rate.
         self._inbound_sample_rate: int | None = None
@@ -472,8 +472,8 @@ class AudioPipeline:
                         "speaker_id": diarization_result.speaker_id,
                         "confidence": diarization_result.confidence,
                     }
-                    if diarization_result.speaker_id != self._last_speaker_id:
-                        self._last_speaker_id = diarization_result.speaker_id
+                    if diarization_result.speaker_id != self._last_speaker_id.get(session.id):
+                        self._last_speaker_id[session.id] = diarization_result.speaker_id
                         for sc_cb in self._speaker_change_callbacks:
                             try:
                                 result = sc_cb(session, diarization_result)
@@ -741,7 +741,7 @@ class AudioPipeline:
             self._config.dtmf.reset()
         for pp in self._config.postprocessors:
             pp.reset()
-        self._last_speaker_id = None
+        self._last_speaker_id.clear()
         self._recording_handles.clear()
         # Close debug taps from any previous session
         for dt in self._debug_tap_sessions.values():

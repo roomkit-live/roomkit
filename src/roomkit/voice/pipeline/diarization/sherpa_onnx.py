@@ -51,7 +51,7 @@ class SherpaOnnxDiarizationProvider(DiarizationProvider):
             self._extractor.dim,
         )
         self._speech_buffer = bytearray()
-        self._sample_rate = 16000
+        self._sample_rate = config.sample_rate if hasattr(config, "sample_rate") else 16000
         self._in_speech = False
         self._last_speaker_id = ""
         self._enrolled_embeddings: dict[str, list[float]] = {}  # for debug scoring

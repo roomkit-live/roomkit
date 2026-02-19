@@ -106,9 +106,12 @@ class NeuTTSProvider(TTSProvider):
                 "neutts is required for NeuTTSProvider. "
                 "Install it with: pip install roomkit[neutts]"
             ) from exc
+        import threading
+
         self._config = config
         self._model: Any = None
         self._cached_refs: dict[str, Any] = {}
+        self._watermark_lock = threading.Lock()
 
     @staticmethod
     def _patch_perth() -> None:
@@ -301,9 +304,10 @@ class NeuTTSProvider(TTSProvider):
             # before overlap-add, so adjacent chunks get incompatible watermarks
             # that interfere in the overlap region → crackling artifacts.
             # Non-streaming infer() watermarks the full audio at once (no issue).
-            watermarker = getattr(model, "watermarker", None)
-            if watermarker is not None:
-                model.watermarker = None
+            with self._watermark_lock:
+                watermarker = getattr(model, "watermarker", None)
+                if watermarker is not None:
+                    model.watermarker = None
             try:
                 for chunk_samples in model.infer_stream(
                     text=text,
@@ -319,8 +323,9 @@ class NeuTTSProvider(TTSProvider):
                     )
                     loop.call_soon_threadsafe(queue.put_nowait, audio_chunk)
             finally:
-                if watermarker is not None:
-                    model.watermarker = watermarker
+                with self._watermark_lock:
+                    if watermarker is not None:
+                        model.watermarker = watermarker
             # Signal completion
             loop.call_soon_threadsafe(queue.put_nowait, None)
 

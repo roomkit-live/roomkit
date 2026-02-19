@@ -93,10 +93,13 @@ class OutboundAudioPacer:
 
     def interrupt(self) -> None:
         """Drain queue + wake sender. Called on speech_start for barge-in."""
-        # Drain synchronously — no await needed from caller
-        while not self._queue.empty():
+        # Swap with a fresh queue to avoid busy-loop drain
+        old_queue = self._queue
+        self._queue = asyncio.Queue()
+        # Drain the old queue to call task_done on pending items
+        while not old_queue.empty():
             try:
-                self._queue.get_nowait()
+                old_queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
         self._interrupt_event.set()

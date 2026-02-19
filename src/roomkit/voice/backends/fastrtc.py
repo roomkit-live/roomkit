@@ -102,7 +102,7 @@ def _pcm16_to_mulaw(pcm_data: bytes) -> bytes:
         magnitude = -s if s < 0 else s
         magnitude = min(magnitude, _MULAW_CLIP)
         # Shift right once to get a 14-bit index (15-bit magnitude → 14-bit)
-        out[i] = table[magnitude >> 2] | sign
+        out[i] = table[magnitude >> 1] | sign
     return bytes(out)
 
 
