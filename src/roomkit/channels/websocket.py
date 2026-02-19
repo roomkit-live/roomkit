@@ -190,22 +190,23 @@ class WebSocketChannel(Channel):
         for conn_id in list(self._stream_send_fns):
             await self._send_stream_message(conn_id, start_msg)
 
-        # Stream chunks
+        # Stream chunks — build text incrementally to avoid O(N^2) joins
         accumulated: list[str] = []
+        running_text = ""
         async for delta in text_stream:
             accumulated.append(delta)
-            full_text = "".join(accumulated)
+            running_text += delta
             chunk_msg = StreamChunk(
                 room_id=room_id,
                 stream_id=stream_id,
                 delta=delta,
-                text=full_text,
+                text=running_text,
             )
             for conn_id in list(self._stream_send_fns):
                 await self._send_stream_message(conn_id, chunk_msg)
 
         # Build final event
-        final_text = "".join(accumulated)
+        final_text = running_text
         final_event = event.model_copy(update={"content": TextContent(body=final_text)})
 
         # Send stream_end to streaming connections

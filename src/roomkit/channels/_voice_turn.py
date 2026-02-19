@@ -63,7 +63,9 @@ class VoiceTurnMixin:
             buf = self._pending_audio.setdefault(session.id, bytearray())
             buf.extend(audio_bytes)
             if len(buf) > _MAX_PENDING_AUDIO_BYTES:
-                del buf[: len(buf) - _MAX_PENDING_AUDIO_BYTES]
+                trim = len(buf) - _MAX_PENDING_AUDIO_BYTES
+                trim = trim + (trim % 2)  # Align to 2-byte (16-bit PCM) boundary
+                del buf[:trim]
 
         accumulated_audio = bytes(self._pending_audio.get(session.id, b"")) or None
         sample_rate = session.metadata.get("input_sample_rate", 16000)

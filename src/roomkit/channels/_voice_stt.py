@@ -437,6 +437,7 @@ class VoiceSTTMixin:
         """Process a transcription result from continuous STT."""
         if not self._framework or not text.strip():
             return
+        _vs_token = None
         try:
             from roomkit.telemetry.context import reset_span, set_current_span
 

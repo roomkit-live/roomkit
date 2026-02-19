@@ -175,6 +175,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             raise ValueError("batch_mode=True requires an STT provider")
         if batch_mode and pipeline is not None and pipeline.vad is not None:
             raise ValueError("batch_mode=True is incompatible with VAD")
+        if batch_mode and not streaming:
+            raise ValueError("batch_mode=True requires streaming=True for STT")
         self._batch_mode = batch_mode
         self._batch_audio_buffers: dict[str, bytearray] = {}
         self._batch_audio_sample_rate: dict[str, int] = {}
@@ -185,6 +187,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._event_loop: asyncio.AbstractEventLoop | None = None
         # Per-agent voice mapping: channel_id -> TTS voice override
         self._voice_map: dict[str, str] = voice_map or {}
+        # Telemetry spans for voice sessions (session_id -> span_id)
+        self._voice_session_spans: dict[str, str] = {}
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -616,8 +620,6 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                 "tts_provider": self._tts.name if self._tts else "none",
             },
         )
-        if not hasattr(self, "_voice_session_spans"):
-            self._voice_session_spans: dict[str, str] = {}
         self._voice_session_spans[session.id] = span_id
         # Tell the pipeline about the parent span for speech segment spans
         if self._pipeline is not None:

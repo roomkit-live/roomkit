@@ -1164,7 +1164,7 @@ class RealtimeVoiceChannel(Channel):
                 if hook_result.allowed:
                     result_str = json.dumps(
                         hook_result.event.metadata.get("result", {"status": "ok"})
-                        if hasattr(hook_result.event, "metadata") and hook_result.event is not None
+                        if hook_result.event is not None and hasattr(hook_result.event, "metadata")
                         else {"status": "ok"}
                     )
                 else:
