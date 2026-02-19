@@ -194,7 +194,7 @@ class WebhookMeta:
             sender=self.sender,
             error_code=error_code,
             error_message=error_message,
-            timestamp=self.timestamp.isoformat() if self.timestamp else None,
+            timestamp=self.timestamp,
             raw=self.raw,
         )
 

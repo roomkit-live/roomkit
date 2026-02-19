@@ -208,7 +208,7 @@ class OpenAIAIProvider(AIProvider):
         )
 
         if not response.choices:
-            return AIResponse(text="", tool_calls=[], usage={}, provider="openai")
+            return AIResponse(content="")
 
         choice = response.choices[0]
         usage: dict[str, int] = {}
