@@ -298,6 +298,12 @@ class VoiceTTSMixin:
                 )
 
         full_text = "".join(accumulated)
+        # Update playback state with actual streamed text (was "(streaming)")
+        for session in target_sessions:
+            if session.id in self._playing_sessions:
+                self._playing_sessions[session.id] = TTSPlaybackState(
+                    session_id=session.id, text=full_text or "(empty)"
+                )
         if full_text:
             for session in target_sessions:
                 await self._backend.send_transcription(session, full_text, "assistant")

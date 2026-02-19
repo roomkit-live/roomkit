@@ -236,8 +236,8 @@ class TestStreamingToolLoop:
         assert len(provider.calls) == 4
         assert tool_executions == 3
 
-    async def test_tool_execution_error_propagates(self) -> None:
-        """Exception from tool handler propagates out of the stream."""
+    async def test_tool_execution_error_fed_back_to_llm(self) -> None:
+        """Tool errors are fed back as tool results instead of propagating."""
 
         async def broken_handler(name: str, args: dict[str, Any]) -> str:
             raise RuntimeError("Tool failed!")
@@ -251,6 +251,11 @@ class TestStreamingToolLoop:
                     AIToolCall(id="tc1", name="search", arguments={}),
                 ],
             ),
+            AIResponse(
+                content="The tool failed, let me explain.",
+                finish_reason="stop",
+                usage={"prompt_tokens": 20, "completion_tokens": 10},
+            ),
         ]
 
         provider = MockAIProvider(ai_responses=responses, streaming=True)
@@ -263,9 +268,11 @@ class TestStreamingToolLoop:
         )
 
         assert output.response_stream is not None
-        with pytest.raises(RuntimeError, match="Tool failed!"):
-            async for _ in output.response_stream:
-                pass
+        collected = []
+        async for delta in output.response_stream:
+            collected.append(delta)
+        # Should get both rounds of text (tool error handled gracefully)
+        assert len(collected) > 0
 
     async def test_context_updated_between_rounds(self) -> None:
         """Verify tool results are appended to context between rounds."""

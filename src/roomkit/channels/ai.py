@@ -264,7 +264,8 @@ class AIChannel(Channel):
                     telemetry.end_span(tool_span_id)
                 except Exception as exc:
                     telemetry.end_span(tool_span_id, status="error", error_message=str(exc))
-                    raise
+                    logger.warning("Tool %s raised %s: %s", tc.name, type(exc).__name__, exc)
+                    result = f"Error executing tool '{tc.name}': {exc}"
                 result_parts.append(
                     AIToolResultPart(
                         tool_call_id=tc.id,
@@ -402,7 +403,8 @@ class AIChannel(Channel):
                     telemetry.end_span(tool_span_id)
                 except Exception as exc:
                     telemetry.end_span(tool_span_id, status="error", error_message=str(exc))
-                    raise
+                    logger.warning("Tool %s raised %s: %s", tc.name, type(exc).__name__, exc)
+                    result = f"Error executing tool '{tc.name}': {exc}"
                 result_parts.append(
                     AIToolResultPart(
                         tool_call_id=tc.id,
@@ -495,7 +497,31 @@ class AIChannel(Channel):
             for b in transport_bindings[1:]:
                 common_types &= set(b.capabilities.media_types)
             target_media = list(common_types)
-            target_caps = transport_bindings[0].capabilities
+            # Intersect capabilities: AND for booleans, MIN for numeric limits
+            caps0 = transport_bindings[0].capabilities
+            merged = caps0.model_dump()
+            merged["media_types"] = target_media
+            for b in transport_bindings[1:]:
+                other = b.capabilities
+                for field_name in (
+                    "supports_threading", "supports_reactions", "supports_edit",
+                    "supports_delete", "supports_read_receipts", "supports_typing",
+                    "supports_templates", "supports_rich_text", "supports_buttons",
+                    "supports_cards", "supports_quick_replies", "supports_media",
+                    "supports_audio", "supports_video",
+                ):
+                    merged[field_name] = merged[field_name] and getattr(other, field_name)
+                for field_name in (
+                    "max_length", "max_buttons", "max_media_size_bytes",
+                    "max_audio_duration_seconds", "max_video_duration_seconds",
+                ):
+                    a, b_val = merged[field_name], getattr(other, field_name)
+                    if a is not None and b_val is not None:
+                        merged[field_name] = min(a, b_val)
+                    elif b_val is not None:
+                        merged[field_name] = b_val
+            from roomkit.models.channel import ChannelCapabilities
+            target_caps = ChannelCapabilities(**merged)
         else:
             target_media = []
             target_caps = None

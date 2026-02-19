@@ -79,7 +79,9 @@ class VoiceTurnMixin:
             audio_bytes=accumulated_audio,
             audio_sample_rate=sample_rate,
         )
-        decision = turn_detector.evaluate(turn_ctx)
+        import asyncio
+
+        decision = await asyncio.to_thread(turn_detector.evaluate, turn_ctx)
 
         if decision.is_complete:
             # Fire ON_TURN_COMPLETE hook

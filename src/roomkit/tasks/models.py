@@ -51,8 +51,14 @@ class DelegatedTask:
         self.task = task
         self.status: TaskStatus = TaskStatus.PENDING
         self.result: DelegatedTaskResult | None = None
-        self._done = asyncio.Event()
+        self._done: asyncio.Event | None = None
         self._start_time = time.monotonic()
+
+    def _get_done_event(self) -> asyncio.Event:
+        """Lazily create the Event on first use (inside a running loop)."""
+        if self._done is None:
+            self._done = asyncio.Event()
+        return self._done
 
     async def wait(self, timeout: float | None = None) -> DelegatedTaskResult:
         """Block until the task completes or *timeout* seconds elapse.
@@ -61,7 +67,7 @@ class DelegatedTask:
             asyncio.TimeoutError: If *timeout* is exceeded.
             RuntimeError: If the task finished without a result.
         """
-        await asyncio.wait_for(self._done.wait(), timeout=timeout)
+        await asyncio.wait_for(self._get_done_event().wait(), timeout=timeout)
         if self.result is None:
             msg = f"Task {self.id} finished without a result"
             raise RuntimeError(msg)
@@ -69,7 +75,8 @@ class DelegatedTask:
 
     def cancel(self) -> None:
         """Mark the task as cancelled and unblock waiters."""
-        if self._done.is_set():
+        done = self._get_done_event()
+        if done.is_set():
             return
         self.status = TaskStatus.CANCELLED
         elapsed = (time.monotonic() - self._start_time) * 1000
@@ -81,10 +88,10 @@ class DelegatedTask:
             status=TaskStatus.CANCELLED,
             duration_ms=elapsed,
         )
-        self._done.set()
+        done.set()
 
     def _set_result(self, result: DelegatedTaskResult) -> None:
         """Set the task result and unblock waiters (called by TaskRunner)."""
         self.status = result.status
         self.result = result
-        self._done.set()
+        self._get_done_event().set()
