@@ -49,7 +49,7 @@ from roomkit.models.enums import (
     HookTrigger,
     RoomStatus,
 )
-from roomkit.models.event import EventSource, RoomEvent
+from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.task import Observation, Task
 from roomkit.realtime.base import (
     EphemeralCallback,
@@ -61,6 +61,8 @@ from roomkit.realtime.memory import InMemoryRealtime
 from roomkit.sources.base import SourceHealth, SourceProvider, SourceStatus
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
+from roomkit.tasks.base import TaskRunner
+from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
 
 # Re-export type aliases so existing imports continue to work
 __all__ = [
@@ -137,6 +139,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         stt: STTProvider | None = None,
         tts: TTSProvider | None = None,
         voice: VoiceBackend | None = None,
+        task_runner: TaskRunner | None = None,
         telemetry: TelemetryConfig | TelemetryProvider | None = None,
     ) -> None:
         """Initialise the RoomKit orchestrator.
@@ -161,6 +164,8 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             stt: Optional speech-to-text provider for transcription.
             tts: Optional text-to-speech provider for synthesis.
             voice: Optional voice backend for real-time audio transport.
+            task_runner: Pluggable backend for delegated background tasks.
+                Defaults to ``InMemoryTaskRunner``.
             telemetry: Optional telemetry provider or config for span/metric
                 collection. Accepts a ``TelemetryProvider`` instance or a
                 ``TelemetryConfig``. Defaults to ``NoopTelemetryProvider``.
@@ -191,6 +196,10 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         self._stt = stt
         self._tts = tts
         self._voice = voice
+        # Background task delegation
+        from roomkit.tasks.memory import InMemoryTaskRunner
+
+        self._task_runner: TaskRunner = task_runner or InMemoryTaskRunner()
         # Traces received before the room exists (flushed on attach_channel)
         self._pending_traces: dict[str, list[object]] = {}
         # Telemetry
@@ -237,6 +246,11 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
     def voice(self) -> VoiceBackend | None:
         """Voice backend for real-time audio (optional)."""
         return self._voice
+
+    @property
+    def task_runner(self) -> TaskRunner:
+        """The task runner for background delegation."""
+        return self._task_runner
 
     @property
     def telemetry(self) -> TelemetryProvider:
@@ -434,6 +448,187 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             raise VoiceNotConfiguredError("No TTS provider configured")
         return await self._tts.synthesize(text, voice=voice)
 
+    # -- Background delegation --
+
+    async def delegate(
+        self,
+        room_id: str,
+        agent_id: str,
+        task: str,
+        *,
+        context: dict[str, Any] | None = None,
+        share_channels: list[str] | None = None,
+        notify: str | None = None,
+        on_complete: Any | None = None,
+    ) -> DelegatedTask:
+        """Delegate a task to a background agent in a child room.
+
+        Creates a child room linked to *room_id*, attaches the agent and
+        any shared channels, then submits the task for background execution.
+
+        Args:
+            room_id: Parent room ID.
+            agent_id: Channel ID of the agent to run the task.
+            task: Description of what the agent should do.
+            context: Optional context dict passed to the agent.
+            share_channels: Channel IDs from the parent to share.
+            notify: Channel ID to update when the task completes
+                (system prompt injection). Defaults to *agent_id*.
+            on_complete: Optional async callback ``(DelegatedTaskResult) -> None``.
+
+        Returns:
+            A :class:`DelegatedTask` handle. Call ``.wait()`` to block
+            for the result, or let it run fire-and-forget.
+
+        Raises:
+            RoomNotFoundError: If the parent room doesn't exist.
+            ChannelNotRegisteredError: If the agent channel isn't registered.
+        """
+        from uuid import uuid4
+
+        # Validate
+        await self.get_room(room_id)
+        if agent_id not in self._channels:
+            raise ChannelNotRegisteredError(f"Agent channel '{agent_id}' not registered")
+
+        child_room_id = f"{room_id}::task-{uuid4().hex[:8]}"
+
+        # Create child room
+        await self.create_room(
+            room_id=child_room_id,
+            metadata={
+                "parent_room_id": room_id,
+                "task_agent_id": agent_id,
+                "task_input": task,
+                "task_context": context or {},
+                "task_status": "pending",
+            },
+        )
+
+        # Attach agent as intelligence
+        from roomkit.models.enums import ChannelCategory
+
+        await self.attach_channel(
+            child_room_id,
+            agent_id,
+            category=ChannelCategory.INTELLIGENCE,
+        )
+
+        # Share channels from parent
+        for ch_id in share_channels or []:
+            parent_binding = await self._store.get_binding(room_id, ch_id)
+            if parent_binding:
+                await self.attach_channel(
+                    child_room_id,
+                    ch_id,
+                    category=parent_binding.category,
+                    metadata=parent_binding.metadata,
+                )
+
+        # Create task handle
+        handle = DelegatedTask(
+            id=f"task-{uuid4().hex[:8]}",
+            child_room_id=child_room_id,
+            parent_room_id=room_id,
+            agent_id=agent_id,
+            task=task,
+        )
+
+        # Fire ON_TASK_DELEGATED hook
+        hook_event = RoomEvent(
+            room_id=room_id,
+            source=EventSource(
+                channel_id=agent_id,
+                channel_type=ChannelType.AI,
+            ),
+            content=TextContent(body=f"[Task delegated to {agent_id}] {task}"),
+            type=EventType.TASK_DELEGATED,
+            status=EventStatus.DELIVERED,
+            visibility="internal",
+            metadata={
+                "task_id": handle.id,
+                "child_room_id": child_room_id,
+                "agent_id": agent_id,
+            },
+        )
+        room_context = await self._build_context(room_id)
+        await self._hook_engine.run_async_hooks(
+            room_id, HookTrigger.ON_TASK_DELEGATED, hook_event, room_context
+        )
+
+        # Build completion callback
+        notify_channel = notify or agent_id
+
+        async def _on_complete(result: DelegatedTaskResult) -> None:
+            await self._on_delegation_complete(result, notify_channel)
+            if on_complete:
+                await on_complete(result)
+
+        # Submit to task runner
+        await self._task_runner.submit(
+            self, handle, context=context, on_complete=_on_complete
+        )
+
+        return handle
+
+    async def _on_delegation_complete(
+        self,
+        result: DelegatedTaskResult,
+        notify_channel_id: str,
+    ) -> None:
+        """Handle delegation completion: update notified agent + fire hook."""
+        # Inject result into the notified agent's system prompt
+        binding = await self._store.get_binding(result.parent_room_id, notify_channel_id)
+        if binding:
+            current_prompt = binding.metadata.get("system_prompt", "")
+            updated = binding.model_copy(
+                update={
+                    "metadata": {
+                        **binding.metadata,
+                        "system_prompt": (
+                            current_prompt
+                            + "\n\n--- BACKGROUND TASK COMPLETED ---\n"
+                            + f"Task ID: {result.task_id}\n"
+                            + f"Agent: {result.agent_id}\n"
+                            + f"Status: {result.status}\n"
+                            + f"Result:\n{result.output or result.error or 'No output'}\n"
+                            + "--- END ---\n"
+                            + "Inform the user naturally about this result."
+                        ),
+                    }
+                }
+            )
+            await self._store.update_binding(updated)
+
+        # Fire ON_TASK_COMPLETED hook
+        hook_event = RoomEvent(
+            room_id=result.parent_room_id,
+            source=EventSource(
+                channel_id=result.agent_id,
+                channel_type=ChannelType.AI,
+            ),
+            content=TextContent(body=result.output or result.error or ""),
+            type=EventType.TASK_COMPLETED,
+            status=EventStatus.DELIVERED,
+            visibility="internal",
+            metadata={
+                "task_id": result.task_id,
+                "child_room_id": result.child_room_id,
+                "agent_id": result.agent_id,
+                "task_status": result.status,
+                "duration_ms": result.duration_ms,
+            },
+        )
+        try:
+            room_context = await self._build_context(result.parent_room_id)
+            await self._hook_engine.run_async_hooks(
+                result.parent_room_id, HookTrigger.ON_TASK_COMPLETED, hook_event, room_context
+            )
+        except Exception:
+            logging.getLogger("roomkit.tasks").exception(
+                "Failed to fire ON_TASK_COMPLETED hook for task %s", result.task_id
+            )
+
     def _get_router(self) -> EventRouter:
         if self._event_router is None:
             self._event_router = EventRouter(
@@ -446,7 +641,9 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
 
     async def close(self) -> None:
         """Close all sources, channels, voice backend, and the realtime backend."""
-        # Stop all event sources first
+        # Cancel in-flight background tasks first
+        await self._task_runner.close()
+        # Stop all event sources
         for channel_id in list(self._sources.keys()):
             await self.detach_source(channel_id)
         # Then close channels

@@ -68,7 +68,7 @@ class TestEventType:
         assert EventType.MESSAGE == "message"
 
     def test_count(self) -> None:
-        assert len(EventType) == 22
+        assert len(EventType) == 24
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):
@@ -148,7 +148,8 @@ class TestHookTrigger:
     def test_count(self) -> None:
         # 11 voice hooks (RFC §18 + §19 + §12.3) + 2 realtime + 1 trace + 2 audio level
         # + 3 orchestration (on_phase_transition, on_handoff, on_handoff_rejected)
-        assert len(HookTrigger) == 39
+        # + 2 delegation (on_task_delegated, on_task_completed)
+        assert len(HookTrigger) == 41
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):

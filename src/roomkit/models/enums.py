@@ -72,6 +72,8 @@ class EventType(StrEnum):
     CHANNEL_UPDATED = "channel_updated"
     # Side effects
     TASK_CREATED = "task_created"
+    TASK_DELEGATED = "task_delegated"
+    TASK_COMPLETED = "task_completed"
     OBSERVATION = "observation"
     # Voice pipeline events
     DTMF = "dtmf"
@@ -207,6 +209,9 @@ class HookTrigger(StrEnum):
     ON_PHASE_TRANSITION = "on_phase_transition"
     ON_HANDOFF = "on_handoff"
     ON_HANDOFF_REJECTED = "on_handoff_rejected"
+    # Delegation (background tasks)
+    ON_TASK_DELEGATED = "on_task_delegated"
+    ON_TASK_COMPLETED = "on_task_completed"
 
 
 @unique

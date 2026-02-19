@@ -243,6 +243,16 @@ from roomkit.sources.base import (
 )
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
+from roomkit.tasks import (
+    DELEGATE_TOOL,
+    DelegatedTask,
+    DelegatedTaskResult,
+    DelegateHandler,
+    InMemoryTaskRunner,
+    TaskRunner,
+    build_delegate_tool,
+    setup_delegation,
+)
 from roomkit.telemetry import (
     Attr,
     ConsoleTelemetryProvider,
@@ -405,6 +415,15 @@ __all__ = [
     "setup_handoff",
     "ConversationPipeline",
     "PipelineStage",
+    # Delegation (background tasks)
+    "DELEGATE_TOOL",
+    "DelegateHandler",
+    "DelegatedTask",
+    "DelegatedTaskResult",
+    "InMemoryTaskRunner",
+    "TaskRunner",
+    "build_delegate_tool",
+    "setup_delegation",
     # Models - Data
     "AudioContent",
     "ChannelBinding",
