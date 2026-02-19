@@ -53,6 +53,9 @@ class ConversationStore(ABC):
         organization_id: str | None = None,
         status: str | None = None,
         metadata_filter: dict[str, Any] | None = None,
+        *,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[Room]:
         """Find rooms matching the given filters."""
         ...

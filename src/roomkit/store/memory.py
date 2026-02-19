@@ -47,6 +47,10 @@ class InMemoryStore(ConversationStore):
         return room.model_copy() if room is not None else None
 
     async def update_room(self, room: Room) -> Room:
+        if room.id not in self._rooms:
+            from roomkit.core.framework import RoomNotFoundError
+
+            raise RoomNotFoundError(room.id)
         self._rooms[room.id] = room
         return room
 
@@ -81,6 +85,9 @@ class InMemoryStore(ConversationStore):
         organization_id: str | None = None,
         status: str | None = None,
         metadata_filter: dict[str, Any] | None = None,
+        *,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[Room]:
         results: list[Room] = []
         for room in self._rooms.values():
@@ -93,7 +100,7 @@ class InMemoryStore(ConversationStore):
             ):
                 continue
             results.append(room.model_copy())
-        return results
+        return results[offset : offset + limit]
 
     async def find_latest_room(
         self,
