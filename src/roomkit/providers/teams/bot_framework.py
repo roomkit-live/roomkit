@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.delivery import ProviderResult
@@ -15,6 +16,8 @@ from roomkit.providers.teams.conversation_store import (
 
 if TYPE_CHECKING:
     from botbuilder.core import BotFrameworkAdapter
+
+logger = logging.getLogger("roomkit.providers.teams")
 
 
 class BotFrameworkTeamsProvider(TeamsProvider):
@@ -184,6 +187,78 @@ class BotFrameworkTeamsProvider(TeamsProvider):
         await self._conversation_store.save(conv_id, ref.serialize())
 
         return str(conv_id)
+
+    def verify_signature(
+        self,
+        payload: bytes,  # noqa: ARG002
+        signature: str,
+    ) -> bool:
+        """Verify a Bot Framework JWT bearer token.
+
+        Validates the JWT from the ``Authorization: Bearer <token>`` header
+        using Microsoft's OpenID Connect metadata and signing keys.
+
+        Requires the ``PyJWT`` and ``cryptography`` packages::
+
+            pip install PyJWT cryptography
+
+        Args:
+            payload: Raw request body bytes (unused — Bot Framework signs
+                the token, not the payload).
+            signature: The full ``Authorization`` header value, including
+                the ``Bearer `` prefix, OR just the raw JWT token.
+
+        Returns:
+            True if the JWT is valid (signature, issuer, audience, expiry).
+
+        Raises:
+            ValueError: If required dependencies are missing.
+        """
+        try:
+            import jwt
+            from jwt import PyJWKClient
+        except ImportError as exc:
+            raise ValueError(
+                "PyJWT[crypto] is required for Teams JWT verification. "
+                "Install it with: pip install 'PyJWT[crypto]'"
+            ) from exc
+
+        token = signature.removeprefix("Bearer ").strip()
+        if not token:
+            return False
+
+        # Allowed issuers for Bot Framework v3.1 and v3.2
+        allowed_issuers = {
+            "https://api.botframework.com",
+            "https://sts.windows.net/d6d49420-f39b-4df7-a1dc-d59a935871db/",
+            "https://login.microsoftonline.com/d6d49420-f39b-4df7-a1dc-d59a935871db/v2.0",
+            f"https://sts.windows.net/{self._config.tenant_id}/",
+            f"https://login.microsoftonline.com/{self._config.tenant_id}/v2.0",
+        }
+
+        openid_urls = [
+            "https://login.botframework.com/v1/.well-known/openidconfiguration",
+            "https://login.microsoftonline.com/botframework.com/v2.0/.well-known/openid-configuration",
+        ]
+
+        for openid_url in openid_urls:
+            try:
+                jwk_client = PyJWKClient(openid_url, cache_jwk_set=True, lifespan=3600)
+                signing_key = jwk_client.get_signing_key_from_jwt(token)
+                claims = jwt.decode(
+                    token,
+                    signing_key.key,
+                    algorithms=["RS256"],
+                    audience=self._config.app_id,
+                    options={"verify_exp": True},
+                )
+                issuer = claims.get("iss", "")
+                if issuer in allowed_issuers:
+                    return True
+            except Exception:  # nosec B112 — intentional: try next OpenID endpoint
+                continue
+
+        return False
 
     @staticmethod
     def _extract_text(event: RoomEvent) -> str:

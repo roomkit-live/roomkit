@@ -112,6 +112,20 @@ class AIChannel(Channel):
         # Extra tools injected by orchestration (e.g. HANDOFF_TOOL)
         self._extra_tools: list[AITool] = []
 
+    @property
+    def tool_handler(self) -> ToolHandler | None:
+        """The current tool handler (may be wrapped by orchestration)."""
+        return self._tool_handler
+
+    @tool_handler.setter
+    def tool_handler(self, value: ToolHandler | None) -> None:
+        self._tool_handler = value
+
+    @property
+    def extra_tools(self) -> list[AITool]:
+        """Extra tools injected by orchestration (e.g. handoff tool)."""
+        return self._extra_tools
+
     def _propagate_telemetry(self) -> None:
         """Propagate telemetry to AI provider."""
         telemetry = getattr(self, "_telemetry", None)

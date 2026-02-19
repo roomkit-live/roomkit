@@ -541,10 +541,8 @@ class TestLLMTelemetry:
 
 
 class TestRealtimeVoiceTelemetry:
-    async def test_session_span_created_on_start(self) -> None:
+    async def test_session_span_created_on_start(self, advance) -> None:
         """start_session creates a REALTIME_SESSION span."""
-        import asyncio
-
         mock = MockTelemetryProvider()
         kit = RoomKit(telemetry=mock)
 
@@ -569,12 +567,10 @@ class TestRealtimeVoiceTelemetry:
 
         await channel.end_session(session)
         # Let pending tasks complete
-        await asyncio.sleep(0)
+        await advance()
 
-    async def test_session_span_ended_on_end(self) -> None:
+    async def test_session_span_ended_on_end(self, advance) -> None:
         """end_session closes the REALTIME_SESSION span."""
-        import asyncio
-
         mock = MockTelemetryProvider()
         kit = RoomKit(telemetry=mock)
 
@@ -591,17 +587,15 @@ class TestRealtimeVoiceTelemetry:
 
         session = await channel.start_session(room.id, "user1", "fake-ws")
         await channel.end_session(session)
-        await asyncio.sleep(0)
+        await advance()
 
         completed = mock.get_spans(SpanKind.REALTIME_SESSION)
         assert len(completed) == 1
         assert completed[0].status == "ok"
         assert completed[0].duration_ms is not None
 
-    async def test_turn_span_on_response_cycle(self) -> None:
+    async def test_turn_span_on_response_cycle(self, advance) -> None:
         """response_start/end creates a REALTIME_TURN span."""
-        import asyncio
-
         mock = MockTelemetryProvider()
         kit = RoomKit(telemetry=mock)
 
@@ -620,9 +614,9 @@ class TestRealtimeVoiceTelemetry:
 
         # Simulate a response cycle
         await provider.simulate_response_start(session)
-        await asyncio.sleep(0.01)
+        await advance()
         await provider.simulate_response_end(session)
-        await asyncio.sleep(0.01)
+        await advance()
 
         turn_spans = mock.get_spans(SpanKind.REALTIME_TURN)
         assert len(turn_spans) == 1
@@ -631,12 +625,10 @@ class TestRealtimeVoiceTelemetry:
         assert turn_spans[0].parent_id is not None
 
         await channel.end_session(session)
-        await asyncio.sleep(0)
+        await advance()
 
-    async def test_tool_call_span(self) -> None:
+    async def test_tool_call_span(self, advance) -> None:
         """Tool calls create a REALTIME_TOOL_CALL span."""
-        import asyncio
-
         mock = MockTelemetryProvider()
         kit = RoomKit(telemetry=mock)
 
@@ -664,7 +656,7 @@ class TestRealtimeVoiceTelemetry:
 
         # Simulate a tool call
         await provider.simulate_tool_call(session, "call-1", "get_weather", {"city": "NYC"})
-        await asyncio.sleep(0.01)
+        await advance()
 
         tool_spans = mock.get_spans(SpanKind.REALTIME_TOOL_CALL)
         assert len(tool_spans) == 1
@@ -673,7 +665,7 @@ class TestRealtimeVoiceTelemetry:
         assert tool_spans[0].status == "ok"
 
         await channel.end_session(session)
-        await asyncio.sleep(0)
+        await advance()
 
 
 # ---------------------------------------------------------------------------

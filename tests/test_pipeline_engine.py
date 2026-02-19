@@ -396,7 +396,7 @@ class TestAsyncCallbacks:
 
         pipeline.process_inbound(_session(), _frame())
 
-        # Allow the scheduled task to run
+        # Allow the scheduled task to run (real delay needed for create_task)
         await asyncio.sleep(0.01)
 
         assert len(received) == 1
@@ -420,6 +420,7 @@ class TestAsyncCallbacks:
 
         pipeline.process_inbound(_session(), _frame())
 
+        # Allow the scheduled task to run (real delay needed for create_task)
         await asyncio.sleep(0.01)
 
         assert len(received) == 1

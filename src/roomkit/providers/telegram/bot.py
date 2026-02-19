@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.delivery import ProviderResult
@@ -152,6 +153,38 @@ class TelegramBotProvider(TelegramProvider):
                 success=False,
                 error=f"http_{exc.response.status_code}",
             )
+
+    def verify_signature(
+        self,
+        payload: bytes,  # noqa: ARG002
+        signature: str,
+    ) -> bool:
+        """Verify a Telegram webhook secret token.
+
+        Telegram's ``setWebhook`` accepts a ``secret_token`` parameter.
+        On each webhook request Telegram sends the token in the
+        ``X-Telegram-Bot-Api-Secret-Token`` header.  Verification is a
+        constant-time comparison of that header value against the
+        configured :attr:`TelegramConfig.webhook_secret`.
+
+        Args:
+            payload: Raw request body bytes (unused).
+            signature: Value of the ``X-Telegram-Bot-Api-Secret-Token`` header.
+
+        Returns:
+            True if the token matches, False otherwise.
+
+        Raises:
+            ValueError: If ``webhook_secret`` was not provided in config.
+        """
+        if not self._config.webhook_secret:
+            raise ValueError(
+                "webhook_secret must be provided in TelegramConfig for signature verification"
+            )
+        return hmac.compare_digest(
+            signature,
+            self._config.webhook_secret.get_secret_value(),
+        )
 
     @staticmethod
     def _extract_text(event: RoomEvent) -> str:

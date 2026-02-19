@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 from unittest.mock import MagicMock
 
@@ -156,7 +155,7 @@ class TestSafeInvoke:
         # Should not raise
         _safe_invoke(cb, _make_trace())
 
-    async def test_async_callback_scheduled(self) -> None:
+    async def test_async_callback_scheduled(self, advance) -> None:
         received: list[ProtocolTrace] = []
 
         async def cb(t: ProtocolTrace) -> None:
@@ -165,7 +164,7 @@ class TestSafeInvoke:
         trace = _make_trace()
         _safe_invoke(cb, trace)
         # Let the task run
-        await asyncio.sleep(0)
+        await advance()
         assert len(received) == 1
 
 
@@ -275,7 +274,7 @@ class TestFrameworkTraceWiring:
         assert ch._trace_framework_handler is not None
         assert ch.trace_enabled is True
 
-    async def test_on_channel_trace_fires_hook(self) -> None:
+    async def test_on_channel_trace_fires_hook(self, advance) -> None:
         from roomkit import RoomKit
 
         kit = RoomKit()
@@ -298,12 +297,12 @@ class TestFrameworkTraceWiring:
         ch.emit_trace(trace)
 
         # Let async tasks run
-        await asyncio.sleep(0.05)
+        await advance()
 
         assert len(hook_traces) == 1
         assert hook_traces[0].summary == "INVITE sip:+1555@pbx"
 
-    async def test_trace_without_room_id_not_fired(self) -> None:
+    async def test_trace_without_room_id_not_fired(self, advance) -> None:
         from roomkit import RoomKit
 
         kit = RoomKit()
@@ -320,10 +319,10 @@ class TestFrameworkTraceWiring:
         trace = _make_trace(channel_id="ch-1")
         ch.emit_trace(trace)
 
-        await asyncio.sleep(0.05)
+        await advance()
         assert len(hook_traces) == 0
 
-    async def test_trace_resolved_via_session_id(self) -> None:
+    async def test_trace_resolved_via_session_id(self, advance) -> None:
         from roomkit import RoomKit
         from roomkit.channels.voice import VoiceChannel
 
@@ -349,7 +348,7 @@ class TestFrameworkTraceWiring:
         trace = _make_trace(channel_id="voice", session_id="sess-42")
         voice.emit_trace(trace)
 
-        await asyncio.sleep(0.05)
+        await advance()
         assert len(hook_traces) == 1
 
 
@@ -359,7 +358,7 @@ class TestFrameworkTraceWiring:
 class TestPendingTraceFlush:
     """Traces emitted before the room exists are buffered and flushed on attach."""
 
-    async def test_trace_buffered_and_flushed_on_attach(self) -> None:
+    async def test_trace_buffered_and_flushed_on_attach(self, advance) -> None:
         from roomkit import RoomKit
 
         kit = RoomKit()
@@ -377,7 +376,7 @@ class TestPendingTraceFlush:
         ch.emit_trace(trace)
 
         # Let async task run — trace should be buffered, not fired
-        await asyncio.sleep(0.05)
+        await advance()
         assert len(hook_traces) == 0
         assert "future-room" in kit._pending_traces
 
@@ -385,12 +384,12 @@ class TestPendingTraceFlush:
         await kit.create_room(room_id="future-room")
         await kit.attach_channel("future-room", "ch-1")
 
-        await asyncio.sleep(0.05)
+        await advance()
         assert len(hook_traces) == 1
         assert hook_traces[0].summary == "INVITE sip:+1555@pbx"
         assert "future-room" not in kit._pending_traces
 
-    async def test_trace_fires_immediately_when_room_exists(self) -> None:
+    async def test_trace_fires_immediately_when_room_exists(self, advance) -> None:
         from roomkit import RoomKit
 
         kit = RoomKit()
@@ -409,7 +408,7 @@ class TestPendingTraceFlush:
         trace = _make_trace(channel_id="ch-1", room_id="existing-room")
         ch.emit_trace(trace)
 
-        await asyncio.sleep(0.05)
+        await advance()
         assert len(hook_traces) == 1
         assert not kit._pending_traces
 

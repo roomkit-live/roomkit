@@ -131,7 +131,7 @@ class RealtimeVoiceChannel(Channel):
                 overflow the provider's context window.  Defaults to 16384.
         """
         super().__init__(channel_id)
-        self._provider = provider
+        self._provider: RealtimeVoiceProvider = provider
         self._transport = transport
         self._system_prompt = system_prompt
         self._voice = voice
@@ -197,6 +197,29 @@ class RealtimeVoiceChannel(Channel):
         """Access telemetry provider (set by register_channel)."""
         return getattr(self, "_telemetry", None) or NoopTelemetryProvider()
 
+    @property
+    def provider(self) -> RealtimeVoiceProvider:
+        """The underlying realtime voice provider."""
+        return self._provider
+
+    @property
+    def session_rooms(self) -> dict[str, str]:
+        """Mapping of session_id to room_id."""
+        return self._session_rooms
+
+    def get_room_sessions(self, room_id: str) -> list[VoiceSession]:
+        """Get all active sessions for a room."""
+        return [s for s in self._sessions.values() if self._session_rooms.get(s.id) == room_id]
+
+    @property
+    def tool_handler(self) -> ToolHandler | None:
+        """The current tool handler for realtime tool calls."""
+        return self._tool_handler
+
+    @tool_handler.setter
+    def tool_handler(self, value: ToolHandler | None) -> None:
+        self._tool_handler = value
+
     def _rt_span_ctx(
         self, session_id: str
     ) -> tuple[str | None, contextvars.Token[str | None] | None]:
@@ -215,7 +238,7 @@ class RealtimeVoiceChannel(Channel):
         """Propagate telemetry to realtime provider."""
         telemetry = getattr(self, "_telemetry", None)
         if telemetry is not None:
-            self._provider._telemetry = telemetry
+            self._provider._telemetry = telemetry  # type: ignore[attr-defined]
 
     def set_framework(self, framework: RoomKit) -> None:
         """Set the framework reference for event routing.

@@ -38,9 +38,9 @@ def _make_mock_kit(room: Room, bindings: list[ChannelBinding]) -> MagicMock:
     kit.store.list_bindings = AsyncMock(return_value=bindings)
     kit.store.update_room = AsyncMock()
     kit.send_event = AsyncMock()
-    kit._hook_engine.run_async_hooks = AsyncMock()
-    kit._lock_manager = MagicMock()
-    kit._lock_manager.locked = MagicMock(return_value=_NoopLock())
+    kit.hook_engine.run_async_hooks = AsyncMock()
+    kit.lock_manager = MagicMock()
+    kit.lock_manager.locked = MagicMock(return_value=_NoopLock())
     return kit
 
 
@@ -404,31 +404,31 @@ class TestHandoffMemoryProvider:
 class TestSetupHandoff:
     def test_injects_handoff_tool(self):
         channel = MagicMock()
-        channel._extra_tools = []
-        channel._tool_handler = None
+        channel.extra_tools = []
+        channel.tool_handler = None
 
         handler = MagicMock(spec=HandoffHandler)
         setup_handoff(channel, handler)
 
-        assert len(channel._extra_tools) == 1
-        assert channel._extra_tools[0].name == "handoff_conversation"
+        assert len(channel.extra_tools) == 1
+        assert channel.extra_tools[0].name == "handoff_conversation"
 
     def test_wraps_tool_handler(self):
         channel = MagicMock()
-        channel._extra_tools = []
-        channel._tool_handler = AsyncMock(return_value='{"ok": true}')
+        channel.extra_tools = []
+        channel.tool_handler = AsyncMock(return_value='{"ok": true}')
         channel.channel_id = "agent-a"
 
         handler = MagicMock(spec=HandoffHandler)
         setup_handoff(channel, handler)
 
         # _tool_handler should be replaced with the wrapper
-        assert channel._tool_handler is not None
+        assert channel.tool_handler is not None
 
     async def test_handoff_tool_call_dispatched(self):
         channel = MagicMock()
-        channel._extra_tools = []
-        channel._tool_handler = None
+        channel.extra_tools = []
+        channel.tool_handler = None
         channel.channel_id = "agent-a"
 
         handler = MagicMock(spec=HandoffHandler)
@@ -437,7 +437,7 @@ class TestSetupHandoff:
         )
 
         setup_handoff(channel, handler)
-        wrapped = channel._tool_handler
+        wrapped = channel.tool_handler
 
         # Set the ContextVar as the routing hook would
         token = _room_id_var.set("r1")
@@ -466,13 +466,13 @@ class TestSetupHandoff:
     async def test_non_handoff_tool_delegates(self):
         original = AsyncMock(return_value='{"result": "ok"}')
         channel = MagicMock()
-        channel._extra_tools = []
-        channel._tool_handler = original
+        channel.extra_tools = []
+        channel.tool_handler = original
         channel.channel_id = "agent-a"
 
         handler = MagicMock(spec=HandoffHandler)
         setup_handoff(channel, handler)
-        wrapped = channel._tool_handler
+        wrapped = channel.tool_handler
 
         result = await wrapped("some_other_tool", {"arg": "val"})
         assert json.loads(result) == {"result": "ok"}
@@ -480,13 +480,13 @@ class TestSetupHandoff:
 
     async def test_handoff_without_room_id_returns_error(self):
         channel = MagicMock()
-        channel._extra_tools = []
-        channel._tool_handler = None
+        channel.extra_tools = []
+        channel.tool_handler = None
         channel.channel_id = "agent-a"
 
         handler = MagicMock(spec=HandoffHandler)
         setup_handoff(channel, handler)
-        wrapped = channel._tool_handler
+        wrapped = channel.tool_handler
 
         # Don't set _room_id_var
         token = _room_id_var.set(None)
@@ -500,8 +500,8 @@ class TestSetupHandoff:
 
     def test_double_setup_raises(self):
         channel = MagicMock()
-        channel._extra_tools = []
-        channel._tool_handler = None
+        channel.extra_tools = []
+        channel.tool_handler = None
 
         handler = MagicMock(spec=HandoffHandler)
         setup_handoff(channel, handler)
@@ -530,7 +530,7 @@ class TestHandoffHookFiring:
         )
 
         # ON_HANDOFF and ON_PHASE_TRANSITION should both fire
-        hook_calls = kit._hook_engine.run_async_hooks.call_args_list
+        hook_calls = kit.hook_engine.run_async_hooks.call_args_list
         triggers = [c[0][1] for c in hook_calls]
         from roomkit.models.enums import HookTrigger
 
@@ -552,7 +552,7 @@ class TestHandoffHookFiring:
 
         assert result.accepted is False
 
-        hook_calls = kit._hook_engine.run_async_hooks.call_args_list
+        hook_calls = kit.hook_engine.run_async_hooks.call_args_list
         triggers = [c[0][1] for c in hook_calls]
         from roomkit.models.enums import HookTrigger
 
@@ -624,25 +624,25 @@ class TestBuildHandoffTool:
 class TestSetupHandoffCustomTool:
     def test_custom_tool_injected(self):
         channel = MagicMock()
-        channel._extra_tools = []
-        channel._tool_handler = None
+        channel.extra_tools = []
+        channel.tool_handler = None
 
         custom_tool = build_handoff_tool([("agent-b", "specialist")])
         handler = MagicMock(spec=HandoffHandler)
         setup_handoff(channel, handler, tool=custom_tool)
 
-        assert len(channel._extra_tools) == 1
-        assert channel._extra_tools[0] is custom_tool
+        assert len(channel.extra_tools) == 1
+        assert channel.extra_tools[0] is custom_tool
 
     def test_default_tool_when_none(self):
         channel = MagicMock()
-        channel._extra_tools = []
-        channel._tool_handler = None
+        channel.extra_tools = []
+        channel.tool_handler = None
 
         handler = MagicMock(spec=HandoffHandler)
         setup_handoff(channel, handler)
 
-        assert channel._extra_tools[0] is HANDOFF_TOOL
+        assert channel.extra_tools[0] is HANDOFF_TOOL
 
 
 # -- known_agents + on_handoff_complete ---------------------------------------
@@ -754,16 +754,16 @@ class TestSendGreeting:
         mock_provider.inject_text = AsyncMock()
         mock_rtv = MagicMock()
         mock_rtv.__class__ = RealtimeVoiceChannel
-        mock_rtv._get_room_sessions.return_value = [mock_session]
-        mock_rtv._provider = mock_provider
-        kit._channels = {"voice": mock_rtv}
+        mock_rtv.get_room_sessions.return_value = [mock_session]
+        mock_rtv.provider = mock_provider
+        kit.channels = {"voice": mock_rtv}
 
         handler = HandoffHandler(kit=kit, router=MagicMock())
-        handler._greeting_map = {"agent-triage": "Welcome! How can I help?"}
+        handler.greeting_map = {"agent-triage": "Welcome! How can I help?"}
 
         await handler.send_greeting("r1", channel_id="voice")
 
-        mock_rtv._provider.inject_text.assert_called_once_with(
+        mock_rtv.provider.inject_text.assert_called_once_with(
             mock_session, "Welcome! How can I help?", role="user"
         )
 
@@ -774,11 +774,11 @@ class TestSendGreeting:
             room, ConversationState(phase="intake", active_agent_id="agent-triage")
         )
         kit = _make_mock_kit(room, [])
-        kit._channels = {"voice": MagicMock()}  # not a RealtimeVoiceChannel
+        kit.channels = {"voice": MagicMock()}  # not a RealtimeVoiceChannel
         kit.process_inbound = AsyncMock()
 
         handler = HandoffHandler(kit=kit, router=MagicMock())
-        handler._greeting_map = {"agent-triage": "Welcome!"}
+        handler.greeting_map = {"agent-triage": "Welcome!"}
 
         await handler.send_greeting("r1", channel_id="voice")
 
@@ -794,11 +794,11 @@ class TestSendGreeting:
             room, ConversationState(phase="intake", active_agent_id="agent-triage")
         )
         kit = _make_mock_kit(room, [])
-        kit._channels = {"voice": MagicMock()}
+        kit.channels = {"voice": MagicMock()}
         kit.process_inbound = AsyncMock()
 
         handler = HandoffHandler(kit=kit, router=MagicMock())
-        handler._greeting_map = {}  # no greetings
+        handler.greeting_map = {}  # no greetings
 
         await handler.send_greeting("r1", channel_id="voice")
 
@@ -810,7 +810,7 @@ class TestSendGreeting:
         kit = _make_mock_kit(room, [])
 
         handler = HandoffHandler(kit=kit, router=MagicMock())
-        handler._greeting_map = {"agent-triage": "Hello"}
+        handler.greeting_map = {"agent-triage": "Hello"}
 
         await handler.send_greeting("r1", channel_id="voice")
         # No crash, no calls
@@ -822,7 +822,7 @@ class TestSendGreeting:
             room, ConversationState(phase="intake", active_agent_id="agent-triage")
         )
         kit = _make_mock_kit(room, [])
-        kit._channels = {"voice": MagicMock()}
+        kit.channels = {"voice": MagicMock()}
         kit.process_inbound = AsyncMock()
 
         # Mock agent with language
@@ -830,8 +830,8 @@ class TestSendGreeting:
         mock_agent.language = "French"
 
         handler = HandoffHandler(kit=kit, router=MagicMock())
-        handler._greeting_map = {"agent-triage": "Welcome!"}
-        handler._agents = {"agent-triage": mock_agent}
+        handler.greeting_map = {"agent-triage": "Welcome!"}
+        handler.agents = {"agent-triage": mock_agent}
 
         await handler.send_greeting("r1", channel_id="voice")
 
@@ -847,7 +847,7 @@ class TestSetLanguage:
             room, ConversationState(phase="intake", active_agent_id="agent-triage")
         )
         kit = _make_mock_kit(room, [])
-        kit._channels = {}
+        kit.channels = {}
 
         handler = HandoffHandler(kit=kit, router=MagicMock())
 
@@ -872,13 +872,13 @@ class TestSetLanguage:
         mock_session = MagicMock()
         mock_rtv = MagicMock()
         mock_rtv.__class__ = RealtimeVoiceChannel
-        mock_rtv._get_room_sessions.return_value = [mock_session]
+        mock_rtv.get_room_sessions.return_value = [mock_session]
         mock_rtv.reconfigure_session = AsyncMock()
-        kit._channels = {"voice": mock_rtv}
+        kit.channels = {"voice": mock_rtv}
 
         agent = Agent("agent-triage", role="Triage", language="English")
         handler = HandoffHandler(kit=kit, router=MagicMock(), event_channel_id="voice")
-        handler._agents = {"agent-triage": agent}
+        handler.agents = {"agent-triage": agent}
 
         await handler.set_language("r1", "French", channel_id="voice")
 

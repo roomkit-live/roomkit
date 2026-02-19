@@ -201,6 +201,42 @@ class HandoffHandler:
         self._agents: dict[str, Any] = {}  # agent_id -> Agent
         self._agent_configs: dict[str, dict[str, Any]] = {}  # for realtime reconfigure
 
+    @property
+    def greeting_map(self) -> dict[str, str]:
+        """Agent ID to greeting text mapping."""
+        return self._greeting_map
+
+    @greeting_map.setter
+    def greeting_map(self, value: dict[str, str]) -> None:
+        self._greeting_map = value
+
+    @property
+    def agents(self) -> dict[str, Any]:
+        """Agent ID to Agent instance mapping."""
+        return self._agents
+
+    @agents.setter
+    def agents(self, value: dict[str, Any]) -> None:
+        self._agents = value
+
+    @property
+    def on_handoff_complete(
+        self,
+    ) -> Callable[[str, HandoffResult], Awaitable[None]] | None:
+        """Callback invoked after a successful handoff."""
+        return self._on_handoff_complete
+
+    @on_handoff_complete.setter
+    def on_handoff_complete(
+        self,
+        value: Callable[[str, HandoffResult], Awaitable[None]] | None,
+    ) -> None:
+        self._on_handoff_complete = value
+
+    def get_room_language(self, room: Room, agent_id: str | None) -> str | None:
+        """Get effective language: room override > agent default."""
+        return self._get_room_language(room, agent_id)
+
     async def handle(
         self,
         room_id: str,
@@ -227,7 +263,7 @@ class HandoffHandler:
 
         # Validate and update state under room lock to prevent lost updates.
         # send_event() is called AFTER releasing the lock (it acquires its own).
-        async with self._kit._lock_manager.locked(room_id):
+        async with self._kit.lock_manager.locked(room_id):
             room = await self._kit.get_room(room_id)
             bindings = await self._kit.store.list_bindings(room_id)
             target_binding = None
@@ -422,7 +458,7 @@ class HandoffHandler:
             },
         )
         context = RoomContext(room=room, bindings=bindings)
-        await self._kit._hook_engine.run_async_hooks(room_id, trigger, event, context)
+        await self._kit.hook_engine.run_async_hooks(room_id, trigger, event, context)
 
     async def send_greeting(
         self,
@@ -464,14 +500,14 @@ class HandoffHandler:
         if not ch_id:
             return
 
-        channel = self._kit._channels.get(ch_id)
+        channel = self._kit.channels.get(ch_id)
 
         # RealtimeVoiceChannel: inject text directly into provider session
         from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 
         if isinstance(channel, RealtimeVoiceChannel):
-            for session in channel._get_room_sessions(room_id):
-                await channel._provider.inject_text(session, greeting, role="user")
+            for session in channel.get_room_sessions(room_id):
+                await channel.provider.inject_text(session, greeting, role="user")
             return
 
         # Traditional voice: send synthetic inbound message
@@ -506,7 +542,7 @@ class HandoffHandler:
                 configured by ``install()``.
         """
         # 1. Persist language in conversation state
-        async with self._kit._lock_manager.locked(room_id):
+        async with self._kit.lock_manager.locked(room_id):
             room = await self._kit.get_room(room_id)
             state = get_conversation_state(room)
             new_state = state.model_copy(
@@ -524,7 +560,7 @@ class HandoffHandler:
         if not ch_id:
             return
 
-        channel = self._kit._channels.get(ch_id)
+        channel = self._kit.channels.get(ch_id)
 
         from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 
@@ -536,12 +572,12 @@ class HandoffHandler:
             return
 
         # Rebuild system prompt with new language
-        prompt = getattr(agent, "_system_prompt", None) or ""
-        identity = agent._build_identity_block(language=language)
+        prompt = getattr(agent, "system_prompt", None) or ""
+        identity = agent.build_identity_block(language=language)
         if identity:
             prompt = prompt + identity
 
-        for session in channel._get_room_sessions(room_id):
+        for session in channel.get_room_sessions(room_id):
             await channel.reconfigure_session(session, system_prompt=prompt)
 
         logger.info("Language set to %r for room %s (agent=%s)", language, room_id, agent_id)
@@ -640,15 +676,15 @@ def setup_handoff(
             Defaults to the generic :data:`HANDOFF_TOOL`.
     """
     # Guard against double registration
-    if any(t.name == "handoff_conversation" for t in channel._extra_tools):
+    if any(t.name == "handoff_conversation" for t in channel.extra_tools):
         msg = f"setup_handoff() already called for channel '{channel.channel_id}'"
         raise RuntimeError(msg)
 
     # Inject the handoff tool definition
-    channel._extra_tools.append(tool or HANDOFF_TOOL)
+    channel.extra_tools.append(tool or HANDOFF_TOOL)
 
     # Wrap the tool handler chain
-    original = channel._tool_handler
+    original = channel.tool_handler
 
     async def handoff_aware_handler(name: str, arguments: dict[str, Any]) -> str:
         if name == "handoff_conversation":
@@ -665,4 +701,4 @@ def setup_handoff(
             return await original(name, arguments)
         return json.dumps({"error": f"Unknown tool: {name}"})
 
-    channel._tool_handler = handoff_aware_handler
+    channel.tool_handler = handoff_aware_handler

@@ -259,6 +259,16 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         """The telemetry provider for span and metric collection."""
         return self._telemetry
 
+    @property
+    def lock_manager(self) -> RoomLockManager:
+        """The per-room lock manager."""
+        return self._lock_manager
+
+    @property
+    def channels(self) -> dict[str, Channel]:
+        """Registered channels keyed by channel ID."""
+        return self._channels
+
     async def connect_voice(
         self,
         room_id: str,

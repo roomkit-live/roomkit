@@ -205,3 +205,41 @@ class TestParseMessengerWebhook:
     def test_parse_empty_payload(self) -> None:
         messages = parse_messenger_webhook({}, channel_id="msg-main")
         assert messages == []
+
+
+class TestMessengerSignatureVerification:
+    """Tests for FacebookMessengerProvider.verify_signature()."""
+
+    def test_verify_valid_signature(self) -> None:
+        import hashlib
+        import hmac as hmac_mod
+
+        provider = FacebookMessengerProvider(_config(app_secret="secret123"))
+        payload = b'{"entry": []}'
+        digest = hmac_mod.new(b"secret123", payload, hashlib.sha256).hexdigest()
+        signature = f"sha256={digest}"
+
+        assert provider.verify_signature(payload, signature) is True
+
+    def test_verify_invalid_signature(self) -> None:
+        provider = FacebookMessengerProvider(_config(app_secret="secret123"))
+        payload = b'{"entry": []}'
+
+        assert provider.verify_signature(payload, "sha256=bad_signature") is False
+
+    def test_verify_no_app_secret(self) -> None:
+        provider = FacebookMessengerProvider(_config())
+
+        with pytest.raises(ValueError, match="app_secret must be provided"):
+            provider.verify_signature(b"payload", "sha256=anything")
+
+    def test_verify_missing_prefix(self) -> None:
+        import hashlib
+        import hmac as hmac_mod
+
+        provider = FacebookMessengerProvider(_config(app_secret="secret123"))
+        payload = b'{"entry": []}'
+        digest = hmac_mod.new(b"secret123", payload, hashlib.sha256).hexdigest()
+
+        # Valid digest but without the "sha256=" prefix
+        assert provider.verify_signature(payload, digest) is False

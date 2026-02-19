@@ -119,12 +119,13 @@ class TestAudioForwarding:
         provider: MockRealtimeProvider,
         transport: MockRealtimeTransport,
         room_id: str,
+        advance,
     ) -> None:
         session = await channel.start_session(room_id, "user-1", "fake-ws")
 
         # Simulate client sending audio
         await transport.simulate_client_audio(session, b"client-audio-data")
-        await asyncio.sleep(0.05)
+        await advance()
 
         # Verify provider received the audio
         assert len(provider.sent_audio) == 1
@@ -137,12 +138,13 @@ class TestAudioForwarding:
         provider: MockRealtimeProvider,
         transport: MockRealtimeTransport,
         room_id: str,
+        advance,
     ) -> None:
         session = await channel.start_session(room_id, "user-1", "fake-ws")
 
         # Simulate provider producing audio
         await provider.simulate_audio(session, b"provider-audio-data")
-        await asyncio.sleep(0.05)
+        await advance()
 
         # Verify transport sent audio to client
         assert len(transport.sent_audio) == 1
@@ -372,11 +374,12 @@ class TestSpeakingIndicators:
         provider: MockRealtimeProvider,
         transport: MockRealtimeTransport,
         room_id: str,
+        advance,
     ) -> None:
         session = await channel.start_session(room_id, "user-1", "fake-ws")
 
         await provider.simulate_response_start(session)
-        await asyncio.sleep(0.05)
+        await advance()
 
         speaking_msgs = [
             m
@@ -393,11 +396,12 @@ class TestSpeakingIndicators:
         provider: MockRealtimeProvider,
         transport: MockRealtimeTransport,
         room_id: str,
+        advance,
     ) -> None:
         session = await channel.start_session(room_id, "user-1", "fake-ws")
 
         await provider.simulate_response_end(session)
-        await asyncio.sleep(0.05)
+        await advance()
 
         speaking_msgs = [
             m
@@ -640,19 +644,20 @@ class TestTransportSampleRateNone:
         provider: MockRealtimeProvider,
         transport: MockRealtimeTransport,
         room_id: str,
+        advance,
     ) -> None:
         session = await channel.start_session(room_id, "user-1", "fake-ws")
 
         # Client → Provider: no resampling
         audio = b"\x01\x00" * 80
         await transport.simulate_client_audio(session, audio)
-        await asyncio.sleep(0.05)
+        await advance()
         assert len(provider.sent_audio) == 1
         assert provider.sent_audio[0] == (session.id, audio)
 
         # Provider → Client: no resampling
         await provider.simulate_audio(session, audio)
-        await asyncio.sleep(0.05)
+        await advance()
         assert len(transport.sent_audio) == 1
         assert transport.sent_audio[0] == (session.id, audio)
 
@@ -679,6 +684,7 @@ class TestResamplingEnabled:
         provider: MockRealtimeProvider,
         transport: MockRealtimeTransport,
         resample_room_id: str,
+        advance,
     ) -> None:
         session = await resample_channel.start_session(resample_room_id, "user-1", "fake-ws")
 
@@ -687,7 +693,7 @@ class TestResamplingEnabled:
 
         audio_8k = struct.pack("<80h", *([500] * 80))
         await transport.simulate_client_audio(session, audio_8k)
-        await asyncio.sleep(0.05)
+        await advance()
 
         # Provider should receive resampled audio (different size)
         assert len(provider.sent_audio) == 1
@@ -748,6 +754,7 @@ class TestInterruptionFlush:
         provider: MockRealtimeProvider,
         transport: MockRealtimeTransport,
         room_id: str,
+        advance,
     ) -> None:
         """Audio pushed before speech_start should NOT arrive at transport."""
         session = await channel.start_session(room_id, "user-1", "fake-ws")
@@ -760,7 +767,7 @@ class TestInterruptionFlush:
         await provider.simulate_speech_start(session)
 
         # Let pending tasks run
-        await asyncio.sleep(0.05)
+        await advance()
 
         # No audio should have been sent (tasks were stale)
         assert len(transport.sent_audio) == 0
@@ -772,6 +779,7 @@ class TestInterruptionFlush:
         provider: MockRealtimeProvider,
         transport: MockRealtimeTransport,
         resample_room_id: str,
+        advance,
     ) -> None:
         """Interrupt resets the outbound resampler so stale buffered audio
         doesn't leak into the next response."""
@@ -782,11 +790,11 @@ class TestInterruptionFlush:
         # Push one chunk (sinc resampler buffers first frame)
         audio_24k = struct.pack("<240h", *([500] * 240))
         await provider.simulate_audio(session, audio_24k)
-        await asyncio.sleep(0.05)
+        await advance()
 
         # The first frame is still in the resampler buffer — interrupt should discard it
         await provider.simulate_speech_start(session)
-        await asyncio.sleep(0.05)
+        await advance()
 
         # Verify the resampler state was cleared
         resamplers = resample_channel._session_resamplers.get(session.id)

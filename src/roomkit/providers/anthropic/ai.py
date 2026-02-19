@@ -81,15 +81,31 @@ class AnthropicAIProvider(AIProvider):
             if isinstance(part, AITextPart):
                 parts.append({"type": "text", "text": part.text})
             elif isinstance(part, AIImagePart):
-                parts.append(
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "url",
-                            "url": part.url,
-                        },
-                    }
-                )
+                url = part.url
+                if url.startswith("data:"):
+                    # data:<media_type>;base64,<data>
+                    header, _, b64data = url.partition(",")
+                    media_type = header.split(":", 1)[1].split(";", 1)[0]
+                    parts.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": b64data,
+                            },
+                        }
+                    )
+                else:
+                    parts.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "url",
+                                "url": url,
+                            },
+                        }
+                    )
             elif isinstance(part, AIToolCallPart):
                 parts.append(
                     {

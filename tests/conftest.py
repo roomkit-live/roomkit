@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable, Coroutine
+from typing import Any
+
 import pytest
 
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities
@@ -16,6 +20,24 @@ from roomkit.models.event import (
 from roomkit.models.event import EventContent as EventContentType
 from roomkit.models.room import Room
 from roomkit.store.memory import InMemoryStore
+
+
+@pytest.fixture
+def advance() -> Callable[[int], Coroutine[Any, Any, None]]:
+    """Yield control to let pending tasks run without real delay.
+
+    Replaces ``await asyncio.sleep(0.05)`` patterns with zero-delay
+    event loop yields::
+
+        await advance()       # 5 yields (default)
+        await advance(10)     # 10 yields for heavier workloads
+    """
+
+    async def _advance(n: int = 5) -> None:
+        for _ in range(n):
+            await asyncio.sleep(0)
+
+    return _advance
 
 
 @pytest.fixture

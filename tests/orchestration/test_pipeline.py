@@ -334,8 +334,8 @@ class TestPipelineInstall:
 
         # Each agent should have the handoff tool injected
         for agent in agents:
-            assert len(agent._extra_tools) == 1
-            assert agent._extra_tools[0].name == "handoff_conversation"
+            assert len(agent.extra_tools) == 1
+            assert agent.extra_tools[0].name == "handoff_conversation"
 
     def test_install_returns_router_and_handler(self):
         pipeline = ConversationPipeline(
@@ -561,14 +561,14 @@ class TestAgentAwareInstall:
         pipeline.install(kit, [triage, advisor])
 
         # triage should have tool with enum=["agent-advisor"]
-        assert len(triage._extra_tools) == 1
-        tool = triage._extra_tools[0]
+        assert len(triage.extra_tools) == 1
+        tool = triage.extra_tools[0]
         target_prop = tool.parameters["properties"]["target"]
         assert target_prop["enum"] == ["agent-advisor"]
 
         # advisor should have tool with enum=["agent-triage"]
-        assert len(advisor._extra_tools) == 1
-        tool = advisor._extra_tools[0]
+        assert len(advisor.extra_tools) == 1
+        tool = advisor.extra_tools[0]
         target_prop = tool.parameters["properties"]["target"]
         assert target_prop["enum"] == ["agent-triage"]
 
@@ -587,7 +587,7 @@ class TestAgentAwareInstall:
         pipeline.install(kit, [agent_a, agent_b])
 
         # agent-a's tool should mention agent-b's description
-        tool = agent_a._extra_tools[0]
+        tool = agent_a.extra_tools[0]
         assert "Does B things" in tool.description
 
     def test_install_uses_stage_description_fallback(self):
@@ -609,7 +609,7 @@ class TestAgentAwareInstall:
         pipeline.install(kit, [agent_a, agent_b])
 
         # agent-a's tool should use PipelineStage.description for agent-b
-        tool = agent_a._extra_tools[0]
+        tool = agent_a.extra_tools[0]
         assert "Stage B desc" in tool.description
 
     def test_install_auto_wires_voice_map(self):
@@ -625,7 +625,7 @@ class TestAgentAwareInstall:
 
         vc = MagicMock(spec=VoiceChannel)
         vc.update_voice_map = MagicMock()
-        kit._channels = {"voice": vc}
+        kit.channels = {"voice": vc}
 
         agent_a = _mock_agent("agent-a", voice="voice-a")
         agent_b = _mock_agent("agent-b", voice="voice-b")
@@ -649,7 +649,7 @@ class TestAgentAwareInstall:
         kit = _mock_kit()
         vc = MagicMock()
         vc.update_voice_map = MagicMock()
-        kit._channels = {"voice": vc}
+        kit.channels = {"voice": vc}
 
         agent_a = _mock_agent("agent-a", role="A")
 
@@ -672,7 +672,7 @@ class TestAgentAwareInstall:
         pipeline.install(kit, [agent_a, agent_b])
 
         # agent-b has no reachable targets → empty targets → generic tool
-        assert agent_b._extra_tools[0] is HANDOFF_TOOL
+        assert agent_b.extra_tools[0] is HANDOFF_TOOL
 
 
 # -- Realtime (speech-to-speech) install ------------------------------------
@@ -695,7 +695,7 @@ def _mock_kit_with_rtv(rtv_channel_id: str = "rtv"):
     hook_decorator = MagicMock()
     kit.hook.return_value = hook_decorator
     rtv = _make_rtv(rtv_channel_id)
-    kit._channels = {rtv_channel_id: rtv}
+    kit.channels = {rtv_channel_id: rtv}
     return kit, rtv
 
 
@@ -717,11 +717,11 @@ class TestRealtimeInstall:
 
         # Agents should NOT have handoff tools injected directly
         # (they're config-only, wiring goes through the RTV tool handler)
-        assert len(a._extra_tools) == 0
-        assert len(b._extra_tools) == 0
+        assert len(a.extra_tools) == 0
+        assert len(b.extra_tools) == 0
 
         # RTV should have a tool handler installed
-        assert rtv._tool_handler is not None
+        assert rtv.tool_handler is not None
 
     def test_wire_realtime_sets_initial_config(self):
         """Initial agent's config is applied to the RTV channel."""
@@ -846,9 +846,9 @@ class TestRealtimeInstall:
         kit.store.list_bindings = AsyncMock(return_value=[])
         kit.store.update_room = AsyncMock()
         kit.send_event = AsyncMock()
-        kit._hook_engine.run_async_hooks = AsyncMock()
-        kit._lock_manager = MagicMock()
-        kit._lock_manager.locked = MagicMock(return_value=_NoopLock())
+        kit.hook_engine.run_async_hooks = AsyncMock()
+        kit.lock_manager = MagicMock()
+        kit.lock_manager.locked = MagicMock(return_value=_NoopLock())
 
         pipeline.install(kit, [triage, advisor], voice_channel_id="rtv")
 
@@ -863,7 +863,7 @@ class TestRealtimeInstall:
         rtv._session_rooms["s1"] = "r1"
 
         # Call the tool handler
-        result = await rtv._tool_handler(
+        result = await rtv.tool_handler(
             session,
             "handoff_conversation",
             {"target": "agent-advisor", "reason": "needs help", "summary": "context"},
@@ -906,9 +906,9 @@ class TestRealtimeInstall:
         kit.store.list_bindings = AsyncMock(return_value=[])
         kit.store.update_room = AsyncMock()
         kit.send_event = AsyncMock()
-        kit._hook_engine.run_async_hooks = AsyncMock()
-        kit._lock_manager = MagicMock()
-        kit._lock_manager.locked = MagicMock(return_value=_NoopLock())
+        kit.hook_engine.run_async_hooks = AsyncMock()
+        kit.lock_manager = MagicMock()
+        kit.lock_manager.locked = MagicMock(return_value=_NoopLock())
 
         _, handler = pipeline.install(
             kit,
@@ -927,14 +927,14 @@ class TestRealtimeInstall:
         rtv._session_rooms["s1"] = "r1"
 
         # Trigger handoff via tool handler
-        await rtv._tool_handler(
+        await rtv.tool_handler(
             session,
             "handoff_conversation",
             {"target": "agent-advisor", "reason": "help", "summary": "ctx"},
         )
 
         # Provider should have been reconfigured (disconnect + reconnect)
-        provider = rtv._provider
+        provider = rtv.provider
         reconfig_calls = [c for c in provider.calls if c.method == "disconnect"]
         assert len(reconfig_calls) >= 1  # reconfigure disconnects the old session
 
@@ -971,9 +971,9 @@ class TestRealtimeInstall:
         kit.store.list_bindings = AsyncMock(return_value=[])
         kit.store.update_room = AsyncMock()
         kit.send_event = AsyncMock()
-        kit._hook_engine.run_async_hooks = AsyncMock()
-        kit._lock_manager = MagicMock()
-        kit._lock_manager.locked = MagicMock(return_value=_NoopLock())
+        kit.hook_engine.run_async_hooks = AsyncMock()
+        kit.lock_manager = MagicMock()
+        kit.lock_manager.locked = MagicMock(return_value=_NoopLock())
 
         pipeline.install(
             kit,
@@ -991,7 +991,7 @@ class TestRealtimeInstall:
         rtv._sessions["s1"] = session
         rtv._session_rooms["s1"] = "r1"
 
-        result = await rtv._tool_handler(
+        result = await rtv.tool_handler(
             session,
             "handoff_conversation",
             {"target": "agent-advisor", "reason": "help", "summary": "ctx"},
@@ -1016,7 +1016,7 @@ class TestRealtimeInstall:
             original_called["name"] = name
             return {"result": "from_original"}
 
-        rtv._tool_handler = original_handler
+        rtv.tool_handler = original_handler
 
         pipeline.install(kit, [a], voice_channel_id="rtv")
 
@@ -1027,7 +1027,7 @@ class TestRealtimeInstall:
             channel_id="rtv",
         )
 
-        result = await rtv._tool_handler(session, "get_weather", {"city": "NYC"})
+        result = await rtv.tool_handler(session, "get_weather", {"city": "NYC"})
 
         assert original_called["name"] == "get_weather"
         assert result == {"result": "from_original"}
@@ -1045,7 +1045,7 @@ class TestRealtimeInstall:
 
         vc = MagicMock(spec=VoiceChannel)
         vc.update_voice_map = MagicMock()
-        kit._channels = {"voice": vc}
+        kit.channels = {"voice": vc}
 
         agent_a = _mock_agent("agent-a", voice="v-a")
         agent_b = _mock_agent("agent-b", voice="v-b")
@@ -1053,6 +1053,6 @@ class TestRealtimeInstall:
         pipeline.install(kit, [agent_a, agent_b], voice_channel_id="voice")
 
         # Traditional: agents get handoff tools directly
-        assert len(agent_a._extra_tools) == 1
-        assert len(agent_b._extra_tools) == 1
+        assert len(agent_a.extra_tools) == 1
+        assert len(agent_b.extra_tools) == 1
         vc.update_voice_map.assert_called_once()

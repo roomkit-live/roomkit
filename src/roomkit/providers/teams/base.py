@@ -29,5 +29,25 @@ class TeamsProvider(ABC):
         """
         ...
 
+    def verify_signature(
+        self,
+        payload: bytes,
+        signature: str,
+    ) -> bool:
+        """Verify that a webhook payload was signed by the Bot Framework.
+
+        Args:
+            payload: Raw request body bytes.
+            signature: Value of the ``Authorization`` header (``Bearer <token>``).
+
+        Returns:
+            True if the signature is valid, False otherwise.
+
+        Raises:
+            NotImplementedError: If the provider does not support signature
+                verification.
+        """
+        raise NotImplementedError(f"{self.name} does not support webhook signature verification")
+
     async def close(self) -> None:  # noqa: B027
         """Release resources. Override in subclasses that hold connections."""

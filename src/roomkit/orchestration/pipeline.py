@@ -164,7 +164,7 @@ class ConversationPipeline:
         if voice_channel_id:
             from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 
-            is_realtime = isinstance(kit._channels.get(voice_channel_id), RealtimeVoiceChannel)
+            is_realtime = isinstance(kit.channels.get(voice_channel_id), RealtimeVoiceChannel)
 
         handler = HandoffHandler(
             kit=kit,
@@ -177,10 +177,10 @@ class ConversationPipeline:
         )
 
         # Populate agent metadata from Agent fields
-        handler._greeting_map = {
+        handler.greeting_map = {
             a.channel_id: g for a in agents if (g := getattr(a, "greeting", None)) is not None
         }
-        handler._agents = {a.channel_id: a for a in agents}
+        handler.agents = {a.channel_id: a for a in agents}
 
         if is_realtime:
             self._wire_realtime(
@@ -260,7 +260,7 @@ class ConversationPipeline:
         if not auto_map:
             return
 
-        vc = kit._channels.get(voice_channel_id)
+        vc = kit.channels.get(voice_channel_id)
         if isinstance(vc, VoiceChannel):
             vc.update_voice_map(auto_map)
         else:
@@ -290,7 +290,7 @@ class ConversationPipeline:
         from roomkit.channels.realtime_voice import RealtimeVoiceChannel
         from roomkit.orchestration.state import get_conversation_state
 
-        rtv = kit._channels.get(rtv_channel_id)
+        rtv = kit.channels.get(rtv_channel_id)
         if not isinstance(rtv, RealtimeVoiceChannel):
             msg = f"voice_channel_id={rtv_channel_id!r} does not point to a RealtimeVoiceChannel"
             raise TypeError(msg)
@@ -301,8 +301,8 @@ class ConversationPipeline:
         # Build per-agent configurations
         agent_configs: dict[str, dict[str, Any]] = {}
         for agent in agents:
-            prompt = agent._system_prompt or ""
-            identity = agent._build_identity_block()
+            prompt = agent.system_prompt or ""
+            identity = agent.build_identity_block()
             if identity:
                 prompt = prompt + identity
 
@@ -370,7 +370,7 @@ class ConversationPipeline:
             return msg
 
         # Install tool handler that intercepts handoff_conversation
-        original_handler = rtv._tool_handler
+        original_handler = rtv.tool_handler
 
         async def _realtime_tool_handler(
             session: Any,
@@ -386,7 +386,7 @@ class ConversationPipeline:
                     )
                 return {"error": f"Unknown tool: {name}"}
 
-            room_id = rtv._session_rooms.get(session.id)
+            room_id = rtv.session_rooms.get(session.id)
             if not room_id:
                 return {"error": "No room context for this session"}
 
@@ -405,11 +405,11 @@ class ConversationPipeline:
                 target = arguments.get("target", "")
                 # Re-read room for current language
                 room = await kit.get_room(room_id)
-                lang = handler._get_room_language(room, target)
+                lang = handler.get_room_language(room, target)
                 output["message"] = _build_greet(target, language=lang)
             return output
 
-        rtv._tool_handler = _realtime_tool_handler
+        rtv.tool_handler = _realtime_tool_handler
 
         # on_handoff_complete: reconfigure the realtime session
         async def _on_complete(room_id: str, result: Any) -> None:
@@ -420,18 +420,18 @@ class ConversationPipeline:
 
             # Check for per-room language override
             room = await kit.get_room(room_id)
-            lang = handler._get_room_language(room, new_id)
+            lang = handler.get_room_language(room, new_id)
 
             # Rebuild prompt with language if needed
             prompt = config["system_prompt"]
             if lang:
                 agent = agent_map.get(new_id)
                 if agent is not None:
-                    base = getattr(agent, "_system_prompt", None) or ""
-                    identity = agent._build_identity_block(language=lang)
+                    base = getattr(agent, "system_prompt", None) or ""
+                    identity = agent.build_identity_block(language=lang)
                     prompt = (base + identity) if identity else prompt
 
-            for session in rtv._get_room_sessions(room_id):
+            for session in rtv.get_room_sessions(room_id):
                 await rtv.reconfigure_session(
                     session,
                     system_prompt=prompt,
@@ -445,13 +445,13 @@ class ConversationPipeline:
                     # response.  Inject a language-aware message to give
                     # the new agent a turn to speak in its new role.
                     msg = _build_greet(new_id, language=lang)
-                    await rtv._provider.inject_text(
+                    await rtv.provider.inject_text(
                         session,
                         msg,
                         role="user",
                     )
 
-        handler._on_handoff_complete = _on_complete
+        handler.on_handoff_complete = _on_complete
 
         logger.info(
             "Wired speech-to-speech orchestration: %d agents on %s",

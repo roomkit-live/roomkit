@@ -685,8 +685,15 @@ class InboundMixin(HelpersMixin):
             if binding.channel_id == sr.source_channel_id:
                 continue
             channel = router.get_channel(binding.channel_id)
-            if channel and getattr(channel, "supports_streaming_delivery", False):
+            supports = getattr(channel, "supports_streaming_delivery", False) if channel else False
+            if channel and supports:
                 streaming_targets.append((channel, binding))
+
+        logger.debug(
+            "Streaming targets for room %s: %d found",
+            room_id,
+            len(streaming_targets),
+        )
 
         accumulated: list[str] = []
 

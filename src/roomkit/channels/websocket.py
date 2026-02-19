@@ -177,6 +177,14 @@ class WebSocketChannel(Channel):
         room_id = event.room_id
         source = event.source
 
+        logger.debug(
+            "deliver_stream: channel=%s, stream=%s, streaming_conns=%d, total_conns=%d",
+            self.channel_id,
+            stream_id[:8],
+            len(self._stream_send_fns),
+            len(self._connections),
+        )
+
         # Send stream_start to all streaming connections
         start_msg = StreamStart(room_id=room_id, stream_id=stream_id, source=source)
         for conn_id in list(self._stream_send_fns):
@@ -221,11 +229,15 @@ class WebSocketChannel(Channel):
         """Send a streaming protocol message, tracking errors."""
         stream_send_fn = self._stream_send_fns.get(conn_id)
         if stream_send_fn is None:
+            logger.warning("_send_stream_message: no stream_send_fn for %s", conn_id)
             return
         try:
             await stream_send_fn(conn_id, msg)
             self._error_counts.pop(conn_id, None)
         except Exception:
+            logger.exception(
+                "_send_stream_message: failed for %s (msg type=%s)", conn_id, msg.type
+            )
             self._handle_send_error(conn_id)
 
     def _handle_send_error(self, conn_id: str) -> None:

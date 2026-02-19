@@ -228,3 +228,23 @@ class TestTelegramBotProvider:
         provider = TelegramBotProvider(_config())
         await provider.close()
         # Should not raise
+
+
+class TestTelegramSignatureVerification:
+    """Tests for TelegramBotProvider.verify_signature()."""
+
+    def test_verify_valid_token(self) -> None:
+        provider = TelegramBotProvider(_config(webhook_secret="my-secret"))
+
+        assert provider.verify_signature(b"ignored", "my-secret") is True
+
+    def test_verify_invalid_token(self) -> None:
+        provider = TelegramBotProvider(_config(webhook_secret="my-secret"))
+
+        assert provider.verify_signature(b"ignored", "wrong-token") is False
+
+    def test_verify_no_webhook_secret(self) -> None:
+        provider = TelegramBotProvider(_config())
+
+        with pytest.raises(ValueError, match="webhook_secret must be provided"):
+            provider.verify_signature(b"ignored", "any-token")

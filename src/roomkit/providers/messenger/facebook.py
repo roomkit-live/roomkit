@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.delivery import ProviderResult
@@ -95,6 +97,45 @@ class FacebookMessengerProvider(MessengerProvider):
                 success=False,
                 error=f"http_{exc.response.status_code}",
             )
+
+    def verify_signature(
+        self,
+        payload: bytes,
+        signature: str,
+    ) -> bool:
+        """Verify a Facebook Messenger webhook signature using HMAC-SHA256.
+
+        Facebook sends an ``X-Hub-Signature-256`` header with format
+        ``sha256=<hex_digest>``.  This method computes the expected
+        HMAC-SHA256 of *payload* using the ``app_secret`` from config
+        and performs a constant-time comparison.
+
+        Args:
+            payload: Raw request body bytes.
+            signature: Value of the ``X-Hub-Signature-256`` header.
+
+        Returns:
+            True if the signature is valid, False otherwise.
+
+        Raises:
+            ValueError: If ``app_secret`` was not provided in config.
+        """
+        if not self._config.app_secret:
+            raise ValueError(
+                "app_secret must be provided in MessengerConfig for signature verification"
+            )
+
+        prefix = "sha256="
+        if not signature.startswith(prefix):
+            return False
+
+        expected = hmac.new(
+            self._config.app_secret.get_secret_value().encode(),
+            payload,
+            hashlib.sha256,
+        ).hexdigest()
+
+        return hmac.compare_digest(expected, signature[len(prefix):])
 
     @staticmethod
     def _extract_text(event: RoomEvent) -> str:

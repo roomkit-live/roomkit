@@ -9,6 +9,7 @@ class TelegramConfig(BaseModel):
     """Telegram Bot API provider configuration."""
 
     bot_token: SecretStr
+    webhook_secret: SecretStr | None = None
     timeout: float = 30.0
 
     @property

@@ -29,5 +29,26 @@ class TelegramProvider(ABC):
         """
         ...
 
+    def verify_signature(
+        self,
+        payload: bytes,
+        signature: str,
+    ) -> bool:
+        """Verify that a webhook request was sent by Telegram.
+
+        Args:
+            payload: Raw request body bytes (unused — Telegram uses a
+                shared secret token, not payload signing).
+            signature: Value of the ``X-Telegram-Bot-Api-Secret-Token`` header.
+
+        Returns:
+            True if the signature matches the configured webhook secret.
+
+        Raises:
+            NotImplementedError: If the provider does not support signature
+                verification.
+        """
+        raise NotImplementedError(f"{self.name} does not support webhook signature verification")
+
     async def close(self) -> None:  # noqa: B027
         """Release resources. Override in subclasses that hold connections."""

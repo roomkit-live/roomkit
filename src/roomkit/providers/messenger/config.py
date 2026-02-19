@@ -9,6 +9,7 @@ class MessengerConfig(BaseModel):
     """Facebook Messenger provider configuration."""
 
     page_access_token: SecretStr
+    app_secret: SecretStr | None = None
     api_version: str = "v21.0"
     timeout: float = 30.0
 

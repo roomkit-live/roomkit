@@ -96,6 +96,22 @@ class Agent(AIChannel):
         """Whether this agent has no AI provider (config-only mode)."""
         return isinstance(self._provider, _NullAIProvider)
 
+    @property
+    def system_prompt(self) -> str | None:
+        """The base system prompt for this agent."""
+        return self._system_prompt
+
+    def build_identity_block(self, language: str | None = None) -> str | None:
+        """Build the identity block appended to the system prompt.
+
+        Args:
+            language: Override language (e.g. from conversation state).
+                Falls back to ``self.language`` when ``None``.
+
+        Returns ``None`` when all identity fields are ``None``.
+        """
+        return self._build_identity_block(language=language)
+
     def _build_identity_block(self, language: str | None = None) -> str | None:
         """Build the identity block appended to the system prompt.
 
