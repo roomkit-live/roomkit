@@ -161,6 +161,8 @@ class VoiceSTTMixin:
                             self._fire_partial_transcription_hook(session, result, room_id),
                             name=f"partial_stt:{session.id}",
                         )
+            except asyncio.CancelledError:
+                state.cancelled = True
             except Exception:
                 logger.exception("STT stream error for session %s", session.id)
                 state.error = True
