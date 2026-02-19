@@ -62,9 +62,16 @@ class SinchSMSProvider(SMSProvider):
         }
 
         if media_urls:
-            # Sinch MMS: type mt_media, body contains url and optional message
+            # Sinch MMS: type mt_media, body contains url(s) and optional message.
+            # When multiple media URLs are provided, use the `urls` array field;
+            # for a single URL the simple `url` field works too.
             payload["type"] = "mt_media"
-            media_body: dict[str, str] = {"url": media_urls[0]}
+            media_body: dict[str, Any] = {}
+            if len(media_urls) == 1:
+                media_body["url"] = media_urls[0]
+            else:
+                media_body["url"] = media_urls[0]
+                media_body["urls"] = media_urls
             if body:
                 media_body["message"] = body
             payload["body"] = media_body

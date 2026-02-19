@@ -382,11 +382,11 @@ class VoiceMeUpSMSProvider(SMSProvider):
     def _split_message(text: str) -> list[str]:
         if len(text) <= _MAX_SEGMENT_LENGTH:
             return [text]
-        segments: list[str] = []
-        while text:
-            segments.append(text[:_MAX_SEGMENT_LENGTH])
-            text = text[_MAX_SEGMENT_LENGTH:]
-        return segments
+        import textwrap
+
+        return textwrap.wrap(
+            text, width=_MAX_SEGMENT_LENGTH, break_long_words=True, break_on_hyphens=False
+        )
 
     async def close(self) -> None:
         await self._client.aclose()

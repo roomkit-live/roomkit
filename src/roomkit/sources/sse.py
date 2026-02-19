@@ -127,6 +127,8 @@ class SSESource(BaseSourceProvider):
         params: dict[str, str] | None = None,
         timeout: float = 30.0,
         last_event_id: str | None = None,
+        reconnect: bool = False,
+        max_reconnect_backoff: float = 30.0,
     ) -> None:
         """Initialize SSE source.
 
@@ -140,6 +142,9 @@ class SSESource(BaseSourceProvider):
             params: Query parameters for the URL.
             timeout: Connection timeout in seconds.
             last_event_id: Resume from this event ID (sent as Last-Event-ID header).
+            reconnect: Automatically reconnect with exponential backoff on errors.
+                When enabled, ``Last-Event-ID`` is sent on reconnection for resumption.
+            max_reconnect_backoff: Maximum backoff between reconnect attempts in seconds.
         """
         super().__init__()
         self._url = url
@@ -147,6 +152,8 @@ class SSESource(BaseSourceProvider):
         self._parser = parser or default_json_parser(channel_id)
         self._headers = headers or {}
         self._params = params or {}
+        self._reconnect = reconnect
+        self._max_reconnect_backoff = max_reconnect_backoff
         self._timeout = timeout
         self._last_event_id = last_event_id
         self._client: Any = None
@@ -166,34 +173,53 @@ class SSESource(BaseSourceProvider):
         self._reset_stop()
         self._set_status(SourceStatus.CONNECTING)
 
-        # Build headers with Last-Event-ID if resuming
-        headers = dict(self._headers)
-        if self._last_event_id:
-            headers["Last-Event-ID"] = self._last_event_id
+        backoff = 1.0
+        while True:
+            # Build headers with Last-Event-ID for resumption
+            headers = dict(self._headers)
+            if self._last_event_id:
+                headers["Last-Event-ID"] = self._last_event_id
 
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                self._client = client
+            try:
+                # Use read_timeout=None so the SSE stream isn't closed
+                # during idle periods between events.
+                timeout = httpx.Timeout(self._timeout, read=None)
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    self._client = client
 
-                async with aconnect_sse(
-                    client,
-                    "GET",
-                    self._url,
-                    headers=headers,
-                    params=self._params,
-                ) as event_source:
-                    self._set_status(SourceStatus.CONNECTED)
-                    logger.info("Connected to SSE endpoint: %s", self._url)
+                    async with aconnect_sse(
+                        client,
+                        "GET",
+                        self._url,
+                        headers=headers,
+                        params=self._params,
+                    ) as event_source:
+                        self._set_status(SourceStatus.CONNECTED)
+                        logger.info("Connected to SSE endpoint: %s", self._url)
+                        backoff = 1.0  # Reset on successful connection
 
-                    await self._receive_loop(event_source, emit)
+                        await self._receive_loop(event_source, emit)
+                        # Normal exit (stop signaled)
+                        if self._should_stop() or not self._reconnect:
+                            return
 
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            self._set_status(SourceStatus.ERROR, str(e))
-            raise
-        finally:
-            self._client = None
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                if not self._reconnect or self._should_stop():
+                    self._set_status(SourceStatus.ERROR, str(e))
+                    raise
+                self._set_status(SourceStatus.ERROR, str(e))
+                logger.warning(
+                    "SSE connection lost (%s), reconnecting in %.1fs",
+                    e,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, self._max_reconnect_backoff)
+                self._set_status(SourceStatus.CONNECTING)
+            finally:
+                self._client = None
 
     async def _receive_loop(self, event_source: Any, emit: EmitCallback) -> None:
         """Main receive loop - reads SSE events and emits them."""

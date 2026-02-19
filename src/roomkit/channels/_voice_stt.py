@@ -110,7 +110,16 @@ class VoiceSTTMixin:
         try:
             state.queue.put_nowait(chunk)
         except asyncio.QueueFull:
-            logger.warning("STT stream queue full for session %s, dropping chunk", session_id)
+            # Drop the oldest chunk to make room for fresher audio
+            import contextlib
+
+            with contextlib.suppress(asyncio.QueueEmpty):
+                state.queue.get_nowait()
+            with contextlib.suppress(asyncio.QueueFull):
+                state.queue.put_nowait(chunk)
+            logger.warning(
+                "STT queue full for session %s, dropped oldest chunk", session_id
+            )
 
     def _start_stt_stream(
         self,
@@ -254,7 +263,7 @@ class VoiceSTTMixin:
         async def run_continuous(state: _STTStreamState) -> None:
             import time as _time
 
-            backoff = 1.0
+            backoff = 0.1
             while not state.cancelled:
                 # Fresh queue + WebSocket per turn (avoids server-side overlap).
                 # Keep frame_buffer intact — audio arriving during the
@@ -310,7 +319,7 @@ class VoiceSTTMixin:
                 try:
                     assert self._stt is not None
                     barge_in_fired = False
-                    backoff = 1.0
+                    backoff = 0.1
 
                     # Wait for the first audio chunk before connecting the
                     # STT stream.  This avoids opening a WebSocket that sits

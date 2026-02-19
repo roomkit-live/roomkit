@@ -123,6 +123,8 @@ class WebSocketSource(BaseSourceProvider):
         close_timeout: float = 10.0,
         max_size: int = 2**20,  # 1 MB
         origin: str | None = None,
+        reconnect: bool = False,
+        max_reconnect_backoff: float = 30.0,
     ) -> None:
         """Initialize WebSocket source.
 
@@ -139,6 +141,8 @@ class WebSocketSource(BaseSourceProvider):
             close_timeout: Timeout for close handshake in seconds.
             max_size: Maximum message size in bytes.
             origin: Origin header value.
+            reconnect: Automatically reconnect with exponential backoff on errors.
+            max_reconnect_backoff: Maximum backoff between reconnect attempts in seconds.
         """
         super().__init__()
         self._url = url
@@ -146,6 +150,8 @@ class WebSocketSource(BaseSourceProvider):
         self._parser = parser or default_json_parser(channel_id)
         self._headers = headers or {}
         self._subprotocols = subprotocols
+        self._reconnect = reconnect
+        self._max_reconnect_backoff = max_reconnect_backoff
         self._ping_interval = ping_interval
         self._ping_timeout = ping_timeout
         self._close_timeout = close_timeout
@@ -188,19 +194,35 @@ class WebSocketSource(BaseSourceProvider):
         if self._origin is not None:
             connect_kwargs["origin"] = self._origin
 
-        try:
-            async with websockets.connect(**connect_kwargs) as ws:
-                self._ws = ws
-                self._set_status(SourceStatus.CONNECTED)
-                logger.info("Connected to %s", self._url)
+        backoff = 1.0
+        while True:
+            try:
+                async with websockets.connect(**connect_kwargs) as ws:
+                    self._ws = ws
+                    self._set_status(SourceStatus.CONNECTED)
+                    logger.info("Connected to %s", self._url)
+                    backoff = 1.0  # Reset on successful connection
 
-                await self._receive_loop(ws, emit)
+                    await self._receive_loop(ws, emit)
+                    # Normal exit from receive loop (stop signaled)
+                    if self._should_stop() or not self._reconnect:
+                        return
 
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            self._set_status(SourceStatus.ERROR, str(e))
-            raise
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                if not self._reconnect or self._should_stop():
+                    self._set_status(SourceStatus.ERROR, str(e))
+                    raise
+                self._set_status(SourceStatus.ERROR, str(e))
+                logger.warning(
+                    "WebSocket connection lost (%s), reconnecting in %.1fs",
+                    e,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, self._max_reconnect_backoff)
+                self._set_status(SourceStatus.CONNECTING)
 
     async def _receive_loop(
         self,

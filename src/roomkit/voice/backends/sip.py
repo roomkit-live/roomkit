@@ -290,9 +290,10 @@ class SIPVoiceBackend(VoiceBackend):
         local_ip = self._resolve_local_ip(call.source_addr)
 
         # Fix SIP Contact header: if transport is bound to 0.0.0.0,
-        # replace with the resolved IP so responses use a routable address.
-        if self._transport is not None and self._transport.local_addr[0] in ("0.0.0.0", ""):  # nosec B104
-            self._transport.local_addr = (local_ip, self._transport.local_addr[1])
+        # use the resolved IP for the SDP answer.  We do NOT mutate
+        # self._transport.local_addr because that's shared across calls;
+        # instead pass local_ip to the CallSession which sets it in the SDP.
+        # (The original mutation was a concurrency hazard with multiple calls.)
 
         try:
             call_session = self._rtp_bridge.CallSession(
