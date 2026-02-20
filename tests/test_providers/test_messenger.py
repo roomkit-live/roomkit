@@ -88,8 +88,10 @@ class TestFacebookMessengerProvider:
         event = make_event(body="Hi")
         await provider.send(event, to="user-1")
 
-        url = str(transport.requests[0].url)
-        assert "access_token=token-123" in url
+        req = transport.requests[0]
+        assert req.headers["Authorization"] == "Bearer token-123"
+        # Token must NOT appear in the URL (security: avoid log exposure)
+        assert "access_token" not in str(req.url)
 
     @pytest.mark.asyncio
     async def test_send_empty_message(self) -> None:

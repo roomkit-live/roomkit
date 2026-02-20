@@ -234,6 +234,9 @@ class SIPVoiceBackend(VoiceBackend):
         # Track which RTP port each session uses for release on cleanup
         self._session_ports: dict[str, int] = {}
 
+        # One-time flag: transport local_addr has been resolved from 0.0.0.0
+        self._transport_addr_resolved = False
+
     @property
     def name(self) -> str:
         return "SIP"
@@ -497,7 +500,10 @@ class SIPVoiceBackend(VoiceBackend):
             )
 
         if call_session is not None:
-            asyncio.get_running_loop().create_task(call_session.close())
+            task = asyncio.get_running_loop().create_task(
+                call_session.close(), name=f"sip_close:{session_id}"
+            )
+            task.add_done_callback(self._log_task_exception)
 
         self._cleanup_session(session_id)
 
@@ -561,8 +567,11 @@ class SIPVoiceBackend(VoiceBackend):
 
         # Fix SIP Contact/Via: if transport is bound to 0.0.0.0,
         # replace with the resolved IP so INVITE uses a routable address.
-        if self._transport.local_addr[0] in ("0.0.0.0", ""):  # nosec B104
+        # Only set once to avoid races with concurrent dials overwriting
+        # each other's resolved IP (shared transport state).
+        if not self._transport_addr_resolved and self._transport.local_addr[0] in ("0.0.0.0", ""):  # nosec B104
             self._transport.local_addr = (local_ip, self._transport.local_addr[1])
+            self._transport_addr_resolved = True
 
         # Build SDP offer
         from aiosipua import build_sdp
@@ -814,6 +823,15 @@ class SIPVoiceBackend(VoiceBackend):
                 remote_addr,
             )
             return self._local_rtp_ip
+
+    @staticmethod
+    def _log_task_exception(task: asyncio.Task[Any]) -> None:
+        """Done callback — log exceptions from fire-and-forget tasks."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error("SIP background task %s failed: %s", task.get_name(), exc)
 
     # -------------------------------------------------------------------------
     # Session lifecycle (VoiceBackend interface)

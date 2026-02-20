@@ -250,3 +250,7 @@ class AnthropicAIProvider(AIProvider):
         async for event in self.generate_structured_stream(context):
             if isinstance(event, StreamTextDelta):
                 yield event.text
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        await self._client.close()

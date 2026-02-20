@@ -307,12 +307,10 @@ class VoiceMeUpSMSProvider(SMSProvider):
         self, message: str, to: str, from_: str, *, attachment: str | None = None
     ) -> ProviderResult:
         url = f"{self._config.base_url}queue_sms"
-        auth_params: dict[str, str] = {
-            "username": self._config.username,
-            "auth_token": self._config.auth_token.get_secret_value(),
-        }
 
         form_data: dict[str, str] = {
+            "username": self._config.username,
+            "auth_token": self._config.auth_token.get_secret_value(),
             "source_number": from_,
             "destination_number": to,
         }
@@ -327,7 +325,7 @@ class VoiceMeUpSMSProvider(SMSProvider):
             import time as _time
 
             t0 = _time.monotonic()
-            resp = await self._client.post(url, params=auth_params, data=form_data)
+            resp = await self._client.post(url, data=form_data)
             resp.raise_for_status()
             send_ms = (_time.monotonic() - t0) * 1000
             data = resp.json()

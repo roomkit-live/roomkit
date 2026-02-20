@@ -159,7 +159,16 @@ class SIPRealtimeTransport(VoiceBackend):
     # -- Internal --
 
     def _on_sip_audio(self, voice_session: Any, frame: Any) -> None:
-        """Handle inbound SIP audio: pass through to callbacks."""
+        """Handle inbound SIP audio: pass through to callbacks.
+
+        Also chains to the previous audio callback (if any) so that
+        VoiceChannel pipelines wired before the realtime transport
+        continue to receive audio.
+        """
+        # Chain to previous callback first (e.g. VoiceChannel pipeline)
+        if self._prev_audio_callback is not None:
+            self._prev_audio_callback(voice_session, frame)
+
         rt_session_id = self._voice_to_rt.get(voice_session.id)
         if rt_session_id is None:
             return

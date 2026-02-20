@@ -136,12 +136,11 @@ class WebRTCAECProvider(AECProvider):
             return frame  # closed, passthrough
 
         pcm_in = frame.data
-        self._capture_buf.extend(pcm_in)
-
         output_chunks: list[bytes] = []
         fb = self._frame_bytes
 
         with self._lock:
+            self._capture_buf.extend(pcm_in)
             while len(self._capture_buf) >= fb:
                 chunk = bytes(self._capture_buf[:fb])
                 del self._capture_buf[:fb]
@@ -184,10 +183,10 @@ class WebRTCAECProvider(AECProvider):
     def feed_reference(self, frame: AudioFrame) -> None:
         """Feed a reference (playback / TTS) frame for echo modelling."""
         pcm = frame.data
-        self._ref_buf.extend(pcm)
         fb = self._frame_bytes
 
         with self._lock:
+            self._ref_buf.extend(pcm)
             ap = self._ap
             if ap is None:
                 return
@@ -199,12 +198,13 @@ class WebRTCAECProvider(AECProvider):
 
     def reset(self) -> None:
         """Reset internal state."""
-        self._capture_buf.clear()
-        self._ref_buf.clear()
-        self._process_count = 0
-        self._ref_fed_count = 0
-        self._total_in_energy = 0
-        self._total_out_energy = 0
+        with self._lock:
+            self._capture_buf.clear()
+            self._ref_buf.clear()
+            self._process_count = 0
+            self._ref_fed_count = 0
+            self._total_in_energy = 0
+            self._total_out_energy = 0
 
     def close(self) -> None:
         """Release resources."""

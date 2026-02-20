@@ -778,7 +778,8 @@ class LocalAudioBackend(VoiceBackend):
             self._aec_feed_played(bytearray(bytes(outdata)))
 
         # Notify listeners about played audio
-        if self._audio_played_callbacks and written > 0:
+        if self._audio_played_callbacks and written > 0 and self._sessions:
+            session = next(iter(self._sessions.values()))
             played_frame = AudioFrame(
                 data=bytes(outdata),
                 sample_rate=self._output_sample_rate,
@@ -787,7 +788,7 @@ class LocalAudioBackend(VoiceBackend):
             )
             for cb in self._audio_played_callbacks:
                 with contextlib.suppress(Exception):
-                    cb(list(self._sessions.values())[0], played_frame)
+                    cb(session, played_frame)
 
         # Track playing state based on buffer content
         if written > 0:

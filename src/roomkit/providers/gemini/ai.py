@@ -111,7 +111,7 @@ class GeminiAIProvider(AIProvider):
     def _extract_tool_calls(self, response: Any) -> list[AIToolCall]:
         """Extract tool calls from Gemini response."""
         tool_calls: list[AIToolCall] = []
-        if not response.candidates:
+        if not response.candidates or not response.candidates[0].content:
             return tool_calls
 
         for part in response.candidates[0].content.parts:
@@ -196,9 +196,18 @@ class GeminiAIProvider(AIProvider):
                 "completion_tokens": response.usage_metadata.candidates_token_count or 0,
             }
 
+        try:
+            text = response.text or ""
+        except (ValueError, AttributeError):
+            text = ""
+
         return AIResponse(
-            content=response.text or "",
+            content=text,
             usage=usage,
             tool_calls=self._extract_tool_calls(response),
             metadata={"model": self._config.model},
         )
+
+    async def close(self) -> None:
+        """Release the genai client reference."""
+        self._client = None  # type: ignore[assignment]

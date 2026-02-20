@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -96,6 +97,7 @@ class AudioPipeline:
         self._playback_aec_wired = False
         # Separate resampler for playback AEC path (may run on audio thread)
         self._playback_aec_resampler: ResamplerProvider | None = None
+        self._playback_aec_resampler_lock = threading.Lock()
         # Telemetry counters (lightweight, emitted periodically)
         self._telemetry = config.telemetry
         # Speech segment telemetry spans (session_id -> span_id)
@@ -631,12 +633,13 @@ class AudioPipeline:
             ref_frame = frame
             target_rate = self._inbound_sample_rate
             if target_rate and ref_frame.sample_rate != target_rate:
-                if self._playback_aec_resampler is None:
-                    from roomkit.voice.pipeline.resampler.linear import (
-                        LinearResamplerProvider,
-                    )
+                with self._playback_aec_resampler_lock:
+                    if self._playback_aec_resampler is None:
+                        from roomkit.voice.pipeline.resampler.linear import (
+                            LinearResamplerProvider,
+                        )
 
-                    self._playback_aec_resampler = LinearResamplerProvider()
+                        self._playback_aec_resampler = LinearResamplerProvider()
                 ref_frame = self._playback_aec_resampler.resample(
                     ref_frame,
                     target_rate,

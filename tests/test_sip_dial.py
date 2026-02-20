@@ -210,6 +210,7 @@ def backend() -> SIPVoiceBackend:
     b._session_ports: dict[str, int] = {}
     b._audio_stats = {}
     b._stats_task = None
+    b._transport_addr_resolved = False
 
     return b
 

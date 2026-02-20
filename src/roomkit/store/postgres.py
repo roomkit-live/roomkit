@@ -410,9 +410,19 @@ class PostgresStore(ConversationStore):
         return row["cnt"] if row else 0
 
     async def add_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent:
-        """Atomically assign the next index and store the event in one transaction."""
+        """Atomically assign the next index and store the event in one transaction.
+
+        Uses ``SELECT ... FOR UPDATE`` on the rooms table to serialise
+        concurrent index assignments for the same room, preventing
+        duplicate indices under ``READ COMMITTED`` isolation.
+        """
         with self._query_span("add_event_auto_index", "events"):
             async with self._acquire() as conn, conn.transaction():
+                # Lock the room row to serialise concurrent index assignments
+                await conn.fetchrow(
+                    "SELECT id FROM rooms WHERE id = $1 FOR UPDATE",
+                    room_id,
+                )
                 row = await conn.fetchrow(
                     "SELECT count(*) AS cnt FROM events WHERE room_id = $1",
                     room_id,

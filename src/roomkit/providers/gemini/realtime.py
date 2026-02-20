@@ -435,8 +435,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         # Clean up transcription buffers, audio counters, and stored config
         self._clear_transcription_buffers(session.id)
         self._audio_chunk_count.pop(session.id, None)
-        self._send_audio_count.pop(session.id, None)
         self._live_configs.pop(session.id, None)
+        if hasattr(self, "_response_started"):
+            self._response_started.pop(session.id, None)
         self._audio_buffers.pop(session.id, None)
         self._error_suppressed.discard(session.id)
         self._resumption_handles.pop(session.id, None)

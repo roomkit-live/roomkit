@@ -40,8 +40,18 @@ class InMemoryTaskRunner(TaskRunner):
             self._execute(kit, task, context=context, on_complete=on_complete),
             name=f"delegate:{task.id}",
         )
+        bg.add_done_callback(self._task_done)
         self._tasks[task.id] = bg
         self._handles[task.id] = task
+
+    @staticmethod
+    def _task_done(task: asyncio.Task[None]) -> None:
+        """Log exceptions from background delegate tasks."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error("Delegate task %s failed: %s", task.get_name(), exc)
 
     async def cancel(self, task_id: str) -> bool:
         handle = self._handles.get(task_id)

@@ -565,11 +565,11 @@ class InboundMixin(HelpersMixin):
                             "blocked_by": "reentry_loop_cap",
                         }
                     )
-                    await self._store.add_event(blocked_remaining)
+                    await self._store.add_event_auto_index(room_id, blocked_remaining)
                 break
             reentry_count += 1
             reentry = pending_reentries.popleft()
-            await self._store.add_event(reentry)
+            reentry = await self._store.add_event_auto_index(room_id, reentry)
             reentry_binding = await self._store.get_binding(room_id, reentry.source.channel_id)
             if reentry_binding:
                 # Append reentry event to context locally instead of full rebuild

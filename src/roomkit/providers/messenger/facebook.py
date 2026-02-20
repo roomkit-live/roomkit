@@ -50,8 +50,8 @@ class FacebookMessengerProvider(MessengerProvider):
             resp = await self._client.post(
                 self._config.base_url,
                 json=payload,
-                params={
-                    "access_token": self._config.page_access_token.get_secret_value(),
+                headers={
+                    "Authorization": f"Bearer {self._config.page_access_token.get_secret_value()}",
                 },
             )
             resp.raise_for_status()

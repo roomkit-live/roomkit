@@ -270,4 +270,5 @@ class BotFrameworkTeamsProvider(TeamsProvider):
         return ""
 
     async def close(self) -> None:
-        pass
+        self._adapter = None
+        self._conversation_store = None  # type: ignore[assignment]

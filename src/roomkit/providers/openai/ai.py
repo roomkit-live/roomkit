@@ -279,3 +279,13 @@ class OpenAIAIProvider(AIProvider):
                 provider="openai",
                 status_code=exc.status_code,
             ) from exc
+        except Exception as exc:
+            raise ProviderError(
+                str(exc),
+                retryable=False,
+                provider=self._provider_name,
+            ) from exc
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        await self._client.close()

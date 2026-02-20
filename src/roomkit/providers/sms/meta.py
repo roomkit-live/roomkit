@@ -319,7 +319,7 @@ def extract_twilio_meta(payload: dict[str, Any]) -> WebhookMeta:
         payload = dict(await request.form())
     """
     media_urls: list[dict[str, str | None]] = []
-    num_media = int(payload.get("NumMedia", "0"))
+    num_media = min(int(payload.get("NumMedia", "0")), 20)
     for i in range(num_media):
         url = payload.get(f"MediaUrl{i}")
         if url:
