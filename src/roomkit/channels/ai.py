@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -14,6 +15,7 @@ from roomkit.models.channel import (
     ChannelBinding,
     ChannelCapabilities,
     ChannelOutput,
+    RetryPolicy,
 )
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -85,7 +87,11 @@ class AIChannel(Channel):
         max_tokens: int = 1024,
         max_context_events: int = 50,
         tool_handler: ToolHandler | None = None,
-        max_tool_rounds: int = 10,
+        max_tool_rounds: int = 200,
+        tool_loop_timeout_seconds: float | None = 300.0,
+        tool_loop_warn_after: int = 50,
+        retry_policy: RetryPolicy | None = None,
+        fallback_provider: AIProvider | None = None,
         skills: SkillRegistry | None = None,
         script_executor: ScriptExecutor | None = None,
         memory: MemoryProvider | None = None,
@@ -97,6 +103,10 @@ class AIChannel(Channel):
         self._max_tokens = max_tokens
         self._max_context_events = max_context_events
         self._max_tool_rounds = max_tool_rounds
+        self._tool_loop_timeout_seconds = tool_loop_timeout_seconds
+        self._tool_loop_warn_after = tool_loop_warn_after
+        self._retry_policy = retry_policy
+        self._fallback_provider = fallback_provider
         self._skills = skills
         self._script_executor = script_executor
         self._memory = memory or SlidingWindowMemory(max_events=max_context_events)
@@ -212,12 +222,17 @@ class AIChannel(Channel):
     async def _run_streaming_tool_loop(self, context: AIContext) -> AsyncIterator[str]:
         """Stream text deltas, executing tool calls between generation rounds."""
         telemetry = self._telemetry_provider
+        deadline = (
+            asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
+            if self._tool_loop_timeout_seconds
+            else None
+        )
 
         for _round_idx in range(self._max_tool_rounds + 1):
             text_parts: list[str] = []
             tool_calls: list[StreamToolCall] = []
 
-            async for event in self._provider.generate_structured_stream(context):
+            async for event in self._generate_stream_with_retry(context):
                 if isinstance(event, StreamTextDelta):
                     text_parts.append(event.text)
                     yield event.text
@@ -235,6 +250,21 @@ class AIChannel(Channel):
                 )
                 return
 
+            # Timeout check
+            if deadline and asyncio.get_event_loop().time() >= deadline:
+                logger.warning(
+                    "Streaming tool loop timeout after %d rounds (%.0fs)",
+                    _round_idx,
+                    self._tool_loop_timeout_seconds,
+                )
+                return
+
+            # Soft warning
+            if _round_idx == self._tool_loop_warn_after:
+                logger.warning(
+                    "Streaming tool loop reached %d rounds, still running", _round_idx
+                )
+
             logger.info(
                 "Streaming tool round %d: %d call(s)",
                 _round_idx + 1,
@@ -250,30 +280,8 @@ class AIChannel(Channel):
                 parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
             context.messages.append(AIMessage(role="assistant", content=parts))
 
-            # Execute each tool
-            result_parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
-            for tc in tool_calls:
-                logger.info("Executing tool: %s(%s)", tc.name, tc.id)
-                tool_span_id = telemetry.start_span(
-                    SpanKind.LLM_TOOL_CALL,
-                    f"tool.{tc.name}",
-                    attributes={"tool.name": tc.name, "tool.id": tc.id},
-                )
-                try:
-                    result = await self._tool_handler(tc.name, tc.arguments)
-                    telemetry.end_span(tool_span_id)
-                except Exception as exc:
-                    telemetry.end_span(tool_span_id, status="error", error_message=str(exc))
-                    logger.warning("Tool %s raised %s: %s", tc.name, type(exc).__name__, exc)
-                    result = f"Error executing tool '{tc.name}': {exc}"
-                result_parts.append(
-                    AIToolResultPart(
-                        tool_call_id=tc.id,
-                        name=tc.name,
-                        result=result,
-                    )
-                )
-
+            # Execute tools concurrently
+            result_parts = await self._execute_tools_parallel(tool_calls, telemetry)
             context.messages.append(AIMessage(role="tool", content=result_parts))
 
     @property
@@ -367,12 +375,30 @@ class AIChannel(Channel):
         self, context: AIContext, *, parent_span_id: str | None = None
     ) -> AIResponse:
         """Generate → execute tools → re-generate until a text response."""
-        response: AIResponse = await self._provider.generate(context)
+        response: AIResponse = await self._generate_with_retry(context)
         telemetry = self._telemetry_provider
+        deadline = (
+            asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
+            if self._tool_loop_timeout_seconds
+            else None
+        )
 
         for round_idx in range(self._max_tool_rounds):
             if not response.tool_calls or self._tool_handler is None:
                 break
+
+            # Timeout check (after current round finishes)
+            if deadline and asyncio.get_event_loop().time() >= deadline:
+                logger.warning(
+                    "Tool loop timeout after %d rounds (%.0fs)",
+                    round_idx,
+                    self._tool_loop_timeout_seconds,
+                )
+                break
+
+            # Soft warning
+            if round_idx == self._tool_loop_warn_after:
+                logger.warning("Tool loop reached %d rounds, still running", round_idx)
 
             logger.info(
                 "Tool round %d: %d call(s)",
@@ -388,37 +414,236 @@ class AIChannel(Channel):
                 parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
             context.messages.append(AIMessage(role="assistant", content=parts))
 
-            # Execute each tool and collect results
-            result_parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
-            for tc in response.tool_calls:
-                logger.info("Executing tool: %s(%s)", tc.name, tc.id)
-                tool_span_id = telemetry.start_span(
-                    SpanKind.LLM_TOOL_CALL,
-                    f"tool.{tc.name}",
-                    parent_id=parent_span_id,
-                    attributes={"tool.name": tc.name, "tool.id": tc.id},
-                )
-                try:
-                    result = await self._tool_handler(tc.name, tc.arguments)
-                    telemetry.end_span(tool_span_id)
-                except Exception as exc:
-                    telemetry.end_span(tool_span_id, status="error", error_message=str(exc))
-                    logger.warning("Tool %s raised %s: %s", tc.name, type(exc).__name__, exc)
-                    result = f"Error executing tool '{tc.name}': {exc}"
-                result_parts.append(
-                    AIToolResultPart(
-                        tool_call_id=tc.id,
-                        name=tc.name,
-                        result=result,
-                    )
-                )
-
+            # Execute tools concurrently
+            result_parts = await self._execute_tools_parallel(
+                response.tool_calls, telemetry, parent_span_id=parent_span_id
+            )
             context.messages.append(AIMessage(role="tool", content=result_parts))
 
-            # Re-generate with tool results
-            response = await self._provider.generate(context)
+            # Re-generate with tool results (with retry)
+            try:
+                response = await self._generate_with_retry(context)
+            except ProviderError as exc:
+                if self._is_context_overflow(exc):
+                    logger.warning("Context overflow at round %d. Compacting.", round_idx)
+                    context = await self._compact_context(context)
+                    response = await self._generate_with_retry(context)
+                else:
+                    # Return partial result if we have accumulated text
+                    accumulated = self._extract_accumulated_text(context.messages)
+                    if accumulated:
+                        return AIResponse(
+                            content=accumulated + f"\n\n[Agent interrupted: {exc}]",
+                            tool_calls=[],
+                        )
+                    raise
 
         return response
+
+    async def _execute_tools_parallel(
+        self,
+        tool_calls: list[Any],
+        telemetry: Any,
+        *,
+        parent_span_id: str | None = None,
+    ) -> list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart]:
+        """Execute tool calls concurrently and return result parts."""
+        assert self._tool_handler is not None
+
+        async def _run_one(tc: Any) -> AIToolResultPart:
+            logger.info("Executing tool: %s(%s)", tc.name, tc.id)
+            tool_span_id = telemetry.start_span(
+                SpanKind.LLM_TOOL_CALL,
+                f"tool.{tc.name}",
+                parent_id=parent_span_id,
+                attributes={"tool.name": tc.name, "tool.id": tc.id},
+            )
+            try:
+                result = await self._tool_handler(tc.name, tc.arguments)
+                result = self._maybe_truncate_result(result)
+                telemetry.end_span(tool_span_id)
+            except Exception as exc:
+                telemetry.end_span(tool_span_id, status="error", error_message=str(exc))
+                logger.warning("Tool %s raised %s: %s", tc.name, type(exc).__name__, exc)
+                result = f"Error executing tool '{tc.name}': {exc}"
+            return AIToolResultPart(
+                tool_call_id=tc.id,
+                name=tc.name,
+                result=result,
+            )
+
+        results = await asyncio.gather(*[_run_one(tc) for tc in tool_calls])
+        return list(results)
+
+    # -- Retry / fallback / context management --------------------------------
+
+    _MAX_TOOL_RESULT_TOKENS = 30_000  # ~120K characters
+
+    async def _generate_with_retry(self, context: AIContext) -> AIResponse:
+        """Call provider.generate() with retry and optional fallback."""
+        policy = self._retry_policy or RetryPolicy(max_retries=0)
+        last_error: ProviderError | None = None
+
+        for attempt in range(policy.max_retries + 1):
+            try:
+                return await self._provider.generate(context)
+            except ProviderError as exc:
+                last_error = exc
+                if not exc.retryable:
+                    raise
+                if attempt >= policy.max_retries:
+                    break
+                delay = min(
+                    policy.base_delay_seconds * (policy.exponential_base ** attempt),
+                    policy.max_delay_seconds,
+                )
+                logger.warning(
+                    "Provider error (attempt %d/%d, status=%s): %s. Retrying in %.1fs",
+                    attempt + 1,
+                    policy.max_retries,
+                    exc.status_code,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+
+        # All retries exhausted — try fallback provider
+        if self._fallback_provider and last_error:
+            logger.warning(
+                "Primary provider failed after %d attempts. Trying fallback.",
+                policy.max_retries + 1,
+            )
+            try:
+                return await self._fallback_provider.generate(context)
+            except ProviderError as fallback_exc:
+                logger.error("Fallback provider also failed: %s", fallback_exc)
+                raise last_error from fallback_exc
+
+        if last_error:
+            raise last_error
+        raise RuntimeError("_generate_with_retry completed without result or exception")
+
+    async def _generate_stream_with_retry(
+        self, context: AIContext
+    ) -> AsyncIterator[StreamTextDelta | StreamToolCall]:
+        """Stream with retry on provider errors."""
+        policy = self._retry_policy or RetryPolicy(max_retries=0)
+        last_error: ProviderError | None = None
+
+        for attempt in range(policy.max_retries + 1):
+            try:
+                async for event in self._provider.generate_structured_stream(context):
+                    yield event
+                return  # Stream completed successfully
+            except ProviderError as exc:
+                last_error = exc
+                if not exc.retryable:
+                    raise
+                if attempt >= policy.max_retries:
+                    break
+                delay = min(
+                    policy.base_delay_seconds * (policy.exponential_base ** attempt),
+                    policy.max_delay_seconds,
+                )
+                logger.warning(
+                    "Stream error (attempt %d/%d): %s. Retrying in %.1fs",
+                    attempt + 1,
+                    policy.max_retries,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+
+        # Fallback
+        if self._fallback_provider and last_error:
+            logger.warning("Trying fallback provider for stream.")
+            async for event in self._fallback_provider.generate_structured_stream(context):
+                yield event
+            return
+
+        if last_error:
+            raise last_error
+
+    @staticmethod
+    def _is_context_overflow(exc: ProviderError) -> bool:
+        """Check if a provider error indicates context window overflow."""
+        msg = str(exc).lower()
+        return any(
+            phrase in msg
+            for phrase in [
+                "context length exceeded",
+                "maximum context length",
+                "token limit",
+                "too many tokens",
+                "request too large",
+                "prompt is too long",
+            ]
+        )
+
+    async def _compact_context(self, context: AIContext) -> AIContext:
+        """Emergency compaction: summarize the first half of messages."""
+        messages = context.messages
+        if len(messages) <= 4:
+            raise ProviderError(
+                "Context too large but cannot compact further (<=4 messages)",
+                retryable=False,
+            )
+
+        split = len(messages) // 2
+        old_messages = messages[:split]
+        recent_messages = messages[split:]
+
+        # Build a quick summary of old messages
+        summary_parts: list[str] = []
+        for msg in old_messages:
+            role = msg.role
+            if isinstance(msg.content, str):
+                text = msg.content[:500]
+            elif isinstance(msg.content, list):
+                text = " ".join(
+                    p.text[:200] if hasattr(p, "text") else f"[{p.type}]" for p in msg.content
+                )[:500]
+            else:
+                text = str(msg.content)[:500]
+            summary_parts.append(f"[{role}]: {text}")
+
+        summary_text = "\n".join(summary_parts)
+        summary_msg = AIMessage(
+            role="user",
+            content=(
+                "[Context compacted — earlier conversation summary]\n"
+                f"{summary_text}"
+            ),
+        )
+
+        return context.model_copy(update={"messages": [summary_msg] + recent_messages})
+
+    @staticmethod
+    def _extract_accumulated_text(messages: list[AIMessage]) -> str:
+        """Extract accumulated assistant text from message history."""
+        parts: list[str] = []
+        for msg in messages:
+            if msg.role != "assistant":
+                continue
+            if isinstance(msg.content, str):
+                parts.append(msg.content)
+            elif isinstance(msg.content, list):
+                for p in msg.content:
+                    if isinstance(p, AITextPart) and p.text:
+                        parts.append(p.text)
+        return "\n".join(parts)
+
+    def _maybe_truncate_result(self, result: str) -> str:
+        """Truncate oversized tool results, keeping start and end."""
+        estimated = len(result) // 4 + 1
+        if estimated <= self._MAX_TOOL_RESULT_TOKENS:
+            return result
+        max_chars = self._MAX_TOOL_RESULT_TOKENS * 4
+        half = max_chars // 2
+        truncated = estimated - self._MAX_TOOL_RESULT_TOKENS
+        return result[:half] + f"\n\n[... truncated ~{truncated} tokens ...]\n\n" + result[-half:]
+
+    # -- Context building -------------------------------------------------------
 
     async def _build_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
