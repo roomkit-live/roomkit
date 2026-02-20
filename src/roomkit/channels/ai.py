@@ -261,9 +261,7 @@ class AIChannel(Channel):
 
             # Soft warning
             if _round_idx == self._tool_loop_warn_after:
-                logger.warning(
-                    "Streaming tool loop reached %d rounds, still running", _round_idx
-                )
+                logger.warning("Streaming tool loop reached %d rounds, still running", _round_idx)
 
             logger.info(
                 "Streaming tool round %d: %d call(s)",
@@ -283,6 +281,16 @@ class AIChannel(Channel):
             # Execute tools concurrently
             result_parts = await self._execute_tools_parallel(tool_calls, telemetry)
             context.messages.append(AIMessage(role="tool", content=result_parts))
+
+            # Yield inline XML so streaming consumers can render tool calls.
+            # Format matches <invoke name="...">input</invoke><result>output</result>
+            # which frontends can parse for collapsible tool call display.
+            for tc, rp in zip(tool_calls, result_parts, strict=False):
+                args_str = json.dumps(tc.arguments) if tc.arguments else ""
+                yield (
+                    f'\n<invoke name="{tc.name}">{args_str}</invoke>'
+                    f"\n<result>{rp.result}</result>\n"
+                )
 
     @property
     def _telemetry_provider(self) -> NoopTelemetryProvider:
@@ -494,7 +502,7 @@ class AIChannel(Channel):
                 if attempt >= policy.max_retries:
                     break
                 delay = min(
-                    policy.base_delay_seconds * (policy.exponential_base ** attempt),
+                    policy.base_delay_seconds * (policy.exponential_base**attempt),
                     policy.max_delay_seconds,
                 )
                 logger.warning(
@@ -542,7 +550,7 @@ class AIChannel(Channel):
                 if attempt >= policy.max_retries:
                     break
                 delay = min(
-                    policy.base_delay_seconds * (policy.exponential_base ** attempt),
+                    policy.base_delay_seconds * (policy.exponential_base**attempt),
                     policy.max_delay_seconds,
                 )
                 logger.warning(
@@ -610,10 +618,7 @@ class AIChannel(Channel):
         summary_text = "\n".join(summary_parts)
         summary_msg = AIMessage(
             role="user",
-            content=(
-                "[Context compacted — earlier conversation summary]\n"
-                f"{summary_text}"
-            ),
+            content=(f"[Context compacted — earlier conversation summary]\n{summary_text}"),
         )
 
         return context.model_copy(update={"messages": [summary_msg] + recent_messages})
