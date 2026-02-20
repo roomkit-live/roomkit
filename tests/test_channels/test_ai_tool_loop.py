@@ -37,25 +37,25 @@ def _final_response(content: str = "Done") -> AIResponse:
 class TestToolLoopTimeout:
     async def test_loop_stops_at_deadline(self) -> None:
         """Tool loop breaks when timeout is exceeded."""
-        # Provider always returns tool calls — only timeout can stop it
-        provider = MockAIProvider(ai_responses=[_tool_response()] * 100)
+        max_rounds = 200
+        provider = MockAIProvider(ai_responses=[_tool_response()] * max_rounds)
         handler = AsyncMock(return_value="ok")
         ch = AIChannel(
             "ai1",
             provider=provider,
             tool_handler=handler,
-            max_tool_rounds=200,
-            tool_loop_timeout_seconds=0.05,  # very short timeout
+            max_tool_rounds=max_rounds,
+            tool_loop_timeout_seconds=0.05,
         )
 
         # Patch event loop time so it jumps past the deadline after first round
         original_time = asyncio.get_event_loop().time
-        call_count = 0
+        time_call_count = 0
 
         def advancing_time() -> float:
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 1:
+            nonlocal time_call_count
+            time_call_count += 1
+            if time_call_count <= 1:
                 return original_time()
             # After first call, return a time well past the deadline
             return original_time() + 1000
@@ -64,7 +64,8 @@ class TestToolLoopTimeout:
         with patch.object(asyncio.get_event_loop(), "time", advancing_time):
             await ch._run_tool_loop(context)
 
-        # Should have stopped early due to timeout (not all 200 rounds)
+        # Timeout must have stopped the loop — far fewer than max_tool_rounds
+        assert handler.call_count < max_rounds
         assert handler.call_count <= 2
 
     async def test_no_timeout_when_none(self) -> None:
@@ -77,7 +78,7 @@ class TestToolLoopTimeout:
             provider=provider,
             tool_handler=handler,
             max_tool_rounds=200,
-            tool_loop_timeout_seconds=None,  # no timeout
+            tool_loop_timeout_seconds=None,
         )
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
@@ -85,6 +86,40 @@ class TestToolLoopTimeout:
 
         assert response.content == "Done"
         assert handler.call_count == 2
+
+    async def test_timeout_before_any_tool_response(self) -> None:
+        """Timeout fires on first round — loop returns partial with no tool results."""
+        max_rounds = 200
+        provider = MockAIProvider(ai_responses=[_tool_response()] * max_rounds)
+        handler = AsyncMock(return_value="ok")
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_handler=handler,
+            max_tool_rounds=max_rounds,
+            tool_loop_timeout_seconds=0.001,
+        )
+
+        # Immediately past deadline from the very first time check
+        original_time = asyncio.get_event_loop().time
+        call_count = 0
+
+        def already_expired() -> float:
+            nonlocal call_count
+            call_count += 1
+            # First call sets the deadline; immediately return far future
+            if call_count <= 1:
+                return original_time()
+            return original_time() + 99999
+
+        context = AIContext(messages=[AIMessage(role="user", content="go")])
+        with patch.object(asyncio.get_event_loop(), "time", already_expired):
+            response = await ch._run_tool_loop(context)
+
+        # At most 1 round completes (the one in-flight when timeout is checked)
+        assert handler.call_count <= 1
+        # Response should exist (may be partial or timeout message)
+        assert response is not None
 
     async def test_loop_completes_current_round_before_timeout(self) -> None:
         """Timeout check happens after round finishes, not mid-tool-execution."""
@@ -118,7 +153,6 @@ class TestToolLoopWarning:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Warning is logged at tool_loop_warn_after rounds."""
-        # Build responses: warn_after tool rounds + 1 final
         warn_after = 3
         responses = [_tool_response()] * (warn_after + 1) + [_final_response()]
         provider = MockAIProvider(ai_responses=responses)
@@ -137,9 +171,13 @@ class TestToolLoopWarning:
             await ch._run_tool_loop(context)
 
         warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-        assert any(f"reached {warn_after} rounds" in m for m in warning_msgs)
+        assert any(
+            f"reached {warn_after} rounds, still running" in m for m in warning_msgs
+        ), f"Expected exact warning format, got: {warning_msgs}"
 
-    async def test_no_warning_below_threshold(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_no_warning_below_threshold(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """No warning when loop finishes before warn_after."""
         responses = [_tool_response(), _final_response()]
         provider = MockAIProvider(ai_responses=responses)
@@ -158,12 +196,11 @@ class TestToolLoopWarning:
             await ch._run_tool_loop(context)
 
         warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-        assert not any("reached" in m and "rounds" in m for m in warning_msgs)
+        assert not any("still running" in m for m in warning_msgs)
 
     async def test_hard_cap_terminates_loop(self) -> None:
         """Loop stops at max_tool_rounds even if model keeps requesting tools."""
         max_rounds = 3
-        # All responses have tool calls — only cap stops the loop
         provider = MockAIProvider(ai_responses=[_tool_response()] * (max_rounds + 5))
         handler = AsyncMock(return_value="ok")
         ch = AIChannel(
@@ -177,22 +214,22 @@ class TestToolLoopWarning:
         context = AIContext(messages=[AIMessage(role="user", content="go")])
         await ch._run_tool_loop(context)
 
-        # max_tool_rounds tool executions + initial generate + max_tool_rounds re-generates
         assert handler.call_count == max_rounds
 
 
 class TestParallelToolExecution:
     async def test_tools_run_concurrently(self) -> None:
-        """Multiple tool calls in a single round execute concurrently."""
+        """Multiple tool calls in a single round interleave execution."""
         execution_order: list[str] = []
 
         async def handler(name: str, args: dict) -> str:
             execution_order.append(f"start:{name}")
-            await asyncio.sleep(0)  # yield control
+            # Yield control — if sequential, all starts would come before
+            # any ends. With gather, starts interleave with ends.
+            await asyncio.sleep(0)
             execution_order.append(f"end:{name}")
             return f"result:{name}"
 
-        # Provider returns 2 tool calls in one round, then final
         multi_tool_response = AIResponse(
             content="",
             tool_calls=[
@@ -212,10 +249,15 @@ class TestParallelToolExecution:
         context = AIContext(messages=[AIMessage(role="user", content="go")])
         response = await ch._run_tool_loop(context)
 
-        # Both tools should have executed
-        assert "start:tool_a" in execution_order
-        assert "start:tool_b" in execution_order
         assert response.content == "Done"
+        assert len(execution_order) == 4
+        # With asyncio.gather + sleep(0), both starts happen before ends
+        # because gather launches all coroutines, they each hit sleep(0)
+        # and yield, then they each complete.
+        assert execution_order[0].startswith("start:")
+        assert execution_order[1].startswith("start:")
+        assert execution_order[2].startswith("end:")
+        assert execution_order[3].startswith("end:")
 
     async def test_tool_failure_isolation(self) -> None:
         """One tool failing doesn't prevent others from completing."""
@@ -245,13 +287,16 @@ class TestParallelToolExecution:
         await ch._run_tool_loop(context)
 
         # Messages: [0]=user "go", [1]=assistant (tool calls), [2]=tool (results)
+        assert context.messages[1].role == "assistant"
         tool_msg = context.messages[2]
         assert tool_msg.role == "tool"
         results = tool_msg.content
         assert len(results) == 2
         # Good tool succeeds
+        assert results[0].name == "good_tool"
         assert results[0].result == "ok"
         # Bad tool has error message
+        assert results[1].name == "bad_tool"
         assert "Error executing tool" in results[1].result
         assert "Tool exploded" in results[1].result
 
@@ -268,14 +313,27 @@ class TestToolResultTruncation:
         """Results over the limit are truncated with start/end preserved."""
         provider = MockAIProvider()
         ch = AIChannel("ai1", provider=provider)
-        # Create a very large result (>120K chars = >30K estimated tokens)
-        large = "x" * 200_000
+        max_chars = ch._MAX_TOOL_RESULT_TOKENS * 4
+        half = max_chars // 2
+        # Create a result that's well over the limit
+        large = "x" * (max_chars + 40_000)
         truncated = ch._maybe_truncate_result(large)
 
         assert len(truncated) < len(large)
         assert "[... truncated" in truncated
-        assert truncated.startswith("x" * 100)
-        assert truncated.endswith("x" * 100)
+        # First half preserved
+        assert truncated[:half] == large[:half]
+        # Last half preserved
+        assert truncated.endswith(large[-half:])
+
+    def test_result_at_exact_limit_unchanged(self) -> None:
+        """Result exactly at the token limit is not truncated."""
+        provider = MockAIProvider()
+        ch = AIChannel("ai1", provider=provider)
+        # estimate_tokens = len // 4 + 1, so for 30_000 tokens: (30_000-1)*4 = 119_996 chars
+        chars = (ch._MAX_TOOL_RESULT_TOKENS - 1) * 4
+        result = "x" * chars
+        assert ch._maybe_truncate_result(result) == result
 
 
 class TestContextOverflowRecovery:
@@ -287,10 +345,10 @@ class TestContextOverflowRecovery:
             nonlocal call_count
             call_count += 1
             if call_count == 2:
-                # Second call overflows
-                raise ProviderError("context length exceeded", retryable=True, status_code=400)
+                raise ProviderError(
+                    "context length exceeded", retryable=True, status_code=400
+                )
             if call_count == 3:
-                # After compaction, succeeds
                 return _final_response("Recovered")
             return _tool_response()
 
@@ -305,7 +363,6 @@ class TestContextOverflowRecovery:
             tool_loop_timeout_seconds=None,
         )
 
-        # Seed context with enough messages for compaction
         context = AIContext(
             messages=[AIMessage(role="user", content=f"msg{i}") for i in range(10)]
         )
@@ -323,7 +380,9 @@ class TestContextOverflowRecovery:
             call_count += 1
             if call_count == 1:
                 return _tool_response("Thinking...")
-            raise ProviderError("Internal server error", retryable=False, status_code=500)
+            raise ProviderError(
+                "Internal server error", retryable=False, status_code=500
+            )
 
         provider = MockAIProvider()
         provider.generate = generate_failing  # type: ignore[assignment]
@@ -341,6 +400,39 @@ class TestContextOverflowRecovery:
 
         assert "Thinking..." in response.content
         assert "[Agent interrupted" in response.content
+
+    async def test_compaction_still_overflows_raises(self) -> None:
+        """When compaction doesn't help, error propagates."""
+        call_count = 0
+
+        async def always_overflow(context: AIContext) -> AIResponse:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _tool_response()
+            # Even after compaction, still overflows
+            raise ProviderError(
+                "context length exceeded", retryable=True, status_code=400
+            )
+
+        provider = MockAIProvider()
+        provider.generate = always_overflow  # type: ignore[assignment]
+        handler = AsyncMock(return_value="ok")
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_handler=handler,
+            max_tool_rounds=200,
+            tool_loop_timeout_seconds=None,
+        )
+
+        # Enough messages for compaction to work, but second generate
+        # still overflows — the compacted context is re-raised.
+        context = AIContext(
+            messages=[AIMessage(role="user", content=f"msg{i}") for i in range(10)]
+        )
+        with pytest.raises(ProviderError, match="context length exceeded"):
+            await ch._run_tool_loop(context)
 
     def test_is_context_overflow_matches_known_patterns(self) -> None:
         """_is_context_overflow detects known error messages."""
@@ -370,10 +462,15 @@ class TestContextOverflowRecovery:
         context = AIContext(messages=messages)
         compacted = await ch._compact_context(context)
 
-        # First message should be the summary
+        # First message is the summary
+        assert compacted.messages[0].role == "user"
         assert "[Context compacted" in compacted.messages[0].content
-        # Should have summary + second half (5 messages)
+        # Summary includes content from old messages
+        assert "msg0" in compacted.messages[0].content
+        # Second half preserved as-is
         assert len(compacted.messages) == 6  # 1 summary + 5 recent
+        assert compacted.messages[1].content == "msg5"
+        assert compacted.messages[-1].content == "msg9"
 
     async def test_compact_context_raises_when_too_few_messages(self) -> None:
         """_compact_context raises when <= 4 messages."""
@@ -384,6 +481,82 @@ class TestContextOverflowRecovery:
         context = AIContext(messages=messages)
         with pytest.raises(ProviderError, match="cannot compact further"):
             await ch._compact_context(context)
+
+
+class TestToolLoopContextAccumulation:
+    async def test_tool_results_appear_in_context_for_next_round(self) -> None:
+        """Each round's tool results are appended to context, visible to next generate."""
+        contexts_seen: list[int] = []
+
+        async def tracking_generate(context: AIContext) -> AIResponse:
+            # Record how many messages the provider sees on each call
+            contexts_seen.append(len(context.messages))
+            if len(contexts_seen) == 1:
+                return _tool_response(content="round1")
+            if len(contexts_seen) == 2:
+                return _tool_response(content="round2")
+            return _final_response("Done")
+
+        provider = MockAIProvider()
+        provider.generate = tracking_generate  # type: ignore[assignment]
+        handler = AsyncMock(return_value="tool result")
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_handler=handler,
+            max_tool_rounds=200,
+            tool_loop_timeout_seconds=None,
+        )
+
+        context = AIContext(messages=[AIMessage(role="user", content="go")])
+        response = await ch._run_tool_loop(context)
+
+        assert response.content == "Done"
+        # First call: 1 message (user "go")
+        assert contexts_seen[0] == 1
+        # Second call: 1 + 2 = 3 (user + assistant[tool_calls] + tool[results])
+        assert contexts_seen[1] == 3
+        # Third call: 3 + 2 = 5 (prev + assistant[tool_calls] + tool[results])
+        assert contexts_seen[2] == 5
+        # Final context has all messages
+        assert len(context.messages) == 5
+        assert context.messages[1].role == "assistant"
+        assert context.messages[2].role == "tool"
+        assert context.messages[3].role == "assistant"
+        assert context.messages[4].role == "tool"
+
+    async def test_tool_results_content_matches_handler_output(self) -> None:
+        """Tool result parts contain the actual handler return values."""
+
+        async def handler(name: str, args: dict) -> str:
+            return f"result_for_{name}"
+
+        multi_tool_response = AIResponse(
+            content="",
+            tool_calls=[
+                AIToolCall(id="tc1", name="alpha", arguments={}),
+                AIToolCall(id="tc2", name="beta", arguments={}),
+            ],
+        )
+        provider = MockAIProvider(ai_responses=[multi_tool_response, _final_response()])
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_handler=handler,
+            max_tool_rounds=200,
+            tool_loop_timeout_seconds=None,
+        )
+
+        context = AIContext(messages=[AIMessage(role="user", content="go")])
+        await ch._run_tool_loop(context)
+
+        tool_msg = context.messages[2]
+        assert tool_msg.role == "tool"
+        results = tool_msg.content
+        # Results match handler output, keyed by tool name
+        result_map = {r.name: r.result for r in results}
+        assert result_map["alpha"] == "result_for_alpha"
+        assert result_map["beta"] == "result_for_beta"
 
 
 class TestExtractAccumulatedText:
@@ -403,7 +576,10 @@ class TestExtractAccumulatedText:
         messages = [
             AIMessage(
                 role="assistant",
-                content=[AITextPart(text="part1"), AIToolCallPart(id="x", name="t", arguments={})],
+                content=[
+                    AITextPart(text="part1"),
+                    AIToolCallPart(id="x", name="t", arguments={}),
+                ],
             ),
         ]
         result = AIChannel._extract_accumulated_text(messages)

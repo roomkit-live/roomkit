@@ -168,8 +168,8 @@ class TestBudgetAwareMemory:
         result = await mem.retrieve("r1", event, ctx)
 
         assert len(result.events) < 10
-        # Should keep most recent events
-        assert result.events[-1] is events[-1]
+        # Should keep most recent events (value equality, not identity)
+        assert result.events[-1] == events[-1]
 
     async def test_respects_min_events_floor(self) -> None:
         """Always keeps at least min_events even when over budget."""
@@ -240,8 +240,9 @@ class TestBudgetAwareMemory:
         event = make_event(body="current")
         result = await mem.retrieve("r1", event, ctx)
 
-        # Should keep ~8 events (8500 / 1001 ≈ 8.49)
-        assert len(result.events) <= 9
+        # Each event is ~1001 tokens (4000 chars // 4 + 1).
+        # Budget = 10000 * 0.85 = 8500.  8 events = 8008 tokens (fits), 9 = 9009 (over).
+        assert len(result.events) == 8
 
 
 class TestCompactingMemory:
