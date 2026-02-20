@@ -32,6 +32,7 @@ from roomkit.models.event import (
     RoomEvent,
     TextContent,
 )
+from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
@@ -48,6 +49,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.noop import NoopTelemetryProvider
+from roomkit.tools.policy import ToolPolicy
 
 if TYPE_CHECKING:
     from roomkit.skills.executor import ScriptExecutor
@@ -95,6 +97,7 @@ class AIChannel(Channel):
         skills: SkillRegistry | None = None,
         script_executor: ScriptExecutor | None = None,
         memory: MemoryProvider | None = None,
+        tool_policy: ToolPolicy | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._provider = provider
@@ -110,6 +113,7 @@ class AIChannel(Channel):
         self._skills = skills
         self._script_executor = script_executor
         self._memory = memory or SlidingWindowMemory(max_events=max_context_events)
+        self._tool_policy = tool_policy
 
         # Wrap the user's tool handler with skill-aware dispatch
         self._user_tool_handler = tool_handler
@@ -121,6 +125,18 @@ class AIChannel(Channel):
 
         # Extra tools injected by orchestration (e.g. HANDOFF_TOOL)
         self._extra_tools: list[AITool] = []
+
+        # Skill gating: tools gated until their skill is activated
+        self._activated_skills: set[str] = set()
+        # Unfiltered tools from _build_context (used to re-apply gating)
+        self._all_context_tools: list[AITool] = []
+
+        # Role-based tool policy: set per on_event from participant lookup
+        self._current_participant_role: str | None = None
+
+        # Steering: mid-run interaction (inject messages, cancel, update prompt)
+        self._steering_queue: asyncio.Queue[SteeringDirective] = asyncio.Queue()
+        self._cancel_event: asyncio.Event = asyncio.Event()
 
     @property
     def tool_handler(self) -> ToolHandler | None:
@@ -141,6 +157,50 @@ class AIChannel(Channel):
         telemetry = getattr(self, "_telemetry", None)
         if telemetry is not None:
             self._provider._telemetry = telemetry
+
+    # -- Steering (mid-run interaction) ----------------------------------------
+
+    def steer(self, directive: SteeringDirective) -> None:
+        """Enqueue a steering directive for the active tool loop.
+
+        Safe to call from any coroutine. Cancel directives also set the
+        fast-path cancel event so the loop can exit without waiting for
+        the next drain point.
+        """
+        self._steering_queue.put_nowait(directive)
+        if isinstance(directive, Cancel):
+            self._cancel_event.set()
+
+    def _drain_steering_queue(self, context: AIContext) -> tuple[AIContext, bool]:
+        """Drain all pending steering directives, applying them to *context*.
+
+        Returns:
+            (updated_context, should_cancel)
+        """
+        should_cancel = False
+        while not self._steering_queue.empty():
+            try:
+                directive = self._steering_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+            if isinstance(directive, Cancel):
+                logger.info("Steering: cancel received — %s", directive.reason)
+                should_cancel = True
+            elif isinstance(directive, InjectMessage):
+                logger.info("Steering: injecting %s message", directive.role)
+                context.messages.append(
+                    AIMessage(role=directive.role, content=directive.content)
+                )
+            elif isinstance(directive, UpdateSystemPrompt):
+                logger.info("Steering: appending to system prompt")
+                context = context.model_copy(
+                    update={
+                        "system_prompt": (context.system_prompt or "") + directive.append
+                    }
+                )
+
+        return context, should_cancel
 
     async def close(self) -> None:
         """Close the channel, its provider, and the memory provider."""
@@ -178,6 +238,9 @@ class AIChannel(Channel):
         """
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
+
+        # Resolve participant role for role-based tool policy
+        self._current_participant_role = self._resolve_participant_role(event, context)
 
         raw_tools = binding.metadata.get("tools", [])
         has_tools = (
@@ -221,6 +284,12 @@ class AIChannel(Channel):
 
     async def _run_streaming_tool_loop(self, context: AIContext) -> AsyncIterator[str]:
         """Stream text deltas, executing tool calls between generation rounds."""
+        self._activated_skills = set()
+        self._cancel_event.clear()
+        # Apply pre-queued directives (e.g. cancel enqueued before loop started)
+        context, should_cancel = self._drain_steering_queue(context)
+        if should_cancel:
+            return
         telemetry = self._telemetry_provider
         deadline = (
             asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
@@ -229,6 +298,17 @@ class AIChannel(Channel):
         )
 
         for _round_idx in range(self._max_tool_rounds + 1):
+            # Steering checkpoint 1: fast-path cancel before generate
+            if self._cancel_event.is_set():
+                logger.info("Streaming tool loop cancelled before round %d", _round_idx)
+                return
+
+            # Re-apply gating so newly-activated skills expose their tools
+            if self._all_context_tools:
+                context = context.model_copy(
+                    update={"tools": self._apply_tool_filters(self._all_context_tools)}
+                )
+
             text_parts: list[str] = []
             tool_calls: list[StreamToolCall] = []
 
@@ -290,6 +370,12 @@ class AIChannel(Channel):
                     f'\n<invoke name="{tc.name}"></invoke>'
                     f"\n<result>{rp.result}</result>\n"
                 )
+
+            # Steering checkpoint 2: drain queue after tool execution
+            context, should_cancel = self._drain_steering_queue(context)
+            if should_cancel:
+                logger.info("Streaming tool loop cancelled after round %d", _round_idx)
+                return
 
     @property
     def _telemetry_provider(self) -> NoopTelemetryProvider:
@@ -382,6 +468,12 @@ class AIChannel(Channel):
         self, context: AIContext, *, parent_span_id: str | None = None
     ) -> AIResponse:
         """Generate → execute tools → re-generate until a text response."""
+        self._activated_skills = set()
+        self._cancel_event.clear()
+        # Apply pre-queued directives (e.g. cancel enqueued before loop started)
+        context, should_cancel = self._drain_steering_queue(context)
+        if should_cancel:
+            return AIResponse(content="", tool_calls=[])
         response: AIResponse = await self._generate_with_retry(context)
         telemetry = self._telemetry_provider
         deadline = (
@@ -392,6 +484,11 @@ class AIChannel(Channel):
 
         for round_idx in range(self._max_tool_rounds):
             if not response.tool_calls or self._tool_handler is None:
+                break
+
+            # Steering checkpoint 1: fast-path cancel before generate
+            if self._cancel_event.is_set():
+                logger.info("Tool loop cancelled before round %d", round_idx)
                 break
 
             # Timeout check (after current round finishes)
@@ -427,6 +524,18 @@ class AIChannel(Channel):
             )
             context.messages.append(AIMessage(role="tool", content=result_parts))
 
+            # Steering checkpoint 2: drain queue after tool execution
+            context, should_cancel = self._drain_steering_queue(context)
+            if should_cancel:
+                logger.info("Tool loop cancelled after round %d", round_idx)
+                break
+
+            # Re-apply gating so newly-activated skills expose their tools
+            if self._all_context_tools:
+                context = context.model_copy(
+                    update={"tools": self._apply_tool_filters(self._all_context_tools)}
+                )
+
             # Re-generate with tool results (with retry)
             try:
                 response = await self._generate_with_retry(context)
@@ -459,6 +568,37 @@ class AIChannel(Channel):
 
         async def _run_one(tc: Any) -> AIToolResultPart:
             logger.info("Executing tool: %s(%s)", tc.name, tc.id)
+
+            # Execution guard: policy deny (defense-in-depth, role-aware)
+            effective_policy = self._effective_tool_policy
+            if (
+                tc.name not in self._SKILL_INFRA_TOOLS
+                and effective_policy
+                and not effective_policy.is_allowed(tc.name)
+            ):
+                logger.warning("Tool %s blocked by policy", tc.name)
+                return AIToolResultPart(
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                    result=json.dumps({
+                        "error": f"Tool '{tc.name}' is not permitted by the agent's tool policy."
+                    }),
+                )
+
+            # Execution guard: skill gating
+            if tc.name not in self._SKILL_INFRA_TOOLS and tc.name in self._gated_tool_names:
+                logger.warning("Tool %s blocked by skill gating", tc.name)
+                return AIToolResultPart(
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                    result=json.dumps({
+                        "error": (
+                            f"Tool '{tc.name}' is gated by a skill. "
+                            "Activate the skill first using activate_skill."
+                        ),
+                    }),
+                )
+
             tool_span_id = telemetry.start_span(
                 SpanKind.LLM_TOOL_CALL,
                 f"tool.{tc.name}",
@@ -647,6 +787,73 @@ class AIChannel(Channel):
         truncated = estimated - self._MAX_TOOL_RESULT_TOKENS
         return result[:half] + f"\n\n[... truncated ~{truncated} tokens ...]\n\n" + result[-half:]
 
+    # -- Role-based tool policy -------------------------------------------------
+
+    def _resolve_participant_role(
+        self, event: RoomEvent, context: RoomContext
+    ) -> str | None:
+        """Look up the participant role for the event source."""
+        pid = event.source.participant_id
+        if not pid:
+            return None
+        for p in context.participants:
+            if p.id == pid:
+                return p.role
+        return None
+
+    @property
+    def _effective_tool_policy(self) -> ToolPolicy | None:
+        """Return the tool policy resolved for the current participant role."""
+        if self._tool_policy is None:
+            return None
+        return self._tool_policy.resolve(self._current_participant_role)
+
+    # -- Tool policy / skill gating helpers ------------------------------------
+
+    # Skill infrastructure tool names — never filtered by policy or gating
+    _SKILL_INFRA_TOOLS = frozenset({
+        _TOOL_ACTIVATE_SKILL,
+        _TOOL_READ_REFERENCE,
+        _TOOL_RUN_SCRIPT,
+    })
+
+    @property
+    def _gated_tool_names(self) -> set[str]:
+        """Collect tool names gated by skills that have NOT been activated yet."""
+        if not self._skills:
+            return set()
+        gated: set[str] = set()
+        for meta in self._skills.all_metadata():
+            if meta.name in self._activated_skills:
+                continue
+            gated.update(meta.gated_tool_names)
+        return gated
+
+    def _apply_tool_filters(self, tools: list[AITool]) -> list[AITool]:
+        """Apply tool policy and skill gating to a list of tools.
+
+        Skill infrastructure tools (activate_skill, read_reference, run_script)
+        are *never* filtered — they must always remain visible.
+
+        Uses ``_effective_tool_policy`` which incorporates role-based overrides.
+        """
+        gated = self._gated_tool_names
+        policy = self._effective_tool_policy
+        result: list[AITool] = []
+        for tool in tools:
+            # Skill infra tools always pass
+            if tool.name in self._SKILL_INFRA_TOOLS:
+                result.append(tool)
+                continue
+            # Tool policy filter (role-aware)
+            if policy and not policy.is_allowed(tool.name):
+                continue
+            # Skill gating filter
+            if tool.name in gated:
+                continue
+            result.append(tool)
+        return result
+
     # -- Context building -------------------------------------------------------
 
     async def _build_context(
@@ -679,7 +886,7 @@ class AIChannel(Channel):
         # Inject extra tools (orchestration handoff, etc.)
         tools.extend(self._extra_tools)
 
-        # Inject skill tools and prompt
+        # Inject skill tools and prompt (infra tools added here, gated tools later)
         if self._skills and self._skills.skill_count > 0:
             tools.extend(self._skill_tools())
             preamble = _SKILLS_PREAMBLE
@@ -688,6 +895,12 @@ class AIChannel(Channel):
             skills_xml = self._skills.to_prompt_xml()
             skill_block = f"\n\n{preamble}\n\n{skills_xml}"
             system_prompt = (system_prompt or "") + skill_block
+
+        # Store unfiltered tool list for re-application after skill activation
+        self._all_context_tools = list(tools)
+
+        # Apply tool policy + skill gating visibility filters
+        tools = self._apply_tool_filters(tools)
 
         # Retrieve memory
         memory_result = await self._memory.retrieve(
@@ -907,7 +1120,7 @@ class AIChannel(Channel):
         return json.dumps({"error": f"Unknown tool: {name}"})
 
     async def _handle_activate_skill(self, arguments: dict[str, Any]) -> str:
-        """Load and return full skill instructions."""
+        """Load and return full skill instructions, tracking activation for gating."""
         skill_name = arguments.get("name", "")
         if not self._skills:
             return json.dumps({"error": "No skills registry configured"})
@@ -921,6 +1134,9 @@ class AIChannel(Channel):
                     "available_skills": available,
                 }
             )
+
+        # Track activation so gated tools become visible on next round
+        self._activated_skills.add(skill_name)
 
         result: dict[str, Any] = {
             "name": skill.name,

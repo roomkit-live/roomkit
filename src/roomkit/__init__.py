@@ -100,6 +100,7 @@ from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
+from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
 from roomkit.models.task import Observation, Task
 from roomkit.models.trace import ProtocolTrace
 from roomkit.orchestration.handoff import (
@@ -266,6 +267,7 @@ from roomkit.telemetry import (
     TelemetryProvider,
 )
 from roomkit.tools.compose import compose_tool_handlers
+from roomkit.tools.policy import RoleOverride, ToolPolicy
 from roomkit.voice import (
     AudioChunk,
     AudioFrame,
@@ -653,8 +655,15 @@ __all__ = [
     "SpanKind",
     "TelemetryConfig",
     "TelemetryProvider",
+    # Steering
+    "Cancel",
+    "InjectMessage",
+    "SteeringDirective",
+    "UpdateSystemPrompt",
     # Tools
     "MCPToolProvider",
+    "RoleOverride",
+    "ToolPolicy",
     "compose_tool_handlers",
     # AI Docs
     "get_agents_md",
