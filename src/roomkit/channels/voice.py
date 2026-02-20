@@ -533,8 +533,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
     def _create_task(self, coro: Coroutine[Any, Any, Any], name: str) -> None:
         """Create and track an asyncio task (must be called on the event loop thread)."""
         task = asyncio.get_running_loop().create_task(coro, name=name)
-        self._scheduled_tasks.add(task)
         task.add_done_callback(self._task_done)
+        self._scheduled_tasks.add(task)
 
     def _task_done(self, task: asyncio.Task[Any]) -> None:
         """Done-callback for scheduled tasks: log exceptions and remove from set."""

@@ -53,6 +53,7 @@ class VoiceSTTMixin:
     _pending_turns: dict[str, list[TurnEntry]]
     _pending_audio: dict[str, bytearray]
     _debug_frame_count: int
+    _scheduled_tasks: set[asyncio.Task[Any]]
 
     # -- methods provided by other mixins / main class (TYPE_CHECKING only) --
     if TYPE_CHECKING:
@@ -79,6 +80,9 @@ class VoiceSTTMixin:
     # VAD-driven STT streaming
     # -----------------------------------------------------------------
 
+    # Safety cap: ~2MB — prevents unbounded memory growth if flush fails
+    _MAX_STT_BUFFER_BYTES = 10 * 6400  # 10x normal buffer (~2MB at 16kHz mono 16-bit)
+
     def _on_pipeline_speech_frame(self, session: VoiceSession, frame: AudioFrame) -> None:
         """Handle processed audio frame during speech — feed to STT stream.
 
@@ -94,6 +98,10 @@ class VoiceSTTMixin:
         stream_state.frame_buffer.extend(frame.data)
         stream_state.frame_buffer_rate = frame.sample_rate
         if len(stream_state.frame_buffer) >= _STT_STREAM_BUFFER_BYTES:
+            self._flush_stt_buffer(stream_state, session.id)
+        # Safety cap: if buffer exceeds max, force flush + warn
+        if len(stream_state.frame_buffer) >= self._MAX_STT_BUFFER_BYTES:
+            logger.warning("STT buffer overflow for session %s, forcing flush", session.id)
             self._flush_stt_buffer(stream_state, session.id)
 
     def _flush_stt_buffer(self, state: _STTStreamState, session_id: str) -> None:
@@ -179,6 +187,8 @@ class VoiceSTTMixin:
         try:
             loop = asyncio.get_running_loop()
             state.task = loop.create_task(consume(state), name=f"stt_stream:{session.id}")
+            state.task.add_done_callback(self._task_done)  # type: ignore[attr-defined]
+            self._scheduled_tasks.add(state.task)
         except RuntimeError:
             self._stt_streams.pop(session.id, None)
 
@@ -431,6 +441,8 @@ class VoiceSTTMixin:
             state.task = loop.create_task(
                 run_continuous(state), name=f"continuous_stt:{session.id}"
             )
+            state.task.add_done_callback(self._task_done)  # type: ignore[attr-defined]
+            self._scheduled_tasks.add(state.task)
         except RuntimeError:
             self._stt_streams.pop(session.id, None)
 

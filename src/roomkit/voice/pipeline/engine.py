@@ -693,6 +693,10 @@ class AudioPipeline:
         # End any active speech segment span (session ended mid-speech)
         self._end_segment_span(session.id)
         self._parent_spans.pop(session.id, None)
+        self._last_speaker_id.pop(session.id, None)
+        # Clean up telemetry dicts that _end_segment_span may not fully clean
+        self._segment_stage_timings.pop(session.id, None)
+        self._segment_frame_counts.pop(session.id, None)
 
         # Close debug taps
         dt = self._debug_tap_sessions.pop(session.id, None)

@@ -288,8 +288,8 @@ class HelpersMixin:
 
         with contextlib.suppress(RuntimeError):
             task = asyncio.get_running_loop().create_task(self._fire_trace_hook(trace, room_id))
-            self._pending_hook_tasks.add(task)
             task.add_done_callback(self._pending_hook_tasks.discard)
+            self._pending_hook_tasks.add(task)
 
     def _resolve_trace_room(self, trace: object) -> str | None:
         """Try to resolve a room_id for a trace via the originating channel."""

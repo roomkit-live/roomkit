@@ -38,7 +38,7 @@ class InMemoryRealtime(RealtimeBackend):
         if self._closed:
             return
 
-        sub_ids = self._channels.get(channel, set())
+        sub_ids = set(self._channels.get(channel, set()))
         for sub_id in sub_ids:
             sub = self._subscriptions.get(sub_id)
             if sub is not None:
@@ -148,11 +148,16 @@ class _Subscription:
         """Background task that drains the queue and invokes callbacks."""
         while not self._stopped:
             await self._event.wait()
-            self._event.clear()
-
+            # Drain all queued events before clearing the wakeup flag.
+            # Clearing after drain (with re-check) prevents lost wakeups
+            # when a publish() calls event.set() between the last popitem()
+            # and the clear().
             while self._queue and not self._stopped:
+                self._event.clear()
                 _, event = self._queue.popitem(last=False)
                 try:
                     await self.callback(event)
                 except Exception:
                     logger.exception("Error in realtime callback for subscription %s", self.sub_id)
+            if not self._queue:
+                self._event.clear()

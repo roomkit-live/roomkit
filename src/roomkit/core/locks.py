@@ -57,6 +57,7 @@ class InMemoryLockManager(RoomLockManager):
         self._locks: OrderedDict[str, asyncio.Lock] = OrderedDict()
         self._refcounts: dict[str, int] = {}
         self._max_locks = max_locks
+        self._mgr_lock = asyncio.Lock()
 
     def _get_lock(self, room_id: str) -> asyncio.Lock:
         if room_id in self._locks:
@@ -100,7 +101,8 @@ class InMemoryLockManager(RoomLockManager):
             yield
             return
 
-        lock = self._get_lock(room_id)
+        async with self._mgr_lock:
+            lock = self._get_lock(room_id)
         try:
             async with lock:
                 token = _held_rooms.set(held | frozenset({room_id}))
@@ -109,7 +111,8 @@ class InMemoryLockManager(RoomLockManager):
                 finally:
                     _held_rooms.reset(token)
         finally:
-            self._release_ref(room_id)
+            async with self._mgr_lock:
+                self._release_ref(room_id)
 
     @property
     def size(self) -> int:

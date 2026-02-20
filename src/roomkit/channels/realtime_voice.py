@@ -205,11 +205,13 @@ class RealtimeVoiceChannel(Channel):
     @property
     def session_rooms(self) -> dict[str, str]:
         """Mapping of session_id to room_id."""
-        return self._session_rooms
+        with self._state_lock:
+            return dict(self._session_rooms)
 
     def get_room_sessions(self, room_id: str) -> list[VoiceSession]:
         """Get all active sessions for a room."""
-        return [s for s in self._sessions.values() if self._session_rooms.get(s.id) == room_id]
+        with self._state_lock:
+            return [s for s in self._sessions.values() if self._session_rooms.get(s.id) == room_id]
 
     @property
     def tool_handler(self) -> ToolHandler | None:
@@ -230,7 +232,8 @@ class RealtimeVoiceChannel(Channel):
         """
         from roomkit.telemetry.context import set_current_span
 
-        parent = self._session_spans.get(session_id)
+        with self._state_lock:
+            parent = self._session_spans.get(session_id)
         token = set_current_span(parent) if parent else None
         return parent, token
 
@@ -269,7 +272,8 @@ class RealtimeVoiceChannel(Channel):
         """Resolve room_id from realtime session mappings."""
         if session_id is None:
             return None
-        return self._session_rooms.get(session_id)
+        with self._state_lock:
+            return self._session_rooms.get(session_id)
 
     @property
     def provider_name(self) -> str | None:
@@ -446,7 +450,8 @@ class RealtimeVoiceChannel(Channel):
         Args:
             session: The session to end.
         """
-        room_id = self._session_rooms.get(session.id, session.room_id)
+        with self._state_lock:
+            room_id = self._session_rooms.get(session.id, session.room_id)
 
         # Disconnect provider and transport
         try:
@@ -465,23 +470,26 @@ class RealtimeVoiceChannel(Channel):
             self._session_rooms.pop(session.id, None)
             self._session_bindings.pop(session.id, None)
             self._audio_generation.pop(session.id, None)
-        self._session_transport_rates.pop(session.id, None)
-        self._audio_forward_count.pop(session.id, None)
+            self._session_transport_rates.pop(session.id, None)
+            self._audio_forward_count.pop(session.id, None)
+            turn_span_id = self._turn_spans.pop(session.id, None)
+            session_span_id = self._session_spans.pop(session.id, None)
+            resamplers = self._session_resamplers.pop(session.id, None)
 
         # End any active turn span, then the session span
         telemetry = self._telemetry_provider
-        turn_span_id = self._turn_spans.pop(session.id, None)
         if turn_span_id:
             telemetry.end_span(turn_span_id)
-        session_span_id = self._session_spans.pop(session.id, None)
         if session_span_id:
             telemetry.end_span(session_span_id)
             telemetry.flush()
 
-        resamplers = self._session_resamplers.pop(session.id, None)
         if resamplers:
-            resamplers[0].close()
-            resamplers[1].close()
+            for r in resamplers:
+                try:
+                    r.close()
+                except Exception:
+                    logger.exception("Error closing resampler for session %s", session.id)
 
         # Fire framework event
         if self._framework:
@@ -666,7 +674,9 @@ class RealtimeVoiceChannel(Channel):
     async def close(self) -> None:
         """End all sessions and close provider + transport."""
         # End all active sessions
-        for session in list(self._sessions.values()):
+        with self._state_lock:
+            sessions = list(self._sessions.values())
+        for session in sessions:
             try:
                 await self.end_session(session)
             except Exception:
@@ -713,8 +723,8 @@ class RealtimeVoiceChannel(Channel):
     ) -> asyncio.Task[Any]:
         """Create a tracked asyncio task with automatic cleanup and error logging."""
         task = loop.create_task(coro, name=name)
-        self._scheduled_tasks.add(task)
         task.add_done_callback(self._task_done)
+        self._scheduled_tasks.add(task)
         return task
 
     def _task_done(self, task: asyncio.Task[Any]) -> None:
@@ -751,14 +761,15 @@ class RealtimeVoiceChannel(Channel):
         if session.state != VoiceSessionState.ACTIVE:
             return
         # Enforce ChannelBinding.access and muted per RFC §7.5
-        binding = self._session_bindings.get(session.id)
+        with self._state_lock:
+            binding = self._session_bindings.get(session.id)
+            resamplers = self._session_resamplers.get(session.id)
+            transport_rate = self._session_transport_rates.get(session.id)
         if binding is not None and (
             binding.access in (Access.READ_ONLY, Access.NONE) or binding.muted
         ):
             return
         try:
-            resamplers = self._session_resamplers.get(session.id)
-            transport_rate = self._session_transport_rates.get(session.id)
             if resamplers and transport_rate and transport_rate != self._input_sample_rate:
                 from roomkit.voice.audio_frame import AudioFrame
 
@@ -800,12 +811,17 @@ class RealtimeVoiceChannel(Channel):
         Each task captures the current generation counter so that tasks
         created before an interrupt are silently discarded.
         """
-        self._audio_forward_count[session.id] = self._audio_forward_count.get(session.id, 0) + 1
-        audio = self._resample_outbound(session, audio)
+        with self._state_lock:
+            resamplers = self._session_resamplers.get(session.id)
+            transport_rate = self._session_transport_rates.get(session.id)
+            gen = self._audio_generation.get(session.id, 0)
+        audio = self._resample_outbound_with(audio, resamplers, transport_rate)
         if not audio:
             return
         with self._state_lock:
-            gen = self._audio_generation.get(session.id, 0)
+            self._audio_forward_count[session.id] = (
+                self._audio_forward_count.get(session.id, 0) + 1
+            )
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -818,7 +834,9 @@ class RealtimeVoiceChannel(Channel):
 
     async def _send_outbound_audio(self, session: VoiceSession, audio: bytes, gen: int) -> None:
         """Send audio to transport, skipping if the generation is stale."""
-        if self._audio_generation.get(session.id, 0) != gen:
+        with self._state_lock:
+            current_gen = self._audio_generation.get(session.id, 0)
+        if current_gen != gen:
             return
         await self._transport.send_audio(session, audio)
         # Fallback: fire output level at queue-insertion time for transports
@@ -843,8 +861,18 @@ class RealtimeVoiceChannel(Channel):
 
     def _resample_outbound(self, session: VoiceSession, audio: bytes) -> bytes:
         """Resample outbound audio from provider rate to transport rate."""
-        resamplers = self._session_resamplers.get(session.id)
-        transport_rate = self._session_transport_rates.get(session.id)
+        with self._state_lock:
+            resamplers = self._session_resamplers.get(session.id)
+            transport_rate = self._session_transport_rates.get(session.id)
+        return self._resample_outbound_with(audio, resamplers, transport_rate)
+
+    def _resample_outbound_with(
+        self,
+        audio: bytes,
+        resamplers: tuple[Any, Any] | None,
+        transport_rate: int | None,
+    ) -> bytes:
+        """Resample outbound audio using pre-snapshotted resamplers/rate."""
         if resamplers and transport_rate and transport_rate != self._output_sample_rate:
             from roomkit.voice.audio_frame import AudioFrame
 
@@ -884,7 +912,8 @@ class RealtimeVoiceChannel(Channel):
         if not self._framework:
             return
 
-        room_id = self._session_rooms.get(session.id)
+        with self._state_lock:
+            room_id = self._session_rooms.get(session.id)
         if not room_id:
             return
 
@@ -994,9 +1023,9 @@ class RealtimeVoiceChannel(Channel):
         # Bump generation — pending tasks with the old generation will skip
         with self._state_lock:
             self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
+            resamplers = self._session_resamplers.get(session.id)
 
         # Discard outbound resampler state so stale audio doesn't leak
-        resamplers = self._session_resamplers.get(session.id)
         if resamplers:
             resamplers[1].reset()
 
@@ -1029,7 +1058,8 @@ class RealtimeVoiceChannel(Channel):
         if not self._framework:
             return
 
-        room_id = self._session_rooms.get(session.id)
+        with self._state_lock:
+            room_id = self._session_rooms.get(session.id)
         if not room_id:
             return
 
@@ -1105,17 +1135,18 @@ class RealtimeVoiceChannel(Channel):
         If a ``tool_handler`` was provided, it is called directly.
         Otherwise, the ``ON_REALTIME_TOOL_CALL`` hook is fired.
         """
-        room_id = self._session_rooms.get(session.id)
+        with self._state_lock:
+            room_id = self._session_rooms.get(session.id)
+            _rt_parent = self._session_spans.get(session.id)
+            parent = self._turn_spans.get(session.id) or _rt_parent
 
         from roomkit.telemetry.context import reset_span, set_current_span
 
         # Set session span context so hooks inside are parented correctly
-        _rt_parent = self._session_spans.get(session.id)
         _rt_tok = set_current_span(_rt_parent) if _rt_parent else None
 
         # Telemetry: tool call span (child of current turn span)
         telemetry = self._telemetry_provider
-        parent = self._turn_spans.get(session.id) or self._session_spans.get(session.id)
         tool_span_id = telemetry.start_span(
             SpanKind.REALTIME_TOOL_CALL,
             f"realtime_tool:{name}",
@@ -1251,8 +1282,9 @@ class RealtimeVoiceChannel(Channel):
         that never gets its own end marker.
         """
         # Flush the outbound resampler's pending frame (sinc one-frame delay)
-        resamplers = self._session_resamplers.get(session.id)
-        transport_rate = self._session_transport_rates.get(session.id)
+        with self._state_lock:
+            resamplers = self._session_resamplers.get(session.id)
+            transport_rate = self._session_transport_rates.get(session.id)
         if resamplers and transport_rate:
             flushed = resamplers[1].flush(transport_rate, 1, 2)
             if flushed and flushed.data:
@@ -1299,7 +1331,9 @@ class RealtimeVoiceChannel(Channel):
         """Publish ephemeral speaking indicator for the AI."""
         telemetry = self._telemetry_provider
         if not is_speaking:
-            forwarded = self._audio_forward_count.pop(session.id, 0)
+            with self._state_lock:
+                forwarded = self._audio_forward_count.pop(session.id, 0)
+                turn_span_id = self._turn_spans.pop(session.id, None)
             if forwarded:
                 logger.info(
                     "Response ended: forwarded %d audio chunks for session %s",
@@ -1307,17 +1341,16 @@ class RealtimeVoiceChannel(Channel):
                     session.id,
                 )
             # End turn span
-            turn_span_id = self._turn_spans.pop(session.id, None)
             if turn_span_id:
                 telemetry.end_span(
                     turn_span_id,
                     attributes={"audio_chunks_forwarded": forwarded},
                 )
         elif is_speaking:
-            self._audio_forward_count[session.id] = 0
-            # Start turn span (child of session span)
-            parent = self._session_spans.get(session.id)
-            room_id = self._session_rooms.get(session.id)
+            with self._state_lock:
+                self._audio_forward_count[session.id] = 0
+                parent = self._session_spans.get(session.id)
+                room_id = self._session_rooms.get(session.id)
             turn_span_id = telemetry.start_span(
                 SpanKind.REALTIME_TURN,
                 "realtime_turn",
@@ -1327,7 +1360,8 @@ class RealtimeVoiceChannel(Channel):
                 session_id=session.id,
                 channel_id=self.channel_id,
             )
-            self._turn_spans[session.id] = turn_span_id
+            with self._state_lock:
+                self._turn_spans[session.id] = turn_span_id
         try:
             await self._send_client_message(
                 session,
@@ -1340,7 +1374,8 @@ class RealtimeVoiceChannel(Channel):
 
             # Publish to realtime backend for dashboard subscribers
             if self._framework:
-                room_id = self._session_rooms.get(session.id)
+                with self._state_lock:
+                    room_id = self._session_rooms.get(session.id)
                 if room_id:
                     await self._framework.publish_typing(
                         room_id,
@@ -1375,7 +1410,9 @@ class RealtimeVoiceChannel(Channel):
 
     async def _handle_client_disconnect(self, session: VoiceSession) -> None:
         """Clean up after client disconnects."""
-        if session.id in self._sessions:
+        with self._state_lock:
+            active = session.id in self._sessions
+        if active:
             await self.end_session(session)
 
     # -- Audio level hooks --
@@ -1466,4 +1503,5 @@ class RealtimeVoiceChannel(Channel):
 
     def _get_room_sessions(self, room_id: str) -> list[VoiceSession]:
         """Get all active sessions for a room."""
-        return [s for s in self._sessions.values() if self._session_rooms.get(s.id) == room_id]
+        with self._state_lock:
+            return [s for s in self._sessions.values() if self._session_rooms.get(s.id) == room_id]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from roomkit.models.channel import ChannelBinding
@@ -30,6 +31,14 @@ class InMemoryStore(ConversationStore):
         self._room_tasks: dict[str, list[str]] = {}
         self._observations: dict[str, Observation] = {}
         self._room_observations: dict[str, list[str]] = {}
+        # Per-room locks for atomic index assignment
+        self._room_locks: dict[str, asyncio.Lock] = {}
+
+    def _lock_for(self, room_id: str) -> asyncio.Lock:
+        """Return (or create) the asyncio.Lock for a room."""
+        if room_id not in self._room_locks:
+            self._room_locks[room_id] = asyncio.Lock()
+        return self._room_locks[room_id]
 
     # Room operations
 
@@ -74,6 +83,7 @@ class InMemoryStore(ConversationStore):
         self._participants.pop(room_id, None)
         self._idempotency.pop(room_id, None)
         self._read_markers.pop(room_id, None)
+        self._room_locks.pop(room_id, None)
         return True
 
     async def list_rooms(self, offset: int = 0, limit: int = 50) -> list[Room]:
@@ -178,13 +188,14 @@ class InMemoryStore(ConversationStore):
 
     async def add_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent:
         """Atomically assign index = len(room_events) and append."""
-        events = self._room_events.setdefault(room_id, [])
-        indexed = event.model_copy(update={"index": len(events)})
-        self._events[indexed.id] = indexed
-        events.append(indexed.id)
-        if indexed.idempotency_key:
-            self._idempotency.setdefault(room_id, set()).add(indexed.idempotency_key)
-        return indexed
+        async with self._lock_for(room_id):
+            events = self._room_events.setdefault(room_id, [])
+            indexed = event.model_copy(update={"index": len(events)})
+            self._events[indexed.id] = indexed
+            events.append(indexed.id)
+            if indexed.idempotency_key:
+                self._idempotency.setdefault(room_id, set()).add(indexed.idempotency_key)
+            return indexed
 
     # Binding operations
 
