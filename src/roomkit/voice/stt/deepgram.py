@@ -254,7 +254,7 @@ class DeepgramSTTProvider(STTProvider):
 
         headers = [("Authorization", f"Token {self._config.api_key}")]
 
-        async with websockets.connect(ws_url, additional_headers=headers) as ws:
+        async with websockets.connect(ws_url, additional_headers=headers, open_timeout=30) as ws:
             # Start sender task
             async def send_audio() -> None:
                 try:

@@ -696,8 +696,14 @@ class RealtimeVoiceChannel(Channel):
                 logger.warning("Timed out waiting for %d tasks during close", len(tasks))
         self._scheduled_tasks.clear()
 
-        await self._provider.close()
-        await self._transport.close()
+        try:
+            await self._provider.close()
+        except Exception:
+            logger.exception("Error closing provider during channel close")
+        try:
+            await self._transport.close()
+        except Exception:
+            logger.exception("Error closing transport during channel close")
 
     # -- Client messaging --
 

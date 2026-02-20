@@ -104,7 +104,10 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             "OpenAI-Beta": "realtime=v1",
         }
 
-        ws = await websockets.connect(url, additional_headers=headers)
+        ws = await asyncio.wait_for(
+            websockets.connect(url, additional_headers=headers),
+            timeout=30.0,
+        )
 
         self._connections[session.id] = ws
         self._sessions[session.id] = session

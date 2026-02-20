@@ -258,6 +258,7 @@ class ElevenLabsTTSProvider(TTSProvider):
         async with websockets.connect(
             ws_url,
             additional_headers=[("xi-api-key", self._config.api_key)],
+            open_timeout=30,
         ) as ws:
             # Send initial BOS (beginning of stream) message
             await ws.send(
