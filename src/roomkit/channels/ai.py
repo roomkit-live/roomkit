@@ -283,12 +283,11 @@ class AIChannel(Channel):
             context.messages.append(AIMessage(role="tool", content=result_parts))
 
             # Yield inline XML so streaming consumers can render tool calls.
-            # Format matches <invoke name="...">input</invoke><result>output</result>
-            # which frontends can parse for collapsible tool call display.
+            # Format: <invoke name="..."></invoke><result>output</result>
+            # Arguments are omitted to avoid large JSON breaking markdown rendering.
             for tc, rp in zip(tool_calls, result_parts, strict=False):
-                args_str = json.dumps(tc.arguments) if tc.arguments else ""
                 yield (
-                    f'\n<invoke name="{tc.name}">{args_str}</invoke>'
+                    f'\n<invoke name="{tc.name}"></invoke>'
                     f"\n<result>{rp.result}</result>\n"
                 )
 
