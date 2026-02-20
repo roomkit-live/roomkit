@@ -52,7 +52,16 @@ class StreamEnd(BaseModel):
     event: RoomEvent
 
 
-StreamMessage = StreamStart | StreamChunk | StreamEnd
+class StreamError(BaseModel):
+    """Sent when a streaming response fails."""
+
+    type: Literal["stream_error"] = "stream_error"
+    room_id: str
+    stream_id: str
+    error: str
+
+
+StreamMessage = StreamStart | StreamChunk | StreamEnd | StreamError
 
 StreamSendFn = Callable[[str, StreamMessage], Coroutine[Any, Any, None]]
 
@@ -193,17 +202,25 @@ class WebSocketChannel(Channel):
         # Stream chunks — build text incrementally to avoid O(N^2) joins
         accumulated: list[str] = []
         running_text = ""
-        async for delta in text_stream:
-            accumulated.append(delta)
-            running_text += delta
-            chunk_msg = StreamChunk(
-                room_id=room_id,
-                stream_id=stream_id,
-                delta=delta,
-                text=running_text,
+        try:
+            async for delta in text_stream:
+                accumulated.append(delta)
+                running_text += delta
+                chunk_msg = StreamChunk(
+                    room_id=room_id,
+                    stream_id=stream_id,
+                    delta=delta,
+                    text=running_text,
+                )
+                for conn_id in list(self._stream_send_fns):
+                    await self._send_stream_message(conn_id, chunk_msg)
+        except Exception as exc:
+            error_msg = StreamError(
+                room_id=room_id, stream_id=stream_id, error=str(exc)
             )
             for conn_id in list(self._stream_send_fns):
-                await self._send_stream_message(conn_id, chunk_msg)
+                await self._send_stream_message(conn_id, error_msg)
+            raise
 
         # Build final event
         final_text = running_text

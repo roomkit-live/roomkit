@@ -178,6 +178,8 @@ class HookTrigger(StrEnum):
     ON_TASK_CREATED = "on_task_created"
     # Delivery status (outbound message tracking)
     ON_DELIVERY_STATUS = "on_delivery_status"
+    # Error handling
+    ON_ERROR = "on_error"
     # Voice (RFC §18)
     ON_SPEECH_START = "on_speech_start"
     ON_SPEECH_END = "on_speech_end"

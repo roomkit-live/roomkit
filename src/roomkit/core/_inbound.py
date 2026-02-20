@@ -727,8 +727,27 @@ class InboundMixin(HelpersMixin):
             try:
                 await channel.deliver_stream(accumulated_stream(), placeholder, binding, context)
                 delivered_to.add(binding.channel_id)
-            except Exception:
+            except Exception as exc:
                 logger.exception("Streaming delivery to %s failed", binding.channel_id)
+                # Fire ON_ERROR hook so consumers can react
+                error_event = RoomEvent(
+                    room_id=room_id,
+                    source=EventSource(
+                        channel_id=sr.source_channel_id,
+                        channel_type=sr.source_channel_type,
+                    ),
+                    content=TextContent(body="".join(accumulated)),
+                    metadata={
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                        "error_category": "streaming",
+                        "stream_partial_text": "".join(accumulated),
+                    },
+                    chain_depth=sr.trigger_event.chain_depth + 1,
+                )
+                await self._hook_engine.run_async_hooks(
+                    room_id, HookTrigger.ON_ERROR, error_event, context
+                )
         else:
             # No streaming targets — just consume the stream
             async for delta in sr.stream:
