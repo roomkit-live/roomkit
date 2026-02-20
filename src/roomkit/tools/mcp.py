@@ -208,8 +208,12 @@ class MCPToolProvider:
         self._ensure_connected()
 
         async def _handler(name: str, arguments: dict[str, Any]) -> str:
-            if name not in self._tool_set:
+            lookup = name
+            # Strip mcp__<server>__ prefix if present (e.g. from system prompt naming)
+            if lookup.startswith("mcp__") and "__" in lookup[5:]:
+                lookup = lookup.split("__", 2)[-1]
+            if lookup not in self._tool_set:
                 return json.dumps({"error": f"Unknown tool: {name}"})
-            return await self.call_tool(name, arguments)
+            return await self.call_tool(lookup, arguments)
 
         return _handler
