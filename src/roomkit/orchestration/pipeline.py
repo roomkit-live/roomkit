@@ -477,7 +477,13 @@ class ConversationPipeline:
             "[The caller has just been transferred to you — please introduce yourself briefly]"
         )
 
-        # Rooms where a handoff is in flight — TTS blocked until greeting fires
+        # Rooms where a handoff is in flight — TTS blocked until the greeting
+        # task starts.  The flag is set by ON_HANDOFF and cleared at the *start*
+        # of _trigger_greeting (before process_inbound) so the old agent's
+        # farewell is only blocked during the brief window between the handoff
+        # event and the greeting task starting on the next event-loop tick.
+        # The AI model needs ~300-500ms to generate a farewell response, by
+        # which time the flag is already cleared and the farewell plays through.
         _handoff_pending: set[str] = set()
 
         @kit.hook(HookTrigger.ON_HANDOFF, execution=HookExecution.ASYNC)
@@ -490,19 +496,28 @@ class ConversationPipeline:
             _handoff_pending.add(event.room_id)
 
             async def _trigger_greeting() -> None:
+                # Clear the block flag *before* process_inbound so both the
+                # old agent's farewell TTS and the new agent's greeting TTS
+                # can play.  The flag only needs to live long enough to
+                # suppress any TTS that fires between ON_HANDOFF and the
+                # greeting task starting (typically <1ms).
+                _handoff_pending.discard(event.room_id)
                 try:
-                    await kit.process_inbound(
-                        InboundMessage(
-                            channel_id=voice_channel_id,
-                            sender_id="system",
-                            content=TextContent(body=prompt),
+                    await asyncio.wait_for(
+                        kit.process_inbound(
+                            InboundMessage(
+                                channel_id=voice_channel_id,
+                                sender_id="system",
+                                content=TextContent(body=prompt),
+                            ),
+                            room_id=event.room_id,
                         ),
-                        room_id=event.room_id,
+                        timeout=30.0,
                     )
+                except TimeoutError:
+                    logger.warning("Handoff greeting timed out for room %s", event.room_id)
                 except Exception:
                     logger.exception("Handoff greeting failed for room %s", event.room_id)
-                finally:
-                    _handoff_pending.discard(event.room_id)
 
             loop = asyncio.get_running_loop()
             loop.create_task(_trigger_greeting(), context=contextvars.Context())

@@ -491,6 +491,73 @@ class TestGreetOnHandoff:
         assert isinstance(result, HookResult)
         assert result.action == "allow"
 
+    async def test_greeting_tts_not_blocked_during_handoff(self):
+        """Greeting task clears flag before process_inbound so both farewell
+        and greeting TTS play.
+
+        Regression test: commit 89fabbf moved _handoff_pending.discard() to
+        the finally block of _trigger_greeting(), which caused the greeting
+        (and farewell) TTS to be permanently blocked until process_inbound
+        returned.  The flag must be cleared at the *start* of the greeting
+        task so the AI's farewell response plays through.
+        """
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit, captured = _mock_kit_capturing_hooks()
+        agents = [_mock_agent("agent-a"), _mock_agent("agent-b")]
+
+        # Track BEFORE_TTS results during process_inbound (greeting context)
+        tts_results_during_greeting: list[HookResult] = []
+
+        async def mock_process_inbound(*args, **kwargs):
+            # Called from within the greeting task — flag should already be
+            # cleared, so BEFORE_TTS must allow.
+            before_tts_key = (str(HookTrigger.BEFORE_TTS), str(HookExecution.SYNC))
+            before_tts_fn = captured[before_tts_key][0]
+            ctx = RoomContext(room=Room(id="room-1"), bindings=[])
+            result = await before_tts_fn("Hello from new agent", ctx)
+            tts_results_during_greeting.append(result)
+
+        kit.process_inbound = AsyncMock(side_effect=mock_process_inbound)
+
+        pipeline.install(kit, agents, greet_on_handoff=True, voice_channel_id="voice")
+
+        on_handoff_key = (str(HookTrigger.ON_HANDOFF), str(HookExecution.ASYNC))
+        before_tts_key = (str(HookTrigger.BEFORE_TTS), str(HookExecution.SYNC))
+
+        on_handoff_fn = captured[on_handoff_key][0]
+        before_tts_fn = captured[before_tts_key][0]
+
+        handoff_event = RoomEvent(
+            room_id="room-1",
+            source=EventSource(channel_id="agent-a", channel_type=ChannelType.AI),
+            content=TextContent(body="transferring"),
+            metadata={"from_agent": "agent-a", "to_agent": "agent-b"},
+        )
+        ctx = RoomContext(room=Room(id="room-1"), bindings=[])
+
+        # Fire ON_HANDOFF
+        await on_handoff_fn(handoff_event, ctx)
+
+        # BEFORE_TTS blocks in the narrow window before greeting task starts
+        result = await before_tts_fn("Goodbye!", ctx)
+        assert result.action == "block"
+
+        # Let greeting task run — it clears the flag then calls process_inbound
+        await asyncio.sleep(0.05)
+
+        # Verify BEFORE_TTS allowed during greeting (flag was cleared)
+        assert len(tts_results_during_greeting) == 1
+        assert tts_results_during_greeting[0].action == "allow"
+
+        # Also verify a standalone check after greeting — flag stays cleared
+        result = await before_tts_fn("Follow-up", ctx)
+        assert result.action == "allow"
+
     async def test_greet_triggers_process_inbound(self):
         """ON_HANDOFF should trigger kit.process_inbound with voice_channel_id."""
         pipeline = ConversationPipeline(

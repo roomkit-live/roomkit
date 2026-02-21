@@ -193,6 +193,9 @@ class SIPVoiceBackend(VoiceBackend):
         dtmf_payload_type: RTP payload type for RFC 4733 DTMF events.
         user_agent: Value for the SIP ``User-Agent`` header in responses.
         server_name: SDP session name (``s=`` line) in answers.
+        rtp_inactivity_timeout: Seconds of RTP silence before forcing
+            session disconnect (safety net for missed BYE).  Set to 0
+            to disable.  Default 30.
     """
 
     def __init__(
@@ -206,6 +209,7 @@ class SIPVoiceBackend(VoiceBackend):
         dtmf_payload_type: int = 101,
         user_agent: str | None = None,
         server_name: str = "-",
+        rtp_inactivity_timeout: float = 30.0,
     ) -> None:
         self._aiosipua = _import_aiosipua()
         self._rtp_bridge = _import_rtp_bridge()
@@ -218,6 +222,7 @@ class SIPVoiceBackend(VoiceBackend):
         self._dtmf_payload_type = dtmf_payload_type
         self._user_agent = user_agent
         self._server_name = server_name
+        self._rtp_inactivity_timeout = rtp_inactivity_timeout
 
         # SIP components (created in start())
         self._transport: Any = None
@@ -303,11 +308,16 @@ class SIPVoiceBackend(VoiceBackend):
         rtp_port = self._allocate_rtp_port()
         local_ip = self._resolve_local_ip(call.source_addr)
 
-        # Fix SIP Contact header: if transport is bound to 0.0.0.0,
-        # use the resolved IP for the SDP answer.  We do NOT mutate
-        # self._transport.local_addr because that's shared across calls;
-        # instead pass local_ip to the CallSession which sets it in the SDP.
-        # (The original mutation was a concurrency hazard with multiple calls.)
+        # Resolve transport address once so SIP Contact headers use a
+        # routable IP instead of 0.0.0.0.  Without this, the remote
+        # party (PBX) cannot route BYE back to us and sessions linger.
+        if (
+            not self._transport_addr_resolved
+            and self._transport is not None
+            and self._transport.local_addr[0] in ("0.0.0.0", "")  # nosec B104
+        ):
+            self._transport.local_addr = (local_ip, self._transport.local_addr[1])
+            self._transport_addr_resolved = True
 
         try:
             call_session = self._rtp_bridge.CallSession(
@@ -995,10 +1005,18 @@ class SIPVoiceBackend(VoiceBackend):
     # -------------------------------------------------------------------------
 
     async def _audio_stats_loop(self) -> None:
-        """Periodically log per-session audio diagnostics."""
+        """Periodically log per-session audio diagnostics.
+
+        Also detects RTP inactivity: if no inbound audio arrives for
+        longer than ``rtp_inactivity_timeout`` seconds, the session is
+        treated as a missed BYE and cleaned up automatically.
+        """
         try:
             while True:
                 await asyncio.sleep(_STATS_INTERVAL)
+                now = time.monotonic()
+                inactive_sessions: list[tuple[str, _SIPSessionState]] = []
+
                 for sid, st in list(self._session_states.items()):
                     stats = st.audio_stats
                     # Gather RTP-level stats from call session
@@ -1038,6 +1056,39 @@ class SIPVoiceBackend(VoiceBackend):
                         stats.outbound_calls,
                         rtp_info,
                     )
+
+                    # Detect RTP inactivity (missed BYE safety net)
+                    if (
+                        self._rtp_inactivity_timeout > 0
+                        and stats.inbound_packets > 0
+                        and (now - stats.inbound_last_ts) > self._rtp_inactivity_timeout
+                    ):
+                        inactive_sessions.append((sid, st))
+
+                # Clean up inactive sessions outside the iteration loop
+                for sid, st in inactive_sessions:
+                    idle = now - st.audio_stats.inbound_last_ts
+                    logger.warning(
+                        "RTP inactivity timeout: session=%s idle=%.1fs "
+                        "(threshold=%.0fs) — forcing disconnect",
+                        sid[:8],
+                        idle,
+                        self._rtp_inactivity_timeout,
+                    )
+                    session = st.session
+                    call_session = st.call_session
+
+                    if call_session is not None:
+                        task = asyncio.get_running_loop().create_task(
+                            call_session.close(), name=f"sip_close:{sid}"
+                        )
+                        task.add_done_callback(self._log_task_exception)
+
+                    self._cleanup_session(sid)
+
+                    if self._on_disconnect_callback is not None:
+                        self._on_disconnect_callback(session)
+
         except asyncio.CancelledError:
             pass
 
