@@ -358,7 +358,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
         if vad_event.type == VADEventType.SPEECH_START:
             # Check for barge-in using InterruptionHandler
-            playback = self._playing_sessions.get(session.id)
+            with self._state_lock:
+                playback = self._playing_sessions.get(session.id)
             if playback:
                 decision = self._interruption_handler.evaluate(
                     playback_position_ms=playback.position_ms,
@@ -794,7 +795,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         """Interrupt ongoing TTS playback for a session."""
         import time as _time
 
-        playback = self._playing_sessions.pop(session.id, None)
+        with self._state_lock:
+            playback = self._playing_sessions.pop(session.id, None)
         if not playback:
             return False
 
@@ -839,11 +841,11 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         """Handle barge-in detected by backend."""
         with self._state_lock:
             binding_info = self._session_bindings.get(session.id)
+            playback = self._playing_sessions.get(session.id)
         if not binding_info or not self._framework:
             return
 
         room_id, _ = binding_info
-        playback = self._playing_sessions.get(session.id)
         if not playback:
             return
 

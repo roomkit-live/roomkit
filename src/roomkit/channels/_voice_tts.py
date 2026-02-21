@@ -74,7 +74,8 @@ class VoiceTTSMixin:
         if now - self._last_output_level_at.get(session.id, 0.0) < 0.1:
             return
         self._last_output_level_at[session.id] = now
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:  # type: ignore[attr-defined]
+            binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
         room_id, _ = binding_info
@@ -167,7 +168,8 @@ class VoiceTTSMixin:
         import time as _time
 
         await asyncio.sleep(_PLAYBACK_DRAIN_S)
-        playback = self._playing_sessions.pop(session_id, None)
+        with self._state_lock:  # type: ignore[attr-defined]
+            playback = self._playing_sessions.pop(session_id, None)
         if playback:
             self._last_tts_ended_at[session_id] = _time.monotonic()
             logger.debug(
@@ -181,8 +183,10 @@ class VoiceTTSMixin:
         if not self._backend:
             return []
 
+        with self._state_lock:  # type: ignore[attr-defined]
+            bindings_snapshot = list(self._session_bindings.items())
         target_sessions: list[VoiceSession] = []
-        for session_id, (bound_room_id, bound_binding) in self._session_bindings.items():
+        for session_id, (bound_room_id, bound_binding) in bindings_snapshot:
             if bound_room_id == room_id and bound_binding.channel_id == binding.channel_id:
                 session = self._backend.get_session(session_id)
                 if session:
@@ -236,9 +240,10 @@ class VoiceTTSMixin:
         )
 
         for session in target_sessions:
-            self._playing_sessions[session.id] = TTSPlaybackState(
-                session_id=session.id, text="(streaming)"
-            )
+            with self._state_lock:  # type: ignore[attr-defined]
+                self._playing_sessions[session.id] = TTSPlaybackState(
+                    session_id=session.id, text="(streaming)"
+                )
             t0 = _time.monotonic()
             logger.info("Streaming TTS playback started for session %s", session.id)
 
@@ -300,10 +305,11 @@ class VoiceTTSMixin:
         full_text = "".join(accumulated)
         # Update playback state with actual streamed text (was "(streaming)")
         for session in target_sessions:
-            if session.id in self._playing_sessions:
-                self._playing_sessions[session.id] = TTSPlaybackState(
-                    session_id=session.id, text=full_text or "(empty)"
-                )
+            with self._state_lock:  # type: ignore[attr-defined]
+                if session.id in self._playing_sessions:
+                    self._playing_sessions[session.id] = TTSPlaybackState(
+                        session_id=session.id, text=full_text or "(empty)"
+                    )
         if full_text:
             for session in target_sessions:
                 await self._backend.send_transcription(session, full_text, "assistant")
@@ -346,16 +352,18 @@ class VoiceTTSMixin:
 
         await self._backend.send_transcription(session, text, "assistant")
 
-        self._playing_sessions[session.id] = TTSPlaybackState(
-            session_id=session.id,
-            text=text,
-        )
+        with self._state_lock:  # type: ignore[attr-defined]
+            self._playing_sessions[session.id] = TTSPlaybackState(
+                session_id=session.id,
+                text=text,
+            )
 
         # Resolve telemetry provider
         _t = getattr(self._framework, "_telemetry", None) if self._framework else None
         telemetry: TelemetryProvider | None = _t if isinstance(_t, TelemetryProvider) else None
 
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:  # type: ignore[attr-defined]
+            binding_info = self._session_bindings.get(session.id)
         room_id = binding_info[0] if binding_info else None
 
         span_id = None
@@ -507,7 +515,8 @@ class VoiceTTSMixin:
         if not self._backend:
             raise VoiceBackendNotConfiguredError("No voice backend configured")
 
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:  # type: ignore[attr-defined]
+            binding_info = self._session_bindings.get(session.id)
         room_id = binding_info[0] if binding_info else None
 
         from roomkit.telemetry.context import reset_span, set_current_span
@@ -613,10 +622,11 @@ class VoiceTTSMixin:
         if text is not None:
             await self._backend.send_transcription(session, text, "assistant")
 
-        self._playing_sessions[session.id] = TTSPlaybackState(
-            session_id=session.id,
-            text=text or "(audio)",
-        )
+        with self._state_lock:  # type: ignore[attr-defined]
+            self._playing_sessions[session.id] = TTSPlaybackState(
+                session_id=session.id,
+                text=text or "(audio)",
+            )
 
         try:
             # Wrap PCM as an AudioChunk stream so the outbound pipeline can

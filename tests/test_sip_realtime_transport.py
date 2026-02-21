@@ -43,7 +43,7 @@ def _make_sip_backend() -> MagicMock:
     """Create a mock SIPVoiceBackend."""
     backend = MagicMock()
     backend._audio_received_callback = None
-    backend._codec_rates = {}  # real dict so .get() returns int, not MagicMock
+    backend._session_states = {}  # real dict so .get() returns state, not MagicMock
     backend.on_audio_received = MagicMock(
         side_effect=lambda cb: setattr(backend, "_audio_received_callback", cb)
     )

@@ -369,6 +369,10 @@ class InboundMixin(HelpersMixin):
                 )
                 return InboundResult(blocked=True, reason="target_event_not_found")
 
+            # Identity required: anonymous users must not edit/delete others' messages
+            if event.source.participant_id is None or target_event.source.participant_id is None:
+                return InboundResult(blocked=True, reason="identity_required_for_edit")
+
             # Authorization check
             if isinstance(event.content, EditContent):
                 if (

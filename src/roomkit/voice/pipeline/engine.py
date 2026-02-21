@@ -654,12 +654,30 @@ class AudioPipeline:
     # Session lifecycle
     # -----------------------------------------------------------------
 
+    def _cleanup_session_state(self, session_id: str) -> None:
+        """Remove per-session tracking state without resetting shared providers."""
+        self._in_speech_sessions.discard(session_id)
+        self._end_segment_span(session_id)
+        self._parent_spans.pop(session_id, None)
+        self._last_speaker_id.pop(session_id, None)
+        self._segment_stage_timings.pop(session_id, None)
+        self._segment_frame_counts.pop(session_id, None)
+        handle = self._recording_handles.pop(session_id, None)
+        if handle is not None and self._config.recorder is not None:
+            try:
+                self._config.recorder.stop(handle)
+            except Exception:
+                logger.exception("Failed to stop stale recording for %s", session_id)
+        dt = self._debug_tap_sessions.pop(session_id, None)
+        if dt is not None:
+            dt.close()
+
     def on_session_active(self, session: VoiceSession) -> None:
         """Called when a voice session becomes active.
 
-        Resets all pipeline stages and starts recording if configured.
+        Cleans up stale state for this session and starts recording if configured.
         """
-        self.reset()
+        self._cleanup_session_state(session.id)
 
         # Start debug taps if configured
         if self._config.debug_taps is not None and self._config.debug_taps.output_dir:
@@ -749,6 +767,13 @@ class AudioPipeline:
         for pp in self._config.postprocessors:
             pp.reset()
         self._last_speaker_id.clear()
+        # Stop active recordings before clearing handles
+        for handle in self._recording_handles.values():
+            if self._config.recorder is not None:
+                try:
+                    self._config.recorder.stop(handle)
+                except Exception:
+                    logger.exception("Failed to stop recording during reset")
         self._recording_handles.clear()
         # Close debug taps from any previous session
         for dt in self._debug_tap_sessions.values():
@@ -757,6 +782,18 @@ class AudioPipeline:
 
     def close(self) -> None:
         """Release all pipeline resources."""
+        # Stop active recordings before closing providers
+        for handle in self._recording_handles.values():
+            if self._config.recorder is not None:
+                try:
+                    self._config.recorder.stop(handle)
+                except Exception:
+                    logger.exception("Failed to stop recording during close")
+        self._recording_handles.clear()
+        # Close debug taps
+        for dt in self._debug_tap_sessions.values():
+            dt.close()
+        self._debug_tap_sessions.clear()
         if self._resampler is not None:
             self._resampler.close()
         if self._aec_resampler is not None:

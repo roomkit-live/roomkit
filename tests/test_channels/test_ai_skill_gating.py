@@ -6,7 +6,13 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-from roomkit.channels.ai import _TOOL_ACTIVATE_SKILL, _TOOL_READ_REFERENCE, AIChannel
+from roomkit.channels.ai import (
+    _TOOL_ACTIVATE_SKILL,
+    _TOOL_READ_REFERENCE,
+    AIChannel,
+    _current_loop_ctx,
+    _ToolLoopContext,
+)
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
@@ -93,6 +99,18 @@ def _final_response(content: str = "Done") -> AIResponse:
     return AIResponse(content=content, tool_calls=[])
 
 
+def _set_loop_ctx(**kwargs: object) -> _ToolLoopContext:
+    """Set a _ToolLoopContext on the contextvar and return it."""
+    ctx = _ToolLoopContext(**kwargs)  # type: ignore[arg-type]
+    _current_loop_ctx.set(ctx)
+    return ctx
+
+
+def _clear_loop_ctx() -> None:
+    """Clear the contextvar."""
+    _current_loop_ctx.set(None)
+
+
 # ---------------------------------------------------------------------------
 # SkillMetadata.gated_tool_names
 # ---------------------------------------------------------------------------
@@ -137,10 +155,14 @@ class TestPolicyVisibilityFilter:
                 {"name": "read", "description": "Read"},
             ]
         )
-        ctx = await ch._build_context(_make_event(), binding, _make_context())
-        tool_names = [t.name for t in ctx.tools]
-        assert "search" not in tool_names
-        assert "read" in tool_names
+        _set_loop_ctx()
+        try:
+            ctx = await ch._build_context(_make_event(), binding, _make_context())
+            tool_names = [t.name for t in ctx.tools]
+            assert "search" not in tool_names
+            assert "read" in tool_names
+        finally:
+            _clear_loop_ctx()
 
     async def test_allowed_tools_pass(self) -> None:
         provider = MockAIProvider(ai_responses=[_final_response()])
@@ -152,10 +174,14 @@ class TestPolicyVisibilityFilter:
                 {"name": "delete_file", "description": "Delete"},
             ]
         )
-        ctx = await ch._build_context(_make_event(), binding, _make_context())
-        tool_names = [t.name for t in ctx.tools]
-        assert "read_file" in tool_names
-        assert "delete_file" not in tool_names
+        _set_loop_ctx()
+        try:
+            ctx = await ch._build_context(_make_event(), binding, _make_context())
+            tool_names = [t.name for t in ctx.tools]
+            assert "read_file" in tool_names
+            assert "delete_file" not in tool_names
+        finally:
+            _clear_loop_ctx()
 
     async def test_empty_policy_no_filtering(self) -> None:
         provider = MockAIProvider(ai_responses=[_final_response()])
@@ -166,10 +192,14 @@ class TestPolicyVisibilityFilter:
                 {"name": "delete", "description": "Delete"},
             ]
         )
-        ctx = await ch._build_context(_make_event(), binding, _make_context())
-        tool_names = [t.name for t in ctx.tools]
-        assert "search" in tool_names
-        assert "delete" in tool_names
+        _set_loop_ctx()
+        try:
+            ctx = await ch._build_context(_make_event(), binding, _make_context())
+            tool_names = [t.name for t in ctx.tools]
+            assert "search" in tool_names
+            assert "delete" in tool_names
+        finally:
+            _clear_loop_ctx()
 
     async def test_skill_infra_tools_never_filtered(self) -> None:
         """activate_skill and read_skill_reference must always be visible."""
@@ -184,11 +214,15 @@ class TestPolicyVisibilityFilter:
             skills=registry,
         )
         binding = _make_binding(tools=[{"name": "search", "description": "Search"}])
-        ctx = await ch._build_context(_make_event(), binding, _make_context())
-        tool_names = [t.name for t in ctx.tools]
-        assert _TOOL_ACTIVATE_SKILL in tool_names
-        assert _TOOL_READ_REFERENCE in tool_names
-        assert "search" not in tool_names
+        _set_loop_ctx()
+        try:
+            ctx = await ch._build_context(_make_event(), binding, _make_context())
+            tool_names = [t.name for t in ctx.tools]
+            assert _TOOL_ACTIVATE_SKILL in tool_names
+            assert _TOOL_READ_REFERENCE in tool_names
+            assert "search" not in tool_names
+        finally:
+            _clear_loop_ctx()
 
 
 # ---------------------------------------------------------------------------
@@ -264,11 +298,15 @@ class TestSkillGatingVisibility:
                 {"name": "search", "description": "Search"},
             ]
         )
-        ctx = await ch._build_context(_make_event(), binding, _make_context())
-        tool_names = [t.name for t in ctx.tools]
-        assert "run_query" not in tool_names
-        assert "export_csv" not in tool_names
-        assert "search" in tool_names
+        _set_loop_ctx()
+        try:
+            ctx = await ch._build_context(_make_event(), binding, _make_context())
+            tool_names = [t.name for t in ctx.tools]
+            assert "run_query" not in tool_names
+            assert "export_csv" not in tool_names
+            assert "search" in tool_names
+        finally:
+            _clear_loop_ctx()
 
     async def test_gated_tools_visible_after_activation(self) -> None:
         provider = MockAIProvider(ai_responses=[_final_response()])
@@ -280,19 +318,21 @@ class TestSkillGatingVisibility:
             skills=registry,
         )
 
-        # Simulate activation
-        ch._activated_skills.add("analytics")
-
-        binding = _make_binding(
-            tools=[
-                {"name": "run_query", "description": "Run a query"},
-                {"name": "export_csv", "description": "Export CSV"},
-            ]
-        )
-        ctx = await ch._build_context(_make_event(), binding, _make_context())
-        tool_names = [t.name for t in ctx.tools]
-        assert "run_query" in tool_names
-        assert "export_csv" in tool_names
+        # Simulate activation via contextvar
+        _set_loop_ctx(activated_skills={"analytics"})
+        try:
+            binding = _make_binding(
+                tools=[
+                    {"name": "run_query", "description": "Run a query"},
+                    {"name": "export_csv", "description": "Export CSV"},
+                ]
+            )
+            ctx = await ch._build_context(_make_event(), binding, _make_context())
+            tool_names = [t.name for t in ctx.tools]
+            assert "run_query" in tool_names
+            assert "export_csv" in tool_names
+        finally:
+            _clear_loop_ctx()
 
     async def test_non_gated_tools_always_visible(self) -> None:
         provider = MockAIProvider(ai_responses=[_final_response()])
@@ -309,10 +349,14 @@ class TestSkillGatingVisibility:
                 {"name": "special_tool", "description": "Gated"},
             ]
         )
-        ctx = await ch._build_context(_make_event(), binding, _make_context())
-        tool_names = [t.name for t in ctx.tools]
-        assert "search" in tool_names
-        assert "special_tool" not in tool_names  # gated, not activated
+        _set_loop_ctx()
+        try:
+            ctx = await ch._build_context(_make_event(), binding, _make_context())
+            tool_names = [t.name for t in ctx.tools]
+            assert "search" in tool_names
+            assert "special_tool" not in tool_names  # gated, not activated
+        finally:
+            _clear_loop_ctx()
 
 
 class TestSkillGatingExecution:
@@ -341,7 +385,7 @@ class TestSkillGatingExecution:
 
     async def test_gated_tool_allowed_after_activation(self) -> None:
         """After activate_skill within the same tool loop, gated tools execute."""
-        # Sequence: activate_skill("analytics") → run_query
+        # Sequence: activate_skill("analytics") -> run_query
         provider = MockAIProvider(
             ai_responses=[
                 # Round 1: model calls activate_skill
@@ -384,7 +428,7 @@ class TestSkillGatingExecution:
 
 class TestActivationTracking:
     async def test_activation_resets_per_tool_loop(self) -> None:
-        """_activated_skills is cleared at the start of each tool loop."""
+        """activated_skills starts fresh for each tool loop invocation."""
         provider = MockAIProvider(ai_responses=[_final_response()])
         registry = _skill_registry(("s1", "Skill 1", "t1"))
         ch = AIChannel(
@@ -394,14 +438,19 @@ class TestActivationTracking:
             skills=registry,
             max_tool_rounds=5,
         )
-        ch._activated_skills.add("s1")
-        context = AIContext(messages=[AIMessage(role="user", content="go")])
-        await ch._run_tool_loop(context)
-        # After tool loop, activated_skills was reset
-        assert "s1" not in ch._activated_skills
+        # Set an activation on a parent context — the tool loop creates its own
+        _set_loop_ctx(activated_skills={"s1"})
+        try:
+            context = AIContext(messages=[AIMessage(role="user", content="go")])
+            # _run_tool_loop creates a fresh _ToolLoopContext, so "s1" is NOT inherited
+            await ch._run_tool_loop(context)
+            # After tool loop, active_loops should be empty
+            assert len(ch._active_loops) == 0
+        finally:
+            _clear_loop_ctx()
 
     async def test_handle_activate_skill_tracks_name(self) -> None:
-        """_handle_activate_skill adds the skill name to _activated_skills."""
+        """_handle_activate_skill adds the skill name to activated_skills."""
         provider = MockAIProvider(ai_responses=[_final_response()])
         registry = _skill_registry(("analytics", "Analytics skill", "run_query"))
         ch = AIChannel(
@@ -410,10 +459,14 @@ class TestActivationTracking:
             tool_handler=AsyncMock(),
             skills=registry,
         )
-        result = await ch._handle_activate_skill({"name": "analytics"})
-        parsed = json.loads(result)
-        assert parsed["name"] == "analytics"
-        assert "analytics" in ch._activated_skills
+        loop_ctx = _set_loop_ctx()
+        try:
+            result = await ch._handle_activate_skill({"name": "analytics"})
+            parsed = json.loads(result)
+            assert parsed["name"] == "analytics"
+            assert "analytics" in loop_ctx.activated_skills
+        finally:
+            _clear_loop_ctx()
 
 
 class TestMultipleSkillGating:
@@ -430,18 +483,20 @@ class TestMultipleSkillGating:
             skills=registry,
         )
         # Activate only analytics
-        ch._activated_skills.add("analytics")
-
-        binding = _make_binding(
-            tools=[
-                {"name": "run_query", "description": "Query"},
-                {"name": "export_csv", "description": "Export"},
-            ]
-        )
-        ctx = await ch._build_context(_make_event(), binding, _make_context())
-        tool_names = [t.name for t in ctx.tools]
-        assert "run_query" in tool_names
-        assert "export_csv" not in tool_names  # export skill not activated
+        _set_loop_ctx(activated_skills={"analytics"})
+        try:
+            binding = _make_binding(
+                tools=[
+                    {"name": "run_query", "description": "Query"},
+                    {"name": "export_csv", "description": "Export"},
+                ]
+            )
+            ctx = await ch._build_context(_make_event(), binding, _make_context())
+            tool_names = [t.name for t in ctx.tools]
+            assert "run_query" in tool_names
+            assert "export_csv" not in tool_names  # export skill not activated
+        finally:
+            _clear_loop_ctx()
 
     async def test_both_skills_activated(self) -> None:
         provider = MockAIProvider(ai_responses=[_final_response()])
@@ -455,18 +510,20 @@ class TestMultipleSkillGating:
             tool_handler=AsyncMock(),
             skills=registry,
         )
-        ch._activated_skills.update({"analytics", "export"})
-
-        binding = _make_binding(
-            tools=[
-                {"name": "run_query", "description": "Query"},
-                {"name": "export_csv", "description": "Export"},
-            ]
-        )
-        ctx = await ch._build_context(_make_event(), binding, _make_context())
-        tool_names = [t.name for t in ctx.tools]
-        assert "run_query" in tool_names
-        assert "export_csv" in tool_names
+        _set_loop_ctx(activated_skills={"analytics", "export"})
+        try:
+            binding = _make_binding(
+                tools=[
+                    {"name": "run_query", "description": "Query"},
+                    {"name": "export_csv", "description": "Export"},
+                ]
+            )
+            ctx = await ch._build_context(_make_event(), binding, _make_context())
+            tool_names = [t.name for t in ctx.tools]
+            assert "run_query" in tool_names
+            assert "export_csv" in tool_names
+        finally:
+            _clear_loop_ctx()
 
 
 # ---------------------------------------------------------------------------
@@ -487,12 +544,14 @@ class TestPolicyPlusGating:
             skills=registry,
             tool_policy=policy,
         )
-        ch._activated_skills.add("analytics")
-
-        binding = _make_binding(tools=[{"name": "run_query", "description": "Query"}])
-        ctx = await ch._build_context(_make_event(), binding, _make_context())
-        tool_names = [t.name for t in ctx.tools]
-        assert "run_query" not in tool_names
+        _set_loop_ctx(activated_skills={"analytics"})
+        try:
+            binding = _make_binding(tools=[{"name": "run_query", "description": "Query"}])
+            ctx = await ch._build_context(_make_event(), binding, _make_context())
+            tool_names = [t.name for t in ctx.tools]
+            assert "run_query" not in tool_names
+        finally:
+            _clear_loop_ctx()
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +585,11 @@ def _make_context_with_participants(
 
 class TestRoleBasedPolicy:
     async def test_observer_restricted_by_role_override(self) -> None:
-        """Observer role override restricts available tools."""
+        """Observer role override restricts available tools.
+
+        We set up the loop context with the resolved participant role and
+        verify that _build_context correctly filters tools.
+        """
         provider = MockAIProvider(ai_responses=[_final_response()])
         policy = ToolPolicy(
             allow=["search", "write_file", "read_file"],
@@ -550,17 +613,19 @@ class TestRoleBasedPolicy:
                 ),
             ]
         )
-        await ch.on_event(event, binding, context)
 
-        # Verify the role was resolved
-        assert ch._current_participant_role == ParticipantRole.OBSERVER
-
-        # Build context directly to inspect tools
-        ctx = await ch._build_context(event, binding, context)
-        tool_names = [t.name for t in ctx.tools]
-        assert "search" in tool_names
-        assert "read_file" in tool_names
-        assert "write_file" not in tool_names
+        # Simulate what on_event does: resolve role and set contextvar
+        role = ch._resolve_participant_role(event, context)
+        assert role == ParticipantRole.OBSERVER
+        _set_loop_ctx(current_participant_role=role)
+        try:
+            ctx = await ch._build_context(event, binding, context)
+            tool_names = [t.name for t in ctx.tools]
+            assert "search" in tool_names
+            assert "read_file" in tool_names
+            assert "write_file" not in tool_names
+        finally:
+            _clear_loop_ctx()
 
     async def test_no_participant_match_uses_base_policy(self) -> None:
         """When participant_id doesn't match any participant, base policy is used."""
@@ -586,13 +651,18 @@ class TestRoleBasedPolicy:
                 ),
             ]
         )
-        await ch.on_event(event, binding, context)
-        assert ch._current_participant_role is None
 
-        ctx = await ch._build_context(event, binding, context)
-        tool_names = [t.name for t in ctx.tools]
-        assert "search" in tool_names
-        assert "write_file" in tool_names  # base policy allows it
+        # Resolve role — unknown participant gives None
+        role = ch._resolve_participant_role(event, context)
+        assert role is None
+        _set_loop_ctx(current_participant_role=role)
+        try:
+            ctx = await ch._build_context(event, binding, context)
+            tool_names = [t.name for t in ctx.tools]
+            assert "search" in tool_names
+            assert "write_file" in tool_names  # base policy allows it
+        finally:
+            _clear_loop_ctx()
 
     async def test_replace_mode_owner_gets_full_access(self) -> None:
         """Owner with replace mode gets unrestricted access."""
@@ -620,10 +690,14 @@ class TestRoleBasedPolicy:
                 ),
             ]
         )
-        await ch.on_event(event, binding, context)
 
-        ctx = await ch._build_context(event, binding, context)
-        tool_names = [t.name for t in ctx.tools]
-        assert "search" in tool_names
-        assert "admin_panel" in tool_names
-        assert "delete_all" in tool_names
+        role = ch._resolve_participant_role(event, context)
+        _set_loop_ctx(current_participant_role=role)
+        try:
+            ctx = await ch._build_context(event, binding, context)
+            tool_names = [t.name for t in ctx.tools]
+            assert "search" in tool_names
+            assert "admin_panel" in tool_names
+            assert "delete_all" in tool_names
+        finally:
+            _clear_loop_ctx()

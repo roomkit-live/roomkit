@@ -226,7 +226,9 @@ class VoiceSTTMixin:
             return
 
         # Debug: log RMS energy during playback (sampled every ~1s)
-        if logger.isEnabledFor(logging.DEBUG) and self._playing_sessions.get(session.id):
+        with self._state_lock:  # type: ignore[attr-defined]
+            _is_playing = bool(self._playing_sessions.get(session.id))
+        if logger.isEnabledFor(logging.DEBUG) and _is_playing:
             import struct
 
             samples = struct.unpack(f"<{len(frame.data) // 2}h", frame.data)
@@ -258,7 +260,8 @@ class VoiceSTTMixin:
         """
         from .voice import _STTStreamState
 
-        binding_info = self._session_bindings.get(session.id)
+        with self._state_lock:  # type: ignore[attr-defined]
+            binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._stt:
             return
         room_id, _ = binding_info
@@ -347,7 +350,8 @@ class VoiceSTTMixin:
                     async for result in self._stt.transcribe_stream(audio_gen(first_chunk)):
                         if state.cancelled:
                             break
-                        playing = session.id in self._playing_sessions
+                        with self._state_lock:  # type: ignore[attr-defined]
+                            playing = session.id in self._playing_sessions
                         if result.is_final and result.text:
                             last_tts = self._last_tts_ended_at.get(session.id, 0.0)
                             since_tts_now = _time.monotonic() - last_tts if last_tts else -1.0
@@ -361,7 +365,8 @@ class VoiceSTTMixin:
                             # During playback (and no barge-in), this is
                             # almost certainly TTS echo leaking through AEC.
                             # Discard it and reconnect for a fresh stream.
-                            playback = self._playing_sessions.get(session.id)
+                            with self._state_lock:  # type: ignore[attr-defined]
+                                playback = self._playing_sessions.get(session.id)
                             if playback and not barge_in_fired:
                                 logger.info(
                                     "Discarding echo transcription during playback: %r",
@@ -391,7 +396,8 @@ class VoiceSTTMixin:
                         elif not result.is_final and result.text:
                             # Barge-in: user speaking during TTS playback
                             if not barge_in_fired:
-                                playback = self._playing_sessions.get(session.id)
+                                with self._state_lock:  # type: ignore[attr-defined]
+                                    playback = self._playing_sessions.get(session.id)
                                 if playback:
                                     from roomkit.voice.interruption import InterruptionHandler
 
@@ -464,7 +470,8 @@ class VoiceSTTMixin:
             _vs_token = set_current_span(_vs_parent) if _vs_parent else None
             import time as _time
 
-            playback = self._playing_sessions.get(session.id)
+            with self._state_lock:  # type: ignore[attr-defined]
+                playback = self._playing_sessions.get(session.id)
             last_tts_end = self._last_tts_ended_at.get(session.id, 0.0)
             since_tts = _time.monotonic() - last_tts_end if last_tts_end else -1.0
 
@@ -790,7 +797,8 @@ class VoiceSTTMixin:
         result = await self._stt.transcribe(audio_frame)
 
         if route and result.text.strip() and self._framework:
-            binding_info = self._session_bindings.get(session.id)
+            with self._state_lock:  # type: ignore[attr-defined]
+                binding_info = self._session_bindings.get(session.id)
             if binding_info:
                 room_id, _ = binding_info
                 context = await self._framework._build_context(room_id)

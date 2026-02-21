@@ -230,8 +230,9 @@ class TestHandleInvite:
         await backend._handle_invite(call)
 
         # Session should be created
-        assert len(backend._sessions) == 1
-        session = list(backend._sessions.values())[0]
+        assert len(backend._session_states) == 1
+        state = list(backend._session_states.values())[0]
+        session = state.session
         assert session.state == VoiceSessionState.ACTIVE
         assert session.room_id == "room-42"
         assert session.participant_id == "sess-001"
@@ -256,7 +257,7 @@ class TestHandleInvite:
         await backend._handle_invite(call)
 
         call.reject.assert_called_once_with(488, "Not Acceptable Here")
-        assert len(backend._sessions) == 0
+        assert len(backend._session_states) == 0
 
     async def test_invite_negotiation_failure_rejects(
         self, backend: Any, mock_rtp_bridge: MagicMock
@@ -267,7 +268,7 @@ class TestHandleInvite:
         await backend._handle_invite(call)
 
         call.reject.assert_called_once_with(488, "Not Acceptable Here")
-        assert len(backend._sessions) == 0
+        assert len(backend._session_states) == 0
 
     async def test_invite_wires_audio_callback(
         self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
@@ -324,13 +325,13 @@ class TestHandleInvite:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
-        assert backend._call_sessions[session.id] is mock_call_session
-        assert backend._incoming_calls[session.id] is call
-        assert backend._call_to_session["test-call-1"] == session.id
-        assert backend._send_timestamps[session.id] == 0
-        assert backend._codec_rates[session.id] == 8000
-        assert backend._clock_rates[session.id] == 8000
+        state = list(backend._session_states.values())[0]
+        assert state.call_session is mock_call_session
+        assert state.incoming_call is call
+        assert backend._call_to_session["test-call-1"] == state.session.id
+        assert state.send_timestamp == 0
+        assert state.codec_rate == 8000
+        assert state.clock_rate == 8000
 
 
 class TestHandleBye:
@@ -340,7 +341,7 @@ class TestHandleBye:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         assert session.state == VoiceSessionState.ACTIVE
 
         # Simulate BYE
@@ -350,9 +351,7 @@ class TestHandleBye:
         await asyncio.sleep(0.01)
 
         assert session.state == VoiceSessionState.ENDED
-        assert len(backend._sessions) == 0
-        assert len(backend._call_sessions) == 0
-        assert len(backend._incoming_calls) == 0
+        assert len(backend._session_states) == 0
         assert len(backend._call_to_session) == 0
 
     async def test_bye_fires_disconnect_callback(
@@ -384,7 +383,7 @@ class TestConnect:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
-        session_id = list(backend._sessions.keys())[0]
+        session_id = list(backend._session_states.keys())[0]
         result = await backend.connect(
             "room-42", "user-1", "voice-1", metadata={"session_id": session_id}
         )
@@ -412,12 +411,12 @@ class TestDisconnect:
         call.dialog.state = "confirmed"
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         await backend.disconnect(session)
 
         mock_call_session.close.assert_awaited_once()
         assert session.state == VoiceSessionState.ENDED
-        assert len(backend._sessions) == 0
+        assert len(backend._session_states) == 0
 
     async def test_disconnect_cleans_state(
         self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
@@ -425,15 +424,11 @@ class TestDisconnect:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         await backend.disconnect(session)
 
         assert backend.get_session(session.id) is None
-        assert session.id not in backend._call_sessions
-        assert session.id not in backend._incoming_calls
-        assert session.id not in backend._send_timestamps
-        assert session.id not in backend._codec_rates
-        assert session.id not in backend._clock_rates
+        assert session.id not in backend._session_states
 
 
 class TestSendAudio:
@@ -443,7 +438,7 @@ class TestSendAudio:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
 
         # 20ms frame at 8kHz = 160 samples = 320 bytes
         pcm = b"\x00\x01" * 160
@@ -459,7 +454,7 @@ class TestSendAudio:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
 
         # Two 20ms frames = 640 bytes
         pcm = b"\x00\x01" * 320
@@ -478,7 +473,7 @@ class TestSendAudio:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
 
         pcm = b"\x00\x01" * 160
         await backend.send_audio(session, _chunks_from_bytes(pcm))
@@ -503,7 +498,7 @@ class TestCancelAudio:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         assert await backend.cancel_audio(session) is False
 
     async def test_is_playing(
@@ -512,7 +507,7 @@ class TestCancelAudio:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         assert backend.is_playing(session) is False
 
 
@@ -553,7 +548,7 @@ class TestSessionQueries:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         assert backend.get_session(session.id) is session
         assert backend.get_session("nonexistent") is None
 
@@ -583,11 +578,11 @@ class TestClose:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         await backend.close()
 
         assert session.state == VoiceSessionState.ENDED
-        assert len(backend._sessions) == 0
+        assert len(backend._session_states) == 0
 
         uas = mock_aiosipua.SipUAS.return_value
         uas.stop.assert_awaited_once()
@@ -600,7 +595,7 @@ class TestXHeaderRouting:
         call = _make_mock_incoming_call(room_id="custom-room")
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         assert session.room_id == "custom-room"
 
     async def test_room_id_fallback_to_call_id(
@@ -609,7 +604,7 @@ class TestXHeaderRouting:
         call = _make_mock_incoming_call(room_id=None, call_id="fallback-call")
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         assert session.room_id == "fallback-call"
 
     async def test_participant_id_from_session_header(
@@ -618,7 +613,7 @@ class TestXHeaderRouting:
         call = _make_mock_incoming_call(session_id="participant-99")
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         assert session.participant_id == "participant-99"
 
     async def test_participant_id_fallback_to_caller(
@@ -627,7 +622,7 @@ class TestXHeaderRouting:
         call = _make_mock_incoming_call(session_id=None, caller="sip:alice@example.com")
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         assert session.participant_id == "sip:alice@example.com"
 
     async def test_x_headers_stored_in_metadata(
@@ -638,7 +633,7 @@ class TestXHeaderRouting:
         )
         await backend._handle_invite(call)
 
-        session = list(backend._sessions.values())[0]
+        session = list(backend._session_states.values())[0].session
         assert session.metadata["x_headers"]["X-Language"] == "fr"
 
 
@@ -681,8 +676,8 @@ class TestMultipleCalls:
         await backend._handle_invite(call1)
         await backend._handle_invite(call2)
 
-        assert len(backend._sessions) == 2
-        rooms = {s.room_id for s in backend._sessions.values()}
+        assert len(backend._session_states) == 2
+        rooms = {st.session.room_id for st in backend._session_states.values()}
         assert rooms == {"room-a", "room-b"}
 
         assert backend.list_sessions("room-a") != []

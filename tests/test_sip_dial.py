@@ -184,21 +184,8 @@ def backend() -> SIPVoiceBackend:
     b._uac = uac
     b._uas = uas
 
-    b._sessions = {}
-    b._call_sessions = {}
-    b._incoming_calls = {}
-    b._outgoing_calls = {}
+    b._session_states = {}
     b._call_to_session = {}
-    b._pending_reinvite_sdp = {}
-    b._codec_rates = {}
-    b._clock_rates = {}
-    b._send_timestamps = {}
-    b._send_buffers = {}
-    b._send_frame_count = {}
-    b._last_rtp_send_time = {}
-    b._playing_sessions = set()
-    b._playback_tasks = {}
-    b._session_pacers = {}
     b._audio_received_callback = None
     b._barge_in_callbacks = []
     b._dtmf_callbacks = []
@@ -207,8 +194,6 @@ def backend() -> SIPVoiceBackend:
     b._trace_emitter = None
     b._available_ports = set(range(10000, 20000, 2))
     b._allocated_ports: set[int] = set()
-    b._session_ports: dict[str, int] = {}
-    b._audio_stats = {}
     b._stats_task = None
     b._transport_addr_resolved = False
 
@@ -271,7 +256,7 @@ class TestDialReturnsSession:
         assert session.metadata["caller"] == FROM_URI
 
     async def test_session_stored_in_tracking_dicts(self, backend: SIPVoiceBackend) -> None:
-        """Session tracked in _sessions, _outgoing_calls, _call_sessions."""
+        """Session tracked in _session_states with correct fields."""
         with patch("aiosipua.build_sdp", return_value=FakeSdpMessage()):
             session = await backend.dial(
                 to_uri=TO_URI,
@@ -279,9 +264,11 @@ class TestDialReturnsSession:
                 proxy_addr=PROXY_ADDR,
             )
 
-        assert session.id in backend._sessions
-        assert session.id in backend._outgoing_calls
-        assert session.id in backend._call_sessions
+        assert session.id in backend._session_states
+        state = backend._session_states[session.id]
+        assert state.session is session
+        assert state.outgoing_call is not None
+        assert state.call_session is not None
         assert session.id in backend._call_to_session.values()
 
 
@@ -396,8 +383,9 @@ class TestDialCodecSelection:
         assert call_kwargs["codec_name"] == "G722"
         assert call_kwargs["sample_rate"] == 8000  # RTP clock rate
 
-        assert backend._codec_rates[session.id] == 16000
-        assert backend._clock_rates[session.id] == 8000
+        state = backend._session_states[session.id]
+        assert state.codec_rate == 16000
+        assert state.clock_rate == 8000
 
     async def test_pcma_codec(self, backend: SIPVoiceBackend) -> None:
         """PCMA codec produces correct SDP params."""
@@ -434,7 +422,7 @@ class TestDisconnectOutgoing:
                 proxy_addr=PROXY_ADDR,
             )
 
-        out_call = backend._outgoing_calls[session.id]
+        out_call = backend._session_states[session.id].outgoing_call
         out_call.hangup = MagicMock()
 
         await backend.disconnect(session)
@@ -443,7 +431,7 @@ class TestDisconnectOutgoing:
         assert session.state == VoiceSessionState.ENDED
 
     async def test_disconnect_cleans_up_tracking(self, backend: SIPVoiceBackend) -> None:
-        """All tracking dicts cleaned up after disconnect."""
+        """All tracking state cleaned up after disconnect."""
         with patch("aiosipua.build_sdp", return_value=FakeSdpMessage()):
             session = await backend.dial(
                 to_uri=TO_URI,
@@ -454,9 +442,7 @@ class TestDisconnectOutgoing:
         sid = session.id
         await backend.disconnect(session)
 
-        assert sid not in backend._sessions
-        assert sid not in backend._outgoing_calls
-        assert sid not in backend._call_sessions
+        assert sid not in backend._session_states
         assert sid not in backend._call_to_session.values()
 
 
@@ -572,7 +558,7 @@ class TestReinviteHandler:
             )
 
         # Create a fake re-INVITE call object
-        call_session = backend._call_sessions[session.id]
+        call_session = backend._session_states[session.id].call_session
         reinvite_call = MagicMock()
         reinvite_call.call_id = session.metadata["call_id"]
         reinvite_call.caller = TO_URI
@@ -592,7 +578,7 @@ class TestReinviteHandler:
                 proxy_addr=PROXY_ADDR,
             )
 
-        call_session = backend._call_sessions[session.id]
+        call_session = backend._session_states[session.id].call_session
         call_session.update_remote = MagicMock()
         # Fake the remote_addr property for comparison
         call_session.remote_addr = ("10.0.0.1", 30000)
@@ -629,8 +615,8 @@ class TestReinviteHandler:
                 proxy_addr=PROXY_ADDR,
             )
 
-        call_session = backend._call_sessions[session.id]
-        initial_session_count = len(backend._sessions)
+        call_session = backend._session_states[session.id].call_session
+        initial_session_count = len(backend._session_states)
 
         # Simulate Asterisk sending a re-INVITE via on_invite (not on_reinvite)
         reinvite_call = MagicMock()
@@ -643,5 +629,5 @@ class TestReinviteHandler:
         await backend._handle_invite(reinvite_call)
 
         # Should NOT create a new session — routed to _handle_reinvite
-        assert len(backend._sessions) == initial_session_count
+        assert len(backend._session_states) == initial_session_count
         reinvite_call.accept.assert_called_once_with(call_session.sdp_answer)

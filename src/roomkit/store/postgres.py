@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS events (
     data JSONB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_room_id ON events(room_id);
+CREATE INDEX IF NOT EXISTS idx_events_room_created ON events(room_id, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency
     ON events(room_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS bindings (
     data JSONB NOT NULL,
     PRIMARY KEY (room_id, channel_id)
 );
+CREATE INDEX IF NOT EXISTS idx_bindings_channel_id ON bindings(channel_id);
 
 CREATE TABLE IF NOT EXISTS participants (
     id TEXT NOT NULL,
@@ -424,10 +426,11 @@ class PostgresStore(ConversationStore):
                     room_id,
                 )
                 row = await conn.fetchrow(
-                    "SELECT count(*) AS cnt FROM events WHERE room_id = $1",
+                    "SELECT COALESCE(MAX((data->>'index')::int), -1) + 1 AS next_idx "
+                    "FROM events WHERE room_id = $1",
                     room_id,
                 )
-                idx = row["cnt"] if row else 0
+                idx = row["next_idx"]
                 indexed = event.model_copy(update={"index": idx})
                 await conn.execute(
                     "INSERT INTO events (id, room_id, idempotency_key, visibility, "

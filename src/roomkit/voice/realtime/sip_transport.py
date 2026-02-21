@@ -95,7 +95,8 @@ class SIPRealtimeTransport(VoiceBackend):
         # Expose the negotiated codec sample rate so the channel can
         # create resamplers at the correct rate (16 kHz for G.722, 8 kHz
         # for G.711) instead of relying on a static transport_sample_rate.
-        codec_rate = self._backend._codec_rates.get(voice_session.id, 8000)
+        _sip_state = self._backend._session_states.get(voice_session.id)
+        codec_rate = _sip_state.codec_rate if _sip_state is not None else 8000
         session.metadata["transport_sample_rate"] = codec_rate
 
         logger.info(

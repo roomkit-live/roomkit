@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels.base import Channel
@@ -74,6 +76,23 @@ _SKILLS_PREAMBLE = (
 _SKILLS_NO_SCRIPTS_NOTE = " Note: Script execution is not available in this environment."
 
 
+@dataclass
+class _ToolLoopContext:
+    """Per-invocation state for a tool loop, scoped via contextvar."""
+
+    activated_skills: set[str] = field(default_factory=set)
+    all_context_tools: list[Any] = field(default_factory=list)
+    current_participant_role: str | None = None
+    steering_queue: asyncio.Queue[SteeringDirective] = field(default_factory=asyncio.Queue)
+    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    loop_id: str = ""
+
+
+_current_loop_ctx: contextvars.ContextVar[_ToolLoopContext | None] = contextvars.ContextVar(
+    "_current_loop_ctx", default=None
+)
+
+
 class AIChannel(Channel):
     """AI intelligence channel that generates responses using an AI provider."""
 
@@ -127,17 +146,8 @@ class AIChannel(Channel):
         # Extra tools injected by orchestration (e.g. HANDOFF_TOOL)
         self._extra_tools: list[AITool] = []
 
-        # Skill gating: tools gated until their skill is activated
-        self._activated_skills: set[str] = set()
-        # Unfiltered tools from _build_context (used to re-apply gating)
-        self._all_context_tools: list[AITool] = []
-
-        # Role-based tool policy: set per on_event from participant lookup
-        self._current_participant_role: str | None = None
-
-        # Steering: mid-run interaction (inject messages, cancel, update prompt)
-        self._steering_queue: asyncio.Queue[SteeringDirective] = asyncio.Queue()
-        self._cancel_event: asyncio.Event = asyncio.Event()
+        # Active tool loops for steering (loop_id -> context)
+        self._active_loops: dict[str, _ToolLoopContext] = {}
 
     @property
     def tool_handler(self) -> ToolHandler | None:
@@ -159,29 +169,55 @@ class AIChannel(Channel):
         if telemetry is not None:
             self._provider._telemetry = telemetry
 
+    # -- Per-invocation context ------------------------------------------------
+
+    def _get_loop_ctx(self) -> _ToolLoopContext:
+        """Get the current tool loop context (from contextvar or create default)."""
+        ctx = _current_loop_ctx.get()
+        if ctx is None:
+            # Fallback for code paths outside a tool loop
+            ctx = _ToolLoopContext()
+        return ctx
+
     # -- Steering (mid-run interaction) ----------------------------------------
 
-    def steer(self, directive: SteeringDirective) -> None:
+    def steer(self, directive: SteeringDirective, *, loop_id: str | None = None) -> None:
         """Enqueue a steering directive for the active tool loop.
 
         Safe to call from any coroutine. Cancel directives also set the
         fast-path cancel event so the loop can exit without waiting for
         the next drain point.
-        """
-        self._steering_queue.put_nowait(directive)
-        if isinstance(directive, Cancel):
-            self._cancel_event.set()
 
-    def _drain_steering_queue(self, context: AIContext) -> tuple[AIContext, bool]:
+        Args:
+            directive: The steering directive to enqueue.
+            loop_id: Optional loop ID to target. If ``None``, targets the
+                most recently started active loop.
+        """
+        if loop_id is not None:
+            ctx = self._active_loops.get(loop_id)
+        elif self._active_loops:
+            ctx = next(reversed(self._active_loops.values()))
+        else:
+            ctx = None
+        if ctx is None:
+            logger.warning("steer() called with no active tool loop")
+            return
+        ctx.steering_queue.put_nowait(directive)
+        if isinstance(directive, Cancel):
+            ctx.cancel_event.set()
+
+    def _drain_steering_queue(
+        self, context: AIContext, loop_ctx: _ToolLoopContext
+    ) -> tuple[AIContext, bool]:
         """Drain all pending steering directives, applying them to *context*.
 
         Returns:
             (updated_context, should_cancel)
         """
         should_cancel = False
-        while not self._steering_queue.empty():
+        while not loop_ctx.steering_queue.empty():
             try:
-                directive = self._steering_queue.get_nowait()
+                directive = loop_ctx.steering_queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
 
@@ -236,22 +272,28 @@ class AIChannel(Channel):
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
 
-        # Resolve participant role for role-based tool policy
-        self._current_participant_role = self._resolve_participant_role(event, context)
+        # Resolve participant role for role-based tool policy.
+        # Set on a per-invocation _ToolLoopContext visible via contextvar so that
+        # _build_context and the tool loop methods can read it.
+        event_ctx = _ToolLoopContext()
+        event_ctx.current_participant_role = self._resolve_participant_role(event, context)
+        token = _current_loop_ctx.set(event_ctx)
+        try:
+            raw_tools = binding.metadata.get("tools", [])
+            has_tools = (
+                bool(raw_tools)
+                or bool(self._extra_tools)
+                or (self._skills is not None and self._skills.skill_count > 0)
+            )
 
-        raw_tools = binding.metadata.get("tools", [])
-        has_tools = (
-            bool(raw_tools)
-            or bool(self._extra_tools)
-            or (self._skills is not None and self._skills.skill_count > 0)
-        )
+            if self._provider.supports_streaming or self._provider.supports_structured_streaming:
+                if has_tools:
+                    return await self._start_streaming_tool_response(event, binding, context)
+                return await self._start_streaming_response(event, binding, context)
 
-        if self._provider.supports_streaming or self._provider.supports_structured_streaming:
-            if has_tools:
-                return await self._start_streaming_tool_response(event, binding, context)
-            return await self._start_streaming_response(event, binding, context)
-
-        return await self._generate_response(event, binding, context)
+            return await self._generate_response(event, binding, context)
+        finally:
+            _current_loop_ctx.reset(token)
 
     async def deliver(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -281,96 +323,110 @@ class AIChannel(Channel):
 
     async def _run_streaming_tool_loop(self, context: AIContext) -> AsyncIterator[str]:
         """Stream text deltas, executing tool calls between generation rounds."""
-        self._activated_skills = set()
-        self._cancel_event.clear()
-        # Apply pre-queued directives (e.g. cancel enqueued before loop started)
-        context, should_cancel = self._drain_steering_queue(context)
-        if should_cancel:
-            return
-        telemetry = self._telemetry_provider
-        deadline = (
-            asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
-            if self._tool_loop_timeout_seconds
-            else None
-        )
-
-        for _round_idx in range(self._max_tool_rounds + 1):
-            # Steering checkpoint 1: fast-path cancel before generate
-            if self._cancel_event.is_set():
-                logger.info("Streaming tool loop cancelled before round %d", _round_idx)
+        loop_ctx = _ToolLoopContext()
+        loop_ctx.loop_id = str(id(loop_ctx))
+        # Inherit participant role from the on_event-level context
+        parent_ctx = _current_loop_ctx.get()
+        if parent_ctx is not None:
+            loop_ctx.current_participant_role = parent_ctx.current_participant_role
+        _current_loop_ctx.set(loop_ctx)
+        self._active_loops[loop_ctx.loop_id] = loop_ctx
+        try:
+            # Apply pre-queued directives (e.g. cancel enqueued before loop started)
+            context, should_cancel = self._drain_steering_queue(context, loop_ctx)
+            if should_cancel:
                 return
-
-            # Re-apply gating so newly-activated skills expose their tools
-            if self._all_context_tools:
-                context = context.model_copy(
-                    update={"tools": self._apply_tool_filters(self._all_context_tools)}
-                )
-
-            text_parts: list[str] = []
-            tool_calls: list[StreamToolCall] = []
-
-            async for event in self._generate_stream_with_retry(context):
-                if isinstance(event, StreamTextDelta):
-                    text_parts.append(event.text)
-                    yield event.text
-                elif isinstance(event, StreamToolCall):
-                    tool_calls.append(event)
-
-            if not tool_calls or self._tool_handler is None:
-                return
-
-            # Don't execute tools on the final iteration — no generation follows
-            if _round_idx >= self._max_tool_rounds:
-                logger.warning(
-                    "Streaming tool loop reached max_tool_rounds=%d",
-                    self._max_tool_rounds,
-                )
-                return
-
-            # Timeout check
-            if deadline and asyncio.get_event_loop().time() >= deadline:
-                logger.warning(
-                    "Streaming tool loop timeout after %d rounds (%.0fs)",
-                    _round_idx,
-                    self._tool_loop_timeout_seconds,
-                )
-                return
-
-            # Soft warning
-            if _round_idx == self._tool_loop_warn_after:
-                logger.warning("Streaming tool loop reached %d rounds, still running", _round_idx)
-
-            logger.info(
-                "Streaming tool round %d: %d call(s)",
-                _round_idx + 1,
-                len(tool_calls),
+            telemetry = self._telemetry_provider
+            deadline = (
+                asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
+                if self._tool_loop_timeout_seconds
+                else None
             )
 
-            # Append assistant message with text + tool calls
-            parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
-            accumulated_text = "".join(text_parts)
-            if accumulated_text:
-                parts.append(AITextPart(text=accumulated_text))
-            for tc in tool_calls:
-                parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
-            context.messages.append(AIMessage(role="assistant", content=parts))
+            for _round_idx in range(self._max_tool_rounds + 1):
+                # Steering checkpoint 1: fast-path cancel before generate
+                if loop_ctx.cancel_event.is_set():
+                    logger.info("Streaming tool loop cancelled before round %d", _round_idx)
+                    return
 
-            # Execute tools concurrently
-            result_parts = await self._execute_tools_parallel(tool_calls, telemetry)
-            context.messages.append(AIMessage(role="tool", content=result_parts))
+                # Re-apply gating so newly-activated skills expose their tools
+                if loop_ctx.all_context_tools:
+                    context = context.model_copy(
+                        update={"tools": self._apply_tool_filters(loop_ctx.all_context_tools)}
+                    )
 
-            # Yield inline XML so streaming consumers can render tool calls.
-            # Format: <invoke name="..."></invoke><result>output</result>
-            # Arguments are omitted to avoid large JSON breaking markdown rendering.
-            for tc, rp in zip(tool_calls, result_parts, strict=False):
-                result_text = rp.result if isinstance(rp, AIToolResultPart) else ""
-                yield f'\n<invoke name="{tc.name}"></invoke>\n<result>{result_text}</result>\n'
+                text_parts: list[str] = []
+                tool_calls: list[StreamToolCall] = []
 
-            # Steering checkpoint 2: drain queue after tool execution
-            context, should_cancel = self._drain_steering_queue(context)
-            if should_cancel:
-                logger.info("Streaming tool loop cancelled after round %d", _round_idx)
-                return
+                async for event in self._generate_stream_with_retry(context):
+                    if isinstance(event, StreamTextDelta):
+                        text_parts.append(event.text)
+                        yield event.text
+                    elif isinstance(event, StreamToolCall):
+                        tool_calls.append(event)
+
+                if not tool_calls or self._tool_handler is None:
+                    return
+
+                # Don't execute tools on the final iteration — no generation follows
+                if _round_idx >= self._max_tool_rounds:
+                    logger.warning(
+                        "Streaming tool loop reached max_tool_rounds=%d",
+                        self._max_tool_rounds,
+                    )
+                    return
+
+                # Timeout check
+                if deadline and asyncio.get_event_loop().time() >= deadline:
+                    logger.warning(
+                        "Streaming tool loop timeout after %d rounds (%.0fs)",
+                        _round_idx,
+                        self._tool_loop_timeout_seconds,
+                    )
+                    return
+
+                # Soft warning
+                if _round_idx == self._tool_loop_warn_after:
+                    logger.warning(
+                        "Streaming tool loop reached %d rounds, still running", _round_idx
+                    )
+
+                logger.info(
+                    "Streaming tool round %d: %d call(s)",
+                    _round_idx + 1,
+                    len(tool_calls),
+                )
+
+                # Append assistant message with text + tool calls
+                parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
+                accumulated_text = "".join(text_parts)
+                if accumulated_text:
+                    parts.append(AITextPart(text=accumulated_text))
+                for tc in tool_calls:
+                    parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
+                context.messages.append(AIMessage(role="assistant", content=parts))
+
+                # Execute tools concurrently
+                result_parts = await self._execute_tools_parallel(tool_calls, telemetry)
+                context.messages.append(AIMessage(role="tool", content=result_parts))
+
+                # Yield inline XML so streaming consumers can render tool calls.
+                # Format: <invoke name="..."></invoke><result>output</result>
+                # Arguments are omitted to avoid large JSON breaking markdown rendering.
+                for tc, rp in zip(tool_calls, result_parts, strict=False):
+                    result_text = rp.result if isinstance(rp, AIToolResultPart) else ""
+                    yield (
+                        f'\n<invoke name="{tc.name}"></invoke>\n<result>{result_text}</result>\n'
+                    )
+
+                # Steering checkpoint 2: drain queue after tool execution
+                context, should_cancel = self._drain_steering_queue(context, loop_ctx)
+                if should_cancel:
+                    logger.info("Streaming tool loop cancelled after round %d", _round_idx)
+                    return
+        finally:
+            self._active_loops.pop(loop_ctx.loop_id, None)
+            _current_loop_ctx.set(None)
 
     @property
     def _telemetry_provider(self) -> NoopTelemetryProvider:
@@ -462,94 +518,104 @@ class AIChannel(Channel):
     async def _run_tool_loop(
         self, context: AIContext, *, parent_span_id: str | None = None
     ) -> AIResponse:
-        """Generate → execute tools → re-generate until a text response."""
-        self._activated_skills = set()
-        self._cancel_event.clear()
-        # Apply pre-queued directives (e.g. cancel enqueued before loop started)
-        context, should_cancel = self._drain_steering_queue(context)
-        if should_cancel:
-            return AIResponse(content="", tool_calls=[])
-        response: AIResponse = await self._generate_with_retry(context)
-        telemetry = self._telemetry_provider
-        deadline = (
-            asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
-            if self._tool_loop_timeout_seconds
-            else None
-        )
-
-        for round_idx in range(self._max_tool_rounds):
-            if not response.tool_calls or self._tool_handler is None:
-                break
-
-            # Steering checkpoint 1: fast-path cancel before generate
-            if self._cancel_event.is_set():
-                logger.info("Tool loop cancelled before round %d", round_idx)
-                break
-
-            # Timeout check (after current round finishes)
-            if deadline and asyncio.get_event_loop().time() >= deadline:
-                logger.warning(
-                    "Tool loop timeout after %d rounds (%.0fs)",
-                    round_idx,
-                    self._tool_loop_timeout_seconds,
-                )
-                break
-
-            # Soft warning
-            if round_idx == self._tool_loop_warn_after:
-                logger.warning("Tool loop reached %d rounds, still running", round_idx)
-
-            logger.info(
-                "Tool round %d: %d call(s)",
-                round_idx + 1,
-                len(response.tool_calls),
-            )
-
-            # Append assistant message with tool calls
-            parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
-            if response.content:
-                parts.append(AITextPart(text=response.content))
-            for tc in response.tool_calls:
-                parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
-            context.messages.append(AIMessage(role="assistant", content=parts))
-
-            # Execute tools concurrently
-            result_parts = await self._execute_tools_parallel(
-                response.tool_calls, telemetry, parent_span_id=parent_span_id
-            )
-            context.messages.append(AIMessage(role="tool", content=result_parts))
-
-            # Steering checkpoint 2: drain queue after tool execution
-            context, should_cancel = self._drain_steering_queue(context)
+        """Generate -> execute tools -> re-generate until a text response."""
+        loop_ctx = _ToolLoopContext()
+        loop_ctx.loop_id = str(id(loop_ctx))
+        # Inherit participant role from the on_event-level context
+        parent_lctx = _current_loop_ctx.get()
+        if parent_lctx is not None:
+            loop_ctx.current_participant_role = parent_lctx.current_participant_role
+        _current_loop_ctx.set(loop_ctx)
+        self._active_loops[loop_ctx.loop_id] = loop_ctx
+        try:
+            # Apply pre-queued directives (e.g. cancel enqueued before loop started)
+            context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
-                logger.info("Tool loop cancelled after round %d", round_idx)
-                break
+                return AIResponse(content="", tool_calls=[])
+            response: AIResponse = await self._generate_with_retry(context)
+            telemetry = self._telemetry_provider
+            deadline = (
+                asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
+                if self._tool_loop_timeout_seconds
+                else None
+            )
 
-            # Re-apply gating so newly-activated skills expose their tools
-            if self._all_context_tools:
-                context = context.model_copy(
-                    update={"tools": self._apply_tool_filters(self._all_context_tools)}
+            for round_idx in range(self._max_tool_rounds):
+                if not response.tool_calls or self._tool_handler is None:
+                    break
+
+                # Steering checkpoint 1: fast-path cancel before generate
+                if loop_ctx.cancel_event.is_set():
+                    logger.info("Tool loop cancelled before round %d", round_idx)
+                    break
+
+                # Timeout check (after current round finishes)
+                if deadline and asyncio.get_event_loop().time() >= deadline:
+                    logger.warning(
+                        "Tool loop timeout after %d rounds (%.0fs)",
+                        round_idx,
+                        self._tool_loop_timeout_seconds,
+                    )
+                    break
+
+                # Soft warning
+                if round_idx == self._tool_loop_warn_after:
+                    logger.warning("Tool loop reached %d rounds, still running", round_idx)
+
+                logger.info(
+                    "Tool round %d: %d call(s)",
+                    round_idx + 1,
+                    len(response.tool_calls),
                 )
 
-            # Re-generate with tool results (with retry)
-            try:
-                response = await self._generate_with_retry(context)
-            except ProviderError as exc:
-                if self._is_context_overflow(exc):
-                    logger.warning("Context overflow at round %d. Compacting.", round_idx)
-                    context = await self._compact_context(context)
-                    response = await self._generate_with_retry(context)
-                else:
-                    # Return partial result if we have accumulated text
-                    accumulated = self._extract_accumulated_text(context.messages)
-                    if accumulated:
-                        return AIResponse(
-                            content=accumulated + f"\n\n[Agent interrupted: {exc}]",
-                            tool_calls=[],
-                        )
-                    raise
+                # Append assistant message with tool calls
+                parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
+                if response.content:
+                    parts.append(AITextPart(text=response.content))
+                for tc in response.tool_calls:
+                    parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
+                context.messages.append(AIMessage(role="assistant", content=parts))
 
-        return response
+                # Execute tools concurrently
+                result_parts = await self._execute_tools_parallel(
+                    response.tool_calls, telemetry, parent_span_id=parent_span_id
+                )
+                context.messages.append(AIMessage(role="tool", content=result_parts))
+
+                # Steering checkpoint 2: drain queue after tool execution
+                context, should_cancel = self._drain_steering_queue(context, loop_ctx)
+                if should_cancel:
+                    logger.info("Tool loop cancelled after round %d", round_idx)
+                    break
+
+                # Re-apply gating so newly-activated skills expose their tools
+                if loop_ctx.all_context_tools:
+                    context = context.model_copy(
+                        update={"tools": self._apply_tool_filters(loop_ctx.all_context_tools)}
+                    )
+
+                # Re-generate with tool results (with retry)
+                try:
+                    response = await self._generate_with_retry(context)
+                except ProviderError as exc:
+                    if self._is_context_overflow(exc):
+                        logger.warning("Context overflow at round %d. Compacting.", round_idx)
+                        context = await self._compact_context(context)
+                        response = await self._generate_with_retry(context)
+                    else:
+                        # Return partial result if we have accumulated text
+                        accumulated = self._extract_accumulated_text(context.messages)
+                        if accumulated:
+                            return AIResponse(
+                                content=accumulated + f"\n\n[Agent interrupted: {exc}]",
+                                tool_calls=[],
+                            )
+                        raise
+
+            return response
+        finally:
+            self._active_loops.pop(loop_ctx.loop_id, None)
+            _current_loop_ctx.set(None)
 
     async def _execute_tools_parallel(
         self,
@@ -803,7 +869,7 @@ class AIChannel(Channel):
         """Return the tool policy resolved for the current participant role."""
         if self._tool_policy is None:
             return None
-        return self._tool_policy.resolve(self._current_participant_role)
+        return self._tool_policy.resolve(self._get_loop_ctx().current_participant_role)
 
     # -- Tool policy / skill gating helpers ------------------------------------
 
@@ -821,9 +887,10 @@ class AIChannel(Channel):
         """Collect tool names gated by skills that have NOT been activated yet."""
         if not self._skills:
             return set()
+        activated = self._get_loop_ctx().activated_skills
         gated: set[str] = set()
         for meta in self._skills.all_metadata():
-            if meta.name in self._activated_skills:
+            if meta.name in activated:
                 continue
             gated.update(meta.gated_tool_names)
         return gated
@@ -896,7 +963,8 @@ class AIChannel(Channel):
             system_prompt = (system_prompt or "") + skill_block
 
         # Store unfiltered tool list for re-application after skill activation
-        self._all_context_tools = list(tools)
+        loop_ctx = self._get_loop_ctx()
+        loop_ctx.all_context_tools = list(tools)
 
         # Apply tool policy + skill gating visibility filters
         tools = self._apply_tool_filters(tools)
@@ -1135,7 +1203,7 @@ class AIChannel(Channel):
             )
 
         # Track activation so gated tools become visible on next round
-        self._activated_skills.add(skill_name)
+        self._get_loop_ctx().activated_skills.add(skill_name)
 
         result: dict[str, Any] = {
             "name": skill.name,

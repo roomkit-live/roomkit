@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -845,20 +844,8 @@ def _make_gemini_provider() -> Any:
         p = GeminiLiveProvider.__new__(GeminiLiveProvider)
 
     # Initialize fields normally set in __init__
-    p._live_sessions = {}
-    p._live_ctxmgrs = {}
-    p._live_configs = {}
-    p._receive_tasks = {}
     p._sessions = {}
     p._transcription_buffers = {}
-    p._audio_chunk_count = {}
-    p._audio_buffers = {}
-    p._send_audio_count = {}
-    p._error_suppressed = set()
-    p._session_started_at = {}
-    p._session_turn_count = {}
-    p._session_tool_result_bytes = {}
-    p._resumption_handles = {}
     p._audio_callbacks = []
     p._transcription_callbacks = []
     p._speech_start_callbacks = []
@@ -884,14 +871,16 @@ class TestAudioBufferingDuringReconnect:
     """Audio chunks sent while state==CONNECTING are buffered, not dropped."""
 
     async def test_audio_buffered_when_connecting(self) -> None:
+        from roomkit.providers.gemini.realtime import _GeminiSessionState
+
         provider = _make_gemini_provider()
         session = _make_session()
         session.state = VoiceSessionState.CONNECTING
 
-        # Set up a mock live session and buffer
+        # Set up a mock live session via consolidated state
         mock_live = MagicMock()
-        provider._live_sessions[session.id] = mock_live
-        provider._audio_buffers[session.id] = deque(maxlen=100)
+        state = _GeminiSessionState(session=session, live_session=mock_live)
+        provider._sessions[session.id] = state
 
         await provider.send_audio(session, b"chunk-1")
         await provider.send_audio(session, b"chunk-2")
@@ -899,57 +888,62 @@ class TestAudioBufferingDuringReconnect:
 
         # Audio should be in the buffer, not sent to the live session
         mock_live.send_realtime_input.assert_not_called()
-        assert list(provider._audio_buffers[session.id]) == [
+        assert list(state.audio_buffer) == [
             b"chunk-1",
             b"chunk-2",
             b"chunk-3",
         ]
 
     async def test_buffer_bounded_at_100_frames(self) -> None:
+        from roomkit.providers.gemini.realtime import _GeminiSessionState
+
         provider = _make_gemini_provider()
         session = _make_session()
         session.state = VoiceSessionState.CONNECTING
 
         mock_live = MagicMock()
-        provider._live_sessions[session.id] = mock_live
-        provider._audio_buffers[session.id] = deque(maxlen=100)
+        state = _GeminiSessionState(session=session, live_session=mock_live)
+        provider._sessions[session.id] = state
 
         # Send 110 chunks — oldest 10 should be evicted
         for i in range(110):
             await provider.send_audio(session, f"chunk-{i}".encode())
 
-        buf = provider._audio_buffers[session.id]
-        assert len(buf) == 100
-        assert buf[0] == b"chunk-10"  # oldest surviving
-        assert buf[-1] == b"chunk-109"  # newest
+        assert len(state.audio_buffer) == 100
+        assert state.audio_buffer[0] == b"chunk-10"  # oldest surviving
+        assert state.audio_buffer[-1] == b"chunk-109"  # newest
 
     async def test_audio_sent_normally_when_active(self) -> None:
+        from roomkit.providers.gemini.realtime import _GeminiSessionState
+
         provider = _make_gemini_provider()
         session = _make_session()
         session.state = VoiceSessionState.ACTIVE
 
         mock_live = AsyncMock()
-        provider._live_sessions[session.id] = mock_live
-        provider._audio_buffers[session.id] = deque(maxlen=100)
+        state = _GeminiSessionState(session=session, live_session=mock_live)
+        provider._sessions[session.id] = state
 
         await provider.send_audio(session, b"chunk-1")
 
         mock_live.send_realtime_input.assert_called_once()
-        assert len(provider._audio_buffers[session.id]) == 0
+        assert len(state.audio_buffer) == 0
 
 
 class TestErrorDeduplication:
     """Only one send_audio_failed error fires per reconnection cycle."""
 
     async def test_first_error_fires_callback(self) -> None:
+        from roomkit.providers.gemini.realtime import _GeminiSessionState
+
         provider = _make_gemini_provider()
         session = _make_session()
         session.state = VoiceSessionState.ACTIVE
 
         mock_live = AsyncMock()
         mock_live.send_realtime_input.side_effect = ConnectionError("ws closed")
-        provider._live_sessions[session.id] = mock_live
-        provider._audio_buffers[session.id] = deque(maxlen=100)
+        state = _GeminiSessionState(session=session, live_session=mock_live)
+        provider._sessions[session.id] = state
 
         errors: list[tuple[str, str]] = []
         provider.on_error(lambda s, code, msg: errors.append((code, msg)))
@@ -960,14 +954,16 @@ class TestErrorDeduplication:
         assert errors[0][0] == "send_audio_failed"
 
     async def test_subsequent_errors_suppressed(self) -> None:
+        from roomkit.providers.gemini.realtime import _GeminiSessionState
+
         provider = _make_gemini_provider()
         session = _make_session()
         session.state = VoiceSessionState.ACTIVE
 
         mock_live = AsyncMock()
         mock_live.send_realtime_input.side_effect = ConnectionError("ws closed")
-        provider._live_sessions[session.id] = mock_live
-        provider._audio_buffers[session.id] = deque(maxlen=100)
+        state = _GeminiSessionState(session=session, live_session=mock_live)
+        provider._sessions[session.id] = state
 
         errors: list[tuple[str, str]] = []
         provider.on_error(lambda s, code, msg: errors.append((code, msg)))
@@ -982,19 +978,23 @@ class TestErrorDeduplication:
         assert len(errors) == 1  # still just 1
 
     async def test_error_suppression_cleared_after_reconnect_cycle(self) -> None:
+        from roomkit.providers.gemini.realtime import _GeminiSessionState
+
         provider = _make_gemini_provider()
         session = _make_session()
 
-        # Simulate a completed reconnect cycle
-        provider._error_suppressed.add(session.id)
-        provider._error_suppressed.discard(session.id)
+        # Simulate a completed reconnect cycle: suppression was set then cleared
+        state = _GeminiSessionState(
+            session=session,
+            error_suppressed=False,
+        )
 
         # Now a new error should fire
         session.state = VoiceSessionState.ACTIVE
         mock_live = AsyncMock()
         mock_live.send_realtime_input.side_effect = ConnectionError("ws closed again")
-        provider._live_sessions[session.id] = mock_live
-        provider._audio_buffers[session.id] = deque(maxlen=100)
+        state.live_session = mock_live
+        provider._sessions[session.id] = state
 
         errors: list[tuple[str, str]] = []
         provider.on_error(lambda s, code, msg: errors.append((code, msg)))
@@ -1003,21 +1003,21 @@ class TestErrorDeduplication:
         assert len(errors) == 1
 
     async def test_disconnect_cleans_up_suppression(self) -> None:
+        from roomkit.providers.gemini.realtime import _GeminiSessionState
+
         provider = _make_gemini_provider()
         session = _make_session()
 
-        provider._sessions[session.id] = session
-        provider._audio_buffers[session.id] = deque(maxlen=100)
-        provider._error_suppressed.add(session.id)
-        provider._session_started_at[session.id] = 0.0
-        provider._session_turn_count[session.id] = 0
-        provider._session_tool_result_bytes[session.id] = 0
+        state = _GeminiSessionState(
+            session=session,
+            error_suppressed=True,
+            started_at=0.0,
+        )
+        provider._sessions[session.id] = state
 
         await provider.disconnect(session)
 
-        assert session.id not in provider._error_suppressed
-        assert session.id not in provider._audio_buffers
-        assert session.id not in provider._session_started_at
+        assert session.id not in provider._sessions
 
 
 class TestEndOfResponseOrdering:
