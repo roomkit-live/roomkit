@@ -36,9 +36,7 @@ def estimate_message_tokens(message: AIMessage) -> int:
             )
             total += estimate_tokens(part.name) + estimate_tokens(args_str)
         elif isinstance(part, AIToolResultPart):
-            result_text = (
-                part.result if isinstance(part.result, str) else json.dumps(part.result)
-            )
+            result_text = part.result if isinstance(part.result, str) else json.dumps(part.result)
             total += estimate_tokens(result_text)
         elif isinstance(part, AIImagePart):
             total += 1000  # rough estimate for vision tokens

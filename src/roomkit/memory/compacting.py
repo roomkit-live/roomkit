@@ -102,9 +102,7 @@ class CompactingMemory(MemoryProvider):
         text = event.content.body if isinstance(event.content, TextContent) else str(event.content)
         return estimate_tokens(text)
 
-    async def _get_or_create_summary(
-        self, room_id: str, events: list[RoomEvent]
-    ) -> str:
+    async def _get_or_create_summary(self, room_id: str, events: list[RoomEvent]) -> str:
         # Check cache
         now = asyncio.get_event_loop().time()
         if room_id in self._summary_cache:
@@ -115,14 +113,8 @@ class CompactingMemory(MemoryProvider):
         # Generate summary
         event_texts: list[str] = []
         for e in events:
-            role = (
-                "assistant"
-                if e.source and e.source.channel_type == ChannelType.AI
-                else "user"
-            )
-            text = (
-                e.content.body if isinstance(e.content, TextContent) else str(e.content)
-            )
+            role = "assistant" if e.source and e.source.channel_type == ChannelType.AI else "user"
+            text = e.content.body if isinstance(e.content, TextContent) else str(e.content)
             event_texts.append(f"[{role}]: {text[:2000]}")
 
         prompt = (
@@ -144,9 +136,7 @@ class CompactingMemory(MemoryProvider):
             summary = response.content or "[Summary generation failed]"
         except Exception as exc:
             logger.warning("Failed to generate summary: %s", exc)
-            summary = (
-                f"[Earlier conversation with {len(events)} messages — summary unavailable]"
-            )
+            summary = f"[Earlier conversation with {len(events)} messages — summary unavailable]"
 
         self._summary_cache[room_id] = (now, summary)
         return summary

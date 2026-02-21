@@ -56,9 +56,7 @@ class BudgetAwareMemory(MemoryProvider):
             events=trimmed_events,
         )
 
-    def _trim_events_to_budget(
-        self, events: list[RoomEvent], budget: int
-    ) -> list[RoomEvent]:
+    def _trim_events_to_budget(self, events: list[RoomEvent], budget: int) -> list[RoomEvent]:
         if not events:
             return events
 

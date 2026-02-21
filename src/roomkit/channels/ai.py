@@ -44,6 +44,7 @@ from roomkit.providers.ai.base import (
     AIToolCallPart,
     AIToolResultPart,
     ProviderError,
+    StreamDone,
     StreamTextDelta,
     StreamToolCall,
 )
@@ -189,15 +190,11 @@ class AIChannel(Channel):
                 should_cancel = True
             elif isinstance(directive, InjectMessage):
                 logger.info("Steering: injecting %s message", directive.role)
-                context.messages.append(
-                    AIMessage(role=directive.role, content=directive.content)
-                )
+                context.messages.append(AIMessage(role=directive.role, content=directive.content))
             elif isinstance(directive, UpdateSystemPrompt):
                 logger.info("Steering: appending to system prompt")
                 context = context.model_copy(
-                    update={
-                        "system_prompt": (context.system_prompt or "") + directive.append
-                    }
+                    update={"system_prompt": (context.system_prompt or "") + directive.append}
                 )
 
         return context, should_cancel
@@ -366,10 +363,8 @@ class AIChannel(Channel):
             # Format: <invoke name="..."></invoke><result>output</result>
             # Arguments are omitted to avoid large JSON breaking markdown rendering.
             for tc, rp in zip(tool_calls, result_parts, strict=False):
-                yield (
-                    f'\n<invoke name="{tc.name}"></invoke>'
-                    f"\n<result>{rp.result}</result>\n"
-                )
+                result_text = rp.result if isinstance(rp, AIToolResultPart) else ""
+                yield f'\n<invoke name="{tc.name}"></invoke>\n<result>{result_text}</result>\n'
 
             # Steering checkpoint 2: drain queue after tool execution
             context, should_cancel = self._drain_steering_queue(context)
@@ -565,6 +560,7 @@ class AIChannel(Channel):
     ) -> list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart]:
         """Execute tool calls concurrently and return result parts."""
         assert self._tool_handler is not None
+        handler = self._tool_handler
 
         async def _run_one(tc: Any) -> AIToolResultPart:
             logger.info("Executing tool: %s(%s)", tc.name, tc.id)
@@ -580,9 +576,9 @@ class AIChannel(Channel):
                 return AIToolResultPart(
                     tool_call_id=tc.id,
                     name=tc.name,
-                    result=json.dumps({
-                        "error": f"Tool '{tc.name}' is not permitted by the agent's tool policy."
-                    }),
+                    result=json.dumps(
+                        {"error": f"Tool '{tc.name}' is not permitted by the agent's tool policy."}
+                    ),
                 )
 
             # Execution guard: skill gating
@@ -591,12 +587,14 @@ class AIChannel(Channel):
                 return AIToolResultPart(
                     tool_call_id=tc.id,
                     name=tc.name,
-                    result=json.dumps({
-                        "error": (
-                            f"Tool '{tc.name}' is gated by a skill. "
-                            "Activate the skill first using activate_skill."
-                        ),
-                    }),
+                    result=json.dumps(
+                        {
+                            "error": (
+                                f"Tool '{tc.name}' is gated by a skill. "
+                                "Activate the skill first using activate_skill."
+                            ),
+                        }
+                    ),
                 )
 
             tool_span_id = telemetry.start_span(
@@ -606,7 +604,7 @@ class AIChannel(Channel):
                 attributes={"tool.name": tc.name, "tool.id": tc.id},
             )
             try:
-                result = await self._tool_handler(tc.name, tc.arguments)
+                result = await handler(tc.name, tc.arguments)
                 result = self._maybe_truncate_result(result)
                 telemetry.end_span(tool_span_id)
             except Exception as exc:
@@ -631,9 +629,10 @@ class AIChannel(Channel):
         policy = self._retry_policy or RetryPolicy(max_retries=0)
         last_error: ProviderError | None = None
 
+        provider: AIProvider = self._provider
         for attempt in range(policy.max_retries + 1):
             try:
-                return await self._provider.generate(context)
+                return await provider.generate(context)
             except ProviderError as exc:
                 last_error = exc
                 if not exc.retryable:
@@ -672,7 +671,7 @@ class AIChannel(Channel):
 
     async def _generate_stream_with_retry(
         self, context: AIContext
-    ) -> AsyncIterator[StreamTextDelta | StreamToolCall]:
+    ) -> AsyncIterator[StreamTextDelta | StreamToolCall | StreamDone]:
         """Stream with retry on provider errors."""
         policy = self._retry_policy or RetryPolicy(max_retries=0)
         last_error: ProviderError | None = None
@@ -789,9 +788,7 @@ class AIChannel(Channel):
 
     # -- Role-based tool policy -------------------------------------------------
 
-    def _resolve_participant_role(
-        self, event: RoomEvent, context: RoomContext
-    ) -> str | None:
+    def _resolve_participant_role(self, event: RoomEvent, context: RoomContext) -> str | None:
         """Look up the participant role for the event source."""
         pid = event.source.participant_id
         if not pid:
@@ -811,11 +808,13 @@ class AIChannel(Channel):
     # -- Tool policy / skill gating helpers ------------------------------------
 
     # Skill infrastructure tool names — never filtered by policy or gating
-    _SKILL_INFRA_TOOLS = frozenset({
-        _TOOL_ACTIVATE_SKILL,
-        _TOOL_READ_REFERENCE,
-        _TOOL_RUN_SCRIPT,
-    })
+    _SKILL_INFRA_TOOLS = frozenset(
+        {
+            _TOOL_ACTIVATE_SKILL,
+            _TOOL_READ_REFERENCE,
+            _TOOL_RUN_SCRIPT,
+        }
+    )
 
     @property
     def _gated_tool_names(self) -> set[str]:

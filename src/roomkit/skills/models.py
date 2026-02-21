@@ -26,6 +26,17 @@ class SkillMetadata:
     allowed_tools: str | None = None
     extra_metadata: dict[str, str] = field(default_factory=dict)
 
+    @property
+    def gated_tool_names(self) -> list[str]:
+        """Parse ``allowed_tools`` into a list of tool names.
+
+        The ``allowed_tools`` field is a comma-separated string.  Returns an
+        empty list when the field is ``None`` or blank.
+        """
+        if not self.allowed_tools:
+            return []
+        return [t.strip() for t in self.allowed_tools.split(",") if t.strip()]
+
 
 @dataclass
 class Skill:

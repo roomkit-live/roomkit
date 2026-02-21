@@ -215,9 +215,7 @@ class WebSocketChannel(Channel):
                 for conn_id in list(self._stream_send_fns):
                     await self._send_stream_message(conn_id, chunk_msg)
         except Exception as exc:
-            error_msg = StreamError(
-                room_id=room_id, stream_id=stream_id, error=str(exc)
-            )
+            error_msg = StreamError(room_id=room_id, stream_id=stream_id, error=str(exc))
             for conn_id in list(self._stream_send_fns):
                 await self._send_stream_message(conn_id, error_msg)
             raise

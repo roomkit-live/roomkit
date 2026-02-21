@@ -171,13 +171,11 @@ class TestToolLoopWarning:
             await ch._run_tool_loop(context)
 
         warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-        assert any(
-            f"reached {warn_after} rounds, still running" in m for m in warning_msgs
-        ), f"Expected exact warning format, got: {warning_msgs}"
+        assert any(f"reached {warn_after} rounds, still running" in m for m in warning_msgs), (
+            f"Expected exact warning format, got: {warning_msgs}"
+        )
 
-    async def test_no_warning_below_threshold(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    async def test_no_warning_below_threshold(self, caplog: pytest.LogCaptureFixture) -> None:
         """No warning when loop finishes before warn_after."""
         responses = [_tool_response(), _final_response()]
         provider = MockAIProvider(ai_responses=responses)
@@ -345,9 +343,7 @@ class TestContextOverflowRecovery:
             nonlocal call_count
             call_count += 1
             if call_count == 2:
-                raise ProviderError(
-                    "context length exceeded", retryable=True, status_code=400
-                )
+                raise ProviderError("context length exceeded", retryable=True, status_code=400)
             if call_count == 3:
                 return _final_response("Recovered")
             return _tool_response()
@@ -380,9 +376,7 @@ class TestContextOverflowRecovery:
             call_count += 1
             if call_count == 1:
                 return _tool_response("Thinking...")
-            raise ProviderError(
-                "Internal server error", retryable=False, status_code=500
-            )
+            raise ProviderError("Internal server error", retryable=False, status_code=500)
 
         provider = MockAIProvider()
         provider.generate = generate_failing  # type: ignore[assignment]
@@ -411,9 +405,7 @@ class TestContextOverflowRecovery:
             if call_count == 1:
                 return _tool_response()
             # Even after compaction, still overflows
-            raise ProviderError(
-                "context length exceeded", retryable=True, status_code=400
-            )
+            raise ProviderError("context length exceeded", retryable=True, status_code=400)
 
         provider = MockAIProvider()
         provider.generate = always_overflow  # type: ignore[assignment]

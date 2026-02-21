@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock
-
-import pytest
 
 from roomkit.channels.ai import AIChannel
 from roomkit.models.steering import Cancel, InjectMessage, UpdateSystemPrompt
