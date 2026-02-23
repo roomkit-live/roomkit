@@ -36,7 +36,6 @@ from roomkit.models.event import (
     TextContent,
 )
 from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
-from roomkit.realtime.base import EphemeralEvent, EphemeralEventType, RealtimeBackend
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
@@ -52,6 +51,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamToolCall,
 )
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType, RealtimeBackend
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.tools.policy import ToolPolicy
@@ -257,7 +257,7 @@ class AIChannel(Channel):
         """Publish a tool call ephemeral event. Best-effort, never breaks the loop."""
         if self._realtime is None or not room_id:
             return
-        _RESULT_PREVIEW = 500
+        result_preview = 500
         if event_type == EphemeralEventType.TOOL_CALL_START:
             tc_data = [
                 {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in tool_calls
@@ -267,8 +267,8 @@ class AIChannel(Channel):
                 {
                     "id": tc.tool_call_id,
                     "name": tc.name,
-                    "result": tc.result[:_RESULT_PREVIEW]
-                    if len(tc.result) > _RESULT_PREVIEW
+                    "result": tc.result[:result_preview]
+                    if len(tc.result) > result_preview
                     else tc.result,
                 }
                 for tc in tool_calls
