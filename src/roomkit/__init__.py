@@ -187,6 +187,7 @@ from roomkit.providers.teams.mock import MockTeamsProvider
 from roomkit.providers.teams.webhook import (
     is_bot_added,
     parse_teams_activity,
+    parse_teams_reactions,
     parse_teams_webhook,
 )
 from roomkit.providers.telegram.base import TelegramProvider
@@ -539,6 +540,7 @@ __all__ = [
     "TeamsConfig",
     "is_bot_added",
     "parse_teams_activity",
+    "parse_teams_reactions",
     "parse_teams_webhook",
     # SMS
     "MockSMSProvider",

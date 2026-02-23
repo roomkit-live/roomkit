@@ -200,3 +200,49 @@ class TestChannelCapabilities:
         assert caps.max_buttons == 3
         assert caps.supports_quick_replies is True
         assert caps.supports_media is True
+
+
+class TestTransportChannelThreadMapping:
+    """Test that TransportChannel.handle_inbound maps thread_id to channel_data."""
+
+    async def test_handle_inbound_with_thread_id(self) -> None:
+        from roomkit.channels.transport import TransportChannel
+        from roomkit.models.context import RoomContext
+        from roomkit.models.delivery import InboundMessage
+        from roomkit.models.event import TextContent
+        from roomkit.models.room import Room
+
+        ch = TransportChannel("ch-test", ChannelType.TEAMS)
+        room = Room(id="room-1")
+        ctx = RoomContext(room=room, store=None)  # type: ignore[arg-type]
+        msg = InboundMessage(
+            channel_id="ch-test",
+            sender_id="user-1",
+            content=TextContent(body="hello"),
+            thread_id="thread-abc",
+        )
+
+        event = await ch.handle_inbound(msg, ctx)
+
+        assert event.channel_data.thread_id == "thread-abc"
+        assert event.channel_data.external_id is None
+
+    async def test_handle_inbound_without_thread_id(self) -> None:
+        from roomkit.channels.transport import TransportChannel
+        from roomkit.models.context import RoomContext
+        from roomkit.models.delivery import InboundMessage
+        from roomkit.models.event import TextContent
+        from roomkit.models.room import Room
+
+        ch = TransportChannel("ch-test", ChannelType.TEAMS)
+        room = Room(id="room-1")
+        ctx = RoomContext(room=room, store=None)  # type: ignore[arg-type]
+        msg = InboundMessage(
+            channel_id="ch-test",
+            sender_id="user-1",
+            content=TextContent(body="no thread"),
+        )
+
+        event = await ch.handle_inbound(msg, ctx)
+
+        assert event.channel_data.thread_id is None

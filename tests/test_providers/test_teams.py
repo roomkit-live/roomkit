@@ -14,6 +14,7 @@ from roomkit.providers.teams import (
     TeamsConfig,
     is_bot_added,
     parse_teams_activity,
+    parse_teams_reactions,
     parse_teams_webhook,
 )
 from tests.conftest import make_event
@@ -225,8 +226,14 @@ class TestParseTeamsActivity:
         assert result["sender_id"] == "user-aad-1"
         assert result["sender_name"] == "Alice"
         assert result["bot_id"] == "bot-aad-1"
+        assert result["reply_to_id"] == ""
         assert result["members_added"] == []
         assert result["members_removed"] == []
+
+    def test_parse_activity_with_reply_to_id(self) -> None:
+        payload = _personal_message_payload(replyToId="parent-act-99")
+        result = parse_teams_activity(payload)
+        assert result["reply_to_id"] == "parent-act-99"
 
     def test_parse_conversation_update(self) -> None:
         payload = _conversation_update_payload(
@@ -420,6 +427,100 @@ class TestParseTeamsWebhook:
         assert len(messages) == 1
         # Personal chats do NOT strip <at> tags
         assert "<at>SomeUser</at>" in messages[0].content.body  # type: ignore[union-attr]
+
+    def test_thread_id_from_reply_to_id(self) -> None:
+        """replyToId is mapped to InboundMessage.thread_id."""
+        payload = _personal_message_payload(replyToId="parent-act-1")
+        messages = parse_teams_webhook(payload, channel_id="teams-main")
+
+        assert len(messages) == 1
+        assert messages[0].thread_id == "parent-act-1"
+        assert messages[0].metadata["reply_to_id"] == "parent-act-1"
+
+    def test_no_reply_to_id(self) -> None:
+        """Without replyToId, thread_id is None."""
+        payload = _personal_message_payload()
+        messages = parse_teams_webhook(payload, channel_id="teams-main")
+
+        assert len(messages) == 1
+        assert messages[0].thread_id is None
+        assert messages[0].metadata["reply_to_id"] == ""
+
+    def test_empty_reply_to_id(self) -> None:
+        """An empty-string replyToId is treated as no thread."""
+        payload = _personal_message_payload(replyToId="")
+        messages = parse_teams_webhook(payload, channel_id="teams-main")
+
+        assert len(messages) == 1
+        assert messages[0].thread_id is None
+
+
+# ---------------------------------------------------------------------------
+# parse_teams_reactions
+# ---------------------------------------------------------------------------
+
+
+class TestParseTeamsReactions:
+    def test_reactions_added(self) -> None:
+        payload = {
+            "type": "messageReaction",
+            "from": {"id": "user-1", "name": "Alice"},
+            "replyToId": "target-act-1",
+            "reactionsAdded": [{"type": "like"}, {"type": "heart"}],
+        }
+        results = parse_teams_reactions(payload)
+
+        assert len(results) == 2
+        assert results[0]["action"] == "add"
+        assert results[0]["emoji"] == "like"
+        assert results[0]["sender_id"] == "user-1"
+        assert results[0]["sender_name"] == "Alice"
+        assert results[0]["target_activity_id"] == "target-act-1"
+        assert results[1]["emoji"] == "heart"
+
+    def test_reactions_removed(self) -> None:
+        payload = {
+            "type": "messageReaction",
+            "from": {"id": "user-2", "name": "Bob"},
+            "replyToId": "target-act-2",
+            "reactionsRemoved": [{"type": "laugh"}],
+        }
+        results = parse_teams_reactions(payload)
+
+        assert len(results) == 1
+        assert results[0]["action"] == "remove"
+        assert results[0]["emoji"] == "laugh"
+        assert results[0]["sender_id"] == "user-2"
+
+    def test_both_added_and_removed(self) -> None:
+        payload = {
+            "type": "messageReaction",
+            "from": {"id": "user-1", "name": "Alice"},
+            "replyToId": "target-act-3",
+            "reactionsAdded": [{"type": "like"}],
+            "reactionsRemoved": [{"type": "heart"}],
+        }
+        results = parse_teams_reactions(payload)
+
+        assert len(results) == 2
+        assert results[0]["action"] == "add"
+        assert results[1]["action"] == "remove"
+
+    def test_non_reaction_activity_returns_empty(self) -> None:
+        payload = _personal_message_payload()
+        results = parse_teams_reactions(payload)
+        assert results == []
+
+    def test_empty_reaction_lists(self) -> None:
+        payload = {
+            "type": "messageReaction",
+            "from": {"id": "user-1", "name": "Alice"},
+            "replyToId": "target-act-4",
+            "reactionsAdded": [],
+            "reactionsRemoved": [],
+        }
+        results = parse_teams_reactions(payload)
+        assert results == []
 
 
 # ---------------------------------------------------------------------------
@@ -681,3 +782,89 @@ class TestMockTeamsProvider:
     async def test_provider_name(self) -> None:
         provider = MockTeamsProvider()
         assert provider.name == "MockTeamsProvider"
+
+
+# ---------------------------------------------------------------------------
+# BotFrameworkTeamsProvider.send — threading
+# ---------------------------------------------------------------------------
+
+
+class TestBotFrameworkSendThreading:
+    """Tests that send() sets reply_to_id on the Activity when thread_id is present."""
+
+    def _make_provider(self) -> Any:
+        from unittest.mock import AsyncMock, MagicMock
+
+        from roomkit.providers.teams import BotFrameworkTeamsProvider
+
+        config = TeamsConfig(app_id="bot-app-id", app_password="pw", tenant_id="default-tenant")
+        provider = BotFrameworkTeamsProvider.__new__(BotFrameworkTeamsProvider)
+        provider._config = config
+        provider._conversation_store = InMemoryConversationReferenceStore()
+        provider._adapter = MagicMock()
+        provider._adapter.continue_conversation = AsyncMock()
+        return provider
+
+    async def test_send_with_thread_id(self) -> None:
+        """When event has channel_data.thread_id, Activity gets reply_to_id."""
+        from unittest.mock import MagicMock
+
+        from roomkit.models.event import ChannelData
+
+        provider = self._make_provider()
+        await provider.conversation_store.save("conv-1", {"conversation": {"id": "conv-1"}})
+
+        event = make_event(
+            body="threaded reply",
+            channel_data=ChannelData(thread_id="parent-act-1"),
+        )
+
+        # Capture the callback to inspect the Activity
+        captured_activity = None
+
+        async def _capture_callback(ref, callback, app_id):  # noqa: ARG001
+            mock_turn = MagicMock()
+            mock_response = MagicMock()
+            mock_response.id = "response-1"
+            mock_turn.send_activity = AsyncMock(return_value=mock_response)
+            await callback(mock_turn)
+            nonlocal captured_activity
+            captured_activity = mock_turn.send_activity.call_args[0][0]
+
+        from unittest.mock import AsyncMock
+
+        provider._adapter.continue_conversation = _capture_callback
+
+        result = await provider.send(event, to="conv-1")
+        assert result.success is True
+        assert captured_activity is not None
+        assert captured_activity.reply_to_id == "parent-act-1"
+
+    async def test_send_without_thread_id(self) -> None:
+        """When event has no thread_id, Activity does not set reply_to_id."""
+        from unittest.mock import MagicMock
+
+        provider = self._make_provider()
+        await provider.conversation_store.save("conv-1", {"conversation": {"id": "conv-1"}})
+
+        event = make_event(body="no thread")
+
+        captured_activity = None
+
+        async def _capture_callback(ref, callback, app_id):  # noqa: ARG001
+            mock_turn = MagicMock()
+            mock_response = MagicMock()
+            mock_response.id = "response-2"
+            mock_turn.send_activity = AsyncMock(return_value=mock_response)
+            await callback(mock_turn)
+            nonlocal captured_activity
+            captured_activity = mock_turn.send_activity.call_args[0][0]
+
+        from unittest.mock import AsyncMock
+
+        provider._adapter.continue_conversation = _capture_callback
+
+        result = await provider.send(event, to="conv-1")
+        assert result.success is True
+        assert captured_activity is not None
+        assert captured_activity.reply_to_id is None

@@ -38,6 +38,7 @@ def parse_teams_activity(payload: dict[str, Any]) -> dict[str, Any]:
         "sender_id": sender.get("id", ""),
         "sender_name": sender.get("name", ""),
         "bot_id": recipient.get("id", ""),
+        "reply_to_id": payload.get("replyToId", ""),
         "members_added": [m.get("id", "") for m in payload.get("membersAdded", [])],
         "members_removed": [m.get("id", "") for m in payload.get("membersRemoved", [])],
     }
@@ -109,12 +110,15 @@ def parse_teams_webhook(
     if not is_group:
         bot_mentioned = True
 
+    reply_to_id = payload.get("replyToId") or None
+
     return [
         InboundMessage(
             channel_id=channel_id,
             sender_id=sender_id,
             content=TextContent(body=text),
             external_id=payload.get("id"),
+            thread_id=reply_to_id,
             idempotency_key=payload.get("id"),
             metadata={
                 "sender_name": sender.get("name", ""),
@@ -124,6 +128,52 @@ def parse_teams_webhook(
                 "bot_mentioned": bot_mentioned,
                 "service_url": payload.get("serviceUrl", ""),
                 "tenant_id": payload.get("channelData", {}).get("tenant", {}).get("id", ""),
+                "reply_to_id": reply_to_id or "",
             },
         )
     ]
+
+
+def parse_teams_reactions(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parse reaction events from a ``messageReaction`` Activity.
+
+    Teams sends ``messageReaction`` activities when a user adds or removes
+    a reaction (like, heart, laugh, etc.) on a message.  This helper
+    normalises both ``reactionsAdded`` and ``reactionsRemoved`` into a flat
+    list of dicts.
+
+    Args:
+        payload: Raw Bot Framework Activity dict.
+
+    Returns:
+        A list of dicts, each with keys ``action`` (``"add"`` or
+        ``"remove"``), ``emoji``, ``sender_id``, ``sender_name``, and
+        ``target_activity_id``.  Returns an empty list if the Activity
+        is not a ``messageReaction`` or has no reactions.
+    """
+    if payload.get("type") != "messageReaction":
+        return []
+
+    sender = payload.get("from", {})
+    sender_id = sender.get("id", "")
+    sender_name = sender.get("name", "")
+    target_activity_id = payload.get("replyToId", "")
+
+    results: list[dict[str, Any]] = []
+    for reaction in payload.get("reactionsAdded", []):
+        results.append({
+            "action": "add",
+            "emoji": reaction.get("type", ""),
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "target_activity_id": target_activity_id,
+        })
+    for reaction in payload.get("reactionsRemoved", []):
+        results.append({
+            "action": "remove",
+            "emoji": reaction.get("type", ""),
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "target_activity_id": target_activity_id,
+        })
+    return results

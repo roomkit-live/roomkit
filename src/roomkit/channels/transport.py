@@ -11,7 +11,13 @@ from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelO
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelType
-from roomkit.models.event import CompositeContent, EventSource, MediaContent, RoomEvent
+from roomkit.models.event import (
+    ChannelData,
+    CompositeContent,
+    EventSource,
+    MediaContent,
+    RoomEvent,
+)
 
 logger = logging.getLogger("roomkit.channels.transport")
 
@@ -91,6 +97,11 @@ class TransportChannel(Channel):
                 provider=self.provider_name,
             ),
             content=message.content,
+            channel_data=ChannelData(
+                provider=self.provider_name,
+                external_id=message.external_id,
+                thread_id=message.thread_id,
+            ),
             idempotency_key=message.idempotency_key,
             metadata=message.metadata,
         )

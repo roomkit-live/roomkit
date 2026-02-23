@@ -32,6 +32,7 @@ from roomkit import (
     TeamsConfig,
     is_bot_added,
     parse_teams_activity,
+    parse_teams_reactions,
     parse_teams_webhook,
 )
 from roomkit.channels import TeamsChannel
@@ -88,10 +89,16 @@ async def main() -> None:
         # Echo back only when the bot is mentioned
         if mentioned and body:
             from roomkit.models.enums import ChannelType
-            from roomkit.models.event import EventSource, RoomEvent, TextContent
+            from roomkit.models.event import ChannelData, EventSource, RoomEvent, TextContent
 
             conv_id = (event.metadata or {}).get("conversation_id", "")
             if conv_id:
+                # Reply in-thread when the inbound message has a thread/reply ID
+                reply_to = (event.metadata or {}).get("reply_to_id", "") or (
+                    event.channel_data.thread_id if event.channel_data else None
+                )
+                cd = ChannelData(thread_id=reply_to) if reply_to else ChannelData()
+
                 reply = RoomEvent(
                     room_id=event.room_id,
                     source=EventSource(
@@ -99,6 +106,7 @@ async def main() -> None:
                         channel_type=ChannelType.TEAMS,
                     ),
                     content=TextContent(body=f"Echo: {body}"),
+                    channel_data=cd,
                 )
                 result = await provider.send(reply, to=conv_id)
                 print(f"  Echo sent: success={result.success} error={result.error}")
@@ -153,6 +161,16 @@ async def main() -> None:
             room_id = await ensure_room(conv_id)
             conv_type = activity["conversation_type"]
             print(f"Bot added to {conv_type} conversation: {conv_id} -> room {room_id}")
+            return web.Response(status=200)
+
+        # --- Reactions -------------------------------------------------------
+        if activity_type == "messageReaction":
+            reactions = parse_teams_reactions(payload)
+            for r in reactions:
+                print(
+                    f"  Reaction {r['action']}: {r['emoji']} "
+                    f"by {r['sender_name']} on {r['target_activity_id']}"
+                )
             return web.Response(status=200)
 
         # --- Regular messages ------------------------------------------------

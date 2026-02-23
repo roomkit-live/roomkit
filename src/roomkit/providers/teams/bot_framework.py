@@ -104,7 +104,10 @@ class BotFrameworkTeamsProvider(TeamsProvider):
 
             async def _send_callback(turn_context: TurnContext) -> None:
                 nonlocal message_id
-                response = await turn_context.send_activity(Activity(type="message", text=text))
+                activity_kwargs: dict[str, Any] = {"type": "message", "text": text}
+                if event.channel_data and event.channel_data.thread_id:
+                    activity_kwargs["reply_to_id"] = event.channel_data.thread_id
+                response = await turn_context.send_activity(Activity(**activity_kwargs))
                 if response and response.id:
                     message_id = response.id
 
