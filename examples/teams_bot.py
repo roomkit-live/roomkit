@@ -118,6 +118,25 @@ async def main() -> None:
             print(f"  Created room: {room_id}")
         return room_id
 
+    # --- Proactive 1:1 messaging ---------------------------------------------
+    # To proactively message a user in a 1:1 chat, create a personal
+    # conversation first.  The bot must be installed in the user's tenant.
+    #
+    # conv_id = await provider.create_personal_conversation(
+    #     service_url="https://smba.trafficmanager.net/amer/",
+    #     user_id="29:1abc-user-aad-id",
+    #     tenant_id="your-tenant-id",          # optional, defaults to config
+    # )
+    # event = RoomEvent(
+    #     room_id="notifications",
+    #     source=EventSource(
+    #         channel_id="teams-main",
+    #         channel_type=ChannelType.TEAMS,
+    #     ),
+    #     content=TextContent(body="Hello! This is a proactive message."),
+    # )
+    # await provider.send(event, to=conv_id)
+
     # --- aiohttp webhook handler ---------------------------------------------
     async def handle_messages(request: web.Request) -> web.Response:
         payload = await request.json()

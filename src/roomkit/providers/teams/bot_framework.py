@@ -141,6 +141,74 @@ class BotFrameworkTeamsProvider(TeamsProvider):
         if conv_id:
             await self._conversation_store.save(conv_id, ref.serialize())
 
+    async def create_personal_conversation(
+        self,
+        service_url: str,
+        user_id: str,
+        *,
+        tenant_id: str | None = None,
+    ) -> str:
+        """Create a 1:1 personal conversation with a user and store its reference.
+
+        Use this to proactively message a Teams user by their AAD/Teams ID,
+        even if the user has never messaged the bot.  The bot must be installed
+        in the user's tenant for this to succeed.
+
+        Args:
+            service_url: The Bot Framework service URL for the tenant
+                (e.g. ``"https://smba.trafficmanager.net/amer/"``).
+                Available from a prior ``conversationUpdate`` Activity or
+                from :func:`parse_teams_activity`.
+            user_id: The AAD object ID or Teams user ID of the target user
+                (e.g. ``"29:1abc-user-aad-id"``).
+            tenant_id: Azure AD tenant ID.  Falls back to
+                :attr:`TeamsConfig.tenant_id` if not provided.
+
+        Returns:
+            The conversation ID for the newly created 1:1 conversation.
+            This ID can be used as the ``to`` parameter in :meth:`send`.
+
+        Raises:
+            RuntimeError: If the conversation could not be created.
+        """
+        from botbuilder.schema import (
+            ChannelAccount,
+            ConversationAccount,
+            ConversationParameters,
+            ConversationReference,
+        )
+
+        tid = tenant_id or self._config.tenant_id
+
+        params = ConversationParameters(
+            is_group=False,
+            members=[ChannelAccount(id=user_id)],
+            tenant_id=tid,
+            bot=ChannelAccount(id=self._config.app_id),
+        )
+
+        response = await self._adapter.create_conversation(
+            ConversationReference(service_url=service_url),
+            params,
+        )
+
+        if not response or not response.id:
+            msg = f"Failed to create personal conversation with user {user_id}"
+            raise RuntimeError(msg)
+
+        conv_id = response.id
+
+        # Build and store a conversation reference so send() works immediately
+        ref = ConversationReference(
+            service_url=service_url,
+            channel_id="msteams",
+            conversation=ConversationAccount(id=conv_id, is_group=False),
+            bot=ChannelAccount(id=self._config.app_id),
+        )
+        await self._conversation_store.save(conv_id, ref.serialize())
+
+        return str(conv_id)
+
     async def create_channel_conversation(
         self,
         service_url: str,

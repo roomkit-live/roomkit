@@ -496,6 +496,155 @@ class TestInMemoryConversationReferenceStore:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# BotFrameworkTeamsProvider.create_personal_conversation
+# ---------------------------------------------------------------------------
+
+
+class TestCreatePersonalConversation:
+    """Tests for proactive 1:1 personal conversation creation."""
+
+    def _make_provider(self) -> Any:
+        """Build a BotFrameworkTeamsProvider with a mocked adapter."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from roomkit.providers.teams import BotFrameworkTeamsProvider
+
+        config = TeamsConfig(app_id="bot-app-id", app_password="pw", tenant_id="default-tenant")
+        provider = BotFrameworkTeamsProvider.__new__(BotFrameworkTeamsProvider)
+        provider._config = config
+        provider._conversation_store = InMemoryConversationReferenceStore()
+        provider._adapter = MagicMock()
+        provider._adapter.create_conversation = AsyncMock()
+        return provider
+
+    async def test_happy_path(self) -> None:
+        """Adapter returns a valid ID — reference stored, ID returned."""
+        from unittest.mock import MagicMock
+
+        provider = self._make_provider()
+        mock_response = MagicMock()
+        mock_response.id = "personal-conv-123"
+        provider._adapter.create_conversation.return_value = mock_response
+
+        conv_id = await provider.create_personal_conversation(
+            service_url="https://smba.trafficmanager.net/amer/",
+            user_id="29:user-aad-id",
+        )
+
+        assert conv_id == "personal-conv-123"
+        ref = await provider.conversation_store.get("personal-conv-123")
+        assert ref is not None
+
+    async def test_failure_no_response(self) -> None:
+        """Adapter returns None — RuntimeError raised."""
+        provider = self._make_provider()
+        provider._adapter.create_conversation.return_value = None
+
+        with pytest.raises(RuntimeError, match="Failed to create personal conversation"):
+            await provider.create_personal_conversation(
+                service_url="https://smba.trafficmanager.net/amer/",
+                user_id="29:user-aad-id",
+            )
+
+    async def test_failure_no_id(self) -> None:
+        """Adapter returns response without an ID — RuntimeError raised."""
+        from unittest.mock import MagicMock
+
+        provider = self._make_provider()
+        mock_response = MagicMock()
+        mock_response.id = None
+        provider._adapter.create_conversation.return_value = mock_response
+
+        with pytest.raises(RuntimeError, match="Failed to create personal conversation"):
+            await provider.create_personal_conversation(
+                service_url="https://smba.trafficmanager.net/amer/",
+                user_id="29:user-aad-id",
+            )
+
+    async def test_custom_tenant_id(self) -> None:
+        """Explicit tenant_id is forwarded to ConversationParameters."""
+        from unittest.mock import MagicMock
+
+        provider = self._make_provider()
+        mock_response = MagicMock()
+        mock_response.id = "conv-custom-tenant"
+        provider._adapter.create_conversation.return_value = mock_response
+
+        await provider.create_personal_conversation(
+            service_url="https://smba.trafficmanager.net/amer/",
+            user_id="29:user-aad-id",
+            tenant_id="custom-tenant",
+        )
+
+        call_args = provider._adapter.create_conversation.call_args
+        params = call_args[0][1]
+        assert params.tenant_id == "custom-tenant"
+
+    async def test_default_tenant_id(self) -> None:
+        """When no tenant_id override, config.tenant_id is used."""
+        from unittest.mock import MagicMock
+
+        provider = self._make_provider()
+        mock_response = MagicMock()
+        mock_response.id = "conv-default-tenant"
+        provider._adapter.create_conversation.return_value = mock_response
+
+        await provider.create_personal_conversation(
+            service_url="https://smba.trafficmanager.net/amer/",
+            user_id="29:user-aad-id",
+        )
+
+        call_args = provider._adapter.create_conversation.call_args
+        params = call_args[0][1]
+        assert params.tenant_id == "default-tenant"
+
+    async def test_is_group_false(self) -> None:
+        """ConversationParameters.is_group must be False for 1:1 chats."""
+        from unittest.mock import MagicMock
+
+        provider = self._make_provider()
+        mock_response = MagicMock()
+        mock_response.id = "conv-personal"
+        provider._adapter.create_conversation.return_value = mock_response
+
+        await provider.create_personal_conversation(
+            service_url="https://smba.trafficmanager.net/amer/",
+            user_id="29:user-aad-id",
+        )
+
+        call_args = provider._adapter.create_conversation.call_args
+        params = call_args[0][1]
+        assert params.is_group is False
+        assert params.members[0].id == "29:user-aad-id"
+
+    async def test_send_after_create(self) -> None:
+        """send() works immediately after create_personal_conversation()."""
+        from unittest.mock import MagicMock
+
+        provider = self._make_provider()
+        mock_response = MagicMock()
+        mock_response.id = "conv-roundtrip"
+        provider._adapter.create_conversation.return_value = mock_response
+
+        conv_id = await provider.create_personal_conversation(
+            service_url="https://smba.trafficmanager.net/amer/",
+            user_id="29:user-aad-id",
+        )
+
+        # Verify the stored reference is retrievable for send()
+        ref = await provider.conversation_store.get(conv_id)
+        assert ref is not None
+        # ConversationAccount serializes with camelCase keys
+        assert ref["conversation"]["id"] == "conv-roundtrip"
+        assert ref["conversation"]["isGroup"] is False
+
+
+# ---------------------------------------------------------------------------
+# MockTeamsProvider
+# ---------------------------------------------------------------------------
+
+
 class TestMockTeamsProvider:
     async def test_send_records(self) -> None:
         provider = MockTeamsProvider()
