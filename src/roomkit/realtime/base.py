@@ -21,6 +21,8 @@ class EphemeralEventType(StrEnum):
     PRESENCE_OFFLINE = "presence_offline"
     READ_RECEIPT = "read_receipt"
     REACTION = "reaction"
+    TOOL_CALL_START = "tool_call_start"
+    TOOL_CALL_END = "tool_call_end"
     CUSTOM = "custom"
 
 

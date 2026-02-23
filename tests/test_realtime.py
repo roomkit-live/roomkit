@@ -403,3 +403,58 @@ class TestRoomKitRealtimeIntegration:
 
         # After context exit, subscriptions should be cleaned up
         assert backend.subscription_count == 0
+
+
+class TestRoomKitToolCallEvents:
+    async def test_publish_tool_call_start(self) -> None:
+        kit = RoomKit()
+        received: list[EphemeralEvent] = []
+
+        async def callback(event: EphemeralEvent) -> None:
+            received.append(event)
+
+        sub_id = await kit.subscribe_room("room-1", callback)
+
+        await kit.publish_tool_call(
+            "room-1",
+            "ai1",
+            [{"id": "tc1", "name": "search", "arguments": {"q": "test"}}],
+            EphemeralEventType.TOOL_CALL_START,
+        )
+        await asyncio.sleep(0.01)
+
+        assert len(received) == 1
+        assert received[0].type == EphemeralEventType.TOOL_CALL_START
+        assert received[0].channel_id == "ai1"
+        assert received[0].data["tool_calls"][0]["name"] == "search"
+        assert received[0].data["channel_id"] == "ai1"
+        assert "duration_ms" not in received[0].data
+
+        await kit.unsubscribe_room(sub_id)
+        await kit.close()
+
+    async def test_publish_tool_call_end(self) -> None:
+        kit = RoomKit()
+        received: list[EphemeralEvent] = []
+
+        async def callback(event: EphemeralEvent) -> None:
+            received.append(event)
+
+        sub_id = await kit.subscribe_room("room-1", callback)
+
+        await kit.publish_tool_call(
+            "room-1",
+            "ai1",
+            [{"id": "tc1", "name": "search", "result": "found it"}],
+            EphemeralEventType.TOOL_CALL_END,
+            duration_ms=1234,
+        )
+        await asyncio.sleep(0.01)
+
+        assert len(received) == 1
+        assert received[0].type == EphemeralEventType.TOOL_CALL_END
+        assert received[0].data["duration_ms"] == 1234
+        assert received[0].data["tool_calls"][0]["result"] == "found it"
+
+        await kit.unsubscribe_room(sub_id)
+        await kit.close()

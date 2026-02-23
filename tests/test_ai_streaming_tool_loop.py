@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from roomkit.channels.ai import AIChannel
@@ -18,6 +19,8 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
+from roomkit.realtime.memory import InMemoryRealtime
 from tests.conftest import make_event
 
 
@@ -393,3 +396,143 @@ class TestStreamingWithNoToolsBinding:
         assert output.response_stream is not None
         chunks = [chunk async for chunk in output.response_stream]
         assert "".join(chunks) == "with tools"
+
+
+class TestToolCallEphemeralEvents:
+    """Tool calls emit ephemeral events instead of inline XML."""
+
+    async def test_tool_calls_emit_ephemeral_events(self) -> None:
+        """Streaming tool loop publishes START/END events and no XML in text."""
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            return f"Result for {name}"
+
+        responses = [
+            AIResponse(
+                content="Let me search.",
+                finish_reason="tool_calls",
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+                tool_calls=[
+                    AIToolCall(id="tc1", name="search", arguments={"q": "test"}),
+                ],
+            ),
+            AIResponse(
+                content="Here are the results.",
+                finish_reason="stop",
+                usage={"prompt_tokens": 20, "completion_tokens": 10},
+            ),
+        ]
+
+        provider = MockAIProvider(ai_responses=responses, streaming=True)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+
+        # Inject InMemoryRealtime so ephemeral events are captured
+        realtime = InMemoryRealtime()
+        ch._realtime = realtime
+
+        received: list[EphemeralEvent] = []
+
+        async def on_event(event: EphemeralEvent) -> None:
+            received.append(event)
+
+        await realtime.subscribe_to_room("r1", on_event)
+
+        output = await ch.on_event(
+            make_event(body="search for test", channel_id="sms1"),
+            _binding(),
+            _ctx(),
+        )
+
+        assert output.response_stream is not None
+        chunks = [chunk async for chunk in output.response_stream]
+        text = "".join(chunks)
+
+        # Allow events to propagate
+        await asyncio.sleep(0.02)
+
+        # Text should contain both rounds of text
+        assert "Let me search." in text
+        assert "Here are the results." in text
+
+        # No XML fragments in the stream
+        assert "<invoke" not in text
+        assert "<result>" not in text
+
+        # Exactly one START and one END event
+        starts = [e for e in received if e.type == EphemeralEventType.TOOL_CALL_START]
+        ends = [e for e in received if e.type == EphemeralEventType.TOOL_CALL_END]
+        assert len(starts) == 1
+        assert len(ends) == 1
+
+        # Validate START payload
+        assert starts[0].data["tool_calls"][0]["name"] == "search"
+        assert starts[0].data["tool_calls"][0]["id"] == "tc1"
+        assert starts[0].data["round"] == 0
+        assert starts[0].data["channel_id"] == "ai1"
+
+        # Validate END payload
+        assert ends[0].data["tool_calls"][0]["id"] == "tc1"
+        assert ends[0].data["tool_calls"][0]["name"] == "search"
+        assert "duration_ms" in ends[0].data
+        assert ends[0].data["duration_ms"] >= 0
+
+        await realtime.close()
+
+    async def test_non_streaming_emits_tool_events(self) -> None:
+        """Non-streaming tool loop also publishes START/END events."""
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            return f"Result for {name}"
+
+        responses = [
+            AIResponse(
+                content="Checking.",
+                finish_reason="tool_calls",
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+                tool_calls=[
+                    AIToolCall(id="tc1", name="calculate", arguments={"x": "6*7"}),
+                ],
+            ),
+            AIResponse(
+                content="The answer is 42.",
+                finish_reason="stop",
+                usage={"prompt_tokens": 20, "completion_tokens": 10},
+            ),
+        ]
+
+        # Non-streaming provider
+        provider = MockAIProvider(ai_responses=responses, streaming=False)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+
+        realtime = InMemoryRealtime()
+        ch._realtime = realtime
+
+        received: list[EphemeralEvent] = []
+
+        async def on_event(event: EphemeralEvent) -> None:
+            received.append(event)
+
+        await realtime.subscribe_to_room("r1", on_event)
+
+        output = await ch.on_event(
+            make_event(body="what is 6*7?", channel_id="sms1"),
+            _binding(),
+            _ctx(),
+        )
+
+        # Allow events to propagate
+        await asyncio.sleep(0.02)
+
+        assert output.responded is True
+
+        # Exactly one START and one END event
+        starts = [e for e in received if e.type == EphemeralEventType.TOOL_CALL_START]
+        ends = [e for e in received if e.type == EphemeralEventType.TOOL_CALL_END]
+        assert len(starts) == 1
+        assert len(ends) == 1
+
+        # Validate payloads
+        assert starts[0].data["tool_calls"][0]["name"] == "calculate"
+        assert ends[0].data["duration_ms"] >= 0
+
+        await realtime.close()

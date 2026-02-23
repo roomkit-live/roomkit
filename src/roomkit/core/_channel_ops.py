@@ -43,6 +43,12 @@ class ChannelOpsMixin(HelpersMixin):
         # Propagate telemetry to all channels
         channel._telemetry = self._telemetry  # type: ignore[attr-defined]
 
+        # Propagate realtime backend to AI channels for tool call events
+        from roomkit.channels.ai import AIChannel
+
+        if isinstance(channel, AIChannel):
+            channel._realtime = self._realtime  # type: ignore[attr-defined]
+
         # Propagate telemetry to channel's sub-providers (AI, STT, TTS, etc.)
         if hasattr(channel, "_propagate_telemetry"):
             channel._propagate_telemetry()

@@ -841,6 +841,36 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         )
         await self._realtime.publish_to_room(room_id, event)
 
+    async def publish_tool_call(
+        self,
+        room_id: str,
+        channel_id: str,
+        tool_calls: list[dict[str, Any]],
+        event_type: EphemeralEventType = EphemeralEventType.TOOL_CALL_START,
+        *,
+        duration_ms: int | None = None,
+    ) -> None:
+        """Publish a tool call ephemeral event for a channel in a room.
+
+        Args:
+            room_id: The room to publish the event in.
+            channel_id: The AI channel executing tool calls.
+            tool_calls: List of tool call dicts (id, name, arguments/result).
+            event_type: ``TOOL_CALL_START`` or ``TOOL_CALL_END``.
+            duration_ms: Optional execution duration (for END events).
+        """
+        data: dict[str, Any] = {"tool_calls": tool_calls, "channel_id": channel_id}
+        if duration_ms is not None:
+            data["duration_ms"] = duration_ms
+        event = EphemeralEvent(
+            room_id=room_id,
+            type=event_type,
+            user_id=channel_id,
+            channel_id=channel_id,
+            data=data,
+        )
+        await self._realtime.publish_to_room(room_id, event)
+
     async def publish_presence(self, room_id: str, user_id: str, status: str) -> None:
         """Publish a presence update for a user in a room.
 

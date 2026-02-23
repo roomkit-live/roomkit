@@ -6,6 +6,7 @@ import asyncio
 import contextvars
 import json
 import logging
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -35,6 +36,7 @@ from roomkit.models.event import (
     TextContent,
 )
 from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType, RealtimeBackend
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
@@ -149,6 +151,9 @@ class AIChannel(Channel):
         # Active tool loops for steering (loop_id -> context)
         self._active_loops: dict[str, _ToolLoopContext] = {}
 
+        # Realtime backend for ephemeral tool call events (set by register_channel)
+        self._realtime: RealtimeBackend | None = None
+
     @property
     def tool_handler(self) -> ToolHandler | None:
         """The current tool handler (may be wrapped by orchestration)."""
@@ -239,6 +244,56 @@ class AIChannel(Channel):
         """Close the channel, its provider, and the memory provider."""
         await super().close()
         await self._memory.close()
+
+    async def _publish_tool_event(
+        self,
+        event_type: EphemeralEventType,
+        room_id: str,
+        tool_calls: list[Any],
+        round_idx: int,
+        *,
+        duration_ms: int | None = None,
+    ) -> None:
+        """Publish a tool call ephemeral event. Best-effort, never breaks the loop."""
+        if self._realtime is None or not room_id:
+            return
+        _RESULT_PREVIEW = 500
+        if event_type == EphemeralEventType.TOOL_CALL_START:
+            tc_data = [
+                {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in tool_calls
+            ]
+        else:  # TOOL_CALL_END — tool_calls are AIToolResultPart
+            tc_data = [
+                {
+                    "id": tc.tool_call_id,
+                    "name": tc.name,
+                    "result": tc.result[:_RESULT_PREVIEW]
+                    if len(tc.result) > _RESULT_PREVIEW
+                    else tc.result,
+                }
+                for tc in tool_calls
+                if isinstance(tc, AIToolResultPart)
+            ]
+        data: dict[str, Any] = {
+            "tool_calls": tc_data,
+            "round": round_idx,
+            "channel_id": self.channel_id,
+        }
+        if duration_ms is not None:
+            data["duration_ms"] = duration_ms
+        try:
+            await self._realtime.publish_to_room(
+                room_id,
+                EphemeralEvent(
+                    room_id=room_id,
+                    type=event_type,
+                    user_id=self.channel_id,
+                    channel_id=self.channel_id,
+                    data=data,
+                ),
+            )
+        except Exception:
+            logger.debug("Failed to publish tool call event", exc_info=True)
 
     @property
     def info(self) -> dict[str, Any]:
@@ -337,6 +392,7 @@ class AIChannel(Channel):
             if should_cancel:
                 return
             telemetry = self._telemetry_provider
+            room_id = context.room.room.id if context.room else None
             deadline = (
                 asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
                 if self._tool_loop_timeout_seconds
@@ -406,17 +462,29 @@ class AIChannel(Channel):
                     parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
+                # Publish TOOL_CALL_START ephemeral event
+                if room_id:
+                    await self._publish_tool_event(
+                        EphemeralEventType.TOOL_CALL_START,
+                        room_id,
+                        tool_calls,
+                        _round_idx,
+                    )
+
                 # Execute tools concurrently
+                t0 = time.monotonic()
                 result_parts = await self._execute_tools_parallel(tool_calls, telemetry)
+                duration_ms = int((time.monotonic() - t0) * 1000)
                 context.messages.append(AIMessage(role="tool", content=result_parts))
 
-                # Yield inline XML so streaming consumers can render tool calls.
-                # Format: <invoke name="..."></invoke><result>output</result>
-                # Arguments are omitted to avoid large JSON breaking markdown rendering.
-                for tc, rp in zip(tool_calls, result_parts, strict=False):
-                    result_text = rp.result if isinstance(rp, AIToolResultPart) else ""
-                    yield (
-                        f'\n<invoke name="{tc.name}"></invoke>\n<result>{result_text}</result>\n'
+                # Publish TOOL_CALL_END ephemeral event
+                if room_id:
+                    await self._publish_tool_event(
+                        EphemeralEventType.TOOL_CALL_END,
+                        room_id,
+                        result_parts,
+                        _round_idx,
+                        duration_ms=duration_ms,
                     )
 
                 # Steering checkpoint 2: drain queue after tool execution
@@ -534,6 +602,7 @@ class AIChannel(Channel):
                 return AIResponse(content="", tool_calls=[])
             response: AIResponse = await self._generate_with_retry(context)
             telemetry = self._telemetry_provider
+            room_id = context.room.room.id if context.room else None
             deadline = (
                 asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
                 if self._tool_loop_timeout_seconds
@@ -576,11 +645,32 @@ class AIChannel(Channel):
                     parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
+                # Publish TOOL_CALL_START ephemeral event
+                if room_id:
+                    await self._publish_tool_event(
+                        EphemeralEventType.TOOL_CALL_START,
+                        room_id,
+                        response.tool_calls,
+                        round_idx,
+                    )
+
                 # Execute tools concurrently
+                t0 = time.monotonic()
                 result_parts = await self._execute_tools_parallel(
                     response.tool_calls, telemetry, parent_span_id=parent_span_id
                 )
+                duration_ms = int((time.monotonic() - t0) * 1000)
                 context.messages.append(AIMessage(role="tool", content=result_parts))
+
+                # Publish TOOL_CALL_END ephemeral event
+                if room_id:
+                    await self._publish_tool_event(
+                        EphemeralEventType.TOOL_CALL_END,
+                        room_id,
+                        result_parts,
+                        round_idx,
+                        duration_ms=duration_ms,
+                    )
 
                 # Steering checkpoint 2: drain queue after tool execution
                 context, should_cancel = self._drain_steering_queue(context, loop_ctx)
