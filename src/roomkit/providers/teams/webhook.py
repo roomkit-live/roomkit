@@ -15,10 +15,11 @@ def parse_teams_activity(payload: dict[str, Any]) -> dict[str, Any]:
     """Extract common fields from a Bot Framework Activity payload.
 
     Returns a dict with ``activity_type``, ``conversation_id``,
-    ``conversation_type``, ``is_group``, ``service_url``, ``tenant_id``,
-    ``sender_id``, ``sender_name``, ``bot_id``, ``members_added``, and
-    ``members_removed``.  Useful for handling lifecycle events
-    (``conversationUpdate``) alongside message parsing.
+    ``conversation_type``, ``conversation_name``, ``is_group``,
+    ``service_url``, ``tenant_id``, ``sender_id``, ``sender_name``,
+    ``bot_id``, ``members_added``, and ``members_removed``.  Useful for
+    handling lifecycle events (``conversationUpdate``) alongside message
+    parsing.
     """
     conversation = payload.get("conversation", {})
     is_group = conversation.get("isGroup", False) or conversation.get("conversationType") in (
@@ -32,6 +33,7 @@ def parse_teams_activity(payload: dict[str, Any]) -> dict[str, Any]:
         "activity_type": payload.get("type", ""),
         "conversation_id": conversation.get("id", ""),
         "conversation_type": conversation.get("conversationType", "personal"),
+        "conversation_name": conversation.get("name", ""),
         "is_group": is_group,
         "service_url": payload.get("serviceUrl", ""),
         "tenant_id": payload.get("channelData", {}).get("tenant", {}).get("id", ""),

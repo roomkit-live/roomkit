@@ -220,6 +220,7 @@ class TestParseTeamsActivity:
         assert result["activity_type"] == "message"
         assert result["conversation_id"] == "conv-1"
         assert result["conversation_type"] == "personal"
+        assert result["conversation_name"] == ""
         assert result["is_group"] is False
         assert result["service_url"] == "https://smba.trafficmanager.net/teams/"
         assert result["tenant_id"] == "tenant-abc"
@@ -250,6 +251,16 @@ class TestParseTeamsActivity:
 
         assert result["is_group"] is True
         assert result["conversation_type"] == "groupChat"
+        assert result["conversation_name"] == ""
+
+    def test_parse_group_chat_with_name(self) -> None:
+        """Group chats with a name should include conversation_name."""
+        payload = _group_message_payload()
+        payload["conversation"]["name"] = "General"
+        result = parse_teams_activity(payload)
+
+        assert result["is_group"] is True
+        assert result["conversation_name"] == "General"
 
     def test_parse_channel_type_is_group(self) -> None:
         """conversationType='channel' should also be detected as group."""
