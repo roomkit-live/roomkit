@@ -3,8 +3,16 @@
 Requires:
     pip install roomkit[teams] aiohttp
 
-Run with:
+Password auth:
     TEAMS_APP_ID=... TEAMS_APP_PASSWORD=... python examples/teams_bot.py
+
+Certificate auth:
+    TEAMS_APP_ID=... \\
+    TEAMS_CERT_THUMBPRINT=AABB... \\
+    TEAMS_CERT_PRIVATE_KEY="$(cat key.pem)" \\
+    python examples/teams_bot.py
+
+    Optionally set TEAMS_CERT_PUBLIC for the x5c JWT header (cert rotation).
 
 Then expose the server via ngrok or similar and register the endpoint
 (e.g. https://<host>/api/messages) in the Azure Bot configuration.
@@ -34,11 +42,33 @@ async def main() -> None:
     app_id = os.environ.get("TEAMS_APP_ID", "")
     app_password = os.environ.get("TEAMS_APP_PASSWORD", "")
     tenant_id = os.environ.get("TEAMS_TENANT_ID", "common")
-    if not app_id or not app_password:
-        print("Set TEAMS_APP_ID and TEAMS_APP_PASSWORD to run this example.")
+    cert_thumbprint = os.environ.get("TEAMS_CERT_THUMBPRINT", "")
+    cert_private_key = os.environ.get("TEAMS_CERT_PRIVATE_KEY", "")
+    cert_public = os.environ.get("TEAMS_CERT_PUBLIC", "")
+
+    if not app_id:
+        print("Set TEAMS_APP_ID to run this example.")
         return
 
-    config = TeamsConfig(app_id=app_id, app_password=app_password, tenant_id=tenant_id)
+    if cert_thumbprint and cert_private_key:
+        # Certificate-based auth
+        config_kwargs: dict[str, str] = {
+            "app_id": app_id,
+            "tenant_id": tenant_id,
+            "certificate_thumbprint": cert_thumbprint,
+            "certificate_private_key": cert_private_key,
+        }
+        if cert_public:
+            config_kwargs["certificate_public"] = cert_public
+        config = TeamsConfig(**config_kwargs)
+        print("Using certificate-based authentication.")
+    elif app_password:
+        # Password auth
+        config = TeamsConfig(app_id=app_id, app_password=app_password, tenant_id=tenant_id)
+        print("Using password-based authentication.")
+    else:
+        print("Set TEAMS_APP_PASSWORD or TEAMS_CERT_THUMBPRINT + TEAMS_CERT_PRIVATE_KEY.")
+        return
     provider = BotFrameworkTeamsProvider(config)
 
     # --- RoomKit setup -------------------------------------------------------

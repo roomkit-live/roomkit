@@ -39,15 +39,36 @@ class BotFrameworkTeamsProvider(TeamsProvider):
 
         self._config = config
         self._conversation_store = conversation_store or InMemoryConversationReferenceStore()
-        settings_kwargs: dict[str, Any] = {
-            "app_id": config.app_id,
-            "app_password": config.app_password.get_secret_value(),
-        }
-        if config.tenant_id != "common":
-            settings_kwargs["channel_auth_tenant"] = config.tenant_id
-        self._adapter: BotFrameworkAdapter = BotFrameworkAdapter(
-            BotFrameworkAdapterSettings(**settings_kwargs)
-        )
+
+        if config.uses_certificate_auth:
+            from botframework.connector.auth import CertificateAppCredentials
+
+            cert_kwargs: dict[str, Any] = {
+                "app_id": config.app_id,
+                "certificate_thumbprint": config.certificate_thumbprint,
+                "certificate_private_key": config.certificate_private_key.get_secret_value(),  # type: ignore[union-attr]
+            }
+            if config.tenant_id != "common":
+                cert_kwargs["channel_auth_tenant"] = config.tenant_id
+            if config.certificate_public:
+                cert_kwargs["public_certificate"] = config.certificate_public
+
+            credentials = CertificateAppCredentials(**cert_kwargs)
+            settings = BotFrameworkAdapterSettings(  # nosec B106 — empty password intentional: cert auth used
+                app_id=config.app_id,
+                app_password="",
+                app_credentials=credentials,
+            )
+        else:
+            settings_kwargs: dict[str, Any] = {
+                "app_id": config.app_id,
+                "app_password": config.app_password.get_secret_value(),  # type: ignore[union-attr]
+            }
+            if config.tenant_id != "common":
+                settings_kwargs["channel_auth_tenant"] = config.tenant_id
+            settings = BotFrameworkAdapterSettings(**settings_kwargs)
+
+        self._adapter: BotFrameworkAdapter = BotFrameworkAdapter(settings)
 
     @property
     def adapter(self) -> BotFrameworkAdapter:

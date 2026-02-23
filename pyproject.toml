@@ -215,6 +215,10 @@ module = ["botbuilder", "botbuilder.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["botframework", "botframework.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["asyncpg", "asyncpg.*"]
 ignore_missing_imports = true
 

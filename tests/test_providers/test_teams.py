@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import SecretStr
+import pytest
+from pydantic import SecretStr, ValidationError
 
 from roomkit.models.event import TextContent
 from roomkit.providers.teams import (
@@ -121,6 +122,88 @@ class TestTeamsConfig:
     def test_custom_tenant_id(self) -> None:
         cfg = TeamsConfig(app_id="my-app", app_password="pw", tenant_id="my-tenant")
         assert cfg.tenant_id == "my-tenant"
+
+
+# ---------------------------------------------------------------------------
+# TeamsConfig — Certificate Auth
+# ---------------------------------------------------------------------------
+
+
+class TestTeamsConfigCertificateAuth:
+    """Tests for certificate-based authentication config."""
+
+    def test_valid_cert_config(self) -> None:
+        cfg = TeamsConfig(
+            app_id="my-app",
+            certificate_thumbprint="AABBCCDD",
+            certificate_private_key="-----BEGIN RSA PRIVATE KEY-----\nfake",
+        )
+        assert cfg.uses_certificate_auth is True
+        assert cfg.certificate_thumbprint == "AABBCCDD"
+
+    def test_cert_config_with_public_cert(self) -> None:
+        cfg = TeamsConfig(
+            app_id="my-app",
+            certificate_thumbprint="AABBCCDD",
+            certificate_private_key="-----BEGIN RSA PRIVATE KEY-----\nfake",
+            certificate_public="-----BEGIN CERTIFICATE-----\npublic",
+        )
+        assert cfg.certificate_public == "-----BEGIN CERTIFICATE-----\npublic"
+
+    def test_cert_config_with_custom_tenant(self) -> None:
+        cfg = TeamsConfig(
+            app_id="my-app",
+            certificate_thumbprint="AABBCCDD",
+            certificate_private_key="key-data",
+            tenant_id="my-tenant",
+        )
+        assert cfg.tenant_id == "my-tenant"
+        assert cfg.uses_certificate_auth is True
+
+    def test_private_key_is_secret(self) -> None:
+        cfg = TeamsConfig(
+            app_id="my-app",
+            certificate_thumbprint="AABBCCDD",
+            certificate_private_key="super-secret-key",
+        )
+        assert isinstance(cfg.certificate_private_key, SecretStr)
+        assert cfg.certificate_private_key.get_secret_value() == "super-secret-key"
+        assert "super-secret-key" not in repr(cfg)
+
+    def test_password_auth_backward_compat(self) -> None:
+        cfg = TeamsConfig(app_id="my-app", app_password="s3cret")
+        assert cfg.uses_certificate_auth is False
+        assert cfg.app_password is not None
+        assert cfg.app_password.get_secret_value() == "s3cret"
+
+    def test_both_password_and_cert_raises(self) -> None:
+        with pytest.raises(ValidationError, match="Cannot specify both"):
+            TeamsConfig(
+                app_id="my-app",
+                app_password="pw",
+                certificate_thumbprint="AABBCCDD",
+                certificate_private_key="key-data",
+            )
+
+    def test_neither_password_nor_cert_raises(self) -> None:
+        with pytest.raises(ValidationError, match="must be provided"):
+            TeamsConfig(app_id="my-app")
+
+    def test_thumbprint_without_key_raises(self) -> None:
+        with pytest.raises(ValidationError, match="certificate_private_key"):
+            TeamsConfig(app_id="my-app", certificate_thumbprint="AABBCCDD")
+
+    def test_key_without_thumbprint_raises(self) -> None:
+        with pytest.raises(ValidationError, match="certificate_thumbprint"):
+            TeamsConfig(app_id="my-app", certificate_private_key="key-data")
+
+    def test_certificate_public_without_cert_auth_raises(self) -> None:
+        with pytest.raises(ValidationError, match="certificate_public is only valid"):
+            TeamsConfig(
+                app_id="my-app",
+                app_password="pw",
+                certificate_public="-----BEGIN CERTIFICATE-----\npublic",
+            )
 
 
 # ---------------------------------------------------------------------------
