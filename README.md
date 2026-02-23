@@ -503,7 +503,7 @@ handler = compose_tool_handlers(mcp.handler, my_custom_handler)
 
 ## Realtime Events
 
-Handle ephemeral events like typing indicators, presence, and read receipts:
+Handle ephemeral events like typing indicators, presence, read receipts, and tool call notifications:
 
 ```python
 from roomkit import EphemeralEvent, EphemeralEventType
@@ -511,12 +511,19 @@ from roomkit import EphemeralEvent, EphemeralEventType
 async def handle_realtime(event: EphemeralEvent):
     if event.type == EphemeralEventType.TYPING_START:
         print(f"{event.user_id} is typing...")
+    elif event.type == EphemeralEventType.TOOL_CALL_START:
+        tools = event.data["tool_calls"]
+        print(f"Agent calling: {', '.join(t['name'] for t in tools)}")
+    elif event.type == EphemeralEventType.TOOL_CALL_END:
+        print(f"Tools finished in {event.data['duration_ms']}ms")
 
 sub_id = await kit.subscribe_room("room-1", handle_realtime)
 await kit.publish_typing("room-1", "user-1")
 await kit.publish_presence("room-1", "user-1", "online")
 await kit.publish_read_receipt("room-1", "user-1", "event-123")
 ```
+
+AI channels automatically broadcast `TOOL_CALL_START` and `TOOL_CALL_END` ephemeral events during tool execution, keeping the streamed text clean. Subscribe to these events to render tool call status in your UI.
 
 For distributed deployments, implement a custom `RealtimeBackend` (e.g., Redis pub/sub).
 

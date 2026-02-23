@@ -171,7 +171,7 @@ tests/
 ├── test_framework_queries.py # Timeline/query tests
 ├── test_hooks.py            # Hook system tests
 ├── test_identity_pipeline.py # Identity resolution tests
-├── test_realtime.py         # Ephemeral events (typing, presence, reactions)
+├── test_realtime.py         # Ephemeral events (typing, presence, reactions, tool calls)
 ├── test_router.py           # Event routing and transcoding
 ├── test_circuit_breaker.py  # Circuit breaker tests
 ├── test_resilience.py       # Retry and rate limiting tests
@@ -387,7 +387,7 @@ vad = MockVADProvider(events=[
 
 ### Realtime Ephemeral Events
 
-Typing, presence, and reactions are ephemeral — not stored in history:
+Typing, presence, reactions, and tool calls are ephemeral — not stored in history:
 
 ```python
 # Publish typing indicator
@@ -402,10 +402,27 @@ await kit.publish_reaction("room-1", "alice", target_event_id="evt-123", emoji="
 # Publish read receipt
 await kit.publish_read_receipt("room-1", "alice", event_id="evt-123")
 
+# Publish tool call event (manual — AIChannel does this automatically)
+await kit.publish_tool_call("room-1", "ai-agent", [
+    {"id": "tc1", "name": "search", "arguments": {"q": "test"}}
+], EphemeralEventType.TOOL_CALL_START)
+
 # Subscribe to ephemeral events for a room
 sub_id = await kit.subscribe_room("room-1", my_callback)
 await kit.unsubscribe_room(sub_id)
 ```
+
+#### Tool Call Events
+
+AIChannel automatically broadcasts `TOOL_CALL_START` and `TOOL_CALL_END` ephemeral events
+when executing tools in both streaming and non-streaming tool loops. The streamed text
+stays clean — no inline XML.
+
+- **TOOL_CALL_START** payload: `{tool_calls: [{id, name, arguments}], round, channel_id}`
+- **TOOL_CALL_END** payload: `{tool_calls: [{id, name, result}], round, channel_id, duration_ms}`
+
+Results in END events are preview-truncated to 500 characters. Events are best-effort
+(failures are logged at DEBUG, never break the tool loop).
 
 ### Sources (Event-Driven Providers)
 
