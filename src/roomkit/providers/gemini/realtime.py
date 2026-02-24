@@ -92,7 +92,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             http_options=_types.HttpOptions(
                 async_client_args={
                     "ping_interval": 10,
-                    "ping_timeout": 5,
+                    "ping_timeout": 10,
                 }
             ),
         )
@@ -549,105 +549,34 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     # -- Receive loop --
 
-    _MAX_RECONNECTS = 3
+    _MAX_RECONNECTS = 5
 
     async def _receive_loop(self, session: VoiceSession) -> None:
         """Process server events from Gemini Live API.
 
-        ``live.receive()`` is an async generator that yields messages for
-        a single model turn (stops after ``turn_complete``).  We call it
-        in an outer loop so we keep listening across turns.
-
-        If the connection drops mid-session (common with preview models),
-        the loop will attempt to reconnect up to ``_MAX_RECONNECTS`` times
-        with exponential back-off.
+        If the connection drops mid-session, the loop will attempt to
+        reconnect up to ``_MAX_RECONNECTS`` times with exponential back-off.
         """
         reconnect_count = 0
 
         while True:
             state = self._sessions.get(session.id)
-            if state is None or state.live_session is None:
+            if state is None:
                 return
 
-            try:
-                while True:
-                    logger.debug(
-                        "[Gemini] Waiting for next turn on session %s…",
-                        session.id,
-                    )
-                    async for response in state.live_session.receive():
-                        reconnect_count = 0  # reset on successful data
-                        await self._handle_server_response(session, response)
-                    logger.debug(
-                        "[Gemini] Turn generator exhausted for session %s, looping for next turn",
-                        session.id,
-                    )
+            # If the session was closed by the user, stop the loop
+            if session.state == VoiceSessionState.ENDED:
+                return
 
-            except asyncio.CancelledError:
-                raise
-            except _GoAwayError:
-                # Server warned it's about to disconnect — proactive reconnect.
-                # This does NOT count against the reconnect limit.
-                logger.info(
-                    "Proactive reconnect (GoAway) for session %s",
-                    session.id,
-                )
-                try:
-                    await self._reconnect(session)
-                    reconnect_count = 0
-                except Exception:
-                    logger.exception(
-                        "Proactive reconnect failed for session %s",
-                        session.id,
-                    )
-                    s = self._sessions.get(session.id)
-                    if s:
-                        s.audio_buffer.clear()
-                    session.state = VoiceSessionState.ENDED
-                    await self._fire_error_callbacks(
-                        session,
-                        "reconnect_failed",
-                        f"Proactive reconnect failed for session {session.id}",
-                    )
-                    return
-                continue
-            except Exception as exc:
-                if session.state == VoiceSessionState.ENDED:
-                    return
-
+            # Handle reconnection if needed
+            if state.live_session is None:
                 reconnect_count += 1
-                # Re-fetch state — it may have been updated during exception
-                state = self._sessions.get(session.id)
-                if state is None:
-                    return
-
-                # Suppress duplicate send_audio_failed errors during reconnect
-                state.error_suppressed = True
-
-                # Log disconnect debugging info — include exception details
-                uptime = time.monotonic() - state.started_at if state.started_at else 0.0
-
-                logger.warning(
-                    "Gemini session %s disconnected — "
-                    "uptime=%.1fs, turns=%d, tool_result_bytes=%d, "
-                    "streaming=%s, audio_chunks=%d, "
-                    "error=%s: %s",
-                    session.id,
-                    uptime,
-                    state.turn_count,
-                    state.tool_result_bytes,
-                    state.response_started,
-                    state.audio_chunk_count,
-                    type(exc).__name__,
-                    exc,
-                )
                 if reconnect_count > self._MAX_RECONNECTS:
                     logger.error(
                         "Gemini Live session %s: connection lost, max reconnects (%d) reached",
                         session.id,
                         self._MAX_RECONNECTS,
                     )
-                    # Clear stale buffered audio — session is terminal
                     state.audio_buffer.clear()
                     session.state = VoiceSessionState.ENDED
                     await self._fire_error_callbacks(
@@ -659,14 +588,13 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
                 delay = min(0.5 * (2 ** (reconnect_count - 1)), 4.0)
                 logger.warning(
-                    "Gemini Live connection lost for session %s "
-                    "(attempt %d/%d), reconnecting in %.1fs…",
+                    "Gemini Live connection lost for session %s (attempt %d/%d), "
+                    "reconnecting in %.1fs…",
                     session.id,
                     reconnect_count,
                     self._MAX_RECONNECTS,
                     delay,
                 )
-
                 await asyncio.sleep(delay)
 
                 # If backoff exceeded buffer duration (~2s), the buffered
@@ -685,17 +613,62 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     await self._reconnect(session)
                 except Exception:
                     logger.exception("Reconnect failed for session %s", session.id)
-                    # Clear stale buffered audio — session is terminal
-                    s = self._sessions.get(session.id)
-                    if s:
-                        s.audio_buffer.clear()
-                    session.state = VoiceSessionState.ENDED
-                    await self._fire_error_callbacks(
-                        session,
-                        "reconnect_failed",
-                        f"Reconnect failed for session {session.id}",
-                    )
+                    continue
+
+            # Process messages from the current session
+            try:
+                # local ref to live_session
+                live_session = state.live_session
+                if live_session is None:
+                    continue
+
+                logger.debug(
+                    "[Gemini] Waiting for next turn on session %s…",
+                    session.id,
+                )
+                async for response in live_session.receive():
+                    # Successful message — reset count
+                    reconnect_count = 0
+                    await self._handle_server_response(session, response)
+
+                # receive() generator exhausts after each turn_complete —
+                # that's normal, just loop back to call receive() again.
+                logger.debug(
+                    "[Gemini] Turn generator exhausted for session %s, "
+                    "looping for next turn",
+                    session.id,
+                )
+
+            except asyncio.CancelledError:
+                raise
+            except _GoAwayError:
+                # Server warned it's about to disconnect — proactive reconnect.
+                # This does NOT count against the reconnect limit.
+                logger.info("Proactive reconnect (GoAway) for session %s", session.id)
+                state.live_session = None
+                reconnect_count = 0
+            except Exception as exc:
+                if session.state == VoiceSessionState.ENDED:
                     return
+
+                uptime = time.monotonic() - state.started_at if state.started_at else 0.0
+                close_code = getattr(exc, "code", None)
+                logger.warning(
+                    "Gemini session %s disconnected — "
+                    "uptime=%.1fs, turns=%d, tool_result_bytes=%d, "
+                    "audio_chunks=%d, close_code=%s, error=%s: %s",
+                    session.id,
+                    uptime,
+                    state.turn_count,
+                    state.tool_result_bytes,
+                    state.audio_chunk_count,
+                    close_code,
+                    type(exc).__name__,
+                    exc,
+                )
+                state.live_session = None
+                # Suppress duplicate send_audio_failed errors during reconnect
+                state.error_suppressed = True
 
     def _clear_transcription_buffers(self, session_id: str) -> None:
         """Remove all transcription buffer entries for a session."""
@@ -732,21 +705,37 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             raise RuntimeError("No stored config for reconnection")
 
         # Use stored resumption handle to preserve conversation context
-        if state.resumption_handle and live_config.session_resumption is not None:
-            live_config.session_resumption.handle = state.resumption_handle
-            logger.info(
-                "Reconnecting session %s with resumption handle",
-                session.id,
-            )
+        resumption_handle = state.resumption_handle
+        if resumption_handle and live_config.session_resumption is not None:
+            live_config.session_resumption.handle = resumption_handle
+            logger.info("Reconnecting session %s with resumption handle", session.id)
         elif live_config.session_resumption is not None:
             # No handle available — reset to None for a fresh session
             live_config.session_resumption.handle = None
 
-        ctxmgr = self._client.aio.live.connect(
-            model=self._model,
-            config=live_config,
-        )
-        live_session = await ctxmgr.__aenter__()
+        try:
+            ctxmgr = self._client.aio.live.connect(
+                model=self._model,
+                config=live_config,
+            )
+            live_session = await ctxmgr.__aenter__()
+        except Exception as exc:
+            # Fallback: if reconnection with handle failed, try one fresh connect
+            if resumption_handle and live_config.session_resumption is not None:
+                logger.warning(
+                    "Gemini reconnection with handle failed for %s, trying fresh: %s",
+                    session.id,
+                    exc,
+                )
+                state.resumption_handle = None
+                live_config.session_resumption.handle = None
+                ctxmgr = self._client.aio.live.connect(
+                    model=self._model,
+                    config=live_config,
+                )
+                live_session = await ctxmgr.__aenter__()
+            else:
+                raise
 
         state.ctxmgr = ctxmgr
         state.live_session = live_session

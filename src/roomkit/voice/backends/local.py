@@ -316,6 +316,11 @@ class LocalAudioBackend(VoiceBackend):
 
         blocksize = int(self._input_sample_rate * self._block_duration_ms / 1000)
 
+        # Notify the pipeline that the session is active (starts debug taps,
+        # recording handles, etc.).
+        if self._pipeline is not None:
+            self._pipeline.on_session_active(session)
+
         # Capture references as locals so the PortAudio callback thread
         # reads stable snapshots instead of mutable instance attributes.
         callback_ref = self._audio_received_callback
