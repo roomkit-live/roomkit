@@ -163,19 +163,23 @@ def parse_teams_reactions(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for reaction in payload.get("reactionsAdded", []):
-        results.append({
-            "action": "add",
-            "emoji": reaction.get("type", ""),
-            "sender_id": sender_id,
-            "sender_name": sender_name,
-            "target_activity_id": target_activity_id,
-        })
+        results.append(
+            {
+                "action": "add",
+                "emoji": reaction.get("type", ""),
+                "sender_id": sender_id,
+                "sender_name": sender_name,
+                "target_activity_id": target_activity_id,
+            }
+        )
     for reaction in payload.get("reactionsRemoved", []):
-        results.append({
-            "action": "remove",
-            "emoji": reaction.get("type", ""),
-            "sender_id": sender_id,
-            "sender_name": sender_name,
-            "target_activity_id": target_activity_id,
-        })
+        results.append(
+            {
+                "action": "remove",
+                "emoji": reaction.get("type", ""),
+                "sender_id": sender_id,
+                "sender_name": sender_name,
+                "target_activity_id": target_activity_id,
+            }
+        )
     return results

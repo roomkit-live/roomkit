@@ -768,9 +768,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             channel_id=channel_id,
             attributes={"event_type": str(event_type)},
         )
-        token = set_current_span(
-            span_id, telemetry_ctx=telemetry.get_span_context(span_id)
-        )
+        token = set_current_span(span_id, telemetry_ctx=telemetry.get_span_context(span_id))
         try:
             async with self._lock_manager.locked(room_id):
                 count = await self._store.get_event_count(room_id)

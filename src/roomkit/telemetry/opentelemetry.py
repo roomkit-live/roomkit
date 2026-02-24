@@ -129,9 +129,7 @@ class OpenTelemetryProvider(TelemetryProvider):
                 ctx = telemetry_ctx
             else:
                 # Fallback: dict lookup
-                parent_span = self._active_spans.get(parent_id) or self._ended_spans.get(
-                    parent_id
-                )
+                parent_span = self._active_spans.get(parent_id) or self._ended_spans.get(parent_id)
                 if parent_span is not None:
                     ctx = trace.set_span_in_context(parent_span)
                 else:
