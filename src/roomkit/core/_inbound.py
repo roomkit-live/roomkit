@@ -84,7 +84,10 @@ class InboundMixin(HelpersMixin):
             room_id=room_id,
             attributes={"sender_id": message.sender_id or ""},
         )
-        token = set_current_span(inbound_span_id)
+        # Propagate backend-specific context for robust parent linking
+        token = set_current_span(
+            inbound_span_id, telemetry_ctx=telemetry.get_span_context(inbound_span_id)
+        )
         _inbound_result: InboundResult | None = None
         try:
             _inbound_result = await self._process_inbound_inner(
@@ -111,30 +114,45 @@ class InboundMixin(HelpersMixin):
         inbound_span_id: str,
     ) -> InboundResult:
         """Inner inbound processing (extracted for telemetry wrapping)."""
+        from roomkit.telemetry.base import SpanKind
+        from roomkit.telemetry.context import get_current_span
+
         # Route to room (or auto-create)
-        if room_id is None:
-            room_id = await self._inbound_router.route(
-                channel_id=message.channel_id,
-                channel_type=channel.channel_type,
-                participant_id=message.sender_id,
-            )
-        if room_id is None:
-            # Auto-create room and attach channel
-            room = await self.create_room()  # type: ignore[attr-defined]
-            room_id = room.id
-            await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
-        else:
-            # Ensure room exists; auto-create if needed (e.g. voice session
-            # with a room_id from SIP headers that hasn't been created yet).
-            room = await self._store.get_room(room_id)
-            if room is None:
-                room = await self.create_room(room_id=room_id)  # type: ignore[attr-defined]
+        route_span = telemetry.start_span(
+            SpanKind.INBOUND_PIPELINE,
+            "framework.route",
+            parent_id=get_current_span(),
+            channel_id=message.channel_id,
+            attributes={"sender_id": message.sender_id or ""},
+        )
+        try:
+            if room_id is None:
+                room_id = await self._inbound_router.route(
+                    channel_id=message.channel_id,
+                    channel_type=channel.channel_type,
+                    participant_id=message.sender_id,
+                )
+            if room_id is None:
+                # Auto-create room and attach channel
+                room = await self.create_room()  # type: ignore[attr-defined]
+                room_id = room.id
                 await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
             else:
-                # Room exists — ensure channel is attached
-                binding = await self._store.get_binding(room_id, message.channel_id)
-                if binding is None:
+                # Ensure room exists; auto-create if needed (e.g. voice session
+                # with a room_id from SIP headers that hasn't been created yet).
+                room = await self._store.get_room(room_id)
+                if room is None:
+                    room = await self.create_room(room_id=room_id)  # type: ignore[attr-defined]
                     await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
+                else:
+                    # Room exists — ensure channel is attached
+                    binding = await self._store.get_binding(room_id, message.channel_id)
+                    if binding is None:
+                        await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
+            telemetry.end_span(route_span, attributes={"room_id": room_id or ""})
+        except Exception as exc:
+            telemetry.end_span(route_span, status="error", error_message=str(exc))
+            raise
 
         # Backfill room_id on the INBOUND_PIPELINE span now that routing is done
         telemetry.set_attribute(inbound_span_id, "room_id", room_id)
@@ -156,119 +174,144 @@ class InboundMixin(HelpersMixin):
             or channel.channel_type in self._identity_channel_types
         )
         if should_resolve and resolver is not None:
+            identity_span = telemetry.start_span(
+                SpanKind.INBOUND_PIPELINE,
+                "framework.identity_resolution",
+                parent_id=get_current_span(),
+                room_id=room_id,
+                channel_id=message.channel_id,
+            )
+            _identity_error: str | None = None
             try:
-                id_result = await asyncio.wait_for(
-                    resolver.resolve(message, context),
-                    timeout=self._identity_timeout,
-                )
-            except TimeoutError:
-                logger.warning(
-                    "Identity resolution timed out after %.1fs",
-                    self._identity_timeout,
-                    extra={"room_id": room_id, "channel_id": message.channel_id},
-                )
-                await self._emit_framework_event(
-                    "identity_timeout",
-                    room_id=room_id,
-                    channel_id=message.channel_id,
-                    data={"timeout": self._identity_timeout},
-                )
-                id_result = IdentityResult(status=IdentificationStatus.UNKNOWN)
+                try:
+                    id_result = await asyncio.wait_for(
+                        resolver.resolve(message, context),
+                        timeout=self._identity_timeout,
+                    )
+                except TimeoutError:
+                    logger.warning(
+                        "Identity resolution timed out after %.1fs",
+                        self._identity_timeout,
+                        extra={"room_id": room_id, "channel_id": message.channel_id},
+                    )
+                    await self._emit_framework_event(
+                        "identity_timeout",
+                        room_id=room_id,
+                        channel_id=message.channel_id,
+                        data={"timeout": self._identity_timeout},
+                    )
+                    id_result = IdentityResult(status=IdentificationStatus.UNKNOWN)
+                    _identity_error = "timeout"
 
-            # Backfill address and channel_type from the message if not set by resolver
-            # This ensures identity hooks always have access to sender info
-            updates = {}
-            if id_result.address is None:
-                updates["address"] = message.sender_id
-            if id_result.channel_type is None:
-                updates["channel_type"] = str(channel.channel_type)
-            if updates:
-                id_result = id_result.model_copy(update=updates)
+                # Backfill address and channel_type from the message if not set by resolver
+                # This ensures identity hooks always have access to sender info
+                updates = {}
+                if id_result.address is None:
+                    updates["address"] = message.sender_id
+                if id_result.channel_type is None:
+                    updates["channel_type"] = str(channel.channel_type)
+                if updates:
+                    id_result = id_result.model_copy(update=updates)
 
-            # Deferred participant creation — capture intent only; persist
-            # inside _process_locked to avoid race on event index (Fix #1).
-            resolved_identity: Identity | None = None
-            pending_id_result: IdentityResult | None = None
+                # Deferred participant creation — capture intent only; persist
+                # inside _process_locked to avoid race on event index (Fix #1).
+                resolved_identity: Identity | None = None
+                pending_id_result: IdentityResult | None = None
 
-            if id_result.status == IdentificationStatus.IDENTIFIED and id_result.identity:
-                # Known identity — stamp participant_id; persist later
-                event = event.model_copy(
-                    update={
-                        "source": event.source.model_copy(
-                            update={"participant_id": id_result.identity.id}
-                        )
-                    }
-                )
-                resolved_identity = id_result.identity
-
-            elif id_result.status in (
-                IdentificationStatus.AMBIGUOUS,
-                IdentificationStatus.PENDING,
-            ):
-                # Multiple candidates or pending — run identity-specific hooks
-                hook_result = await self._run_identity_hooks(
-                    room_id, HookTrigger.ON_IDENTITY_AMBIGUOUS, event, context, id_result
-                )
-                # Also fire regular async hooks for observation/logging
-                await self._hook_engine.run_async_hooks(
-                    room_id, HookTrigger.ON_IDENTITY_AMBIGUOUS, event, context
-                )
-                if (
-                    hook_result
-                    and hook_result.status == IdentificationStatus.IDENTIFIED
-                    and hook_result.identity
-                ):
+                if id_result.status == IdentificationStatus.IDENTIFIED and id_result.identity:
+                    # Known identity — stamp participant_id; persist later
                     event = event.model_copy(
                         update={
                             "source": event.source.model_copy(
-                                update={"participant_id": hook_result.identity.id}
+                                update={"participant_id": id_result.identity.id}
                             )
                         }
                     )
-                    resolved_identity = hook_result.identity
-                elif hook_result and hook_result.status == IdentificationStatus.CHALLENGE_SENT:
-                    if hook_result.inject:
-                        await self._deliver_injected_events([hook_result.inject], room_id, context)
-                    return InboundResult(blocked=True, reason="identity_challenge_sent")
-                elif hook_result and hook_result.status == IdentificationStatus.REJECTED:
-                    return InboundResult(
-                        blocked=True,
-                        reason=hook_result.reason or "identity_rejected",
+                    resolved_identity = id_result.identity
+
+                elif id_result.status in (
+                    IdentificationStatus.AMBIGUOUS,
+                    IdentificationStatus.PENDING,
+                ):
+                    # Multiple candidates or pending — run identity-specific hooks
+                    hook_result = await self._run_identity_hooks(
+                        room_id, HookTrigger.ON_IDENTITY_AMBIGUOUS, event, context, id_result
+                    )
+                    # Also fire regular async hooks for observation/logging
+                    await self._hook_engine.run_async_hooks(
+                        room_id, HookTrigger.ON_IDENTITY_AMBIGUOUS, event, context
+                    )
+                    if (
+                        hook_result
+                        and hook_result.status == IdentificationStatus.IDENTIFIED
+                        and hook_result.identity
+                    ):
+                        event = event.model_copy(
+                            update={
+                                "source": event.source.model_copy(
+                                    update={"participant_id": hook_result.identity.id}
+                                )
+                            }
+                        )
+                        resolved_identity = hook_result.identity
+                    elif hook_result and hook_result.status == IdentificationStatus.CHALLENGE_SENT:
+                        if hook_result.inject:
+                            await self._deliver_injected_events(
+                                [hook_result.inject], room_id, context
+                            )
+                        return InboundResult(blocked=True, reason="identity_challenge_sent")
+                    elif hook_result and hook_result.status == IdentificationStatus.REJECTED:
+                        return InboundResult(
+                            blocked=True,
+                            reason=hook_result.reason or "identity_rejected",
+                        )
+                    else:
+                        # No hook resolved it — mark for pending creation
+                        pending_id_result = id_result
+
+                elif id_result.status in (
+                    IdentificationStatus.UNKNOWN,
+                    IdentificationStatus.REJECTED,
+                ):
+                    # No match or rejected — run identity-specific hooks
+                    hook_result = await self._run_identity_hooks(
+                        room_id, HookTrigger.ON_IDENTITY_UNKNOWN, event, context, id_result
+                    )
+                    # Also fire regular async hooks for observation/logging
+                    await self._hook_engine.run_async_hooks(
+                        room_id, HookTrigger.ON_IDENTITY_UNKNOWN, event, context
+                    )
+                    if hook_result and hook_result.status == IdentificationStatus.REJECTED:
+                        return InboundResult(
+                            blocked=True,
+                            reason=hook_result.reason or "unknown_sender",
+                        )
+                    elif (
+                        hook_result
+                        and hook_result.status == IdentificationStatus.IDENTIFIED
+                        and hook_result.identity
+                    ):
+                        event = event.model_copy(
+                            update={
+                                "source": event.source.model_copy(
+                                    update={"participant_id": hook_result.identity.id}
+                                )
+                            }
+                        )
+                        resolved_identity = hook_result.identity
+            except Exception as exc:
+                _identity_error = str(exc)
+                raise
+            finally:
+                if _identity_error:
+                    telemetry.end_span(
+                        identity_span, status="error", error_message=_identity_error
                     )
                 else:
-                    # No hook resolved it — mark for pending creation
-                    pending_id_result = id_result
-
-            elif id_result.status in (
-                IdentificationStatus.UNKNOWN,
-                IdentificationStatus.REJECTED,
-            ):
-                # No match or rejected — run identity-specific hooks
-                hook_result = await self._run_identity_hooks(
-                    room_id, HookTrigger.ON_IDENTITY_UNKNOWN, event, context, id_result
-                )
-                # Also fire regular async hooks for observation/logging
-                await self._hook_engine.run_async_hooks(
-                    room_id, HookTrigger.ON_IDENTITY_UNKNOWN, event, context
-                )
-                if hook_result and hook_result.status == IdentificationStatus.REJECTED:
-                    return InboundResult(
-                        blocked=True,
-                        reason=hook_result.reason or "unknown_sender",
+                    telemetry.end_span(
+                        identity_span,
+                        attributes={"identity_status": str(id_result.status)},
                     )
-                elif (
-                    hook_result
-                    and hook_result.status == IdentificationStatus.IDENTIFIED
-                    and hook_result.identity
-                ):
-                    event = event.model_copy(
-                        update={
-                            "source": event.source.model_copy(
-                                update={"participant_id": hook_result.identity.id}
-                            )
-                        }
-                    )
-                    resolved_identity = hook_result.identity
 
         if not should_resolve or resolver is None:
             resolved_identity = None

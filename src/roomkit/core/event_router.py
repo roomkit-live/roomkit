@@ -137,7 +137,10 @@ class EventRouter:
             session_id=session_id,
             attributes={Attr.CHANNEL_ID: source_binding.channel_id},
         )
-        broadcast_token = set_current_span(span_id)
+        # Propagate backend-specific context for robust parent linking
+        broadcast_token = set_current_span(
+            span_id, telemetry_ctx=telemetry.get_span_context(span_id)
+        )
 
         result = BroadcastResult()
 

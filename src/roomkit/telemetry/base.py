@@ -186,6 +186,18 @@ class TelemetryProvider(ABC):
         """Record a metric value."""
         ...
 
+    def get_span_context(self, span_id: str) -> Any:
+        """Return an opaque context object for the given span.
+
+        Used to propagate backend-specific parent context (e.g. OTel Context)
+        through :func:`set_current_span` for robust parent linking across
+        async boundaries.
+
+        Returns ``None`` by default.  Override in providers that carry
+        backend-specific context (e.g. ``OpenTelemetryProvider``).
+        """
+        return None
+
     def flush(self) -> None:  # noqa: B027
         """Flush pending spans/metrics without closing the provider.
 

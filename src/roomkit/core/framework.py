@@ -737,6 +737,9 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             visibility: Event visibility ("all" or "internal")
             provider: Optional provider/backend name for event attribution
         """
+        from roomkit.telemetry.base import SpanKind
+        from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
+
         await self.get_room(room_id)
         binding = await self._get_binding(room_id, channel_id)
 
@@ -756,19 +759,39 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             visibility=visibility,
         )
 
-        async with self._lock_manager.locked(room_id):
-            count = await self._store.get_event_count(room_id)
-            event = event.model_copy(update={"index": count})
-            await self._store.add_event(event)
+        telemetry = self._telemetry
+        span_id = telemetry.start_span(
+            SpanKind.INBOUND_PIPELINE,
+            "framework.send_event",
+            parent_id=get_current_span(),
+            room_id=room_id,
+            channel_id=channel_id,
+            attributes={"event_type": str(event_type)},
+        )
+        token = set_current_span(
+            span_id, telemetry_ctx=telemetry.get_span_context(span_id)
+        )
+        try:
+            async with self._lock_manager.locked(room_id):
+                count = await self._store.get_event_count(room_id)
+                event = event.model_copy(update={"index": count})
+                await self._store.add_event(event)
 
-            context = await self._build_context(room_id)
-            router = self._get_router()
-            await router.broadcast(event, binding, context)
+                context = await self._build_context(room_id)
+                router = self._get_router()
+                await router.broadcast(event, binding, context)
 
-            # Run AFTER_BROADCAST hooks for observability and fan-out
-            await self._hook_engine.run_async_hooks(
-                room_id, HookTrigger.AFTER_BROADCAST, event, context
-            )
+                # Run AFTER_BROADCAST hooks for observability and fan-out
+                await self._hook_engine.run_async_hooks(
+                    room_id, HookTrigger.AFTER_BROADCAST, event, context
+                )
+
+            telemetry.end_span(span_id)
+        except Exception as exc:
+            telemetry.end_span(span_id, status="error", error_message=str(exc))
+            raise
+        finally:
+            reset_span(token)
 
         return event
 

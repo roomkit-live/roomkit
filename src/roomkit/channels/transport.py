@@ -81,30 +81,52 @@ class TransportChannel(Channel):
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         """Convert an inbound message into a room event."""
-        # Use MMS channel type for SMS with media content
-        channel_type = self.channel_type
-        if channel_type == ChannelType.SMS and self._has_media(message.content):
-            channel_type = ChannelType.MMS
+        from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.context import get_current_span
+        from roomkit.telemetry.noop import NoopTelemetryProvider
 
-        return RoomEvent(
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        span_id = telemetry.start_span(
+            SpanKind.INBOUND_PIPELINE,
+            "channel.handle_inbound",
+            parent_id=get_current_span(),
             room_id=context.room.id,
-            type=message.event_type,
-            source=EventSource(
-                channel_id=self.channel_id,
-                channel_type=channel_type,
-                participant_id=message.sender_id or None,
-                external_id=message.external_id,
-                provider=self.provider_name,
-            ),
-            content=message.content,
-            channel_data=ChannelData(
-                provider=self.provider_name,
-                external_id=message.external_id,
-                thread_id=message.thread_id,
-            ),
-            idempotency_key=message.idempotency_key,
-            metadata=message.metadata,
+            channel_id=self.channel_id,
+            attributes={
+                Attr.CHANNEL_ID: self.channel_id,
+                "channel_type": str(self.channel_type),
+            },
         )
+        try:
+            # Use MMS channel type for SMS with media content
+            channel_type = self.channel_type
+            if channel_type == ChannelType.SMS and self._has_media(message.content):
+                channel_type = ChannelType.MMS
+
+            event = RoomEvent(
+                room_id=context.room.id,
+                type=message.event_type,
+                source=EventSource(
+                    channel_id=self.channel_id,
+                    channel_type=channel_type,
+                    participant_id=message.sender_id or None,
+                    external_id=message.external_id,
+                    provider=self.provider_name,
+                ),
+                content=message.content,
+                channel_data=ChannelData(
+                    provider=self.provider_name,
+                    external_id=message.external_id,
+                    thread_id=message.thread_id,
+                ),
+                idempotency_key=message.idempotency_key,
+                metadata=message.metadata,
+            )
+            telemetry.end_span(span_id)
+            return event
+        except Exception as exc:
+            telemetry.end_span(span_id, status="error", error_message=str(exc))
+            raise
 
     @staticmethod
     def _has_media(content: Any) -> bool:

@@ -141,12 +141,14 @@ class PostgresStore(ConversationStore):
     def _query_span(self, operation: str, table: str) -> Generator[str, None, None]:
         """Context manager for STORE_QUERY telemetry spans."""
         from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.context import get_current_span
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
         telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
         span_id = telemetry.start_span(
             SpanKind.STORE_QUERY,
             f"store.{operation}",
+            parent_id=get_current_span(),
             attributes={
                 Attr.STORE_OPERATION: operation,
                 Attr.STORE_TABLE: table,

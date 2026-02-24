@@ -82,6 +82,20 @@ class OpenTelemetryProvider(TelemetryProvider):
     def name(self) -> str:
         return "opentelemetry"
 
+    def get_span_context(self, span_id: str) -> Any:
+        """Return an OTel Context with the given span set as current.
+
+        Overrides :meth:`TelemetryProvider.get_span_context` to return a
+        native OTel ``Context`` for robust parent linking across async
+        boundaries.
+        """
+        from opentelemetry import trace
+
+        otel_span = self._active_spans.get(span_id) or self._ended_spans.get(span_id)
+        if otel_span is not None:
+            return trace.set_span_in_context(otel_span)
+        return None
+
     def start_span(
         self,
         kind: SpanKind,
@@ -95,15 +109,39 @@ class OpenTelemetryProvider(TelemetryProvider):
     ) -> str:
         from opentelemetry import trace
 
-        # Build context with explicit parent — do NOT use context.attach/detach
-        # because async spans end out of order, corrupting the OTel context stack.
-        # Check both active and recently-ended spans (a child may fire after
-        # its parent was ended, e.g. AFTER_TTS hook after session close).
+        from roomkit.telemetry.context import get_current_telemetry_ctx
+
+        # Build context with explicit parent.
+        #
+        # Primary: use the backend context stored in the ContextVar (set by
+        # callers via set_current_span(..., telemetry_ctx=...)).  This
+        # bypasses the _active_spans dict lookup entirely and is resilient
+        # to any dict key / instance mismatch across async tasks.
+        #
+        # Fallback: look up the parent in _active_spans / _ended_spans by
+        # span_id.  This covers cases where the caller didn't propagate
+        # the telemetry context.
         ctx = None
         if parent_id:
-            parent_span = self._active_spans.get(parent_id) or self._ended_spans.get(parent_id)
-            if parent_span is not None:
-                ctx = trace.set_span_in_context(parent_span)
+            # Try the ContextVar-based context first (most reliable)
+            telemetry_ctx = get_current_telemetry_ctx()
+            if telemetry_ctx is not None:
+                ctx = telemetry_ctx
+            else:
+                # Fallback: dict lookup
+                parent_span = self._active_spans.get(parent_id) or self._ended_spans.get(
+                    parent_id
+                )
+                if parent_span is not None:
+                    ctx = trace.set_span_in_context(parent_span)
+                else:
+                    logger.warning(
+                        "Parent span %s not found for %s (active=%d, ended=%d)",
+                        parent_id,
+                        name,
+                        len(self._active_spans),
+                        len(self._ended_spans),
+                    )
 
         otel_span = self._tracer.start_span(
             name=f"roomkit.{name}",

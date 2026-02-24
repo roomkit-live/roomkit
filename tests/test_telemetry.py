@@ -383,9 +383,16 @@ class TestInboundTelemetry:
 
         inbound_spans = mock.get_spans(SpanKind.INBOUND_PIPELINE)
         assert len(inbound_spans) >= 1
-        span = inbound_spans[0]
-        assert span.name == "framework.inbound"
+        # Find the root inbound span (framework.inbound), not sub-spans like
+        # framework.route or channel.handle_inbound
+        root_spans = [s for s in inbound_spans if s.name == "framework.inbound"]
+        assert len(root_spans) == 1
+        span = root_spans[0]
         assert span.status == "ok"
+
+        # Verify child spans are connected to the root
+        child_names = {s.name for s in inbound_spans if s.parent_id == span.id}
+        assert "framework.route" in child_names
 
 
 # ---------------------------------------------------------------------------
@@ -1247,7 +1254,10 @@ class TestTelemetryPhase4:
         broadcast_spans = mock.get_spans(SpanKind.BROADCAST)
         assert len(inbound_spans) >= 1
         assert len(broadcast_spans) >= 1
-        assert broadcast_spans[0].parent_id == inbound_spans[0].id
+        # Find the root inbound span (framework.inbound)
+        root_spans = [s for s in inbound_spans if s.name == "framework.inbound"]
+        assert len(root_spans) == 1
+        assert broadcast_spans[0].parent_id == root_spans[0].id
 
     async def test_delivery_span_parents_to_broadcast(self) -> None:
         """DELIVERY span should be a child of BROADCAST span."""
@@ -1301,7 +1311,9 @@ class TestTelemetryPhase4:
         hook_spans = mock.get_spans(SpanKind.HOOK_SYNC)
         assert len(inbound_spans) >= 1
         assert len(hook_spans) >= 1
-        assert hook_spans[0].parent_id == inbound_spans[0].id
+        root_spans = [s for s in inbound_spans if s.name == "framework.inbound"]
+        assert len(root_spans) == 1
+        assert hook_spans[0].parent_id == root_spans[0].id
 
     async def test_llm_span_parents_to_broadcast(self) -> None:
         """LLM_GENERATE span should be a child of BROADCAST span."""
@@ -1352,7 +1364,9 @@ class TestTelemetryPhase4:
 
         inbound_spans = mock.get_spans(SpanKind.INBOUND_PIPELINE)
         assert len(inbound_spans) >= 1
-        span = inbound_spans[0]
+        root_spans = [s for s in inbound_spans if s.name == "framework.inbound"]
+        assert len(root_spans) == 1
+        span = root_spans[0]
         # room_id should be set (either on span or in attributes)
         has_room_id = span.room_id is not None or span.attributes.get("room_id") is not None
         assert has_room_id
@@ -1377,7 +1391,9 @@ class TestTelemetryPhase4:
 
         inbound_spans = mock.get_spans(SpanKind.INBOUND_PIPELINE)
         assert len(inbound_spans) >= 1
-        span = inbound_spans[0]
+        root_spans = [s for s in inbound_spans if s.name == "framework.inbound"]
+        assert len(root_spans) == 1
+        span = root_spans[0]
         # session_id should be set (either on span or in attributes)
         has_session_id = (
             span.session_id == "sess-abc" or span.attributes.get("session_id") == "sess-abc"
@@ -1427,6 +1443,138 @@ class TestTelemetryPhase4:
 
         # After process_inbound returns, context var should be reset
         assert get_current_span() is None
+
+
+# ---------------------------------------------------------------------------
+# Text message complete span hierarchy
+# ---------------------------------------------------------------------------
+
+
+class TestTextMessageSpanHierarchy:
+    """Verify the full span tree for a text message is connected."""
+
+    async def test_full_text_pipeline_span_tree(self) -> None:
+        """All spans for a text message should be connected under INBOUND_PIPELINE."""
+        from roomkit.channels.transport import TransportChannel
+
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+
+        # Use TransportChannel as source to get handle_inbound span
+        ch1 = TransportChannel("ch1", ChannelType.SMS)
+        ch2 = TransportChannel(
+            "ch2",
+            ChannelType.SMS,
+            provider=_MockTransportProvider(),
+        )
+        kit.register_channel(ch1)
+        kit.register_channel(ch2)
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="filter_hook")
+        async def my_hook(event: RoomEvent, context: RoomContext) -> HookResult:
+            return HookResult(action="allow")
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "ch2", metadata={"recipient_id": "+1234"})
+
+        msg = InboundMessage(
+            channel_id="ch1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        await kit.process_inbound(msg, room_id=room.id)
+
+        # Collect spans by kind
+        inbound = mock.get_spans(SpanKind.INBOUND_PIPELINE)
+        broadcast = mock.get_spans(SpanKind.BROADCAST)
+        delivery = mock.get_spans(SpanKind.DELIVERY)
+        hooks = mock.get_spans(SpanKind.HOOK_SYNC)
+
+        # Find the root inbound span
+        root_spans = [s for s in inbound if s.name == "framework.inbound"]
+        assert len(root_spans) == 1
+        root = root_spans[0]
+
+        # framework.route should be a child of root
+        route_spans = [s for s in inbound if s.name == "framework.route"]
+        assert len(route_spans) == 1
+        assert route_spans[0].parent_id == root.id
+
+        # channel.handle_inbound should be a child of root
+        handle_spans = [s for s in inbound if s.name == "channel.handle_inbound"]
+        assert len(handle_spans) == 1
+        assert handle_spans[0].parent_id == root.id
+
+        # BROADCAST should be a child of root
+        assert len(broadcast) >= 1
+        assert broadcast[0].parent_id == root.id
+
+        # DELIVERY should be a child of BROADCAST
+        assert len(delivery) >= 1
+        assert delivery[0].parent_id == broadcast[0].id
+
+        # HOOK_SYNC should be a child of root
+        assert len(hooks) >= 1
+        assert hooks[0].parent_id == root.id
+
+        # All spans should be status "ok"
+        all_spans = inbound + broadcast + delivery + hooks
+        for s in all_spans:
+            assert s.status == "ok", f"Span {s.name} has status {s.status}"
+
+    async def test_send_event_creates_span(self) -> None:
+        """send_event should create a framework.send_event span wrapping broadcast."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+
+        ch1 = SimpleChannel("ch1")
+        ch2 = SimpleChannel("ch2")
+        kit.register_channel(ch1)
+        kit.register_channel(ch2)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "ch2")
+
+        await kit.send_event(
+            room_id=room.id,
+            channel_id="ch1",
+            content=TextContent(body="hello"),
+        )
+
+        # Should have a send_event span
+        inbound = mock.get_spans(SpanKind.INBOUND_PIPELINE)
+        send_spans = [s for s in inbound if s.name == "framework.send_event"]
+        assert len(send_spans) == 1
+
+        # Broadcast should be a child of the send_event span
+        broadcast = mock.get_spans(SpanKind.BROADCAST)
+        assert len(broadcast) >= 1
+        assert broadcast[0].parent_id == send_spans[0].id
+
+
+class TestTelemetryContextPropagation:
+    """Verify that telemetry context is propagated through the ContextVar."""
+
+    async def test_telemetry_context_set_and_retrieved(self) -> None:
+        """set_current_span with telemetry_ctx should be retrievable."""
+        from roomkit.telemetry.context import (
+            get_current_telemetry_ctx,
+            reset_span,
+            set_current_span,
+        )
+
+        sentinel = object()
+        token = set_current_span("test-id", telemetry_ctx=sentinel)
+        assert get_current_telemetry_ctx() is sentinel
+        reset_span(token)
+
+    async def test_telemetry_context_none_by_default(self) -> None:
+        """Without telemetry_ctx, get_current_telemetry_ctx returns None."""
+        from roomkit.telemetry.context import get_current_telemetry_ctx
+
+        assert get_current_telemetry_ctx() is None
 
 
 # ---------------------------------------------------------------------------
