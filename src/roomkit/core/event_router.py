@@ -451,8 +451,13 @@ class EventRouter:
         source_binding: ChannelBinding,
         target_binding: ChannelBinding,
     ) -> bool:
-        """Check if source is visible to target based on visibility rules."""
-        vis = source_binding.visibility
+        """Check if source is visible to target based on visibility rules.
+
+        Uses the event's visibility field which already incorporates the source
+        binding's visibility (merged in broadcast() before this is called).
+        This allows callers of send_event() to override visibility per-event.
+        """
+        vis = event.visibility or source_binding.visibility
 
         if vis == "all":
             return True
