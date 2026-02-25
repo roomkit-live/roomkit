@@ -634,8 +634,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 # receive() generator exhausts after each turn_complete —
                 # that's normal, just loop back to call receive() again.
                 logger.debug(
-                    "[Gemini] Turn generator exhausted for session %s, "
-                    "looping for next turn",
+                    "[Gemini] Turn generator exhausted for session %s, looping for next turn",
                     session.id,
                 )
 
@@ -648,8 +647,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 state.live_session = None
                 reconnect_count = 0
             except Exception as exc:
-                if session.state == VoiceSessionState.ENDED:
-                    return
+                if session.state == VoiceSessionState.ENDED:  # type: ignore[comparison-overlap]
+                    return  # state may be mutated by close() during await
 
                 uptime = time.monotonic() - state.started_at if state.started_at else 0.0
                 close_code = getattr(exc, "code", None)
