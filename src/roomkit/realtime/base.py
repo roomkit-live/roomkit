@@ -23,6 +23,8 @@ class EphemeralEventType(StrEnum):
     REACTION = "reaction"
     TOOL_CALL_START = "tool_call_start"
     TOOL_CALL_END = "tool_call_end"
+    THINKING_START = "thinking_start"
+    THINKING_END = "thinking_end"
     CUSTOM = "custom"
 
 

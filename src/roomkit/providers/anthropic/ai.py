@@ -12,6 +12,7 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AITextPart,
+    AIThinkingPart,
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
@@ -19,6 +20,7 @@ from roomkit.providers.ai.base import (
     StreamDone,
     StreamEvent,
     StreamTextDelta,
+    StreamThinkingDelta,
     StreamToolCall,
 )
 from roomkit.providers.anthropic.config import AnthropicConfig
@@ -66,12 +68,16 @@ class AnthropicAIProvider(AIProvider):
         return any(self._config.model.startswith(prefix) for prefix in _VISION_MODELS)
 
     def _format_content(
-        self, content: str | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart]
+        self,
+        content: (
+            str
+            | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart | AIThinkingPart]
+        ),
     ) -> str | list[dict[str, Any]]:
         """Format message content for Anthropic API.
 
-        Converts AITextPart/AIImagePart/AIToolCallPart/AIToolResultPart to
-        Anthropic's content block format.
+        Converts AITextPart/AIImagePart/AIToolCallPart/AIToolResultPart/AIThinkingPart
+        to Anthropic's content block format.
         """
         if isinstance(content, str):
             return content
@@ -123,6 +129,16 @@ class AnthropicAIProvider(AIProvider):
                         "content": part.result,
                     }
                 )
+            elif isinstance(part, AIThinkingPart):
+                # Anthropic requires thinking blocks preserved in conversation
+                # history for round-trip fidelity across tool-loop turns.
+                block: dict[str, Any] = {
+                    "type": "thinking",
+                    "thinking": part.thinking,
+                }
+                if part.signature:
+                    block["signature"] = part.signature
+                parts.append(block)
         return parts
 
     def _build_messages(
@@ -146,7 +162,15 @@ class AnthropicAIProvider(AIProvider):
         }
         if context.system_prompt:
             kwargs["system"] = context.system_prompt
-        if context.temperature is not None:
+        if context.thinking_budget is not None:
+            # Extended thinking: Anthropic requires temperature=1 when thinking
+            # is enabled and does not accept a temperature parameter.
+            kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": context.thinking_budget,
+            }
+            kwargs.pop("temperature", None)
+        elif context.temperature is not None:
             kwargs["temperature"] = context.temperature
         if context.tools:
             kwargs["tools"] = [
@@ -160,32 +184,37 @@ class AnthropicAIProvider(AIProvider):
         return kwargs
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
-        """Yield structured events from the Anthropic Messages streaming API."""
+        """Yield structured events from the Anthropic Messages streaming API.
+
+        When extended thinking is enabled, yields ``StreamThinkingDelta`` events
+        before text deltas.
+        """
         kwargs = self._build_kwargs(context)
         t0 = time.monotonic()
         first_token = True
 
         try:
             async with self._client.messages.stream(**kwargs) as stream:
-                async for text in stream.text_stream:
-                    if first_token:
-                        ttfb_ms = (time.monotonic() - t0) * 1000
-                        from roomkit.telemetry.noop import NoopTelemetryProvider
+                # Use the raw event stream to capture both thinking and text blocks.
+                async for event in stream:
+                    if (
+                        hasattr(event, "type")
+                        and event.type == "content_block_delta"
+                        and hasattr(event.delta, "type")
+                    ):
+                        delta = event.delta
+                        if delta.type == "thinking_delta":
+                            if first_token:
+                                self._record_ttfb(t0)
+                                first_token = False
+                            yield StreamThinkingDelta(thinking=delta.thinking)
+                        elif delta.type == "text_delta":
+                            if first_token:
+                                self._record_ttfb(t0)
+                                first_token = False
+                            yield StreamTextDelta(text=delta.text)
 
-                        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
-                        telemetry.record_metric(
-                            "roomkit.llm.ttfb_ms",
-                            ttfb_ms,
-                            unit="ms",
-                            attributes={
-                                "provider": "anthropic",
-                                "model": self._config.model,
-                            },
-                        )
-                        first_token = False
-                    yield StreamTextDelta(text=text)
-
-                # Extract final message for tool calls and usage
+                # Extract final message for tool calls, thinking, and usage
                 final = await stream.get_final_message()
 
             # Yield tool calls from the final message
@@ -197,12 +226,19 @@ class AnthropicAIProvider(AIProvider):
                         arguments=block.input,
                     )
 
+            usage: dict[str, int] = {
+                "input_tokens": final.usage.input_tokens,
+                "output_tokens": final.usage.output_tokens,
+            }
+            # Include thinking token usage when available (cache_creation/read)
+            if hasattr(final.usage, "cache_creation_input_tokens"):
+                usage["cache_creation_input_tokens"] = final.usage.cache_creation_input_tokens or 0
+            if hasattr(final.usage, "cache_read_input_tokens"):
+                usage["cache_read_input_tokens"] = final.usage.cache_read_input_tokens or 0
+
             yield StreamDone(
                 finish_reason=final.stop_reason,
-                usage={
-                    "input_tokens": final.usage.input_tokens,
-                    "output_tokens": final.usage.output_tokens,
-                },
+                usage=usage,
                 metadata={"model": final.model},
             )
         except self._api_status_error as exc:
@@ -221,14 +257,33 @@ class AnthropicAIProvider(AIProvider):
                 status_code=None,
             ) from exc
 
+    def _record_ttfb(self, t0: float) -> None:
+        """Record time-to-first-byte metric."""
+        ttfb_ms = (time.monotonic() - t0) * 1000
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        telemetry.record_metric(
+            "roomkit.llm.ttfb_ms",
+            ttfb_ms,
+            unit="ms",
+            attributes={
+                "provider": "anthropic",
+                "model": self._config.model,
+            },
+        )
+
     async def generate(self, context: AIContext) -> AIResponse:
         """Generate by consuming the structured stream."""
+        thinking_parts: list[str] = []
         text_parts: list[str] = []
         tool_calls: list[AIToolCall] = []
         done_event: StreamDone | None = None
 
         async for event in self.generate_structured_stream(context):
-            if isinstance(event, StreamTextDelta):
+            if isinstance(event, StreamThinkingDelta):
+                thinking_parts.append(event.thinking)
+            elif isinstance(event, StreamTextDelta):
                 text_parts.append(event.text)
             elif isinstance(event, StreamToolCall):
                 tool_calls.append(
@@ -239,6 +294,7 @@ class AnthropicAIProvider(AIProvider):
 
         return AIResponse(
             content="".join(text_parts),
+            thinking="".join(thinking_parts) if thinking_parts else None,
             finish_reason=done_event.finish_reason if done_event else None,
             usage=done_event.usage if done_event else {},
             metadata=done_event.metadata if done_event else {},

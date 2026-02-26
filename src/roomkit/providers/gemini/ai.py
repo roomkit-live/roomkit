@@ -12,6 +12,7 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AITextPart,
+    AIThinkingPart,
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
@@ -89,7 +90,10 @@ class GeminiAIProvider(AIProvider):
 
     def _format_content(
         self,
-        content: str | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart],
+        content: (
+            str
+            | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart | AIThinkingPart]
+        ),
     ) -> list[Any]:
         """Convert content to Gemini Parts."""
         if isinstance(content, str):

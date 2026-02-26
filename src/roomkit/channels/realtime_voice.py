@@ -288,6 +288,28 @@ class RealtimeVoiceChannel(Channel):
             "voice": self._voice,
         }
 
+    # -- Public helpers --
+
+    async def inject_text(
+        self,
+        session: VoiceSession,
+        text: str,
+        *,
+        role: str = "user",
+    ) -> None:
+        """Inject a text turn into the provider session.
+
+        Useful for nudging the provider when its server-side VAD
+        stalls (e.g. Gemini ignoring valid speech after turn_complete).
+        """
+        await self._provider.inject_text(session, text, role=role)
+        logger.info(
+            "Injected text into session %s (role=%s, len=%d)",
+            session.id,
+            role,
+            len(text),
+        )
+
     # -- Session lifecycle --
 
     async def start_session(
@@ -759,11 +781,16 @@ class RealtimeVoiceChannel(Channel):
             return
         self._track_task(
             loop,
-            self._forward_client_audio(session, audio),
+            self._forward_client_audio(session, audio, time.monotonic()),
             name=f"rt_client_audio:{session.id}",
         )
 
-    async def _forward_client_audio(self, session: VoiceSession, audio: bytes) -> None:
+    async def _forward_client_audio(
+        self,
+        session: VoiceSession,
+        audio: bytes,
+        enqueued_at: float = 0.0,
+    ) -> None:
         if session.state != VoiceSessionState.ACTIVE:
             return
         # Enforce ChannelBinding.access and muted per RFC §7.5

@@ -11,6 +11,7 @@ from roomkit.providers.ai.base import (
     StreamDone,
     StreamEvent,
     StreamTextDelta,
+    StreamThinkingDelta,
     StreamToolCall,
 )
 
@@ -72,6 +73,8 @@ class MockAIProvider(AIProvider):
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """Yield structured events from generate() result."""
         response = await self.generate(context)
+        if response.thinking:
+            yield StreamThinkingDelta(thinking=response.thinking)
         if response.content:
             yield StreamTextDelta(text=response.content)
         for tc in response.tool_calls:

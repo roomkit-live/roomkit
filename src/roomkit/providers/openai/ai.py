@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Literal
 
 from roomkit.providers.ai.base import (
     AIContext,
@@ -14,10 +15,16 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AITextPart,
+    AIThinkingPart,
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
     ProviderError,
+    StreamDone,
+    StreamEvent,
+    StreamTextDelta,
+    StreamThinkingDelta,
+    StreamToolCall,
 )
 from roomkit.providers.openai.config import OpenAIConfig
 
@@ -29,6 +36,76 @@ _VISION_MODELS = (
     "o1",
     "o3",
 )
+
+_THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+
+
+class _ThinkTagParser:
+    """Stateful parser for ``<think>...</think>`` tags in a text stream.
+
+    vLLM / Ollama models (DeepSeek-R1, QwQ, etc.) emit reasoning inside
+    ``<think>`` tags before the answer text.  This parser classifies
+    incoming chunks into ``"thinking"`` and ``"text"`` segments, handling
+    tags that are split across chunk boundaries.
+    """
+
+    _OPEN = "<think>"
+    _CLOSE = "</think>"
+
+    def __init__(self) -> None:
+        self._in_thinking = False
+        self._buf = ""
+
+    def feed(self, chunk: str) -> list[tuple[Literal["thinking", "text"], str]]:
+        """Process *chunk* and return classified ``(kind, content)`` pairs."""
+        self._buf += chunk
+        results: list[tuple[Literal["thinking", "text"], str]] = []
+
+        while self._buf:
+            tag = self._CLOSE if self._in_thinking else self._OPEN
+            idx = self._buf.find(tag)
+
+            if idx >= 0:
+                before = self._buf[:idx]
+                if before:
+                    kind: Literal["thinking", "text"] = "thinking" if self._in_thinking else "text"
+                    results.append((kind, before))
+                self._buf = self._buf[idx + len(tag) :]
+                self._in_thinking = not self._in_thinking
+            else:
+                # Hold back a suffix that could be a partial tag start.
+                hold = self._partial_tag_len(self._buf, tag)
+                if hold:
+                    emit = self._buf[:-hold]
+                    if emit:
+                        kind = "thinking" if self._in_thinking else "text"
+                        results.append((kind, emit))
+                    self._buf = self._buf[-hold:]
+                    break
+                # No partial match — emit everything.
+                kind = "thinking" if self._in_thinking else "text"
+                results.append((kind, self._buf))
+                self._buf = ""
+
+        return results
+
+    def flush(self) -> list[tuple[Literal["thinking", "text"], str]]:
+        """Emit any remaining buffered content."""
+        if not self._buf:
+            return []
+        kind: Literal["thinking", "text"] = "thinking" if self._in_thinking else "text"
+        result = [(kind, self._buf)]
+        self._buf = ""
+        return result
+
+    @staticmethod
+    def _partial_tag_len(text: str, tag: str) -> int:
+        """Length of the longest suffix of *text* that is a prefix of *tag*."""
+        max_check = min(len(text), len(tag) - 1)
+        for length in range(max_check, 0, -1):
+            if text.endswith(tag[:length]):
+                return length
+        return 0
 
 
 class OpenAIAIProvider(AIProvider):
@@ -68,13 +145,22 @@ class OpenAIAIProvider(AIProvider):
     def supports_streaming(self) -> bool:
         return True
 
+    @property
+    def supports_structured_streaming(self) -> bool:
+        return True
+
     def _format_content(
         self,
-        content: str | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart],
+        content: (
+            str
+            | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart | AIThinkingPart]
+        ),
     ) -> str | list[dict[str, Any]]:
         """Format message content for OpenAI API.
 
         Converts AITextPart/AIImagePart to OpenAI's content block format.
+        AIThinkingPart is re-injected as a ``<think>`` text block so
+        vLLM / Ollama models see their own reasoning in history.
         """
         if isinstance(content, str):
             return content
@@ -90,6 +176,10 @@ class OpenAIAIProvider(AIProvider):
                         "image_url": {"url": part.url},
                     }
                 )
+            elif isinstance(part, AIThinkingPart):
+                # Re-wrap thinking as <think> tags so the model sees its own
+                # prior reasoning when the conversation is sent back.
+                parts.append({"type": "text", "text": f"<think>{part.thinking}</think>"})
         return parts
 
     def _build_messages(
@@ -111,6 +201,9 @@ class OpenAIAIProvider(AIProvider):
                 for p in m.content:
                     if isinstance(p, AITextPart):
                         content_text = p.text
+                    elif isinstance(p, AIThinkingPart):
+                        # Prepend thinking as <think> tags before text
+                        content_text = f"<think>{p.thinking}</think>" + content_text
                     elif isinstance(p, AIToolCallPart):
                         tool_calls.append(
                             {
@@ -149,6 +242,8 @@ class OpenAIAIProvider(AIProvider):
                     }
                 )
         return result
+
+    # -- Non-streaming ---------------------------------------------------------
 
     async def generate(self, context: AIContext) -> AIResponse:
         messages = self._build_messages(context.messages, context.system_prompt)
@@ -234,16 +329,29 @@ class OpenAIAIProvider(AIProvider):
                     )
                 )
 
+        # Extract <think>...</think> tags from response text.
+        raw_text = choice.message.content or ""
+        thinking, content = _extract_think_tags(raw_text)
+
         return AIResponse(
-            content=choice.message.content or "",
+            content=content,
+            thinking=thinking,
             finish_reason=choice.finish_reason,
             usage=usage,
             metadata={"model": response.model},
             tool_calls=tool_calls,
         )
 
-    async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
-        """Yield text deltas as they arrive from the OpenAI Chat Completions API."""
+    # -- Streaming -------------------------------------------------------------
+
+    async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        """Yield structured events with ``<think>`` tag parsing.
+
+        Text inside ``<think>...</think>`` is yielded as
+        :class:`StreamThinkingDelta`; everything else as
+        :class:`StreamTextDelta`.  Tool calls are collected from the final
+        chunks and yielded as :class:`StreamToolCall`.
+        """
         messages = self._build_messages(context.messages, context.system_prompt)
         kwargs: dict[str, Any] = {
             "model": self._config.model,
@@ -267,16 +375,79 @@ class OpenAIAIProvider(AIProvider):
                 for t in context.tools
             ]
 
+        t0 = time.monotonic()
+        first_token = True
+        parser = _ThinkTagParser()
+
+        # Accumulate tool call deltas across chunks
+        tool_call_accum: dict[int, dict[str, Any]] = {}
+        finish_reason: str | None = None
+
         try:
             response = await self._client.chat.completions.create(**kwargs)
             async for chunk in response:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                finish_reason = chunk.choices[0].finish_reason or finish_reason
+
+                # Accumulate streamed tool call deltas
+                if hasattr(delta, "tool_calls") and delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in tool_call_accum:
+                            tool_call_accum[idx] = {
+                                "id": "",
+                                "name": "",
+                                "arguments": "",
+                            }
+                        acc = tool_call_accum[idx]
+                        if tc_delta.id:
+                            acc["id"] = tc_delta.id
+                        if hasattr(tc_delta, "function") and tc_delta.function:
+                            if tc_delta.function.name:
+                                acc["name"] = tc_delta.function.name
+                            if tc_delta.function.arguments:
+                                acc["arguments"] += tc_delta.function.arguments
+
+                # Process text content through the think-tag parser
+                text = delta.content if hasattr(delta, "content") else None
+                if text:
+                    for kind, segment in parser.feed(text):
+                        if first_token:
+                            self._record_ttfb(t0)
+                            first_token = False
+                        if kind == "thinking":
+                            yield StreamThinkingDelta(thinking=segment)
+                        else:
+                            yield StreamTextDelta(text=segment)
+
+            # Flush any remaining buffered text from the parser
+            for kind, segment in parser.flush():
+                if first_token:
+                    self._record_ttfb(t0)
+                    first_token = False
+                if kind == "thinking":
+                    yield StreamThinkingDelta(thinking=segment)
+                else:
+                    yield StreamTextDelta(text=segment)
+
+            # Yield accumulated tool calls
+            for _idx in sorted(tool_call_accum):
+                acc = tool_call_accum[_idx]
+                try:
+                    args = json.loads(acc["arguments"]) if acc["arguments"] else {}
+                except (json.JSONDecodeError, TypeError):
+                    args = {"raw": acc["arguments"]}
+                yield StreamToolCall(id=acc["id"], name=acc["name"], arguments=args)
+
+            yield StreamDone(finish_reason=finish_reason)
+
         except self._api_status_error as exc:
             raise ProviderError(
                 str(exc),
                 retryable=exc.status_code in {429, 500, 502, 503},
-                provider="openai",
+                provider=self._provider_name,
                 status_code=exc.status_code,
             ) from exc
         except Exception as exc:
@@ -286,6 +457,40 @@ class OpenAIAIProvider(AIProvider):
                 provider=self._provider_name,
             ) from exc
 
+    async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
+        """Yield text deltas (thinking content filtered out)."""
+        async for event in self.generate_structured_stream(context):
+            if isinstance(event, StreamTextDelta):
+                yield event.text
+
+    def _record_ttfb(self, t0: float) -> None:
+        """Record time-to-first-byte metric."""
+        ttfb_ms = (time.monotonic() - t0) * 1000
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        telemetry.record_metric(
+            "roomkit.llm.ttfb_ms",
+            ttfb_ms,
+            unit="ms",
+            attributes={"provider": self._provider_name, "model": self._config.model},
+        )
+
     async def close(self) -> None:
         """Close the underlying HTTP client."""
         await self._client.close()
+
+
+def _extract_think_tags(text: str) -> tuple[str | None, str]:
+    """Extract ``<think>...</think>`` content from *text*.
+
+    Returns:
+        ``(thinking, clean_text)`` — *thinking* is ``None`` when no tags
+        are present.
+    """
+    matches = _THINK_RE.findall(text)
+    if not matches:
+        return None, text
+    thinking = "\n".join(m.strip() for m in matches if m.strip())
+    clean = _THINK_RE.sub("", text).strip()
+    return thinking or None, clean

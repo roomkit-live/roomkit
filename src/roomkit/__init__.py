@@ -135,6 +135,7 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AITextPart,
+    AIThinkingPart,
     AITool,
     AIToolCall,
     AIToolCallPart,
@@ -143,6 +144,7 @@ from roomkit.providers.ai.base import (
     StreamDone,
     StreamEvent,
     StreamTextDelta,
+    StreamThinkingDelta,
     StreamToolCall,
 )
 from roomkit.providers.ai.mock import MockAIProvider
@@ -489,6 +491,7 @@ __all__ = [
     "AIMessage",
     "AIResponse",
     "AITextPart",
+    "AIThinkingPart",
     "AITool",
     "AIToolCall",
     "AIToolCallPart",
@@ -496,6 +499,7 @@ __all__ = [
     "StreamDone",
     "StreamEvent",
     "StreamTextDelta",
+    "StreamThinkingDelta",
     "StreamToolCall",
     "MockAIProvider",
     # AI – Anthropic

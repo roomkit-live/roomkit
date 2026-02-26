@@ -43,12 +43,14 @@ from roomkit.providers.ai.base import (
     AIProvider,
     AIResponse,
     AITextPart,
+    AIThinkingPart,
     AITool,
     AIToolCallPart,
     AIToolResultPart,
     ProviderError,
-    StreamDone,
+    StreamEvent,
     StreamTextDelta,
+    StreamThinkingDelta,
     StreamToolCall,
 )
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType, RealtimeBackend
@@ -61,6 +63,9 @@ if TYPE_CHECKING:
     from roomkit.skills.registry import SkillRegistry
 
 ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
+
+# Content part union — matches AIMessage.content list type
+_ContentPart = AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart | AIThinkingPart
 
 logger = logging.getLogger("roomkit.channels.ai")
 
@@ -120,6 +125,7 @@ class AIChannel(Channel):
         script_executor: ScriptExecutor | None = None,
         memory: MemoryProvider | None = None,
         tool_policy: ToolPolicy | None = None,
+        thinking_budget: int | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._provider = provider
@@ -127,6 +133,7 @@ class AIChannel(Channel):
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._max_context_events = max_context_events
+        self._thinking_budget = thinking_budget
         self._max_tool_rounds = max_tool_rounds
         self._tool_loop_timeout_seconds = tool_loop_timeout_seconds
         self._tool_loop_warn_after = tool_loop_warn_after
@@ -295,6 +302,37 @@ class AIChannel(Channel):
         except Exception:
             logger.debug("Failed to publish tool call event", exc_info=True)
 
+    async def _publish_thinking_event(
+        self,
+        event_type: EphemeralEventType,
+        room_id: str,
+        thinking: str,
+        round_idx: int,
+    ) -> None:
+        """Publish a thinking ephemeral event. Best-effort, never breaks the loop."""
+        if self._realtime is None or not room_id:
+            return
+        preview_limit = 1000
+        data: dict[str, Any] = {
+            "thinking": thinking[:preview_limit] if len(thinking) > preview_limit else thinking,
+            "thinking_length": len(thinking),
+            "round": round_idx,
+            "channel_id": self.channel_id,
+        }
+        try:
+            await self._realtime.publish_to_room(
+                room_id,
+                EphemeralEvent(
+                    room_id=room_id,
+                    type=event_type,
+                    user_id=self.channel_id,
+                    channel_id=self.channel_id,
+                    data=data,
+                ),
+            )
+        except Exception:
+            logger.debug("Failed to publish thinking event", exc_info=True)
+
     @property
     def info(self) -> dict[str, Any]:
         return {"provider": type(self._provider).__name__}
@@ -411,15 +449,47 @@ class AIChannel(Channel):
                         update={"tools": self._apply_tool_filters(loop_ctx.all_context_tools)}
                     )
 
+                thinking_parts: list[str] = []
                 text_parts: list[str] = []
                 tool_calls: list[StreamToolCall] = []
 
+                # Publish THINKING_START when first thinking delta arrives
+                thinking_started = False
+
                 async for event in self._generate_stream_with_retry(context):
-                    if isinstance(event, StreamTextDelta):
+                    if isinstance(event, StreamThinkingDelta):
+                        if not thinking_started and room_id:
+                            thinking_started = True
+                            await self._publish_thinking_event(
+                                EphemeralEventType.THINKING_START,
+                                room_id,
+                                "",
+                                _round_idx,
+                            )
+                        thinking_parts.append(event.thinking)
+                    elif isinstance(event, StreamTextDelta):
+                        # Publish THINKING_END when we transition from thinking to text
+                        if thinking_started and thinking_parts and room_id:
+                            thinking_started = False
+                            await self._publish_thinking_event(
+                                EphemeralEventType.THINKING_END,
+                                room_id,
+                                "".join(thinking_parts),
+                                _round_idx,
+                            )
                         text_parts.append(event.text)
                         yield event.text
                     elif isinstance(event, StreamToolCall):
                         tool_calls.append(event)
+
+                # Publish THINKING_END if thinking was the last block (no text followed)
+                if thinking_started and thinking_parts and room_id:
+                    await self._publish_thinking_event(
+                        EphemeralEventType.THINKING_END,
+                        room_id,
+                        "".join(thinking_parts),
+                        _round_idx,
+                    )
 
                 if not tool_calls or self._tool_handler is None:
                     return
@@ -453,8 +523,12 @@ class AIChannel(Channel):
                     len(tool_calls),
                 )
 
-                # Append assistant message with text + tool calls
-                parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
+                # Append assistant message with thinking + text + tool calls.
+                # Thinking blocks must be preserved in history for providers
+                # that require round-trip fidelity (e.g. Anthropic).
+                parts: list[_ContentPart] = []
+                if thinking_parts:
+                    parts.append(AIThinkingPart(thinking="".join(thinking_parts)))
                 accumulated_text = "".join(text_parts)
                 if accumulated_text:
                     parts.append(AITextPart(text=accumulated_text))
@@ -637,8 +711,32 @@ class AIChannel(Channel):
                     len(response.tool_calls),
                 )
 
-                # Append assistant message with tool calls
-                parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
+                # Publish thinking ephemeral events (non-streaming path)
+                if response.thinking and room_id:
+                    await self._publish_thinking_event(
+                        EphemeralEventType.THINKING_START,
+                        room_id,
+                        "",
+                        round_idx,
+                    )
+                    await self._publish_thinking_event(
+                        EphemeralEventType.THINKING_END,
+                        room_id,
+                        response.thinking,
+                        round_idx,
+                    )
+
+                # Append assistant message with thinking + tool calls.
+                # Thinking blocks must be preserved in history for providers
+                # that require round-trip fidelity (e.g. Anthropic).
+                parts: list[_ContentPart] = []
+                if response.thinking:
+                    parts.append(
+                        AIThinkingPart(
+                            thinking=response.thinking,
+                            signature=response.thinking_signature,
+                        )
+                    )
                 if response.content:
                     parts.append(AITextPart(text=response.content))
                 for tc in response.tool_calls:
@@ -713,7 +811,7 @@ class AIChannel(Channel):
         telemetry: Any,
         *,
         parent_span_id: str | None = None,
-    ) -> list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart]:
+    ) -> list[_ContentPart]:
         """Execute tool calls concurrently and return result parts."""
         assert self._tool_handler is not None
         handler = self._tool_handler
@@ -825,9 +923,7 @@ class AIChannel(Channel):
             raise last_error
         raise RuntimeError("_generate_with_retry completed without result or exception")
 
-    async def _generate_stream_with_retry(
-        self, context: AIContext
-    ) -> AsyncIterator[StreamTextDelta | StreamToolCall | StreamDone]:
+    async def _generate_stream_with_retry(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """Stream with retry on provider errors."""
         policy = self._retry_policy or RetryPolicy(max_retries=0)
         last_error: ProviderError | None = None
@@ -1027,6 +1123,7 @@ class AIChannel(Channel):
         system_prompt = binding.metadata.get("system_prompt", self._system_prompt)
         temperature = binding.metadata.get("temperature", self._temperature)
         max_tokens = binding.metadata.get("max_tokens", self._max_tokens)
+        thinking_budget = binding.metadata.get("thinking_budget", self._thinking_budget)
         raw_tools = binding.metadata.get("tools", [])
 
         # Convert raw tool dicts to AITool instances
@@ -1143,6 +1240,7 @@ class AIChannel(Channel):
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
+            thinking_budget=thinking_budget,
             tools=tools,
             room=context,
             target_capabilities=target_caps,
@@ -1157,7 +1255,7 @@ class AIChannel(Channel):
     def _extract_content(
         self,
         event: RoomEvent,
-    ) -> str | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart]:
+    ) -> str | list[_ContentPart]:
         """Extract content, including images if provider supports vision."""
         content = event.content
 
@@ -1170,14 +1268,14 @@ class AIChannel(Channel):
             return content.body  # Simple case: just text
 
         if isinstance(content, MediaContent):
-            parts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
+            parts: list[_ContentPart] = []
             if content.caption:
                 parts.append(AITextPart(text=content.caption))
             parts.append(AIImagePart(url=content.url, mime_type=content.mime_type))
             return parts
 
         if isinstance(content, CompositeContent):
-            cparts: list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart] = []
+            cparts: list[_ContentPart] = []
             for part in content.parts:
                 if isinstance(part, TextContent):
                     cparts.append(AITextPart(text=part.body))

@@ -40,7 +40,6 @@ class _GeminiSessionState:
     audio_chunk_count: int = 0
     response_started: bool = False
     audio_buffer: deque[bytes] = field(default_factory=lambda: deque(maxlen=100))
-    send_audio_count: int = 0
     error_suppressed: bool = False
     started_at: float = 0.0
     turn_count: int = 0
@@ -299,7 +298,6 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         state = self._sessions.get(session.id)
         if state is None or state.live_session is None:
-            logger.debug("[Gemini] send_audio: no live session for %s", session.id)
             return
 
         # Buffer audio while reconnecting instead of dropping it
@@ -309,27 +307,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         # Skip if connection is already closed
         if session.state != VoiceSessionState.ACTIVE:
-            logger.debug(
-                "[Gemini] send_audio: skipping, state=%s for %s",
-                session.state,
-                session.id,
-            )
             return
-
-        # Log first audio send and then periodically
-        state.send_audio_count += 1
-        if state.send_audio_count == 1:
-            logger.info(
-                "[Gemini] send_audio: first chunk (%d bytes) for %s",
-                len(audio),
-                session.id,
-            )
-        elif state.send_audio_count % 100 == 0:
-            logger.debug(
-                "[Gemini] send_audio: %d chunks sent for %s",
-                state.send_audio_count,
-                session.id,
-            )
 
         try:
             await state.live_session.send_realtime_input(
@@ -456,9 +434,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 await state.live_session.close()
 
         logger.info(
-            "Gemini session %s disconnected: sent=%d audio chunks, received=%d audio chunks",
+            "Gemini session %s disconnected: received=%d audio chunks",
             session.id,
-            state.send_audio_count,
             state.audio_chunk_count,
         )
         session.state = VoiceSessionState.ENDED
@@ -622,21 +599,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 if live_session is None:
                     continue
 
-                logger.debug(
-                    "[Gemini] Waiting for next turn on session %s…",
-                    session.id,
-                )
                 async for response in live_session.receive():
-                    # Successful message — reset count
                     reconnect_count = 0
                     await self._handle_server_response(session, response)
-
-                # receive() generator exhausts after each turn_complete —
-                # that's normal, just loop back to call receive() again.
-                logger.debug(
-                    "[Gemini] Turn generator exhausted for session %s, looping for next turn",
-                    session.id,
-                )
 
             except asyncio.CancelledError:
                 raise

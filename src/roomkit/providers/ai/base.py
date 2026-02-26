@@ -63,6 +63,23 @@ class AIToolResultPart(BaseModel):
     result: str
 
 
+class AIThinkingPart(BaseModel):
+    """AI reasoning/thinking block in conversation history.
+
+    Used to preserve thinking blocks across tool-loop turns (required by
+    providers like Anthropic that mandate round-trip fidelity).
+
+    Attributes:
+        thinking: The reasoning text produced by the model.
+        signature: Provider-specific opaque token for caching/validation
+            (e.g. Anthropic's thinking block signature).
+    """
+
+    type: Literal["thinking"] = "thinking"
+    thinking: str
+    signature: str | None = None
+
+
 class ProviderError(Exception):
     """Error from an AI provider SDK call.
 
@@ -90,7 +107,9 @@ class AIMessage(BaseModel):
     """A message in the AI conversation context."""
 
     role: str  # "system", "user", "assistant", "tool"
-    content: str | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart]
+    content: (
+        str | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart | AIThinkingPart]
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -103,6 +122,7 @@ class AIContext(BaseModel):
     system_prompt: str | None = None
     temperature: float = 0.7
     max_tokens: int = 1024
+    thinking_budget: int | None = None
     tools: list[AITool] = Field(default_factory=list)
     room: RoomContext | None = None
     target_capabilities: ChannelCapabilities | None = None
@@ -114,12 +134,24 @@ class AIResponse(BaseModel):
     """Response from an AI provider."""
 
     content: str
+    thinking: str | None = None
+    thinking_signature: str | None = None
     finish_reason: str | None = None
     usage: dict[str, int] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     tasks: list[Task] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)
     tool_calls: list[AIToolCall] = Field(default_factory=list)
+
+
+class StreamThinkingDelta(BaseModel):
+    """A thinking/reasoning delta from a streaming AI response.
+
+    Emitted before text deltas when the model is reasoning.
+    """
+
+    type: Literal["thinking_delta"] = "thinking_delta"
+    thinking: str
 
 
 class StreamTextDelta(BaseModel):
@@ -147,7 +179,7 @@ class StreamDone(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-StreamEvent = StreamTextDelta | StreamToolCall | StreamDone
+StreamEvent = StreamThinkingDelta | StreamTextDelta | StreamToolCall | StreamDone
 
 
 class AIProvider(ABC):
@@ -199,12 +231,14 @@ class AIProvider(ABC):
         yield  # pragma: no cover
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
-        """Yield structured events (text deltas, tool calls, done).
+        """Yield structured events (thinking deltas, text deltas, tool calls, done).
 
         Default implementation wraps ``generate()`` so every provider works
         without changes.  Override for true streaming support.
         """
         response = await self.generate(context)
+        if response.thinking:
+            yield StreamThinkingDelta(thinking=response.thinking)
         if response.content:
             yield StreamTextDelta(text=response.content)
         for tc in response.tool_calls:

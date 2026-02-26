@@ -65,14 +65,21 @@ def _mock_response(
 
 
 class _FakeStream:
-    """Async context manager that mimics the Anthropic messages.stream()."""
+    """Async context manager that mimics the Anthropic messages.stream().
+
+    Supports both raw event iteration (``async for event in stream``) and
+    ``text_stream`` for backwards compatibility.
+    """
 
     def __init__(
         self,
         text_chunks: list[str],
         final_message: SimpleNamespace,
+        *,
+        thinking_chunks: list[str] | None = None,
     ) -> None:
         self._text_chunks = text_chunks
+        self._thinking_chunks = thinking_chunks or []
         self._final_message = final_message
 
     async def __aenter__(self) -> _FakeStream:
@@ -80,6 +87,32 @@ class _FakeStream:
 
     async def __aexit__(self, *args: Any) -> None:
         pass
+
+    def __aiter__(self) -> _FakeStream:
+        """Yield raw SDK events (content_block_delta) for thinking + text."""
+        self._events: list[SimpleNamespace] = []
+        for chunk in self._thinking_chunks:
+            self._events.append(
+                SimpleNamespace(
+                    type="content_block_delta",
+                    delta=SimpleNamespace(type="thinking_delta", thinking=chunk),
+                )
+            )
+        for chunk in self._text_chunks:
+            self._events.append(
+                SimpleNamespace(
+                    type="content_block_delta",
+                    delta=SimpleNamespace(type="text_delta", text=chunk),
+                )
+            )
+        self._event_iter = iter(self._events)
+        return self
+
+    async def __anext__(self) -> SimpleNamespace:
+        try:
+            return next(self._event_iter)
+        except StopIteration:
+            raise StopAsyncIteration from None
 
     @property
     def text_stream(self) -> _FakeTextStream:
@@ -113,6 +146,7 @@ def _mock_stream(
     input_tokens: int = 10,
     output_tokens: int = 25,
     tool_use: list[dict[str, Any]] | None = None,
+    thinking_chunks: list[str] | None = None,
 ) -> _FakeStream:
     """Build a fake stream that yields text and returns a final message."""
     final = _mock_response(
@@ -125,7 +159,11 @@ def _mock_stream(
     )
     # Split text into character-level chunks for realistic streaming
     text_chunks = list(text) if text else []
-    return _FakeStream(text_chunks=text_chunks, final_message=final)
+    return _FakeStream(
+        text_chunks=text_chunks,
+        final_message=final,
+        thinking_chunks=thinking_chunks,
+    )
 
 
 def _context(**overrides: Any) -> AIContext:
@@ -407,3 +445,127 @@ class TestAnthropicAIProvider:
             provider = AnthropicAIProvider(_config())
             assert provider.supports_structured_streaming is True
             assert provider.supports_streaming is True
+
+    @pytest.mark.asyncio
+    async def test_thinking_budget_sets_api_param(self) -> None:
+        """thinking_budget on AIContext adds thinking config and removes temperature."""
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.messages.stream = MagicMock(return_value=_mock_stream())
+
+            ctx = _context(thinking_budget=10_000)
+            await provider.generate(ctx)
+
+            call_kwargs = provider._client.messages.stream.call_args[1]
+            assert call_kwargs["thinking"] == {
+                "type": "enabled",
+                "budget_tokens": 10_000,
+            }
+            # temperature must NOT be set when thinking is enabled
+            assert "temperature" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_generate_with_thinking_captures_thinking(self) -> None:
+        """generate() captures thinking deltas into AIResponse.thinking."""
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+
+            stream = _FakeStream(
+                text_chunks=list("Hi"),
+                thinking_chunks=["Let me ", "think..."],
+                final_message=_mock_response(text="Hi"),
+            )
+            provider._client.messages.stream = MagicMock(return_value=stream)
+
+            result = await provider.generate(_context(thinking_budget=5000))
+
+            assert result.thinking == "Let me think..."
+            assert result.content == "Hi"
+
+    @pytest.mark.asyncio
+    async def test_structured_stream_yields_thinking_deltas(self) -> None:
+        """generate_structured_stream() yields StreamThinkingDelta before text."""
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+
+            stream = _FakeStream(
+                text_chunks=list("OK"),
+                thinking_chunks=["reason"],
+                final_message=_mock_response(text="OK"),
+            )
+            provider._client.messages.stream = MagicMock(return_value=stream)
+
+            from roomkit.providers.ai.base import StreamThinkingDelta
+
+            events = []
+            async for ev in provider.generate_structured_stream(_context(thinking_budget=5000)):
+                events.append(ev)
+
+            thinking_events = [e for e in events if isinstance(e, StreamThinkingDelta)]
+            assert len(thinking_events) == 1
+            assert thinking_events[0].thinking == "reason"
+
+            text_events = [e for e in events if isinstance(e, StreamTextDelta)]
+            assert "".join(e.text for e in text_events) == "OK"
+
+            # Thinking deltas must come before text deltas
+            first_thinking_idx = next(
+                i for i, e in enumerate(events) if isinstance(e, StreamThinkingDelta)
+            )
+            first_text_idx = next(
+                i for i, e in enumerate(events) if isinstance(e, StreamTextDelta)
+            )
+            assert first_thinking_idx < first_text_idx
+
+    @pytest.mark.asyncio
+    async def test_thinking_part_round_trip(self) -> None:
+        """AIThinkingPart in messages is formatted correctly for Anthropic API."""
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import AIThinkingPart, AIToolCallPart
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.messages.stream = MagicMock(return_value=_mock_stream())
+
+            # Simulate a conversation with thinking in history
+            ctx = _context(
+                thinking_budget=5000,
+                messages=[
+                    AIMessage(role="user", content="What is 2+2?"),
+                    AIMessage(
+                        role="assistant",
+                        content=[
+                            AIThinkingPart(
+                                thinking="I need to add 2 and 2",
+                                signature="sig_abc",
+                            ),
+                            AIToolCallPart(id="tc1", name="calculator", arguments={"expr": "2+2"}),
+                        ],
+                    ),
+                ],
+            )
+            await provider.generate(ctx)
+
+            call_kwargs = provider._client.messages.stream.call_args[1]
+            # Check the assistant message content blocks
+            assistant_msg = call_kwargs["messages"][1]
+            assert assistant_msg["role"] == "assistant"
+            content_blocks = assistant_msg["content"]
+
+            thinking_block = content_blocks[0]
+            assert thinking_block["type"] == "thinking"
+            assert thinking_block["thinking"] == "I need to add 2 and 2"
+            assert thinking_block["signature"] == "sig_abc"
+
+            tool_block = content_blocks[1]
+            assert tool_block["type"] == "tool_use"

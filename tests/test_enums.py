@@ -149,7 +149,8 @@ class TestHookTrigger:
         # 11 voice hooks (RFC §18 + §19 + §12.3) + 2 realtime + 1 trace + 2 audio level
         # + 3 orchestration (on_phase_transition, on_handoff, on_handoff_rejected)
         # + 2 delegation (on_task_delegated, on_task_completed)
-        assert len(HookTrigger) == 42
+        # + 1 AI thinking (on_ai_thinking)
+        assert len(HookTrigger) == 43
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):
