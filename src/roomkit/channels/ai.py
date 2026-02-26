@@ -683,6 +683,15 @@ class AIChannel(Channel):
                 else None
             )
 
+            # Publish thinking ephemeral events for the initial response
+            if response.thinking and room_id:
+                await self._publish_thinking_event(
+                    EphemeralEventType.THINKING_START, room_id, "", 0
+                )
+                await self._publish_thinking_event(
+                    EphemeralEventType.THINKING_END, room_id, response.thinking, 0
+                )
+
             for round_idx in range(self._max_tool_rounds):
                 if not response.tool_calls or self._tool_handler is None:
                     break
@@ -710,21 +719,6 @@ class AIChannel(Channel):
                     round_idx + 1,
                     len(response.tool_calls),
                 )
-
-                # Publish thinking ephemeral events (non-streaming path)
-                if response.thinking and room_id:
-                    await self._publish_thinking_event(
-                        EphemeralEventType.THINKING_START,
-                        room_id,
-                        "",
-                        round_idx,
-                    )
-                    await self._publish_thinking_event(
-                        EphemeralEventType.THINKING_END,
-                        room_id,
-                        response.thinking,
-                        round_idx,
-                    )
 
                 # Append assistant message with thinking + tool calls.
                 # Thinking blocks must be preserved in history for providers
@@ -799,6 +793,18 @@ class AIChannel(Channel):
                                 tool_calls=[],
                             )
                         raise
+
+                # Publish thinking ephemeral events for this round
+                if response.thinking and room_id:
+                    await self._publish_thinking_event(
+                        EphemeralEventType.THINKING_START, room_id, "", round_idx + 1
+                    )
+                    await self._publish_thinking_event(
+                        EphemeralEventType.THINKING_END,
+                        room_id,
+                        response.thinking,
+                        round_idx + 1,
+                    )
 
             return response
         finally:
