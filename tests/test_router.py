@@ -506,7 +506,7 @@ class TestVisibilityStamping:
 
         The stamping logic only applies when event.visibility == "all".
         If the event already has a specific visibility, it's preserved.
-        Routing uses source_binding.visibility for target filtering.
+        Routing then uses the event's own visibility for target filtering.
         """
         ch1 = StubChannel("ch1")
         ch2 = StubChannel("ch2")
@@ -530,8 +530,8 @@ class TestVisibilityStamping:
         # The stamping should NOT change it from "intelligence" to "transport"
         event = make_event(channel_id="ch1", visibility="intelligence")
         result = await router.broadcast(event, b1, _make_context([b1, b2]))
-        # Routing uses source_binding.visibility="transport" → ch2 (transport) matches
-        assert "ch2" in result.outputs
+        # Event visibility "intelligence" is preserved — ch2 (transport) does NOT match
+        assert "ch2" not in result.outputs
 
 
 class TestBroadcastConcurrency:
