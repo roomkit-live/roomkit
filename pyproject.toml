@@ -26,12 +26,12 @@ dependencies = ["pydantic>=2.9"]
 
 [project.optional-dependencies]
 httpx = ["httpx>=0.27"]
-pydantic-ai = ["pydantic-ai>=0.1"]
 anthropic = ["anthropic>=0.30"]
 openai = ["openai>=2.21"]
 azure = ["openai>=2.21"]
 vllm = ["openai>=2.21"]
 gemini = ["google-genai>=1.0.0"]
+mistral = ["mistralai>=1.0"]
 sherpa-onnx = ["sherpa-onnx>=1.10"]
 qwen-tts = ["qwen-tts>=0.1"]
 qwen-asr = ["qwen-asr>=0.0.4"]
@@ -67,6 +67,7 @@ providers = [
     "roomkit[openai]",
     "roomkit[vllm]",
     "roomkit[gemini]",
+    "roomkit[mistral]",
     "roomkit[twilio]",
     "roomkit[telegram]",
     "roomkit[teams]",
@@ -94,7 +95,7 @@ dev = [
 ]
 all = [
     "roomkit[providers]",
-    "roomkit[pydantic-ai]",
+
     "roomkit[whatsapp-personal]",
 ]
 
@@ -231,6 +232,10 @@ module = ["neonize", "neonize.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["mistralai", "mistralai.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["mcp", "mcp.*"]
 ignore_missing_imports = true
 
@@ -286,7 +291,7 @@ omit = [
     "src/roomkit/voice/stt/qwen3.py",
     "src/roomkit/providers/openai/realtime.py",
     "src/roomkit/providers/gemini/realtime.py",
-    "src/roomkit/providers/pydantic_ai/*.py",
+
     "src/roomkit/voice/backends/rtp.py",
     "src/roomkit/voice/backends/sip.py",
     "src/roomkit/voice/pipeline/aec/webrtc.py",

@@ -168,6 +168,8 @@ from roomkit.providers.messenger.config import MessengerConfig
 from roomkit.providers.messenger.facebook import FacebookMessengerProvider
 from roomkit.providers.messenger.mock import MockMessengerProvider
 from roomkit.providers.messenger.webhook import parse_messenger_webhook
+from roomkit.providers.mistral.ai import MistralAIProvider
+from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.rcs.base import RCSDeliveryResult, RCSProvider
@@ -511,6 +513,9 @@ __all__ = [
     # AI – Gemini
     "GeminiAIProvider",
     "GeminiConfig",
+    # AI – Mistral
+    "MistralAIProvider",
+    "MistralConfig",
     # AI – OpenAI
     "OpenAIAIProvider",
     "OpenAIConfig",

@@ -95,8 +95,9 @@ src/roomkit/
 │   ├── anthropic/           # AnthropicAIProvider, AnthropicConfig
 │   ├── openai/              # OpenAIAIProvider, OpenAIConfig
 │   ├── gemini/              # GeminiAIProvider, GeminiConfig
+│   ├── mistral/             # MistralAIProvider, MistralConfig
 │   ├── vllm/                # VLLMConfig, create_vllm_provider (local AI)
-│   ├── pydantic_ai/         # PydanticAI integration
+
 │   ├── sms/                 # SMSProvider ABC, MockSMSProvider, phone utils
 │   ├── twilio/              # TwilioSMSProvider, TwilioRCSProvider
 │   ├── telnyx/              # TelnyxSMSProvider, TelnyxRCSProvider

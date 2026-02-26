@@ -8,8 +8,33 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from roomkit.providers.ai.base import AIContext, AIMessage, AITool
+from roomkit.providers.ai.base import (
+    AIContext,
+    AIMessage,
+    AITool,
+    StreamDone,
+    StreamTextDelta,
+    StreamToolCall,
+)
 from roomkit.providers.gemini.config import GeminiConfig
+
+
+class _FakeStreamIterator:
+    """Simulates an async iterator returned by generate_content_stream."""
+
+    def __init__(self, chunks: list[SimpleNamespace]) -> None:
+        self._chunks = chunks
+        self._index = 0
+
+    def __aiter__(self) -> _FakeStreamIterator:
+        return self
+
+    async def __anext__(self) -> SimpleNamespace:
+        if self._index >= len(self._chunks):
+            raise StopAsyncIteration
+        chunk = self._chunks[self._index]
+        self._index += 1
+        return chunk
 
 
 def _mock_genai_module() -> MagicMock:
@@ -27,9 +52,10 @@ def _mock_genai_module() -> MagicMock:
     types.Tool = MagicMock(side_effect=lambda **kw: SimpleNamespace(**kw))
     mod.types = types
 
-    # Mock Client with async generate_content (aio.models.generate_content)
+    # Mock Client with async generate_content and generate_content_stream
     client_instance = MagicMock()
     client_instance.aio.models.generate_content = AsyncMock()
+    client_instance.aio.models.generate_content_stream = AsyncMock()
     mod.Client.return_value = client_instance
 
     # Attach types to the module so 'from google.genai import types' works
@@ -96,6 +122,65 @@ def _genai_modules(mock_genai: MagicMock) -> dict[str, Any]:
     }
 
 
+def _stream_chunks(
+    text_parts: list[str] | None = None,
+    tool_calls: list[dict[str, Any]] | None = None,
+    prompt_tokens: int = 10,
+    completion_tokens: int = 25,
+) -> _FakeStreamIterator:
+    """Build a fake stream iterator from text parts and/or tool calls."""
+    chunks: list[SimpleNamespace] = []
+
+    for text in text_parts or []:
+        chunks.append(
+            SimpleNamespace(
+                candidates=[
+                    SimpleNamespace(
+                        content=SimpleNamespace(
+                            parts=[SimpleNamespace(text=text, function_call=None)]
+                        )
+                    )
+                ],
+                usage_metadata=None,
+            )
+        )
+
+    for tc in tool_calls or []:
+        chunks.append(
+            SimpleNamespace(
+                candidates=[
+                    SimpleNamespace(
+                        content=SimpleNamespace(
+                            parts=[
+                                SimpleNamespace(
+                                    text=None,
+                                    function_call=SimpleNamespace(
+                                        name=tc["name"],
+                                        args=tc.get("args", {}),
+                                    ),
+                                )
+                            ]
+                        )
+                    )
+                ],
+                usage_metadata=None,
+            )
+        )
+
+    # Final chunk with usage
+    chunks.append(
+        SimpleNamespace(
+            candidates=None,
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=prompt_tokens,
+                candidates_token_count=completion_tokens,
+            ),
+        )
+    )
+
+    return _FakeStreamIterator(chunks)
+
+
 class TestGeminiAIProvider:
     @pytest.mark.asyncio
     async def test_generate_success(self) -> None:
@@ -104,8 +189,8 @@ class TestGeminiAIProvider:
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
-            provider._client.aio.models.generate_content.return_value = _mock_response(
-                text="Hi there!"
+            provider._client.aio.models.generate_content_stream.return_value = _stream_chunks(
+                text_parts=["Hi there!"]
             )
             result = await provider.generate(_context())
 
@@ -119,11 +204,13 @@ class TestGeminiAIProvider:
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
-            provider._client.aio.models.generate_content.return_value = _mock_response()
+            provider._client.aio.models.generate_content_stream.return_value = _stream_chunks(
+                text_parts=["Hello"]
+            )
             ctx = _context(system_prompt="You are helpful.")
             await provider.generate(ctx)
 
-            assert provider._client.aio.models.generate_content.called
+            assert provider._client.aio.models.generate_content_stream.called
 
     @pytest.mark.asyncio
     async def test_generate_maps_usage(self) -> None:
@@ -132,8 +219,8 @@ class TestGeminiAIProvider:
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
-            provider._client.aio.models.generate_content.return_value = _mock_response(
-                prompt_tokens=42, completion_tokens=7
+            provider._client.aio.models.generate_content_stream.return_value = _stream_chunks(
+                text_parts=["hi"], prompt_tokens=42, completion_tokens=7
             )
             result = await provider.generate(_context())
 
@@ -146,8 +233,7 @@ class TestGeminiAIProvider:
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
-            provider._client.aio.models.generate_content.return_value = _mock_response(
-                text="",
+            provider._client.aio.models.generate_content_stream.return_value = _stream_chunks(
                 tool_calls=[{"name": "search", "args": {"query": "test"}}],
             )
             ctx = _context(
@@ -173,7 +259,9 @@ class TestGeminiAIProvider:
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
-            provider._client.aio.models.generate_content.side_effect = Exception("API error")
+            provider._client.aio.models.generate_content_stream.side_effect = Exception(
+                "API error"
+            )
 
             with pytest.raises(ProviderError) as exc_info:
                 await provider.generate(_context())
@@ -189,7 +277,7 @@ class TestGeminiAIProvider:
             from roomkit.providers.gemini.ai import GeminiAIProvider
 
             provider = GeminiAIProvider(_config())
-            provider._client.aio.models.generate_content.side_effect = Exception(
+            provider._client.aio.models.generate_content_stream.side_effect = Exception(
                 "Rate limit exceeded 429"
             )
 
@@ -212,6 +300,15 @@ class TestGeminiAIProvider:
             provider = GeminiAIProvider(_config())
             assert provider.supports_vision is True
 
+    def test_supports_streaming(self) -> None:
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            assert provider.supports_streaming is True
+            assert provider.supports_structured_streaming is True
+
     def test_model_name(self) -> None:
         mock_genai = _mock_genai_module()
         with patch.dict("sys.modules", _genai_modules(mock_genai)):
@@ -230,3 +327,92 @@ class TestGeminiAIProvider:
 
             with pytest.raises(ImportError, match="google-genai is required"):
                 mod.GeminiAIProvider(_config())
+
+    @pytest.mark.asyncio
+    async def test_structured_stream_yields_events(self) -> None:
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content_stream.return_value = _stream_chunks(
+                text_parts=["Hello", " world"],
+                prompt_tokens=5,
+                completion_tokens=10,
+            )
+
+            events = []
+            async for event in provider.generate_structured_stream(_context()):
+                events.append(event)
+
+            assert len(events) == 3
+            assert isinstance(events[0], StreamTextDelta)
+            assert events[0].text == "Hello"
+            assert isinstance(events[1], StreamTextDelta)
+            assert events[1].text == " world"
+            assert isinstance(events[2], StreamDone)
+            assert events[2].usage == {"prompt_tokens": 5, "completion_tokens": 10}
+            assert events[2].metadata["model"] == "gemini-2.0-flash"
+
+    @pytest.mark.asyncio
+    async def test_generate_stream_yields_text(self) -> None:
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content_stream.return_value = _stream_chunks(
+                text_parts=["one", "two", "three"],
+            )
+
+            parts = []
+            async for text in provider.generate_stream(_context()):
+                parts.append(text)
+
+            assert parts == ["one", "two", "three"]
+
+    @pytest.mark.asyncio
+    async def test_structured_stream_with_tool_calls(self) -> None:
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content_stream.return_value = _stream_chunks(
+                text_parts=["Let me search"],
+                tool_calls=[{"name": "search", "args": {"q": "test"}}],
+            )
+
+            events = []
+            async for event in provider.generate_structured_stream(_context()):
+                events.append(event)
+
+            text_deltas = [e for e in events if isinstance(e, StreamTextDelta)]
+            tool_calls = [e for e in events if isinstance(e, StreamToolCall)]
+            done_events = [e for e in events if isinstance(e, StreamDone)]
+
+            assert len(text_deltas) == 1
+            assert text_deltas[0].text == "Let me search"
+            assert len(tool_calls) == 1
+            assert tool_calls[0].name == "search"
+            assert tool_calls[0].arguments == {"q": "test"}
+            assert len(done_events) == 1
+
+    @pytest.mark.asyncio
+    async def test_structured_stream_api_error(self) -> None:
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.ai.base import ProviderError
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content_stream.side_effect = Exception(
+                "Stream error"
+            )
+
+            with pytest.raises(ProviderError) as exc_info:
+                async for _ in provider.generate_structured_stream(_context()):
+                    pass
+
+            assert "Stream error" in str(exc_info.value)
+            assert exc_info.value.provider == "gemini"

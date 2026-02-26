@@ -100,7 +100,7 @@ Outbound:  TTS → [PostProcessors] → [Recorder] → AEC.feed_reference → [R
 
 All in `providers/` with the pattern: ABC in `base.py`, implementations alongside:
 
-- **AI**: Anthropic, OpenAI, Gemini, vLLM, PydanticAI
+- **AI**: Anthropic, OpenAI, Gemini, Mistral, vLLM
 - **SMS**: Twilio, Sinch, Telnyx, VoiceMeUp
 - **Email**: ElasticEmail, SendGrid
 - **Chat**: Telegram, Teams (Bot Framework), Facebook Messenger

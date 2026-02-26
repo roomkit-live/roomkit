@@ -115,7 +115,7 @@ pip install roomkit                    # core only
 pip install roomkit[anthropic]         # Anthropic Claude
 pip install roomkit[openai]            # OpenAI GPT
 pip install roomkit[gemini]            # Google Gemini
-pip install roomkit[pydantic-ai]       # Pydantic AI
+pip install roomkit[mistral]           # Mistral AI
 
 # Voice backends
 pip install roomkit[fastrtc]           # FastRTC WebRTC backend
@@ -301,7 +301,7 @@ Providers handle the actual API calls. Every provider has a mock counterpart for
 | `AnthropicAIProvider` | Claude, vision, tools, streaming | `roomkit[anthropic]` |
 | `OpenAIAIProvider` | GPT-4, vision, tools, streaming | `roomkit[openai]` |
 | `GeminiAIProvider` | Gemini, vision, tools, streaming | `roomkit[gemini]` |
-| `PydanticAIProvider` | Pydantic AI agent integration | `roomkit[pydantic-ai]` |
+| `MistralAIProvider` | Mistral, vision (Pixtral), tools, streaming | `roomkit[mistral]` |
 | `create_vllm_provider` | Local LLM, OpenAI-compatible | `roomkit[vllm]` |
 
 ### Voice Backends

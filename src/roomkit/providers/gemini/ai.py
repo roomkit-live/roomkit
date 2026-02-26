@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator
 from typing import Any, cast
 
 from roomkit.providers.ai.base import (
@@ -17,6 +18,10 @@ from roomkit.providers.ai.base import (
     AIToolCallPart,
     AIToolResultPart,
     ProviderError,
+    StreamDone,
+    StreamEvent,
+    StreamTextDelta,
+    StreamToolCall,
 )
 from roomkit.providers.gemini.config import GeminiConfig
 
@@ -42,6 +47,14 @@ class GeminiAIProvider(AIProvider):
     @property
     def model_name(self) -> str:
         return self._config.model
+
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
+    @property
+    def supports_structured_streaming(self) -> bool:
+        return True
 
     @property
     def supports_vision(self) -> bool:
@@ -112,26 +125,8 @@ class GeminiAIProvider(AIProvider):
                 )
         return parts
 
-    def _extract_tool_calls(self, response: Any) -> list[AIToolCall]:
-        """Extract tool calls from Gemini response."""
-        tool_calls: list[AIToolCall] = []
-        if not response.candidates or not response.candidates[0].content:
-            return tool_calls
-
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, "function_call") and part.function_call:
-                fc = part.function_call
-                tool_calls.append(
-                    AIToolCall(
-                        id=fc.name,  # Gemini doesn't provide separate IDs
-                        name=fc.name,
-                        arguments=dict(fc.args) if fc.args else {},
-                    )
-                )
-        return tool_calls
-
-    async def generate(self, context: AIContext) -> AIResponse:
-        # Build generation config
+    def _build_gen_config(self, context: AIContext) -> Any:
+        """Build Gemini generation config from AIContext."""
         gen_config = self._types.GenerateContentConfig(
             temperature=context.temperature,
             max_output_tokens=context.max_tokens,
@@ -140,7 +135,6 @@ class GeminiAIProvider(AIProvider):
         if context.system_prompt:
             gen_config.system_instruction = context.system_prompt
 
-        # Add tools if provided
         if context.tools:
             func_decls = [
                 self._types.FunctionDeclaration(
@@ -153,34 +147,27 @@ class GeminiAIProvider(AIProvider):
             ]
             gen_config.tools = [self._types.Tool(function_declarations=func_decls)]
 
-        # Format messages
-        contents = self._format_messages(context.messages)
+        return gen_config
 
-        t0 = time.monotonic()
-        try:
-            response = await self._client.aio.models.generate_content(
-                model=self._config.model,
-                contents=contents,
-                config=gen_config,
+    def _wrap_error(self, exc: Exception) -> ProviderError:
+        """Wrap an SDK exception into a ProviderError."""
+        status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+        retryable = (
+            status_code in (429, 500, 502, 503)
+            if status_code
+            else any(
+                term in str(exc).lower() for term in ["rate", "limit", "429", "500", "502", "503"]
             )
-        except Exception as exc:
-            # Check for rate limit or server errors
-            status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-            retryable = (
-                status_code in (429, 500, 502, 503)
-                if status_code
-                else any(
-                    term in str(exc).lower()
-                    for term in ["rate", "limit", "429", "500", "502", "503"]
-                )
-            )
-            raise ProviderError(
-                str(exc),
-                retryable=retryable,
-                provider="gemini",
-                status_code=status_code,
-            ) from exc
+        )
+        return ProviderError(
+            str(exc),
+            retryable=retryable,
+            provider="gemini",
+            status_code=status_code,
+        )
 
+    def _record_ttfb(self, t0: float) -> None:
+        """Record time-to-first-byte metric."""
         ttfb_ms = (time.monotonic() - t0) * 1000
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
@@ -192,25 +179,90 @@ class GeminiAIProvider(AIProvider):
             attributes={"provider": "gemini", "model": self._config.model},
         )
 
-        # Extract usage metadata
+    async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        """Yield structured events from the Gemini streaming API."""
+        gen_config = self._build_gen_config(context)
+        contents = self._format_messages(context.messages)
+
+        t0 = time.monotonic()
+        first_token = True
+        tool_calls: list[StreamToolCall] = []
         usage: dict[str, int] = {}
-        if response.usage_metadata:
-            usage = {
-                "prompt_tokens": response.usage_metadata.prompt_token_count or 0,
-                "completion_tokens": response.usage_metadata.candidates_token_count or 0,
-            }
 
         try:
-            text = response.text or ""
-        except (ValueError, AttributeError):
-            text = ""
+            response_stream = await self._client.aio.models.generate_content_stream(
+                model=self._config.model,
+                contents=contents,
+                config=gen_config,
+            )
+            async for chunk in response_stream:
+                # Extract usage from each chunk (last one has the totals)
+                if chunk.usage_metadata:
+                    usage = {
+                        "prompt_tokens": chunk.usage_metadata.prompt_token_count or 0,
+                        "completion_tokens": chunk.usage_metadata.candidates_token_count or 0,
+                    }
+
+                if not chunk.candidates or not chunk.candidates[0].content:
+                    continue
+
+                parts = chunk.candidates[0].content.parts
+                if not parts:
+                    continue
+
+                for part in parts:
+                    if hasattr(part, "text") and part.text:
+                        if first_token:
+                            self._record_ttfb(t0)
+                            first_token = False
+                        yield StreamTextDelta(text=part.text)
+                    elif hasattr(part, "function_call") and part.function_call:
+                        fc = part.function_call
+                        fc_name: str = fc.name or ""
+                        tool_calls.append(
+                            StreamToolCall(
+                                id=fc_name,
+                                name=fc_name,
+                                arguments=dict(fc.args) if fc.args else {},
+                            )
+                        )
+
+            for tc in tool_calls:
+                yield tc
+
+            yield StreamDone(usage=usage, metadata={"model": self._config.model})
+
+        except Exception as exc:
+            raise self._wrap_error(exc) from exc
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        """Generate by consuming the structured stream."""
+        text_parts: list[str] = []
+        tool_calls: list[AIToolCall] = []
+        done_event: StreamDone | None = None
+
+        async for event in self.generate_structured_stream(context):
+            if isinstance(event, StreamTextDelta):
+                text_parts.append(event.text)
+            elif isinstance(event, StreamToolCall):
+                tool_calls.append(
+                    AIToolCall(id=event.id, name=event.name, arguments=event.arguments)
+                )
+            elif isinstance(event, StreamDone):
+                done_event = event
 
         return AIResponse(
-            content=text,
-            usage=usage,
-            tool_calls=self._extract_tool_calls(response),
-            metadata={"model": self._config.model},
+            content="".join(text_parts),
+            usage=done_event.usage if done_event else {},
+            tool_calls=tool_calls,
+            metadata=done_event.metadata if done_event else {},
         )
+
+    async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
+        """Yield text deltas as they arrive from the Gemini API."""
+        async for event in self.generate_structured_stream(context):
+            if isinstance(event, StreamTextDelta):
+                yield event.text
 
     async def close(self) -> None:
         """Release the genai client reference."""
