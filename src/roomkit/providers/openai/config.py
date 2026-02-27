@@ -25,3 +25,7 @@ class OpenAIConfig(BaseModel):
     timeout: float = 120.0
     """HTTP request timeout in seconds. Increase for local servers that
     load models on first request (e.g. Ollama)."""
+    include_stream_usage: bool = False
+    """When True, request token usage in streaming responses via
+    ``stream_options.include_usage``. The usage is included in the
+    final :class:`StreamDone` event."""

@@ -358,6 +358,8 @@ class OpenAIAIProvider(AIProvider):
             "messages": messages,
             "stream": True,
         }
+        if self._config.include_stream_usage:
+            kwargs["stream_options"] = {"include_usage": True}
         if context.temperature is not None:
             kwargs["temperature"] = context.temperature
         if context.max_tokens is not None:
@@ -382,10 +384,17 @@ class OpenAIAIProvider(AIProvider):
         # Accumulate tool call deltas across chunks
         tool_call_accum: dict[int, dict[str, Any]] = {}
         finish_reason: str | None = None
+        usage: dict[str, int] = {}
 
         try:
             response = await self._client.chat.completions.create(**kwargs)
             async for chunk in response:
+                # With include_usage, the final chunk has usage but empty choices
+                if hasattr(chunk, "usage") and chunk.usage:
+                    usage = {
+                        "input_tokens": chunk.usage.prompt_tokens or 0,
+                        "output_tokens": chunk.usage.completion_tokens or 0,
+                    }
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
@@ -441,7 +450,7 @@ class OpenAIAIProvider(AIProvider):
                     args = {"raw": acc["arguments"]}
                 yield StreamToolCall(id=acc["id"], name=acc["name"], arguments=args)
 
-            yield StreamDone(finish_reason=finish_reason)
+            yield StreamDone(finish_reason=finish_reason, usage=usage)
 
         except self._api_status_error as exc:
             raise ProviderError(
