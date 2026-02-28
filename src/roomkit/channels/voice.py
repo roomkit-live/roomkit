@@ -195,6 +195,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Audio frame rate limiting (session_id -> (window_start, count))
         self._max_fps = max_audio_frames_per_second
         self._frame_counts: dict[str, tuple[float, int]] = {}
+        # Dual-signal session ready: tracks sessions where the backend
+        # has signalled ready but bind_session() hasn't run yet.
+        self._session_ready_pending: set[str] = set()
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -224,11 +227,20 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             interruption_config, backchannel_detector=backchannel_det
         )
 
-        # Wire up pipeline if both backend and pipeline config are provided
+        # Wire up pipeline: use explicit config or create a default one when a
+        # backend is provided.  A pipeline is required for audio to flow from
+        # the backend through STT processing.
+        if backend and not pipeline:
+            from roomkit.voice.pipeline.config import AudioPipelineConfig as _PipelineCfg
+
+            pipeline = _PipelineCfg()
         if backend and pipeline:
             self._setup_pipeline(backend, pipeline)
         elif backend and VoiceCapability.BARGE_IN in backend.capabilities:
             backend.on_barge_in(self._on_backend_barge_in)
+        # Wire session ready callback regardless of pipeline
+        if backend:
+            backend.on_session_ready(self._on_session_ready)
 
     def _setup_pipeline(self, backend: VoiceBackend, config: AudioPipelineConfig) -> None:
         """Create AudioPipeline and wire backend -> pipeline -> callbacks."""
@@ -304,6 +316,29 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             backend, "on_dtmf_received"
         ):
             backend.on_dtmf_received(self._on_pipeline_dtmf)
+
+    # -------------------------------------------------------------------------
+    # Session ready (dual-signal)
+    # -------------------------------------------------------------------------
+
+    def _on_session_ready(self, session: VoiceSession) -> None:
+        """Handle backend signalling that a session's audio path is live.
+
+        If ``bind_session()`` has already been called (session is in
+        ``_session_bindings``), fire the hook immediately.  Otherwise
+        record the session ID in ``_session_ready_pending`` so
+        ``bind_session()`` can fire the hook when it runs.
+        """
+        with self._state_lock:
+            binding_info = self._session_bindings.get(session.id)
+        if binding_info is not None:
+            room_id, _ = binding_info
+            self._schedule(
+                self._fire_session_ready_hook(session, room_id),
+                name=f"session_ready:{session.id}",
+            )
+        else:
+            self._session_ready_pending.add(session.id)
 
     # -------------------------------------------------------------------------
     # Pipeline event handlers (wiring layer)
@@ -660,6 +695,14 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                 self._emit_session_started(session, room_id),
                 name=f"session_started:{session.id}",
             )
+        # Dual-signal: if backend already signalled ready, fire hook now
+        if session.id in self._session_ready_pending:
+            self._session_ready_pending.discard(session.id)
+            if self._framework:
+                self._schedule(
+                    self._fire_session_ready_hook(session, room_id),
+                    name=f"session_ready:{session.id}",
+                )
 
     async def connect_session(
         self,
@@ -695,6 +738,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         """Remove session binding."""
         # Cancel any active streaming STT
         self._cancel_stt_stream(session.id)
+        self._session_ready_pending.discard(session.id)
         with self._state_lock:
             binding_info = self._session_bindings.pop(session.id, None)
         # Notify pipeline of session end
@@ -960,3 +1004,4 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._batch_audio_buffers.clear()
         self._batch_audio_sample_rate.clear()
         self._frame_counts.clear()
+        self._session_ready_pending.clear()

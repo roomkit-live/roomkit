@@ -189,6 +189,7 @@ def backend() -> SIPVoiceBackend:
     b._audio_received_callback = None
     b._barge_in_callbacks = []
     b._dtmf_callbacks = []
+    b._session_ready_callbacks = []
     b._on_call_callback = None
     b._on_disconnect_callback = None
     b._trace_emitter = None

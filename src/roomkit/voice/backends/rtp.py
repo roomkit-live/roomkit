@@ -32,7 +32,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.backends.base import AudioReceivedCallback, VoiceBackend
+from roomkit.voice.backends.base import AudioReceivedCallback, SessionReadyCallback, VoiceBackend
 from roomkit.voice.base import (
     AudioChunk,
     BargeInCallback,
@@ -107,6 +107,7 @@ class RTPVoiceBackend(VoiceBackend):
         self._audio_received_callback: AudioReceivedCallback | None = None
         self._barge_in_callbacks: list[BargeInCallback] = []
         self._dtmf_callbacks: list[DTMFReceivedCallback] = []
+        self._session_ready_callbacks: list[SessionReadyCallback] = []
 
         # Session tracking
         self._sessions: dict[str, VoiceSession] = {}
@@ -207,6 +208,9 @@ class RTPVoiceBackend(VoiceBackend):
             remote_addr,
             self._payload_type,
         )
+        # RTP socket is ready — fire session ready callbacks
+        for cb in self._session_ready_callbacks:
+            cb(session)
         return session
 
     async def disconnect(self, session: VoiceSession) -> None:
@@ -367,6 +371,9 @@ class RTPVoiceBackend(VoiceBackend):
 
     def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         self._audio_received_callback = callback
+
+    def on_session_ready(self, callback: SessionReadyCallback) -> None:
+        self._session_ready_callbacks.append(callback)
 
     def on_barge_in(self, callback: BargeInCallback) -> None:
         self._barge_in_callbacks.append(callback)

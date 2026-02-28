@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.backends.base import AudioReceivedCallback, VoiceBackend
+from roomkit.voice.backends.base import AudioReceivedCallback, SessionReadyCallback, VoiceBackend
 from roomkit.voice.base import (
     AudioChunk,
     BargeInCallback,
@@ -237,6 +237,7 @@ class SIPVoiceBackend(VoiceBackend):
         self._audio_received_callback: AudioReceivedCallback | None = None
         self._barge_in_callbacks: list[BargeInCallback] = []
         self._dtmf_callbacks: list[DTMFReceivedCallback] = []
+        self._session_ready_callbacks: list[SessionReadyCallback] = []
         self._on_call_callback: CallCallback | None = None
         self._on_disconnect_callback: CallCallback | None = None
 
@@ -432,6 +433,10 @@ class SIPVoiceBackend(VoiceBackend):
         # Fire on_call callback so the app can route to a room
         if self._on_call_callback is not None:
             self._on_call_callback(session)
+
+        # Audio path is live — fire session ready callbacks
+        for cb in self._session_ready_callbacks:
+            cb(session)
 
     def _handle_reinvite(self, call: Any) -> None:
         """Handle a re-INVITE (session timer refresh or media update).
@@ -764,6 +769,10 @@ class SIPVoiceBackend(VoiceBackend):
         # Fire on_call callback
         if self._on_call_callback is not None:
             self._on_call_callback(session)
+
+        # Audio path is live — fire session ready callbacks
+        for cb in self._session_ready_callbacks:
+            cb(session)
 
         return session
 
@@ -1333,6 +1342,9 @@ class SIPVoiceBackend(VoiceBackend):
 
     def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         self._audio_received_callback = callback
+
+    def on_session_ready(self, callback: SessionReadyCallback) -> None:
+        self._session_ready_callbacks.append(callback)
 
     def on_barge_in(self, callback: BargeInCallback) -> None:
         self._barge_in_callbacks.append(callback)

@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.backends.base import AudioReceivedCallback, VoiceBackend
+from roomkit.voice.backends.base import AudioReceivedCallback, SessionReadyCallback, VoiceBackend
 from roomkit.voice.base import (
     AudioChunk,
     BargeInCallback,
@@ -55,6 +55,7 @@ class MockVoiceBackend(VoiceBackend):
         self._sessions: dict[str, VoiceSession] = {}
         self._audio_received_callbacks: list[AudioReceivedCallback] = []
         self._barge_in_callbacks: list[BargeInCallback] = []
+        self._session_ready_callbacks: list[SessionReadyCallback] = []
         # Tracking
         self.calls: list[MockVoiceCall] = []
         self.sent_audio: list[tuple[str, bytes]] = []  # (session_id, audio)
@@ -98,6 +99,13 @@ class MockVoiceBackend(VoiceBackend):
                 },
             )
         )
+        # Fire session ready — audio path is live immediately for mock
+        for cb in self._session_ready_callbacks:
+            result = cb(session)
+            if hasattr(result, "__await__"):
+                import asyncio
+
+                asyncio.get_running_loop().create_task(result)
         return session
 
     async def disconnect(self, session: VoiceSession) -> None:
@@ -163,6 +171,10 @@ class MockVoiceBackend(VoiceBackend):
     # Barge-in support
     # -------------------------------------------------------------------------
 
+    def on_session_ready(self, callback: SessionReadyCallback) -> None:
+        self._session_ready_callbacks.append(callback)
+        self.calls.append(MockVoiceCall(method="on_session_ready"))
+
     def on_barge_in(self, callback: BargeInCallback) -> None:
         self._barge_in_callbacks.append(callback)
         self.calls.append(MockVoiceCall(method="on_barge_in"))
@@ -212,3 +224,13 @@ class MockVoiceBackend(VoiceBackend):
     def stop_playing(self, session: VoiceSession) -> None:
         """Mark a session as no longer playing audio."""
         self._playing_sessions.discard(session.id)
+
+    async def simulate_session_ready(self, session: VoiceSession) -> None:
+        """Simulate the backend signalling that a session's audio path is live.
+
+        Fires all registered on_session_ready callbacks.
+        """
+        for cb in self._session_ready_callbacks:
+            result = cb(session)
+            if hasattr(result, "__await__"):
+                await result

@@ -150,7 +150,8 @@ class TestHookTrigger:
         # + 3 orchestration (on_phase_transition, on_handoff, on_handoff_rejected)
         # + 2 delegation (on_task_delegated, on_task_completed)
         # + 1 AI thinking (on_ai_thinking)
-        assert len(HookTrigger) == 43
+        # + 1 voice session ready (on_voice_session_ready)
+        assert len(HookTrigger) == 44
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):

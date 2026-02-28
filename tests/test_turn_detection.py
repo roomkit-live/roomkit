@@ -66,6 +66,9 @@ class _MockBackend:
     def on_barge_in(self, cb):
         self._barge_in_cbs.append(cb)
 
+    def on_session_ready(self, cb):
+        pass
+
     async def send_transcription(self, session, text, role):
         pass
 

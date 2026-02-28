@@ -25,6 +25,9 @@ AudioReceivedCallback = Callable[["VoiceSession", Any], Any]
 # can use the reference to cancel echo accurately.
 AudioPlayedCallback = Callable[["VoiceSession", Any], Any]
 
+# Callback for when a session's audio path becomes live
+SessionReadyCallback = Callable[["VoiceSession"], Any]
+
 # Callback for client disconnection
 TransportDisconnectCallback = Callable[["VoiceSession"], Any]
 
@@ -188,6 +191,19 @@ class VoiceBackend(ABC):
             callback: Function called with (session, audio_frame).
         """
         pass  # noqa: B027
+
+    def on_session_ready(self, callback: SessionReadyCallback) -> None:  # noqa: B027
+        """Register callback for when a session's audio path becomes live.
+
+        Fired when the transport is ready to send/receive audio for a
+        session (e.g. WebSocket connected, RTP socket active, mic stream
+        started).  The VoiceChannel uses this together with
+        ``bind_session`` to implement the dual-signal
+        ``ON_VOICE_SESSION_READY`` hook.
+
+        Args:
+            callback: Function called with ``(session)``.
+        """
 
     # -------------------------------------------------------------------------
     # Barge-in support

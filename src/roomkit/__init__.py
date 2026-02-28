@@ -302,6 +302,7 @@ from roomkit.voice import (
     VoiceBackend,
     VoiceCapability,
     VoiceSession,
+    VoiceSessionReadyEvent,
     VoiceSessionState,
     parse_voice_session,
 )
@@ -643,6 +644,7 @@ __all__ = [
     "VoiceBackend",
     "VoiceCapability",
     "VoiceSession",
+    "VoiceSessionReadyEvent",
     "VoiceSessionState",
     # Realtime Voice
     "MockRealtimeProvider",

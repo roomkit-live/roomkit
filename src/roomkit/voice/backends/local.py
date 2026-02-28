@@ -42,6 +42,7 @@ from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.base import (
     AudioPlayedCallback,
     AudioReceivedCallback,
+    SessionReadyCallback,
     SpeakerChangeCallback,
     TransportDisconnectCallback,
     VoiceBackend,
@@ -142,6 +143,7 @@ class LocalAudioBackend(VoiceBackend):
         self._audio_received_callback: AudioReceivedCallback | None = None
         self._barge_in_callbacks: list[BargeInCallback] = []
         self._audio_played_callbacks: list[AudioPlayedCallback] = []
+        self._session_ready_callbacks: list[SessionReadyCallback] = []
 
         # Session tracking
         self._sessions: dict[str, VoiceSession] = {}
@@ -397,6 +399,9 @@ class LocalAudioBackend(VoiceBackend):
             self._input_sample_rate,
             self._block_duration_ms,
         )
+        # Mic stream is active — fire session ready callbacks
+        for cb in self._session_ready_callbacks:
+            cb(session)
 
     async def stop_listening(self, session: VoiceSession) -> None:
         """Stop capturing audio from the microphone for a session.
@@ -624,6 +629,9 @@ class LocalAudioBackend(VoiceBackend):
         (VoiceChannel mode → AudioFrame).
         """
         self._audio_received_callback = callback
+
+    def on_session_ready(self, callback: SessionReadyCallback) -> None:
+        self._session_ready_callbacks.append(callback)
 
     def on_barge_in(self, callback: BargeInCallback) -> None:
         self._barge_in_callbacks.append(callback)

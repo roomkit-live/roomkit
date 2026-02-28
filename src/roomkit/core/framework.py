@@ -290,6 +290,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         channel_id: str,
         *,
         metadata: dict[str, Any] | None = None,
+        auto_greet: bool = False,
     ) -> VoiceSession:
         """Connect a participant to a voice session.
 
@@ -301,6 +302,9 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             participant_id: The participant's ID.
             channel_id: The voice channel ID.
             metadata: Optional session metadata.
+            auto_greet: When True, automatically call :meth:`send_greeting`
+                when the session's audio path becomes live (via a one-shot
+                ``ON_VOICE_SESSION_READY`` hook).
 
         Returns:
             A VoiceSession representing the connection.
@@ -345,6 +349,32 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             },
         )
 
+        # Register one-shot ON_VOICE_SESSION_READY hook for auto-greeting
+        if auto_greet:
+            from roomkit.models.enums import HookExecution, HookTrigger
+
+            hook_name = f"_auto_greet:{session.id}"
+            target_session_id = session.id
+            kit_ref = self
+
+            async def _auto_greet_hook(event: Any, ctx: Any) -> None:
+                # Only fire for the target session
+                if hasattr(event, "session") and event.session.id != target_session_id:
+                    return
+                # Remove one-shot hook before firing to prevent re-entry
+                kit_ref.hook_engine.remove_room_hook(room_id, hook_name)
+                await kit_ref.send_greeting(room_id, channel_id=channel_id)
+
+            self.hook_engine.add_room_hook(
+                room_id,
+                HookRegistration(
+                    trigger=HookTrigger.ON_VOICE_SESSION_READY,
+                    execution=HookExecution.ASYNC,
+                    fn=_auto_greet_hook,
+                    name=hook_name,
+                ),
+            )
+
         return session
 
     async def disconnect_voice(self, session: VoiceSession) -> None:
@@ -376,6 +406,113 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 "channel_id": session.channel_id,
             },
         )
+
+    async def send_greeting(
+        self,
+        room_id: str,
+        *,
+        channel_id: str | None = None,
+        agent_id: str | None = None,
+        greeting: str | None = None,
+    ) -> None:
+        """Send a greeting message from an AI agent into a room.
+
+        Finds the agent (by ``agent_id`` or by scanning the room's
+        bindings for an :class:`Agent` channel), builds a greeting
+        message, and injects it as a synthetic inbound message so the
+        normal broadcast pipeline delivers it.
+
+        For :class:`RealtimeVoiceChannel` rooms the greeting is injected
+        via ``inject_text`` on active sessions.
+
+        This is a no-op if no greeting text is available (neither the
+        ``greeting`` argument nor ``Agent.greeting`` is set).
+
+        Args:
+            room_id: The room to greet.
+            channel_id: Optional channel ID to use for finding the agent.
+                If not provided, scans room bindings for an Agent channel.
+            agent_id: Optional agent channel ID to use (alternative to
+                ``channel_id``).
+            greeting: Explicit greeting text.  Falls back to
+                ``Agent.greeting`` if not provided.
+        """
+        from roomkit.channels.agent import Agent as AgentChannel
+
+        # Resolve the agent channel
+        agent: AgentChannel | None = None
+        resolve_id = agent_id or channel_id
+        if resolve_id:
+            ch = self._channels.get(resolve_id)
+            if isinstance(ch, AgentChannel):
+                agent = ch
+            elif ch is not None:
+                # channel_id points to a non-agent channel — scan bindings
+                # for an agent attached to this room
+                pass
+
+        # Fallback: scan room bindings for an Agent channel
+        if agent is None:
+            bindings = await self._store.list_bindings(room_id)
+            for b in bindings:
+                ch = self._channels.get(b.channel_id)
+                if isinstance(ch, AgentChannel):
+                    agent = ch
+                    break
+
+        if agent is None:
+            return  # No agent found — nothing to greet with
+
+        # Resolve greeting text
+        text = greeting or agent.greeting
+        if not text:
+            return  # No greeting configured
+
+        # Prepend language hint if agent has one
+        if agent.language:
+            text = f"[Respond in {agent.language}]\n{text}"
+
+        # Route by channel type — find the voice/event channel for this room
+        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+        bindings = await self._store.list_bindings(room_id)
+        for b in bindings:
+            ch = self._channels.get(b.channel_id)
+            if isinstance(ch, RealtimeVoiceChannel):
+                for sess in ch.get_room_sessions(room_id):
+                    await ch.provider.inject_text(sess, text, role="user")
+                return
+
+        # Traditional path: send as synthetic inbound message through
+        # the voice/transport channel (not the agent — AI channels
+        # don't accept inbound messages).
+        from roomkit.models.delivery import InboundMessage
+        from roomkit.models.event import TextContent
+
+        # Find a voice or transport channel attached to the room
+        event_channel_id: str | None = None
+        for b in bindings:
+            ch = self._channels.get(b.channel_id)
+            if isinstance(ch, VoiceChannel):
+                event_channel_id = b.channel_id
+                break
+        if event_channel_id is None:
+            # Fallback: use any non-agent transport channel
+            for b in bindings:
+                ch = self._channels.get(b.channel_id)
+                if ch is not None and not isinstance(ch, AgentChannel):
+                    event_channel_id = b.channel_id
+                    break
+
+        if event_channel_id is None:
+            return  # No suitable channel to send through
+
+        msg = InboundMessage(
+            channel_id=event_channel_id,
+            sender_id="system",
+            content=TextContent(body=text),
+        )
+        await self.process_inbound(msg, room_id=room_id)
 
     async def connect_realtime_voice(
         self,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.backends.base import AudioReceivedCallback, VoiceBackend
+from roomkit.voice.backends.base import AudioReceivedCallback, SessionReadyCallback, VoiceBackend
 from roomkit.voice.base import (
     AudioChunk,
     BargeInCallback,
@@ -27,6 +27,7 @@ from roomkit.voice.events import (
     TurnIncompleteEvent,
     VADAudioLevelEvent,
     VADSilenceEvent,
+    VoiceSessionReadyEvent,
 )
 from roomkit.voice.inbound import parse_voice_session
 from roomkit.voice.interruption import (
@@ -103,6 +104,7 @@ __all__ = [
     # Callback types
     "AudioReceivedCallback",
     "BargeInCallback",
+    "SessionReadyCallback",
     # Event types
     "BackchannelEvent",
     "BargeInEvent",
@@ -116,6 +118,7 @@ __all__ = [
     "TurnIncompleteEvent",
     "VADAudioLevelEvent",
     "VADSilenceEvent",
+    "VoiceSessionReadyEvent",
     # Pipeline config
     "AudioFormat",
     "AudioPipeline",

@@ -289,7 +289,19 @@ class VoiceTTSMixin:
             try:
                 voice = self._resolve_voice(event.source.channel_id)
                 sentences = split_sentences(tracking_stream())
-                audio = self._tts.synthesize_stream_input(sentences, voice=voice)
+
+                # Relay each sentence to the client before TTS synthesis.
+                async def relay_sentences(
+                    source: AsyncIterator[str],
+                    _session: VoiceSession = session,
+                ) -> AsyncIterator[str]:
+                    async for sentence in source:
+                        await self._backend.send_transcription(
+                            _session, sentence, "assistant_interim"
+                        )
+                        yield sentence
+
+                audio = self._tts.synthesize_stream_input(relay_sentences(sentences), voice=voice)
                 if self._pipeline is not None:
                     audio = self._wrap_outbound(session, audio)
                 await self._backend.send_audio(session, audio)

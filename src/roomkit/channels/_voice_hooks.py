@@ -113,6 +113,33 @@ class VoiceHooksMixin:
     # Hook firing helpers
     # -------------------------------------------------------------------------
 
+    async def _fire_session_ready_hook(self, session: VoiceSession, room_id: str) -> None:
+        if not self._framework:
+            return
+        try:
+            from roomkit.voice.events import VoiceSessionReadyEvent
+
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                event = VoiceSessionReadyEvent(session=session)
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_VOICE_SESSION_READY,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                )
+                await self._framework._emit_framework_event(
+                    "voice_session_ready",
+                    room_id=room_id,
+                    data={
+                        "session_id": session.id,
+                        "channel_id": self.channel_id,
+                    },
+                )
+        except Exception:
+            logger.exception("Error firing ON_VOICE_SESSION_READY hook")
+
     async def _fire_speech_start_hooks(self, session: VoiceSession, room_id: str) -> None:
         if not self._framework:
             return

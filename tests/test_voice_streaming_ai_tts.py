@@ -382,6 +382,53 @@ class TestStreamingAiToTts:
 
         await kit.close()
 
+    async def test_streaming_relay_sends_interim_before_final(self) -> None:
+        """deliver_stream sends assistant_interim for each sentence before final assistant."""
+        ai = _StreamingAIProvider(["First sentence. ", "Second sentence."])
+        tts = _StreamingInputTTS()
+        kit, channel, backend, vad, _ = _build_kit(ai, tts=tts)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+        await kit.attach_channel(room.id, "ai-1")
+        session = await kit.connect_voice(room.id, "user-1", "voice-1")
+
+        await backend.simulate_audio_received(session, AudioFrame(data=b"\x01\x00"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"\x02\x00"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"\x03\x00"))
+
+        await asyncio.sleep(0.5)
+
+        # Collect interim and final assistant transcriptions in order
+        interim = [
+            (sid, text, role)
+            for sid, text, role in backend.sent_transcriptions
+            if role == "assistant_interim"
+        ]
+        final = [
+            (sid, text, role)
+            for sid, text, role in backend.sent_transcriptions
+            if role == "assistant"
+        ]
+
+        # At least one interim sentence should have been relayed
+        assert len(interim) >= 1, f"Expected assistant_interim transcriptions, got: {interim}"
+        # Final assistant transcription should still be present
+        assert len(final) >= 1, f"Expected final assistant transcription, got: {final}"
+        assert final[0][1] == "First sentence. Second sentence."
+
+        # Interims should appear before the final in the overall list
+        all_roles = [role for _, _, role in backend.sent_transcriptions]
+        last_interim_idx = max(
+            i for i, role in enumerate(all_roles) if role == "assistant_interim"
+        )
+        first_final_idx = next(i for i, role in enumerate(all_roles) if role == "assistant")
+        assert last_interim_idx < first_final_idx, (
+            "All assistant_interim transcriptions should precede the final assistant one"
+        )
+
+        await kit.close()
+
     async def test_events_stored_after_streaming(self) -> None:
         """User and AI events are stored in the conversation store."""
         ai = _StreamingAIProvider(["Response text."])

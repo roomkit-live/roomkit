@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.auth import AuthCallback, auth_context
-from roomkit.voice.backends.base import AudioReceivedCallback, VoiceBackend
+from roomkit.voice.backends.base import AudioReceivedCallback, SessionReadyCallback, VoiceBackend
 from roomkit.voice.base import (
     AudioChunk,
     VoiceCapability,
@@ -148,6 +148,9 @@ class FastRTCVoiceBackend(VoiceBackend):
         # WebSocket references: session_id -> websocket
         self._websockets: dict[str, Any] = {}
 
+        # Session ready callbacks
+        self._session_ready_callbacks: list[SessionReadyCallback] = []
+
     @property
     def name(self) -> str:
         return "FastRTC"
@@ -212,6 +215,9 @@ class FastRTCVoiceBackend(VoiceBackend):
     def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         """Register callback for raw inbound audio frames."""
         self._audio_received_callback = callback
+
+    def on_session_ready(self, callback: SessionReadyCallback) -> None:
+        self._session_ready_callbacks.append(callback)
 
     def _resolve_websocket(self, session: VoiceSession) -> Any | None:
         """Resolve WebSocket for a session.
@@ -346,6 +352,9 @@ class FastRTCVoiceBackend(VoiceBackend):
         session = self._sessions.get(session_id)
         if session:
             session.metadata["websocket_id"] = websocket_id
+            # Audio path is now live — fire session ready callbacks
+            for cb in self._session_ready_callbacks:
+                cb(session)
 
     def _find_session_by_websocket_id(self, websocket_id: str) -> VoiceSession | None:
         for session in self._sessions.values():
