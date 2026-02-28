@@ -466,7 +466,10 @@ def mount_fastrtc_voice(
             backend._handle_audio_frame(websocket_id, audio_data, sample_rate)
 
         async def emit(self) -> tuple[int, Any]:
-            # Yield silence — actual response comes via direct WebSocket send
+            # Yield silence — actual response comes via direct WebSocket send.
+            # Sleep to prevent FastRTC's _emit_to_queue tight loop from spinning
+            # at 100% CPU (put_nowait never yields when emit returns instantly).
+            await asyncio.sleep(0.01)
             sr = backend._output_sample_rate
             return (sr, np.zeros(sr // 10, dtype=np.int16))
 
