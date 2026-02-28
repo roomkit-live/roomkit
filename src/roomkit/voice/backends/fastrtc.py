@@ -381,7 +381,6 @@ def mount_fastrtc_voice(
             the WebSocket and returns a metadata dict on success or ``None``
             to reject. Auth metadata is available via :data:`auth_context`.
     """
-    import numpy as np
     from fastrtc import AsyncStreamHandler, Stream
 
     backend._session_factory = session_factory  # type: ignore[attr-defined]
@@ -465,13 +464,12 @@ def mount_fastrtc_voice(
             # Pass raw audio to pipeline via callback
             backend._handle_audio_frame(websocket_id, audio_data, sample_rate)
 
-        async def emit(self) -> tuple[int, Any]:
-            # Yield silence — actual response comes via direct WebSocket send.
-            # Sleep to prevent FastRTC's _emit_to_queue tight loop from spinning
-            # at 100% CPU (put_nowait never yields when emit returns instantly).
-            await asyncio.sleep(0.01)
-            sr = backend._output_sample_rate
-            return (sr, np.zeros(sr // 10, dtype=np.int16))
+        async def emit(self) -> tuple[int, Any] | None:
+            # TTS audio is sent directly via backend.send_audio(), not through
+            # emit(). Return None so FastRTC's _emit_loop skips sending silence.
+            # Sleep to prevent the _emit_to_queue tight loop from spinning CPU.
+            await asyncio.sleep(0.1)
+            return None  # type: ignore[return-value]
 
     # Create FastRTC stream with passthrough handler
     stream = Stream(
