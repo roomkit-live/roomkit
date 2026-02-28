@@ -778,8 +778,11 @@ class LocalAudioBackend(VoiceBackend):
         if written < bytes_needed:
             outdata[written:] = b"\x00" * (bytes_needed - written)
 
-        # AEC: feed the complete output frame as reference
-        if self._aec is not None:
+        # AEC: feed the output frame as reference — but only when audio
+        # was actually written.  Feeding silence confuses AEC3's nonlinear
+        # suppressor: it stays in "echo active" mode and suppresses the
+        # user's voice even when nothing is playing.
+        if self._aec is not None and written > 0:
             self._aec_feed_played(bytearray(bytes(outdata)))
 
         # Notify listeners about played audio

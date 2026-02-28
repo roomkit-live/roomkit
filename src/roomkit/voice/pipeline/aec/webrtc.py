@@ -80,6 +80,9 @@ class WebRTCAECProvider(AECProvider):
 
         self._sample_rate = sample_rate
         self._channels = channels
+        self._enable_ns = enable_ns
+        self._enable_agc = enable_agc
+        self._stream_delay_ms = stream_delay_ms
 
         # 10 ms frame: samples and bytes
         self._frame_samples = sample_rate * _WEBRTC_FRAME_MS // 1000
@@ -102,6 +105,12 @@ class WebRTCAECProvider(AECProvider):
         # Buffers for chunking arbitrary-size frames into 10 ms blocks.
         self._capture_buf = bytearray()
         self._ref_buf = bytearray()
+
+        # When True, process() passes audio through without AEC processing.
+        # Activated automatically when reference stops (TTS ends) and
+        # deactivated when reference resumes (TTS starts).  Avoids the
+        # stale adaptive filter suppressing user speech after playback.
+        self._bypass = True  # Start bypassed — no echo to cancel yet
 
         # Diagnostics
         self._process_count = 0
@@ -131,15 +140,13 @@ class WebRTCAECProvider(AECProvider):
 
     def process(self, frame: AudioFrame) -> AudioFrame:
         """Remove echo from a captured (mic) audio frame."""
-        ap = self._ap
-        if ap is None:
-            return frame  # closed, passthrough
-
         pcm_in = frame.data
         output_chunks: list[bytes] = []
         fb = self._frame_bytes
 
         with self._lock:
+            if self._ap is None or self._bypass:
+                return frame  # closed or no active playback — passthrough
             self._capture_buf.extend(pcm_in)
             while len(self._capture_buf) >= fb:
                 chunk = bytes(self._capture_buf[:fb])
@@ -180,6 +187,20 @@ class WebRTCAECProvider(AECProvider):
             metadata=dict(frame.metadata),
         )
 
+    def set_active(self, active: bool) -> None:
+        """Enable or disable AEC processing.
+
+        When *active* is ``False``, ``process()`` passes audio through
+        without echo cancellation (bypass mode).  Call with ``True``
+        when TTS playback starts, and ``False`` when it ends.
+        """
+        with self._lock:
+            self._bypass = not active
+        if active:
+            logger.debug("AEC activated")
+        else:
+            logger.debug("AEC bypassed")
+
     def feed_reference(self, frame: AudioFrame) -> None:
         """Feed a reference (playback / TTS) frame for echo modelling."""
         pcm = frame.data
@@ -197,7 +218,14 @@ class WebRTCAECProvider(AECProvider):
                 self._ref_fed_count += 1
 
     def reset(self) -> None:
-        """Reset internal state."""
+        """Reset internal state including the adaptive filter.
+
+        Recreates the WebRTC AudioProcessor so the AEC starts fresh.
+        This is critical after barge-in: once TTS stops the old filter
+        is stale and will suppress the user's voice for many seconds
+        while it reconverges.  A full reset avoids this.
+        """
+        ap_cls = _import_webrtc()
         with self._lock:
             self._capture_buf.clear()
             self._ref_buf.clear()
@@ -205,6 +233,20 @@ class WebRTCAECProvider(AECProvider):
             self._ref_fed_count = 0
             self._total_in_energy = 0
             self._total_out_energy = 0
+            # Recreate the processor to clear the adaptive filter
+            self._ap = ap_cls(
+                enable_aec=True,
+                enable_ns=self._enable_ns,
+                enable_agc=self._enable_agc,
+            )
+            self._ap.set_stream_format(
+                self._sample_rate, self._channels, self._sample_rate, self._channels
+            )
+            self._ap.set_reverse_stream_format(self._sample_rate, self._channels)
+            if self._stream_delay_ms > 0:
+                self._ap.set_stream_delay(self._stream_delay_ms)
+            self._bypass = True
+        logger.info("WebRTC AEC reset (adaptive filter cleared, bypass=True)")
 
     def close(self) -> None:
         """Release resources."""

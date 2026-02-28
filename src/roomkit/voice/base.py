@@ -98,6 +98,8 @@ class TranscriptionResult:
     confidence: float | None = None
     language: str | None = None
     words: list[dict[str, Any]] = field(default_factory=list)
+    is_speech_start: bool = False
+    """Set by providers with server-side VAD to signal speech detected."""
 
 
 # Type aliases for voice callbacks

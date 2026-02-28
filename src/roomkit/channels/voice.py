@@ -55,11 +55,11 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-# Buffer ~200ms of audio before sending to STT stream.
+# Buffer ~100ms of audio before sending to STT stream.
 # Small per-frame chunks cause resampling artifacts at frame boundaries
 # when the provider resamples (e.g. 16kHz -> 24kHz).  Larger chunks
 # give the stateless resampler enough context for clean interpolation.
-_STT_STREAM_BUFFER_BYTES = 6400  # 200ms at 16kHz mono 16-bit
+_STT_STREAM_BUFFER_BYTES = 3200  # 100ms at 16kHz mono 16-bit
 
 # Seconds of silence before the continuous STT audio generator closes
 # the current stream.  Triggers the Gradium drain timeout which yields
@@ -166,6 +166,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._stt_streams: dict[str, _STTStreamState] = {}
         # Continuous STT mode: stream all audio to STT, no local VAD
         self._continuous_stt = False
+        # Post-denoiser energy barge-in state (continuous STT mode)
+        self._barge_in_energy_count = 0
         # Timestamp of last TTS playback end per session (for echo diagnostics)
         self._last_tts_ended_at: dict[str, float] = {}
         # Track scheduled fire-and-forget tasks for clean shutdown
@@ -315,6 +317,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             binding = binding_info[1]
             if binding.access in (Access.READ_ONLY, Access.NONE) or binding.muted:
                 return
+
         if self._pipeline is not None:
             self._pipeline.process_frame(session, frame)
 
@@ -804,6 +807,14 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
         if self._backend and VoiceCapability.INTERRUPTION in self._backend.capabilities:
             await self._backend.cancel_audio(session)
+
+        # Deactivate AEC — after TTS stops the adaptive filter is stale
+        # and will suppress the user's voice.  Reset + bypass so audio
+        # passes through cleanly until the next TTS starts.
+        if self._pipeline is not None and self._pipeline._config.aec is not None:
+            aec = self._pipeline._config.aec
+            aec.reset()
+            aec.set_active(False)
 
         if self._framework:
             binding_info = self._session_bindings.get(session.id)

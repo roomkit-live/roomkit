@@ -41,6 +41,14 @@ class AECProvider(ABC):
         """
         ...
 
+    def set_active(self, active: bool) -> None:  # noqa: B027
+        """Enable or disable AEC processing (bypass mode).
+
+        When *active* is ``False``, ``process()`` should pass audio
+        through without echo cancellation.  Default is no-op (always
+        active).
+        """
+
     def reset(self) -> None:  # noqa: B027
         """Reset internal state."""
 

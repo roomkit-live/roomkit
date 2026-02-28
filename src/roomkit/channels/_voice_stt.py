@@ -53,6 +53,7 @@ class VoiceSTTMixin:
     _pending_turns: dict[str, list[TurnEntry]]
     _pending_audio: dict[str, bytearray]
     _debug_frame_count: int
+    _barge_in_energy_count: int
     _scheduled_tasks: set[asyncio.Task[Any]]
 
     # -- methods provided by other mixins / main class (TYPE_CHECKING only) --
@@ -75,6 +76,7 @@ class VoiceSTTMixin:
             audio_bytes: bytes | None = None,
         ) -> None: ...
         async def _route_text(self, session: VoiceSession, text: str, room_id: str) -> None: ...
+        async def _fire_speech_start_hooks(self, session: VoiceSession, room_id: str) -> None: ...
 
     # -----------------------------------------------------------------
     # VAD-driven STT streaming
@@ -212,34 +214,79 @@ class VoiceSTTMixin:
     # Continuous STT (no local VAD — provider handles endpointing)
     # -----------------------------------------------------------------
 
+    # Post-denoiser barge-in: detect user speaking during TTS playback.
+    # After AEC + denoiser the audio contains only the user's voice —
+    # echo and noise are stripped.  A simple absolute RMS threshold
+    # reliably detects speech without false triggers from playback.
+    _BARGE_IN_RMS_THRESHOLD = 200.0  # absolute RMS floor (post-denoiser)
+    _BARGE_IN_FRAMES_REQUIRED = 5  # ~100ms at 20ms frames
+
+    def _check_energy_barge_in(
+        self,
+        session: VoiceSession,
+        frame: AudioFrame,
+        playback: TTSPlaybackState,
+    ) -> None:
+        """Detect barge-in from post-denoiser audio during TTS playback.
+
+        After AEC + denoiser the signal only contains the user's voice —
+        echo and noise are stripped.  A simple absolute RMS threshold
+        reliably detects speech without false triggers from playback.
+        """
+        import struct
+
+        n_samples = len(frame.data) // 2
+        if n_samples == 0:
+            return
+
+        samples = struct.unpack(f"<{n_samples}h", frame.data)
+        rms = (sum(s * s for s in samples) / n_samples) ** 0.5
+
+        if rms > self._BARGE_IN_RMS_THRESHOLD:
+            self._barge_in_energy_count += 1
+        else:
+            self._barge_in_energy_count = 0
+
+        if self._barge_in_energy_count >= self._BARGE_IN_FRAMES_REQUIRED:
+            self._barge_in_energy_count = 0
+            with self._state_lock:  # type: ignore[attr-defined]
+                binding_info = self._session_bindings.get(session.id)
+            if binding_info:
+                room_id, _ = binding_info
+                logger.info(
+                    "Energy barge-in (post-denoiser): rms=%.0f, threshold=%.0f, pos=%dms",
+                    rms,
+                    self._BARGE_IN_RMS_THRESHOLD,
+                    playback.position_ms,
+                )
+                self._schedule(
+                    self._handle_barge_in(session, playback, room_id),
+                    name=f"energy_barge_in:{session.id}",
+                )
+
     def _on_processed_frame_for_stt(self, session: VoiceSession, frame: AudioFrame) -> None:
         """Feed every processed frame to the continuous STT stream.
 
         In continuous mode the STT provider handles endpointing
         server-side (e.g. Gradium ``end_text`` events), so we just
         buffer and forward audio without any local silence detection.
+
+        Also performs energy-based barge-in on post-denoiser audio
+        during TTS playback via :meth:`_check_energy_barge_in`.
         """
         from .voice import _STT_STREAM_BUFFER_BYTES
+
+        # Energy barge-in on post-denoiser audio during TTS playback
+        with self._state_lock:  # type: ignore[attr-defined]
+            playback = self._playing_sessions.get(session.id)
+        if playback:
+            self._check_energy_barge_in(session, frame, playback)
+        elif self._barge_in_energy_count > 0:
+            self._barge_in_energy_count = 0
 
         stream_state = self._stt_streams.get(session.id)
         if stream_state is None or stream_state.cancelled:
             return
-
-        # Debug: log RMS energy during playback (sampled every ~1s)
-        with self._state_lock:  # type: ignore[attr-defined]
-            _is_playing = bool(self._playing_sessions.get(session.id))
-        if logger.isEnabledFor(logging.DEBUG) and _is_playing:
-            import struct
-
-            samples = struct.unpack(f"<{len(frame.data) // 2}h", frame.data)
-            rms = (sum(s * s for s in samples) / len(samples)) ** 0.5
-            self._debug_frame_count = getattr(self, "_debug_frame_count", 0) + 1
-            if self._debug_frame_count % 50 == 0:  # ~1s at 20ms frames
-                logger.debug(
-                    "STT feed during playback: rms=%.0f, frames=%d",
-                    rms,
-                    self._debug_frame_count,
-                )
 
         stream_state.frame_buffer.extend(frame.data)
         stream_state.frame_buffer_rate = frame.sample_rate
@@ -352,6 +399,14 @@ class VoiceSTTMixin:
                             break
                         with self._state_lock:  # type: ignore[attr-defined]
                             playing = session.id in self._playing_sessions
+
+                        # Provider signals speech detected (server-side VAD)
+                        if result.is_speech_start:
+                            self._schedule(
+                                self._fire_speech_start_hooks(session, room_id),
+                                name=f"speech_start:{session.id}",
+                            )
+
                         if result.is_final and result.text:
                             last_tts = self._last_tts_ended_at.get(session.id, 0.0)
                             since_tts_now = _time.monotonic() - last_tts if last_tts else -1.0

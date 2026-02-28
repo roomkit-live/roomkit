@@ -2,28 +2,30 @@
 
 Talk to Claude through your microphone using Gradium for both
 speech-to-text and text-to-speech:
-  - Gradium for speech-to-text (streaming WebSocket)
+  - Gradium for speech-to-text (streaming WebSocket, server-side VAD)
   - Claude (Anthropic) for AI responses
   - Gradium for text-to-speech (streaming)
   - WebRTC or Speex AEC for echo cancellation
   - RNNoise or sherpa-onnx GTCRN for noise suppression
-  - sherpa-onnx neural VAD (TEN-VAD or Silero) for speech detection
   - WavFileRecorder for debug audio capture
 
 Audio flows through the full pipeline:
 
-  Mic -> [Resampler] -> [Recorder tap] -> [AEC] -> [Denoiser] -> VAD
-  -> Gradium STT -> Claude -> Gradium TTS -> [Recorder tap] -> Speaker
+  Mic -> [Resampler] -> [Recorder tap] -> [AEC] -> [Denoiser]
+  -> Gradium STT (continuous, server-side endpointing)
+  -> Claude -> Gradium TTS -> [Recorder tap] -> Speaker
+
+No local VAD is needed — Gradium handles speech detection and
+turn-taking server-side via semantic VAD (inactivity_prob).
 
 Requirements:
-    pip install roomkit[local-audio,anthropic,gradium,sherpa-onnx]
+    pip install roomkit[local-audio,anthropic,gradium]
     System (optional): libspeexdsp (apt install libspeexdsp1) for Speex AEC
     System (optional): librnnoise (apt install librnnoise0) -- or use DENOISE_MODEL
 
 Run with:
     ANTHROPIC_API_KEY=... \\
     GRADIUM_API_KEY=... \\
-    VAD_MODEL=path/to/ten-vad.onnx \\
     uv run python examples/voice_gradium.py
 
 Environment variables:
@@ -35,21 +37,6 @@ Environment variables:
     GRADIUM_VOICE_ID    Voice ID for TTS (default: default)
     LANGUAGE            Language code for STT (default: en)
     SYSTEM_PROMPT       Custom system prompt for Claude
-
-    --- VAD (sherpa-onnx or none) ---
-    VAD_MODEL           Path to sherpa-onnx VAD .onnx model file.
-                        When unset AND VAD=0, no local VAD is used and
-                        Gradium handles speech detection (continuous STT).
-    VAD                 Set to 0 to disable local VAD entirely. Audio is
-                        streamed continuously to Gradium STT which handles
-                        endpointing server-side. (default: 1 if VAD_MODEL set)
-    VAD_MODEL_TYPE      Model type: ten | silero (default: ten)
-    VAD_THRESHOLD       Speech probability threshold 0-1 (default: 0.35)
-                        Lower values improve sensitivity for short utterances.
-                        The GTCRN denoiser slightly alters spectral features,
-                        which reduces TEN-VAD confidence -- 0.35 compensates.
-                        Without denoiser you can raise to 0.5 for fewer false
-                        positives.
 
     --- TTS (optional) ---
     TTS_SPEED           Speech speed: -4.0 (fastest) to 4.0 (slowest).
@@ -101,8 +88,6 @@ from roomkit.voice.pipeline import (
     RecordingConfig,
     WavFileRecorder,
 )
-from roomkit.voice.pipeline.vad.energy import EnergyVADProvider
-from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADConfig, SherpaOnnxVADProvider
 from roomkit.voice.stt.gradium import GradiumSTTConfig, GradiumSTTProvider
 from roomkit.voice.tts.gradium import GradiumTTSConfig, GradiumTTSProvider
 
@@ -110,6 +95,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
+logging.getLogger("roomkit.voice.stt.gradium").setLevel(logging.DEBUG)
 logger = logging.getLogger("voice_gradium")
 
 # Channel mode mapping
@@ -226,40 +212,6 @@ async def main() -> None:
     )
     logger.info("Recording to %s (mode=%s)", recording_dir, rec_mode_name)
 
-    # --- VAD (sherpa-onnx neural VAD, energy fallback, or none) ---------------
-    vad_disabled = os.environ.get("VAD", "").lower() == "0"
-    vad = None
-    vad_model = os.environ.get("VAD_MODEL", "")
-    if vad_disabled:
-        logger.info("VAD: disabled (continuous STT — Gradium handles endpointing)")
-    elif vad_model:
-        vad_model_type = os.environ.get("VAD_MODEL_TYPE", "ten")
-        vad_threshold = float(os.environ.get("VAD_THRESHOLD", "0.35"))
-        vad = SherpaOnnxVADProvider(
-            SherpaOnnxVADConfig(
-                model=vad_model,
-                model_type=vad_model_type,
-                threshold=vad_threshold,
-                silence_threshold_ms=600,
-                min_speech_duration_ms=200,
-                speech_pad_ms=300,
-                sample_rate=sample_rate,
-            )
-        )
-        logger.info(
-            "VAD: sherpa-onnx (type=%s, threshold=%.2f, model=%s)",
-            vad_model_type,
-            vad_threshold,
-            vad_model,
-        )
-    else:
-        vad = EnergyVADProvider(
-            energy_threshold=300.0,
-            silence_threshold_ms=600,
-            min_speech_duration_ms=200,
-        )
-        logger.info("VAD: EnergyVAD (set VAD_MODEL for neural VAD)")
-
     # --- Debug taps (pipeline stage audio capture) ----------------------------
     debug_taps = None
     debug_taps_dir = os.environ.get("DEBUG_TAPS_DIR", "")
@@ -274,7 +226,6 @@ async def main() -> None:
 
     # --- Pipeline config ------------------------------------------------------
     pipeline_config = AudioPipelineConfig(
-        vad=vad,
         aec=aec,
         denoiser=denoiser,
         recorder=recorder,
@@ -285,7 +236,6 @@ async def main() -> None:
     # --- Gradium STT ----------------------------------------------------------
     region = os.environ.get("GRADIUM_REGION", "us")
     language = os.environ.get("LANGUAGE", "en")
-    vad_turn_steps = int(os.environ.get("VAD_TURN_STEPS", "6"))
     stt = GradiumSTTProvider(
         config=GradiumSTTConfig(
             api_key=env["GRADIUM_API_KEY"],
@@ -293,15 +243,14 @@ async def main() -> None:
             model_name=os.environ.get("GRADIUM_STT_MODEL", "default"),
             input_format="pcm",
             language=language,
-            vad_turn_steps=vad_turn_steps,
+            connect_buffer_ms=0,
         )
     )
     logger.info(
-        "STT: Gradium (region=%s, model=%s, lang=%s, vad_steps=%d)",
+        "STT: Gradium (region=%s, model=%s, lang=%s)",
         region,
         stt._config.model_name,
         language,
-        vad_turn_steps,
     )
 
     # --- Gradium TTS ----------------------------------------------------------

@@ -162,10 +162,22 @@ class VoiceTTSMixin:
         ``_playing_sessions`` alive so continuous STT discards any echo
         transcribed during that window.
 
+        AEC is deactivated immediately (before the drain delay) so the
+        stale adaptive filter doesn't suppress user speech.  The
+        ``_playing_sessions`` flag stays alive during the delay to gate
+        echo transcriptions on the STT side.
+
         If ``interrupt()`` fires during the delay, it pops
         ``_playing_sessions`` immediately — the delayed pop becomes a no-op.
         """
         import time as _time
+
+        # Deactivate AEC immediately — don't wait for drain delay.
+        # The adaptive filter is stale and will suppress user speech.
+        if self._pipeline is not None and self._pipeline._config.aec is not None:
+            aec = self._pipeline._config.aec
+            aec.reset()
+            aec.set_active(False)
 
         await asyncio.sleep(_PLAYBACK_DRAIN_S)
         with self._state_lock:  # type: ignore[attr-defined]
@@ -240,10 +252,24 @@ class VoiceTTSMixin:
         )
 
         for session in target_sessions:
+            # Cancel any existing TTS to prevent overlapping audio
+            with self._state_lock:  # type: ignore[attr-defined]
+                existing = self._playing_sessions.get(session.id)
+            if existing:
+                logger.info(
+                    "Cancelling previous TTS for session %s before starting new one",
+                    session.id,
+                )
+                await self.interrupt(session, reason="new_tts")  # type: ignore[attr-defined]
+
             with self._state_lock:  # type: ignore[attr-defined]
                 self._playing_sessions[session.id] = TTSPlaybackState(
                     session_id=session.id, text="(streaming)"
                 )
+            # Activate AEC so echo cancellation runs during playback
+            if self._pipeline is not None and self._pipeline._config.aec is not None:
+                aec = self._pipeline._config.aec
+                aec.set_active(True)
             t0 = _time.monotonic()
             logger.info("Streaming TTS playback started for session %s", session.id)
 
@@ -350,6 +376,16 @@ class VoiceTTSMixin:
 
         tts_name = self._tts.name  # capture before async yields (may become None)
 
+        # Cancel any existing TTS to prevent overlapping audio
+        with self._state_lock:  # type: ignore[attr-defined]
+            existing = self._playing_sessions.get(session.id)
+        if existing:
+            logger.info(
+                "Cancelling previous TTS for session %s before starting new one",
+                session.id,
+            )
+            await self.interrupt(session, reason="new_tts")  # type: ignore[attr-defined]
+
         await self._backend.send_transcription(session, text, "assistant")
 
         with self._state_lock:  # type: ignore[attr-defined]
@@ -357,6 +393,10 @@ class VoiceTTSMixin:
                 session_id=session.id,
                 text=text,
             )
+        # Activate AEC so echo cancellation runs during playback
+        if self._pipeline is not None and self._pipeline._config.aec is not None:
+            aec = self._pipeline._config.aec
+            aec.set_active(True)
 
         # Resolve telemetry provider
         _t = getattr(self._framework, "_telemetry", None) if self._framework else None

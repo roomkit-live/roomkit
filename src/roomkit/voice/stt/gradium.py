@@ -228,6 +228,7 @@ class GradiumSTTProvider(STTProvider):
         first_text_at = 0.0
         last_text_at = 0.0
         msg_count = 0
+        speech_start_signalled = False
 
         raw_iter = stream._stream.__aiter__()  # noqa: SLF001
 
@@ -245,13 +246,21 @@ class GradiumSTTProvider(STTProvider):
                     text = msg.get("text", "")
                     if text:
                         now = time.monotonic()
+                        speech_start = False
                         if not segments and not current_partial:
                             first_text_at = now
+                            if not speech_start_signalled:
+                                speech_start_signalled = True
+                                speech_start = True
                         last_text_at = now
                         current_partial = text
                         consecutive_inactive = 0  # speech activity
                         full = " ".join([*segments, current_partial])
-                        yield TranscriptionResult(text=full, is_final=False)
+                        yield TranscriptionResult(
+                            text=full,
+                            is_final=False,
+                            is_speech_start=speech_start,
+                        )
 
                 elif type_ == "end_text":
                     if current_partial:
@@ -264,8 +273,10 @@ class GradiumSTTProvider(STTProvider):
 
                 elif type_ == "step":
                     vad = msg.get("vad", [])
-                    if len(vad) >= 3 and (segments or current_partial):
+                    if len(vad) >= 3:
                         inactivity = vad[2].get("inactivity_prob", 0.0)
+                        if not (segments or current_partial):
+                            continue
                         if inactivity > vad_threshold:
                             consecutive_inactive += 1
                         else:
@@ -297,15 +308,10 @@ class GradiumSTTProvider(STTProvider):
                 yield TranscriptionResult(text=text, is_final=True)
         finally:
             logger.info("Gradium stream closing (msgs=%d, segs=%d)", msg_count, len(segments))
-
-            async def _bg_close() -> None:
-                clean = await _close_stream(stream)
-                if not clean:
-                    logger.info("Gradium stream close was not clean, resetting client")
-                    self._client = None
-
-            # Close in background so the caller can proceed immediately.
-            asyncio.get_running_loop().create_task(_bg_close(), name="gradium_close")
+            clean = await _close_stream(stream)
+            if not clean:
+                logger.info("Gradium stream close was not clean, resetting client")
+                self._client = None
 
     async def close(self) -> None:
         """Release resources."""
