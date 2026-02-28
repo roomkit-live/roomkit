@@ -56,6 +56,8 @@ class InboundMixin(HelpersMixin):
     _process_timeout: float
     _inbound_router: InboundRoomRouter
     _max_chain_depth: int
+    _inbound_rate_limiter: Any  # TokenBucketRateLimiter | None
+    _inbound_rate_limit: Any  # RateLimit | None
 
     async def process_inbound(
         self, message: InboundMessage, *, room_id: str | None = None
@@ -70,6 +72,16 @@ class InboundMixin(HelpersMixin):
         from roomkit.core.framework import ChannelNotRegisteredError
         from roomkit.telemetry.base import SpanKind
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
+
+        # Inbound rate limiting — drop excess messages before any processing
+        if (
+            self._inbound_rate_limiter
+            and self._inbound_rate_limit
+            and not self._inbound_rate_limiter.acquire(
+                message.channel_id, self._inbound_rate_limit
+            )
+        ):
+            return InboundResult(blocked=True, reason="rate_limited")
 
         channel = self._channels.get(message.channel_id)
         if channel is None:

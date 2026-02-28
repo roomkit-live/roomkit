@@ -38,6 +38,7 @@ from roomkit.core.inbound_router import DefaultInboundRoomRouter, InboundRoomRou
 from roomkit.core.locks import InMemoryLockManager, RoomLockManager
 from roomkit.core.transcoder import DefaultContentTranscoder
 from roomkit.identity.base import IdentityResolver
+from roomkit.models.channel import RateLimit
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryStatus
 from roomkit.models.enums import (
@@ -141,6 +142,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         voice: VoiceBackend | None = None,
         task_runner: TaskRunner | None = None,
         telemetry: TelemetryConfig | TelemetryProvider | None = None,
+        inbound_rate_limit: RateLimit | None = None,
     ) -> None:
         """Initialise the RoomKit orchestrator.
 
@@ -169,6 +171,10 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             telemetry: Optional telemetry provider or config for span/metric
                 collection. Accepts a ``TelemetryProvider`` instance or a
                 ``TelemetryConfig``. Defaults to ``NoopTelemetryProvider``.
+            inbound_rate_limit: Optional rate limit applied to all inbound
+                messages before any processing. Messages exceeding the limit
+                are dropped with ``reason="rate_limited"``. Keyed per
+                ``channel_id``.
         """
         from roomkit.telemetry.base import TelemetryProvider as _TelemetryProviderCls
         from roomkit.telemetry.config import TelemetryConfig as _TelemetryConfigCls
@@ -189,6 +195,14 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         self._identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]] = {}
         self._inbound_router = inbound_router or DefaultInboundRoomRouter(self._store)
         self._event_router: EventRouter | None = None
+        # Inbound rate limiting
+        self._inbound_rate_limit = inbound_rate_limit
+        if inbound_rate_limit is not None:
+            from roomkit.core.rate_limiter import TokenBucketRateLimiter
+
+            self._inbound_rate_limiter: TokenBucketRateLimiter | None = TokenBucketRateLimiter()
+        else:
+            self._inbound_rate_limiter = None
         # Event-driven sources
         self._sources: dict[str, SourceProvider] = {}
         self._source_tasks: dict[str, asyncio.Task[None]] = {}

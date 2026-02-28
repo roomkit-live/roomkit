@@ -142,6 +142,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         interruption: InterruptionConfig | None = None,
         batch_mode: bool = False,
         voice_map: dict[str, str] | None = None,
+        max_audio_frames_per_second: int | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._stt = stt
@@ -191,6 +192,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._voice_map: dict[str, str] = voice_map or {}
         # Telemetry spans for voice sessions (session_id -> span_id)
         self._voice_session_spans: dict[str, str] = {}
+        # Audio frame rate limiting (session_id -> (window_start, count))
+        self._max_fps = max_audio_frames_per_second
+        self._frame_counts: dict[str, tuple[float, int]] = {}
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -317,6 +321,19 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             binding = binding_info[1]
             if binding.access in (Access.READ_ONLY, Access.NONE) or binding.muted:
                 return
+
+        # Audio frame rate limiting — drop excess frames (thread-safe:
+        # _on_audio_received is called from audio callback threads)
+        if self._max_fps is not None:
+            with self._state_lock:
+                now = time.monotonic()
+                window_start, count = self._frame_counts.get(session.id, (now, 0))
+                if now - window_start >= 1.0:
+                    window_start, count = now, 0
+                count += 1
+                self._frame_counts[session.id] = (window_start, count)
+                if count > self._max_fps:
+                    return
 
         if self._pipeline is not None:
             self._pipeline.process_frame(session, frame)
@@ -690,6 +707,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Clear per-session audio level timestamps
         self._last_input_level_at.pop(session.id, None)
         self._last_output_level_at.pop(session.id, None)
+        # Clear frame rate counter
+        self._frame_counts.pop(session.id, None)
         # Clear batch buffers
         self._batch_audio_buffers.pop(session.id, None)
         self._batch_audio_sample_rate.pop(session.id, None)
@@ -940,3 +959,4 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._playing_sessions.clear()
         self._batch_audio_buffers.clear()
         self._batch_audio_sample_rate.clear()
+        self._frame_counts.clear()

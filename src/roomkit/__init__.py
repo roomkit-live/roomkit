@@ -305,6 +305,7 @@ from roomkit.voice import (
     VoiceSessionState,
     parse_voice_session,
 )
+from roomkit.voice.auth import AuthCallback, auth_context
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.realtime import (
     MockRealtimeProvider,
@@ -606,6 +607,9 @@ __all__ = [
     "EphemeralEventType",
     "InMemoryRealtime",
     "RealtimeBackend",
+    # Auth
+    "AuthCallback",
+    "auth_context",
     # Voice
     "AudioChunk",
     "AudioFrame",

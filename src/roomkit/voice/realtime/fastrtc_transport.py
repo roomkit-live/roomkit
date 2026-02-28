@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastrtc import AsyncStreamHandler
 
+from roomkit.voice.auth import AuthCallback
 from roomkit.voice.backends.base import (
     AudioReceivedCallback,
     TransportDisconnectCallback,
@@ -72,6 +73,7 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
         *,
         input_sample_rate: int,
         output_sample_rate: int,
+        auth: AuthCallback | None = None,
     ) -> None:
         import numpy as _np
 
@@ -85,6 +87,9 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._session: VoiceSession | None = None
         self._webrtc_id: str | None = None
+        self._auth = auth
+        self._rejected = False
+        self._auth_meta: dict[str, Any] | None = None
 
         self._np = _np
 
@@ -94,6 +99,7 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
             self._transport,
             input_sample_rate=self.input_sample_rate,
             output_sample_rate=self.output_sample_rate,
+            auth=self._auth,
         )
 
     async def start_up(self) -> None:
@@ -103,6 +109,21 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
         ctx = current_context.get()
         if ctx:
             self._webrtc_id = ctx.webrtc_id
+
+            # Run auth check before registering the handler
+            if self._auth is not None:
+                try:
+                    result = await self._auth(ctx)
+                    if result is None:
+                        self._rejected = True
+                        logger.warning("Auth rejected for webrtc_id=%s", self._webrtc_id)
+                        return
+                    self._auth_meta = result
+                except Exception:
+                    self._rejected = True
+                    logger.exception("Auth error for webrtc_id=%s", self._webrtc_id)
+                    return
+
             self._transport._register_handler(self._webrtc_id, self)
             logger.info("WebRTC handler started: webrtc_id=%s", self._webrtc_id)
 
@@ -112,6 +133,8 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
         Converts the numpy audio array to PCM16 LE bytes and fires
         the transport's audio callbacks.
         """
+        if self._rejected:
+            return
         if self._session is None:
             self._session = self._transport._get_session(self._webrtc_id)
             if self._session is None:
@@ -364,6 +387,7 @@ def mount_fastrtc_realtime(
     transport: FastRTCRealtimeTransport,
     *,
     path: str = "/rtc-realtime",
+    auth: AuthCallback | None = None,
 ) -> None:
     """Mount FastRTC WebRTC endpoints for realtime voice transport.
 
@@ -374,6 +398,9 @@ def mount_fastrtc_realtime(
         app: FastAPI application.
         transport: The FastRTCRealtimeTransport instance.
         path: Base path for WebRTC endpoints (default: /rtc-realtime).
+        auth: Optional async callback for authenticating connections. Receives
+            the FastRTC context and returns a metadata dict on success or
+            ``None`` to reject. Rejected connections are silently dropped.
     """
     from fastrtc import Stream
 
@@ -381,6 +408,7 @@ def mount_fastrtc_realtime(
         transport,
         input_sample_rate=transport._input_sample_rate,
         output_sample_rate=transport._output_sample_rate,
+        auth=auth,
     )
     stream = Stream(handler=handler, modality="audio", mode="send-receive")
     transport._stream = stream

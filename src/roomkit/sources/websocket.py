@@ -9,6 +9,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from roomkit.models.channel import RateLimit
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import TextContent
 from roomkit.sources.base import BaseSourceProvider, EmitCallback, SourceStatus
@@ -125,6 +126,7 @@ class WebSocketSource(BaseSourceProvider):
         origin: str | None = None,
         reconnect: bool = False,
         max_reconnect_backoff: float = 30.0,
+        rate_limit: RateLimit | None = None,
     ) -> None:
         """Initialize WebSocket source.
 
@@ -143,6 +145,7 @@ class WebSocketSource(BaseSourceProvider):
             origin: Origin header value.
             reconnect: Automatically reconnect with exponential backoff on errors.
             max_reconnect_backoff: Maximum backoff between reconnect attempts in seconds.
+            rate_limit: Optional rate limit to drop excess messages before emitting.
         """
         super().__init__()
         self._url = url
@@ -158,6 +161,13 @@ class WebSocketSource(BaseSourceProvider):
         self._max_size = max_size
         self._origin = origin
         self._ws: ClientConnection | None = None
+        self._rate_limit = rate_limit
+        if rate_limit is not None:
+            from roomkit.core.rate_limiter import TokenBucketRateLimiter
+
+            self._rate_limiter: TokenBucketRateLimiter | None = TokenBucketRateLimiter()
+        else:
+            self._rate_limiter = None
 
     @property
     def name(self) -> str:
@@ -238,6 +248,13 @@ class WebSocketSource(BaseSourceProvider):
                 # Parse the message
                 message = self._parser(raw)
                 if message is not None:
+                    if (
+                        self._rate_limiter
+                        and self._rate_limit
+                        and not self._rate_limiter.acquire(self._channel_id, self._rate_limit)
+                    ):
+                        logger.debug("Message dropped: source rate limit exceeded")
+                        continue
                     result = await emit(message)
                     self._record_message()
 

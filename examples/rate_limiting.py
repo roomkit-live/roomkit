@@ -1,10 +1,12 @@
 """Rate limiting with TokenBucketRateLimiter.
 
 Demonstrates how to configure and use rate limiting on channel bindings
-to throttle outbound message delivery. Shows:
+to throttle outbound message delivery, and framework-level inbound rate
+limiting to protect against message floods. Shows:
 - RateLimit configuration (per-second, per-minute, per-hour)
 - TokenBucketRateLimiter acquire() and wait() methods
 - How rate limits apply to channel bindings
+- Inbound rate limiting on RoomKit (drops excess messages before processing)
 
 Run with:
     uv run python examples/rate_limiting.py
@@ -141,6 +143,40 @@ async def main() -> None:
         print(f"  {name:20s}: {', '.join(rates)}")
 
     await kit.close()
+
+    # =====================================================
+    # Part 5: Inbound rate limiting (framework-level)
+    # =====================================================
+    print("\n\n=== Inbound Rate Limiting ===\n")
+
+    # Protect the inbound pipeline — drop excess messages before any processing
+    kit2 = RoomKit(inbound_rate_limit=RateLimit(max_per_second=3.0))
+
+    ws_in = WebSocketChannel("ws-inbound")
+    kit2.register_channel(ws_in)
+    ws_in.register_connection("conn", lambda _c, _e: asyncio.sleep(0))
+
+    await kit2.create_room(room_id="rate-room-2")
+    await kit2.attach_channel("rate-room-2", "ws-inbound")
+
+    print("Sending 8 messages with inbound limit of 3/sec:")
+    allowed_count = 0
+    for i in range(8):
+        result = await kit2.process_inbound(
+            InboundMessage(
+                channel_id="ws-inbound",
+                sender_id="user",
+                content=TextContent(body=f"Message {i + 1}"),
+            )
+        )
+        status = "ALLOWED" if not result.blocked else f"BLOCKED ({result.reason})"
+        print(f"  Message {i + 1}: {status}")
+        if not result.blocked:
+            allowed_count += 1
+
+    print(f"\n  Result: {allowed_count} allowed, {8 - allowed_count} rate-limited")
+
+    await kit2.close()
 
 
 if __name__ == "__main__":

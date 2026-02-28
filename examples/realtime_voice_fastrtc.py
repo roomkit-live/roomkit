@@ -6,6 +6,8 @@ passthrough handler (no VAD -- Gemini handles speech detection).
 Transcriptions are emitted as RoomEvents so other channels see
 the conversation.
 
+Demonstrates pluggable auth on the transport via ``auth=``.
+
 Requirements:
     pip install roomkit[realtime-gemini,fastrtc] fastapi uvicorn
 
@@ -72,11 +74,22 @@ async def on_client_connected(webrtc_id: str) -> None:
 transport.on_client_connected(on_client_connected)
 
 
+# --- Optional: pluggable auth on the transport ---
+async def authenticate_connection(ctx: object) -> dict[str, object] | None:
+    """Example auth callback for WebRTC connections.
+
+    In production, inspect headers/tokens from the connection context.
+    Return a metadata dict on success, or None to reject.
+    """
+    # Accept all connections in this example
+    return {"authenticated": True}
+
+
 # --- FastAPI app ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Mount WebRTC endpoints
-    mount_fastrtc_realtime(app, transport, path="/rtc-realtime")
+    # Mount WebRTC endpoints with auth
+    mount_fastrtc_realtime(app, transport, path="/rtc-realtime", auth=authenticate_connection)
     yield
     await kit.close()
 

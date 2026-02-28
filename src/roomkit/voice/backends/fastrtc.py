@@ -36,6 +36,7 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.auth import AuthCallback, auth_context
 from roomkit.voice.backends.base import AudioReceivedCallback, VoiceBackend
 from roomkit.voice.base import (
     AudioChunk,
@@ -49,6 +50,10 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
 logger = logging.getLogger("roomkit.voice.fastrtc")
+
+# Re-export so existing ``from roomkit.voice.backends.fastrtc import AuthCallback``
+# continues to work.
+__all__ = ["AuthCallback", "auth_context", "FastRTCVoiceBackend", "mount_fastrtc_voice"]
 
 # ---------------------------------------------------------------------------
 # Pure-Python mu-law encoder (replaces audioop.lin2ulaw removed in Python 3.13)
@@ -355,6 +360,7 @@ def mount_fastrtc_voice(
     *,
     path: str = "/fastrtc",
     session_factory: Any = None,
+    auth: AuthCallback | None = None,
 ) -> None:
     """Mount FastRTC voice endpoints on a FastAPI app.
 
@@ -371,6 +377,9 @@ def mount_fastrtc_voice(
         session_factory: Async callable(websocket_id) -> VoiceSession that creates
             sessions when clients connect. If not provided, sessions must be
             created manually before clients connect.
+        auth: Optional async callback for authenticating connections. Receives
+            the WebSocket and returns a metadata dict on success or ``None``
+            to reject. Auth metadata is available via :data:`auth_context`.
     """
     import numpy as np
     from fastrtc import AsyncStreamHandler, Stream
@@ -378,13 +387,49 @@ def mount_fastrtc_voice(
     backend._session_factory = session_factory  # type: ignore[attr-defined]
 
     class AudioPassthroughHandler(AsyncStreamHandler):  # type: ignore[misc]
-        """Passes raw audio frames to the backend's on_audio_received callback."""
+        """Passes raw audio frames to the backend's on_audio_received callback.
+
+        Auth state is per-handler-instance (each WebSocket gets its own via
+        ``copy()``), so there is no memory leak and no race condition between
+        concurrent first frames.
+        """
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._rejected = False
+            self._auth_meta: dict[str, Any] | None = None
+            self._webrtc_id: str | None = None
 
         def copy(self) -> AudioPassthroughHandler:
             return AudioPassthroughHandler()
 
+        async def start_up(self) -> None:
+            """Called once per WebSocket connection — run auth here."""
+            from fastrtc.utils import current_context
+
+            ctx = current_context.get()
+            if not ctx:
+                return
+            self._webrtc_id = ctx.webrtc_id
+
+            if auth is not None:
+                try:
+                    result = await auth(ctx.websocket)
+                    if result is None:
+                        self._rejected = True
+                        logger.warning("Auth rejected for websocket_id=%s", self._webrtc_id)
+                        return
+                    self._auth_meta = result
+                except Exception:
+                    self._rejected = True
+                    logger.exception("Auth error for websocket_id=%s", self._webrtc_id)
+                    return
+
         async def receive(self, frame: tuple[int, Any]) -> None:
             from fastrtc.utils import current_context
+
+            if self._rejected:
+                return
 
             sample_rate, audio_data = frame
 
@@ -399,7 +444,12 @@ def mount_fastrtc_voice(
             session = backend._find_session_by_websocket_id(websocket_id)
             if not session and backend._session_factory:  # type: ignore[attr-defined]
                 try:
-                    session = await backend._session_factory(websocket_id)  # type: ignore[attr-defined]
+                    # Set auth_context so session_factory can read auth metadata
+                    token = auth_context.set(self._auth_meta)
+                    try:
+                        session = await backend._session_factory(websocket_id)  # type: ignore[attr-defined]
+                    finally:
+                        auth_context.reset(token)
                     if session and websocket:
                         backend._register_websocket(websocket_id, session.id, websocket)
                 except Exception:

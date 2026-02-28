@@ -9,6 +9,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+from roomkit.voice.auth import AuthCallback
 from roomkit.voice.backends.base import (
     AudioReceivedCallback,
     TransportDisconnectCallback,
@@ -34,12 +35,17 @@ class WebSocketRealtimeTransport(VoiceBackend):
     Requires the ``websockets`` package.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        authenticate: AuthCallback | None = None,
+    ) -> None:
         self._websockets: dict[str, Any] = {}  # session_id -> WebSocket
         self._receive_tasks: dict[str, asyncio.Task[None]] = {}
         self._audio_callbacks: list[AudioReceivedCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
         self._sessions: dict[str, VoiceSession] = {}  # session_id -> session
+        self._authenticate = authenticate
 
     @property
     def name(self) -> str:
@@ -48,12 +54,30 @@ class WebSocketRealtimeTransport(VoiceBackend):
     async def accept(self, session: VoiceSession, connection: Any) -> None:
         """Accept a WebSocket connection for the given session.
 
-        Starts a background receive loop to process incoming messages.
+        Runs the optional ``authenticate`` callback before starting the
+        receive loop. If authentication returns ``None``, a
+        ``PermissionError`` is raised and the connection is rejected.
 
         Args:
             session: The realtime session.
             connection: A ``websockets`` WebSocket connection.
+
+        Raises:
+            PermissionError: If the ``authenticate`` callback rejects the
+                connection (returns ``None``).
         """
+        if self._authenticate is not None:
+            try:
+                auth_meta = await self._authenticate(connection)
+            except PermissionError:
+                raise
+            except Exception as exc:
+                logger.warning("Auth error for session %s: %s", session.id, exc)
+                raise PermissionError("Authentication failed") from exc
+            if auth_meta is None:
+                raise PermissionError("Authentication rejected")
+            session.metadata.update(auth_meta)
+
         self._websockets[session.id] = connection
         self._sessions[session.id] = session
         self._receive_tasks[session.id] = asyncio.create_task(

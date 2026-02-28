@@ -8,6 +8,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from roomkit.models.channel import RateLimit
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import TextContent
 from roomkit.sources.base import BaseSourceProvider, EmitCallback, SourceStatus
@@ -129,6 +130,7 @@ class SSESource(BaseSourceProvider):
         last_event_id: str | None = None,
         reconnect: bool = False,
         max_reconnect_backoff: float = 30.0,
+        rate_limit: RateLimit | None = None,
     ) -> None:
         """Initialize SSE source.
 
@@ -145,6 +147,7 @@ class SSESource(BaseSourceProvider):
             reconnect: Automatically reconnect with exponential backoff on errors.
                 When enabled, ``Last-Event-ID`` is sent on reconnection for resumption.
             max_reconnect_backoff: Maximum backoff between reconnect attempts in seconds.
+            rate_limit: Optional rate limit to drop excess messages before emitting.
         """
         super().__init__()
         self._url = url
@@ -157,6 +160,13 @@ class SSESource(BaseSourceProvider):
         self._timeout = timeout
         self._last_event_id = last_event_id
         self._client: Any = None
+        self._rate_limit = rate_limit
+        if rate_limit is not None:
+            from roomkit.core.rate_limiter import TokenBucketRateLimiter
+
+            self._rate_limiter: TokenBucketRateLimiter | None = TokenBucketRateLimiter()
+        else:
+            self._rate_limiter = None
 
     @property
     def name(self) -> str:
@@ -234,6 +244,13 @@ class SSESource(BaseSourceProvider):
             # Parse the event
             message = self._parser(sse.event, sse.data, sse.id)
             if message is not None:
+                if (
+                    self._rate_limiter
+                    and self._rate_limit
+                    and not self._rate_limiter.acquire(self._channel_id, self._rate_limit)
+                ):
+                    logger.debug("Message dropped: source rate limit exceeded")
+                    continue
                 result = await emit(message)
                 self._record_message()
 
