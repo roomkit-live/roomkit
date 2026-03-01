@@ -55,6 +55,7 @@ class VoiceTTSMixin:
     _last_output_level_at: dict[str, float]
     _debug_frame_count: int
     _voice_map: dict[str, str]
+    _tts_filter: Any  # Callable[[str], str] | None
 
     # -- methods provided by other mixins / main class (TYPE_CHECKING only) --
     if TYPE_CHECKING:
@@ -296,7 +297,15 @@ class VoiceTTSMixin:
 
             try:
                 voice = self._resolve_voice(event.source.channel_id)
-                sentences = split_sentences(tracking_stream())
+                token_source: AsyncIterator[str] = tracking_stream()
+                if self._tts_filter is not None:
+                    from roomkit.voice.tts.filters import TTSStreamFilter, filtered_stream
+
+                    if isinstance(self._tts_filter, TTSStreamFilter):
+                        token_source = filtered_stream(token_source, self._tts_filter)
+                    else:
+                        token_source = _filter_sentences_plain(token_source, self._tts_filter)
+                sentences = split_sentences(token_source)
 
                 # Relay each sentence to the client before TTS synthesis.
                 async def relay_sentences(
@@ -354,6 +363,9 @@ class VoiceTTSMixin:
                 )
 
         full_text = "".join(accumulated)
+        # Apply TTS filter to the accumulated text for transcription/hooks
+        if self._tts_filter is not None and full_text:
+            full_text = self._tts_filter(full_text)
         # Update playback state with actual streamed text (was "(streaming)")
         for session in target_sessions:
             with self._state_lock:  # type: ignore[attr-defined]
@@ -526,6 +538,12 @@ class VoiceTTSMixin:
 
             final_text = before_result.event if isinstance(before_result.event, str) else text
 
+            if self._tts_filter is not None:
+                final_text = self._tts_filter(final_text)
+                if not final_text:
+                    logger.debug("TTS text empty after filter — skipping")
+                    return
+
             logger.info("AI response: %s", final_text)
 
             target_sessions = self._find_sessions(room_id, binding)
@@ -617,6 +635,12 @@ class VoiceTTSMixin:
                     logger.info("say() blocked by hook: %s", before_result.reason)
                     return
                 final_text = before_result.event if isinstance(before_result.event, str) else text
+
+            if self._tts_filter is not None:
+                final_text = self._tts_filter(final_text)
+                if not final_text:
+                    logger.debug("say() text empty after filter — skipping")
+                    return
 
             await self._send_tts(session, final_text, voice=voice)
 
@@ -727,3 +751,14 @@ class VoiceTTSMixin:
                 self._finish_playback(session.id),
                 name=f"finish_playback:{session.id}",
             )
+
+
+async def _filter_sentences_plain(
+    source: AsyncIterator[str],
+    fn: Any,
+) -> AsyncIterator[str]:
+    """Wrap an async token stream through a plain ``Callable[[str], str]``."""
+    async for chunk in source:
+        cleaned = fn(chunk)
+        if cleaned:
+            yield cleaned

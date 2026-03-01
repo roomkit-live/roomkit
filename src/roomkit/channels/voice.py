@@ -6,7 +6,7 @@ import asyncio
 import logging
 import threading
 import time
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -143,6 +143,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         batch_mode: bool = False,
         voice_map: dict[str, str] | None = None,
         max_audio_frames_per_second: int | None = None,
+        tts_filter: Callable[[str], str] | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._stt = stt
@@ -192,6 +193,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._event_loop: asyncio.AbstractEventLoop | None = None
         # Per-agent voice mapping: channel_id -> TTS voice override
         self._voice_map: dict[str, str] = voice_map or {}
+        # TTS text filter: strips markers before synthesis
+        self._tts_filter = tts_filter
         # Telemetry spans for voice sessions (session_id -> span_id)
         self._voice_session_spans: dict[str, str] = {}
         # Audio frame rate limiting (session_id -> (window_start, count))

@@ -90,6 +90,7 @@ from roomkit.voice.pipeline import (
 )
 from roomkit.voice.stt.base import STTProvider
 from roomkit.voice.tts.base import TTSProvider
+from roomkit.voice.tts.filters import StripBrackets, StripInternalTags, TTSStreamFilter
 
 __all__ = [
     # Base types
@@ -182,6 +183,10 @@ __all__ = [
     # Providers
     "STTProvider",
     "TTSProvider",
+    # TTS filters
+    "StripBrackets",
+    "StripInternalTags",
+    "TTSStreamFilter",
 ]
 
 # Optional providers (lazy imports to avoid requiring dependencies)

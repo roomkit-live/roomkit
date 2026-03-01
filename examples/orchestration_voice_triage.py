@@ -112,6 +112,7 @@ from roomkit import (
     PipelineStage,
     RoomKit,
     SlidingWindowMemory,
+    StripInternalTags,
     VoiceChannel,
     WaitForIdleDelivery,
     build_delegate_tool,
@@ -219,6 +220,7 @@ async def main() -> None:
         tts=tts,
         backend=sip,
         pipeline=AudioPipelineConfig(vad=vad),
+        tts_filter=StripInternalTags(),
     )
     kit.register_channel(voice)
 
@@ -253,7 +255,8 @@ async def main() -> None:
             "Do NOT transfer callers whose needs don't match any available agent. "
             "Keep responses under 30 words — they will be spoken aloud. "
             "NEVER write handoff instructions as text — always use the tool. "
-            "Your spoken responses must ONLY contain words meant for the caller. "
+            "Wrap any internal reasoning or non-spoken annotations in "
+            "[internal]...[/internal] tags. "
             "Never use markdown, bullet points, or special formatting."
         ),
         memory=HandoffMemoryProvider(SlidingWindowMemory(max_events=20)),
@@ -279,7 +282,8 @@ async def main() -> None:
             "them back. "
             "NEVER write handoff or delegation instructions as text — "
             "always use the appropriate tool. "
-            "Your spoken responses must ONLY contain words meant for the caller. "
+            "Wrap any internal reasoning or non-spoken annotations in "
+            "[internal]...[/internal] tags. "
             "Speak naturally, under 50 words per response. "
             "No tables, no bullet points, no file references. "
             "Never use markdown or special formatting."
