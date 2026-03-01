@@ -266,7 +266,22 @@ class FastRTCVoiceBackend(VoiceBackend):
         except Exception:
             logger.exception("Error sending audio to session %s", session.id)
 
+    @staticmethod
+    def _ws_is_connected(websocket: Any) -> bool:
+        """Return True if *websocket* is still open (Starlette-aware)."""
+        state = getattr(websocket, "client_state", None)
+        if state is None:
+            return True  # not a Starlette WebSocket — assume connected
+        try:
+            from starlette.websockets import WebSocketState
+
+            return state == WebSocketState.CONNECTED
+        except ImportError:
+            return True
+
     async def _send_mulaw_audio(self, websocket: Any, pcm_data: bytes) -> None:
+        if not self._ws_is_connected(websocket):
+            return
         mulaw_data = _pcm16_to_mulaw(pcm_data)
         payload = base64.b64encode(mulaw_data).decode("utf-8")
         await websocket.send_json(
@@ -288,6 +303,8 @@ class FastRTCVoiceBackend(VoiceBackend):
             text[:50] if text else "",
         )
         if websocket:
+            if not self._ws_is_connected(websocket):
+                return
             try:
                 await websocket.send_json(
                     {

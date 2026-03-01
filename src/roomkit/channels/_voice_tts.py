@@ -50,6 +50,7 @@ class VoiceTTSMixin:
     _pipeline_config: AudioPipelineConfig | None
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
     _playing_sessions: dict[str, TTSPlaybackState]
+    _playback_done_events: dict[str, asyncio.Event]
     _last_tts_ended_at: dict[str, float]
     _last_output_level_at: dict[str, float]
     _debug_frame_count: int
@@ -266,6 +267,13 @@ class VoiceTTSMixin:
                 self._playing_sessions[session.id] = TTSPlaybackState(
                     session_id=session.id, text="(streaming)"
                 )
+                # Clear done event so wait_playback_done() blocks until send_audio returns
+                done_ev = self._playback_done_events.get(session.id)
+                if done_ev is None:
+                    done_ev = asyncio.Event()
+                    self._playback_done_events[session.id] = done_ev
+                else:
+                    done_ev.clear()
             # Activate AEC so echo cancellation runs during playback
             if self._pipeline is not None and self._pipeline._config.aec is not None:
                 aec = self._pipeline._config.aec
@@ -332,6 +340,11 @@ class VoiceTTSMixin:
                     _time.monotonic() - t0,
                 )
                 self._debug_frame_count = 0  # reset RMS debug counter
+                # Signal that send_audio() has returned so
+                # wait_playback_done() can unblock immediately.
+                done_ev = self._playback_done_events.get(session.id)
+                if done_ev is not None:
+                    done_ev.set()
                 # Keep _playing_sessions alive during post-drain echo decay.
                 # _finish_playback pops it after the delay (interrupt() pops
                 # immediately if barge-in fires first).
@@ -405,6 +418,13 @@ class VoiceTTSMixin:
                 session_id=session.id,
                 text=text,
             )
+            # Clear done event so wait_playback_done() blocks until send_audio returns
+            done_ev = self._playback_done_events.get(session.id)
+            if done_ev is None:
+                done_ev = asyncio.Event()
+                self._playback_done_events[session.id] = done_ev
+            else:
+                done_ev.clear()
         # Activate AEC so echo cancellation runs during playback
         if self._pipeline is not None and self._pipeline._config.aec is not None:
             aec = self._pipeline._config.aec
@@ -467,6 +487,11 @@ class VoiceTTSMixin:
                     unit="ms",
                     attributes={Attr.PROVIDER: tts_name},
                 )
+            # Signal that send_audio() has returned so
+            # wait_playback_done() can unblock immediately.
+            done_ev = self._playback_done_events.get(session.id)
+            if done_ev is not None:
+                done_ev.set()
             self._schedule(
                 self._finish_playback(session.id),
                 name=f"finish_playback:{session.id}",

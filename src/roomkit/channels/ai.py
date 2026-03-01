@@ -437,6 +437,13 @@ class AIChannel(Channel):
                 else None
             )
 
+            # Track text yielded across tool rounds for dedup.
+            # Some providers (e.g. Gemini) repeat pre-tool text in
+            # continuation rounds.  We speculatively buffer incoming
+            # deltas and verify they match the previously-yielded prefix
+            # before skipping them.
+            _dedup_prefix = ""  # text yielded in prior rounds
+
             for _round_idx in range(self._max_tool_rounds + 1):
                 # Steering checkpoint 1: fast-path cancel before generate
                 if loop_ctx.cancel_event.is_set():
@@ -455,6 +462,11 @@ class AIChannel(Channel):
 
                 # Publish THINKING_START when first thinking delta arrives
                 thinking_started = False
+
+                # Dedup state for this round
+                _dedup_active = bool(_dedup_prefix)
+                _dedup_offset = 0  # chars matched so far
+                _dedup_buffer: list[str] = []  # held-back deltas
 
                 async for event in self._generate_stream_with_retry(context):
                     if isinstance(event, StreamThinkingDelta):
@@ -478,9 +490,52 @@ class AIChannel(Channel):
                                 _round_idx,
                             )
                         text_parts.append(event.text)
+
+                        # --- Dedup: skip text that repeats previous rounds ---
+                        if _dedup_active:
+                            end = _dedup_offset + len(event.text)
+                            if end <= len(_dedup_prefix):
+                                # Entire delta within the prefix region
+                                if _dedup_prefix[_dedup_offset:end] == event.text:
+                                    _dedup_offset = end
+                                    _dedup_buffer.append(event.text)
+                                    continue  # matches — keep buffering
+                                # Mismatch — flush buffer and yield normally
+                                _dedup_active = False
+                                for buf in _dedup_buffer:
+                                    yield buf
+                                _dedup_buffer.clear()
+                                yield event.text
+                            else:
+                                # Delta crosses the prefix boundary
+                                prefix_tail = _dedup_prefix[_dedup_offset:]
+                                if event.text[: len(prefix_tail)] == prefix_tail:
+                                    # Full prefix matched — commit dedup
+                                    _dedup_active = False
+                                    _dedup_buffer.clear()
+                                    new_text = event.text[len(prefix_tail) :]
+                                    if new_text:
+                                        yield new_text
+                                else:
+                                    # Mismatch at boundary — flush buffer
+                                    _dedup_active = False
+                                    for buf in _dedup_buffer:
+                                        yield buf
+                                    _dedup_buffer.clear()
+                                    yield event.text
+                            continue
+
                         yield event.text
                     elif isinstance(event, StreamToolCall):
                         tool_calls.append(event)
+
+                # Flush any remaining dedup buffer (dedup matched to end
+                # of prefix but no new text followed — shouldn't happen
+                # in practice but be safe).
+                if _dedup_buffer:
+                    for buf in _dedup_buffer:
+                        yield buf
+                    _dedup_buffer.clear()
 
                 # Publish THINKING_END if thinking was the last block (no text followed)
                 if thinking_started and thinking_parts and room_id:
@@ -532,6 +587,9 @@ class AIChannel(Channel):
                 accumulated_text = "".join(text_parts)
                 if accumulated_text:
                     parts.append(AITextPart(text=accumulated_text))
+                    # Set dedup prefix for the next round — the provider
+                    # may regenerate this text in the continuation.
+                    _dedup_prefix = accumulated_text
                 for tc in tool_calls:
                     parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
                 context.messages.append(AIMessage(role="assistant", content=parts))

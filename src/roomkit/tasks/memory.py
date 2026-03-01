@@ -176,7 +176,9 @@ class InMemoryTaskRunner(TaskRunner):
         )
         result = await router.broadcast(task_event, source_binding, context)
 
-        # Collect the agent's response
+        # Collect the agent's response — check synchronous response_events
+        # first, then fall back to consuming streaming responses (providers
+        # like Gemini return a lazy stream that must be drained).
         agent_response: str | None = None
         for _channel_id, output in result.outputs.items():
             if output.responded and output.response_events:
@@ -184,5 +186,26 @@ class InMemoryTaskRunner(TaskRunner):
                     if isinstance(resp_event.content, TextContent):
                         agent_response = resp_event.content.body
                         await kit.store.add_event(resp_event)
+
+        if agent_response is None and result.streaming_responses:
+            for sr in result.streaming_responses:
+                parts: list[str] = []
+                async for delta in sr.stream:
+                    parts.append(delta)
+                text = "".join(parts)
+                if text:
+                    agent_response = text
+                    resp_event = RoomEvent(
+                        room_id=child_room_id,
+                        type=EventType.MESSAGE,
+                        source=EventSource(
+                            channel_id=sr.source_channel_id,
+                            channel_type=sr.source_channel_type,
+                        ),
+                        content=TextContent(body=text),
+                        chain_depth=task_event.chain_depth + 1,
+                    )
+                    await kit.store.add_event(resp_event)
+                    break  # use the first non-empty streaming response
 
         return agent_response

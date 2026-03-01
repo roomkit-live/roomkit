@@ -502,6 +502,17 @@ class ConversationPipeline:
                 # suppress any TTS that fires between ON_HANDOFF and the
                 # greeting task starting (typically <1ms).
                 _handoff_pending.discard(event.room_id)
+
+                # Wait for the outgoing agent's TTS to finish (e.g.
+                # "je vous transfère") before starting the new agent's
+                # greeting.  Without this, deliver_stream() cancels the
+                # in-flight TTS immediately.
+                from roomkit.channels.voice import VoiceChannel
+
+                vc = kit.channels.get(voice_channel_id)
+                if isinstance(vc, VoiceChannel):
+                    await vc.wait_playback_done(event.room_id, timeout=15.0)
+
                 try:
                     await asyncio.wait_for(
                         kit.process_inbound(

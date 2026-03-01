@@ -237,6 +237,7 @@ async def main() -> None:
         scope="Financial advisory services only",
         voice=VOICE_TRIAGE,
         language="French",
+        auto_greet=False,  # handler.send_greeting() handles greeting via AI
         greeting=(
             "[A new caller just connected — greet them warmly "
             "and ask how you can help with financial services]"

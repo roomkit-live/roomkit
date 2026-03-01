@@ -1200,8 +1200,12 @@ class SIPVoiceBackend(VoiceBackend):
             except asyncio.CancelledError:
                 pass
             finally:
-                state.playback_task = None
-                state.is_playing = False
+                # Only clear state if this is still the current playback.
+                # A concurrent send_audio() may have already replaced
+                # playback_task — clearing it here would kill the new stream.
+                if state.playback_task is task:
+                    state.playback_task = None
+                    state.is_playing = False
 
     def _send_pcm_bytes(self, session: VoiceSession, call_session: Any, pcm_data: bytes) -> None:
         """Send a PCM-16 LE buffer as RTP packets.

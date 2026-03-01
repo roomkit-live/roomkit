@@ -157,6 +157,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._session_bindings: dict[str, tuple[str, ChannelBinding]] = {}
         # Track TTS playback for barge-in detection
         self._playing_sessions: dict[str, TTSPlaybackState] = {}
+        # Signalled when send_audio() returns for a session (before drain delay)
+        self._playback_done_events: dict[str, asyncio.Event] = {}
         # The instantiated pipeline engine (if config provided)
         self._pipeline: AudioPipeline | None = None
         # Pending turns for turn detection (session_id -> list of TurnEntry)
@@ -913,6 +915,36 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             playback.position_ms,
         )
         return True
+
+    async def wait_playback_done(self, room_id: str, timeout: float = 15.0) -> None:
+        """Wait until active TTS playback finishes for all sessions in *room_id*.
+
+        Returns immediately if no playback is in progress.  Uses per-session
+        events that are set when ``send_audio()`` returns (before the echo
+        drain delay), so callers don't wait for the 2-second drain window.
+        """
+        with self._state_lock:
+            events = [
+                self._playback_done_events[sid]
+                for sid, (rid, _) in self._session_bindings.items()
+                if rid == room_id
+                and sid in self._playing_sessions
+                and sid in self._playback_done_events
+                and not self._playback_done_events[sid].is_set()
+            ]
+        if not events:
+            return
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*(e.wait() for e in events)),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            logger.warning(
+                "wait_playback_done timed out for room %s after %.1fs",
+                room_id,
+                timeout,
+            )
 
     def _on_backend_barge_in(self, session: VoiceSession) -> None:
         """Handle barge-in detected by backend."""
