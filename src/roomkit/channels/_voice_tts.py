@@ -296,7 +296,7 @@ class VoiceTTSMixin:
                     _session: VoiceSession = session,
                 ) -> AsyncIterator[str]:
                     async for sentence in source:
-                        await self._backend.send_transcription(
+                        await self._backend.send_transcription(  # type: ignore[union-attr]
                             _session, sentence, "assistant_interim"
                         )
                         yield sentence

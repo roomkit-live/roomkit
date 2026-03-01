@@ -478,7 +478,7 @@ def mount_fastrtc_voice(
             # emit(). Return None so FastRTC's _emit_loop skips sending silence.
             # Sleep to prevent the _emit_to_queue tight loop from spinning CPU.
             await asyncio.sleep(0.1)
-            return None  # type: ignore[return-value]
+            return None
 
     # Create FastRTC stream with passthrough handler
     stream = Stream(
