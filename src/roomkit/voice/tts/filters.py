@@ -47,7 +47,8 @@ class TTSStreamFilter(ABC):
 # Single bracket: [internal: ...] or [internal ...] (AI "thinking" style)
 _INTERNAL_RE = re.compile(
     r"\[internal\].*?\[/internal\]"  # paired tags
-    r"|\[internal[:\s][^\]]*\]",  # single bracket with colon or space
+    r"|\[internal[:\s][^\]]*\]"  # single bracket with colon or space
+    r"|\[/internal\]",  # stray closing tag (AI mixed formats)
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -90,9 +91,20 @@ class StripInternalTags(TTSStreamFilter):
 
         while True:
             if not self._inside:
-                # Look for "[internal" (common prefix for both formats)
                 lower = self._buf.lower()
+
+                # Look for "[internal" (common prefix for both formats)
                 idx = lower.find("[internal")
+                # Also look for stray "[/internal]" (AI mixed formats)
+                stray_idx = lower.find("[/internal]")
+
+                # Handle stray closing tag if it comes first
+                if stray_idx != -1 and (idx == -1 or stray_idx < idx):
+                    if stray_idx > 0:
+                        out.append(self._buf[:stray_idx])
+                    self._buf = self._buf[stray_idx + len("[/internal]") :]
+                    continue
+
                 if idx == -1:
                     # No opening tag found.  Emit everything except a
                     # trailing partial that *could* be the start of a tag.
@@ -158,12 +170,13 @@ class StripInternalTags(TTSStreamFilter):
 
     @staticmethod
     def _safe_prefix(text: str) -> str:
-        """Return the prefix of *text* that cannot be the start of ``[internal``."""
-        # If the text ends with a partial match for "[internal", hold it back.
-        tag = "[internal"
-        for i in range(1, len(tag)):
-            if text.lower().endswith(tag[:i]):
-                return text[:-i]
+        """Return the prefix of *text* that cannot be the start of a tag."""
+        # Hold back partial matches for both "[internal" and "[/internal".
+        lower = text.lower()
+        for tag in ("[/internal", "[internal"):
+            for i in range(1, len(tag)):
+                if lower.endswith(tag[:i]):
+                    return text[:-i]
         return text
 
 
