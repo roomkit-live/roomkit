@@ -8,7 +8,7 @@ import roomkit
 class TestPublicAPI:
     def test_version_string(self) -> None:
         assert isinstance(roomkit.__version__, str)
-        assert roomkit.__version__ == "0.6.6"
+        assert roomkit.__version__ == "0.6.7"
 
     def test_all_names_importable(self) -> None:
         for name in roomkit.__all__:
