@@ -40,18 +40,29 @@ class TTSStreamFilter(ABC):
 
 
 # ---------------------------------------------------------------------------
-# StripInternalTags — removes [internal]...[/internal] blocks
+# StripInternalTags — removes [internal]...[/internal] and [internal: ...] blocks
 # ---------------------------------------------------------------------------
 
-_INTERNAL_RE = re.compile(r"\[internal\].*?\[/internal\]", re.DOTALL | re.IGNORECASE)
+# Paired tags: [internal]...[/internal]
+# Single bracket: [internal: ...] or [internal ...] (AI "thinking" style)
+_INTERNAL_RE = re.compile(
+    r"\[internal\].*?\[/internal\]"  # paired tags
+    r"|\[internal[:\s][^\]]*\]",  # single bracket with colon or space
+    re.DOTALL | re.IGNORECASE,
+)
 
 
 class StripInternalTags(TTSStreamFilter):
-    """Strip ``[internal]...[/internal]`` blocks from TTS text.
+    """Strip ``[internal]...[/internal]`` and ``[internal: ...]`` blocks.
 
-    In streaming mode, buffers text when an opening ``[internal]`` tag is
-    detected and discards everything up to and including the closing
-    ``[/internal]`` tag.  Text outside tags is passed through immediately.
+    Handles two formats that AI models commonly produce:
+
+    - **Paired tags**: ``[internal]reasoning here[/internal] spoken text``
+    - **Single bracket**: ``[internal: reasoning here] spoken text``
+
+    In streaming mode, buffers text when ``[internal`` is detected and
+    discards everything up to the matching close.  Text outside tags is
+    passed through immediately.
 
     In non-streaming mode (``__call__``), a single regex removes all
     tagged blocks.
@@ -60,10 +71,13 @@ class StripInternalTags(TTSStreamFilter):
     def __init__(self) -> None:
         self._buf = ""
         self._inside = False
+        # "paired" = [internal]...[/internal], "single" = [internal: ...]
+        self._mode: str = ""
 
     def reset(self) -> None:
         self._buf = ""
         self._inside = False
+        self._mode = ""
 
     def __call__(self, text: str) -> str:
         result = _INTERNAL_RE.sub("", text)
@@ -76,8 +90,9 @@ class StripInternalTags(TTSStreamFilter):
 
         while True:
             if not self._inside:
-                # Look for opening tag
-                idx = self._buf.lower().find("[internal]")
+                # Look for "[internal" (common prefix for both formats)
+                lower = self._buf.lower()
+                idx = lower.find("[internal")
                 if idx == -1:
                     # No opening tag found.  Emit everything except a
                     # trailing partial that *could* be the start of a tag.
@@ -86,20 +101,47 @@ class StripInternalTags(TTSStreamFilter):
                         out.append(safe)
                         self._buf = self._buf[len(safe) :]
                     break
+
                 # Emit text before the tag
                 if idx > 0:
                     out.append(self._buf[:idx])
-                self._buf = self._buf[idx + len("[internal]") :]
-                self._inside = True
-            else:
-                # Inside a tag — look for closing tag
-                idx = self._buf.lower().find("[/internal]")
-                if idx == -1:
-                    # Still inside — keep buffering; don't emit anything
+
+                # Determine format from the character after "[internal"
+                rest = self._buf[idx + len("[internal") :]
+                if not rest:
+                    # Need more input to determine format
+                    self._buf = self._buf[idx:]
                     break
-                # Discard everything up to and including the closing tag
-                self._buf = self._buf[idx + len("[/internal]") :]
+
+                if rest[0] == "]":
+                    # Paired tag: [internal]...[/internal]
+                    self._buf = rest[1:]
+                    self._inside = True
+                    self._mode = "paired"
+                elif rest[0] in (":", " "):
+                    # Single bracket: [internal: ...] or [internal ...]
+                    self._buf = rest[1:]
+                    self._inside = True
+                    self._mode = "single"
+                else:
+                    # Not a tag (e.g. "[internally]") — emit "[" and retry
+                    out.append(self._buf[idx])
+                    self._buf = self._buf[idx + 1 :]
+            else:
+                if self._mode == "paired":
+                    # Look for closing tag [/internal]
+                    close_idx = self._buf.lower().find("[/internal]")
+                    if close_idx == -1:
+                        break
+                    self._buf = self._buf[close_idx + len("[/internal]") :]
+                else:
+                    # Single bracket — look for ]
+                    close_idx = self._buf.find("]")
+                    if close_idx == -1:
+                        break
+                    self._buf = self._buf[close_idx + 1 :]
                 self._inside = False
+                self._mode = ""
 
         return "".join(out)
 
@@ -108,6 +150,7 @@ class StripInternalTags(TTSStreamFilter):
             # Unclosed tag — discard the buffered content
             self._buf = ""
             self._inside = False
+            self._mode = ""
             return ""
         remaining = self._buf
         self._buf = ""
@@ -115,9 +158,9 @@ class StripInternalTags(TTSStreamFilter):
 
     @staticmethod
     def _safe_prefix(text: str) -> str:
-        """Return the prefix of *text* that cannot be the start of ``[internal]``."""
-        # If the text ends with a partial match for "[internal]", hold it back.
-        tag = "[internal]"
+        """Return the prefix of *text* that cannot be the start of ``[internal``."""
+        # If the text ends with a partial match for "[internal", hold it back.
+        tag = "[internal"
         for i in range(1, len(tag)):
             if text.lower().endswith(tag[:i]):
                 return text[:-i]

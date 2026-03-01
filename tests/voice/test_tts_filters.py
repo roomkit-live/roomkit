@@ -47,6 +47,38 @@ class TestStripInternalTagsCall:
         assert f("[internal]a[/internal] first") == "first"
         assert f("[internal]b[/internal] second") == "second"
 
+    def test_single_bracket_colon(self):
+        f = StripInternalTags()
+        assert f("[internal: thinking about this] Bonjour!") == "Bonjour!"
+
+    def test_single_bracket_space(self):
+        f = StripInternalTags()
+        assert f("[internal The caller wants insurance] Hello!") == "Hello!"
+
+    def test_single_bracket_real_log(self):
+        """Exact format from production AI output."""
+        f = StripInternalTags()
+        text = (
+            "[internal: The caller's request matches financial advisory "
+            "so I should use the handoff_conversation tool to transfer them.]\n"
+            "Je vous transfère à un conseiller."
+        )
+        assert f(text) == "Je vous transfère à un conseiller."
+
+    def test_mixed_formats(self):
+        f = StripInternalTags()
+        text = "[internal: thinking] Hello [internal]paired[/internal] World"
+        assert f(text) == "Hello World"
+
+    def test_single_bracket_empty_result(self):
+        f = StripInternalTags()
+        assert f("[internal: all hidden]") == ""
+
+    def test_not_internal_word(self):
+        """Words like '[internally]' should NOT be stripped."""
+        f = StripInternalTags()
+        assert f("[internally] visible") == "[internally] visible"
+
 
 # ---------------------------------------------------------------------------
 # StripInternalTags — streaming (feed/flush)
@@ -103,6 +135,40 @@ class TestStripInternalTagsStreaming:
         r5 = f.feed(" After")
         r6 = f.flush()
         assert r1 + r2 + r3 + r4 + r5 + r6 == "Before  After"
+
+    def test_single_bracket_streaming(self):
+        f = StripInternalTags()
+        f.reset()
+        r1 = f.feed("[internal: thinking")
+        r2 = f.feed(" about this]")
+        r3 = f.feed(" Hello!")
+        r4 = f.flush()
+        assert r1 + r2 + r3 + r4 == " Hello!"
+
+    def test_single_bracket_split_across_chunks(self):
+        f = StripInternalTags()
+        f.reset()
+        r1 = f.feed("[inter")
+        r2 = f.feed("nal: reason")
+        r3 = f.feed("ing here] visible")
+        r4 = f.flush()
+        assert r1 + r2 + r3 + r4 == " visible"
+
+    def test_single_bracket_unclosed_discarded(self):
+        f = StripInternalTags()
+        f.reset()
+        r1 = f.feed("Hi [internal: never closed")
+        r2 = f.flush()
+        assert r1 + r2 == "Hi "
+
+    def test_not_internal_word_streaming(self):
+        """[internally] should pass through."""
+        f = StripInternalTags()
+        f.reset()
+        r1 = f.feed("[internally")
+        r2 = f.feed("] visible")
+        r3 = f.flush()
+        assert r1 + r2 + r3 == "[internally] visible"
 
 
 # ---------------------------------------------------------------------------
