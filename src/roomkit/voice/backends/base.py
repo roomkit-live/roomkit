@@ -199,7 +199,7 @@ class VoiceBackend(ABC):
         session (e.g. WebSocket connected, RTP socket active, mic stream
         started).  The VoiceChannel uses this together with
         ``bind_session`` to implement the dual-signal
-        ``ON_VOICE_SESSION_READY`` hook.
+        ``ON_SESSION_STARTED`` hook.
 
         Args:
             callback: Function called with ``(session)``.

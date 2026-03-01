@@ -100,6 +100,7 @@ from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
+from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
 from roomkit.models.task import Observation, Task
 from roomkit.models.trace import ProtocolTrace
@@ -302,7 +303,6 @@ from roomkit.voice import (
     VoiceBackend,
     VoiceCapability,
     VoiceSession,
-    VoiceSessionReadyEvent,
     VoiceSessionState,
     parse_voice_session,
 )
@@ -644,8 +644,8 @@ __all__ = [
     "VoiceBackend",
     "VoiceCapability",
     "VoiceSession",
-    "VoiceSessionReadyEvent",
     "VoiceSessionState",
+    "SessionStartedEvent",
     # Realtime Voice
     "MockRealtimeProvider",
     "MockRealtimeTransport",

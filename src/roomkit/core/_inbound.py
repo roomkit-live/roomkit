@@ -137,6 +137,7 @@ class InboundMixin(HelpersMixin):
             channel_id=message.channel_id,
             attributes={"sender_id": message.sender_id or ""},
         )
+        room_just_created = False
         try:
             if room_id is None:
                 room_id = await self._inbound_router.route(
@@ -149,6 +150,7 @@ class InboundMixin(HelpersMixin):
                 room = await self.create_room()  # type: ignore[attr-defined]
                 room_id = room.id
                 await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
+                room_just_created = True
             else:
                 # Ensure room exists; auto-create if needed (e.g. voice session
                 # with a room_id from SIP headers that hasn't been created yet).
@@ -156,6 +158,7 @@ class InboundMixin(HelpersMixin):
                 if room is None:
                     room = await self.create_room(room_id=room_id)  # type: ignore[attr-defined]
                     await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
+                    room_just_created = True
                 else:
                     # Room exists — ensure channel is attached
                     binding = await self._store.get_binding(room_id, message.channel_id)
@@ -174,6 +177,20 @@ class InboundMixin(HelpersMixin):
             telemetry.set_attribute(inbound_span_id, "session_id", voice_session_id)
 
         context = await self._build_context(room_id)
+
+        # Fire ON_SESSION_STARTED for text channels when a new room is created
+        if room_just_created and channel.channel_type not in (
+            ChannelType.VOICE,
+            ChannelType.REALTIME_VOICE,
+        ):
+            asyncio.ensure_future(
+                self._fire_text_session_started(
+                    room_id,
+                    message.channel_id,
+                    channel.channel_type,
+                    message.sender_id or "",
+                )
+            )
 
         # Let channel process inbound
         event = await channel.handle_inbound(message, context)
@@ -872,3 +889,39 @@ class InboundMixin(HelpersMixin):
                         sr_result.event,
                         reentry_ctx,
                     )
+
+    async def _fire_text_session_started(
+        self,
+        room_id: str,
+        channel_id: str,
+        channel_type: ChannelType,
+        participant_id: str,
+    ) -> None:
+        """Fire ON_SESSION_STARTED for text channel room auto-creation."""
+        try:
+            from roomkit.models.session_event import SessionStartedEvent
+
+            context = await self._build_context(room_id)
+            event = SessionStartedEvent(
+                room_id=room_id,
+                channel_id=channel_id,
+                channel_type=channel_type,
+                participant_id=participant_id,
+            )
+            await self._hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_SESSION_STARTED,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+            await self._emit_framework_event(
+                "session_started",
+                room_id=room_id,
+                data={
+                    "channel_id": channel_id,
+                    "channel_type": str(channel_type),
+                },
+            )
+        except Exception:
+            logger.exception("Error firing ON_SESSION_STARTED for text channel")

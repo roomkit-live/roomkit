@@ -1,4 +1,4 @@
-"""Tests for ON_VOICE_SESSION_READY hook and kit.send_greeting()."""
+"""Tests for ON_SESSION_STARTED hook and kit.send_greeting()."""
 
 from __future__ import annotations
 
@@ -12,17 +12,21 @@ from roomkit import (
     RoomKit,
     VoiceChannel,
 )
+from roomkit.channels import SMSChannel
+from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import EventType
+from roomkit.models.event import TextContent
+from roomkit.models.session_event import SessionStartedEvent
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.providers.sms.mock import MockSMSProvider
 from roomkit.voice import AudioPipelineConfig
 from roomkit.voice.backends.mock import MockVoiceBackend
-from roomkit.voice.events import VoiceSessionReadyEvent
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
 
-class TestVoiceSessionReady:
-    """ON_VOICE_SESSION_READY hook tests."""
+class TestVoiceSessionStarted:
+    """ON_SESSION_STARTED hook tests (voice channel)."""
 
     async def test_hook_fires_after_connect_voice(self) -> None:
         """Hook fires when backend signals ready AND session is bound."""
@@ -37,10 +41,10 @@ class TestVoiceSessionReady:
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
 
-        ready_events: list[VoiceSessionReadyEvent] = []
+        ready_events: list[SessionStartedEvent] = []
 
-        @kit.hook(HookTrigger.ON_VOICE_SESSION_READY, HookExecution.ASYNC)
-        async def on_ready(event: VoiceSessionReadyEvent, context: object) -> None:
+        @kit.hook(HookTrigger.ON_SESSION_STARTED, HookExecution.ASYNC)
+        async def on_ready(event: SessionStartedEvent, context: object) -> None:
             ready_events.append(event)
 
         # connect_voice calls backend.connect() which fires session_ready
@@ -65,10 +69,10 @@ class TestVoiceSessionReady:
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
 
-        ready_events: list[VoiceSessionReadyEvent] = []
+        ready_events: list[SessionStartedEvent] = []
 
-        @kit.hook(HookTrigger.ON_VOICE_SESSION_READY, HookExecution.ASYNC)
-        async def on_ready(event: VoiceSessionReadyEvent, context: object) -> None:
+        @kit.hook(HookTrigger.ON_SESSION_STARTED, HookExecution.ASYNC)
+        async def on_ready(event: SessionStartedEvent, context: object) -> None:
             ready_events.append(event)
 
         # MockVoiceBackend fires ready in connect(), and connect_voice
@@ -93,10 +97,10 @@ class TestVoiceSessionReady:
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
 
-        ready_events: list[VoiceSessionReadyEvent] = []
+        ready_events: list[SessionStartedEvent] = []
 
-        @kit.hook(HookTrigger.ON_VOICE_SESSION_READY, HookExecution.ASYNC)
-        async def on_ready(event: VoiceSessionReadyEvent, context: object) -> None:
+        @kit.hook(HookTrigger.ON_SESSION_STARTED, HookExecution.ASYNC)
+        async def on_ready(event: SessionStartedEvent, context: object) -> None:
             ready_events.append(event)
 
         # Create session manually, bind, then simulate ready
@@ -147,7 +151,7 @@ class TestVoiceSessionReady:
         assert fired == ["ready"]
 
     async def test_framework_event_emitted(self) -> None:
-        """voice_session_ready framework event is emitted."""
+        """session_started framework event is emitted."""
         backend = MockVoiceBackend()
         pipeline = AudioPipelineConfig()
 
@@ -160,14 +164,14 @@ class TestVoiceSessionReady:
 
         fw_events: list[str] = []
 
-        @kit.on("voice_session_ready")
+        @kit.on("session_started")
         async def on_ready(event: object) -> None:
-            fw_events.append("voice_session_ready")
+            fw_events.append("session_started")
 
         await kit.connect_voice(room.id, "user-1", "voice-1")
         await asyncio.sleep(0.1)
 
-        assert "voice_session_ready" in fw_events
+        assert "session_started" in fw_events
 
         await kit.close()
 
@@ -188,6 +192,37 @@ class TestVoiceSessionReady:
 
         # Verify _session_ready_pending is clean
         assert session.id not in voice_channel._session_ready_pending
+
+        await kit.close()
+
+    async def test_session_started_event_fields(self) -> None:
+        """SessionStartedEvent carries correct channel-agnostic fields."""
+        backend = MockVoiceBackend()
+        pipeline = AudioPipelineConfig()
+
+        kit = RoomKit(voice=backend)
+        voice_channel = VoiceChannel("voice-1", backend=backend, pipeline=pipeline)
+        kit.register_channel(voice_channel)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+
+        captured: list[SessionStartedEvent] = []
+
+        @kit.hook(HookTrigger.ON_SESSION_STARTED, HookExecution.ASYNC)
+        async def on_ready(event: SessionStartedEvent, context: object) -> None:
+            captured.append(event)
+
+        session = await kit.connect_voice(room.id, "user-1", "voice-1")
+        await asyncio.sleep(0.1)
+
+        assert len(captured) == 1
+        evt = captured[0]
+        assert evt.room_id == room.id
+        assert evt.channel_id == "voice-1"
+        assert evt.channel_type == "voice"
+        assert evt.participant_id == "user-1"
+        assert evt.session is session
 
         await kit.close()
 
@@ -370,8 +405,8 @@ class TestSendGreeting:
 class TestAutoGreet:
     """Agent(auto_greet=True) tests."""
 
-    async def test_auto_greet_triggers_greeting_on_session_ready(self) -> None:
-        """Agent with auto_greet=True greets automatically on session ready."""
+    async def test_auto_greet_triggers_greeting_on_session_started(self) -> None:
+        """Agent with auto_greet=True greets automatically on session started."""
         backend = MockVoiceBackend()
         stt = MockSTTProvider(transcripts=["hi"])
         tts = MockTTSProvider()
@@ -521,5 +556,165 @@ class TestAutoGreet:
             assert len(w) == 1
             assert issubclass(w[0].category, DeprecationWarning)
             assert "Agent" in str(w[0].message)
+
+        await kit.close()
+
+
+class TestTextSessionStarted:
+    """ON_SESSION_STARTED hook tests for text channels."""
+
+    async def test_session_started_fires_on_room_auto_create(self) -> None:
+        """First inbound message creates room and fires ON_SESSION_STARTED."""
+        kit = RoomKit()
+        sms = SMSChannel("sms-1", provider=MockSMSProvider())
+        kit.register_channel(sms)
+
+        captured: list[SessionStartedEvent] = []
+
+        @kit.hook(HookTrigger.ON_SESSION_STARTED, HookExecution.ASYNC)
+        async def on_started(event: SessionStartedEvent, context: object) -> None:
+            captured.append(event)
+
+        msg = InboundMessage(
+            channel_id="sms-1",
+            sender_id="+15551234567",
+            content=TextContent(body="Hello"),
+        )
+        result = await kit.process_inbound(msg)
+        await asyncio.sleep(0.1)
+
+        assert not result.blocked
+        assert len(captured) == 1
+        evt = captured[0]
+        assert evt.channel_id == "sms-1"
+        assert evt.channel_type == "sms"
+        assert evt.participant_id == "+15551234567"
+        assert evt.session is None
+
+        await kit.close()
+
+    async def test_session_started_not_fired_on_existing_room(self) -> None:
+        """Subsequent messages to an existing room don't re-fire the hook."""
+        kit = RoomKit()
+        sms = SMSChannel("sms-1", provider=MockSMSProvider())
+        kit.register_channel(sms)
+
+        captured: list[SessionStartedEvent] = []
+
+        @kit.hook(HookTrigger.ON_SESSION_STARTED, HookExecution.ASYNC)
+        async def on_started(event: SessionStartedEvent, context: object) -> None:
+            captured.append(event)
+
+        # First message — creates room
+        msg1 = InboundMessage(
+            channel_id="sms-1",
+            sender_id="+15551234567",
+            content=TextContent(body="Hello"),
+        )
+        result1 = await kit.process_inbound(msg1)
+        await asyncio.sleep(0.1)
+        room_id = result1.event.room_id
+
+        # Second message — same room
+        msg2 = InboundMessage(
+            channel_id="sms-1",
+            sender_id="+15551234567",
+            content=TextContent(body="Follow up"),
+        )
+        await kit.process_inbound(msg2, room_id=room_id)
+        await asyncio.sleep(0.1)
+
+        # Hook fires only once (for room creation)
+        assert len(captured) == 1
+
+        await kit.close()
+
+    async def test_auto_greet_text_channel(self) -> None:
+        """Agent with auto_greet broadcasts greeting on text channel session start."""
+        kit = RoomKit()
+        sms = SMSChannel("sms-1", provider=MockSMSProvider())
+        agent = Agent(
+            "agent-1",
+            provider=MockAIProvider(responses=["Hi!"]),
+            greeting="Welcome via SMS!",
+            auto_greet=True,
+        )
+        kit.register_channel(sms)
+        kit.register_channel(agent)
+
+        # Pre-create room with both channels attached
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "sms-1")
+        await kit.attach_channel(room.id, "agent-1")
+
+        # Send first inbound to a room that already exists — this won't trigger
+        # ON_SESSION_STARTED because room already exists.  To test auto-greet on
+        # text, we need auto-creation.  So use a NEW inbound without room_id.
+        # But this room was pre-created, so let's test via a fresh setup.
+        await kit.close()
+
+        # Fresh setup: let process_inbound auto-create room
+        kit2 = RoomKit()
+        sms2 = SMSChannel("sms-1", provider=MockSMSProvider())
+        agent2 = Agent(
+            "agent-1",
+            provider=MockAIProvider(responses=["Hi!"]),
+            greeting="Welcome via SMS!",
+            auto_greet=True,
+        )
+        kit2.register_channel(sms2)
+        kit2.register_channel(agent2)
+
+        # We need to pre-attach agent to the auto-created room.
+        # The auto-greet handler checks if agent is attached to the room.
+        # For text auto-greet to work, the agent must be attached after
+        # room creation.  Let's hook ON_ROOM_CREATED to attach the agent.
+        @kit2.hook(HookTrigger.ON_ROOM_CREATED, HookExecution.ASYNC)
+        async def attach_agent(event: object, context: object) -> None:
+            room_id = event.room_id  # type: ignore[attr-defined]
+            await kit2.attach_channel(room_id, "agent-1")
+
+        msg = InboundMessage(
+            channel_id="sms-1",
+            sender_id="+15551234567",
+            content=TextContent(body="Hello"),
+        )
+        await kit2.process_inbound(msg)
+        await asyncio.sleep(0.3)
+
+        # Find the room that was auto-created
+        rooms = await kit2._store.list_rooms()
+        assert len(rooms) == 1
+        events = await kit2._store.list_events(rooms[0].id)
+        greeting_events = [e for e in events if e.metadata.get("auto_greeting") is True]
+        assert len(greeting_events) == 1
+        assert greeting_events[0].content.body == "Welcome via SMS!"
+
+        await kit2.close()
+
+    async def test_send_greeting_broadcasts_to_text_channel(self) -> None:
+        """send_greeting delivers text to transport channels in non-voice rooms."""
+        kit = RoomKit()
+        sms = SMSChannel("sms-1", provider=MockSMSProvider())
+        agent = Agent(
+            "agent-1",
+            provider=MockAIProvider(responses=["Hi!"]),
+            greeting="Hello from the agent!",
+            auto_greet=False,
+        )
+        kit.register_channel(sms)
+        kit.register_channel(agent)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "sms-1")
+        await kit.attach_channel(room.id, "agent-1")
+
+        await kit.send_greeting(room.id)
+        await asyncio.sleep(0.1)
+
+        events = await kit._store.list_events(room.id)
+        greeting_events = [e for e in events if e.metadata.get("auto_greeting") is True]
+        assert len(greeting_events) == 1
+        assert greeting_events[0].content.body == "Hello from the agent!"
 
         await kit.close()

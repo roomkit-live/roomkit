@@ -486,8 +486,13 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 await self._store_greeting_event(room_id, agent.channel_id, text)
                 return
 
-        # Non-voice room: just store the greeting as history
-        await self._store_greeting_event(room_id, agent.channel_id, text)
+        # Non-voice room: store and broadcast to transport channels
+        greeting_event = await self._store_greeting_event(room_id, agent.channel_id, text)
+        source_binding = await self._store.get_binding(room_id, agent.channel_id)
+        if source_binding is not None:
+            router = self._get_router()
+            context = await self._build_context(room_id)
+            await router.broadcast(greeting_event, source_binding, context)
 
     async def _store_greeting_event(
         self, room_id: str, agent_channel_id: str, text: str

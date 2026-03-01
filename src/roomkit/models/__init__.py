@@ -55,6 +55,7 @@ from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
+from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.task import Observation, Task
 from roomkit.models.trace import ProtocolTrace
 
@@ -107,6 +108,7 @@ __all__ = [
     "RoomEvent",
     "RoomStatus",
     "RoomTimers",
+    "SessionStartedEvent",
     "SystemContent",
     "Task",
     "TaskStatus",

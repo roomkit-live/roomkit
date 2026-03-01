@@ -336,8 +336,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         if binding_info is not None:
             room_id, _ = binding_info
             self._schedule(
-                self._fire_session_ready_hook(session, room_id),
-                name=f"session_ready:{session.id}",
+                self._fire_session_started_hook(session, room_id),
+                name=f"session_started:{session.id}",
             )
 
     # -------------------------------------------------------------------------
@@ -703,8 +703,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Dual-signal: if backend already signalled ready, fire hook now
         if was_ready_pending and self._framework:
             self._schedule(
-                self._fire_session_ready_hook(session, room_id),
-                name=f"session_ready:{session.id}",
+                self._fire_session_started_hook(session, room_id),
+                name=f"session_started:{session.id}",
             )
 
     async def connect_session(

@@ -113,24 +113,31 @@ class VoiceHooksMixin:
     # Hook firing helpers
     # -------------------------------------------------------------------------
 
-    async def _fire_session_ready_hook(self, session: VoiceSession, room_id: str) -> None:
+    async def _fire_session_started_hook(self, session: VoiceSession, room_id: str) -> None:
         if not self._framework:
             return
         try:
-            from roomkit.voice.events import VoiceSessionReadyEvent
+            from roomkit.models.enums import ChannelType
+            from roomkit.models.session_event import SessionStartedEvent
 
             with self._voice_span_ctx(session):
                 context = await self._framework._build_context(room_id)
-                event = VoiceSessionReadyEvent(session=session)
+                event = SessionStartedEvent(
+                    room_id=room_id,
+                    channel_id=self.channel_id,
+                    channel_type=ChannelType.VOICE,
+                    participant_id=session.participant_id,
+                    session=session,
+                )
                 await self._framework.hook_engine.run_async_hooks(
                     room_id,
-                    HookTrigger.ON_VOICE_SESSION_READY,
+                    HookTrigger.ON_SESSION_STARTED,
                     event,
                     context,
                     skip_event_filter=True,
                 )
                 await self._framework._emit_framework_event(
-                    "voice_session_ready",
+                    "session_started",
                     room_id=room_id,
                     data={
                         "session_id": session.id,
@@ -138,7 +145,7 @@ class VoiceHooksMixin:
                     },
                 )
         except Exception:
-            logger.exception("Error firing ON_VOICE_SESSION_READY hook")
+            logger.exception("Error firing ON_SESSION_STARTED hook")
 
     async def _fire_speech_start_hooks(self, session: VoiceSession, room_id: str) -> None:
         if not self._framework:

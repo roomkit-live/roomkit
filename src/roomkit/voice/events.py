@@ -254,24 +254,6 @@ class BackchannelEvent:
 
 
 @dataclass(frozen=True)
-class VoiceSessionReadyEvent:
-    """Voice session audio path is live and ready to send/receive.
-
-    Fired when BOTH the session has been bound to a room (via
-    ``bind_session``) AND the backend's transport is ready (e.g.
-    WebSocket connected for FastRTC, RTP socket active, mic stream
-    started).  This is the safe point to send greetings or start
-    telemetry.
-    """
-
-    session: VoiceSession
-    """The voice session that is now ready."""
-
-    timestamp: datetime = field(default_factory=_utcnow)
-    """When the session became ready."""
-
-
-@dataclass(frozen=True)
 class RecordingStartedEvent:
     """Audio recording has started for a session."""
 

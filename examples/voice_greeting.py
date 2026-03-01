@@ -1,14 +1,14 @@
 """RoomKit -- Voice greeting patterns.
 
-Demonstrates how to greet callers when the voice session audio path is
-ready, using the ON_VOICE_SESSION_READY hook and Agent auto_greet.
+Demonstrates how to greet callers when the session starts, using the
+ON_SESSION_STARTED hook and Agent auto_greet.
 
 Four patterns are shown:
 
 1. **Agent auto_greet** — set ``greeting`` on the Agent and it speaks
    automatically when the session is ready.  No extra code needed.
 
-2. **Explicit hook** — register ON_VOICE_SESSION_READY and call
+2. **Explicit hook** — register ON_SESSION_STARTED and call
    send_greeting() yourself.  Maximum control.
 
 3. **Manual say()** — use the hook to call voice.say() directly for
@@ -42,10 +42,10 @@ from roomkit import (
 )
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import TextContent
+from roomkit.models.session_event import SessionStartedEvent
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.voice import AudioPipelineConfig
 from roomkit.voice.backends.mock import MockVoiceBackend
-from roomkit.voice.events import VoiceSessionReadyEvent
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
@@ -92,7 +92,7 @@ async def pattern_agent_auto_greet() -> None:
 
 
 async def pattern_explicit_hook() -> None:
-    """Pattern 2: Explicit ON_VOICE_SESSION_READY hook."""
+    """Pattern 2: Explicit ON_SESSION_STARTED hook."""
     logger.info("--- Pattern 2: Explicit hook ---")
 
     backend = MockVoiceBackend()
@@ -117,9 +117,9 @@ async def pattern_explicit_hook() -> None:
     await kit.attach_channel(room.id, "voice")
     await kit.attach_channel(room.id, "agent")
 
-    @kit.hook(HookTrigger.ON_VOICE_SESSION_READY, HookExecution.ASYNC)
-    async def on_ready(event: VoiceSessionReadyEvent, context: object) -> None:
-        logger.info("Session ready: %s — sending greeting", event.session.id)
+    @kit.hook(HookTrigger.ON_SESSION_STARTED, HookExecution.ASYNC)
+    async def on_ready(event: SessionStartedEvent, context: object) -> None:
+        logger.info("Session started: %s — sending greeting", event.channel_id)
         await kit.send_greeting(room.id)
 
     session = await kit.connect_voice(room.id, "caller-1", "voice")
@@ -130,7 +130,7 @@ async def pattern_explicit_hook() -> None:
 
 
 async def pattern_manual_say() -> None:
-    """Pattern 3: Manual say() via the session-ready hook."""
+    """Pattern 3: Manual say() via the session-started hook."""
     logger.info("--- Pattern 3: Manual say() ---")
 
     backend = MockVoiceBackend()
@@ -147,10 +147,11 @@ async def pattern_manual_say() -> None:
     room = await kit.create_room()
     await kit.attach_channel(room.id, "voice")
 
-    @kit.hook(HookTrigger.ON_VOICE_SESSION_READY, HookExecution.ASYNC)
-    async def on_ready(event: VoiceSessionReadyEvent, context: object) -> None:
-        logger.info("Session ready — speaking directly via say()")
-        await voice.say(event.session, "Please hold while we connect you.")
+    @kit.hook(HookTrigger.ON_SESSION_STARTED, HookExecution.ASYNC)
+    async def on_ready(event: SessionStartedEvent, context: object) -> None:
+        logger.info("Session started — speaking directly via say()")
+        if event.session is not None:
+            await voice.say(event.session, "Please hold while we connect you.")
 
     session = await kit.connect_voice(room.id, "caller-1", "voice")
     await asyncio.sleep(0.2)
@@ -190,14 +191,17 @@ async def pattern_llm_greeting() -> None:
     await kit.attach_channel(room.id, "voice")
     await kit.attach_channel(room.id, "agent")
 
-    @kit.hook(HookTrigger.ON_VOICE_SESSION_READY, HookExecution.ASYNC)
-    async def on_ready(event: VoiceSessionReadyEvent, context: object) -> None:
-        logger.info("Session ready — injecting synthetic message for LLM greeting")
+    @kit.hook(HookTrigger.ON_SESSION_STARTED, HookExecution.ASYNC)
+    async def on_ready(event: SessionStartedEvent, context: object) -> None:
+        logger.info("Session started — injecting synthetic message for LLM greeting")
         inbound = InboundMessage(
             channel_id="voice",
-            sender_id=event.session.participant_id,
+            sender_id=event.participant_id,
             content=TextContent(body="[session started]"),
-            metadata={"voice_session_id": event.session.id, "source": "greeting"},
+            metadata={
+                "voice_session_id": event.session.id if event.session else None,
+                "source": "greeting",
+            },
         )
         await kit.process_inbound(inbound, room_id=room.id)
 

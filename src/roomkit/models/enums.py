@@ -195,6 +195,8 @@ class HookTrigger(StrEnum):
     ON_INPUT_AUDIO_LEVEL = "on_input_audio_level"
     ON_OUTPUT_AUDIO_LEVEL = "on_output_audio_level"
     ON_SPEAKER_CHANGE = "on_speaker_change"
+    # Session lifecycle
+    ON_SESSION_STARTED = "on_session_started"
     # Voice - Pipeline
     ON_DTMF = "on_dtmf"
     ON_TURN_COMPLETE = "on_turn_complete"
@@ -202,7 +204,6 @@ class HookTrigger(StrEnum):
     ON_BACKCHANNEL = "on_backchannel"
     ON_RECORDING_STARTED = "on_recording_started"
     ON_RECORDING_STOPPED = "on_recording_stopped"
-    ON_VOICE_SESSION_READY = "on_voice_session_ready"
     # Realtime Voice (RFC §20)
     ON_REALTIME_TOOL_CALL = "on_realtime_tool_call"
     ON_REALTIME_TEXT_INJECTED = "on_realtime_text_injected"

@@ -58,7 +58,7 @@ class ChannelOpsMixin(HelpersMixin):
         if isinstance(channel, (VoiceChannel, RealtimeVoiceChannel)):
             channel.set_framework(self)  # type: ignore[arg-type]
 
-        # Auto-greet: register global ON_VOICE_SESSION_READY hook for agents
+        # Auto-greet: register global ON_SESSION_STARTED hook for agents
         from roomkit.channels.agent import Agent as AgentChannel
 
         if isinstance(channel, AgentChannel) and channel.auto_greet and channel.greeting:
@@ -295,7 +295,7 @@ class ChannelOpsMixin(HelpersMixin):
         return binding
 
     def _register_auto_greet_hook(self, agent: Channel) -> None:
-        """Register a global ON_VOICE_SESSION_READY hook for agent auto-greeting."""
+        """Register a global ON_SESSION_STARTED hook for agent auto-greeting."""
         from roomkit.channels.agent import Agent as AgentChannel
         from roomkit.core.hooks import HookRegistration
 
@@ -303,29 +303,43 @@ class ChannelOpsMixin(HelpersMixin):
         agent_id = agent.channel_id
         hook_name = f"_agent_auto_greet:{agent_id}"
         kit_ref = self
+        # Track rooms already greeted for text channels (no session to dedup on)
+        greeted_rooms: set[str] = set()
 
         async def _auto_greet_handler(event: Any, ctx: Any) -> None:
-            session = event.session
-            room_id = session.room_id
+            room_id = event.room_id
 
-            # Dedup first (before any await) to prevent races when
-            # two session_ready signals fire for the same session.
-            dedup_key = f"_auto_greeted:{agent_id}"
-            if session.metadata.get(dedup_key):
-                return
-            session.metadata[dedup_key] = True
+            # Voice path: dedup via session metadata
+            if event.session is not None:
+                session = event.session
+                dedup_key = f"_auto_greeted:{agent_id}"
+                if session.metadata.get(dedup_key):
+                    return
+                session.metadata[dedup_key] = True
 
-            # Check agent is attached to this room
-            bindings = await kit_ref._store.list_bindings(room_id)
-            if not any(b.channel_id == agent_id for b in bindings):
-                session.metadata.pop(dedup_key, None)
-                return
+                # Check agent is attached to this room
+                bindings = await kit_ref._store.list_bindings(room_id)
+                if not any(b.channel_id == agent_id for b in bindings):
+                    session.metadata.pop(dedup_key, None)
+                    return
+            else:
+                # Text path: dedup via in-memory set keyed by room+agent
+                dedup_key = f"{room_id}:{agent_id}"
+                if dedup_key in greeted_rooms:
+                    return
+                greeted_rooms.add(dedup_key)
+
+                # Check agent is attached to this room
+                bindings = await kit_ref._store.list_bindings(room_id)
+                if not any(b.channel_id == agent_id for b in bindings):
+                    greeted_rooms.discard(dedup_key)
+                    return
 
             await kit_ref.send_greeting(room_id, agent_id=agent_id)  # type: ignore[attr-defined]
 
         self._hook_engine.register(
             HookRegistration(
-                trigger=HookTrigger.ON_VOICE_SESSION_READY,
+                trigger=HookTrigger.ON_SESSION_STARTED,
                 execution=HookExecution.ASYNC,
                 fn=_auto_greet_handler,
                 name=hook_name,
