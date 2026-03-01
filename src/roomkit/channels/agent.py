@@ -41,8 +41,8 @@ class Agent(AIChannel):
     ``voice``, and ``greeting`` fields.  The first three are auto-injected
     into the system prompt as an identity block; ``voice`` is read by
     :meth:`ConversationPipeline.install` to auto-wire the voice map;
-    ``greeting`` is played once when a new session starts via
-    :meth:`HandoffHandler.send_greeting`.
+    ``greeting`` is spoken directly via TTS when a new voice session
+    becomes ready (controlled by ``auto_greet``).
 
     When ``provider`` is omitted the agent is **config-only** — it holds
     identity and prompt data for speech-to-speech orchestration via
@@ -81,6 +81,7 @@ class Agent(AIChannel):
         voice: str | None = None,
         greeting: str | None = None,
         language: str | None = None,
+        auto_greet: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(channel_id, provider=provider or _NullAIProvider(), **kwargs)
@@ -90,6 +91,7 @@ class Agent(AIChannel):
         self.voice = voice
         self.greeting = greeting
         self.language = language
+        self.auto_greet = auto_greet
 
     @property
     def is_config_only(self) -> bool:

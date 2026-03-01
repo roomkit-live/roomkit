@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import warnings
 
 from roomkit import (
     Agent,
@@ -11,6 +12,7 @@ from roomkit import (
     RoomKit,
     VoiceChannel,
 )
+from roomkit.models.enums import EventType
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.voice import AudioPipelineConfig
 from roomkit.voice.backends.mock import MockVoiceBackend
@@ -191,10 +193,10 @@ class TestVoiceSessionReady:
 
 
 class TestSendGreeting:
-    """kit.send_greeting() tests."""
+    """kit.send_greeting() tests — direct TTS path."""
 
-    async def test_send_greeting_with_agent(self) -> None:
-        """send_greeting injects a greeting message through the agent."""
+    async def test_send_greeting_stores_assistant_event(self) -> None:
+        """send_greeting stores a greeting as an assistant event with metadata."""
         backend = MockVoiceBackend()
         stt = MockSTTProvider(transcripts=["hi"])
         tts = MockTTSProvider()
@@ -204,11 +206,11 @@ class TestSendGreeting:
         voice_channel = VoiceChannel(
             "voice-1", stt=stt, tts=tts, backend=backend, pipeline=AudioPipelineConfig()
         )
-        ai_provider = MockAIProvider(responses=["Hello! How can I help?"])
         agent = Agent(
             "agent-1",
-            provider=ai_provider,
+            provider=MockAIProvider(responses=["Hello! How can I help?"]),
             greeting="Welcome to our service!",
+            auto_greet=False,
         )
         kit.register_channel(voice_channel)
         kit.register_channel(agent)
@@ -217,15 +219,23 @@ class TestSendGreeting:
         await kit.attach_channel(room.id, "voice-1")
         await kit.attach_channel(room.id, "agent-1")
 
+        # Connect a session so TTS has a target
+        await kit.connect_voice(room.id, "user-1", "voice-1")
+        await asyncio.sleep(0.1)
+
         events_before = await kit._store.list_events(room.id)
         await kit.send_greeting(room.id)
         await asyncio.sleep(0.1)
 
-        # Check that an event was stored in the room
         events = await kit._store.list_events(room.id)
         new_events = events[len(events_before) :]
-        # The greeting should have been processed as an inbound message
-        assert len(new_events) >= 1
+        assert len(new_events) == 1
+
+        greeting_event = new_events[0]
+        assert greeting_event.content.body == "Welcome to our service!"
+        assert greeting_event.source.channel_id == "agent-1"
+        assert greeting_event.metadata.get("auto_greeting") is True
+        assert greeting_event.type == EventType.MESSAGE
 
         await kit.close()
 
@@ -259,6 +269,7 @@ class TestSendGreeting:
         agent = Agent(
             "agent-1",
             provider=MockAIProvider(responses=["Hi"]),
+            auto_greet=False,
             # No greeting set
         )
         kit.register_channel(voice_channel)
@@ -292,6 +303,7 @@ class TestSendGreeting:
             "agent-1",
             provider=MockAIProvider(responses=["reply"]),
             greeting="Default greeting",
+            auto_greet=False,
         )
         kit.register_channel(voice_channel)
         kit.register_channel(agent)
@@ -300,20 +312,22 @@ class TestSendGreeting:
         await kit.attach_channel(room.id, "voice-1")
         await kit.attach_channel(room.id, "agent-1")
 
+        await kit.connect_voice(room.id, "user-1", "voice-1")
+        await asyncio.sleep(0.1)
+
         events_before = await kit._store.list_events(room.id)
         await kit.send_greeting(room.id, greeting="Custom hello!")
         await asyncio.sleep(0.1)
 
         events = await kit._store.list_events(room.id)
         new_events = events[len(events_before) :]
-        assert len(new_events) >= 1
-        # The greeting should use the explicit text
+        assert len(new_events) == 1
         assert new_events[0].content.body == "Custom hello!"
 
         await kit.close()
 
-    async def test_send_greeting_with_language(self) -> None:
-        """send_greeting prepends language hint when agent has language."""
+    async def test_send_greeting_no_language_prepend(self) -> None:
+        """send_greeting does not prepend language hint (greeting is literal TTS)."""
         backend = MockVoiceBackend()
         stt = MockSTTProvider(transcripts=["hi"])
         tts = MockTTSProvider()
@@ -328,6 +342,7 @@ class TestSendGreeting:
             provider=MockAIProvider(responses=["reply"]),
             greeting="Bienvenue!",
             language="French",
+            auto_greet=False,
         )
         kit.register_channel(voice_channel)
         kit.register_channel(agent)
@@ -335,6 +350,9 @@ class TestSendGreeting:
         room = await kit.create_room()
         await kit.attach_channel(room.id, "voice-1")
         await kit.attach_channel(room.id, "agent-1")
+
+        await kit.connect_voice(room.id, "user-1", "voice-1")
+        await asyncio.sleep(0.1)
 
         events_before = await kit._store.list_events(room.id)
         await kit.send_greeting(room.id)
@@ -342,17 +360,18 @@ class TestSendGreeting:
 
         events = await kit._store.list_events(room.id)
         new_events = events[len(events_before) :]
-        assert len(new_events) >= 1
-        assert new_events[0].content.body.startswith("[Respond in French]")
+        assert len(new_events) == 1
+        # Greeting is literal — no [Respond in French] prefix
+        assert new_events[0].content.body == "Bienvenue!"
 
         await kit.close()
 
 
 class TestAutoGreet:
-    """connect_voice(auto_greet=True) tests."""
+    """Agent(auto_greet=True) tests."""
 
     async def test_auto_greet_triggers_greeting_on_session_ready(self) -> None:
-        """auto_greet=True registers a one-shot hook that calls send_greeting."""
+        """Agent with auto_greet=True greets automatically on session ready."""
         backend = MockVoiceBackend()
         stt = MockSTTProvider(transcripts=["hi"])
         tts = MockTTSProvider()
@@ -366,6 +385,7 @@ class TestAutoGreet:
             "agent-1",
             provider=MockAIProvider(responses=["Hello!"]),
             greeting="Welcome!",
+            auto_greet=True,
         )
         kit.register_channel(voice_channel)
         kit.register_channel(agent)
@@ -374,17 +394,19 @@ class TestAutoGreet:
         await kit.attach_channel(room.id, "voice-1")
         await kit.attach_channel(room.id, "agent-1")
 
-        await kit.connect_voice(room.id, "user-1", "voice-1", auto_greet=True)
+        await kit.connect_voice(room.id, "user-1", "voice-1")
         await asyncio.sleep(0.2)
 
-        # The greeting should have been sent
         events = await kit._store.list_events(room.id)
-        assert len(events) >= 1
+        greeting_events = [e for e in events if e.metadata.get("auto_greeting") is True]
+        assert len(greeting_events) == 1
+        assert greeting_events[0].content.body == "Welcome!"
+        assert greeting_events[0].source.channel_id == "agent-1"
 
         await kit.close()
 
     async def test_auto_greet_false_does_not_greet(self) -> None:
-        """auto_greet=False (default) does not register any greeting hook."""
+        """Agent with auto_greet=False does not auto-greet."""
         backend = MockVoiceBackend()
         stt = MockSTTProvider(transcripts=["hi"])
         tts = MockTTSProvider()
@@ -398,6 +420,7 @@ class TestAutoGreet:
             "agent-1",
             provider=MockAIProvider(responses=["Hello!"]),
             greeting="Welcome!",
+            auto_greet=False,
         )
         kit.register_channel(voice_channel)
         kit.register_channel(agent)
@@ -410,10 +433,93 @@ class TestAutoGreet:
         await asyncio.sleep(0.1)
 
         events = await kit._store.list_events(room.id)
-        # No greeting events should be stored
-        greeting_events = [
-            e for e in events if hasattr(e.content, "body") and "Welcome" in (e.content.body or "")
-        ]
+        greeting_events = [e for e in events if e.metadata.get("auto_greeting") is True]
         assert len(greeting_events) == 0
+
+        await kit.close()
+
+    async def test_auto_greet_no_greeting_text_skips(self) -> None:
+        """Agent with auto_greet=True but no greeting text does not register hook."""
+        backend = MockVoiceBackend()
+
+        kit = RoomKit(voice=backend)
+        voice_channel = VoiceChannel("voice-1", backend=backend, pipeline=AudioPipelineConfig())
+        agent = Agent(
+            "agent-1",
+            provider=MockAIProvider(responses=["Hi"]),
+            auto_greet=True,
+            # No greeting set
+        )
+        kit.register_channel(voice_channel)
+        kit.register_channel(agent)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+        await kit.attach_channel(room.id, "agent-1")
+
+        await kit.connect_voice(room.id, "user-1", "voice-1")
+        await asyncio.sleep(0.1)
+
+        events = await kit._store.list_events(room.id)
+        greeting_events = [e for e in events if e.metadata.get("auto_greeting") is True]
+        assert len(greeting_events) == 0
+
+        await kit.close()
+
+    async def test_auto_greet_dedup_per_session(self) -> None:
+        """Auto-greet fires only once per session even if hook fires again."""
+        backend = MockVoiceBackend()
+        stt = MockSTTProvider(transcripts=["hi"])
+        tts = MockTTSProvider()
+
+        kit = RoomKit(stt=stt, tts=tts, voice=backend)
+
+        voice_channel = VoiceChannel(
+            "voice-1", stt=stt, tts=tts, backend=backend, pipeline=AudioPipelineConfig()
+        )
+        agent = Agent(
+            "agent-1",
+            provider=MockAIProvider(responses=["Hello!"]),
+            greeting="Welcome!",
+            auto_greet=True,
+        )
+        kit.register_channel(voice_channel)
+        kit.register_channel(agent)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+        await kit.attach_channel(room.id, "agent-1")
+
+        session = await kit.connect_voice(room.id, "user-1", "voice-1")
+        await asyncio.sleep(0.2)
+
+        # Simulate a second session_ready for the same session
+        await backend.simulate_session_ready(session)
+        await asyncio.sleep(0.2)
+
+        events = await kit._store.list_events(room.id)
+        greeting_events = [e for e in events if e.metadata.get("auto_greeting") is True]
+        # Only one greeting despite two ready signals
+        assert len(greeting_events) == 1
+
+        await kit.close()
+
+    async def test_connect_voice_auto_greet_deprecated(self) -> None:
+        """connect_voice(auto_greet=True) emits DeprecationWarning."""
+        backend = MockVoiceBackend()
+
+        kit = RoomKit(voice=backend)
+        voice_channel = VoiceChannel("voice-1", backend=backend, pipeline=AudioPipelineConfig())
+        kit.register_channel(voice_channel)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            await kit.connect_voice(room.id, "user-1", "voice-1", auto_greet=True)
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "Agent" in str(w[0].message)
 
         await kit.close()

@@ -462,6 +462,33 @@ class RealtimeVoiceChannel(Channel):
             self._provider.name,
         )
 
+        # Fire ON_VOICE_SESSION_READY — session is fully active, provider
+        # connected, transport ready.  No dual-signal needed for realtime
+        # channels: the session is live as soon as provider.connect() succeeds.
+        if self._framework:
+            try:
+                from roomkit.voice.events import VoiceSessionReadyEvent
+
+                context = await self._framework._build_context(room_id)
+                ready_event = VoiceSessionReadyEvent(session=session)
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_VOICE_SESSION_READY,
+                    ready_event,
+                    context,
+                    skip_event_filter=True,
+                )
+                await self._framework._emit_framework_event(
+                    "voice_session_ready",
+                    room_id=room_id,
+                    data={
+                        "session_id": session.id,
+                        "channel_id": self.channel_id,
+                    },
+                )
+            except Exception:
+                logger.exception("Error firing ON_VOICE_SESSION_READY hook")
+
         return session
 
     async def end_session(self, session: VoiceSession) -> None:

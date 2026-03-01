@@ -302,9 +302,8 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             participant_id: The participant's ID.
             channel_id: The voice channel ID.
             metadata: Optional session metadata.
-            auto_greet: When True, automatically call :meth:`send_greeting`
-                when the session's audio path becomes live (via a one-shot
-                ``ON_VOICE_SESSION_READY`` hook).
+            auto_greet: Deprecated. Use ``Agent(auto_greet=True)`` instead.
+                When ``True``, emits a :class:`DeprecationWarning`.
 
         Returns:
             A VoiceSession representing the connection.
@@ -314,8 +313,18 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             ChannelNotRegisteredError: If the channel is not a VoiceChannel.
             RoomNotFoundError: If the room doesn't exist.
         """
+        import warnings
+
         if self._voice is None:
             raise VoiceBackendNotConfiguredError("No voice backend configured")
+
+        if auto_greet:
+            warnings.warn(
+                "connect_voice(auto_greet=True) is deprecated. "
+                "Set auto_greet=True on the Agent instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # Verify room exists
         await self.get_room(room_id)
@@ -348,32 +357,6 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 "channel_id": channel_id,
             },
         )
-
-        # Register one-shot ON_VOICE_SESSION_READY hook for auto-greeting
-        if auto_greet:
-            from roomkit.models.enums import HookExecution, HookTrigger
-
-            hook_name = f"_auto_greet:{session.id}"
-            target_session_id = session.id
-            kit_ref = self
-
-            async def _auto_greet_hook(event: Any, ctx: Any) -> None:
-                # Only fire for the target session
-                if hasattr(event, "session") and event.session.id != target_session_id:
-                    return
-                # Remove one-shot hook before firing to prevent re-entry
-                kit_ref.hook_engine.remove_room_hook(room_id, hook_name)
-                await kit_ref.send_greeting(room_id, channel_id=channel_id)
-
-            self.hook_engine.add_room_hook(
-                room_id,
-                HookRegistration(
-                    trigger=HookTrigger.ON_VOICE_SESSION_READY,
-                    execution=HookExecution.ASYNC,
-                    fn=_auto_greet_hook,
-                    name=hook_name,
-                ),
-            )
 
         return session
 
@@ -415,15 +398,20 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         agent_id: str | None = None,
         greeting: str | None = None,
     ) -> None:
-        """Send a greeting message from an AI agent into a room.
+        """Speak a greeting directly via TTS and store it as assistant history.
 
         Finds the agent (by ``agent_id`` or by scanning the room's
-        bindings for an :class:`Agent` channel), builds a greeting
-        message, and injects it as a synthetic inbound message so the
-        normal broadcast pipeline delivers it.
+        bindings for an :class:`Agent` channel), then speaks the greeting
+        text directly through TTS (no LLM round-trip).
+
+        For :class:`VoiceChannel` rooms the greeting is synthesized via
+        ``_send_tts()`` on each active session.
 
         For :class:`RealtimeVoiceChannel` rooms the greeting is injected
-        via ``inject_text`` on active sessions.
+        via ``inject_text`` with ``role="assistant"`` on active sessions.
+
+        The greeting is stored as an assistant event in conversation
+        history so subsequent LLM calls see it.
 
         This is a no-op if no greeting text is available (neither the
         ``greeting`` argument nor ``Agent.greeting`` is set).
@@ -468,51 +456,50 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         if not text:
             return  # No greeting configured
 
-        # Prepend language hint if agent has one
-        if agent.language:
-            text = f"[Respond in {agent.language}]\n{text}"
-
         # Route by channel type — find the voice/event channel for this room
         from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 
         bindings = await self._store.list_bindings(room_id)
+
+        # Realtime path: inject as assistant text
         for b in bindings:
             ch = self._channels.get(b.channel_id)
             if isinstance(ch, RealtimeVoiceChannel):
                 for sess in ch.get_room_sessions(room_id):
-                    await ch.provider.inject_text(sess, text, role="user")
+                    await ch.provider.inject_text(sess, text, role="assistant")
+                await self._store_greeting_event(room_id, agent.channel_id, text)
                 return
 
-        # Traditional path: send as synthetic inbound message through
-        # the voice/transport channel (not the agent — AI channels
-        # don't accept inbound messages).
-        from roomkit.models.delivery import InboundMessage
-        from roomkit.models.event import TextContent
-
-        # Find a voice or transport channel attached to the room
-        event_channel_id: str | None = None
+        # Traditional VoiceChannel path: speak directly via TTS
         for b in bindings:
             ch = self._channels.get(b.channel_id)
-            if isinstance(ch, VoiceChannel):
-                event_channel_id = b.channel_id
-                break
-        if event_channel_id is None:
-            # Fallback: use any non-agent transport channel
-            for b in bindings:
-                ch = self._channels.get(b.channel_id)
-                if ch is not None and not isinstance(ch, AgentChannel):
-                    event_channel_id = b.channel_id
-                    break
+            if isinstance(ch, VoiceChannel) and ch._backend:
+                voice = ch._resolve_voice(agent.channel_id)
+                for sess in ch._backend.list_sessions(room_id):
+                    await ch._send_tts(sess, text, voice=voice)
+                await self._store_greeting_event(room_id, agent.channel_id, text)
+                return
 
-        if event_channel_id is None:
-            return  # No suitable channel to send through
+        # Non-voice room: just store the greeting as history
+        await self._store_greeting_event(room_id, agent.channel_id, text)
 
-        msg = InboundMessage(
-            channel_id=event_channel_id,
-            sender_id="system",
+    async def _store_greeting_event(
+        self, room_id: str, agent_channel_id: str, text: str
+    ) -> RoomEvent:
+        """Store a greeting as an assistant event in conversation history."""
+        event = RoomEvent(
+            room_id=room_id,
+            type=EventType.MESSAGE,
+            source=EventSource(
+                channel_id=agent_channel_id,
+                channel_type=ChannelType.AI,
+                direction=ChannelDirection.OUTBOUND,
+            ),
             content=TextContent(body=text),
+            status=EventStatus.DELIVERED,
+            metadata={"auto_greeting": True},
         )
-        await self.process_inbound(msg, room_id=room_id)
+        return await self._store.add_event_auto_index(room_id, event)
 
     async def connect_realtime_voice(
         self,
