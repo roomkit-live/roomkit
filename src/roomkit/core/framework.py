@@ -465,7 +465,10 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         for b in bindings:
             ch = self._channels.get(b.channel_id)
             if isinstance(ch, RealtimeVoiceChannel):
-                for sess in ch.get_room_sessions(room_id):
+                sessions = ch.get_room_sessions(room_id)
+                if not sessions:
+                    return  # No active sessions — don't store unspoken greeting
+                for sess in sessions:
                     await ch.provider.inject_text(sess, text, role="assistant")
                 await self._store_greeting_event(room_id, agent.channel_id, text)
                 return
@@ -473,9 +476,12 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         # Traditional VoiceChannel path: speak directly via TTS
         for b in bindings:
             ch = self._channels.get(b.channel_id)
-            if isinstance(ch, VoiceChannel) and ch._backend:
+            if isinstance(ch, VoiceChannel) and ch._backend and ch._tts:
+                sessions = ch._backend.list_sessions(room_id)
+                if not sessions:
+                    return  # No active sessions — don't store unspoken greeting
                 voice = ch._resolve_voice(agent.channel_id)
-                for sess in ch._backend.list_sessions(room_id):
+                for sess in sessions:
                     await ch._send_tts(sess, text, voice=voice)
                 await self._store_greeting_event(room_id, agent.channel_id, text)
                 return

@@ -331,14 +331,14 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         """
         with self._state_lock:
             binding_info = self._session_bindings.get(session.id)
+            if binding_info is None:
+                self._session_ready_pending.add(session.id)
         if binding_info is not None:
             room_id, _ = binding_info
             self._schedule(
                 self._fire_session_ready_hook(session, room_id),
                 name=f"session_ready:{session.id}",
             )
-        else:
-            self._session_ready_pending.add(session.id)
 
     # -------------------------------------------------------------------------
     # Pipeline event handlers (wiring layer)
@@ -658,6 +658,11 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         """Bind a voice session to a room for message routing."""
         with self._state_lock:
             self._session_bindings[session.id] = (room_id, binding)
+            # Dual-signal: atomically check and clear pending ready flag
+            # under the same lock that writes _session_bindings, so
+            # _on_session_ready cannot interleave between the two.
+            was_ready_pending = session.id in self._session_ready_pending
+            self._session_ready_pending.discard(session.id)
         # Start VOICE_SESSION telemetry span early so pipeline activation
         # and subsequent operations appear as children in traces.
         from roomkit.telemetry.base import Attr, SpanKind
@@ -696,13 +701,11 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                 name=f"session_started:{session.id}",
             )
         # Dual-signal: if backend already signalled ready, fire hook now
-        if session.id in self._session_ready_pending:
-            self._session_ready_pending.discard(session.id)
-            if self._framework:
-                self._schedule(
-                    self._fire_session_ready_hook(session, room_id),
-                    name=f"session_ready:{session.id}",
-                )
+        if was_ready_pending and self._framework:
+            self._schedule(
+                self._fire_session_ready_hook(session, room_id),
+                name=f"session_ready:{session.id}",
+            )
 
     async def connect_session(
         self,

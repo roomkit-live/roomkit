@@ -11,8 +11,8 @@ Three patterns are shown:
 2. **Explicit hook** — register ON_VOICE_SESSION_READY and call
    send_greeting() yourself.  Maximum control.
 
-3. **Manual say()** — use the hook to call voice._send_tts() directly
-   for pre-rendered audio or non-agent greetings.
+3. **Manual say()** — use the hook to call voice.say() directly for
+   pre-rendered audio or non-agent greetings.
 
 All greetings go directly through TTS — no LLM round-trip, so the
 caller hears exactly the text you set with near-zero latency.
@@ -122,9 +122,9 @@ async def pattern_explicit_hook() -> None:
     await kit.close()
 
 
-async def pattern_manual_tts() -> None:
-    """Pattern 3: Manual TTS via the session-ready hook."""
-    logger.info("--- Pattern 3: Manual TTS ---")
+async def pattern_manual_say() -> None:
+    """Pattern 3: Manual say() via the session-ready hook."""
+    logger.info("--- Pattern 3: Manual say() ---")
 
     backend = MockVoiceBackend()
     stt = MockSTTProvider(transcripts=["hello"])
@@ -142,20 +142,20 @@ async def pattern_manual_tts() -> None:
 
     @kit.hook(HookTrigger.ON_VOICE_SESSION_READY, HookExecution.ASYNC)
     async def on_ready(event: VoiceSessionReadyEvent, context: object) -> None:
-        logger.info("Session ready — speaking directly via TTS")
-        await voice._send_tts(event.session, "Please hold while we connect you.")
+        logger.info("Session ready — speaking directly via say()")
+        await voice.say(event.session, "Please hold while we connect you.")
 
     session = await kit.connect_voice(room.id, "caller-1", "voice")
     await asyncio.sleep(0.2)
 
-    logger.info("Session %s greeted via manual TTS", session.id)
+    logger.info("Session %s greeted via manual say()", session.id)
     await kit.close()
 
 
 async def main() -> None:
     await pattern_agent_auto_greet()
     await pattern_explicit_hook()
-    await pattern_manual_tts()
+    await pattern_manual_say()
     logger.info("All greeting patterns demonstrated successfully.")
 
 

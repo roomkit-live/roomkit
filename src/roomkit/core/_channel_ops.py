@@ -308,16 +308,18 @@ class ChannelOpsMixin(HelpersMixin):
             session = event.session
             room_id = session.room_id
 
-            # Check agent is attached to this room
-            bindings = await kit_ref._store.list_bindings(room_id)
-            if not any(b.channel_id == agent_id for b in bindings):
-                return
-
-            # Dedup: only greet once per session per agent
+            # Dedup first (before any await) to prevent races when
+            # two session_ready signals fire for the same session.
             dedup_key = f"_auto_greeted:{agent_id}"
             if session.metadata.get(dedup_key):
                 return
             session.metadata[dedup_key] = True
+
+            # Check agent is attached to this room
+            bindings = await kit_ref._store.list_bindings(room_id)
+            if not any(b.channel_id == agent_id for b in bindings):
+                session.metadata.pop(dedup_key, None)
+                return
 
             await kit_ref.send_greeting(room_id, agent_id=agent_id)  # type: ignore[attr-defined]
 
