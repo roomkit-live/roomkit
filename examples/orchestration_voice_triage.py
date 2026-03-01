@@ -113,6 +113,7 @@ from roomkit import (
     RoomKit,
     SlidingWindowMemory,
     VoiceChannel,
+    WaitForIdleDelivery,
     build_delegate_tool,
     get_conversation_state,
     set_conversation_state,
@@ -319,7 +320,12 @@ async def main() -> None:
             ("agent-insurance", "Looks up client insurance policy details"),
         ]
     )
-    delegate_handler = DelegateHandler(kit)
+    delegate_handler = DelegateHandler(
+        kit,
+        delivery_strategy=WaitForIdleDelivery(
+            prompt="A background task just completed. Share the result with the caller.",
+        ),
+    )
     setup_delegation(advisor, delegate_handler, tool=delegate_tool)
 
     # --- Hooks ---------------------------------------------------------------

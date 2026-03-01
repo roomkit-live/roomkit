@@ -63,6 +63,7 @@ from roomkit.sources.base import SourceHealth, SourceProvider, SourceStatus
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
 from roomkit.tasks.base import TaskRunner
+from roomkit.tasks.delivery import BackgroundTaskDeliveryStrategy, TaskDeliveryContext
 from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
 
 # Re-export type aliases so existing imports continue to work
@@ -141,6 +142,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         tts: TTSProvider | None = None,
         voice: VoiceBackend | None = None,
         task_runner: TaskRunner | None = None,
+        delivery_strategy: BackgroundTaskDeliveryStrategy | None = None,
         telemetry: TelemetryConfig | TelemetryProvider | None = None,
         inbound_rate_limit: RateLimit | None = None,
     ) -> None:
@@ -168,6 +170,10 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             voice: Optional voice backend for real-time audio transport.
             task_runner: Pluggable backend for delegated background tasks.
                 Defaults to ``InMemoryTaskRunner``.
+            delivery_strategy: Controls proactive delivery of background task
+                results.  When set, ``strategy.deliver()`` is called after
+                system prompt injection and the ``ON_TASK_COMPLETED`` hook.
+                Can be overridden per-task via ``delegate()``.
             telemetry: Optional telemetry provider or config for span/metric
                 collection. Accepts a ``TelemetryProvider`` instance or a
                 ``TelemetryConfig``. Defaults to ``NoopTelemetryProvider``.
@@ -214,6 +220,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         from roomkit.tasks.memory import InMemoryTaskRunner
 
         self._task_runner: TaskRunner = task_runner or InMemoryTaskRunner()
+        self._delivery_strategy = delivery_strategy
         # Traces received before the room exists (flushed on attach_channel)
         self._pending_traces: dict[str, list[object]] = {}
         # Track fire-and-forget trace hook tasks to prevent GC
@@ -611,6 +618,8 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
 
     # -- Background delegation --
 
+    _DELIVERY_UNSET: Any = object()
+
     async def delegate(
         self,
         room_id: str,
@@ -621,6 +630,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         share_channels: list[str] | None = None,
         notify: str | None = None,
         on_complete: Any | None = None,
+        delivery_strategy: BackgroundTaskDeliveryStrategy | None = _DELIVERY_UNSET,
     ) -> DelegatedTask:
         """Delegate a task to a background agent in a child room.
 
@@ -636,6 +646,10 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             notify: Channel ID to update when the task completes
                 (system prompt injection). Defaults to *agent_id*.
             on_complete: Optional async callback ``(DelegatedTaskResult) -> None``.
+            delivery_strategy: Per-task override for proactive delivery of the
+                result.  ``None`` disables proactive delivery for this task.
+                When not provided (default), the framework-level strategy is
+                used.
 
         Returns:
             A :class:`DelegatedTask` handle. Call ``.wait()`` to block
@@ -719,9 +733,15 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
 
         # Build completion callback
         notify_channel = notify or agent_id
+        # Resolve delivery strategy: per-task override > framework-level
+        effective_strategy: BackgroundTaskDeliveryStrategy | None
+        if delivery_strategy is not self._DELIVERY_UNSET:
+            effective_strategy = delivery_strategy
+        else:
+            effective_strategy = self._delivery_strategy
 
         async def _on_complete(result: DelegatedTaskResult) -> None:
-            await self._on_delegation_complete(result, notify_channel)
+            await self._on_delegation_complete(result, notify_channel, strategy=effective_strategy)
             if on_complete:
                 await on_complete(result)
 
@@ -734,6 +754,8 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         self,
         result: DelegatedTaskResult,
         notify_channel_id: str,
+        *,
+        strategy: BackgroundTaskDeliveryStrategy | None = None,
     ) -> None:
         """Handle delegation completion: update notified agent + fire hook."""
         # Inject result into the notified agent's system prompt.
@@ -793,6 +815,20 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             logging.getLogger("roomkit.tasks").exception(
                 "Failed to fire ON_TASK_COMPLETED hook for task %s", result.task_id
             )
+
+        # Proactive delivery via strategy (if configured)
+        if strategy is not None:
+            try:
+                ctx = TaskDeliveryContext(
+                    kit=self,
+                    result=result,
+                    notify_channel_id=notify_channel_id,
+                )
+                await strategy.deliver(ctx)
+            except Exception:
+                logging.getLogger("roomkit.tasks").exception(
+                    "Delivery strategy failed for task %s", result.task_id
+                )
 
     def _get_router(self) -> EventRouter:
         if self._event_router is None:

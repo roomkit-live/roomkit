@@ -16,6 +16,7 @@ from roomkit.providers.ai.base import AITool
 if TYPE_CHECKING:
     from roomkit.channels.ai import AIChannel
     from roomkit.core.framework import RoomKit
+    from roomkit.tasks.delivery import BackgroundTaskDeliveryStrategy
 
 logger = logging.getLogger("roomkit.tasks")
 
@@ -116,10 +117,12 @@ class DelegateHandler:
         *,
         notify: str | None = None,
         default_share_channels: list[str] | None = None,
+        delivery_strategy: BackgroundTaskDeliveryStrategy | None = None,
     ) -> None:
         self._kit = kit
         self._notify = notify
         self._default_share_channels = default_share_channels or []
+        self._delivery_strategy = delivery_strategy
 
     async def handle(
         self,
@@ -140,6 +143,7 @@ class DelegateHandler:
             context=context,
             share_channels=share_channels,
             notify=self._notify or calling_agent_id,
+            delivery_strategy=self._delivery_strategy,
         )
 
         return {

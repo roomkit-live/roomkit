@@ -87,6 +87,7 @@ class TestDelegateHandler:
             context={"repo": "roomkit"},
             share_channels=["email-out"],
             notify="voice-agent",
+            delivery_strategy=None,
         )
 
     async def test_handle_uses_default_share_channels(self):

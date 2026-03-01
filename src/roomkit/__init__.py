@@ -254,11 +254,16 @@ from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
 from roomkit.tasks import (
     DELEGATE_TOOL,
+    BackgroundTaskDeliveryStrategy,
+    ContextOnlyDelivery,
     DelegatedTask,
     DelegatedTaskResult,
     DelegateHandler,
+    ImmediateDelivery,
     InMemoryTaskRunner,
+    TaskDeliveryContext,
     TaskRunner,
+    WaitForIdleDelivery,
     build_delegate_tool,
     setup_delegation,
 )
@@ -427,12 +432,17 @@ __all__ = [
     "ConversationPipeline",
     "PipelineStage",
     # Delegation (background tasks)
+    "BackgroundTaskDeliveryStrategy",
+    "ContextOnlyDelivery",
     "DELEGATE_TOOL",
     "DelegateHandler",
     "DelegatedTask",
     "DelegatedTaskResult",
+    "ImmediateDelivery",
     "InMemoryTaskRunner",
+    "TaskDeliveryContext",
     "TaskRunner",
+    "WaitForIdleDelivery",
     "build_delegate_tool",
     "setup_delegation",
     # Models - Data
