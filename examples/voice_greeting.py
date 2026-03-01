@@ -3,7 +3,7 @@
 Demonstrates how to greet callers when the voice session audio path is
 ready, using the ON_VOICE_SESSION_READY hook and Agent auto_greet.
 
-Three patterns are shown:
+Four patterns are shown:
 
 1. **Agent auto_greet** — set ``greeting`` on the Agent and it speaks
    automatically when the session is ready.  No extra code needed.
@@ -14,8 +14,13 @@ Three patterns are shown:
 3. **Manual say()** — use the hook to call voice.say() directly for
    pre-rendered audio or non-agent greetings.
 
-All greetings go directly through TTS — no LLM round-trip, so the
-caller hears exactly the text you set with near-zero latency.
+4. **LLM-generated greeting** — inject a synthetic user message via
+   process_inbound() to trigger an LLM round-trip.  The AI generates
+   a contextual greeting instead of a static string.
+
+Patterns 1–3 go directly through TTS — no LLM round-trip, so the caller
+hears exactly the text you set with near-zero latency.  Pattern 4 adds
+an LLM round-trip for dynamic, context-aware greetings.
 
 This example uses mock providers so it runs without external dependencies.
 
@@ -35,6 +40,8 @@ from roomkit import (
     RoomKit,
     VoiceChannel,
 )
+from roomkit.models.delivery import InboundMessage
+from roomkit.models.event import TextContent
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.voice import AudioPipelineConfig
 from roomkit.voice.backends.mock import MockVoiceBackend
@@ -152,10 +159,60 @@ async def pattern_manual_say() -> None:
     await kit.close()
 
 
+async def pattern_llm_greeting() -> None:
+    """Pattern 4: LLM-generated greeting via process_inbound().
+
+    Inject a synthetic user message when the session is ready so the AI
+    generates a dynamic, context-aware greeting instead of a static string.
+    """
+    logger.info("--- Pattern 4: LLM-generated greeting ---")
+
+    backend = MockVoiceBackend()
+    stt = MockSTTProvider(transcripts=["hello"])
+    tts = MockTTSProvider()
+
+    kit = RoomKit(stt=stt, tts=tts, voice=backend)
+
+    voice = VoiceChannel(
+        "voice", stt=stt, tts=tts, backend=backend, pipeline=AudioPipelineConfig()
+    )
+    agent = Agent(
+        "agent",
+        provider=MockAIProvider(
+            responses=["Welcome! I'm your virtual assistant. How can I help?"]
+        ),
+        auto_greet=False,  # No static greeting — let the LLM generate one
+    )
+    kit.register_channel(voice)
+    kit.register_channel(agent)
+
+    room = await kit.create_room()
+    await kit.attach_channel(room.id, "voice")
+    await kit.attach_channel(room.id, "agent")
+
+    @kit.hook(HookTrigger.ON_VOICE_SESSION_READY, HookExecution.ASYNC)
+    async def on_ready(event: VoiceSessionReadyEvent, context: object) -> None:
+        logger.info("Session ready — injecting synthetic message for LLM greeting")
+        inbound = InboundMessage(
+            channel_id="voice",
+            sender_id=event.session.participant_id,
+            content=TextContent(body="[session started]"),
+            metadata={"voice_session_id": event.session.id, "source": "greeting"},
+        )
+        await kit.process_inbound(inbound, room_id=room.id)
+
+    session = await kit.connect_voice(room.id, "caller-1", "voice")
+    await asyncio.sleep(0.2)
+
+    logger.info("Session %s greeted via LLM-generated response", session.id)
+    await kit.close()
+
+
 async def main() -> None:
     await pattern_agent_auto_greet()
     await pattern_explicit_hook()
     await pattern_manual_say()
+    await pattern_llm_greeting()
     logger.info("All greeting patterns demonstrated successfully.")
 
 
