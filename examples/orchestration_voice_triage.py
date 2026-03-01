@@ -320,12 +320,7 @@ async def main() -> None:
             ("agent-insurance", "Looks up client insurance policy details"),
         ]
     )
-    delegate_handler = DelegateHandler(
-        kit,
-        delivery_strategy=WaitForIdleDelivery(
-            prompt="A background task just completed. Share the result with the caller.",
-        ),
-    )
+    delegate_handler = DelegateHandler(kit, delivery_strategy=WaitForIdleDelivery())
     setup_delegation(advisor, delegate_handler, tool=delegate_tool)
 
     # --- Hooks ---------------------------------------------------------------

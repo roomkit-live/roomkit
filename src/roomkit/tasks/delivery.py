@@ -110,7 +110,15 @@ class ImmediateDelivery(BackgroundTaskDeliveryStrategy):
     """
 
     def __init__(self, prompt: str | None = None) -> None:
-        self.prompt = prompt or "A background task just completed. Share the result naturally."
+        self._prompt = prompt
+
+    def _build_prompt(self, ctx: TaskDeliveryContext) -> str:
+        if self._prompt is not None:
+            return self._prompt
+        return (
+            f"[The background task from {ctx.result.agent_id} just completed. "
+            f"The result is in your context. Share it with the user now.]"
+        )
 
     async def deliver(self, ctx: TaskDeliveryContext) -> None:
         transport_id = await ctx.find_transport_channel_id()
@@ -133,7 +141,7 @@ class ImmediateDelivery(BackgroundTaskDeliveryStrategy):
             InboundMessage(
                 channel_id=transport_id,
                 sender_id="system",
-                content=TextContent(body=self.prompt),
+                content=TextContent(body=self._build_prompt(ctx)),
             ),
             room_id=ctx.room_id,
         )
@@ -154,8 +162,16 @@ class WaitForIdleDelivery(BackgroundTaskDeliveryStrategy):
         prompt: str | None = None,
         playback_timeout: float = 15.0,
     ) -> None:
-        self.prompt = prompt or "A background task just completed. Share the result naturally."
+        self._prompt = prompt
         self.playback_timeout = playback_timeout
+
+    def _build_prompt(self, ctx: TaskDeliveryContext) -> str:
+        if self._prompt is not None:
+            return self._prompt
+        return (
+            f"[The background task from {ctx.result.agent_id} just completed. "
+            f"The result is in your context. Share it with the user now.]"
+        )
 
     async def deliver(self, ctx: TaskDeliveryContext) -> None:
         transport_id = await ctx.find_transport_channel_id()
@@ -190,7 +206,7 @@ class WaitForIdleDelivery(BackgroundTaskDeliveryStrategy):
             InboundMessage(
                 channel_id=transport_id,
                 sender_id="system",
-                content=TextContent(body=self.prompt),
+                content=TextContent(body=self._build_prompt(ctx)),
             ),
             room_id=ctx.room_id,
         )

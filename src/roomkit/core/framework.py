@@ -761,9 +761,21 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         # Inject result into the notified agent's system prompt.
         # Cap total prompt size to prevent unbounded growth from many delegations.
         max_delegation_prompt = 4000
+        from roomkit.tasks.delivery import ContextOnlyDelivery
+
         binding = await self._store.get_binding(result.parent_room_id, notify_channel_id)
         if binding:
             current_prompt = binding.metadata.get("system_prompt", "")
+            # When a proactive delivery strategy will trigger, use a passive
+            # instruction to avoid the AI volunteering the result twice (once
+            # from the system prompt, once from the delivery-triggered turn).
+            proactive = strategy is not None and not isinstance(strategy, ContextOnlyDelivery)
+            instruction = (
+                "This result will be delivered in a follow-up message. "
+                "Do not proactively share it until then."
+                if proactive
+                else "Inform the user naturally about this result."
+            )
             appendix = (
                 "\n\n--- BACKGROUND TASK COMPLETED ---\n"
                 + f"Task ID: {result.task_id}\n"
@@ -771,7 +783,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 + f"Status: {result.status}\n"
                 + f"Result:\n{result.output or result.error or 'No output'}\n"
                 + "--- END ---\n"
-                + "Inform the user naturally about this result."
+                + instruction
             )
             new_prompt = current_prompt + appendix
             # Sliding window: keep only the tail when prompt exceeds cap

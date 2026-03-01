@@ -209,6 +209,30 @@ class TestImmediateDelivery:
         assert msg.content.body == "Results are ready!"
         await kit.close()
 
+    async def test_default_prompt_includes_agent_id(self):
+        """Default prompt should reference the agent that completed the task."""
+        kit = RoomKit()
+        result = _make_result(agent_id="agent-insurance")
+
+        from roomkit.channels import SMSChannel
+        from roomkit.providers.sms.mock import MockSMSProvider
+
+        sms = SMSChannel("sms-1", provider=MockSMSProvider())
+        kit.register_channel(sms)
+
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "sms-1")
+
+        kit.process_inbound = AsyncMock()
+        ctx = TaskDeliveryContext(kit=kit, result=result, notify_channel_id="agent-x")
+
+        strategy = ImmediateDelivery()
+        await strategy.deliver(ctx)
+
+        msg = kit.process_inbound.call_args[0][0]
+        assert "agent-insurance" in msg.content.body
+        await kit.close()
+
     async def test_no_transport_skips(self):
         """If no transport channel exists, delivery is silently skipped."""
         kit = RoomKit()
@@ -452,10 +476,82 @@ class TestDeliveryIntegration:
         result = await task.wait(timeout=5.0)
 
         assert result.status == TaskStatus.COMPLETED
-        # System prompt was still injected
+        # System prompt was still injected with active instruction
         binding = await kit.store.get_binding("room-1", "main-ai")
         assert binding is not None
-        assert "BACKGROUND TASK COMPLETED" in binding.metadata.get("system_prompt", "")
+        prompt = binding.metadata.get("system_prompt", "")
+        assert "BACKGROUND TASK COMPLETED" in prompt
+        assert "Inform the user naturally" in prompt
+        await kit.close()
+
+    async def test_proactive_strategy_uses_passive_prompt(self):
+        """When a proactive strategy is active, system prompt should NOT say 'Inform the user'."""
+
+        class TrackingStrategy(BackgroundTaskDeliveryStrategy):
+            async def deliver(self, ctx: TaskDeliveryContext) -> None:
+                pass  # no-op, just want to test prompt injection
+
+        kit = RoomKit(delivery_strategy=TrackingStrategy())
+
+        agent = _make_agent("agent-bg", "result")
+        main_ai = AIChannel(
+            "main-ai",
+            provider=MockAIProvider(responses=["ok"]),
+            system_prompt="main",
+        )
+        kit.register_channel(agent)
+        kit.register_channel(main_ai)
+
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "main-ai", category=ChannelCategory.INTELLIGENCE)
+
+        task = await kit.delegate(
+            room_id="room-1",
+            agent_id="agent-bg",
+            task="do work",
+            notify="main-ai",
+        )
+        await task.wait(timeout=5.0)
+
+        binding = await kit.store.get_binding("room-1", "main-ai")
+        assert binding is not None
+        prompt = binding.metadata.get("system_prompt", "")
+        assert "BACKGROUND TASK COMPLETED" in prompt
+        # Should use passive instruction, NOT "Inform the user"
+        assert "Inform the user naturally" not in prompt
+        assert "delivered in a follow-up" in prompt
+        await kit.close()
+
+    async def test_context_only_uses_active_prompt(self):
+        """ContextOnlyDelivery should still use 'Inform the user' instruction."""
+        from roomkit.tasks.delivery import ContextOnlyDelivery
+
+        kit = RoomKit(delivery_strategy=ContextOnlyDelivery())
+
+        agent = _make_agent("agent-bg", "result")
+        main_ai = AIChannel(
+            "main-ai",
+            provider=MockAIProvider(responses=["ok"]),
+            system_prompt="main",
+        )
+        kit.register_channel(agent)
+        kit.register_channel(main_ai)
+
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "main-ai", category=ChannelCategory.INTELLIGENCE)
+
+        task = await kit.delegate(
+            room_id="room-1",
+            agent_id="agent-bg",
+            task="do work",
+            notify="main-ai",
+        )
+        await task.wait(timeout=5.0)
+
+        binding = await kit.store.get_binding("room-1", "main-ai")
+        assert binding is not None
+        prompt = binding.metadata.get("system_prompt", "")
+        assert "Inform the user naturally" in prompt
         await kit.close()
 
     async def test_strategy_error_does_not_break_delegation(self):
