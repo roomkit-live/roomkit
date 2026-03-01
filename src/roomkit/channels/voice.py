@@ -421,20 +421,26 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             with self._state_lock:
                 playback = self._playing_sessions.get(session.id)
             if playback:
-                decision = self._interruption_handler.evaluate(
-                    playback_position_ms=playback.position_ms,
-                    speech_duration_ms=0,
-                )
-                if decision.should_interrupt:
-                    self._schedule(
-                        self._handle_barge_in(session, playback, room_id),
-                        name=f"barge_in:{session.id}",
+                # During drain period (send_audio returned, waiting for echo
+                # decay), skip barge-in — nothing is actually playing.
+                done_ev = self._playback_done_events.get(session.id)
+                if done_ev is not None and done_ev.is_set():
+                    pass  # Drain period — skip barge-in
+                else:
+                    decision = self._interruption_handler.evaluate(
+                        playback_position_ms=playback.position_ms,
+                        speech_duration_ms=0,
                     )
-                elif decision.is_backchannel:
-                    self._schedule(
-                        self._fire_backchannel_hook(session, "", room_id),
-                        name=f"backchannel:{session.id}",
-                    )
+                    if decision.should_interrupt:
+                        self._schedule(
+                            self._handle_barge_in(session, playback, room_id),
+                            name=f"barge_in:{session.id}",
+                        )
+                    elif decision.is_backchannel:
+                        self._schedule(
+                            self._fire_backchannel_hook(session, "", room_id),
+                            name=f"backchannel:{session.id}",
+                        )
 
             # Start streaming STT if provider supports it
             if self._stt and self._stt.supports_streaming:
@@ -919,6 +925,25 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         )
         return True
 
+    async def interrupt_all(self, room_id: str, *, reason: str = "task_delivery") -> int:
+        """Interrupt all active TTS playback in a room.
+
+        Returns:
+            Number of sessions that were interrupted.
+        """
+        with self._state_lock:
+            session_ids = [
+                sid
+                for sid, (rid, _) in self._session_bindings.items()
+                if rid == room_id and sid in self._playing_sessions
+            ]
+        count = 0
+        for sid in session_ids:
+            session = self._backend.get_session(sid) if self._backend else None
+            if session and await self.interrupt(session, reason=reason):
+                count += 1
+        return count
+
     async def wait_playback_done(self, room_id: str, timeout: float = 15.0) -> None:
         """Wait until active TTS playback finishes for all sessions in *room_id*.
 
@@ -959,6 +984,12 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
         room_id, _ = binding_info
         if not playback:
+            return
+
+        # During drain period (send_audio returned, waiting for echo
+        # decay), skip barge-in — nothing is actually playing.
+        done_ev = self._playback_done_events.get(session.id)
+        if done_ev is not None and done_ev.is_set():
             return
 
         self._schedule(

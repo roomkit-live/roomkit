@@ -336,6 +336,75 @@ class TestWaitForIdleDelivery:
         kit.process_inbound.assert_not_called()
         await kit.close()
 
+    async def test_interrupt_playback_calls_interrupt_all(self):
+        """interrupt_playback=True should call interrupt_all instead of wait_playback_done."""
+        kit = RoomKit()
+        result = _make_result()
+
+        from roomkit.channels.voice import VoiceChannel
+
+        voice_ch = MagicMock(spec=VoiceChannel)
+        voice_ch.channel_id = "voice-1"
+        voice_ch.channel_type = ChannelType.VOICE
+        voice_ch.category = ChannelCategory.TRANSPORT
+        voice_ch.wait_playback_done = AsyncMock()
+        voice_ch.interrupt_all = AsyncMock(return_value=1)
+        kit._channels["voice-1"] = voice_ch
+
+        await kit.create_room(room_id="room-1")
+        voice_binding = ChannelBinding(
+            channel_id="voice-1",
+            room_id="room-1",
+            channel_type=ChannelType.VOICE,
+            category=ChannelCategory.TRANSPORT,
+        )
+        await kit.store.update_binding(voice_binding)
+
+        kit.process_inbound = AsyncMock()
+        ctx = TaskDeliveryContext(kit=kit, result=result, notify_channel_id="agent-x")
+
+        strategy = WaitForIdleDelivery(interrupt_playback=True)
+        await strategy.deliver(ctx)
+
+        voice_ch.interrupt_all.assert_called_once_with("room-1", reason="task_delivery")
+        voice_ch.wait_playback_done.assert_not_called()
+        kit.process_inbound.assert_called_once()
+        await kit.close()
+
+    async def test_interrupt_playback_false_waits(self):
+        """interrupt_playback=False (default) should wait, not interrupt."""
+        kit = RoomKit()
+        result = _make_result()
+
+        from roomkit.channels.voice import VoiceChannel
+
+        voice_ch = MagicMock(spec=VoiceChannel)
+        voice_ch.channel_id = "voice-1"
+        voice_ch.channel_type = ChannelType.VOICE
+        voice_ch.category = ChannelCategory.TRANSPORT
+        voice_ch.wait_playback_done = AsyncMock()
+        voice_ch.interrupt_all = AsyncMock()
+        kit._channels["voice-1"] = voice_ch
+
+        await kit.create_room(room_id="room-1")
+        voice_binding = ChannelBinding(
+            channel_id="voice-1",
+            room_id="room-1",
+            channel_type=ChannelType.VOICE,
+            category=ChannelCategory.TRANSPORT,
+        )
+        await kit.store.update_binding(voice_binding)
+
+        kit.process_inbound = AsyncMock()
+        ctx = TaskDeliveryContext(kit=kit, result=result, notify_channel_id="agent-x")
+
+        strategy = WaitForIdleDelivery(interrupt_playback=False)
+        await strategy.deliver(ctx)
+
+        voice_ch.wait_playback_done.assert_called_once()
+        voice_ch.interrupt_all.assert_not_called()
+        await kit.close()
+
 
 # -- Integration with delegate() ---------------------------------------------
 

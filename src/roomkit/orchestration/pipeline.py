@@ -130,6 +130,7 @@ class ConversationPipeline:
         greet_on_handoff: bool = False,
         voice_channel_id: str | None = None,
         greeting_prompt: str | None = None,
+        farewell_prompt: str | None = None,
     ) -> tuple[ConversationRouter, HandoffHandler]:
         """Wire routing and handoff in one call.
 
@@ -202,6 +203,7 @@ class ConversationPipeline:
                     kit,
                     voice_channel_id=voice_channel_id,  # type: ignore[arg-type]
                     greeting_prompt=greeting_prompt,
+                    farewell_prompt=farewell_prompt,
                     hook_priority=hook_priority,
                 )
 
@@ -465,6 +467,7 @@ class ConversationPipeline:
         *,
         voice_channel_id: str,
         greeting_prompt: str | None,
+        farewell_prompt: str | None,
         hook_priority: int,
     ) -> None:
         """Register ON_HANDOFF + BEFORE_TTS hooks for handoff greeting."""
@@ -476,6 +479,31 @@ class ConversationPipeline:
         prompt = greeting_prompt or (
             "[The caller has just been transferred to you — please introduce yourself briefly]"
         )
+        farewell = farewell_prompt
+
+        async def _speak_farewell(vc: Any, room_id: str, text: str) -> None:
+            """Synthesise *text* via TTS and play it to all sessions in *room_id*."""
+            from roomkit.models.context import RoomContext
+            from roomkit.models.enums import ChannelType
+            from roomkit.models.event import EventSource, RoomEvent, TextContent
+
+            bindings = await kit.store.list_bindings(room_id)
+            voice_bindings = [b for b in bindings if b.channel_id == voice_channel_id]
+            if not voice_bindings:
+                return
+
+            room = await kit.get_room(room_id)
+            ctx = RoomContext(room=room, bindings=bindings)
+            synth_event = RoomEvent(
+                room_id=room_id,
+                source=EventSource(
+                    channel_id=voice_channel_id,
+                    channel_type=ChannelType.VOICE,
+                ),
+                content=TextContent(body=text),
+            )
+            await vc.deliver(synth_event, voice_bindings[0], ctx)
+            await vc.wait_playback_done(room_id, timeout=15.0)
 
         # Rooms where a handoff is in flight — TTS blocked until the greeting
         # task starts.  The flag is set by ON_HANDOFF and cleared at the *start*
@@ -512,6 +540,13 @@ class ConversationPipeline:
                 vc = kit.channels.get(voice_channel_id)
                 if isinstance(vc, VoiceChannel):
                     await vc.wait_playback_done(event.room_id, timeout=15.0)
+
+                # Speak farewell before the new agent greets.  This is a
+                # synthetic TTS utterance — no AI generation needed — so
+                # there is always a transition message regardless of what
+                # the outgoing model chose to emit.
+                if farewell and isinstance(vc, VoiceChannel):
+                    await _speak_farewell(vc, event.room_id, farewell)
 
                 try:
                     await asyncio.wait_for(

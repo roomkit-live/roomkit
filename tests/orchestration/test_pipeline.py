@@ -608,6 +608,111 @@ class TestGreetOnHandoff:
         bb_key = (str(HookTrigger.BEFORE_BROADCAST), str(HookExecution.SYNC))
         assert bb_key in captured
 
+    async def test_farewell_prompt_spoken_before_greeting(self):
+        """farewell_prompt should be delivered via TTS before the new agent greets."""
+        from roomkit.channels.voice import VoiceChannel
+
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit, captured = _mock_kit_capturing_hooks()
+        kit.process_inbound = AsyncMock()
+        agents = [_mock_agent("agent-a"), _mock_agent("agent-b")]
+
+        # Mock VoiceChannel so _speak_farewell can call deliver()
+        vc = MagicMock(spec=VoiceChannel)
+        vc.wait_playback_done = AsyncMock()
+        vc.deliver = AsyncMock()
+        kit.channels = {"voice": vc}
+
+        # Mock store/room for _speak_farewell context building
+        voice_binding = ChannelBinding(
+            channel_id="voice",
+            room_id="room-1",
+            channel_type=ChannelType.VOICE,
+            category=ChannelCategory.TRANSPORT,
+        )
+        kit.store.list_bindings = AsyncMock(return_value=[voice_binding])
+        kit.get_room = AsyncMock(return_value=Room(id="room-1"))
+
+        pipeline.install(
+            kit,
+            agents,
+            greet_on_handoff=True,
+            voice_channel_id="voice",
+            farewell_prompt="Transferring you now...",
+        )
+
+        on_handoff_key = (str(HookTrigger.ON_HANDOFF), str(HookExecution.ASYNC))
+        on_handoff_fn = captured[on_handoff_key][0]
+
+        handoff_event = RoomEvent(
+            room_id="room-1",
+            source=EventSource(channel_id="agent-a", channel_type=ChannelType.AI),
+            content=TextContent(body="transferring"),
+            metadata={"from_agent": "agent-a", "to_agent": "agent-b"},
+        )
+        ctx = RoomContext(room=Room(id="room-1"), bindings=[])
+
+        await on_handoff_fn(handoff_event, ctx)
+        await asyncio.sleep(0.05)
+
+        # vc.deliver should have been called with the farewell text
+        vc.deliver.assert_called_once()
+        farewell_event = vc.deliver.call_args[0][0]
+        assert farewell_event.content.body == "Transferring you now..."
+
+        # process_inbound should also have been called (greeting)
+        kit.process_inbound.assert_called_once()
+
+    async def test_no_farewell_without_farewell_prompt(self):
+        """When farewell_prompt is not set, vc.deliver should not be called."""
+        from roomkit.channels.voice import VoiceChannel
+
+        pipeline = ConversationPipeline(
+            stages=[
+                PipelineStage(phase="a", agent_id="agent-a", next="b"),
+                PipelineStage(phase="b", agent_id="agent-b", next=None),
+            ],
+        )
+        kit, captured = _mock_kit_capturing_hooks()
+        kit.process_inbound = AsyncMock()
+        agents = [_mock_agent("agent-a"), _mock_agent("agent-b")]
+
+        vc = MagicMock(spec=VoiceChannel)
+        vc.wait_playback_done = AsyncMock()
+        vc.deliver = AsyncMock()
+        kit.channels = {"voice": vc}
+
+        pipeline.install(
+            kit,
+            agents,
+            greet_on_handoff=True,
+            voice_channel_id="voice",
+        )
+
+        on_handoff_key = (str(HookTrigger.ON_HANDOFF), str(HookExecution.ASYNC))
+        on_handoff_fn = captured[on_handoff_key][0]
+
+        handoff_event = RoomEvent(
+            room_id="room-1",
+            source=EventSource(channel_id="agent-a", channel_type=ChannelType.AI),
+            content=TextContent(body="transferring"),
+            metadata={"from_agent": "agent-a", "to_agent": "agent-b"},
+        )
+        ctx = RoomContext(room=Room(id="room-1"), bindings=[])
+
+        await on_handoff_fn(handoff_event, ctx)
+        await asyncio.sleep(0.05)
+
+        # vc.deliver should NOT be called (no farewell)
+        vc.deliver.assert_not_called()
+        # But process_inbound should still be called (greeting)
+        kit.process_inbound.assert_called_once()
+
 
 # -- Agent-aware install ------------------------------------------------------
 

@@ -906,6 +906,69 @@ class TestBargeInIntegration:
 
         await kit.close()
 
+    async def test_interrupt_all_interrupts_playing_sessions(self) -> None:
+        """interrupt_all() interrupts all playing sessions in a room."""
+        from roomkit.channels.voice import TTSPlaybackState
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelType
+        from roomkit.voice.base import VoiceCapability
+
+        caps = VoiceCapability.INTERRUPTION
+        backend = MockVoiceBackend(capabilities=caps)
+        channel = VoiceChannel("voice-1", backend=backend)
+
+        kit = RoomKit(voice=backend)
+        kit.register_channel(channel)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+
+        # Create two sessions in the same room
+        s1 = await kit.connect_voice(room.id, "user-1", "voice-1")
+        s2 = await kit.connect_voice(room.id, "user-2", "voice-1")
+        binding = ChannelBinding(
+            room_id=room.id, channel_id="voice-1", channel_type=ChannelType.VOICE
+        )
+        channel.bind_session(s1, room.id, binding)
+        channel.bind_session(s2, room.id, binding)
+
+        # Both sessions playing
+        channel._playing_sessions[s1.id] = TTSPlaybackState(session_id=s1.id, text="Hello from s1")
+        channel._playing_sessions[s2.id] = TTSPlaybackState(session_id=s2.id, text="Hello from s2")
+
+        count = await channel.interrupt_all(room.id, reason="task_delivery")
+
+        assert count == 2
+        assert s1.id not in channel._playing_sessions
+        assert s2.id not in channel._playing_sessions
+
+        await kit.close()
+
+    async def test_interrupt_all_returns_zero_when_nothing_playing(self) -> None:
+        """interrupt_all() returns 0 when no sessions are playing."""
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelType
+
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend)
+
+        kit = RoomKit(voice=backend)
+        kit.register_channel(channel)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+
+        session = await kit.connect_voice(room.id, "user-1", "voice-1")
+        binding = ChannelBinding(
+            room_id=room.id, channel_id="voice-1", channel_type=ChannelType.VOICE
+        )
+        channel.bind_session(session, room.id, binding)
+
+        count = await channel.interrupt_all(room.id)
+        assert count == 0
+
+        await kit.close()
+
     async def test_backend_barge_in_callback(self) -> None:
         """Backend-detected barge-in triggers ON_BARGE_IN hook."""
         from roomkit.channels.voice import TTSPlaybackState

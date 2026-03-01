@@ -161,9 +161,11 @@ class WaitForIdleDelivery(BackgroundTaskDeliveryStrategy):
         self,
         prompt: str | None = None,
         playback_timeout: float = 15.0,
+        interrupt_playback: bool = False,
     ) -> None:
         self._prompt = prompt
         self.playback_timeout = playback_timeout
+        self.interrupt_playback = interrupt_playback
 
     def _build_prompt(self, ctx: TaskDeliveryContext) -> str:
         if self._prompt is not None:
@@ -188,11 +190,18 @@ class WaitForIdleDelivery(BackgroundTaskDeliveryStrategy):
             from roomkit.channels.voice import VoiceChannel
 
             if isinstance(channel, VoiceChannel):
-                logger.debug(
-                    "WaitForIdleDelivery: waiting for playback done in room %s",
-                    ctx.room_id,
-                )
-                await channel.wait_playback_done(ctx.room_id, timeout=self.playback_timeout)
+                if self.interrupt_playback:
+                    logger.debug(
+                        "WaitForIdleDelivery: interrupting playback in room %s",
+                        ctx.room_id,
+                    )
+                    await channel.interrupt_all(ctx.room_id, reason="task_delivery")
+                else:
+                    logger.debug(
+                        "WaitForIdleDelivery: waiting for playback done in room %s",
+                        ctx.room_id,
+                    )
+                    await channel.wait_playback_done(ctx.room_id, timeout=self.playback_timeout)
 
         from roomkit.models.delivery import InboundMessage
         from roomkit.models.event import TextContent
