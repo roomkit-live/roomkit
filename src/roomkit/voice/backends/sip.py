@@ -162,6 +162,7 @@ class _SIPSessionState:
     incoming_call: Any = None
     outgoing_call: Any = None
     pending_reinvite_sdp: Any = None
+    pending_reinvite_call: Any = None  # deferred call object to accept() later
     codec_rate: int = 8000
     clock_rate: int = 8000
     send_timestamp: int = 0
@@ -232,6 +233,9 @@ class SIPVoiceBackend(VoiceBackend):
         # Consolidated per-session state (replaces 16 parallel dicts)
         self._session_states: dict[str, _SIPSessionState] = {}
         self._call_to_session: dict[str, str] = {}  # call_id -> session_id
+        # Temporary storage for re-INVITEs that arrive before _session_states is populated
+        # (race: _call_to_session is set early in dial() before CallSession is ready)
+        self._pending_reinvite_calls: dict[str, Any] = {}  # session_id → call
 
         # Callback registrations
         self._audio_received_callback: AudioReceivedCallback | None = None
@@ -383,6 +387,22 @@ class SIPVoiceBackend(VoiceBackend):
         call_session.on_audio = self._make_audio_handler(session)
         call_session.on_dtmf = self._make_dtmf_handler(session)
 
+        # Apply any re-INVITE that arrived before session state was ready
+        _pending_call = (
+            self._pending_reinvite_calls.pop(session.id, None) or state.pending_reinvite_call
+        )
+        state.pending_reinvite_call = None
+        if _pending_call is not None:
+            _pending_call.accept(call_session.sdp_answer)
+            _pending_sdp = getattr(_pending_call, "sdp_offer", None)
+            if _pending_sdp is None:
+                _pending_sdp = state.pending_reinvite_sdp
+            if _pending_sdp is not None:
+                rtp_addr = _pending_sdp.rtp_address
+                if rtp_addr is not None and rtp_addr != call_session.remote_addr:
+                    call_session.update_remote(rtp_addr)
+            state.pending_reinvite_sdp = None
+
         logger.info(
             "SIP call accepted: session=%s, room=%s, call_id=%s",
             session.id,
@@ -455,12 +475,15 @@ class SIPVoiceBackend(VoiceBackend):
         state = self._session_states.get(session_id)
         if state is None or state.call_session is None:
             # CallSession not created yet (race: re-INVITE arrived before
-            # dial() finished RTP setup).  Queue the SDP so we can apply
-            # the remote address update once the CallSession is ready.
-            if call.sdp_offer is not None and state is not None:
-                state.pending_reinvite_sdp = call.sdp_offer
-            # Accept with our original SDP offer (stored as pending)
-            # We need to build a minimal response — the remote expects 200 OK.
+            # dial() finished RTP setup).  Store the call so we can send
+            # the deferred 200 OK once CallSession is ready.
+            if state is not None:
+                state.pending_reinvite_call = call
+                if call.sdp_offer is not None:
+                    state.pending_reinvite_sdp = call.sdp_offer
+            else:
+                # _session_states not yet populated — hold in temporary dict
+                self._pending_reinvite_calls[session_id] = call
             logger.info("re-INVITE queued for session %s (CallSession pending)", session_id)
             return
 
@@ -714,9 +737,18 @@ class SIPVoiceBackend(VoiceBackend):
         call_session.on_audio = self._make_audio_handler(session)
         call_session.on_dtmf = self._make_dtmf_handler(session)
 
-        # Apply any re-INVITE SDP that arrived during RTP setup
+        # Apply any re-INVITE that arrived during RTP setup (deferred 200 OK + RTP update)
+        pending_call = (
+            self._pending_reinvite_calls.pop(session.id, None) or state.pending_reinvite_call
+        )
+        state.pending_reinvite_call = None
+        if pending_call is not None:
+            pending_call.accept(call_session.sdp_answer)
+
         pending_sdp = state.pending_reinvite_sdp
         state.pending_reinvite_sdp = None
+        if pending_sdp is None and pending_call is not None:
+            pending_sdp = getattr(pending_call, "sdp_offer", None)
         if pending_sdp is not None:
             rtp_addr = pending_sdp.rtp_address
             if rtp_addr is not None and rtp_addr != call_session.remote_addr:

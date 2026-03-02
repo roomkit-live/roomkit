@@ -63,6 +63,7 @@ def _make_mock_kit(
     kit.get_room = AsyncMock(return_value=room)
     kit.store.list_bindings = AsyncMock(return_value=bindings)
     kit.store.add_event = AsyncMock()
+    kit.store.add_event_auto_index = AsyncMock(side_effect=lambda room_id, event: event)
     kit.store.update_room = AsyncMock()
 
     router = MagicMock()
@@ -186,3 +187,18 @@ class TestInMemoryTaskRunner:
 
         # Should have called update_room at least twice (in_progress + completed)
         assert kit.store.update_room.call_count >= 2
+
+    async def test_events_stored_via_add_event_auto_index(self):
+        """_run_agent must use add_event_auto_index (not add_event) so the store
+        assigns sequential, monotonically increasing indices per room (RFC §10)."""
+        kit = _make_mock_kit()
+        runner = InMemoryTaskRunner()
+        task = _make_task()
+
+        await runner.submit(kit, task)
+        await task.wait(timeout=5.0)
+
+        # add_event_auto_index should have been called (task event + response event)
+        assert kit.store.add_event_auto_index.call_count >= 2
+        # Legacy add_event must NOT be called from _run_agent
+        kit.store.add_event.assert_not_called()

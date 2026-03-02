@@ -682,3 +682,88 @@ class TestMultipleCalls:
 
         assert backend.list_sessions("room-a") != []
         assert backend.list_sessions("room-b") != []
+
+
+class TestHandleReInvite:
+    async def test_reinvite_with_active_session_accepts(
+        self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        """re-INVITE on an established call is accepted with the existing SDP answer."""
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+
+        reinvite_call = _make_mock_incoming_call(call_id="test-call-1")
+        backend._handle_reinvite(reinvite_call)
+
+        reinvite_call.accept.assert_called_once_with(mock_call_session.sdp_answer)
+
+    async def test_reinvite_updates_rtp_address(
+        self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        """re-INVITE with a new RTP address should call update_remote."""
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+
+        new_sdp = MagicMock()
+        new_sdp.rtp_address = ("10.0.0.2", 30000)
+        reinvite_call = _make_mock_incoming_call(call_id="test-call-1", sdp_offer=new_sdp)
+        backend._handle_reinvite(reinvite_call)
+
+        mock_call_session.update_remote.assert_called_once_with(("10.0.0.2", 30000))
+
+    async def test_reinvite_before_call_session_accepted_deferred(
+        self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        """re-INVITE arriving before _session_states is populated (dial() race) must be
+        deferred: accept() is NOT called immediately, but IS called after CallSession is ready.
+
+        Simulates the window between _call_to_session being set (line 659 in dial()) and
+        _session_states being populated (line 710), which spans the async await on
+        call_session.start().
+        """
+        session_id = "outbound-call-1"
+
+        # Step 1: Simulate early _call_to_session mapping (as dial() does at line 659)
+        # but do NOT yet create _session_states — this is the race window.
+        backend._call_to_session[session_id] = session_id
+
+        # Step 2: re-INVITE arrives during the race window
+        reinvite_call = _make_mock_incoming_call(call_id=session_id)
+        backend._handle_reinvite(reinvite_call)
+
+        # The call must NOT be accepted yet (no CallSession available)
+        reinvite_call.accept.assert_not_called()
+        # The call must be stored for deferred acceptance
+        assert backend._pending_reinvite_calls.get(session_id) is reinvite_call
+
+        # Step 3: Simulate dial() completing — create the session state and apply deferral
+        from roomkit.voice.backends.sip import _SIPSessionState
+        from roomkit.voice.base import VoiceSession, VoiceSessionState
+
+        session = VoiceSession(
+            id=session_id,
+            room_id="room-dial",
+            participant_id="sip:dest@example.com",
+            channel_id="voice",
+            state=VoiceSessionState.ACTIVE,
+            metadata={"backend": "sip"},
+        )
+        state = _SIPSessionState(
+            session=session,
+            call_session=mock_call_session,
+        )
+        backend._session_states[session_id] = state
+        backend._call_to_session[session_id] = session_id
+
+        # Consume the pending call as dial() does after state creation
+        pending_call = (
+            backend._pending_reinvite_calls.pop(session_id, None) or state.pending_reinvite_call
+        )
+        state.pending_reinvite_call = None
+        if pending_call is not None:
+            pending_call.accept(mock_call_session.sdp_answer)
+
+        # Now accept() must have been called with the SDP answer
+        reinvite_call.accept.assert_called_once_with(mock_call_session.sdp_answer)
+        # The pending dict must be cleared
+        assert session_id not in backend._pending_reinvite_calls

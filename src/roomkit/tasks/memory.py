@@ -165,7 +165,7 @@ class InMemoryTaskRunner(TaskRunner):
             ),
             content=TextContent(body=task.task),
         )
-        await kit.store.add_event(task_event)
+        task_event = await kit.store.add_event_auto_index(child_room_id, task_event)
 
         # Broadcast to the child room — the agent picks it up
         router = kit._get_router()
@@ -185,7 +185,7 @@ class InMemoryTaskRunner(TaskRunner):
                 for resp_event in output.response_events:
                     if isinstance(resp_event.content, TextContent):
                         agent_response = resp_event.content.body
-                        await kit.store.add_event(resp_event)
+                        await kit.store.add_event_auto_index(child_room_id, resp_event)
 
         if agent_response is None and result.streaming_responses:
             for sr in result.streaming_responses:
@@ -205,7 +205,7 @@ class InMemoryTaskRunner(TaskRunner):
                         content=TextContent(body=text),
                         chain_depth=task_event.chain_depth + 1,
                     )
-                    await kit.store.add_event(resp_event)
+                    await kit.store.add_event_auto_index(child_room_id, resp_event)
                     break  # use the first non-empty streaming response
 
         return agent_response
