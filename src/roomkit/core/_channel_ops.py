@@ -303,8 +303,10 @@ class ChannelOpsMixin(HelpersMixin):
         agent_id = agent.channel_id
         hook_name = f"_agent_auto_greet:{agent_id}"
         kit_ref = self
-        # Track rooms already greeted for text channels (no session to dedup on)
+        # Track rooms already greeted for text channels (no session to dedup on).
+        # Bounded to prevent unbounded growth on long-running servers.
         greeted_rooms: set[str] = set()
+        greeted_rooms_max = 10_000
 
         async def _auto_greet_handler(event: Any, ctx: Any) -> None:
             room_id = event.room_id
@@ -327,6 +329,8 @@ class ChannelOpsMixin(HelpersMixin):
                 dedup_key = f"{room_id}:{agent_id}"
                 if dedup_key in greeted_rooms:
                     return
+                if len(greeted_rooms) >= greeted_rooms_max:
+                    greeted_rooms.clear()
                 greeted_rooms.add(dedup_key)
 
                 # Check agent is attached to this room
@@ -335,7 +339,16 @@ class ChannelOpsMixin(HelpersMixin):
                     greeted_rooms.discard(dedup_key)
                     return
 
-            await kit_ref.send_greeting(room_id, agent_id=agent_id)  # type: ignore[attr-defined]
+            kit_ref._set_greeting_gate(room_id)  # type: ignore[attr-defined]
+            try:
+                await kit_ref.send_greeting(  # type: ignore[attr-defined]
+                    room_id,
+                    agent_id=agent_id,
+                    session=event.session,
+                    channel_type=event.channel_type,
+                )
+            finally:
+                kit_ref._clear_greeting_gate(room_id)  # type: ignore[attr-defined]
 
         self._hook_engine.register(
             HookRegistration(

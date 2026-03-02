@@ -22,6 +22,9 @@ Patterns 1–3 go directly through TTS — no LLM round-trip, so the caller
 hears exactly the text you set with near-zero latency.  Pattern 4 adds
 an LLM round-trip for dynamic, context-aware greetings.
 
+When ``auto_greet`` is enabled, a **greeting gate** blocks AI processing
+until the greeting is stored in conversation history, preventing races.
+
 This example uses mock providers so it runs without external dependencies.
 
 Run with:
@@ -120,7 +123,13 @@ async def pattern_explicit_hook() -> None:
     @kit.hook(HookTrigger.ON_SESSION_STARTED, HookExecution.ASYNC)
     async def on_ready(event: SessionStartedEvent, context: object) -> None:
         logger.info("Session started: %s — sending greeting", event.channel_id)
-        await kit.send_greeting(room.id)
+        # Pass session/channel_type so send_greeting dispatches correctly:
+        # voice sessions get TTS via say(), text sessions get a broadcast.
+        await kit.send_greeting(
+            room.id,
+            session=event.session,
+            channel_type=event.channel_type,
+        )
 
     session = await kit.connect_voice(room.id, "caller-1", "voice")
     await asyncio.sleep(0.2)

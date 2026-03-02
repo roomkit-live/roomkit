@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -87,6 +88,7 @@ class EventRouter:
         max_chain_depth: int = 5,
         rate_limiter: TokenBucketRateLimiter | None = None,
         telemetry: Any = None,
+        greeting_gate_fn: Callable[[str, float], Awaitable[None]] | None = None,
     ) -> None:
         self._channels = channels
         self._transcoder = transcoder or DefaultContentTranscoder()
@@ -94,6 +96,7 @@ class EventRouter:
         self._rate_limiter = rate_limiter or TokenBucketRateLimiter()
         self._circuit_breakers: dict[str, CircuitBreaker] = {}
         self._telemetry = telemetry
+        self._greeting_gate_fn = greeting_gate_fn
 
     def _get_breaker(self, channel_id: str) -> CircuitBreaker:
         """Get or create a circuit breaker for a channel."""
@@ -232,6 +235,10 @@ class EventRouter:
                         ):
                             target_results.append(tr)
                             return
+
+                    # Greeting gate: wait for greeting to be stored before AI processes
+                    if self._greeting_gate_fn is not None:
+                        await self._greeting_gate_fn(transcoded_event.room_id, 10.0)
 
                 # Step 1: on_event — all channels react
                 output = await channel.on_event(transcoded_event, binding, context)

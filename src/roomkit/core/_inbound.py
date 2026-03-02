@@ -185,13 +185,11 @@ class InboundMixin(HelpersMixin):
             ChannelType.VOICE,
             ChannelType.REALTIME_VOICE,
         ):
-            asyncio.ensure_future(
-                self._fire_text_session_started(
-                    room_id,
-                    message.channel_id,
-                    channel.channel_type,
-                    message.sender_id or "",
-                )
+            await self._fire_text_session_started(
+                room_id,
+                message.channel_id,
+                channel.channel_type,
+                message.sender_id or "",
             )
 
         # Let channel process inbound
