@@ -252,6 +252,7 @@ async def main() -> None:
             state.phase,
             state.handoff_count,
         )
+        await rtv.disconnect_session(session, room_id)
         await kit.close_room(room_id)
 
     # --- Start ---------------------------------------------------------------

@@ -164,6 +164,7 @@ async def main() -> None:
         """Called when the remote party hangs up (BYE)."""
         logger.info("Call ended — session=%s", session.id)
         room_id = session.metadata.get("room_id", session.id)
+        await voice.disconnect_session(session, room_id)
         await kit.close_room(room_id)
 
     # -----------------------------------------------------------------------
