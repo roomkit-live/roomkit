@@ -623,7 +623,16 @@ class InboundMixin(HelpersMixin):
             pending_streams_out.extend(broadcast_result.streaming_responses)
 
         # Store reentry events and re-broadcast them (drain loop)
-        pending_reentries = deque(broadcast_result.reentry_events)
+        # Stamp response_visibility from the trigger event onto direct reentry
+        # events so the existing _check_visibility() filters them correctly.
+        _reentry_vis = event.response_visibility
+        if _reentry_vis:
+            pending_reentries = deque(
+                re.model_copy(update={"visibility": _reentry_vis})
+                for re in broadcast_result.reentry_events
+            )
+        else:
+            pending_reentries = deque(broadcast_result.reentry_events)
         max_reentries = self._max_chain_depth * 10
         reentry_count = 0
         reentry_tasks: list[Any] = []
@@ -767,8 +776,8 @@ class InboundMixin(HelpersMixin):
 
         # Find streaming delivery targets (transport channels that support it).
         # Apply the same permission checks as _filter_targets() in broadcast():
-        # access and direction.  Visibility is not checked here because the
-        # response event hasn't been materialised yet and defaults to "all".
+        # access, direction, and response_visibility.
+        response_vis = sr.trigger_event.response_visibility
         streaming_targets: list[Any] = []
         for binding in context.bindings:
             if binding.category != ChannelCategory.TRANSPORT:
@@ -779,6 +788,20 @@ class InboundMixin(HelpersMixin):
                 continue
             if binding.direction == ChannelDirection.OUTBOUND:
                 continue
+            # Apply response_visibility filter (same logic as _check_visibility)
+            if response_vis is not None and response_vis != "all":
+                if response_vis == "none":
+                    continue
+                if response_vis == "transport":
+                    pass  # already filtered to TRANSPORT above
+                elif response_vis == "intelligence":
+                    continue  # skip all transport targets
+                elif "," in response_vis:
+                    allowed = {cid.strip() for cid in response_vis.split(",") if cid.strip()}
+                    if binding.channel_id not in allowed:
+                        continue
+                elif binding.channel_id != response_vis:
+                    continue
             channel = router.get_channel(binding.channel_id)
             supports = getattr(channel, "supports_streaming_delivery", False) if channel else False
             if channel and supports:
@@ -819,6 +842,7 @@ class InboundMixin(HelpersMixin):
                 ),
                 content=TextContent(body=full_text),
                 chain_depth=sr.trigger_event.chain_depth + 1,
+                visibility=response_vis or "all",
             )
             return await self._store.add_event_auto_index(room_id, event)
 
@@ -835,6 +859,7 @@ class InboundMixin(HelpersMixin):
                 ),
                 content=TextContent(body=""),
                 chain_depth=sr.trigger_event.chain_depth + 1,
+                visibility=response_vis or "all",
             )
             try:
                 await channel.deliver_stream(accumulated_stream(), placeholder, binding, context)
@@ -856,6 +881,7 @@ class InboundMixin(HelpersMixin):
                         "stream_partial_text": "".join(accumulated),
                     },
                     chain_depth=sr.trigger_event.chain_depth + 1,
+                    visibility=response_vis or "all",
                 )
                 await self._hook_engine.run_async_hooks(
                     room_id, HookTrigger.ON_ERROR, error_event, context

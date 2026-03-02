@@ -920,6 +920,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         metadata: dict[str, Any] | None = None,
         visibility: str = "all",
         provider: str | None = None,
+        response_visibility: str | None = None,
     ) -> RoomEvent:
         """Send an event directly into a room from a channel.
 
@@ -933,6 +934,8 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             metadata: Optional event metadata
             visibility: Event visibility ("all" or "internal")
             provider: Optional provider/backend name for event attribution
+            response_visibility: Controls where the AI's response is delivered.
+                Uses the same vocabulary as visibility. None means no restriction.
         """
         from roomkit.telemetry.base import SpanKind
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
@@ -954,6 +957,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             status=EventStatus.DELIVERED,
             metadata=metadata or {},
             visibility=visibility,
+            response_visibility=response_visibility,
         )
 
         telemetry = self._telemetry

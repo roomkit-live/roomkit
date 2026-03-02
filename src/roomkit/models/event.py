@@ -213,6 +213,7 @@ class RoomEvent(BaseModel):
     status: EventStatus = EventStatus.PENDING
     blocked_by: str | None = None
     visibility: str = "all"
+    response_visibility: str | None = None
     index: int = Field(default=0, ge=0)
     chain_depth: int = Field(default=0, ge=0)
     parent_event_id: str | None = None
