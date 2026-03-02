@@ -274,6 +274,8 @@ class HookEngine:
         context: RoomContext,
         *,
         skip_event_filter: bool = False,
+        name_prefix: str | None = None,
+        exclude_name_prefix: str | None = None,
     ) -> None:
         """Run async hooks concurrently. Errors are logged, never raised.
 
@@ -290,9 +292,15 @@ class HookEngine:
             context: The room context.
             skip_event_filter: If True, skip channel-based event filtering.
                 Use this for voice hooks where event is not a RoomEvent.
+            name_prefix: Only run hooks whose name starts with this prefix.
+            exclude_name_prefix: Skip hooks whose name starts with this prefix.
         """
         filter_event = None if skip_event_filter else event
         hooks = self._get_hooks(room_id, trigger, None, event=filter_event)
+        if name_prefix is not None:
+            hooks = [h for h in hooks if h.name.startswith(name_prefix)]
+        if exclude_name_prefix is not None:
+            hooks = [h for h in hooks if not h.name.startswith(exclude_name_prefix)]
         if not hooks:
             return
 

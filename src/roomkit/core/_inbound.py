@@ -952,7 +952,12 @@ class InboundMixin(HelpersMixin):
         channel_type: ChannelType,
         participant_id: str,
     ) -> None:
-        """Fire ON_SESSION_STARTED for text channel room auto-creation."""
+        """Fire ON_SESSION_STARTED for text channel room auto-creation.
+
+        Internal hooks (name starts with ``_``) are awaited so the greeting
+        gate mechanism completes before the first inbound message is processed.
+        User hooks are fired in the background to avoid blocking the pipeline.
+        """
         try:
             from roomkit.models.session_event import SessionStartedEvent
 
@@ -963,13 +968,30 @@ class InboundMixin(HelpersMixin):
                 channel_type=channel_type,
                 participant_id=participant_id,
             )
+            # Await internal hooks (auto-greet must complete for gate ordering)
             await self._hook_engine.run_async_hooks(
                 room_id,
                 HookTrigger.ON_SESSION_STARTED,
                 event,
                 context,
                 skip_event_filter=True,
+                name_prefix="_",
             )
+            # Fire-and-forget user hooks (slow hooks must not block inbound).
+            # Track via _pending_hook_tasks to prevent GC and ensure graceful
+            # cancellation in close().
+            task = asyncio.get_running_loop().create_task(
+                self._hook_engine.run_async_hooks(
+                    room_id,
+                    HookTrigger.ON_SESSION_STARTED,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                    exclude_name_prefix="_",
+                )
+            )
+            task.add_done_callback(self._pending_hook_tasks.discard)
+            self._pending_hook_tasks.add(task)
             await self._emit_framework_event(
                 "session_started",
                 room_id=room_id,

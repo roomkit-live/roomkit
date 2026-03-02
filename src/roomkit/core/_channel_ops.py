@@ -305,7 +305,11 @@ class ChannelOpsMixin(HelpersMixin):
         kit_ref = self
         # Track rooms already greeted for text channels (no session to dedup on).
         # Bounded to prevent unbounded growth on long-running servers.
-        greeted_rooms: set[str] = set()
+        # Uses OrderedDict as LRU — on overflow, evict oldest 10% instead of
+        # clearing all history (which would allow duplicate greetings).
+        from collections import OrderedDict
+
+        greeted_rooms: OrderedDict[str, None] = OrderedDict()
         greeted_rooms_max = 10_000
 
         async def _auto_greet_handler(event: Any, ctx: Any) -> None:
@@ -330,13 +334,15 @@ class ChannelOpsMixin(HelpersMixin):
                 if dedup_key in greeted_rooms:
                     return
                 if len(greeted_rooms) >= greeted_rooms_max:
-                    greeted_rooms.clear()
-                greeted_rooms.add(dedup_key)
+                    for _ in range(greeted_rooms_max // 10):
+                        if greeted_rooms:
+                            greeted_rooms.popitem(last=False)
+                greeted_rooms[dedup_key] = None
 
                 # Check agent is attached to this room
                 bindings = await kit_ref._store.list_bindings(room_id)
                 if not any(b.channel_id == agent_id for b in bindings):
-                    greeted_rooms.discard(dedup_key)
+                    greeted_rooms.pop(dedup_key, None)
                     return
 
             kit_ref._set_greeting_gate(room_id)  # type: ignore[attr-defined]
@@ -347,8 +353,10 @@ class ChannelOpsMixin(HelpersMixin):
                     session=event.session,
                     channel_type=event.channel_type,
                 )
-            finally:
                 kit_ref._clear_greeting_gate(room_id)  # type: ignore[attr-defined]
+            except Exception:
+                kit_ref._force_clear_greeting_gate(room_id)  # type: ignore[attr-defined]
+                raise
 
         self._hook_engine.register(
             HookRegistration(

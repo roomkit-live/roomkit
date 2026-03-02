@@ -238,7 +238,7 @@ class EventRouter:
 
                     # Greeting gate: wait for greeting to be stored before AI processes
                     if self._greeting_gate_fn is not None:
-                        await self._greeting_gate_fn(transcoded_event.room_id, 10.0)
+                        await self._greeting_gate_fn(transcoded_event.room_id, 30.0)
 
                 # Step 1: on_event — all channels react
                 output = await channel.on_event(transcoded_event, binding, context)

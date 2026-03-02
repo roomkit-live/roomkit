@@ -538,7 +538,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         if gate is not None:
             gate.set()
 
-    async def _wait_greeting_gate(self, room_id: str, timeout: float = 10.0) -> None:
+    async def _wait_greeting_gate(self, room_id: str, timeout: float = 30.0) -> None:
         """Wait until the greeting gate for *room_id* is cleared.
 
         If no gate exists the call returns immediately.  On timeout the
