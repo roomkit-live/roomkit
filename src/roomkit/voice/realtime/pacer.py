@@ -105,8 +105,10 @@ class OutboundAudioPacer:
         # Wake _run() if it is blocked on the old queue's get().
         # _RESPONSE_END causes _run() to loop back to the top where the
         # next self._queue.get() resolves to the new (swapped) queue.
-        with contextlib.suppress(asyncio.QueueFull):
-            old_queue.put_nowait(_RESPONSE_END)
+        # Queue is unbounded (maxsize=0) so put_nowait() never raises QueueFull.
+        # _interrupt_event.set() below is the primary wakeup and handles the
+        # race where _run() has already switched to self._queue.
+        old_queue.put_nowait(_RESPONSE_END)
         self._interrupt_event.set()
         self._response_done.set()  # Unblock any wait_for_response_done() waiters
 

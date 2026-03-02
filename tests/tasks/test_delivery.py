@@ -252,6 +252,28 @@ class TestImmediateDelivery:
         kit.process_inbound.assert_not_called()
         await kit.close()
 
+    async def test_no_transport_logs_error(self, caplog):
+        """Missing transport channel should log at ERROR level (misconfiguration)."""
+        import logging
+
+        kit = RoomKit()
+        result = _make_result()
+        agent = _make_agent("agent-only")
+        kit.register_channel(agent)
+
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "agent-only", category=ChannelCategory.INTELLIGENCE)
+
+        ctx = TaskDeliveryContext(kit=kit, result=result, notify_channel_id="agent-x")
+
+        with caplog.at_level(logging.ERROR, logger="roomkit.tasks.delivery"):
+            await ImmediateDelivery().deliver(ctx)
+
+        assert any(
+            r.levelno == logging.ERROR and "delivery skipped" in r.message for r in caplog.records
+        )
+        await kit.close()
+
 
 # -- WaitForIdleDelivery ------------------------------------------------------
 
@@ -334,6 +356,28 @@ class TestWaitForIdleDelivery:
         await strategy.deliver(ctx)
 
         kit.process_inbound.assert_not_called()
+        await kit.close()
+
+    async def test_no_transport_logs_error(self, caplog):
+        """Missing transport channel should log at ERROR level (misconfiguration)."""
+        import logging
+
+        kit = RoomKit()
+        result = _make_result()
+        agent = _make_agent("agent-only")
+        kit.register_channel(agent)
+
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "agent-only", category=ChannelCategory.INTELLIGENCE)
+
+        ctx = TaskDeliveryContext(kit=kit, result=result, notify_channel_id="agent-x")
+
+        with caplog.at_level(logging.ERROR, logger="roomkit.tasks.delivery"):
+            await WaitForIdleDelivery().deliver(ctx)
+
+        assert any(
+            r.levelno == logging.ERROR and "delivery skipped" in r.message for r in caplog.records
+        )
         await kit.close()
 
     async def test_interrupt_playback_calls_interrupt_all(self):

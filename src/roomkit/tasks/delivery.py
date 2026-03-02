@@ -123,8 +123,8 @@ class ImmediateDelivery(BackgroundTaskDeliveryStrategy):
     async def deliver(self, ctx: TaskDeliveryContext) -> None:
         transport_id = await ctx.find_transport_channel_id()
         if transport_id is None:
-            logger.warning(
-                "ImmediateDelivery: no transport channel in room %s, skipping",
+            logger.error(
+                "ImmediateDelivery: no transport channel in room %s, delivery skipped",
                 ctx.room_id,
             )
             return
@@ -178,8 +178,8 @@ class WaitForIdleDelivery(BackgroundTaskDeliveryStrategy):
     async def deliver(self, ctx: TaskDeliveryContext) -> None:
         transport_id = await ctx.find_transport_channel_id()
         if transport_id is None:
-            logger.warning(
-                "WaitForIdleDelivery: no transport channel in room %s, skipping",
+            logger.error(
+                "WaitForIdleDelivery: no transport channel in room %s, delivery skipped",
                 ctx.room_id,
             )
             return

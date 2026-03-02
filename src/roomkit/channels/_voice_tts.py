@@ -6,7 +6,7 @@ import asyncio
 import logging
 import os
 import time
-from collections.abc import AsyncIterator, Coroutine
+from collections.abc import AsyncGenerator, AsyncIterator, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.enums import HookTrigger
@@ -756,7 +756,7 @@ class VoiceTTSMixin:
 async def _filter_sentences_plain(
     source: AsyncIterator[str],
     fn: Any,
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str, None]:
     """Wrap an async token stream through a plain ``Callable[[str], str]``."""
     async for chunk in source:
         cleaned = fn(chunk)

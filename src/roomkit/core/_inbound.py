@@ -623,8 +623,10 @@ class InboundMixin(HelpersMixin):
             pending_streams_out.extend(broadcast_result.streaming_responses)
 
         # Store reentry events and re-broadcast them (drain loop)
-        # Stamp response_visibility from the trigger event onto direct reentry
-        # events so the existing _check_visibility() filters them correctly.
+        # Stamp response_visibility from the trigger event onto reentry events'
+        # *visibility* field.  The event router's _check_visibility() reads
+        # `visibility`, not `response_visibility`, so propagating the scope
+        # here avoids a separate codepath in the router.
         _reentry_vis = event.response_visibility
         if _reentry_vis:
             pending_reentries = deque(
@@ -842,6 +844,9 @@ class InboundMixin(HelpersMixin):
                 ),
                 content=TextContent(body=full_text),
                 chain_depth=sr.trigger_event.chain_depth + 1,
+                # visibility mirrors response_visibility so the subsequent
+                # broadcast of this stored event is filtered correctly by
+                # the existing _check_visibility() logic in the router.
                 visibility=response_vis or "all",
             )
             return await self._store.add_event_auto_index(room_id, event)
