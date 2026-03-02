@@ -959,7 +959,6 @@ class TestGreetingGate:
             )
             # The greeting error should be caught by the hook's try/finally
             await kit.process_inbound(msg)
-            await asyncio.sleep(0.3)
 
         # Gate must be cleared despite the error
         assert len(kit._greeting_gates) == 0
