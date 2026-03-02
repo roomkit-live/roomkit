@@ -275,7 +275,7 @@ class FastRTCVoiceBackend(VoiceBackend):
         try:
             from starlette.websockets import WebSocketState
 
-            return state == WebSocketState.CONNECTED
+            return bool(state == WebSocketState.CONNECTED)
         except ImportError:
             return True
 
