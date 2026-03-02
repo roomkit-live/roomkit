@@ -8,7 +8,12 @@ from typing import Any
 from uuid import uuid4
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.backends.base import AudioReceivedCallback, SessionReadyCallback, VoiceBackend
+from roomkit.voice.backends.base import (
+    AudioReceivedCallback,
+    SessionReadyCallback,
+    TransportDisconnectCallback,
+    VoiceBackend,
+)
 from roomkit.voice.base import (
     AudioChunk,
     BargeInCallback,
@@ -56,6 +61,7 @@ class MockVoiceBackend(VoiceBackend):
         self._audio_received_callbacks: list[AudioReceivedCallback] = []
         self._barge_in_callbacks: list[BargeInCallback] = []
         self._session_ready_callbacks: list[SessionReadyCallback] = []
+        self._disconnect_callbacks: list[TransportDisconnectCallback] = []
         # Tracking
         self.calls: list[MockVoiceCall] = []
         self.sent_audio: list[tuple[str, bytes]] = []  # (session_id, audio)
@@ -179,6 +185,10 @@ class MockVoiceBackend(VoiceBackend):
         self._barge_in_callbacks.append(callback)
         self.calls.append(MockVoiceCall(method="on_barge_in"))
 
+    def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
+        self._disconnect_callbacks.append(callback)
+        self.calls.append(MockVoiceCall(method="on_client_disconnected"))
+
     async def cancel_audio(self, session: VoiceSession) -> bool:
         was_playing = session.id in self._playing_sessions
         self._playing_sessions.discard(session.id)
@@ -231,6 +241,16 @@ class MockVoiceBackend(VoiceBackend):
         Fires all registered on_session_ready callbacks.
         """
         for cb in self._session_ready_callbacks:
+            result = cb(session)
+            if hasattr(result, "__await__"):
+                await result
+
+    async def simulate_client_disconnected(self, session: VoiceSession) -> None:
+        """Simulate the backend signalling that a client has disconnected.
+
+        Fires all registered on_client_disconnected callbacks.
+        """
+        for cb in self._disconnect_callbacks:
             result = cb(session)
             if hasattr(result, "__await__"):
                 await result

@@ -37,7 +37,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.backends.base import AudioReceivedCallback, SessionReadyCallback, VoiceBackend
+from roomkit.voice.backends.base import (
+    AudioReceivedCallback,
+    SessionReadyCallback,
+    TransportDisconnectCallback,
+    VoiceBackend,
+)
 from roomkit.voice.base import (
     AudioChunk,
     BargeInCallback,
@@ -243,7 +248,7 @@ class SIPVoiceBackend(VoiceBackend):
         self._dtmf_callbacks: list[DTMFReceivedCallback] = []
         self._session_ready_callbacks: list[SessionReadyCallback] = []
         self._on_call_callback: CallCallback | None = None
-        self._on_disconnect_callback: CallCallback | None = None
+        self._disconnect_callbacks: list[CallCallback] = []
 
         # Audio diagnostics
         self._stats_task: asyncio.Task[None] | None = None
@@ -563,8 +568,8 @@ class SIPVoiceBackend(VoiceBackend):
 
         if session is not None:
             logger.info("SIP call ended (remote BYE): session=%s", session_id)
-            if self._on_disconnect_callback is not None:
-                self._on_disconnect_callback(session)
+            for cb in self._disconnect_callbacks:
+                cb(session)
 
     # -------------------------------------------------------------------------
     # Outbound calling
@@ -1127,8 +1132,8 @@ class SIPVoiceBackend(VoiceBackend):
 
                     self._cleanup_session(sid)
 
-                    if self._on_disconnect_callback is not None:
-                        self._on_disconnect_callback(session)
+                    for cb in self._disconnect_callbacks:
+                        cb(session)
 
         except asyncio.CancelledError:
             pass
@@ -1432,8 +1437,19 @@ class SIPVoiceBackend(VoiceBackend):
         Args:
             callback: Function called with ``(session)``.
         """
-        self._on_disconnect_callback = _wrap_async(callback)
+        self._disconnect_callbacks.append(_wrap_async(callback))
         return callback
+
+    def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
+        """Register callback for client disconnection (base-class API).
+
+        Called by ``VoiceChannel`` and ``RealtimeVoiceChannel`` to receive
+        automatic cleanup notifications when the SIP session ends.
+
+        Args:
+            callback: Called with ``(session)`` when the remote party disconnects.
+        """
+        self._disconnect_callbacks.append(_wrap_async(callback))
 
     async def cancel_audio(self, session: VoiceSession) -> bool:
         state = self._session_states.get(session.id)

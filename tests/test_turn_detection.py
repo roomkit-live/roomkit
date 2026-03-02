@@ -69,6 +69,9 @@ class _MockBackend:
     def on_session_ready(self, cb):
         pass
 
+    def on_client_disconnected(self, cb):
+        pass
+
     async def send_transcription(self, session, text, role):
         pass
 

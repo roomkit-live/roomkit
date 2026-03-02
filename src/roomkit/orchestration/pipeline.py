@@ -568,15 +568,17 @@ class ConversationPipeline:
             loop = asyncio.get_running_loop()
             loop.create_task(_trigger_greeting(), context=contextvars.Context())
 
-        @kit.hook(
-            HookTrigger.BEFORE_TTS,
-            execution=HookExecution.SYNC,
-            priority=hook_priority - 1,
-        )
-        async def _block_farewell(
-            text: str,
-            ctx: RoomContext,  # noqa: ARG001
-        ) -> HookResult:
-            if ctx.room.id in _handoff_pending:
-                return HookResult.block("handoff_transition")
-            return HookResult.allow()
+        if farewell:
+
+            @kit.hook(
+                HookTrigger.BEFORE_TTS,
+                execution=HookExecution.SYNC,
+                priority=hook_priority - 1,
+            )
+            async def _block_farewell(
+                text: str,
+                ctx: RoomContext,  # noqa: ARG001
+            ) -> HookResult:
+                if ctx.room.id in _handoff_pending:
+                    return HookResult.block("handoff_transition")
+                return HookResult.allow()

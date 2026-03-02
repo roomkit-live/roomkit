@@ -322,3 +322,26 @@ class TestStreamingSTTLifecycle:
 
         await channel.close()
         assert len(channel._stt_streams) == 0
+
+    async def test_auto_disconnect_cancels_stt_stream(self) -> None:
+        """Backend simulate_client_disconnected auto-cancels streaming STT."""
+        stt = _StreamingMockSTT()
+        kit, channel, backend, vad = _build_kit(
+            stt,
+            vad_events=[VADEvent(type=VADEventType.SPEECH_START), None],
+        )
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+        session = await kit.connect_voice(room.id, "user-1", "voice-1")
+
+        # Start speech without ending it to leave STT stream open
+        await backend.simulate_audio_received(session, AudioFrame(data=b"\x01\x00"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"\x02\x00"))
+
+        await asyncio.sleep(0.05)
+        assert session.id in channel._stt_streams
+
+        # Backend fires disconnect — VoiceChannel should auto-cleanup
+        await backend.simulate_client_disconnected(session)
+        assert session.id not in channel._stt_streams

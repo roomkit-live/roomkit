@@ -208,8 +208,6 @@ async def main() -> None:
     async def handle_disconnect(session):
         logger.info("SIP call ended — session=%s", session.id)
         room_id = session.metadata.get("room_id", session.id)
-        for rt_session in realtime._get_room_sessions(room_id):
-            await realtime.end_session(rt_session)
         await kit.close_room(room_id)
 
     # -------------------------------------------------------------------

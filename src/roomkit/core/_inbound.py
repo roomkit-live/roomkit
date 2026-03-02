@@ -630,8 +630,8 @@ class InboundMixin(HelpersMixin):
         _reentry_vis = event.response_visibility
         if _reentry_vis:
             pending_reentries = deque(
-                re.model_copy(update={"visibility": _reentry_vis})
-                for re in broadcast_result.reentry_events
+                rev.model_copy(update={"visibility": _reentry_vis})
+                for rev in broadcast_result.reentry_events
             )
         else:
             pending_reentries = deque(broadcast_result.reentry_events)

@@ -369,6 +369,23 @@ class TestHandleBye:
         assert len(disconnected) == 1
         assert disconnected[0].state == VoiceSessionState.ENDED
 
+    async def test_bye_fires_all_disconnect_callbacks(
+        self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        fired1: list[VoiceSession] = []
+        fired2: list[VoiceSession] = []
+        backend.on_call_disconnected(lambda s: fired1.append(s))
+        backend.on_client_disconnected(lambda s: fired2.append(s))
+
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+        backend._handle_bye(call, MagicMock())
+        await asyncio.sleep(0.01)
+
+        assert len(fired1) == 1
+        assert len(fired2) == 1
+        assert fired1[0].id == fired2[0].id
+
     async def test_bye_unknown_call_id(self, backend: Any) -> None:
         call = _make_mock_incoming_call(call_id="unknown")
 
@@ -661,7 +678,14 @@ class TestCallbackRegistrations:
     def test_on_call_disconnected(self, backend: Any) -> None:
         cb = MagicMock()
         backend.on_call_disconnected(cb)
-        assert backend._on_disconnect_callback is cb
+        assert cb in backend._disconnect_callbacks
+
+    def test_on_client_disconnected_appends(self, backend: Any) -> None:
+        cb1 = MagicMock()
+        cb2 = MagicMock()
+        backend.on_client_disconnected(cb1)
+        backend.on_client_disconnected(cb2)
+        assert len(backend._disconnect_callbacks) == 2
 
 
 class TestMultipleCalls:

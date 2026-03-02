@@ -453,7 +453,6 @@ async def main() -> None:
             state.phase,
             state.handoff_count,
         )
-        await voice.disconnect_session(session, room_id)
         await kit.close_room(room_id)
 
     # --- Start ---------------------------------------------------------------

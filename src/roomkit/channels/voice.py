@@ -246,6 +246,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Wire session ready callback regardless of pipeline
         if backend:
             backend.on_session_ready(self._on_session_ready)
+            backend.on_client_disconnected(self._on_backend_disconnected)
 
     def _setup_pipeline(self, backend: VoiceBackend, config: AudioPipelineConfig) -> None:
         """Create AudioPipeline and wire backend -> pipeline -> callbacks."""
@@ -323,8 +324,17 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             backend.on_dtmf_received(self._on_pipeline_dtmf)
 
     # -------------------------------------------------------------------------
-    # Session ready (dual-signal)
+    # Session ready / disconnect (backend callbacks)
     # -------------------------------------------------------------------------
+
+    def _on_backend_disconnected(self, session: VoiceSession) -> None:
+        """Auto-called when backend signals that a session has disconnected.
+
+        The backend has already cleaned up its own transport state, so we
+        call ``unbind_session`` (not ``disconnect_session``) to avoid a
+        redundant backend disconnect call.
+        """
+        self.unbind_session(session)
 
     def _on_session_ready(self, session: VoiceSession) -> None:
         """Handle backend signalling that a session's audio path is live.
@@ -755,6 +765,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._session_ready_pending.discard(session.id)
         with self._state_lock:
             binding_info = self._session_bindings.pop(session.id, None)
+        if binding_info is None:
+            return  # Already unbound — prevent double pipeline/telemetry calls
         # Notify pipeline of session end
         if self._pipeline is not None:
             self._pipeline.on_session_ended(session)

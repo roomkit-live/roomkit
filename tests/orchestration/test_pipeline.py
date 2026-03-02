@@ -437,9 +437,33 @@ class TestGreetOnHandoff:
         kit, captured = _mock_kit_capturing_hooks()
         agents = [_mock_agent("agent-a")]
 
+        # Without farewell_prompt: only ON_HANDOFF, no BEFORE_TTS
         pipeline.install(kit, agents, greet_on_handoff=True, voice_channel_id="voice")
 
-        # Should have ON_HANDOFF (ASYNC) and BEFORE_TTS (SYNC) hooks
+        on_handoff_key = (str(HookTrigger.ON_HANDOFF), str(HookExecution.ASYNC))
+        before_tts_key = (str(HookTrigger.BEFORE_TTS), str(HookExecution.SYNC))
+
+        assert on_handoff_key in captured, f"ON_HANDOFF not registered: {captured.keys()}"
+        assert before_tts_key not in captured, (
+            "BEFORE_TTS should not be registered without farewell_prompt"
+        )
+
+    def test_greet_on_handoff_registers_before_tts_with_farewell(self):
+        pipeline = ConversationPipeline(
+            stages=[PipelineStage(phase="a", agent_id="agent-a", next=None)],
+        )
+        kit, captured = _mock_kit_capturing_hooks()
+        agents = [_mock_agent("agent-a")]
+
+        # With farewell_prompt: both ON_HANDOFF and BEFORE_TTS are registered
+        pipeline.install(
+            kit,
+            agents,
+            greet_on_handoff=True,
+            voice_channel_id="voice",
+            farewell_prompt="Goodbye!",
+        )
+
         on_handoff_key = (str(HookTrigger.ON_HANDOFF), str(HookExecution.ASYNC))
         before_tts_key = (str(HookTrigger.BEFORE_TTS), str(HookExecution.SYNC))
 
@@ -447,7 +471,7 @@ class TestGreetOnHandoff:
         assert before_tts_key in captured, f"BEFORE_TTS not registered: {captured.keys()}"
 
     async def test_greet_blocks_farewell_then_allows(self):
-        """BEFORE_TTS blocks during handoff, allows after greeting clears flag."""
+        """BEFORE_TTS blocks during handoff (when farewell_prompt set), allows after."""
         pipeline = ConversationPipeline(
             stages=[
                 PipelineStage(phase="a", agent_id="agent-a", next="b"),
@@ -458,7 +482,13 @@ class TestGreetOnHandoff:
         kit.process_inbound = AsyncMock()
         agents = [_mock_agent("agent-a"), _mock_agent("agent-b")]
 
-        pipeline.install(kit, agents, greet_on_handoff=True, voice_channel_id="voice")
+        pipeline.install(
+            kit,
+            agents,
+            greet_on_handoff=True,
+            voice_channel_id="voice",
+            farewell_prompt="Goodbye!",
+        )
 
         on_handoff_key = (str(HookTrigger.ON_HANDOFF), str(HookExecution.ASYNC))
         before_tts_key = (str(HookTrigger.BEFORE_TTS), str(HookExecution.SYNC))
@@ -524,7 +554,13 @@ class TestGreetOnHandoff:
 
         kit.process_inbound = AsyncMock(side_effect=mock_process_inbound)
 
-        pipeline.install(kit, agents, greet_on_handoff=True, voice_channel_id="voice")
+        pipeline.install(
+            kit,
+            agents,
+            greet_on_handoff=True,
+            voice_channel_id="voice",
+            farewell_prompt="Goodbye!",
+        )
 
         on_handoff_key = (str(HookTrigger.ON_HANDOFF), str(HookExecution.ASYNC))
         before_tts_key = (str(HookTrigger.BEFORE_TTS), str(HookExecution.SYNC))
