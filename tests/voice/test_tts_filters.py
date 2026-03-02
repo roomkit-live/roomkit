@@ -79,6 +79,16 @@ class TestStripInternalTagsCall:
         f = StripInternalTags()
         assert f("[internally] visible") == "[internally] visible"
 
+    def test_stray_closing_tag(self):
+        """AI mixes formats: [internal: ...] then stray [/internal]."""
+        f = StripInternalTags()
+        text = "[internal: reasoning here][/internal]\nJe suis la réceptionniste."
+        assert f(text) == "Je suis la réceptionniste."
+
+    def test_stray_closing_tag_alone(self):
+        f = StripInternalTags()
+        assert f("[/internal] Hello!") == "Hello!"
+
 
 # ---------------------------------------------------------------------------
 # StripInternalTags — streaming (feed/flush)
@@ -169,6 +179,25 @@ class TestStripInternalTagsStreaming:
         r2 = f.feed("] visible")
         r3 = f.flush()
         assert r1 + r2 + r3 == "[internally] visible"
+
+    def test_stray_closing_tag_streaming(self):
+        """Stray [/internal] after single-bracket format is stripped."""
+        f = StripInternalTags()
+        f.reset()
+        r1 = f.feed("[internal: reason]")
+        r2 = f.feed("[/internal]")
+        r3 = f.feed("\nHello!")
+        r4 = f.flush()
+        assert r1 + r2 + r3 + r4 == "\nHello!"
+
+    def test_stray_closing_tag_split_chunks(self):
+        f = StripInternalTags()
+        f.reset()
+        r1 = f.feed("[internal: x]")
+        r2 = f.feed("[/inter")
+        r3 = f.feed("nal] visible")
+        r4 = f.flush()
+        assert r1 + r2 + r3 + r4 == " visible"
 
 
 # ---------------------------------------------------------------------------

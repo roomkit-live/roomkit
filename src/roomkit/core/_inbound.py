@@ -13,7 +13,9 @@ from roomkit.core._helpers import HelpersMixin
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, InboundResult
 from roomkit.models.enums import (
+    Access,
     ChannelCategory,
+    ChannelDirection,
     ChannelType,
     DeleteType,
     EventStatus,
@@ -763,12 +765,19 @@ class InboundMixin(HelpersMixin):
         """Consume a streaming response, pipe to streaming channels, store result."""
         from roomkit.models.event import EventSource, TextContent
 
-        # Find streaming delivery targets (transport channels that support it)
+        # Find streaming delivery targets (transport channels that support it).
+        # Apply the same permission checks as _filter_targets() in broadcast():
+        # access and direction.  Visibility is not checked here because the
+        # response event hasn't been materialised yet and defaults to "all".
         streaming_targets: list[Any] = []
         for binding in context.bindings:
             if binding.category != ChannelCategory.TRANSPORT:
                 continue
             if binding.channel_id == sr.source_channel_id:
+                continue
+            if binding.access in (Access.WRITE_ONLY, Access.NONE):
+                continue
+            if binding.direction == ChannelDirection.OUTBOUND:
                 continue
             channel = router.get_channel(binding.channel_id)
             supports = getattr(channel, "supports_streaming_delivery", False) if channel else False
@@ -782,11 +791,38 @@ class InboundMixin(HelpersMixin):
         )
 
         accumulated: list[str] = []
+        stream_exhausted = asyncio.Event()
 
         async def accumulated_stream() -> Any:
-            async for delta in sr.stream:
-                accumulated.append(delta)
-                yield delta
+            try:
+                async for delta in sr.stream:
+                    accumulated.append(delta)
+                    yield delta
+            finally:
+                stream_exhausted.set()
+
+        async def _store_when_ready() -> RoomEvent | None:
+            """Store the response as soon as the text stream exhausts.
+
+            This runs concurrently with audio playback so the response
+            is visible in the conversation store before TTS finishes.
+            """
+            await stream_exhausted.wait()
+            full_text = "".join(accumulated)
+            if not full_text:
+                return None
+            event = RoomEvent(
+                room_id=room_id,
+                source=EventSource(
+                    channel_id=sr.source_channel_id,
+                    channel_type=sr.source_channel_type,
+                ),
+                content=TextContent(body=full_text),
+                chain_depth=sr.trigger_event.chain_depth + 1,
+            )
+            return await self._store.add_event_auto_index(room_id, event)
+
+        store_task = asyncio.create_task(_store_when_ready())
 
         delivered_to: set[str] = set()
         if streaming_targets:
@@ -828,21 +864,11 @@ class InboundMixin(HelpersMixin):
             # No streaming targets — just consume the stream
             async for delta in sr.stream:
                 accumulated.append(delta)
+            stream_exhausted.set()
 
-        full_text = "".join(accumulated)
-        if not full_text:
+        response_event = await store_task
+        if response_event is None:
             return None
-
-        response_event = RoomEvent(
-            room_id=room_id,
-            source=EventSource(
-                channel_id=sr.source_channel_id,
-                channel_type=sr.source_channel_type,
-            ),
-            content=TextContent(body=full_text),
-            chain_depth=sr.trigger_event.chain_depth + 1,
-        )
-        response_event = await self._store.add_event_auto_index(room_id, response_event)
 
         return _StreamingResult(event=response_event, delivered_to=delivered_to)
 

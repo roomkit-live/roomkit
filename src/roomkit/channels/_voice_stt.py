@@ -44,6 +44,7 @@ class VoiceSTTMixin:
     _pipeline_config: AudioPipelineConfig | None
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
     _playing_sessions: dict[str, TTSPlaybackState]
+    _playback_done_events: dict[str, asyncio.Event]
     _last_tts_ended_at: dict[str, float]
     _stt_streams: dict[str, _STTStreamState]
     _continuous_stt: bool
@@ -280,7 +281,11 @@ class VoiceSTTMixin:
         with self._state_lock:  # type: ignore[attr-defined]
             playback = self._playing_sessions.get(session.id)
         if playback:
-            self._check_energy_barge_in(session, frame, playback)
+            # Skip energy barge-in during drain period (send_audio returned,
+            # waiting for echo decay) — nothing is actually playing.
+            done_ev = self._playback_done_events.get(session.id)
+            if done_ev is None or not done_ev.is_set():
+                self._check_energy_barge_in(session, frame, playback)
         elif self._barge_in_energy_count > 0:
             self._barge_in_energy_count = 0
 
@@ -453,7 +458,10 @@ class VoiceSTTMixin:
                             if not barge_in_fired:
                                 with self._state_lock:  # type: ignore[attr-defined]
                                     playback = self._playing_sessions.get(session.id)
-                                if playback:
+                                # Skip barge-in during drain period (send_audio
+                                # returned, waiting for echo decay).
+                                drain_ev = self._playback_done_events.get(session.id)
+                                if playback and not (drain_ev is not None and drain_ev.is_set()):
                                     from roomkit.voice.interruption import InterruptionHandler
 
                                     handler: InterruptionHandler = self._interruption_handler  # type: ignore[attr-defined]
