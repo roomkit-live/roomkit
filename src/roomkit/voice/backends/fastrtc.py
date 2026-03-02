@@ -30,8 +30,15 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import os
 import struct
 import uuid
+
+# Suppress gradio/huggingface telemetry that fires on import — set before
+# fastrtc/gradio are imported (both are lazy-imported inside mount_fastrtc_voice).
+# Users can override by setting the env vars explicitly before importing this module.
+os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
