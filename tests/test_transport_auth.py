@@ -103,6 +103,53 @@ async def test_ws_transport_no_auth() -> None:
 
 
 # -------------------------------------------------------------------------
+# audio_format tests
+# -------------------------------------------------------------------------
+
+
+async def test_ws_transport_send_audio_binary() -> None:
+    """audio_format='binary' should send raw bytes, not base64 JSON."""
+    transport = WebSocketRealtimeTransport(audio_format="binary")
+
+    session = _make_session()
+    mock_ws = AsyncMock()
+    mock_ws.__aiter__ = MagicMock(return_value=iter([]))
+
+    await transport.accept(session, mock_ws)
+
+    audio = b"\x00\x01\x02\x03"
+    await transport.send_audio(session, audio)
+
+    mock_ws.send.assert_called_once_with(audio)
+
+    await transport.close()
+
+
+async def test_ws_transport_send_audio_base64_json() -> None:
+    """audio_format='base64_json' (default) should send base64-encoded JSON."""
+    import base64
+    import json
+
+    transport = WebSocketRealtimeTransport()
+
+    session = _make_session()
+    mock_ws = AsyncMock()
+    mock_ws.__aiter__ = MagicMock(return_value=iter([]))
+
+    await transport.accept(session, mock_ws)
+
+    audio = b"\x00\x01\x02\x03"
+    await transport.send_audio(session, audio)
+
+    sent = mock_ws.send.call_args[0][0]
+    parsed = json.loads(sent)
+    assert parsed["type"] == "audio"
+    assert base64.b64decode(parsed["data"]) == audio
+
+    await transport.close()
+
+
+# -------------------------------------------------------------------------
 # AuthCallback type + auth_context tests
 # -------------------------------------------------------------------------
 

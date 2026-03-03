@@ -7,7 +7,7 @@ import base64
 import json
 import logging
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Literal
 
 from roomkit.voice.auth import AuthCallback
 from roomkit.voice.backends.base import (
@@ -24,13 +24,20 @@ class WebSocketRealtimeTransport(VoiceBackend):
     """Concrete WebSocket-based audio transport.
 
     Protocol:
-    - Client sends: ``{"type": "audio", "data": "<base64 PCM>"}``
-    - Server sends: ``{"type": "audio", "data": "<base64 PCM>"}``
+    - Client sends: ``{"type": "audio", "data": "<base64 PCM>"}`` or raw binary
+    - Server sends (``audio_format="base64_json"``): ``{"type": "audio", "data": "<base64 PCM>"}``
+    - Server sends (``audio_format="binary"``): raw binary frame
     - Server sends: ``{"type": "transcription", "text": "...", "role": "...", "is_final": true}``
     - Server sends: ``{"type": "speaking", "speaking": true, "who": "user"|"assistant"}``
 
     Each accepted connection starts a background receive loop that
     decodes incoming audio and fires callbacks.
+
+    Args:
+        authenticate: Optional async callback to authenticate connections.
+        audio_format: Outbound audio encoding. ``"base64_json"`` (default) wraps
+            audio in a JSON text frame; ``"binary"`` sends raw bytes as a
+            WebSocket binary frame (lower overhead, suitable for Web Audio API).
 
     Requires the ``websockets`` package.
     """
@@ -39,6 +46,7 @@ class WebSocketRealtimeTransport(VoiceBackend):
         self,
         *,
         authenticate: AuthCallback | None = None,
+        audio_format: Literal["binary", "base64_json"] = "base64_json",
     ) -> None:
         self._websockets: dict[str, Any] = {}  # session_id -> WebSocket
         self._receive_tasks: dict[str, asyncio.Task[None]] = {}
@@ -46,6 +54,7 @@ class WebSocketRealtimeTransport(VoiceBackend):
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
         self._sessions: dict[str, VoiceSession] = {}  # session_id -> session
         self._authenticate = authenticate
+        self._audio_format = audio_format
 
     @property
     def name(self) -> str:
@@ -90,21 +99,22 @@ class WebSocketRealtimeTransport(VoiceBackend):
         session: VoiceSession,
         audio: bytes | AsyncIterator[AudioChunk],
     ) -> None:
-        if isinstance(audio, bytes):
-            raw = audio
-        else:
+        if not isinstance(audio, bytes):
             return  # Streaming not supported in WS transport
         ws = self._websockets.get(session.id)
         if ws is None:
             return
-        message = json.dumps(
-            {
-                "type": "audio",
-                "data": base64.b64encode(raw).decode("ascii"),
-            }
-        )
         try:
-            await ws.send(message)
+            if self._audio_format == "binary":
+                await ws.send(audio)
+            else:
+                message = json.dumps(
+                    {
+                        "type": "audio",
+                        "data": base64.b64encode(audio).decode("ascii"),
+                    }
+                )
+                await ws.send(message)
         except Exception:
             logger.exception("Error sending audio to session %s", session.id)
 
