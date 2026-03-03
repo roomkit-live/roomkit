@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>RoomKit FastRTC Client</title>
+<!--
+  RoomKit browser client for FastRTC voice backends.
+
+  Supports two connection modes:
+    1. WebSocket (FastRTCVoiceBackend) — for STT/TTS pipeline
+    2. WebRTC  (FastRTCRealtimeTransport) — for speech-to-speech AI
+
+  Usage:
+    Open this file in a browser and enter the server URL.
+    Or serve it from a FastAPI app alongside the voice endpoint.
+-->
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 2rem;
+         max-width: 720px; margin: 0 auto; background: #fafafa; color: #333; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+  h1 small { font-weight: normal; color: #888; font-size: 0.8rem; }
+  .card { background: white; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  label { display: block; font-weight: 600; margin-bottom: 0.25rem; font-size: 0.85rem; }
+  input, select { width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px;
+                  font-size: 0.9rem; margin-bottom: 0.75rem; }
+  .row { display: flex; gap: 1rem; }
+  .row > * { flex: 1; }
+  button { padding: 0.6rem 1.5rem; font-size: 0.95rem; cursor: pointer; border-radius: 6px;
+           border: none; font-weight: 600; transition: opacity 0.2s; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button:hover:not(:disabled) { opacity: 0.85; }
+  #btn-connect { background: #4CAF50; color: white; }
+  #btn-disconnect { background: #f44336; color: white; }
+  #status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+                background: #ccc; margin-right: 0.5rem; vertical-align: middle; }
+  #status-dot.connected { background: #4CAF50; }
+  #status-dot.connecting { background: #FF9800; }
+  #transcript { margin-top: 1rem; max-height: 350px; overflow-y: auto; font-size: 0.9rem;
+                padding: 1rem; background: #f8f8f8; border-radius: 6px; border: 1px solid #eee; }
+  .msg { margin-bottom: 0.5rem; line-height: 1.4; }
+  .msg-user { color: #1565C0; }
+  .msg-assistant { color: #2E7D32; }
+  .msg-system { color: #999; font-style: italic; font-size: 0.85rem; }
+  #vu { height: 6px; background: #eee; border-radius: 3px; margin-top: 0.5rem; overflow: hidden; }
+  #vu-bar { height: 100%; width: 0; background: #4CAF50; transition: width 50ms; }
+</style>
+</head>
+<body>
+
+<h1>RoomKit FastRTC Client <small>v1</small></h1>
+
+<div class="card">
+  <div class="row">
+    <div>
+      <label for="server-url">Server URL</label>
+      <input id="server-url" type="text" value="http://localhost:8000" placeholder="http://localhost:8000">
+    </div>
+    <div>
+      <label for="mode">Transport</label>
+      <select id="mode">
+        <option value="websocket">WebSocket (STT/TTS pipeline)</option>
+        <option value="webrtc">WebRTC (speech-to-speech)</option>
+      </select>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label for="ws-path">WS endpoint path</label>
+      <input id="ws-path" type="text" value="/voice">
+    </div>
+    <div>
+      <label for="rtc-path">WebRTC endpoint path</label>
+      <input id="rtc-path" type="text" value="/rtc-realtime">
+    </div>
+  </div>
+  <div style="display:flex; align-items:center; gap:1rem; margin-top:0.5rem;">
+    <button id="btn-connect" onclick="connect()">Connect</button>
+    <button id="btn-disconnect" onclick="disconnect()" disabled>Disconnect</button>
+    <span><span id="status-dot"></span><span id="status-text">Disconnected</span></span>
+  </div>
+  <div id="vu"><div id="vu-bar"></div></div>
+</div>
+
+<div class="card">
+  <label>Conversation</label>
+  <div id="transcript"></div>
+</div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────────────
+let ws = null;
+let pc = null;
+let audioCtx = null;
+let micStream = null;
+let processor = null;
+
+// ─── UI helpers ─────────────────────────────────────────────────────────
+function setStatus(state, text) {
+  document.getElementById('status-dot').className = state;
+  document.getElementById('status-text').textContent = text;
+}
+
+function logMsg(text, role) {
+  const el = document.getElementById('transcript');
+  const div = document.createElement('div');
+  div.className = 'msg msg-' + (role || 'system');
+  div.textContent = (role === 'user' ? 'You: ' : role === 'assistant' ? 'Assistant: ' : '') + text;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setVU(level) {
+  document.getElementById('vu-bar').style.width = Math.min(100, level) + '%';
+}
+
+function setButtons(connected) {
+  document.getElementById('btn-connect').disabled = connected;
+  document.getElementById('btn-disconnect').disabled = !connected;
+}
+
+// ─── Mu-law codec ───────────────────────────────────────────────────────
+const MULAW_BIAS = 0x84, MULAW_CLIP = 32635;
+
+function encodeMulaw(sample) {
+  const sign = sample >= 0 ? 0x80 : 0x00;
+  let mag = Math.min(Math.abs(sample), MULAW_CLIP) + MULAW_BIAS;
+  let exp = 7, mask = 0x4000;
+  while (exp > 0 && !(mag & mask)) { exp--; mask >>= 1; }
+  const mantissa = (mag >> (exp + 3)) & 0x0F;
+  return (~((exp << 4) | mantissa) & 0x7F) | sign;
+}
+
+const MULAW_DECODE = new Int16Array(256);
+(function() {
+  for (let i = 0; i < 256; i++) {
+    const v = ~i;
+    const sign = v & 0x80;
+    const exp = (v >> 4) & 0x07;
+    const mantissa = v & 0x0F;
+    let sample = ((mantissa << 3) + MULAW_BIAS) << exp;
+    sample -= MULAW_BIAS;
+    MULAW_DECODE[i] = sign ? sample : -sample;
+  }
+})();
+
+function pcmToMulaw(pcm16) {
+  const out = new Uint8Array(pcm16.length);
+  for (let i = 0; i < pcm16.length; i++) out[i] = encodeMulaw(pcm16[i]);
+  return out;
+}
+
+function mulawToPcm(mulaw) {
+  const pcm = new Int16Array(mulaw.length);
+  for (let i = 0; i < mulaw.length; i++) pcm[i] = MULAW_DECODE[mulaw[i]];
+  return pcm;
+}
+
+// ─── Connect ────────────────────────────────────────────────────────────
+async function connect() {
+  const mode = document.getElementById('mode').value;
+  if (mode === 'websocket') await connectWebSocket();
+  else await connectWebRTC();
+}
+
+// ─── WebSocket mode (FastRTCVoiceBackend) ───────────────────────────────
+async function connectWebSocket() {
+  const base = document.getElementById('server-url').value.replace(/\/$/, '');
+  const path = document.getElementById('ws-path').value;
+  const proto = base.startsWith('https') ? 'wss:' : 'ws:';
+  const host = base.replace(/^https?:\/\//, '');
+  const wsUrl = `${proto}//${host}${path}/websocket/offer`;
+  const wsId = crypto.randomUUID?.() || Math.random().toString(36).substring(2, 10);
+
+  setStatus('connecting', 'Connecting (WS)...');
+  setButtons(true);
+  logMsg('Connecting via WebSocket to ' + wsUrl, 'system');
+
+  ws = new WebSocket(wsUrl);
+  audioCtx = new AudioContext({ sampleRate: 48000 });
+
+  ws.onopen = async () => {
+    ws.send(JSON.stringify({ event: 'start', websocket_id: wsId }));
+    setStatus('connected', 'Connected (WebSocket)');
+    logMsg('Connected (id=' + wsId + ')', 'system');
+
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      logMsg('Microphone access denied: ' + err.message, 'system');
+      disconnect();
+      return;
+    }
+
+    const source = audioCtx.createMediaStreamSource(micStream);
+    processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+    processor.onaudioprocess = (e) => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const f32 = e.inputBuffer.getChannelData(0);
+
+      // VU meter
+      let sum = 0;
+      for (let i = 0; i < f32.length; i++) sum += f32[i] * f32[i];
+      setVU(Math.sqrt(sum / f32.length) * 500);
+
+      // PCM16 → mu-law → base64
+      const pcm16 = new Int16Array(f32.length);
+      for (let i = 0; i < f32.length; i++)
+        pcm16[i] = Math.max(-32768, Math.min(32767, Math.round(f32[i] * 32767)));
+      const mulaw = pcmToMulaw(pcm16);
+      const b64 = btoa(String.fromCharCode.apply(null, mulaw));
+      ws.send(JSON.stringify({ event: 'media', media: { payload: b64 } }));
+    };
+
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+  };
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    // Audio playback
+    if (data.event === 'media' && data.media?.payload) {
+      const raw = atob(data.media.payload);
+      const mulaw = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) mulaw[i] = raw.charCodeAt(i);
+      const pcm = mulawToPcm(mulaw);
+      const f32 = new Float32Array(pcm.length);
+      for (let i = 0; i < pcm.length; i++) f32[i] = pcm[i] / 32768;
+      playAudio(f32, 24000);
+    }
+
+    // Transcription
+    if (data.type === 'transcription' && data.data?.text) {
+      logMsg(data.data.text, data.data.role || 'user');
+    }
+  };
+
+  ws.onclose = () => { setStatus('', 'Disconnected'); logMsg('Disconnected', 'system'); cleanup(); };
+  ws.onerror = () => { logMsg('WebSocket error', 'system'); cleanup(); };
+}
+
+// ─── WebRTC mode (FastRTCRealtimeTransport) ─────────────────────────────
+async function connectWebRTC() {
+  const base = document.getElementById('server-url').value.replace(/\/$/, '');
+  const path = document.getElementById('rtc-path').value;
+  const offerUrl = `${base}${path}/webrtc/offer`;
+  const webrtcId = crypto.randomUUID?.() || Math.random().toString(36).substring(2, 10);
+
+  setStatus('connecting', 'Connecting (WebRTC)...');
+  setButtons(true);
+  logMsg('Connecting via WebRTC to ' + offerUrl, 'system');
+
+  audioCtx = new AudioContext();
+
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    logMsg('Microphone access denied: ' + err.message, 'system');
+    disconnect();
+    return;
+  }
+
+  pc = new RTCPeerConnection();
+
+  // Add mic tracks
+  micStream.getTracks().forEach(track => pc.addTrack(track, micStream));
+
+  // Data channel for transcriptions and JSON messages
+  const dc = pc.createDataChannel('text');
+  dc.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      // Transcription from provider
+      if (data.type === 'transcription' && data.data?.text) {
+        logMsg(data.data.text, data.data.role || 'user');
+      }
+      // Audio via data channel (mu-law)
+      if (data.event === 'media' && data.media?.payload) {
+        const raw = atob(data.media.payload);
+        const mulaw = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) mulaw[i] = raw.charCodeAt(i);
+        const pcm = mulawToPcm(mulaw);
+        const f32 = new Float32Array(pcm.length);
+        for (let i = 0; i < pcm.length; i++) f32[i] = pcm[i] / 32768;
+        playAudio(f32, 24000);
+      }
+    } catch { /* ignore non-JSON */ }
+  };
+
+  // Receive remote audio tracks
+  pc.ontrack = (event) => {
+    const audio = new Audio();
+    audio.srcObject = event.streams[0];
+    audio.play();
+    logMsg('Receiving remote audio track', 'system');
+  };
+
+  // ICE candidates → server
+  pc.onicecandidate = ({ candidate }) => {
+    if (candidate) {
+      fetch(offerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidate: candidate.toJSON(), webrtc_id: webrtcId, type: 'ice-candidate' }),
+      });
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'connected') {
+      setStatus('connected', 'Connected (WebRTC)');
+      logMsg('WebRTC connected', 'system');
+    } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      logMsg('WebRTC ' + pc.connectionState, 'system');
+      disconnect();
+    }
+  };
+
+  // Create offer → send to server → set remote answer
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  try {
+    const resp = await fetch(offerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sdp: offer.sdp, type: offer.type, webrtc_id: webrtcId }),
+    });
+    const answer = await resp.json();
+    if (answer.status === 'failed') {
+      logMsg('Server rejected: ' + JSON.stringify(answer.meta), 'system');
+      disconnect();
+      return;
+    }
+    await pc.setRemoteDescription(answer);
+  } catch (err) {
+    logMsg('Offer failed: ' + err.message, 'system');
+    disconnect();
+  }
+}
+
+// ─── Audio playback ─────────────────────────────────────────────────────
+function playAudio(float32, sampleRate) {
+  if (!audioCtx || audioCtx.state === 'closed') return;
+  const buffer = audioCtx.createBuffer(1, float32.length, sampleRate);
+  buffer.getChannelData(0).set(float32);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(audioCtx.destination);
+  src.start();
+}
+
+// ─── Disconnect / cleanup ───────────────────────────────────────────────
+function disconnect() {
+  if (ws) { ws.close(); ws = null; }
+  if (pc) { pc.close(); pc = null; }
+  cleanup();
+}
+
+function cleanup() {
+  setButtons(false);
+  setVU(0);
+  if (processor) { processor.disconnect(); processor = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (audioCtx && audioCtx.state !== 'closed') audioCtx.close().catch(() => {});
+  audioCtx = null;
+}
+</script>
+</body>
+</html>
