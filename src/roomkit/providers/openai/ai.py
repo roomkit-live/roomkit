@@ -309,9 +309,14 @@ class OpenAIAIProvider(AIProvider):
         usage: dict[str, int] = {}
         if response.usage:
             usage = {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
+                "input_tokens": response.usage.prompt_tokens or 0,
+                "output_tokens": response.usage.completion_tokens or 0,
             }
+            # Extract cached tokens from OpenAI-compatible prompt_tokens_details
+            ptd = getattr(response.usage, "prompt_tokens_details", None)
+            cached = getattr(ptd, "cached_tokens", 0) if ptd else 0
+            if cached:
+                usage["cache_read_input_tokens"] = cached
 
         # Extract tool calls from response
         tool_calls: list[AIToolCall] = []
@@ -395,6 +400,11 @@ class OpenAIAIProvider(AIProvider):
                         "input_tokens": chunk.usage.prompt_tokens or 0,
                         "output_tokens": chunk.usage.completion_tokens or 0,
                     }
+                    # Extract cached tokens from OpenAI-compatible prompt_tokens_details
+                    ptd = getattr(chunk.usage, "prompt_tokens_details", None)
+                    cached = getattr(ptd, "cached_tokens", 0) if ptd else 0
+                    if cached:
+                        usage["cache_read_input_tokens"] = cached
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
