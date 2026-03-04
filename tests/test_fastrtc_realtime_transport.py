@@ -63,7 +63,7 @@ class TestFastRTCRealtimeTransport:
         assert transport._session_handlers[session.id] == webrtc_id
         assert transport._webrtc_sessions[webrtc_id] is session
 
-    async def test_send_audio_queues_to_handler(self, transport, handler) -> None:
+    async def test_send_audio_calls_send_audio_direct(self, transport, handler) -> None:
         session = _make_session()
         webrtc_id = "webrtc-123"
 
@@ -72,11 +72,11 @@ class TestFastRTCRealtimeTransport:
         await transport.accept(session, webrtc_id)
 
         audio_data = b"\x00\x01" * 100
-        await transport.send_audio(session, audio_data)
 
-        # Check audio was queued
-        queued = handler._audio_queue.get_nowait()
-        assert queued == audio_data
+        # send_audio now goes through send_audio_direct (bypasses emit queue)
+        with patch.object(handler, "send_audio_direct") as mock_send:
+            await transport.send_audio(session, audio_data)
+            mock_send.assert_called_once_with(audio_data)
 
     async def test_send_audio_no_handler_noop(self, transport) -> None:
         """send_audio with no handler registered should not raise."""
@@ -89,20 +89,23 @@ class TestFastRTCRealtimeTransport:
         session = _make_session()
         webrtc_id = "webrtc-123"
 
-        # Set up a mock data channel
-        handler.channel = MagicMock()
-        handler.channel.send = MagicMock()
+        # Set up a mock data channel via property patch (channel is read-only)
+        mock_channel = MagicMock()
+        mock_channel.send = MagicMock()
 
         transport._register_handler(webrtc_id, handler)
         await transport.accept(session, webrtc_id)
 
         message = {"type": "transcription", "text": "hello"}
-        await transport.send_message(session, message)
+        with patch.object(
+            type(handler), "channel", new_callable=lambda: property(lambda self: mock_channel)
+        ):
+            await transport.send_message(session, message)
 
-        handler.channel.send.assert_called_once()
+        mock_channel.send.assert_called_once()
         import json
 
-        sent_data = handler.channel.send.call_args[0][0]
+        sent_data = mock_channel.send.call_args[0][0]
         assert json.loads(sent_data) == message
 
     async def test_send_message_no_channel_noop(self, transport, handler) -> None:
@@ -110,12 +113,16 @@ class TestFastRTCRealtimeTransport:
         session = _make_session()
         webrtc_id = "webrtc-123"
 
-        handler.channel = None
+        # channel property returns None by default when no WebRTC connection
         transport._register_handler(webrtc_id, handler)
         await transport.accept(session, webrtc_id)
 
-        # Should not raise
-        await transport.send_message(session, {"type": "test"})
+        # Patch channel to return None
+        with patch.object(
+            type(handler), "channel", new_callable=lambda: property(lambda self: None)
+        ):
+            # Should not raise
+            await transport.send_message(session, {"type": "test"})
 
     async def test_receive_fires_audio_callbacks(self, transport, handler) -> None:
         import numpy as np
@@ -222,12 +229,15 @@ class TestFastRTCRealtimeTransport:
         await transport.accept(session1, "webrtc-1")
         await transport.accept(session2, "webrtc-2")
 
-        # Send audio to each
-        await transport.send_audio(session1, b"audio-1")
-        await transport.send_audio(session2, b"audio-2")
-
-        assert handler1._audio_queue.get_nowait() == b"audio-1"
-        assert handler2._audio_queue.get_nowait() == b"audio-2"
+        # Send audio to each — now goes through send_audio_direct
+        with (
+            patch.object(handler1, "send_audio_direct") as mock1,
+            patch.object(handler2, "send_audio_direct") as mock2,
+        ):
+            await transport.send_audio(session1, b"audio-1")
+            await transport.send_audio(session2, b"audio-2")
+            mock1.assert_called_once_with(b"audio-1")
+            mock2.assert_called_once_with(b"audio-2")
 
         # Disconnect one doesn't affect the other
         await transport.disconnect(session1)
@@ -306,18 +316,10 @@ class TestFastRTCRealtimeTransport:
         result = await handler.emit()
         assert result is None
 
-    async def test_handler_emit_audio(self, handler) -> None:
-        """emit() should return (sample_rate, ndarray) for queued audio."""
-        import numpy as np
-
-        pcm_bytes = np.array([100, -200, 300], dtype=np.int16).tobytes()
-        handler._audio_queue.put_nowait(pcm_bytes)
-
+    async def test_handler_emit_always_returns_none(self, handler) -> None:
+        """emit() is a no-op that always returns None (audio sent via send_audio_direct)."""
         result = await handler.emit()
-        assert result is not None
-        rate, arr = result
-        assert rate == 24000
-        np.testing.assert_array_equal(arr, np.array([100, -200, 300], dtype=np.int16))
+        assert result is None
 
     async def test_handler_shutdown_unregisters(self, transport, handler) -> None:
         webrtc_id = "webrtc-123"
