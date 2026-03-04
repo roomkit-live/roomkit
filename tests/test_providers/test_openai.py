@@ -135,7 +135,7 @@ class TestOpenAIAIProvider:
 
             result = await provider.generate(_context())
 
-            assert result.usage == {"prompt_tokens": 42, "completion_tokens": 7}
+            assert result.usage == {"input_tokens": 42, "output_tokens": 7}
 
     @pytest.mark.asyncio
     async def test_generate_api_error(self) -> None:
