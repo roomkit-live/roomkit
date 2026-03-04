@@ -295,6 +295,7 @@ class TestFastRTCSendAudio:
         backend = FastRTCVoiceBackend()
         session = await backend.connect("room-1", "user-1", "voice-1")
         ws = AsyncMock()
+        ws.client_state = None  # Not a Starlette WebSocket
         backend._register_websocket("ws-1", session.id, ws)
 
         pcm = struct.pack("<h", 1000)  # one sample
@@ -310,6 +311,7 @@ class TestFastRTCSendAudio:
         backend = FastRTCVoiceBackend()
         session = await backend.connect("room-1", "user-1", "voice-1")
         ws = AsyncMock()
+        ws.client_state = None  # Not a Starlette WebSocket
         backend._register_websocket("ws-1", session.id, ws)
 
         async def audio_gen():
@@ -325,6 +327,7 @@ class TestFastRTCSendTranscription:
         backend = FastRTCVoiceBackend()
         session = await backend.connect("room-1", "user-1", "voice-1")
         ws = AsyncMock()
+        ws.client_state = None
         backend._register_websocket("ws-1", session.id, ws)
 
         await backend.send_transcription(session, "Hello", "user")
@@ -346,6 +349,7 @@ class TestFastRTCSendTranscription:
         backend = FastRTCVoiceBackend()
         session = await backend.connect("room-1", "user-1", "voice-1")
         ws = AsyncMock()
+        ws.client_state = None
         backend._register_websocket("ws-1", session.id, ws)
 
         await backend.send_transcription(session, "Hello")
@@ -418,6 +422,7 @@ class TestFastRTCResolveWebSocket:
         )
 
         mock_ws = AsyncMock()
+        mock_ws.client_state = None
         mock_handler = MagicMock()
         mock_handler.websocket = mock_ws
         mock_stream = MagicMock()
@@ -439,6 +444,7 @@ class TestFastRTCResolveWebSocket:
         )
 
         mock_ws = AsyncMock()
+        mock_ws.client_state = None
         mock_handler = MagicMock()
         mock_handler.websocket = mock_ws
         mock_stream = MagicMock()

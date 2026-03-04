@@ -278,8 +278,15 @@ class ElevenLabsTTSProvider(TTSProvider):
                             await ws.send(json.dumps({"text": text_chunk}))
                     # Send EOS (end of stream) message
                     await ws.send(json.dumps({"text": ""}))
+                except websockets.exceptions.ConnectionClosed as e:
+                    logger.error("ElevenLabs WebSocket closed while sending: %s", e)
                 except Exception as e:
-                    logger.error("Error sending text to ElevenLabs: %s", e)
+                    logger.error(
+                        "Error in upstream text stream (not ElevenLabs): %s: %s",
+                        type(e).__name__,
+                        e,
+                    )
+                    await ws.close()
 
             sender_task = asyncio.create_task(send_text())
 

@@ -160,6 +160,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._playing_sessions: dict[str, TTSPlaybackState] = {}
         # Signalled when send_audio() returns for a session (before drain delay)
         self._playback_done_events: dict[str, asyncio.Event] = {}
+        # Sessions where speech was suppressed (echo during TTS playback)
+        self._suppressed_sessions: set[str] = set()
         # The instantiated pipeline engine (if config provided)
         self._pipeline: AudioPipeline | None = None
         # Pending turns for turn detection (session_id -> list of TurnEntry)
@@ -390,6 +392,12 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
     def _on_pipeline_speech_end(self, session: VoiceSession, audio: bytes) -> None:
         """Handle speech end from pipeline — fire hooks and transcribe."""
+        # If this speech segment was suppressed (echo during TTS), discard it.
+        if session.id in self._suppressed_sessions:
+            self._suppressed_sessions.discard(session.id)
+            logger.debug("Suppressed echo speech end for %s", session.id)
+            return
+
         # Pop the stream state now so a rapid SPEECH_START can't steal it.
         # Without this, a new stream created by _start_stt_stream would
         # overwrite _stt_streams[session.id] before _process_speech_end
@@ -428,6 +436,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
         if vad_event.type == VADEventType.SPEECH_START:
             # Check for barge-in using InterruptionHandler
+            suppress_speech = False
             with self._state_lock:
                 playback = self._playing_sessions.get(session.id)
             if playback:
@@ -435,7 +444,10 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                 # decay), skip barge-in — nothing is actually playing.
                 done_ev = self._playback_done_events.get(session.id)
                 if done_ev is not None and done_ev.is_set():
-                    pass  # Drain period — skip barge-in
+                    # Drain period — TTS finished but echo decay in progress.
+                    # Suppress STT to avoid transcribing residual echo.
+                    suppress_speech = True
+                    self._suppressed_sessions.add(session.id)
                 else:
                     decision = self._interruption_handler.evaluate(
                         playback_position_ms=playback.position_ms,
@@ -451,15 +463,21 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                             self._fire_backchannel_hook(session, "", room_id),
                             name=f"backchannel:{session.id}",
                         )
+                    else:
+                        # No interruption and no backchannel — suppress STT
+                        # to prevent echo loops (TTS audio picked up by mic).
+                        suppress_speech = True
+                        self._suppressed_sessions.add(session.id)
 
-            # Start streaming STT if provider supports it
-            if self._stt and self._stt.supports_streaming:
-                self._start_stt_stream(session, room_id, pre_roll=vad_event.audio_bytes)
+            if not suppress_speech:
+                # Start streaming STT if provider supports it
+                if self._stt and self._stt.supports_streaming:
+                    self._start_stt_stream(session, room_id, pre_roll=vad_event.audio_bytes)
 
-            self._schedule(
-                self._fire_speech_start_hooks(session, room_id),
-                name=f"speech_start:{session.id}",
-            )
+                self._schedule(
+                    self._fire_speech_start_hooks(session, room_id),
+                    name=f"speech_start:{session.id}",
+                )
         elif vad_event.type == VADEventType.SPEECH_END:
             # ON_SPEECH_END hooks are fired by _process_speech_end() to
             # guarantee ordering (ON_SPEECH_END before ON_TRANSCRIPTION).

@@ -236,6 +236,23 @@ class DeepgramSTTProvider(STTProvider):
 
         import websockets
 
+        # Read the first chunk to detect the actual sample rate.
+        first_chunk: AudioChunk | None = None
+        async for chunk in audio_stream:
+            first_chunk = chunk
+            break
+
+        if first_chunk is None:
+            logger.debug("Deepgram stream: no audio chunks received")
+            return
+
+        sample_rate = first_chunk.sample_rate or 16000
+        logger.debug(
+            "Deepgram stream: first chunk %d bytes, sample_rate=%d",
+            len(first_chunk.data),
+            sample_rate,
+        )
+
         # Build WebSocket URL with query params
         params = self._build_query_params()
         params["interim_results"] = str(self._config.interim_results).lower()
@@ -247,26 +264,40 @@ class DeepgramSTTProvider(STTProvider):
         if self._config.utterance_end_ms is not None:
             params["utterance_end_ms"] = self._config.utterance_end_ms
         params["encoding"] = "linear16"
-        params["sample_rate"] = "16000"
+        params["sample_rate"] = str(sample_rate)
 
         query_string = self._to_query_string(params)
         ws_url = f"wss://api.deepgram.com/v1/listen?{query_string}"
 
         headers = [("Authorization", f"Token {self._config.api_key}")]
 
+        logger.debug("Deepgram stream: connecting to %s", ws_url[:80])
         async with websockets.connect(ws_url, additional_headers=headers, open_timeout=30) as ws:
+            logger.debug("Deepgram stream: WebSocket connected")
+
             # Start sender task
+            chunks_sent = 0
+
             async def send_audio() -> None:
+                nonlocal chunks_sent
                 try:
+                    # Send the first chunk that was consumed to detect sample rate
+                    if first_chunk.data:
+                        await ws.send(first_chunk.data)
+                        chunks_sent += 1
                     async for chunk in audio_stream:
                         if chunk.data:
                             await ws.send(chunk.data)
+                            chunks_sent += 1
                         if chunk.is_final:
                             break
+                    logger.debug("Deepgram stream: sender done, %d chunks sent", chunks_sent)
                     # Tell Deepgram to flush remaining audio and close
                     await ws.send(json.dumps({"type": "CloseStream"}))
                 except Exception as e:
-                    logger.error("Error sending audio to Deepgram: %s", e)
+                    logger.error(
+                        "Error sending audio to Deepgram (%d chunks sent): %s", chunks_sent, e
+                    )
 
                 # NOTE: Do NOT call ws.close() here — let Deepgram close
                 # from its side after flushing final results.  Calling
@@ -276,14 +307,17 @@ class DeepgramSTTProvider(STTProvider):
             sender_task = asyncio.create_task(send_audio())
 
             try:
+                msg_count = 0
                 async for message in ws:
                     if isinstance(message, bytes):
                         continue
 
                     data = json.loads(message)
+                    msg_count += 1
+                    msg_type = data.get("type", "unknown")
 
                     # Handle transcription results
-                    if data.get("type") == "Results":
+                    if msg_type == "Results":
                         channel = data.get("channel", {})
                         alternatives = channel.get("alternatives", [])
                         if alternatives:
@@ -293,6 +327,14 @@ class DeepgramSTTProvider(STTProvider):
                             words = alt.get("words", [])
                             is_final = data.get("is_final", False)
 
+                            logger.debug(
+                                "Deepgram stream msg #%d: type=%s, final=%s, text=%r",
+                                msg_count,
+                                msg_type,
+                                is_final,
+                                transcript[:80] if transcript else "",
+                            )
+
                             if transcript:
                                 yield TranscriptionResult(
                                     text=transcript,
@@ -301,12 +343,26 @@ class DeepgramSTTProvider(STTProvider):
                                     language=data.get("channel", {}).get("detected_language"),
                                     words=words,
                                 )
+                        else:
+                            logger.debug(
+                                "Deepgram stream msg #%d: type=%s, no alternatives",
+                                msg_count,
+                                msg_type,
+                            )
 
                     # Handle speech events
-                    elif data.get("type") == "SpeechStarted":
-                        logger.debug("Speech started")
-                    elif data.get("type") == "UtteranceEnd":
-                        logger.debug("Utterance ended")
+                    elif msg_type == "SpeechStarted":
+                        logger.debug("Deepgram stream msg #%d: SpeechStarted", msg_count)
+                    elif msg_type == "UtteranceEnd":
+                        logger.debug("Deepgram stream msg #%d: UtteranceEnd", msg_count)
+                    else:
+                        logger.debug("Deepgram stream msg #%d: type=%s", msg_count, msg_type)
+
+                logger.debug(
+                    "Deepgram stream: WebSocket closed after %d messages, %d chunks sent",
+                    msg_count,
+                    chunks_sent,
+                )
 
             finally:
                 sender_task.cancel()

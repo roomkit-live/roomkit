@@ -23,6 +23,7 @@ Run with:
 Environment variables:
     ANTHROPIC_API_KEY   (required) Anthropic API key
     DEEPGRAM_API_KEY    (required) Deepgram API key
+    STT_LANGUAGE        STT language code (default: en)
     ELEVENLABS_API_KEY  (required) ElevenLabs API key
     ELEVENLABS_VOICE_ID Voice ID (default: Rachel)
     SYSTEM_PROMPT       Custom system prompt for Claude
@@ -80,11 +81,12 @@ vad = EnergyVADProvider(
 pipeline = AudioPipelineConfig(vad=vad)
 
 # --- Deepgram STT ---
+stt_language = os.environ.get("STT_LANGUAGE", "en")
 stt = DeepgramSTTProvider(
     config=DeepgramConfig(
         api_key=os.environ.get("DEEPGRAM_API_KEY", ""),
         model="nova-3",
-        language="en",
+        language=stt_language,
         punctuate=True,
         smart_format=True,
         endpointing=300,
@@ -130,11 +132,11 @@ kit.register_channel(ai)
 async def session_factory(websocket_id: str):
     """Create a room and voice session when a browser connects."""
     room = await kit.create_room()
-    await kit.attach_channel(room.id, "voice")
+    binding = await kit.attach_channel(room.id, "voice")
     await kit.attach_channel(room.id, "ai", category=ChannelCategory.INTELLIGENCE)
     session = await backend.connect(room.id, "browser-user", "voice")
     session.metadata["websocket_id"] = websocket_id
-    voice.bind_session(session, room.id)
+    voice.bind_session(session, room.id, binding)
     logger.info("Session created: session=%s, room=%s", session.id, room.id)
     return session
 
@@ -233,7 +235,7 @@ BROWSER_CLIENT_HTML = """\
 <div id="log"></div>
 
 <script>
-let ws, audioCtx, processor, micStream;
+let ws, audioCtx, processor, micStream, nextPlayTime = 0;
 
 function log(text, cls) {
   const el = document.getElementById('log');
@@ -298,6 +300,7 @@ async function startVoice() {
   ws = new WebSocket(`${proto}//${location.host}/voice/websocket/offer`);
 
   audioCtx = new AudioContext({ sampleRate: 48000 });
+  nextPlayTime = 0;
 
   ws.onopen = async () => {
     ws.send(JSON.stringify({ event: 'start', websocket_id: wsId }));
@@ -329,7 +332,7 @@ async function startVoice() {
     const data = JSON.parse(event.data);
 
     if (data.event === 'media' && data.media && data.media.payload) {
-      // Decode mu-law audio and play
+      // Decode mu-law audio and play sequentially (queued)
       const raw = atob(data.media.payload);
       const mulaw = new Uint8Array(raw.length);
       for (let i = 0; i < raw.length; i++) mulaw[i] = raw.charCodeAt(i);
@@ -337,18 +340,40 @@ async function startVoice() {
       const float32 = new Float32Array(pcm.length);
       for (let i = 0; i < pcm.length; i++) float32[i] = pcm[i] / 32768;
 
-      const buffer = audioCtx.createBuffer(1, float32.length, 24000);
+      const sampleRate = 24000;
+      const buffer = audioCtx.createBuffer(1, float32.length, sampleRate);
       buffer.getChannelData(0).set(float32);
       const src = audioCtx.createBufferSource();
       src.buffer = buffer;
       src.connect(audioCtx.destination);
-      src.start();
+
+      // Schedule chunk after previous one finishes (no overlap)
+      const now = audioCtx.currentTime;
+      if (nextPlayTime < now) nextPlayTime = now;
+      src.start(nextPlayTime);
+      nextPlayTime += buffer.duration;
     }
 
     if (data.type === 'transcription') {
       const role = data.data.role || 'user';
-      const label = role === 'assistant' ? 'Assistant' : 'You';
-      log(`${label}: ${data.data.text}`, role === 'assistant' ? 'assistant' : 'user');
+      if (role === 'assistant_interim') {
+        // Update interim text in-place
+        let el = document.getElementById('interim');
+        if (!el) {
+          el = document.createElement('span');
+          el.id = 'interim';
+          el.className = 'assistant';
+          document.getElementById('log').appendChild(el);
+        }
+        el.textContent = 'Assistant: ' + data.data.text + '\\n';
+        document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight;
+      } else {
+        // Final transcription — remove interim and log permanently
+        const interim = document.getElementById('interim');
+        if (interim) interim.remove();
+        const label = role === 'assistant' ? 'Assistant' : 'You';
+        log(label + ': ' + data.data.text, role === 'assistant' ? 'assistant' : 'user');
+      }
     }
   };
 

@@ -156,6 +156,11 @@ class VoiceSTTMixin:
             from roomkit.voice.base import AudioChunk as OutChunk
 
             sample_rate = session.metadata.get("input_sample_rate", 16000)
+            logger.debug(
+                "STT stream pre-roll: %d bytes, sample_rate=%d",
+                len(pre_roll),
+                sample_rate,
+            )
             queue.put_nowait(OutChunk(data=pre_roll, sample_rate=sample_rate))
 
         async def audio_gen() -> AsyncIterator[AudioChunk]:
