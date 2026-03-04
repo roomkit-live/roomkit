@@ -95,6 +95,7 @@ let pc = null;
 let audioCtx = null;
 let micStream = null;
 let processor = null;
+let nextPlayTime = 0;
 
 // ─── UI helpers ─────────────────────────────────────────────────────────
 function setStatus(state, text) {
@@ -109,6 +110,27 @@ function logMsg(text, role) {
   div.textContent = (role === 'user' ? 'You: ' : role === 'assistant' ? 'Assistant: ' : '') + text;
   el.appendChild(div);
   el.scrollTop = el.scrollHeight;
+}
+
+function handleTranscription(data) {
+  const role = data.role || 'user';
+  if (role === 'assistant_interim') {
+    // Update interim text in-place
+    let el = document.getElementById('interim-msg');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'interim-msg';
+      el.className = 'msg msg-assistant';
+      document.getElementById('transcript').appendChild(el);
+    }
+    el.textContent = 'Assistant: ' + data.text;
+    document.getElementById('transcript').scrollTop = document.getElementById('transcript').scrollHeight;
+  } else {
+    // Final transcription — remove interim and log permanently
+    const interim = document.getElementById('interim-msg');
+    if (interim) interim.remove();
+    logMsg(data.text, role === 'assistant' ? 'assistant' : 'user');
+  }
 }
 
 function setVU(level) {
@@ -179,6 +201,7 @@ async function connectWebSocket() {
 
   ws = new WebSocket(wsUrl);
   audioCtx = new AudioContext({ sampleRate: 48000 });
+  nextPlayTime = 0;
 
   ws.onopen = async () => {
     ws.send(JSON.stringify({ event: 'start', websocket_id: wsId }));
@@ -234,7 +257,7 @@ async function connectWebSocket() {
 
     // Transcription
     if (data.type === 'transcription' && data.data?.text) {
-      logMsg(data.data.text, data.data.role || 'user');
+      handleTranscription(data.data);
     }
   };
 
@@ -254,6 +277,7 @@ async function connectWebRTC() {
   logMsg('Connecting via WebRTC to ' + offerUrl, 'system');
 
   audioCtx = new AudioContext();
+  nextPlayTime = 0;
 
   try {
     micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -275,7 +299,7 @@ async function connectWebRTC() {
       const data = JSON.parse(event.data);
       // Transcription from provider
       if (data.type === 'transcription' && data.data?.text) {
-        logMsg(data.data.text, data.data.role || 'user');
+        handleTranscription(data.data);
       }
       // Audio via data channel (mu-law)
       if (data.event === 'media' && data.media?.payload) {
@@ -350,7 +374,11 @@ function playAudio(float32, sampleRate) {
   const src = audioCtx.createBufferSource();
   src.buffer = buffer;
   src.connect(audioCtx.destination);
-  src.start();
+  // Schedule chunk after previous one finishes (no overlap)
+  const now = audioCtx.currentTime;
+  if (nextPlayTime < now) nextPlayTime = now;
+  src.start(nextPlayTime);
+  nextPlayTime += buffer.duration;
 }
 
 // ─── Disconnect / cleanup ───────────────────────────────────────────────
