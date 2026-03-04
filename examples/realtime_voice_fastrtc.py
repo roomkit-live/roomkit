@@ -109,7 +109,7 @@ app.add_middleware(
 @app.get("/")
 async def index():
     """Serve the FastRTC browser client."""
-    html_path = Path(__file__).parent / "fastrtc_client.html"
+    html_path = Path(__file__).parent / "voice_agent_ui.html"
     if html_path.exists():
         return HTMLResponse(html_path.read_text())
     return {
