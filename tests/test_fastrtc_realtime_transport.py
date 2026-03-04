@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -103,8 +104,6 @@ class TestFastRTCRealtimeTransport:
             await transport.send_message(session, message)
 
         mock_channel.send.assert_called_once()
-        import json
-
         sent_data = mock_channel.send.call_args[0][0]
         assert json.loads(sent_data) == message
 
