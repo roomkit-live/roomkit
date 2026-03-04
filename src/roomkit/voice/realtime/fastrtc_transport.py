@@ -155,7 +155,7 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc,unused-ignor
             self._transport._unregister_handler(self._webrtc_id)
             logger.info("WebRTC handler shutdown: webrtc_id=%s", self._webrtc_id)
 
-    def send_message(self, message: str) -> None:  # type: ignore[override]
+    def send_message(self, message: str) -> None:  # type: ignore[override,unused-ignore]
         """Send a message via the WebRTC DataChannel."""
         if self.channel:
             self.channel.send(message)
