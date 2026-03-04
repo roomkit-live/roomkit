@@ -20,8 +20,11 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
@@ -95,10 +98,20 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
 async def index():
+    """Serve the FastRTC browser client."""
+    html_path = Path(__file__).parent / "fastrtc_client.html"
+    if html_path.exists():
+        return HTMLResponse(html_path.read_text())
     return {
         "message": "RoomKit Realtime Voice (FastRTC/WebRTC)",
         "webrtc_endpoint": "/rtc-realtime",
