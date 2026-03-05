@@ -65,6 +65,7 @@ class MockVoiceBackend(VoiceBackend):
         # Tracking
         self.calls: list[MockVoiceCall] = []
         self.sent_audio: list[tuple[str, bytes]] = []  # (session_id, audio)
+        self.sent_dtmf: list[tuple[str, str, int]] = []  # (session_id, digit, duration_ms)
         self.sent_transcriptions: list[tuple[str, str, str]] = []  # (session_id, text, role)
         self._playing_sessions: set[str] = set()
         self._capabilities = capabilities
@@ -199,6 +200,15 @@ class MockVoiceBackend(VoiceBackend):
             )
         )
         return was_playing
+
+    def send_dtmf(self, session: VoiceSession, digit: str, duration_ms: int = 160) -> None:
+        self.sent_dtmf.append((session.id, digit, duration_ms))
+        self.calls.append(
+            MockVoiceCall(
+                method="send_dtmf",
+                args={"session_id": session.id, "digit": digit, "duration_ms": duration_ms},
+            )
+        )
 
     def is_playing(self, session: VoiceSession) -> bool:
         return session.id in self._playing_sessions

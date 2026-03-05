@@ -12,7 +12,7 @@ pytest.importorskip("aiortp")
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.rtp import RTPVoiceBackend
-from roomkit.voice.base import AudioChunk, VoiceCapability, VoiceSessionState
+from roomkit.voice.base import AudioChunk, VoiceCapability, VoiceSession, VoiceSessionState
 from roomkit.voice.pipeline.dtmf.base import DTMFEvent
 
 # ---------------------------------------------------------------------------
@@ -235,6 +235,28 @@ class TestRTPVoiceBackend:
 
         assert calls_a == ["#"]
         assert calls_b == ["#"]
+
+    # -- outbound DTMF ---------------------------------------------------------
+
+    async def test_send_dtmf(self, backend: RTPVoiceBackend, mock_rtp_session: MagicMock) -> None:
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        backend.send_dtmf(session, "5", 200)
+        mock_rtp_session.send_dtmf.assert_called_once_with("5", 200)
+
+    async def test_send_dtmf_default_duration(
+        self, backend: RTPVoiceBackend, mock_rtp_session: MagicMock
+    ) -> None:
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        backend.send_dtmf(session, "#")
+        mock_rtp_session.send_dtmf.assert_called_once_with("#", 160)
+
+    async def test_send_dtmf_no_session(
+        self, backend: RTPVoiceBackend, mock_rtp_session: MagicMock
+    ) -> None:
+        """send_dtmf with unknown session should log a warning, not raise."""
+        session = VoiceSession(id="unknown", room_id="r", participant_id="p", channel_id="c")
+        backend.send_dtmf(session, "1")  # Should not raise
+        mock_rtp_session.send_dtmf.assert_not_called()
 
     # -- outbound audio (bytes) ------------------------------------------------
 

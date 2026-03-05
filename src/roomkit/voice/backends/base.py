@@ -220,6 +220,22 @@ class VoiceBackend(ABC):
             callback: Function called with (session).
         """
 
+    def send_dtmf(self, session: VoiceSession, digit: str, duration_ms: int = 160) -> None:
+        """Send a DTMF digit to the remote party.
+
+        Sends an RFC 4733 telephone-event via RTP (out-of-band signaling).
+        Only backends with ``DTMF_SIGNALING`` capability support this.
+
+        Args:
+            session: The voice session to send DTMF on.
+            digit: The DTMF digit to send ('0'-'9', '*', '#', 'A'-'D').
+            duration_ms: Duration of the tone in milliseconds (default 160).
+
+        Raises:
+            NotImplementedError: If the backend does not support sending DTMF.
+        """
+        raise NotImplementedError(f"{self.name} does not support send_dtmf()")
+
     async def cancel_audio(self, session: VoiceSession) -> bool:
         """Cancel ongoing audio playback for a session.
 

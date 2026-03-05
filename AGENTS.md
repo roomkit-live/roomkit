@@ -347,6 +347,9 @@ voice = VoiceChannel(
 - `VoiceCapability.DTMF_INBAND` — backend sends DTMF as in-band audio tones
 - `VoiceCapability.DTMF_SIGNALING` — backend sends DTMF via out-of-band signaling
 
+**Outbound DTMF** (`channels/voice.py` → `voice/backends/`):
+`VoiceChannel.send_dtmf(session, digit, duration_ms=160)` sends an RFC 4733 telephone-event to the remote party. The digit must be `'0'-'9'`, `'*'`, `'#'`, or `'A'-'D'`; `duration_ms` must be 1–10000. Raises `ValueError` on invalid input, `RuntimeError` if no backend or session is ended. SIP and RTP backends implement this; others raise `NotImplementedError`.
+
 **InterruptionHandler** (`voice/interruption.py`):
 Four strategies for handling user speech during TTS playback:
 - `IMMEDIATE` — interrupt on any speech (matches legacy `enable_barge_in=True`)

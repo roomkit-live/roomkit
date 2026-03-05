@@ -307,6 +307,20 @@ class TestHandleInvite:
         assert event.digit == "5"
         assert event.duration_ms == 160.0
 
+    async def test_send_dtmf(
+        self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+        session = list(backend._session_states.values())[0].session
+        backend.send_dtmf(session, "9", 200)
+        mock_call_session.send_dtmf.assert_called_once_with("9", 200)
+
+    async def test_send_dtmf_no_session(self, backend: Any) -> None:
+        """send_dtmf with unknown session should warn, not raise."""
+        session = VoiceSession(id="unknown", room_id="r", participant_id="p", channel_id="c")
+        backend.send_dtmf(session, "1")  # Should not raise
+
     async def test_invite_fires_on_call_callback(
         self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
     ) -> None:

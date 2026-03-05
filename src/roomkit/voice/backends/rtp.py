@@ -272,6 +272,23 @@ class RTPVoiceBackend(VoiceBackend):
         return _on_dtmf
 
     # -------------------------------------------------------------------------
+    # Outbound DTMF
+    # -------------------------------------------------------------------------
+
+    def send_dtmf(self, session: VoiceSession, digit: str, duration_ms: int = 160) -> None:
+        rtp_session = self._rtp_sessions.get(session.id)
+        if rtp_session is None:
+            logger.warning("send_dtmf: no RTP session for %s", session.id)
+            return
+        rtp_session.send_dtmf(digit, duration_ms)
+        logger.info(
+            "DTMF sent: digit=%s, duration=%dms, session=%s",
+            digit,
+            duration_ms,
+            session.id,
+        )
+
+    # -------------------------------------------------------------------------
     # Outbound audio
     # -------------------------------------------------------------------------
 

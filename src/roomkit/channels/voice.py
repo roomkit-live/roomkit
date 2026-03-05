@@ -869,6 +869,39 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._voice_map.update(entries)
 
     # -------------------------------------------------------------------------
+    # Outbound DTMF
+    # -------------------------------------------------------------------------
+
+    _VALID_DTMF_DIGITS = frozenset("0123456789*#ABCD")
+
+    def send_dtmf(self, session: VoiceSession, digit: str, duration_ms: int = 160) -> None:
+        """Send a DTMF digit to the remote party via the voice backend.
+
+        The digit is sent as an RFC 4733 telephone-event (out-of-band).
+        Requires a backend with ``DTMF_SIGNALING`` capability (SIP, RTP).
+
+        Args:
+            session: The active voice session.
+            digit: DTMF digit ('0'-'9', '*', '#', 'A'-'D').
+            duration_ms: Tone duration in milliseconds (default 160).
+
+        Raises:
+            RuntimeError: If no backend is configured or session is ended.
+            ValueError: If *digit* or *duration_ms* is invalid.
+        """
+        if self._backend is None:
+            raise RuntimeError("No voice backend configured")
+        if digit not in self._VALID_DTMF_DIGITS:
+            raise ValueError(f"Invalid DTMF digit {digit!r}. Must be one of 0-9, *, #, A-D.")
+        if not 1 <= duration_ms <= 10000:
+            raise ValueError(f"duration_ms must be between 1 and 10000, got {duration_ms}")
+        from roomkit.voice.base import VoiceSessionState
+
+        if session.state == VoiceSessionState.ENDED:
+            raise RuntimeError(f"Cannot send DTMF on ended session {session.id}")
+        self._backend.send_dtmf(session, digit, duration_ms)
+
+    # -------------------------------------------------------------------------
     # Barge-in handling
     # -------------------------------------------------------------------------
 

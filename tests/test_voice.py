@@ -232,6 +232,101 @@ class TestMockVoiceBackend:
         assert result is True
         assert backend.is_playing(session) is False
 
+    async def test_send_dtmf(self) -> None:
+        backend = MockVoiceBackend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        backend.send_dtmf(session, "5", 200)
+
+        assert len(backend.sent_dtmf) == 1
+        assert backend.sent_dtmf[0] == (session.id, "5", 200)
+        assert backend.calls[-1].method == "send_dtmf"
+
+    async def test_send_dtmf_default_duration(self) -> None:
+        backend = MockVoiceBackend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        backend.send_dtmf(session, "#")
+
+        assert backend.sent_dtmf[0] == (session.id, "#", 160)
+
+
+class TestVoiceChannelSendDTMF:
+    async def test_send_dtmf_delegates_to_backend(self) -> None:
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        channel.send_dtmf(session, "9", 250)
+
+        assert len(backend.sent_dtmf) == 1
+        assert backend.sent_dtmf[0] == (session.id, "9", 250)
+
+    async def test_send_dtmf_no_backend_raises(self) -> None:
+        channel = VoiceChannel("voice-1")
+        from roomkit.voice.base import VoiceSession
+
+        session = VoiceSession(id="s1", room_id="r1", participant_id="p1", channel_id="voice-1")
+        with pytest.raises(RuntimeError, match="No voice backend configured"):
+            channel.send_dtmf(session, "1")
+
+    async def test_send_dtmf_invalid_digit_raises(self) -> None:
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        with pytest.raises(ValueError, match="Invalid DTMF digit"):
+            channel.send_dtmf(session, "Q")
+
+    async def test_send_dtmf_empty_digit_raises(self) -> None:
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        with pytest.raises(ValueError, match="Invalid DTMF digit"):
+            channel.send_dtmf(session, "")
+
+    async def test_send_dtmf_invalid_duration_raises(self) -> None:
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        with pytest.raises(ValueError, match="duration_ms must be between"):
+            channel.send_dtmf(session, "1", 0)
+        with pytest.raises(ValueError, match="duration_ms must be between"):
+            channel.send_dtmf(session, "1", -5)
+
+    async def test_send_dtmf_ended_session_raises(self) -> None:
+        from roomkit.voice.base import VoiceSessionState
+
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        # Mark the session as ended (simulating disconnect)
+        session.state = VoiceSessionState.ENDED
+
+        with pytest.raises(RuntimeError, match="ended session"):
+            channel.send_dtmf(session, "1")
+
+    async def test_send_dtmf_all_valid_digits(self) -> None:
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        for digit in "0123456789*#ABCD":
+            channel.send_dtmf(session, digit)
+
+        assert len(backend.sent_dtmf) == 16
+
+    async def test_send_dtmf_sequential_calls(self) -> None:
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice-1", backend=backend)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        for digit in ["1", "2", "3", "*"]:
+            channel.send_dtmf(session, digit)
+
+        assert len(backend.sent_dtmf) == 4
+        assert [entry[1] for entry in backend.sent_dtmf] == ["1", "2", "3", "*"]
+
 
 class TestVoiceChannel:
     async def test_capabilities_include_audio(self) -> None:

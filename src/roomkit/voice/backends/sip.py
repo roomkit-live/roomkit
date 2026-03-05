@@ -1190,6 +1190,23 @@ class SIPVoiceBackend(VoiceBackend):
         return _on_dtmf
 
     # -------------------------------------------------------------------------
+    # Outbound DTMF
+    # -------------------------------------------------------------------------
+
+    def send_dtmf(self, session: VoiceSession, digit: str, duration_ms: int = 160) -> None:
+        state = self._session_states.get(session.id)
+        if state is None or state.call_session is None:
+            logger.warning("send_dtmf: no call session for %s", session.id)
+            return
+        state.call_session.send_dtmf(digit, duration_ms)
+        logger.info(
+            "DTMF sent: digit=%s, duration=%dms, session=%s",
+            digit,
+            duration_ms,
+            session.id,
+        )
+
+    # -------------------------------------------------------------------------
     # Outbound audio
     # -------------------------------------------------------------------------
 
