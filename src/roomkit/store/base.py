@@ -101,8 +101,29 @@ class ConversationStore(ABC):
         offset: int = 0,
         limit: int = 50,
         visibility_filter: str | None = None,
+        *,
+        after_index: int | None = None,
+        before_index: int | None = None,
     ) -> list[RoomEvent]:
-        """List events in a room with pagination and optional visibility filter."""
+        """List events in a room with pagination and optional visibility filter.
+
+        Supports two pagination modes:
+
+        - **Offset-based** (default): ``offset`` + ``limit`` for simple page access.
+        - **Cursor-based**: ``after_index`` or ``before_index`` for efficient
+          keyset pagination on large rooms.  When either is set, ``offset`` is
+          ignored.
+
+        ``after_index`` and ``before_index`` are mutually exclusive.
+
+        Args:
+            room_id: Room to query.
+            offset: Number of events to skip (offset-based mode).
+            limit: Maximum number of events to return.
+            visibility_filter: Optional visibility value to filter by.
+            after_index: Return events with ``index > after_index`` (ascending).
+            before_index: Return events with ``index < before_index`` (ascending).
+        """
         ...
 
     @abstractmethod

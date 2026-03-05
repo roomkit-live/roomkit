@@ -401,6 +401,55 @@ class TestListEventsVisibilityFilter:
         assert len(internal_only) == 1
 
 
+class TestCursorPagination:
+    async def test_after_index(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(5):
+            await store.add_event_auto_index("r1", _make_event(room_id="r1", body=f"msg{i}"))
+        events = await store.list_events("r1", after_index=1, limit=50)
+        assert len(events) == 3
+        assert all(e.index > 1 for e in events)
+
+    async def test_before_index(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(5):
+            await store.add_event_auto_index("r1", _make_event(room_id="r1", body=f"msg{i}"))
+        events = await store.list_events("r1", before_index=3, limit=50)
+        assert len(events) == 3
+        assert all(e.index < 3 for e in events)
+
+    async def test_after_index_with_limit(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(10):
+            await store.add_event_auto_index("r1", _make_event(room_id="r1", body=f"msg{i}"))
+        events = await store.list_events("r1", after_index=2, limit=3)
+        assert len(events) == 3
+        assert events[0].index == 3
+
+    async def test_mutually_exclusive(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            await store.list_events("r1", after_index=0, before_index=5)
+
+    async def test_cursor_with_visibility_filter(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(6):
+            vis = "all" if i % 2 == 0 else "internal"
+            await store.add_event_auto_index(
+                "r1", _make_event(room_id="r1", body=f"msg{i}", visibility=vis)
+            )
+        events = await store.list_events("r1", after_index=0, visibility_filter="all")
+        assert len(events) == 2
+        assert all(e.visibility == "all" for e in events)
+
+    async def test_empty_result(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(3):
+            await store.add_event_auto_index("r1", _make_event(room_id="r1", body=f"msg{i}"))
+        events = await store.list_events("r1", after_index=10)
+        assert events == []
+
+
 class TestDeleteRoomCleanup:
     async def test_cascading_delete(self, store) -> None:
         """ON DELETE CASCADE removes all child rows."""

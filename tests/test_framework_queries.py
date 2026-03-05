@@ -159,6 +159,34 @@ class TestGetTimeline:
             await kit.get_timeline("nonexistent")
 
 
+class TestGetTimelineCursorPagination:
+    async def test_after_index(self) -> None:
+        kit, room_id = await _setup_kit_with_room()
+        # add_event_auto_index assigns sequential indices
+        from tests.conftest import make_event
+
+        for i in range(5):
+            e = make_event(room_id=room_id, body=f"m{i}")
+            await kit.store.add_event_auto_index(room_id, e)
+        events = await kit.get_timeline(room_id, after_index=2)
+        assert all(e.index > 2 for e in events)
+
+    async def test_before_index(self) -> None:
+        kit, room_id = await _setup_kit_with_room()
+        from tests.conftest import make_event
+
+        for i in range(5):
+            e = make_event(room_id=room_id, body=f"m{i}")
+            await kit.store.add_event_auto_index(room_id, e)
+        events = await kit.get_timeline(room_id, before_index=2)
+        assert all(e.index < 2 for e in events)
+
+    async def test_mutually_exclusive(self) -> None:
+        kit, room_id = await _setup_kit_with_room()
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            await kit.get_timeline(room_id, after_index=0, before_index=5)
+
+
 class TestListTasks:
     async def test_empty(self) -> None:
         kit, room_id = await _setup_kit_with_room()

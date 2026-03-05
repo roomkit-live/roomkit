@@ -931,14 +931,32 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         offset: int = 0,
         limit: int = 50,
         visibility_filter: str | None = None,
+        *,
+        after_index: int | None = None,
+        before_index: int | None = None,
     ) -> list[RoomEvent]:
-        """Query the event timeline for a room."""
+        """Query the event timeline for a room.
+
+        Supports offset-based (``offset``/``limit``) and cursor-based
+        (``after_index``/``before_index``) pagination.  When a cursor
+        parameter is set, ``offset`` is ignored.
+
+        Args:
+            room_id: Room to query.
+            offset: Number of events to skip (offset-based mode).
+            limit: Maximum number of events to return.
+            visibility_filter: Optional visibility value to filter by.
+            after_index: Return events with ``index > after_index``.
+            before_index: Return events with ``index < before_index``.
+        """
         await self.get_room(room_id)
         return await self._store.list_events(
             room_id,
             offset=offset,
             limit=limit,
             visibility_filter=visibility_filter,
+            after_index=after_index,
+            before_index=before_index,
         )
 
     async def list_tasks(self, room_id: str, status: str | None = None) -> list[Task]:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelType, RoomStatus
 from roomkit.models.identity import Identity
@@ -350,6 +352,64 @@ class TestListEventsVisibilityFilter:
 
         internal_only = await store.list_events("r1", visibility_filter="internal")
         assert len(internal_only) == 1
+
+
+class TestCursorPagination:
+    async def test_after_index(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(5):
+            await store.add_event_auto_index("r1", make_event(room_id="r1", body=f"msg{i}"))
+        events = await store.list_events("r1", after_index=1, limit=50)
+        assert len(events) == 3
+        assert all(e.index > 1 for e in events)
+
+    async def test_before_index(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(5):
+            await store.add_event_auto_index("r1", make_event(room_id="r1", body=f"msg{i}"))
+        events = await store.list_events("r1", before_index=3, limit=50)
+        assert len(events) == 3
+        assert all(e.index < 3 for e in events)
+
+    async def test_after_index_with_limit(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(10):
+            await store.add_event_auto_index("r1", make_event(room_id="r1", body=f"msg{i}"))
+        events = await store.list_events("r1", after_index=2, limit=3)
+        assert len(events) == 3
+        assert events[0].index == 3
+
+    async def test_mutually_exclusive(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            await store.list_events("r1", after_index=0, before_index=5)
+
+    async def test_cursor_with_visibility_filter(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(6):
+            vis = "all" if i % 2 == 0 else "internal"
+            await store.add_event_auto_index(
+                "r1", make_event(room_id="r1", body=f"msg{i}", visibility=vis)
+            )
+        events = await store.list_events("r1", after_index=0, visibility_filter="all")
+        # Indices 0,2,4 are "all" — after_index=0 means index>0 → indices 2,4
+        assert len(events) == 2
+        assert all(e.visibility == "all" for e in events)
+
+    async def test_cursor_ignores_offset(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(5):
+            await store.add_event_auto_index("r1", make_event(room_id="r1", body=f"msg{i}"))
+        # offset should be ignored when using cursor
+        events = await store.list_events("r1", offset=100, after_index=1, limit=50)
+        assert len(events) == 3
+
+    async def test_empty_result(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        for i in range(3):
+            await store.add_event_auto_index("r1", make_event(room_id="r1", body=f"msg{i}"))
+        events = await store.list_events("r1", after_index=10)
+        assert events == []
 
 
 class TestDeleteRoomCleanup:

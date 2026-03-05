@@ -377,23 +377,48 @@ class PostgresStore(ConversationStore):
         offset: int = 0,
         limit: int = 50,
         visibility_filter: str | None = None,
+        *,
+        after_index: int | None = None,
+        before_index: int | None = None,
     ) -> list[RoomEvent]:
+        if after_index is not None and before_index is not None:
+            raise ValueError("after_index and before_index are mutually exclusive")
+
+        use_cursor = after_index is not None or before_index is not None
+
+        # Build query dynamically based on pagination mode
+        conditions = ["room_id = $1"]
+        params: list[object] = [room_id]
+        idx = 2
+
         if visibility_filter is not None:
-            query = (
-                "SELECT data FROM events WHERE room_id = $1 AND visibility = $2 "
-                "ORDER BY created_at LIMIT $3 OFFSET $4"
-            )
-            async with self._acquire() as conn:
-                rows = await conn.fetch(query, room_id, visibility_filter, limit, offset)
-        else:
-            async with self._acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT data FROM events WHERE room_id = $1 "
-                    "ORDER BY created_at LIMIT $2 OFFSET $3",
-                    room_id,
-                    limit,
-                    offset,
-                )
+            conditions.append(f"visibility = ${idx}")
+            params.append(visibility_filter)
+            idx += 1
+
+        if after_index is not None:
+            conditions.append(f"(data->>'index')::int > ${idx}")  # nosec B608
+            params.append(after_index)
+            idx += 1
+        elif before_index is not None:
+            conditions.append(f"(data->>'index')::int < ${idx}")  # nosec B608
+            params.append(before_index)
+            idx += 1
+
+        where = " AND ".join(conditions)
+        order_col = "(data->>'index')::int" if use_cursor else "created_at"
+        query = f"SELECT data FROM events WHERE {where} ORDER BY {order_col}"  # nosec B608
+
+        query += f" LIMIT ${idx}"
+        params.append(limit)
+        idx += 1
+
+        if not use_cursor:
+            query += f" OFFSET ${idx}"
+            params.append(offset)
+
+        async with self._acquire() as conn:
+            rows = await conn.fetch(query, *params)
         return [RoomEvent.model_validate_json(r["data"]) for r in rows]
 
     async def check_idempotency(self, room_id: str, key: str) -> bool:

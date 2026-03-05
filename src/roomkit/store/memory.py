@@ -173,11 +173,27 @@ class InMemoryStore(ConversationStore):
         offset: int = 0,
         limit: int = 50,
         visibility_filter: str | None = None,
+        *,
+        after_index: int | None = None,
+        before_index: int | None = None,
     ) -> list[RoomEvent]:
+        if after_index is not None and before_index is not None:
+            raise ValueError("after_index and before_index are mutually exclusive")
+
         event_ids = self._room_events.get(room_id, [])
         events = [self._events[eid] for eid in event_ids if eid in self._events]
+
+        if after_index is not None:
+            events = [e for e in events if e.index > after_index]
+        elif before_index is not None:
+            events = [e for e in events if e.index < before_index]
+
         if visibility_filter is not None:
             events = [e for e in events if e.visibility == visibility_filter]
+
+        if after_index is not None or before_index is not None:
+            # Cursor mode: ignore offset
+            return [e.model_copy() for e in events[:limit]]
         return [e.model_copy() for e in events[offset : offset + limit]]
 
     async def check_idempotency(self, room_id: str, key: str) -> bool:
