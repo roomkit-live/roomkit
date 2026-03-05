@@ -799,8 +799,25 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             return binding_info[0]
         return None
 
-    def bind_session(self, session: VoiceSession, room_id: str, binding: ChannelBinding) -> None:
-        """Bind a voice session to a room for message routing."""
+    def bind_session(
+        self,
+        session: VoiceSession,
+        room_id: str,
+        binding: ChannelBinding,
+        *,
+        backend: VoiceBackend | None = None,
+    ) -> None:
+        """Bind a voice session to a room for message routing.
+
+        Args:
+            session: The voice session to bind.
+            room_id: Target room ID.
+            binding: Channel binding descriptor.
+            backend: Override backend for the bridge.  When bridging
+                sessions from different transports (e.g. SIP + WebRTC),
+                pass the session's own backend so the bridge sends audio
+                through the correct transport.
+        """
         with self._state_lock:
             self._session_bindings[session.id] = (room_id, binding)
             # Dual-signal: atomically check and clear pending ready flag
@@ -834,8 +851,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         if self._pipeline is not None:
             self._pipeline.on_session_active(session)
         # Register session with audio bridge
-        if self._bridge is not None and self._backend is not None:
-            self._bridge.add_session(session, room_id, self._backend)
+        bridge_backend = backend or self._backend
+        if self._bridge is not None and bridge_backend is not None:
+            self._bridge.add_session(session, room_id, bridge_backend)
         # Initialize batch buffer for this session
         if self._batch_mode:
             self._batch_audio_buffers[session.id] = bytearray()
