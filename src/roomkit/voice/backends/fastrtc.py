@@ -550,6 +550,7 @@ def mount_fastrtc_voice(
     path: str = "/fastrtc",
     session_factory: Any = None,
     auth: AuthCallback | None = None,
+    concurrency_limit: int | None = 1,
 ) -> None:
     """Mount FastRTC voice endpoints on a FastAPI app.
 
@@ -569,6 +570,9 @@ def mount_fastrtc_voice(
         auth: Optional async callback for authenticating connections. Receives
             the WebSocket and returns a metadata dict on success or ``None``
             to reject. Auth metadata is available via :data:`auth_context`.
+        concurrency_limit: Maximum number of concurrent connections. Set to
+            ``None`` for unlimited connections (e.g. multi-participant calls).
+            Defaults to 1.
     """
     from fastrtc import AsyncStreamHandler, Stream
 
@@ -698,11 +702,14 @@ def mount_fastrtc_voice(
             await asyncio.sleep(0.1)
             return None
 
-    # Create FastRTC stream with passthrough handler
+    # Create FastRTC stream with passthrough handler.
+    # FastRTC converts None → 1 internally, so we use a large int for "unlimited".
+    effective_limit = concurrency_limit if concurrency_limit is not None else 2**31
     stream = Stream(
         handler=AudioPassthroughHandler(),
         modality="audio",
         mode="send-receive",
+        concurrency_limit=effective_limit,
     )
 
     backend._stream = stream
