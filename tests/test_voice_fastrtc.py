@@ -455,6 +455,11 @@ class TestFastRTCWebRTCTransport:
         chunk = AudioChunk(data=struct.pack("<2h", 500, -500))
         backend.send_audio_sync(session, chunk)
 
+        # call_soon_threadsafe schedules on the event loop — yield to execute
+        import asyncio
+
+        await asyncio.sleep(0)
+
         queue = backend._emit_queues["rtc-1"]
         assert not queue.empty()
         sample_rate, arr = queue.get_nowait()

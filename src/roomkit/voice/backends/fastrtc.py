@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 import os
 import struct
@@ -166,6 +167,9 @@ class FastRTCVoiceBackend(VoiceBackend):
         # FastRTC stream (set by mount_fastrtc_voice)
         self._stream: Any = None
 
+        # Event loop reference for thread-safe operations (set lazily)
+        self._loop: asyncio.AbstractEventLoop | None = None
+
         # Emit queues for WebRTC sessions: webrtc_id -> asyncio.Queue
         # WebRTC audio goes through emit() → player_worker_decode → RTP track.
         self._emit_queues: dict[str, asyncio.Queue[tuple[int, Any] | None]] = {}
@@ -207,6 +211,9 @@ class FastRTCVoiceBackend(VoiceBackend):
             metadata=session_metadata,
         )
         self._sessions[session_id] = session
+        # Capture the event loop for thread-safe send_audio_sync
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
 
         from roomkit.telemetry.base import Attr, SpanKind
         from roomkit.telemetry.noop import NoopTelemetryProvider
@@ -368,8 +375,9 @@ class FastRTCVoiceBackend(VoiceBackend):
     def send_audio_sync(self, session: VoiceSession, chunk: AudioChunk) -> None:
         """Synchronously send a single audio chunk.
 
-        Used by the audio bridge for frame-by-frame forwarding from audio
-        callback threads.
+        Thread-safe — can be called from any thread (e.g. SIP audio
+        callback threads).  Uses ``call_soon_threadsafe`` to schedule
+        operations on the event loop.
 
         - **WebRTC**: Puts a numpy frame into the session's emit queue
           (consumed by the handler's ``emit()`` → FastRTC RTP track).
@@ -377,18 +385,18 @@ class FastRTCVoiceBackend(VoiceBackend):
           schedules ``send_json`` on the event loop.
         - **WebSocket (pcm)**: schedules ``send_bytes`` on the event loop.
         """
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+
         if self._is_webrtc_session(session):
             queue = self._get_emit_queue(session)
             if queue is None:
                 return
             sample_rate = session.metadata.get("output_sample_rate", self._output_sample_rate)
-            try:
-                queue.put_nowait(self._pcm_to_numpy(chunk.data, sample_rate))
-            except Exception:
-                logger.warning(
-                    "send_audio_sync: emit queue full for session %s",
-                    session.id,
-                )
+            frame = self._pcm_to_numpy(chunk.data, sample_rate)
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(queue.put_nowait, frame)
             return
 
         # WebSocket path
@@ -397,48 +405,51 @@ class FastRTCVoiceBackend(VoiceBackend):
             return
 
         mode, data = self._prepare_ws_sync(chunk.data)
-        try:
-            loop = asyncio.get_running_loop()
+        with contextlib.suppress(RuntimeError):
             if mode == "bytes":
-                loop.create_task(websocket.send_bytes(data))
+                loop.call_soon_threadsafe(loop.create_task, websocket.send_bytes(data))
             else:
-                loop.create_task(websocket.send_json(data))
-        except RuntimeError:
-            logger.warning(
-                "send_audio_sync: no event loop for session %s",
-                session.id,
-            )
+                loop.call_soon_threadsafe(loop.create_task, websocket.send_json(data))
+
+    def _resolve_data_channel(self, session: VoiceSession) -> Any | None:
+        """Resolve the WebRTC data channel for a session."""
+        if not self._stream or not hasattr(self._stream, "data_channels"):
+            return None
+        ws_id = session.metadata.get("websocket_id")
+        if ws_id:
+            return self._stream.data_channels.get(ws_id)
+        return None
 
     async def send_transcription(
         self, session: VoiceSession, text: str, role: str = "user"
     ) -> None:
+        import json as _json
+
+        message = {"type": "transcription", "data": {"text": text, "role": role}}
+
+        # WebRTC: send via data channel
+        if self._is_webrtc_session(session):
+            dc = self._resolve_data_channel(session)
+            if dc:
+                try:
+                    dc.send(_json.dumps(message))
+                except Exception:
+                    logger.exception("Error sending transcription via data channel")
+            else:
+                logger.debug("No data channel for WebRTC session %s", session.id)
+            return
+
+        # WebSocket: send via websocket
         websocket = self._resolve_websocket(session)
-        logger.info(
-            "send_transcription: session=%s, role=%s, has_websocket=%s, text=%s",
-            session.id,
-            role,
-            websocket is not None,
-            text[:50] if text else "",
-        )
         if websocket:
             if not self._ws_is_connected(websocket):
                 return
             try:
-                await websocket.send_json(
-                    {
-                        "type": "transcription",
-                        "data": {"text": text, "role": role},
-                    }
-                )
-                logger.info("Transcription sent to client")
+                await websocket.send_json(message)
             except Exception:
                 logger.exception("Error sending transcription")
         else:
-            logger.warning(
-                "No websocket for session %s, registered sessions: %s",
-                session.id,
-                list(self._websockets.keys()),
-            )
+            logger.warning("No websocket for session %s", session.id)
 
     def get_session(self, session_id: str) -> VoiceSession | None:
         return self._sessions.get(session_id)
