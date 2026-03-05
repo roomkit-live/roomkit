@@ -222,6 +222,13 @@
     color: var(--text-primary);
   }
 
+  .bubble-other {
+    align-self: flex-start;
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    color: var(--text-primary);
+  }
+
   .bubble-system {
     align-self: center;
     color: var(--text-dim);
@@ -299,6 +306,16 @@
     background: rgba(255, 60, 60, 0.15);
     border-color: rgba(255, 60, 60, 0.4);
   }
+
+  .ctrl-btn.mute {
+    border-color: rgba(255, 165, 0, 0.3);
+  }
+  .ctrl-btn.mute.muted {
+    background: rgba(255, 60, 60, 0.2);
+    border-color: rgba(255, 60, 60, 0.5);
+  }
+  .ctrl-btn.mute.muted svg .slash { display: block; }
+  .ctrl-btn.mute svg .slash { display: none; }
 
   .ctrl-btn.settings-btn {
     width: 40px;
@@ -401,6 +418,13 @@
     <button class="ctrl-btn" id="btn-mic" onclick="toggleConnection()" title="Connect microphone">
       <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
     </button>
+    <button class="ctrl-btn mute" id="btn-mute" onclick="toggleMute()" disabled title="Mute/unmute microphone">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z"/>
+        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+        <line class="slash" x1="3" y1="3" x2="21" y2="21" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </button>
     <button class="ctrl-btn danger" id="btn-end" onclick="disconnect()" disabled title="End session">
       <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
     </button>
@@ -458,15 +482,19 @@ function setState(state) {
 
   const btnMic = document.getElementById('btn-mic');
   const btnEnd = document.getElementById('btn-end');
+  const btnMute = document.getElementById('btn-mute');
 
   if (state === 'disconnected') {
     btnMic.disabled = false;
     btnMic.classList.remove('active');
     btnEnd.disabled = true;
+    btnMute.disabled = true;
+    btnMute.classList.remove('muted');
   } else {
     btnMic.disabled = true;
     btnMic.classList.add('active');
     btnEnd.disabled = false;
+    btnMute.disabled = false;
   }
 }
 
@@ -479,6 +507,7 @@ let micStream = null;
 let processor = null;
 let nextPlayTime = 0;
 let micAnalyser = null;
+let micAnalyserStream = null;
 let agentAnalyser = null;
 let agentGain = null;
 let speakingTimeout = null;
@@ -494,6 +523,16 @@ function toggleConnection() {
   if (currentState === 'disconnected') connect();
 }
 
+function toggleMute() {
+  if (!micStream) return;
+  const btn = document.getElementById('btn-mute');
+  const tracks = micStream.getAudioTracks();
+  const muted = tracks[0]?.enabled !== false;
+  tracks.forEach(t => { t.enabled = !muted; });
+  btn.classList.toggle('muted', muted);
+  btn.title = muted ? 'Unmute microphone' : 'Mute microphone';
+}
+
 async function connect() {
   const mode = document.getElementById('mode').value;
   setState('connecting');
@@ -502,6 +541,7 @@ async function connect() {
 
   try {
     audioCtx = new AudioContext({ sampleRate: 48000 });
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
     nextPlayTime = 0;
 
     // Create agent analyser for output visualization
@@ -531,6 +571,7 @@ function doDisconnect() {
   if (pc) { pc.close(); pc = null; }
   dc = null;
   if (processor) { processor.disconnect(); processor = null; }
+  if (micAnalyserStream) { micAnalyserStream.getTracks().forEach(t => t.stop()); micAnalyserStream = null; }
   if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
   if (audioCtx && audioCtx.state !== 'closed') audioCtx.close().catch(() => {});
   audioCtx = null;
@@ -635,7 +676,7 @@ function handleServerMessage(data) {
         // Non-final are individual chunks — accumulate
         appendAssistantChunk(text);
       }
-    } else {
+    } else if (role === 'user') {
       // User transcription — always update same bubble, finalize on is_final
       finalizeAssistantBubble();
       updateUserInterim(text);
@@ -643,6 +684,11 @@ function handleServerMessage(data) {
         finalizeUserBubble();
         if (currentState === 'listening') setState('thinking');
       }
+    } else {
+      // Other participant transcription (bridge mode)
+      finalizeAssistantBubble();
+      finalizeUserBubble();
+      addBubble(text, 'other', role);
     }
     return;
   }
@@ -756,15 +802,22 @@ async function connectWebRTC() {
     throw err;
   }
 
-  // Mic analyser for visualization
-  const micSource = audioCtx.createMediaStreamSource(micStream);
+  pc = new RTCPeerConnection();
+  micStream.getTracks().forEach(track => pc.addTrack(track, micStream));
+
+  // Mic analyser for visualization — use a cloned stream because Chrome
+  // silences MediaStreamSourceNode when the original track is added to
+  // a RTCPeerConnection.
+  micAnalyserStream = micStream.clone();
+  const analyserStream = micAnalyserStream;
+  const micSource = audioCtx.createMediaStreamSource(analyserStream);
   micAnalyser = audioCtx.createAnalyser();
   micAnalyser.fftSize = 64;
   micSource.connect(micAnalyser);
-
-  pc = new RTCPeerConnection();
-
-  micStream.getTracks().forEach(track => pc.addTrack(track, micStream));
+  const micSilentGain = audioCtx.createGain();
+  micSilentGain.gain.value = 0;
+  micAnalyser.connect(micSilentGain);
+  micSilentGain.connect(audioCtx.destination);
 
   // Data channel for transcriptions and JSON messages
   dc = pc.createDataChannel('text');
@@ -774,12 +827,26 @@ async function connectWebRTC() {
     } catch { /* ignore non-JSON */ }
   };
 
-  // Receive remote audio tracks — route through agent analyser
+  // Receive remote audio tracks
   pc.ontrack = (event) => {
+    console.log('[ontrack] kind=', event.track.kind, 'streams=', event.streams.length,
+      'track.readyState=', event.track.readyState);
+    let stream;
     if (event.streams && event.streams[0]) {
-      const remoteSource = audioCtx.createMediaStreamSource(event.streams[0]);
-      remoteSource.connect(agentGain);
+      stream = event.streams[0];
+    } else {
+      stream = new MediaStream([event.track]);
     }
+    // Play remote audio via <audio> element (most reliable for WebRTC)
+    const audio = document.createElement('audio');
+    audio.srcObject = stream;
+    audio.autoplay = true;
+    audio.playsInline = true;
+    audio.play().catch(e => console.warn('[ontrack] audio.play() error:', e));
+    // Keep references to prevent GC
+    if (!pc._remoteAudio) pc._remoteAudio = [];
+    pc._remoteAudio.push(audio);
+    console.log('[ontrack] remote audio → <audio> element');
   };
 
   // ICE candidates
@@ -857,18 +924,22 @@ function hideEmptyMessage() {
   if (empty) empty.style.display = 'none';
 }
 
-function addBubble(text, role) {
+function addBubble(text, role, speakerName) {
   hideEmptyMessage();
   const transcript = document.getElementById('transcript');
   const bubble = document.createElement('div');
   bubble.className = 'bubble bubble-' + role;
 
-  if (role === 'user' || role === 'assistant') {
-    const label = document.createElement('div');
-    label.className = 'bubble-label';
-    label.textContent = role === 'user' ? 'You' : 'Assistant';
-    bubble.appendChild(label);
+  const label = document.createElement('div');
+  label.className = 'bubble-label';
+  if (speakerName) {
+    label.textContent = speakerName;
+  } else if (role === 'user') {
+    label.textContent = 'You';
+  } else if (role === 'assistant') {
+    label.textContent = 'Assistant';
   }
+  if (label.textContent) bubble.appendChild(label);
 
   const content = document.createElement('span');
   content.textContent = text;

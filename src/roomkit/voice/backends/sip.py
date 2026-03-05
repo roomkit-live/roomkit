@@ -381,6 +381,9 @@ class SIPVoiceBackend(VoiceBackend):
                 "caller_user": caller_user,
                 "room_id": room_id,
                 "x_headers": call.x_headers,
+                "input_sample_rate": codec_rate,
+                "output_sample_rate": codec_rate,
+                "codec_sample_rate": codec_rate,
             },
         )
 
@@ -731,6 +734,9 @@ class SIPVoiceBackend(VoiceBackend):
                 "callee": to_uri,
                 "room_id": effective_room_id,
                 "direction": "outbound",
+                "input_sample_rate": actual_codec_rate,
+                "output_sample_rate": actual_codec_rate,
+                "codec_sample_rate": actual_codec_rate,
             },
         )
 

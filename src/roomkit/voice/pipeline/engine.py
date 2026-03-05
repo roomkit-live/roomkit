@@ -120,9 +120,7 @@ class AudioPipeline:
         if config.resampler is not None:
             self._resampler = config.resampler
         elif config.contract is not None:
-            from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
-
-            self._resampler = LinearResamplerProvider()
+            self._resampler = _create_default_resampler()
         else:
             self._resampler = None
 
@@ -593,11 +591,7 @@ class AudioPipeline:
                 target_rate = self._inbound_sample_rate
                 if target_rate and ref_frame.sample_rate != target_rate:
                     if self._aec_resampler is None:
-                        from roomkit.voice.pipeline.resampler.linear import (
-                            LinearResamplerProvider,
-                        )
-
-                        self._aec_resampler = LinearResamplerProvider()
+                        self._aec_resampler = _create_default_resampler()
                     ref_frame = self._aec_resampler.resample(
                         ref_frame,
                         target_rate,
@@ -654,11 +648,7 @@ class AudioPipeline:
             if target_rate and ref_frame.sample_rate != target_rate:
                 with self._playback_aec_resampler_lock:
                     if self._playback_aec_resampler is None:
-                        from roomkit.voice.pipeline.resampler.linear import (
-                            LinearResamplerProvider,
-                        )
-
-                        self._playback_aec_resampler = LinearResamplerProvider()
+                        self._playback_aec_resampler = _create_default_resampler()
                 ref_frame = self._playback_aec_resampler.resample(
                     ref_frame,
                     target_rate,
@@ -843,3 +833,15 @@ class AudioPipeline:
             self._config.turn_detector.close()
         if self._config.backchannel_detector is not None:
             self._config.backchannel_detector.close()
+
+
+def _create_default_resampler() -> ResamplerProvider:
+    """Return the best available resampler: NumPy if installed, else pure Python."""
+    try:
+        from roomkit.voice.pipeline.resampler.numpy import NumpyResamplerProvider
+
+        return NumpyResamplerProvider()
+    except ImportError:
+        from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
+
+        return LinearResamplerProvider()

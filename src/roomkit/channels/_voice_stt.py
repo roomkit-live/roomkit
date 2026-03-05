@@ -92,6 +92,10 @@ class VoiceSTTMixin:
         ) -> None: ...
         async def _route_text(self, session: VoiceSession, text: str, room_id: str) -> None: ...
         async def _fire_speech_start_hooks(self, session: VoiceSession, room_id: str) -> None: ...
+        def _resolve_session_backend(self, session: VoiceSession) -> VoiceBackend | None: ...
+        async def _broadcast_bridge_transcription(
+            self, source_session: VoiceSession, text: str, room_id: str
+        ) -> None: ...
 
     # -----------------------------------------------------------------
     # VAD-driven STT streaming
@@ -571,8 +575,11 @@ class VoiceSTTMixin:
                 since_tts,
             )
 
-            if self._backend:
-                await self._backend.send_transcription(session, text, "user")
+            backend = self._resolve_session_backend(session)
+            if backend:
+                await backend.send_transcription(session, text, "user")
+            # Broadcast to other bridged participants
+            await self._broadcast_bridge_transcription(session, text, room_id)
 
             context = await self._framework._build_context(room_id)
 
@@ -776,8 +783,11 @@ class VoiceSTTMixin:
             logger.info("Transcription: %s", text)
 
             # Send transcription to client UI (if backend supports it)
-            if self._backend:
-                await self._backend.send_transcription(session, text, "user")
+            backend = self._resolve_session_backend(session)
+            if backend:
+                await backend.send_transcription(session, text, "user")
+            # Broadcast to other bridged participants
+            await self._broadcast_bridge_transcription(session, text, room_id)
 
             # Fire ON_TRANSCRIPTION hooks (sync, can modify)
             tx_event = TranscriptionEvent(session=session, text=text)

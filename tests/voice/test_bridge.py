@@ -1028,6 +1028,69 @@ class TestCrossRateResampling:
         assert len(backend.sent_audio) == 0
 
 
+class TestBridgeSessionQueries:
+    """Tests for get_bridged_sessions and get_session_backend."""
+
+    async def test_get_bridged_sessions_returns_all(self) -> None:
+        backend = MockVoiceBackend()
+        bridge = AudioBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s2 = await backend.connect("room-1", "user-2", "voice")
+        bridge.add_session(s1, "room-1", backend)
+        bridge.add_session(s2, "room-1", backend)
+
+        sessions = bridge.get_bridged_sessions("room-1")
+        session_ids = {s.id for s, _ in sessions}
+        assert session_ids == {s1.id, s2.id}
+
+    async def test_get_bridged_sessions_empty_room(self) -> None:
+        bridge = AudioBridge()
+        assert bridge.get_bridged_sessions("nonexistent") == []
+
+    async def test_get_session_backend_found(self) -> None:
+        backend = MockVoiceBackend()
+        bridge = AudioBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        bridge.add_session(s1, "room-1", backend)
+
+        assert bridge.get_session_backend(s1.id) is backend
+
+    async def test_get_session_backend_not_found(self) -> None:
+        bridge = AudioBridge()
+        assert bridge.get_session_backend("nonexistent") is None
+
+    async def test_output_sample_rate_from_metadata(self) -> None:
+        """Output sample rate is read from session metadata."""
+        backend = MockVoiceBackend()
+        bridge = AudioBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s1.metadata["input_sample_rate"] = 48000
+        s1.metadata["output_sample_rate"] = 24000
+
+        bridge.add_session(s1, "room-1", backend)
+
+        # Check internal state
+        bs = bridge._rooms["room-1"][s1.id]
+        assert bs.sample_rate == 48000
+        assert bs.output_sample_rate == 24000
+
+    async def test_output_sample_rate_defaults_to_input(self) -> None:
+        """output_sample_rate defaults to input_sample_rate when not set."""
+        backend = MockVoiceBackend()
+        bridge = AudioBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s1.metadata["input_sample_rate"] = 8000
+
+        bridge.add_session(s1, "room-1", backend)
+
+        bs = bridge._rooms["room-1"][s1.id]
+        assert bs.output_sample_rate == 8000
+
+
 # ======================================================================
 # Phase 1.2: BEFORE_BRIDGE_AUDIO hook wiring
 # ======================================================================

@@ -635,6 +635,42 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             channels=outbound_frame.channels,
         )
 
+    def _resolve_session_backend(self, session: VoiceSession) -> VoiceBackend | None:
+        """Return the backend for a session (bridge-aware).
+
+        In bridge mode, each session may have its own backend (e.g. SIP vs
+        FastRTC).  Falls back to the channel's default ``_backend``.
+        """
+        if self._bridge is not None:
+            bridge_backend = self._bridge.get_session_backend(session.id)
+            if bridge_backend is not None:
+                return bridge_backend
+        return self._backend
+
+    async def _broadcast_bridge_transcription(
+        self, source_session: VoiceSession, text: str, room_id: str
+    ) -> None:
+        """Send a transcription to all OTHER bridged sessions in the room.
+
+        In bridge mode, when one participant speaks, all other participants
+        should see the transcription attributed to the speaker.
+        """
+        if self._bridge is None:
+            return
+        speaker = (
+            source_session.metadata.get("caller_display_name")
+            or source_session.metadata.get("caller_user")
+            or source_session.participant_id
+            or source_session.id[:8]
+        )
+        for session, backend in self._bridge.get_bridged_sessions(room_id):
+            if session.id == source_session.id:
+                continue
+            try:
+                await backend.send_transcription(session, text, speaker)
+            except Exception:
+                logger.debug("Failed to send bridge transcription to %s", session.id)
+
     def set_bridge_filter(self, fn: BridgeFrameFilter | None) -> None:
         """Set a synchronous filter for bridged audio frames.
 

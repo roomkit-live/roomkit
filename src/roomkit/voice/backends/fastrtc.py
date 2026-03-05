@@ -47,7 +47,12 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.auth import AuthCallback, auth_context
-from roomkit.voice.backends.base import AudioReceivedCallback, SessionReadyCallback, VoiceBackend
+from roomkit.voice.backends.base import (
+    AudioReceivedCallback,
+    SessionReadyCallback,
+    TransportDisconnectCallback,
+    VoiceBackend,
+)
 from roomkit.voice.base import (
     AudioChunk,
     VoiceCapability,
@@ -177,6 +182,9 @@ class FastRTCVoiceBackend(VoiceBackend):
         # WebSocket references: session_id -> websocket
         self._websockets: dict[str, Any] = {}
 
+        # Client disconnect callbacks
+        self._client_disconnected_callbacks: list[TransportDisconnectCallback] = []
+
         # Session ready callbacks
         self._session_ready_callbacks: list[SessionReadyCallback] = []
 
@@ -252,6 +260,10 @@ class FastRTCVoiceBackend(VoiceBackend):
     def on_session_ready(self, callback: SessionReadyCallback) -> None:
         self._session_ready_callbacks.append(callback)
 
+    def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
+        """Register callback for client disconnection."""
+        self._client_disconnected_callbacks.append(callback)
+
     def _resolve_websocket(self, session: VoiceSession) -> Any | None:
         """Resolve WebSocket for a session.
 
@@ -299,6 +311,16 @@ class FastRTCVoiceBackend(VoiceBackend):
         arr = _np.frombuffer(pcm_data, dtype=_np.int16)
         return (sample_rate, arr)
 
+    @staticmethod
+    def _enqueue_frame(
+        queue: asyncio.Queue[tuple[int, Any] | None], frame: tuple[int, Any]
+    ) -> None:
+        """Put a frame into an emit queue, dropping oldest if full."""
+        if queue.full():
+            with contextlib.suppress(asyncio.QueueEmpty):
+                queue.get_nowait()
+        queue.put_nowait(frame)
+
     async def send_audio(
         self,
         session: VoiceSession,
@@ -312,11 +334,11 @@ class FastRTCVoiceBackend(VoiceBackend):
             sample_rate = session.metadata.get("output_sample_rate", self._output_sample_rate)
             try:
                 if isinstance(audio, bytes):
-                    queue.put_nowait(self._pcm_to_numpy(audio, sample_rate))
+                    self._enqueue_frame(queue, self._pcm_to_numpy(audio, sample_rate))
                 else:
                     async for chunk in audio:
                         if chunk.data:
-                            queue.put_nowait(self._pcm_to_numpy(chunk.data, sample_rate))
+                            self._enqueue_frame(queue, self._pcm_to_numpy(chunk.data, sample_rate))
             except Exception:
                 logger.exception("Error sending audio to WebRTC session %s", session.id)
             return
@@ -396,7 +418,7 @@ class FastRTCVoiceBackend(VoiceBackend):
             sample_rate = session.metadata.get("output_sample_rate", self._output_sample_rate)
             frame = self._pcm_to_numpy(chunk.data, sample_rate)
             with contextlib.suppress(RuntimeError):
-                loop.call_soon_threadsafe(queue.put_nowait, frame)
+                loop.call_soon_threadsafe(self._enqueue_frame, queue, frame)
             return
 
         # WebSocket path
@@ -569,6 +591,25 @@ def mount_fastrtc_voice(
 
         def copy(self) -> AudioPassthroughHandler:
             return AudioPassthroughHandler()
+
+        async def shutdown(self) -> None:
+            """Called by FastRTC when the connection ends."""
+            if self._webrtc_id:
+                session = backend._find_session_by_websocket_id(self._webrtc_id)
+                if session:
+                    logger.info(
+                        "WebRTC disconnected: session=%s webrtc_id=%s",
+                        session.id,
+                        self._webrtc_id,
+                    )
+                    for cb in backend._client_disconnected_callbacks:
+                        try:
+                            result = cb(session)
+                            if asyncio.iscoroutine(result):
+                                await result
+                        except Exception:
+                            logger.exception("Client disconnected callback error")
+                    await backend.disconnect(session)
 
         async def start_up(self) -> None:
             """Called once per connection — run auth and detect transport."""

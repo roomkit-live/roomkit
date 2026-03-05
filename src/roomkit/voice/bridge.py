@@ -56,7 +56,9 @@ class _BridgedSession:
     room_id: str
     backend: VoiceBackend
     sample_rate: int = 16000
-    """Native sample rate for this session (from backend/metadata)."""
+    """Native inbound sample rate for this session (from backend/metadata)."""
+    output_sample_rate: int = 16000
+    """Target outbound sample rate for sending audio to this session."""
 
 
 @dataclass
@@ -131,6 +133,7 @@ class AudioBridge:
             RuntimeError: If the room has reached ``max_participants``.
         """
         sample_rate = session.metadata.get("input_sample_rate", 16000)
+        output_rate = session.metadata.get("output_sample_rate", sample_rate)
         with self._lock:
             room = self._rooms.setdefault(room_id, {})
             if session.id not in room and len(room) >= self._config.max_participants:
@@ -143,15 +146,17 @@ class AudioBridge:
                 room_id=room_id,
                 backend=backend,
                 sample_rate=sample_rate,
+                output_sample_rate=output_rate,
             )
             if self._config.mixing_strategy == "mix":
                 self._mix_buffers.setdefault(room_id, _MixingBuffer())
             logger.info(
-                "Bridge: added session %s to room %s (%d participants, rate=%d)",
+                "Bridge: added session %s to room %s (%d participants, in=%d out=%d)",
                 session.id,
                 room_id,
                 len(room),
                 sample_rate,
+                output_rate,
             )
 
     def remove_session(self, session_id: str) -> None:
@@ -214,6 +219,23 @@ class AudioBridge:
             room = self._rooms.get(room_id)
             return len(room) if room else 0
 
+    def get_bridged_sessions(self, room_id: str) -> list[tuple[VoiceSession, VoiceBackend]]:
+        """Return ``(session, backend)`` pairs for all sessions in a room."""
+        with self._lock:
+            room = self._rooms.get(room_id)
+            if not room:
+                return []
+            return [(bs.session, bs.backend) for bs in room.values()]
+
+    def get_session_backend(self, session_id: str) -> VoiceBackend | None:
+        """Return the backend registered for a bridged session, or ``None``."""
+        with self._lock:
+            for room in self._rooms.values():
+                bs = room.get(session_id)
+                if bs is not None:
+                    return bs.backend
+        return None
+
     def close(self) -> None:
         """Remove all sessions and clean up."""
         with self._lock:
@@ -260,9 +282,9 @@ class AudioBridge:
                     mix_jobs.append((bs, others))
 
         for target, frames_to_mix in mix_jobs:
-            # Resample all source frames to the target's native rate before
+            # Resample all source frames to the target's output rate before
             # mixing so that samples are temporally aligned.
-            target_rate = target.sample_rate
+            target_rate = target.output_sample_rate
             resampled = [
                 self._resample(f, target_rate) if f.sample_rate != target_rate else f
                 for f in frames_to_mix
@@ -281,12 +303,13 @@ class AudioBridge:
         frame: AudioFrame,
     ) -> None:
         try:
+            # Always resample to the target's output rate before processing
+            target_rate = target.output_sample_rate
+            if frame.sample_rate != target_rate:
+                frame = self._resample(frame, target_rate)
             if self._frame_processor is not None:
                 chunk = self._frame_processor(target.session, frame)
             else:
-                # Resample if source and target rates differ
-                if frame.sample_rate != target.sample_rate:
-                    frame = self._resample(frame, target.sample_rate)
                 chunk = self._frame_to_chunk(frame)
             target.backend.send_audio_sync(target.session, chunk)
         except Exception:
@@ -344,12 +367,17 @@ _resampler_instance: ResamplerProvider | None = None
 
 
 def _get_resampler() -> ResamplerProvider:
-    """Return a cached LinearResamplerProvider (created on first use)."""
+    """Return the best available resampler: NumPy if installed, else pure Python."""
     global _resampler_instance  # noqa: PLW0603
     if _resampler_instance is None:
-        from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
+        try:
+            from roomkit.voice.pipeline.resampler.numpy import NumpyResamplerProvider
 
-        _resampler_instance = LinearResamplerProvider()
+            _resampler_instance = NumpyResamplerProvider()
+        except ImportError:
+            from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
+
+            _resampler_instance = LinearResamplerProvider()
     return _resampler_instance
 
 

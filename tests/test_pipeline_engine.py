@@ -675,7 +675,7 @@ class TestResamplerStage:
         pipeline = AudioPipeline(config)
 
         assert pipeline._resampler is not None
-        assert pipeline._resampler.name == "linear"
+        assert pipeline._resampler.name in ("linear", "numpy")
 
     def test_no_auto_default_without_contract(self):
         """No auto-default resampler without contract."""
