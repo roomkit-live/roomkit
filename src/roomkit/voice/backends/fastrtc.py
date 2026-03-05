@@ -1,13 +1,15 @@
 """FastRTC VoiceBackend implementation for RoomKit.
 
-This module provides a VoiceBackend that uses FastRTC for WebSocket audio transport.
-The backend is a pure transport — all audio intelligence (VAD, denoising, diarization)
-is handled by the AudioPipeline.
+This module provides a VoiceBackend that uses FastRTC for WebRTC and WebSocket
+audio transport.  The backend is a pure transport — all audio intelligence
+(VAD, denoising, diarization) is handled by the AudioPipeline.
 
-The backend:
-- Handles WebSocket connections from clients
-- Delivers raw audio frames via on_audio_received callback
-- Sends TTS audio back to clients via FastRTC
+The backend supports three FastRTC transport modes:
+
+- **WebRTC** (``/webrtc/offer``): peer-to-peer audio via RTP tracks.
+  Outbound audio is returned from the handler's ``emit()`` method.
+- **WebSocket** (``/websocket/offer``): mu-law encoded audio in JSON messages.
+- **Telephone** (``/telephone/handler``): Twilio-style telephony WebSocket.
 
 Requires the ``fastrtc`` optional dependency::
 
@@ -119,11 +121,11 @@ def _pcm16_to_mulaw(pcm_data: bytes) -> bytes:
 
 
 class FastRTCVoiceBackend(VoiceBackend):
-    """VoiceBackend implementation using FastRTC for WebSocket audio transport.
+    """VoiceBackend implementation using FastRTC for WebRTC and WebSocket transport.
 
-    This backend is a pure transport — it delivers raw audio frames via
-    the on_audio_received callback. All audio intelligence (VAD, denoising,
-    diarization) is handled by the AudioPipeline.
+    Supports all three FastRTC transport modes (WebRTC, WebSocket, Telephone).
+    Delivers raw audio frames via on_audio_received callback.  All audio
+    intelligence (VAD, denoising, diarization) is handled by the AudioPipeline.
     """
 
     #: Default maximum size for per-session audio queues.
@@ -149,8 +151,9 @@ class FastRTCVoiceBackend(VoiceBackend):
         # FastRTC stream (set by mount_fastrtc_voice)
         self._stream: Any = None
 
-        # Pending audio to send: session_id -> asyncio.Queue of audio chunks
-        self._audio_queues: dict[str, asyncio.Queue[AudioChunk | None]] = {}
+        # Emit queues for WebRTC sessions: webrtc_id -> asyncio.Queue
+        # WebRTC audio goes through emit() → player_worker_decode → RTP track.
+        self._emit_queues: dict[str, asyncio.Queue[tuple[int, Any] | None]] = {}
 
         # WebSocket references: session_id -> websocket
         self._websockets: dict[str, Any] = {}
@@ -189,7 +192,6 @@ class FastRTCVoiceBackend(VoiceBackend):
             metadata=session_metadata,
         )
         self._sessions[session_id] = session
-        self._audio_queues[session_id] = asyncio.Queue(maxsize=self._audio_queue_maxsize)
 
         from roomkit.telemetry.base import Attr, SpanKind
         from roomkit.telemetry.noop import NoopTelemetryProvider
@@ -215,7 +217,9 @@ class FastRTCVoiceBackend(VoiceBackend):
     async def disconnect(self, session: VoiceSession) -> None:
         session.state = VoiceSessionState.ENDED
         self._sessions.pop(session.id, None)
-        self._audio_queues.pop(session.id, None)
+        ws_id = session.metadata.get("websocket_id")
+        if ws_id:
+            self._emit_queues.pop(ws_id, None)
         self._websockets.pop(session.id, None)
         logger.info("Voice session ended: session=%s", session.id)
 
@@ -253,16 +257,53 @@ class FastRTCVoiceBackend(VoiceBackend):
 
         return None
 
+    def _is_webrtc_session(self, session: VoiceSession) -> bool:
+        """Check if a session is connected via WebRTC (not WebSocket)."""
+        return session.metadata.get("transport") == "webrtc"
+
+    def _get_emit_queue(
+        self, session: VoiceSession
+    ) -> asyncio.Queue[tuple[int, Any] | None] | None:
+        """Get the emit queue for a WebRTC session."""
+        ws_id = session.metadata.get("websocket_id")
+        if ws_id:
+            return self._emit_queues.get(ws_id)
+        return None
+
+    def _pcm_to_numpy(self, pcm_data: bytes, sample_rate: int) -> tuple[int, Any]:
+        """Convert PCM-16 LE bytes to a (sample_rate, numpy_int16_array) tuple."""
+        import numpy as _np
+
+        arr = _np.frombuffer(pcm_data, dtype=_np.int16)
+        return (sample_rate, arr)
+
     async def send_audio(
         self,
         session: VoiceSession,
         audio: bytes | AsyncIterator[AudioChunk],
     ) -> None:
+        if self._is_webrtc_session(session):
+            queue = self._get_emit_queue(session)
+            if queue is None:
+                logger.warning("No emit queue for WebRTC session %s", session.id)
+                return
+            sample_rate = session.metadata.get("output_sample_rate", self._output_sample_rate)
+            try:
+                if isinstance(audio, bytes):
+                    queue.put_nowait(self._pcm_to_numpy(audio, sample_rate))
+                else:
+                    async for chunk in audio:
+                        if chunk.data:
+                            queue.put_nowait(self._pcm_to_numpy(chunk.data, sample_rate))
+            except Exception:
+                logger.exception("Error sending audio to WebRTC session %s", session.id)
+            return
+
+        # WebSocket path
         websocket = self._resolve_websocket(session)
         if not websocket:
             logger.warning("No WebSocket for session %s", session.id)
             return
-
         try:
             if isinstance(audio, bytes):
                 await self._send_mulaw_audio(websocket, audio)
@@ -299,18 +340,32 @@ class FastRTCVoiceBackend(VoiceBackend):
         )
 
     def send_audio_sync(self, session: VoiceSession, chunk: AudioChunk) -> None:
-        """Synchronously send a single audio chunk via WebSocket.
+        """Synchronously send a single audio chunk.
 
         Used by the audio bridge for frame-by-frame forwarding from audio
-        callback threads.  Performs mu-law encoding and base64 in the
-        calling thread, then schedules only the WebSocket send on the
-        event loop.
+        callback threads.
+
+        - **WebRTC**: Puts a numpy frame into the session's emit queue
+          (consumed by the handler's ``emit()`` → FastRTC RTP track).
+        - **WebSocket**: Performs mu-law encoding and base64 in the calling
+          thread, then schedules the WebSocket send on the event loop.
         """
+        if self._is_webrtc_session(session):
+            queue = self._get_emit_queue(session)
+            if queue is None:
+                return
+            sample_rate = session.metadata.get("output_sample_rate", self._output_sample_rate)
+            try:
+                queue.put_nowait(self._pcm_to_numpy(chunk.data, sample_rate))
+            except Exception:
+                logger.warning("send_audio_sync: emit queue full for session %s", session.id)
+            return
+
+        # WebSocket path
         websocket = self._resolve_websocket(session)
         if not websocket or not self._ws_is_connected(websocket):
             return
 
-        # Do CPU work (mu-law + base64) synchronously in the audio thread
         mulaw_data = _pcm16_to_mulaw(chunk.data)
         payload = base64.b64encode(mulaw_data).decode("utf-8")
         message = {"event": "media", "media": {"payload": payload}}
@@ -365,6 +420,7 @@ class FastRTCVoiceBackend(VoiceBackend):
         for session in list(self._sessions.values()):
             await self.disconnect(session)
         self._websockets.clear()
+        self._emit_queues.clear()
 
     # -------------------------------------------------------------------------
     # FastRTC integration methods (called by mount_fastrtc_voice)
@@ -402,7 +458,18 @@ class FastRTCVoiceBackend(VoiceBackend):
         session = self._sessions.get(session_id)
         if session:
             session.metadata["websocket_id"] = websocket_id
+            session.metadata["transport"] = "websocket"
             # Audio path is now live — fire session ready callbacks
+            for cb in self._session_ready_callbacks:
+                cb(session)
+
+    def _register_webrtc(self, webrtc_id: str, session_id: str) -> None:
+        """Register a WebRTC session and create its emit queue."""
+        session = self._sessions.get(session_id)
+        if session:
+            session.metadata["websocket_id"] = webrtc_id
+            session.metadata["transport"] = "webrtc"
+            self._emit_queues[webrtc_id] = asyncio.Queue(maxsize=self._audio_queue_maxsize)
             for cb in self._session_ready_callbacks:
                 cb(session)
 
@@ -423,11 +490,11 @@ def mount_fastrtc_voice(
 ) -> None:
     """Mount FastRTC voice endpoints on a FastAPI app.
 
-    This creates the WebSocket endpoint that FastRTC clients connect to.
-    The endpoint handles:
-    - WebSocket connection/disconnection
-    - Audio streaming with mu-law encoding
-    - Raw audio frame passthrough to the pipeline
+    Registers three endpoint groups:
+
+    - ``/webrtc/offer`` — WebRTC signaling (SDP offer/answer, ICE)
+    - ``/websocket/offer`` — WebSocket audio (mu-law in JSON)
+    - ``/telephone/handler`` — Twilio-style telephony WebSocket
 
     Args:
         app: FastAPI application.
@@ -447,9 +514,9 @@ def mount_fastrtc_voice(
     class AudioPassthroughHandler(AsyncStreamHandler):  # type: ignore[misc,unused-ignore]
         """Passes raw audio frames to the backend's on_audio_received callback.
 
-        Auth state is per-handler-instance (each WebSocket gets its own via
-        ``copy()``), so there is no memory leak and no race condition between
-        concurrent first frames.
+        Each connection gets its own handler instance via ``copy()``.
+        For WebRTC, ``emit()`` returns frames from a per-connection queue.
+        For WebSocket, ``emit()`` returns None (audio sent directly on WS).
         """
 
         def __init__(self) -> None:
@@ -457,30 +524,33 @@ def mount_fastrtc_voice(
             self._rejected = False
             self._auth_meta: dict[str, Any] | None = None
             self._webrtc_id: str | None = None
+            self._is_webrtc = False
 
         def copy(self) -> AudioPassthroughHandler:
             return AudioPassthroughHandler()
 
         async def start_up(self) -> None:
-            """Called once per WebSocket connection — run auth here."""
+            """Called once per connection — run auth and detect transport."""
             from fastrtc.utils import current_context
 
             ctx = current_context.get()
             if not ctx:
                 return
             self._webrtc_id = ctx.webrtc_id
+            # WebRTC connections have no websocket object
+            self._is_webrtc = ctx.websocket is None
 
-            if auth is not None:
+            if auth is not None and ctx.websocket is not None:
                 try:
                     result = await auth(ctx.websocket)
                     if result is None:
                         self._rejected = True
-                        logger.warning("Auth rejected for websocket_id=%s", self._webrtc_id)
+                        logger.warning("Auth rejected for id=%s", self._webrtc_id)
                         return
                     self._auth_meta = result
                 except Exception:
                     self._rejected = True
-                    logger.exception("Auth error for websocket_id=%s", self._webrtc_id)
+                    logger.exception("Auth error for id=%s", self._webrtc_id)
                     return
 
         async def receive(self, frame: tuple[int, Any]) -> None:
@@ -492,40 +562,56 @@ def mount_fastrtc_voice(
             sample_rate, audio_data = frame
 
             ctx = current_context.get()
-            websocket_id = ctx.webrtc_id if ctx else None
+            connection_id = ctx.webrtc_id if ctx else None
             websocket = ctx.websocket if ctx else None
 
-            if not websocket_id:
+            if not connection_id:
                 return
 
             # Create session if not exists and we have a factory
-            session = backend._find_session_by_websocket_id(websocket_id)
+            session = backend._find_session_by_websocket_id(connection_id)
             if not session and backend._session_factory:  # type: ignore[attr-defined]
                 try:
-                    # Set auth_context so session_factory can read auth metadata
                     token = auth_context.set(self._auth_meta)
                     try:
-                        session = await backend._session_factory(websocket_id)  # type: ignore[attr-defined]
+                        session = await backend._session_factory(connection_id)  # type: ignore[attr-defined]
                     finally:
                         auth_context.reset(token)
-                    if session and websocket:
-                        backend._register_websocket(websocket_id, session.id, websocket)
+                    if session:
+                        if websocket:
+                            backend._register_websocket(connection_id, session.id, websocket)
+                        else:
+                            backend._register_webrtc(connection_id, session.id)
                 except Exception:
                     logger.exception("Error creating session")
 
             if not session:
                 return
 
-            # Register websocket if not already registered
-            if websocket and session.id not in backend._websockets:
-                backend._register_websocket(websocket_id, session.id, websocket)
+            # Register connection if not already registered
+            if session.id not in backend._websockets and "transport" not in session.metadata:
+                if websocket:
+                    backend._register_websocket(connection_id, session.id, websocket)
+                else:
+                    backend._register_webrtc(connection_id, session.id)
 
             # Pass raw audio to pipeline via callback
-            backend._handle_audio_frame(websocket_id, audio_data, sample_rate)
+            backend._handle_audio_frame(connection_id, audio_data, sample_rate)
 
         async def emit(self) -> tuple[int, Any] | None:
-            # TTS audio is sent directly via backend.send_audio(), not through
-            # emit(). Return None so FastRTC's _emit_loop skips sending silence.
+            if self._is_webrtc and self._webrtc_id:
+                # WebRTC: pull from per-connection emit queue
+                queue = backend._emit_queues.get(self._webrtc_id)
+                if queue:
+                    try:
+                        return await asyncio.wait_for(queue.get(), timeout=0.1)
+                    except TimeoutError:
+                        return None
+                # Queue not created yet — wait for session registration
+                await asyncio.sleep(0.1)
+                return None
+
+            # WebSocket: audio sent directly via send_audio / send_audio_sync.
             # Sleep to prevent the _emit_to_queue tight loop from spinning CPU.
             await asyncio.sleep(0.1)
             return None

@@ -368,6 +368,89 @@ class TestFastRTCSendAudioSync:
         ws.send_json.assert_not_called()
 
 
+class TestFastRTCWebRTCTransport:
+    """Tests for WebRTC transport path (emit queue)."""
+
+    async def test_register_webrtc_creates_emit_queue(self) -> None:
+        backend = FastRTCVoiceBackend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        backend._register_webrtc("rtc-1", session.id)
+
+        assert session.metadata["transport"] == "webrtc"
+        assert session.metadata["websocket_id"] == "rtc-1"
+        assert "rtc-1" in backend._emit_queues
+
+    async def test_send_audio_webrtc_puts_to_emit_queue(self) -> None:
+        backend = FastRTCVoiceBackend(output_sample_rate=24000)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        backend._register_webrtc("rtc-1", session.id)
+
+        pcm = struct.pack("<4h", 100, 200, 300, 400)
+        await backend.send_audio(session, pcm)
+
+        queue = backend._emit_queues["rtc-1"]
+        assert not queue.empty()
+        sample_rate, arr = queue.get_nowait()
+        assert sample_rate == 24000
+        assert len(arr) == 4
+
+    async def test_send_audio_sync_webrtc(self) -> None:
+        backend = FastRTCVoiceBackend(output_sample_rate=16000)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        backend._register_webrtc("rtc-1", session.id)
+
+        chunk = AudioChunk(data=struct.pack("<2h", 500, -500))
+        backend.send_audio_sync(session, chunk)
+
+        queue = backend._emit_queues["rtc-1"]
+        assert not queue.empty()
+        sample_rate, arr = queue.get_nowait()
+        assert sample_rate == 16000
+        assert len(arr) == 2
+
+    async def test_send_audio_stream_webrtc(self) -> None:
+        backend = FastRTCVoiceBackend(output_sample_rate=24000)
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        backend._register_webrtc("rtc-1", session.id)
+
+        async def audio_gen():
+            yield AudioChunk(data=struct.pack("<h", 100))
+            yield AudioChunk(data=struct.pack("<h", 200))
+
+        await backend.send_audio(session, audio_gen())
+
+        queue = backend._emit_queues["rtc-1"]
+        assert queue.qsize() == 2
+
+    async def test_disconnect_cleans_emit_queue(self) -> None:
+        backend = FastRTCVoiceBackend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        backend._register_webrtc("rtc-1", session.id)
+        assert "rtc-1" in backend._emit_queues
+
+        await backend.disconnect(session)
+        assert "rtc-1" not in backend._emit_queues
+
+    async def test_is_webrtc_session(self) -> None:
+        backend = FastRTCVoiceBackend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+
+        assert not backend._is_webrtc_session(session)
+
+        backend._register_webrtc("rtc-1", session.id)
+        assert backend._is_webrtc_session(session)
+
+    async def test_websocket_session_not_webrtc(self) -> None:
+        backend = FastRTCVoiceBackend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        ws = AsyncMock()
+        ws.client_state = None
+        backend._register_websocket("ws-1", session.id, ws)
+
+        assert not backend._is_webrtc_session(session)
+        assert session.metadata["transport"] == "websocket"
+
+
 class TestFastRTCSendTranscription:
     async def test_send_transcription_with_websocket(self) -> None:
         backend = FastRTCVoiceBackend()
