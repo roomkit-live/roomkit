@@ -701,6 +701,7 @@ __all__ = [
     "MockTelemetryProvider",
     "NoopTelemetryProvider",
     "OpenTelemetryProvider",
+    "PyroscopeProfiler",
     "Span",
     "SpanKind",
     "TelemetryConfig",
@@ -731,6 +732,10 @@ def __getattr__(name: str) -> object:
         from roomkit.telemetry.opentelemetry import OpenTelemetryProvider
 
         return OpenTelemetryProvider
+    if name == "PyroscopeProfiler":
+        from roomkit.telemetry.pyroscope import PyroscopeProfiler
+
+        return PyroscopeProfiler
     if name == "MCPToolProvider":
         from roomkit.tools.mcp import MCPToolProvider
 

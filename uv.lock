@@ -3890,6 +3890,23 @@ wheels = [
 ]
 
 [[package]]
+name = "pyroscope-io"
+version = "1.0.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9c/17/c2421da1df3dca1f96668f75e7c759beafce406493017731d4520ee8ab20/pyroscope_io-1.0.4.tar.gz", hash = "sha256:b191ce8e2445e34591f250a23c1fa03e3b7a6ce0cf461fdf4f1a21bfd1c7da40", size = 64224, upload-time = "2026-02-23T11:35:20.616Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/25/71/cec9e6dc587689da7e8f96ae6a3d845db2c6199db9493cc21a59c0dea894/pyroscope_io-1.0.4-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:b161d729efc8b793fafe4c6cc0d9d449473dfbeb72919aa5de1a33fd37f28db6", size = 2884682, upload-time = "2026-02-23T11:35:11.367Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/48/073ba0458642dba1f2d775022e402936ebedcc29bc23cb12e3aa8a38655d/pyroscope_io-1.0.4-cp310-abi3-macosx_11_0_x86_64.whl", hash = "sha256:5b9fa727bf934fce772abb245fb33451fb57b6ad646cb2826e2bff0d656f464f", size = 3115770, upload-time = "2026-02-23T11:35:13.393Z" },
+    { url = "https://files.pythonhosted.org/packages/1a/c5/548b30ce330d7f09bc7ee2de6617912f9d7564281025118eb256b40c0852/pyroscope_io-1.0.4-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:7d1defd792d582ab963cd1946c8853d5b30eda7b060bdf10ecc53e8a7395ec39", size = 4086980, upload-time = "2026-02-23T11:35:14.676Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/9a/86ecde7df062fa3a89774e4c6b031eea097b1d3d70f9404d4d655e316815/pyroscope_io-1.0.4-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:62c4c6de74882ab37cb91e7f8d7af35749d6513c557e2857f9f443c463713d68", size = 3873967, upload-time = "2026-02-23T11:35:15.988Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/18/3ae66705d5bb55598ce696559db1863393731be2a3797a4257f0894d4827/pyroscope_io-1.0.4-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:a30a950bffbc58f6a7d40d543fa2856acffa850149882bd50858c5000dead1ba", size = 4162657, upload-time = "2026-02-23T11:35:17.745Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/e8/b3c4a5d9e99c5e4f63cbd1eb995c06f784ff00e73de33cf4c2d848ee173e/pyroscope_io-1.0.4-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:e0a689e0b872020a3490e4eb6166da9a393750206606a6bae13c1f6ae44ec0fd", size = 3955884, upload-time = "2026-02-23T11:35:19.081Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -4405,6 +4422,9 @@ providers = [
 pynacl = [
     { name = "pynacl" },
 ]
+pyroscope = [
+    { name = "pyroscope-io" },
+]
 qwen-asr = [
     { name = "qwen-asr" },
 ]
@@ -4544,6 +4564,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pynacl", marker = "extra == 'dev'", specifier = ">=1.5" },
     { name = "pynacl", marker = "extra == 'pynacl'", specifier = ">=1.5" },
+    { name = "pyroscope-io", marker = "extra == 'pyroscope'", specifier = ">=1.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
@@ -4562,7 +4583,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["all", "anthropic", "azure", "dev", "docs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "vllm", "webrtc-aec", "websocket", "whatsapp-personal"]
+provides-extras = ["all", "anthropic", "azure", "dev", "docs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "vllm", "webrtc-aec", "websocket", "whatsapp-personal"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]

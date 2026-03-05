@@ -119,8 +119,8 @@ sip_backend = SIPVoiceBackend(
 )
 
 fastrtc_backend = FastRTCVoiceBackend(
-    input_sample_rate=48000,
-    output_sample_rate=24000,
+    input_sample_rate=16000,
+    output_sample_rate=16000,
 )
 
 # ---------------------------------------------------------------------------
