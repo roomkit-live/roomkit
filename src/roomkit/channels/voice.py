@@ -27,7 +27,7 @@ from roomkit.models.enums import (
     HookTrigger,
 )
 from roomkit.voice.base import VoiceCapability
-from roomkit.voice.bridge import AudioBridge, AudioBridgeConfig
+from roomkit.voice.bridge import AudioBridge, AudioBridgeConfig, BridgeFrameFilter
 from roomkit.voice.interruption import InterruptionConfig
 from roomkit.voice.utils import rms_db
 
@@ -301,6 +301,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Audio bridge: forward processed frames to other sessions
         if self._bridge is not None:
             self._pipeline.on_processed_frame(self._on_processed_frame_for_bridge)
+            self._bridge.set_frame_processor(self._process_bridge_outbound)
 
         # Audio level hooks:
         # - Input: fires from pipeline processed-frame callback.
@@ -562,6 +563,47 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         """Forward processed audio to other sessions via the bridge."""
         if self._bridge is not None:
             self._bridge.forward(session, frame)
+
+    def _process_bridge_outbound(self, target_session: VoiceSession, frame: AudioFrame) -> Any:
+        """Process bridged audio through the outbound pipeline for a target.
+
+        Called by AudioBridge for each target before sending.  Runs the
+        outbound pipeline (postprocessors, recorder tap, AEC reference,
+        resampler) so that recording captures both sides and AEC stays
+        accurate.
+        """
+        from roomkit.voice.audio_frame import AudioFrame as _AudioFrame
+        from roomkit.voice.base import AudioChunk
+
+        outbound_frame = _AudioFrame(
+            data=frame.data,
+            sample_rate=frame.sample_rate,
+            channels=frame.channels,
+            sample_width=frame.sample_width,
+        )
+        if self._pipeline is not None:
+            outbound_frame = self._pipeline.process_outbound(target_session, outbound_frame)
+        return AudioChunk(
+            data=outbound_frame.data,
+            sample_rate=outbound_frame.sample_rate,
+            channels=outbound_frame.channels,
+        )
+
+    def set_bridge_filter(self, fn: BridgeFrameFilter | None) -> None:
+        """Set a synchronous filter for bridged audio frames.
+
+        The filter runs in the audio callback thread before each frame
+        is forwarded.  It receives ``(source_session, frame)`` and
+        returns the frame (possibly modified) or ``None`` to drop it.
+
+        This is the synchronous equivalent of ``BEFORE_BRIDGE_AUDIO``
+        — use it for fast operations like per-session muting or gain.
+
+        Args:
+            fn: Filter function, or ``None`` to remove.
+        """
+        if self._bridge is not None:
+            self._bridge.set_frame_filter(fn)
 
     def _on_pipeline_speaker_change(
         self, session: VoiceSession, result: DiarizationResult

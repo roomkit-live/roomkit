@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -13,6 +14,15 @@ if TYPE_CHECKING:
     from roomkit.voice.base import AudioChunk, VoiceSession
 
 logger = logging.getLogger("roomkit.voice.bridge")
+
+# Synchronous filter called before forwarding each frame.
+# Returns the (possibly modified) frame, or None to drop it.
+BridgeFrameFilter = Callable[["VoiceSession", "AudioFrame"], "AudioFrame | None"]
+
+# Synchronous processor called for each (target_session, frame) pair.
+# Returns an AudioChunk ready for send_audio_sync.  Used by VoiceChannel
+# to run outbound pipeline (recorder tap, AEC reference, resampler).
+BridgeFrameProcessor = Callable[["VoiceSession", "AudioFrame"], "AudioChunk"]
 
 
 @dataclass
@@ -57,10 +67,31 @@ class AudioBridge:
         # room_id -> {session_id -> _BridgedSession}
         self._rooms: dict[str, dict[str, _BridgedSession]] = {}
         self._lock = threading.Lock()
+        self._frame_filter: BridgeFrameFilter | None = None
+        self._frame_processor: BridgeFrameProcessor | None = None
 
     @property
     def config(self) -> AudioBridgeConfig:
         return self._config
+
+    def set_frame_filter(self, fn: BridgeFrameFilter | None) -> None:
+        """Set a synchronous filter called before forwarding each frame.
+
+        The filter receives ``(source_session, frame)`` and returns the
+        frame (possibly modified) or ``None`` to drop it.  Runs in the
+        audio callback thread — must complete in < 1ms.
+        """
+        self._frame_filter = fn
+
+    def set_frame_processor(self, fn: BridgeFrameProcessor | None) -> None:
+        """Set a processor for outbound frames before sending.
+
+        The processor receives ``(target_session, frame)`` and returns
+        an ``AudioChunk`` ready for ``send_audio_sync``.  Used by
+        VoiceChannel to run the outbound pipeline (recorder tap, AEC
+        reference, resampler) on bridged audio.
+        """
+        self._frame_processor = fn
 
     def add_session(
         self,
@@ -104,17 +135,20 @@ class AudioBridge:
             session_id: The session to remove.
         """
         with self._lock:
+            found_room_id: str | None = None
             for room_id, room in self._rooms.items():
                 if session_id in room:
                     del room[session_id]
-                    if not room:
-                        del self._rooms[room_id]
-                    logger.info(
-                        "Bridge: removed session %s from room %s",
-                        session_id,
-                        room_id,
-                    )
-                    return
+                    found_room_id = room_id
+                    break
+            if found_room_id is not None:
+                if not self._rooms[found_room_id]:
+                    del self._rooms[found_room_id]
+                logger.info(
+                    "Bridge: removed session %s from room %s",
+                    session_id,
+                    found_room_id,
+                )
 
     def forward(self, session: VoiceSession, frame: AudioFrame) -> None:
         """Forward audio from this session to other sessions in the room.
@@ -127,15 +161,25 @@ class AudioBridge:
             session: The source session.
             frame: The processed audio frame to forward.
         """
+        # Pre-forward filter (BEFORE_BRIDGE_AUDIO)
+        if self._frame_filter is not None:
+            filtered = self._frame_filter(session, frame)
+            if filtered is None:
+                return  # frame dropped
+            frame = filtered
+
         with self._lock:
             targets = self._get_targets(session.id)
 
         if not targets:
             return
 
-        chunk = self._frame_to_chunk(frame)
         for target in targets:
             try:
+                if self._frame_processor is not None:
+                    chunk = self._frame_processor(target.session, frame)
+                else:
+                    chunk = self._frame_to_chunk(frame)
                 target.backend.send_audio_sync(target.session, chunk)
             except Exception:
                 logger.exception(

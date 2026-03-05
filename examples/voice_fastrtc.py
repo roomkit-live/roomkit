@@ -143,8 +143,8 @@ async def session_factory(websocket_id: str):
 
 # --- Hooks ---
 @kit.hook(HookTrigger.ON_TRANSCRIPTION)
-async def on_transcription(text, ctx):
-    logger.info("User: %s", text)
+async def on_transcription(event, ctx):
+    logger.info("User: %s", event.text)
     return HookResult.allow()
 
 

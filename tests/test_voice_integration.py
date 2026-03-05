@@ -238,6 +238,46 @@ class TestVoicePipelineIntegration:
 
         await kit.close()
 
+    async def test_on_transcription_event_contains_session(self) -> None:
+        """ON_TRANSCRIPTION receives a TranscriptionEvent with the session."""
+        from roomkit.voice.events import TranscriptionEvent
+
+        stt = MockSTTProvider(transcripts=["hello"])
+        backend = MockVoiceBackend()
+
+        vad = MockVADProvider(events=_speech_events(b"audio\x00"))
+        pipeline = AudioPipelineConfig(vad=vad)
+
+        kit = RoomKit(stt=stt, voice=backend)
+
+        voice_channel = VoiceChannel("voice-1", stt=stt, backend=backend, pipeline=pipeline)
+        kit.register_channel(voice_channel)
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+
+        captured_events: list[TranscriptionEvent] = []
+
+        @kit.hook(HookTrigger.ON_TRANSCRIPTION, HookExecution.SYNC)
+        async def capture(event, context):
+            from roomkit.models.hook import HookResult
+
+            assert isinstance(event, TranscriptionEvent)
+            captured_events.append(event)
+            return HookResult.allow()
+
+        session = await kit.connect_voice(room.id, "user-1", "voice-1")
+
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f1"))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"f2"))
+        await asyncio.sleep(0.15)
+
+        assert len(captured_events) == 1
+        assert captured_events[0].text == "hello"
+        assert captured_events[0].session.id == session.id
+
+        await kit.close()
+
     async def test_before_tts_hook_fires(self) -> None:
         """Test that BEFORE_TTS hook fires before synthesis."""
         stt = MockSTTProvider(transcripts=["hello"])

@@ -347,6 +347,9 @@ voice = VoiceChannel(
 - `VoiceCapability.DTMF_INBAND` — backend sends DTMF as in-band audio tones
 - `VoiceCapability.DTMF_SIGNALING` — backend sends DTMF via out-of-band signaling
 
+**Audio bridging** (`voice/bridge.py`):
+Direct session-to-session audio forwarding for human-to-human voice calls, bypassing STT/TTS. Enabled via `VoiceChannel("voice", backend=backend, bridge=True)`. Audio flows through the inbound pipeline, then the bridge forwards each processed frame to other sessions in the same room via `send_audio_sync()`, passing through the outbound pipeline (recorder tap, AEC reference, resampler) per target. `AudioBridge` is a concrete class — not an ABC — with `AudioBridgeConfig(max_participants=10, mixing_strategy="forward"|"mix")`. Bridge operates alongside STT/TTS (not either/or): `bridge=True, stt=provider` gives bridging plus live transcription. `set_bridge_filter(fn)` on `VoiceChannel` registers a synchronous per-frame filter for muting or gain adjustment (runs in audio thread, must complete < 1ms). BEFORE_BRIDGE_AUDIO hook trigger is defined for this purpose.
+
 **Outbound DTMF** (`channels/voice.py` → `voice/backends/`):
 `VoiceChannel.send_dtmf(session, digit, duration_ms=160)` sends an RFC 4733 telephone-event to the remote party. The digit must be `'0'-'9'`, `'*'`, `'#'`, or `'A'-'D'`; `duration_ms` must be 1–10000. Raises `ValueError` on invalid input, `RuntimeError` if no backend or session is ended. SIP and RTP backends implement this; others raise `NotImplementedError`.
 

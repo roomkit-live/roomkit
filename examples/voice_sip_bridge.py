@@ -1,21 +1,31 @@
 #!/usr/bin/env python3
-"""Bridge two SIP calls — human-to-human voice via audio forwarding.
+"""Bridge two SIP calls with live transcription.
 
-Demonstrates VoiceChannel with ``bridge=True``: audio from caller A is
-forwarded directly to caller B and vice versa, bypassing the STT/TTS
-pipeline.  Optionally adds STT for live transcription.
+Demonstrates VoiceChannel with ``bridge=True`` and STT: audio from
+caller A is forwarded directly to caller B (and vice versa) while
+Deepgram transcribes both sides in real time.
 
 The example accepts two incoming SIP calls (INVITEs) and bridges them
 in the same room.  Audio flows directly between the two participants
-at native quality — no AI, no text roundtrip.
+at native quality — no AI roundtrip.  Meanwhile, each caller's speech
+is transcribed and logged via the ``ON_TRANSCRIPTION`` hook.
+
+Architecture::
+
+    Caller A ──mic──► Pipeline ──► STT (Deepgram streaming)
+                          │                  │
+                          └──bridge──► Caller B   └──► ON_TRANSCRIPTION hook
+                                                       (live transcript log)
 
 Requirements:
     pip install roomkit[sip]
 
 Run with:
-    uv run python examples/voice_sip_bridge.py
+    DEEPGRAM_API_KEY=... uv run python examples/voice_sip_bridge.py
 
-Environment variables (all optional):
+Environment variables:
+    DEEPGRAM_API_KEY — Deepgram API key (required for STT)
+    STT_LANGUAGE     — Language code for STT (default: en)
     SIP_LISTEN_ADDR  — SIP listen IP     (default: 0.0.0.0)
     SIP_LISTEN_PORT  — SIP listen port   (default: 5060)
     RTP_IP           — RTP bind IP       (default: 0.0.0.0)
@@ -38,11 +48,13 @@ from roomkit import (
     ChannelBinding,
     ChannelType,
     HookExecution,
+    HookResult,
     HookTrigger,
     RoomKit,
     VoiceChannel,
 )
 from roomkit.voice.backends.sip import SIPVoiceBackend
+from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -51,11 +63,17 @@ from roomkit.voice.backends.sip import SIPVoiceBackend
 SIP_LISTEN_ADDR = os.environ.get("SIP_LISTEN_ADDR", "0.0.0.0")
 SIP_LISTEN_PORT = int(os.environ.get("SIP_LISTEN_PORT", "5060"))
 RTP_IP = os.environ.get("RTP_IP", "0.0.0.0")
+DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "")
+STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "en")
 
 ROOM_ID = "bridge-room"
 
 
 async def main() -> None:
+    if not DEEPGRAM_API_KEY:
+        logger.error("DEEPGRAM_API_KEY is required. Set it and re-run.")
+        return
+
     kit = RoomKit()
 
     # --- SIP backend ----------------------------------------------------------
@@ -64,12 +82,26 @@ async def main() -> None:
         local_rtp_ip=RTP_IP,  # nosec B104
     )
 
-    # --- Voice channel with bridge enabled ------------------------------------
+    # --- STT: Deepgram streaming for live transcription -----------------------
+    # No local VAD — Deepgram handles endpointing server-side.  This gives
+    # continuous streaming transcription instead of batch (collect-then-send).
+    stt = DeepgramSTTProvider(
+        config=DeepgramConfig(
+            api_key=DEEPGRAM_API_KEY,
+            model="nova-3",
+            language=STT_LANGUAGE,
+            punctuate=True,
+            smart_format=True,
+            endpointing=300,
+        )
+    )
+
+    # --- Voice channel with bridge + STT --------------------------------------
     voice = VoiceChannel(
         "voice",
         backend=backend,
-        bridge=True,  # Enable audio forwarding between sessions
-        # stt=deepgram,  # Uncomment to add live transcription
+        stt=stt,
+        bridge=True,
     )
     kit.register_channel(voice)
 
@@ -82,24 +114,21 @@ async def main() -> None:
     async def on_session(event, ctx):
         logger.info("Session started: %s", event.session.id)
 
-    @kit.hook(HookTrigger.ON_SPEECH_START, execution=HookExecution.ASYNC)
-    async def on_speech(event, ctx):
-        logger.info("Speech detected on session %s", event.session.id)
+    @kit.hook(HookTrigger.ON_TRANSCRIPTION)
+    async def on_transcription(event, ctx):
+        """Log each caller's transcribed speech in real time."""
+        # Use SIP display name or user part, fall back to session ID
+        meta = event.session.metadata
+        name = meta.get("caller_display_name") or meta.get("caller_user") or event.session.id
+        logger.info("[TRANSCRIPT %s] %s", name, event.text)
+        return HookResult.allow()
 
     # --- Handle incoming calls ------------------------------------------------
-    call_count = 0
-
     @backend.on_call
     async def handle_call(session):
-        nonlocal call_count
-        call_count += 1
-        participant_id = f"caller-{call_count}"
-        logger.info(
-            "Incoming call #%d — session=%s, participant=%s",
-            call_count,
-            session.id,
-            participant_id,
-        )
+        meta = session.metadata
+        name = meta.get("caller_display_name") or meta.get("caller_user") or session.id
+        logger.info("Incoming call — session=%s, caller=%s", session.id, name)
         binding = ChannelBinding(
             room_id=ROOM_ID,
             channel_id="voice",
@@ -119,6 +148,10 @@ async def main() -> None:
         "Listening for SIP calls on %s:%d — two callers will be bridged together",
         SIP_LISTEN_ADDR,
         SIP_LISTEN_PORT,
+    )
+    logger.info(
+        "STT: Deepgram nova-3 (language=%s) — transcripts logged as [TRANSCRIPT]",
+        STT_LANGUAGE,
     )
 
     stop = asyncio.Event()

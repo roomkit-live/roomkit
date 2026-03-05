@@ -171,10 +171,10 @@ async def main() -> None:
         logger.info("Speech ended (neural VAD)")
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
-    async def on_transcription(text, ctx):
+    async def on_transcription(event, ctx):
         from roomkit import HookResult
 
-        logger.info("Transcription: %s", text)
+        logger.info("Transcription: %s", event.text)
         return HookResult.allow()
 
     @kit.hook(HookTrigger.BEFORE_TTS)

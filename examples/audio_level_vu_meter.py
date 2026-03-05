@@ -148,8 +148,8 @@ async def main() -> None:
     # --- Log transcription and TTS for visibility ---------------------------
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION, name="log_stt")
-    async def on_transcription(text, ctx):
-        print(f"\n  STT: {text}")
+    async def on_transcription(event, ctx):
+        print(f"\n  STT: {event.text}")
         return HookResult.allow()
 
     @kit.hook(HookTrigger.BEFORE_TTS, name="log_tts")

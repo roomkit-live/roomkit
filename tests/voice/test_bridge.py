@@ -6,6 +6,7 @@ import pytest
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
+from roomkit.voice.base import AudioChunk
 from roomkit.voice.bridge import AudioBridge, AudioBridgeConfig
 
 
@@ -216,6 +217,170 @@ class TestAudioBridge:
 
         assert len(backend.sent_audio) == 0
 
+    async def test_frame_filter_blocks(self) -> None:
+        """Frame filter returning None drops the frame."""
+        backend = MockVoiceBackend()
+        bridge = AudioBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s2 = await backend.connect("room-1", "user-2", "voice")
+
+        bridge.add_session(s1, "room-1", backend)
+        bridge.add_session(s2, "room-1", backend)
+
+        # Block all frames
+        bridge.set_frame_filter(lambda session, frame: None)
+
+        frame = AudioFrame(data=b"\x01" * 320, sample_rate=16000)
+        bridge.forward(s1, frame)
+
+        assert len(backend.sent_audio) == 0
+
+    async def test_frame_filter_modifies(self) -> None:
+        """Frame filter can modify the frame before forwarding."""
+        backend = MockVoiceBackend()
+        bridge = AudioBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s2 = await backend.connect("room-1", "user-2", "voice")
+
+        bridge.add_session(s1, "room-1", backend)
+        bridge.add_session(s2, "room-1", backend)
+
+        # Replace data with silence
+        silence = b"\x00" * 320
+
+        def replace_with_silence(session, frame):
+            return AudioFrame(data=silence, sample_rate=frame.sample_rate)
+
+        bridge.set_frame_filter(replace_with_silence)
+
+        frame = AudioFrame(data=b"\x01" * 320, sample_rate=16000)
+        bridge.forward(s1, frame)
+
+        assert len(backend.sent_audio) == 1
+        assert backend.sent_audio[0][1] == silence
+
+    async def test_frame_filter_passthrough(self) -> None:
+        """Frame filter returning the frame passes it through."""
+        backend = MockVoiceBackend()
+        bridge = AudioBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s2 = await backend.connect("room-1", "user-2", "voice")
+
+        bridge.add_session(s1, "room-1", backend)
+        bridge.add_session(s2, "room-1", backend)
+
+        bridge.set_frame_filter(lambda session, frame: frame)
+
+        frame = AudioFrame(data=b"\x01" * 320, sample_rate=16000)
+        bridge.forward(s1, frame)
+
+        assert len(backend.sent_audio) == 1
+        assert backend.sent_audio[0][1] == frame.data
+
+    async def test_frame_filter_remove(self) -> None:
+        """Setting filter to None removes it."""
+        backend = MockVoiceBackend()
+        bridge = AudioBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s2 = await backend.connect("room-1", "user-2", "voice")
+
+        bridge.add_session(s1, "room-1", backend)
+        bridge.add_session(s2, "room-1", backend)
+
+        bridge.set_frame_filter(lambda session, frame: None)
+        bridge.set_frame_filter(None)  # Remove filter
+
+        frame = AudioFrame(data=b"\x01" * 320, sample_rate=16000)
+        bridge.forward(s1, frame)
+
+        assert len(backend.sent_audio) == 1
+
+    async def test_frame_processor(self) -> None:
+        """Frame processor transforms audio before sending to each target."""
+        backend = MockVoiceBackend()
+        bridge = AudioBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s2 = await backend.connect("room-1", "user-2", "voice")
+
+        bridge.add_session(s1, "room-1", backend)
+        bridge.add_session(s2, "room-1", backend)
+
+        processed_data = b"\xaa" * 320
+        processed_targets: list[str] = []
+
+        def processor(target_session, frame):
+            processed_targets.append(target_session.id)
+            return AudioChunk(data=processed_data, sample_rate=16000, channels=1)
+
+        bridge.set_frame_processor(processor)
+
+        frame = AudioFrame(data=b"\x01" * 320, sample_rate=16000)
+        bridge.forward(s1, frame)
+
+        assert len(backend.sent_audio) == 1
+        assert backend.sent_audio[0][0] == s2.id
+        assert backend.sent_audio[0][1] == processed_data
+        assert processed_targets == [s2.id]
+
+    async def test_frame_processor_per_target(self) -> None:
+        """Frame processor is called once per target session."""
+        backend = MockVoiceBackend()
+        bridge = AudioBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s2 = await backend.connect("room-1", "user-2", "voice")
+        s3 = await backend.connect("room-1", "user-3", "voice")
+
+        bridge.add_session(s1, "room-1", backend)
+        bridge.add_session(s2, "room-1", backend)
+        bridge.add_session(s3, "room-1", backend)
+
+        call_count = 0
+
+        def processor(target_session, frame):
+            nonlocal call_count
+            call_count += 1
+            return AudioChunk(data=frame.data, sample_rate=16000, channels=1)
+
+        bridge.set_frame_processor(processor)
+
+        frame = AudioFrame(data=b"\x01" * 320, sample_rate=16000)
+        bridge.forward(s1, frame)
+
+        assert call_count == 2  # s2 and s3
+
+    async def test_filter_and_processor_combined(self) -> None:
+        """Filter runs before processor — blocked frames skip processor."""
+        backend = MockVoiceBackend()
+        bridge = AudioBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s2 = await backend.connect("room-1", "user-2", "voice")
+
+        bridge.add_session(s1, "room-1", backend)
+        bridge.add_session(s2, "room-1", backend)
+
+        processor_called = False
+
+        def processor(target_session, frame):
+            nonlocal processor_called
+            processor_called = True
+            return AudioChunk(data=frame.data, sample_rate=16000, channels=1)
+
+        bridge.set_frame_filter(lambda session, frame: None)
+        bridge.set_frame_processor(processor)
+
+        frame = AudioFrame(data=b"\x01" * 320, sample_rate=16000)
+        bridge.forward(s1, frame)
+
+        assert len(backend.sent_audio) == 0
+        assert not processor_called
+
 
 class TestVoiceChannelBridge:
     """Test VoiceChannel bridge integration."""
@@ -330,3 +495,100 @@ class TestVoiceChannelBridge:
 
         assert channel._bridge is not None
         assert channel._bridge.get_participant_count("room-1") == 0
+
+    async def test_set_bridge_filter_mutes_session(self) -> None:
+        """set_bridge_filter can mute a specific session."""
+        from roomkit import VoiceChannel
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelType
+
+        backend = MockVoiceBackend()
+        channel = VoiceChannel("voice", backend=backend, bridge=True)
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s2 = await backend.connect("room-1", "user-2", "voice")
+        binding = ChannelBinding(
+            room_id="room-1",
+            channel_id="voice",
+            channel_type=ChannelType.VOICE,
+        )
+        channel.bind_session(s1, "room-1", binding)
+        channel.bind_session(s2, "room-1", binding)
+
+        # Mute s1 via bridge filter
+        channel.set_bridge_filter(lambda session, frame: None if session.id == s1.id else frame)
+
+        # Audio from s1 should be blocked
+        frame = AudioFrame(data=b"\x01\x02" * 160, sample_rate=16000)
+        await backend.simulate_audio_received(s1, frame)
+        blocked = [(sid, data) for sid, data in backend.sent_audio if sid == s2.id]
+        assert len(blocked) == 0
+
+        # Audio from s2 should pass through
+        backend.sent_audio.clear()
+        await backend.simulate_audio_received(s2, frame)
+        forwarded = [(sid, data) for sid, data in backend.sent_audio if sid == s1.id]
+        assert len(forwarded) >= 1
+
+    async def test_bridge_outbound_pipeline_processes_frames(self) -> None:
+        """Bridged audio passes through the outbound pipeline (recorder tap)."""
+        from roomkit import VoiceChannel
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelType
+        from roomkit.voice.pipeline.config import AudioPipelineConfig
+        from roomkit.voice.pipeline.recorder.base import RecordingConfig
+        from roomkit.voice.pipeline.recorder.mock import MockAudioRecorder
+
+        recorder = MockAudioRecorder()
+        pipeline = AudioPipelineConfig(
+            recorder=recorder,
+            recording_config=RecordingConfig(),
+        )
+        backend = MockVoiceBackend()
+        channel = VoiceChannel(
+            "voice",
+            backend=backend,
+            bridge=True,
+            pipeline=pipeline,
+        )
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s2 = await backend.connect("room-1", "user-2", "voice")
+        binding = ChannelBinding(
+            room_id="room-1",
+            channel_id="voice",
+            channel_type=ChannelType.VOICE,
+        )
+        channel.bind_session(s1, "room-1", binding)
+        channel.bind_session(s2, "room-1", binding)
+
+        # Both sessions should have recording started via on_session_active
+        assert len(recorder.started) == 2
+
+        # Simulate inbound audio from s1
+        frame = AudioFrame(data=b"\x01\x02" * 160, sample_rate=16000)
+        await backend.simulate_audio_received(s1, frame)
+
+        # Audio should reach s2
+        forwarded = [(sid, data) for sid, data in backend.sent_audio if sid == s2.id]
+        assert len(forwarded) >= 1
+
+        # Inbound pipeline tapped s1's recording (recorder sees inbound frame)
+        assert len(recorder.inbound_frames) >= 1
+
+        # Outbound pipeline tapped s2's recording (bridge forwarded through
+        # process_outbound which calls recorder.tap_outbound for target session)
+        assert len(recorder.outbound_frames) >= 1
+        # The outbound tap should be for s2's recording handle, not s1's
+        s2_rec_handle_id = "rec_2"  # second session started = rec_2
+        outbound_for_s2 = [
+            (hid, f) for hid, f in recorder.outbound_frames if hid == s2_rec_handle_id
+        ]
+        assert len(outbound_for_s2) >= 1
+
+    async def test_set_bridge_filter_on_no_bridge(self) -> None:
+        """set_bridge_filter is a no-op when bridge is not configured."""
+        from roomkit import VoiceChannel
+
+        channel = VoiceChannel("voice")
+        channel.set_bridge_filter(lambda s, f: f)  # Should not raise

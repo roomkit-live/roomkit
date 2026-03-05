@@ -90,6 +90,10 @@ class AudioPipeline:
         self._aec_resampler: ResamplerProvider | None = None
         # Active recording handle (per session, keyed by session_id)
         self._recording_handles: dict[str, RecordingHandle] = {}
+        # Per-session lock for process_outbound — serializes concurrent
+        # outbound calls (bridge forwarding + TTS) for the same target
+        # session to protect the recorder handle and other per-session state.
+        self._outbound_locks: dict[str, threading.Lock] = {}
         # Debug tap sessions (per session, keyed by session_id)
         self._debug_tap_sessions: dict[str, DebugTapSession] = {}
         # Whether playback-time AEC reference is wired (suppresses
@@ -523,9 +527,24 @@ class AudioPipeline:
     def process_outbound(self, session: VoiceSession, frame: AudioFrame) -> AudioFrame:
         """Process a single outbound audio frame through the pipeline.
 
+        Thread-safe per session: concurrent calls for the same session
+        (e.g. bridge forwarding + TTS) are serialized via a per-session
+        lock to protect the recorder handle and other per-session state.
+
         Order: [PostProcessors] -> [Recorder tap] -> AEC.feed_reference ->
                [Resampler]
         """
+        lock = self._outbound_locks.get(session.id)
+        if lock is not None:
+            lock.acquire()
+        try:
+            return self._process_outbound_unlocked(session, frame)
+        finally:
+            if lock is not None:
+                lock.release()
+
+    def _process_outbound_unlocked(self, session: VoiceSession, frame: AudioFrame) -> AudioFrame:
+        """Internal outbound processing (caller holds per-session lock)."""
         current_frame = frame
 
         # Debug tap: outbound_raw (before postprocessors)
@@ -662,6 +681,7 @@ class AudioPipeline:
         self._last_speaker_id.pop(session_id, None)
         self._segment_stage_timings.pop(session_id, None)
         self._segment_frame_counts.pop(session_id, None)
+        self._outbound_locks.pop(session_id, None)
         handle = self._recording_handles.pop(session_id, None)
         if handle is not None and self._config.recorder is not None:
             try:
@@ -678,6 +698,7 @@ class AudioPipeline:
         Cleans up stale state for this session and starts recording if configured.
         """
         self._cleanup_session_state(session.id)
+        self._outbound_locks[session.id] = threading.Lock()
 
         # Start debug taps if configured
         if self._config.debug_taps is not None and self._config.debug_taps.output_dir:
@@ -745,6 +766,7 @@ class AudioPipeline:
         self._segment_stage_timings.clear()
         self._segment_frame_counts.clear()
         self._parent_spans.clear()
+        self._outbound_locks.clear()
         self._inbound_sample_rate = None
         if self._aec_resampler is not None:
             self._aec_resampler.reset()
@@ -782,6 +804,7 @@ class AudioPipeline:
 
     def close(self) -> None:
         """Release all pipeline resources."""
+        self._outbound_locks.clear()
         # Stop active recordings before closing providers
         for handle in self._recording_handles.values():
             if self._config.recorder is not None:

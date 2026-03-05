@@ -127,8 +127,8 @@ async def main() -> None:
         logger.info("Speech ended: session=%s", session.id)
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
-    async def on_transcription(text, ctx):
-        logger.info("Transcription: %s", text)
+    async def on_transcription(event, ctx):
+        logger.info("Transcription: %s", event.text)
         return HookResult.allow()
 
     @kit.hook(HookTrigger.ON_DTMF, execution=HookExecution.ASYNC)

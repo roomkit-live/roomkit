@@ -332,9 +332,9 @@ async def main() -> None:
         return HookResult.allow()
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
-    async def on_transcription(text: str, ctx: RoomContext) -> HookResult:
+    async def on_transcription(event, ctx: RoomContext) -> HookResult:
         """Log what the caller says."""
-        logger.info("Caller: %s", text)
+        logger.info("Caller: %s", event.text)
         return HookResult.allow()
 
     @kit.hook(HookTrigger.BEFORE_TTS)

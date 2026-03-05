@@ -360,6 +360,12 @@ class SIPVoiceBackend(VoiceBackend):
         participant_id = call.session_id or call.caller
 
         session_id = call.session_id or call.call_id
+
+        # Extract display name and user from SIP From header
+        from_addr = call.invite.from_addr
+        caller_display_name = from_addr.display_name if from_addr else None
+        caller_user = from_addr.uri.user if from_addr else None
+
         session = VoiceSession(
             id=session_id,
             room_id=room_id,
@@ -371,6 +377,8 @@ class SIPVoiceBackend(VoiceBackend):
                 "call_id": call.call_id,
                 "caller": call.caller,
                 "callee": call.callee,
+                "caller_display_name": caller_display_name,
+                "caller_user": caller_user,
                 "room_id": room_id,
                 "x_headers": call.x_headers,
             },
@@ -1084,7 +1092,7 @@ class SIPVoiceBackend(VoiceBackend):
                     if stats.outbound_frames > 1:
                         out_dur = stats.outbound_last_ts - stats.outbound_first_ts
 
-                    logger.info(
+                    logger.debug(
                         "SIP audio [%s] IN: pkts=%d bytes=%d gaps=%d"
                         " max_gap=%.0fms dur=%.1fs |"
                         " OUT: frames=%d bytes=%d dur=%.1fs"

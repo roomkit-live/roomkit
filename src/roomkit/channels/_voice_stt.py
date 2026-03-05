@@ -12,6 +12,7 @@ from roomkit.models.enums import HookTrigger
 from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
 from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.voice.base import TranscriptionResult
+from roomkit.voice.events import TranscriptionEvent
 
 _NOOP = NoopTelemetryProvider()
 
@@ -30,6 +31,19 @@ if TYPE_CHECKING:
     from .voice import TTSPlaybackState, _STTStreamState
 
 logger = logging.getLogger("roomkit.voice")
+
+
+def _extract_transcription_text(hook_event: Any, original: str) -> str:
+    """Extract text from an ON_TRANSCRIPTION hook result.
+
+    Handles both ``TranscriptionEvent`` (preferred) and plain ``str``
+    (backward compat) returns from hook handlers.
+    """
+    if isinstance(hook_event, TranscriptionEvent):
+        return hook_event.text
+    if isinstance(hook_event, str):
+        return hook_event
+    return original
 
 
 class VoiceSTTMixin:
@@ -572,10 +586,11 @@ class VoiceSTTMixin:
             )
 
             # Fire ON_TRANSCRIPTION hooks
+            tx_event = TranscriptionEvent(session=session, text=text)
             transcription_result = await self._framework.hook_engine.run_sync_hooks(
                 room_id,
                 HookTrigger.ON_TRANSCRIPTION,
-                text,
+                tx_event,
                 context,
                 skip_event_filter=True,
             )
@@ -584,9 +599,7 @@ class VoiceSTTMixin:
                 logger.info("Transcription blocked by hook: %s", transcription_result.reason)
                 return
 
-            final_text = (
-                transcription_result.event if isinstance(transcription_result.event, str) else text
-            )
+            final_text = _extract_transcription_text(transcription_result.event, text)
 
             turn_detector = self._pipeline_config.turn_detector if self._pipeline_config else None
             if turn_detector is not None:
@@ -685,7 +698,18 @@ class VoiceSTTMixin:
             # Batch fallback: no stream, stream error, or no final text
             if text is None:
                 if stream_state is not None:
-                    logger.info("Falling back to batch STT for %s", session.id)
+                    reason = "stream returned no text"
+                    if stream_state.error:
+                        reason = f"stream error: {stream_state.error}"
+                    elif stream_state.cancelled:
+                        reason = "stream was cancelled"
+                    logger.info(
+                        "STT stream→batch fallback for %s (%s) — "
+                        "sending %d bytes to batch transcribe",
+                        session.id,
+                        reason,
+                        len(audio),
+                    )
                 audio_frame = AudioFrame(
                     data=audio,
                     sample_rate=sample_rate,
@@ -756,10 +780,11 @@ class VoiceSTTMixin:
                 await self._backend.send_transcription(session, text, "user")
 
             # Fire ON_TRANSCRIPTION hooks (sync, can modify)
+            tx_event = TranscriptionEvent(session=session, text=text)
             transcription_result = await self._framework.hook_engine.run_sync_hooks(
                 room_id,
                 HookTrigger.ON_TRANSCRIPTION,
-                text,
+                tx_event,
                 context,
                 skip_event_filter=True,
             )
@@ -769,9 +794,7 @@ class VoiceSTTMixin:
                 return
 
             # Use potentially modified text
-            final_text = (
-                transcription_result.event if isinstance(transcription_result.event, str) else text
-            )
+            final_text = _extract_transcription_text(transcription_result.event, text)
 
             # Turn detection: if configured, evaluate before routing
             turn_detector = self._pipeline_config.turn_detector if self._pipeline_config else None
@@ -881,19 +904,18 @@ class VoiceSTTMixin:
                 )
 
                 # Fire ON_TRANSCRIPTION hooks (sync, can modify/block)
+                tx_event = TranscriptionEvent(session=session, text=result.text)
                 transcription_result = await self._framework.hook_engine.run_sync_hooks(
                     room_id,
                     HookTrigger.ON_TRANSCRIPTION,
-                    result.text,
+                    tx_event,
                     context,
                     skip_event_filter=True,
                 )
 
                 if transcription_result.allowed:
-                    final_text = (
-                        transcription_result.event
-                        if isinstance(transcription_result.event, str)
-                        else result.text
+                    final_text = _extract_transcription_text(
+                        transcription_result.event, result.text
                     )
                     await self._route_text(session, final_text, room_id)
 

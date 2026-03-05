@@ -236,8 +236,8 @@ async def main() -> None:
         logger.info("Speech ended — transcribing with Parakeet TDT...")
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
-    async def on_transcription(text, ctx):
-        logger.info("You said: %s", text)
+    async def on_transcription(event, ctx):
+        logger.info("You said: %s", event.text)
         return HookResult.allow()
 
     @kit.hook(HookTrigger.BEFORE_TTS)

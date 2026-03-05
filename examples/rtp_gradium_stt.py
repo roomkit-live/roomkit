@@ -184,8 +184,8 @@ async def main() -> None:
         logger.info("Partial: %r", result.text)
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
-    async def on_transcription(text, ctx):
-        print(f"\n>>> {text}\n")
+    async def on_transcription(event, ctx):
+        print(f"\n>>> {event.text}\n")
         # Block further processing (no AI provider to forward to)
         return HookResult.block("transcribe-only, no AI provider")
 

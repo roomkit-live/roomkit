@@ -14,7 +14,12 @@ from roomkit.voice.base import (
     VoiceSession,
     VoiceSessionState,
 )
-from roomkit.voice.bridge import AudioBridge, AudioBridgeConfig
+from roomkit.voice.bridge import (
+    AudioBridge,
+    AudioBridgeConfig,
+    BridgeFrameFilter,
+    BridgeFrameProcessor,
+)
 from roomkit.voice.events import (
     BackchannelEvent,
     BargeInEvent,
@@ -23,6 +28,7 @@ from roomkit.voice.events import (
     RecordingStartedEvent,
     RecordingStoppedEvent,
     SpeakerChangeEvent,
+    TranscriptionEvent,
     TTSCancelledEvent,
     TurnCompleteEvent,
     TurnIncompleteEvent,
@@ -97,6 +103,8 @@ __all__ = [
     # Bridge
     "AudioBridge",
     "AudioBridgeConfig",
+    "BridgeFrameFilter",
+    "BridgeFrameProcessor",
     # Base types
     "AudioChunk",
     "AudioFrame",
@@ -114,6 +122,7 @@ __all__ = [
     "BargeInEvent",
     "DTMFDetectedEvent",
     "PartialTranscriptionEvent",
+    "TranscriptionEvent",
     "RecordingStartedEvent",
     "RecordingStoppedEvent",
     "SpeakerChangeEvent",

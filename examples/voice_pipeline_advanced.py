@@ -182,10 +182,10 @@ async def main() -> None:
         print(f"[hook] Backchannel detected: '{event.text}'")
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION, name="log_transcription")
-    async def on_transcription(text, ctx):
+    async def on_transcription(event, ctx):
         from roomkit import HookResult
 
-        print(f"[hook] Transcription: {text}")
+        print(f"[hook] Transcription: {event.text}")
         return HookResult.allow()
 
     # --- Simulate session -----------------------------------------------------

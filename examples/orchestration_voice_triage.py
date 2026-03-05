@@ -341,9 +341,9 @@ async def main() -> None:
         logger.info("[VAD] speech_end — room=%s", ctx.room.id)
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
-    async def on_transcription(text: str, ctx: RoomContext) -> HookResult:
+    async def on_transcription(event, ctx: RoomContext) -> HookResult:
         _last_transcription_ts[ctx.room.id] = time.monotonic()
-        logger.info("[STT] Caller: %s", text)
+        logger.info("[STT] Caller: %s", event.text)
         return HookResult.allow()
 
     @kit.hook(HookTrigger.BEFORE_TTS)

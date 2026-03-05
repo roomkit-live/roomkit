@@ -68,6 +68,24 @@ class TTSCancelledEvent:
 
 
 @dataclass(frozen=True)
+class TranscriptionEvent:
+    """Final transcription passed to ON_TRANSCRIPTION hooks.
+
+    Wraps the transcribed text together with the voice session that
+    produced it, so hook handlers can identify which participant spoke.
+    """
+
+    session: VoiceSession
+    """The voice session that produced this transcription."""
+
+    text: str
+    """The transcribed text."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the transcription was produced."""
+
+
+@dataclass(frozen=True)
 class PartialTranscriptionEvent:
     """Interim transcription result during speech.
 

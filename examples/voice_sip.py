@@ -105,9 +105,9 @@ async def main() -> None:
         return HookResult.allow()
 
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
-    async def on_transcription(text: str, ctx: RoomContext) -> HookResult:
+    async def on_transcription(event, ctx: RoomContext) -> HookResult:
         """Log what the caller says. Can also modify or block the text."""
-        logger.info("ON_TRANSCRIPTION: %s", text)
+        logger.info("ON_TRANSCRIPTION: %s", event.text)
         return HookResult.allow()
 
     @kit.hook(HookTrigger.ON_PROTOCOL_TRACE)
