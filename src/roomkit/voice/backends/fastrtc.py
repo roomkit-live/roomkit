@@ -298,6 +298,32 @@ class FastRTCVoiceBackend(VoiceBackend):
             }
         )
 
+    def send_audio_sync(self, session: VoiceSession, chunk: AudioChunk) -> None:
+        """Synchronously send a single audio chunk via WebSocket.
+
+        Used by the audio bridge for frame-by-frame forwarding from audio
+        callback threads.  Performs mu-law encoding and base64 in the
+        calling thread, then schedules only the WebSocket send on the
+        event loop.
+        """
+        websocket = self._resolve_websocket(session)
+        if not websocket or not self._ws_is_connected(websocket):
+            return
+
+        # Do CPU work (mu-law + base64) synchronously in the audio thread
+        mulaw_data = _pcm16_to_mulaw(chunk.data)
+        payload = base64.b64encode(mulaw_data).decode("utf-8")
+        message = {"event": "media", "media": {"payload": payload}}
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(websocket.send_json(message))
+        except RuntimeError:
+            logger.warning(
+                "send_audio_sync: no event loop for session %s",
+                session.id,
+            )
+
     async def send_transcription(
         self, session: VoiceSession, text: str, role: str = "user"
     ) -> None:

@@ -322,6 +322,52 @@ class TestFastRTCSendAudio:
         assert ws.send_json.call_count == 2
 
 
+class TestFastRTCSendAudioSync:
+    async def test_send_audio_sync_no_websocket(self) -> None:
+        """send_audio_sync should not crash when no WebSocket is registered."""
+        backend = FastRTCVoiceBackend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        chunk = AudioChunk(data=struct.pack("<h", 1000))
+        backend.send_audio_sync(session, chunk)  # should not raise
+
+    async def test_send_audio_sync_sends_mulaw(self) -> None:
+        """send_audio_sync should encode mu-law and schedule WebSocket send."""
+        backend = FastRTCVoiceBackend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        ws = AsyncMock()
+        ws.client_state = None  # Not a Starlette WebSocket
+        backend._register_websocket("ws-1", session.id, ws)
+
+        pcm = struct.pack("<h", 1000)
+        chunk = AudioChunk(data=pcm)
+        backend.send_audio_sync(session, chunk)
+
+        # The task was scheduled — give the event loop a tick to execute it
+        import asyncio
+
+        await asyncio.sleep(0)
+
+        ws.send_json.assert_called_once()
+        call_args = ws.send_json.call_args[0][0]
+        assert call_args["event"] == "media"
+        assert "payload" in call_args["media"]
+
+    async def test_send_audio_sync_skips_disconnected_ws(self) -> None:
+        """send_audio_sync should skip sending if WebSocket is disconnected."""
+        backend = FastRTCVoiceBackend()
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        ws = AsyncMock()
+        # Simulate a disconnected Starlette WebSocket
+        ws.client_state = MagicMock()
+        ws.client_state.__eq__ = lambda self, other: False  # not CONNECTED
+        backend._register_websocket("ws-1", session.id, ws)
+
+        chunk = AudioChunk(data=struct.pack("<h", 1000))
+        backend.send_audio_sync(session, chunk)
+
+        ws.send_json.assert_not_called()
+
+
 class TestFastRTCSendTranscription:
     async def test_send_transcription_with_websocket(self) -> None:
         backend = FastRTCVoiceBackend()
