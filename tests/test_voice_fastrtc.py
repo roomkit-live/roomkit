@@ -322,6 +322,59 @@ class TestFastRTCSendAudio:
         assert ws.send_json.call_count == 2
 
 
+class TestFastRTCPcmFormat:
+    """Tests for audio_format='pcm' (raw PCM binary WebSocket frames)."""
+
+    async def test_send_audio_pcm_bytes(self) -> None:
+        backend = FastRTCVoiceBackend(audio_format="pcm")
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        ws = AsyncMock()
+        ws.client_state = None
+        backend._register_websocket("ws-1", session.id, ws)
+
+        pcm = struct.pack("<2h", 100, 200)
+        await backend.send_audio(session, pcm)
+
+        ws.send_bytes.assert_called_once_with(pcm)
+        ws.send_json.assert_not_called()
+
+    async def test_send_audio_pcm_stream(self) -> None:
+        backend = FastRTCVoiceBackend(audio_format="pcm")
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        ws = AsyncMock()
+        ws.client_state = None
+        backend._register_websocket("ws-1", session.id, ws)
+
+        async def audio_gen():
+            yield AudioChunk(data=struct.pack("<h", 100))
+            yield AudioChunk(data=struct.pack("<h", 200))
+
+        await backend.send_audio(session, audio_gen())
+        assert ws.send_bytes.call_count == 2
+
+    async def test_send_audio_sync_pcm(self) -> None:
+        backend = FastRTCVoiceBackend(audio_format="pcm")
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        ws = AsyncMock()
+        ws.client_state = None
+        backend._register_websocket("ws-1", session.id, ws)
+
+        pcm = struct.pack("<h", 500)
+        chunk = AudioChunk(data=pcm)
+        backend.send_audio_sync(session, chunk)
+
+        import asyncio
+
+        await asyncio.sleep(0)
+
+        ws.send_bytes.assert_called_once()
+        ws.send_json.assert_not_called()
+
+    def test_invalid_audio_format_raises(self) -> None:
+        with pytest.raises(ValueError, match="audio_format"):
+            FastRTCVoiceBackend(audio_format="opus")
+
+
 class TestFastRTCSendAudioSync:
     async def test_send_audio_sync_no_websocket(self) -> None:
         """send_audio_sync should not crash when no WebSocket is registered."""

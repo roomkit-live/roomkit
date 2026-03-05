@@ -136,10 +136,25 @@ class FastRTCVoiceBackend(VoiceBackend):
         *,
         input_sample_rate: int = 48000,
         output_sample_rate: int = 24000,
+        audio_format: str = "mulaw",
         audio_queue_maxsize: int = DEFAULT_QUEUE_MAXSIZE,
     ) -> None:
+        """
+        Args:
+            input_sample_rate: Expected inbound sample rate.
+            output_sample_rate: Target outbound sample rate.
+            audio_format: WebSocket audio encoding — ``"mulaw"`` (mu-law in
+                JSON, Twilio-compatible) or ``"pcm"`` (raw PCM-16 LE binary
+                frames).  Has no effect on WebRTC transport (always PCM via
+                RTP).
+            audio_queue_maxsize: Max pending frames per session emit queue.
+        """
+        if audio_format not in ("mulaw", "pcm"):
+            msg = f"audio_format must be 'mulaw' or 'pcm', got {audio_format!r}"
+            raise ValueError(msg)
         self._input_sample_rate = input_sample_rate
         self._output_sample_rate = output_sample_rate
+        self._audio_format = audio_format
         self._audio_queue_maxsize = audio_queue_maxsize
 
         # Callback for raw audio frames
@@ -306,11 +321,11 @@ class FastRTCVoiceBackend(VoiceBackend):
             return
         try:
             if isinstance(audio, bytes):
-                await self._send_mulaw_audio(websocket, audio)
+                await self._send_ws_audio(websocket, audio)
             else:
                 async for chunk in audio:
                     if chunk.data:
-                        await self._send_mulaw_audio(websocket, chunk.data)
+                        await self._send_ws_audio(websocket, chunk.data)
         except Exception:
             logger.exception("Error sending audio to session %s", session.id)
 
@@ -327,17 +342,28 @@ class FastRTCVoiceBackend(VoiceBackend):
         except ImportError:
             return True
 
-    async def _send_mulaw_audio(self, websocket: Any, pcm_data: bytes) -> None:
+    async def _send_ws_audio(self, websocket: Any, pcm_data: bytes) -> None:
+        """Send audio to a WebSocket using the configured format."""
         if not self._ws_is_connected(websocket):
             return
+        if self._audio_format == "pcm":
+            await websocket.send_bytes(pcm_data)
+        else:
+            mulaw_data = _pcm16_to_mulaw(pcm_data)
+            payload = base64.b64encode(mulaw_data).decode("utf-8")
+            await websocket.send_json({"event": "media", "media": {"payload": payload}})
+
+    def _prepare_ws_sync(self, pcm_data: bytes) -> tuple[str, bytes | dict[str, Any]]:
+        """Prepare a WebSocket message synchronously (for audio thread).
+
+        Returns ``("bytes", data)`` for PCM or ``("json", message)`` for
+        mu-law, ready to schedule on the event loop.
+        """
+        if self._audio_format == "pcm":
+            return ("bytes", pcm_data)
         mulaw_data = _pcm16_to_mulaw(pcm_data)
         payload = base64.b64encode(mulaw_data).decode("utf-8")
-        await websocket.send_json(
-            {
-                "event": "media",
-                "media": {"payload": payload},
-            }
-        )
+        return ("json", {"event": "media", "media": {"payload": payload}})
 
     def send_audio_sync(self, session: VoiceSession, chunk: AudioChunk) -> None:
         """Synchronously send a single audio chunk.
@@ -347,8 +373,9 @@ class FastRTCVoiceBackend(VoiceBackend):
 
         - **WebRTC**: Puts a numpy frame into the session's emit queue
           (consumed by the handler's ``emit()`` → FastRTC RTP track).
-        - **WebSocket**: Performs mu-law encoding and base64 in the calling
-          thread, then schedules the WebSocket send on the event loop.
+        - **WebSocket (mulaw)**: mu-law + base64 in calling thread, then
+          schedules ``send_json`` on the event loop.
+        - **WebSocket (pcm)**: schedules ``send_bytes`` on the event loop.
         """
         if self._is_webrtc_session(session):
             queue = self._get_emit_queue(session)
@@ -358,7 +385,10 @@ class FastRTCVoiceBackend(VoiceBackend):
             try:
                 queue.put_nowait(self._pcm_to_numpy(chunk.data, sample_rate))
             except Exception:
-                logger.warning("send_audio_sync: emit queue full for session %s", session.id)
+                logger.warning(
+                    "send_audio_sync: emit queue full for session %s",
+                    session.id,
+                )
             return
 
         # WebSocket path
@@ -366,13 +396,13 @@ class FastRTCVoiceBackend(VoiceBackend):
         if not websocket or not self._ws_is_connected(websocket):
             return
 
-        mulaw_data = _pcm16_to_mulaw(chunk.data)
-        payload = base64.b64encode(mulaw_data).decode("utf-8")
-        message = {"event": "media", "media": {"payload": payload}}
-
+        mode, data = self._prepare_ws_sync(chunk.data)
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(websocket.send_json(message))
+            if mode == "bytes":
+                loop.create_task(websocket.send_bytes(data))
+            else:
+                loop.create_task(websocket.send_json(data))
         except RuntimeError:
             logger.warning(
                 "send_audio_sync: no event loop for session %s",
