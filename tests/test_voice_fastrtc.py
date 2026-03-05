@@ -410,9 +410,10 @@ class TestFastRTCSendAudioSync:
         backend = FastRTCVoiceBackend()
         session = await backend.connect("room-1", "user-1", "voice-1")
         ws = AsyncMock()
-        # Simulate a disconnected Starlette WebSocket
-        ws.client_state = MagicMock()
-        ws.client_state.__eq__ = lambda self, other: False  # not CONNECTED
+        # Simulate a disconnected Starlette WebSocket by patching the
+        # connection check directly — avoids MagicMock __eq__ differences
+        # across Python versions.
+        backend._ws_is_connected = staticmethod(lambda _ws: False)  # type: ignore[assignment]
         backend._register_websocket("ws-1", session.id, ws)
 
         chunk = AudioChunk(data=struct.pack("<h", 1000))

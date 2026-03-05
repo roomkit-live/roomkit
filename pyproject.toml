@@ -237,6 +237,10 @@ module = ["mistralai", "mistralai.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["pyroscope", "pyroscope.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["mcp", "mcp.*"]
 ignore_missing_imports = true
 
