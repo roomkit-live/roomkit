@@ -191,7 +191,11 @@ class InMemoryStore(ConversationStore):
         if visibility_filter is not None:
             events = [e for e in events if e.visibility == visibility_filter]
 
-        if after_index is not None or before_index is not None:
+        if before_index is not None:
+            # Take the *last* `limit` events before the cursor, then return ascending
+            tail = events[-limit:] if limit < len(events) else events
+            return [e.model_copy() for e in tail]
+        if after_index is not None:
             # Cursor mode: ignore offset
             return [e.model_copy() for e in events[:limit]]
         return [e.model_copy() for e in events[offset : offset + limit]]

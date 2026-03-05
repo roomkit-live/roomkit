@@ -370,6 +370,19 @@ class TestCursorPagination:
         events = await store.list_events("r1", before_index=3, limit=50)
         assert len(events) == 3
         assert all(e.index < 3 for e in events)
+        # Results are in ascending order
+        assert [e.index for e in events] == [0, 1, 2]
+
+    async def test_before_index_returns_last_n(self, store: InMemoryStore) -> None:
+        """before_index returns the *last* limit events before cursor."""
+        await store.create_room(Room(id="r1"))
+        for i in range(10):
+            await store.add_event_auto_index("r1", make_event(room_id="r1", body=f"msg{i}"))
+        # 10 events with indices 0..9; before_index=8 with limit=3
+        # should return [5, 6, 7] — the last 3 before index 8
+        events = await store.list_events("r1", before_index=8, limit=3)
+        assert len(events) == 3
+        assert [e.index for e in events] == [5, 6, 7]
 
     async def test_after_index_with_limit(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))

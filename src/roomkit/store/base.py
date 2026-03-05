@@ -116,13 +116,22 @@ class ConversationStore(ABC):
 
         ``after_index`` and ``before_index`` are mutually exclusive.
 
+        .. note::
+
+            Cursor pagination relies on events having a valid ``index``
+            assigned by :meth:`add_event_auto_index`.  Events stored via
+            :meth:`add_event` keep the model default ``index=0`` and will
+            all compare equal, producing incorrect cursor results.  Use
+            ``add_event_auto_index`` for rooms that need cursor pagination.
+
         Args:
             room_id: Room to query.
             offset: Number of events to skip (offset-based mode).
             limit: Maximum number of events to return.
             visibility_filter: Optional visibility value to filter by.
             after_index: Return events with ``index > after_index`` (ascending).
-            before_index: Return events with ``index < before_index`` (ascending).
+            before_index: Return the last ``limit`` events with
+                ``index < before_index``, in ascending order.
         """
         ...
 

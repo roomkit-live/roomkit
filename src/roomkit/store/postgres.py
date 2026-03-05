@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_room_id ON events(room_id);
 CREATE INDEX IF NOT EXISTS idx_events_room_created ON events(room_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_room_index
+    ON events(room_id, ((data->>'index')::int));
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency
     ON events(room_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 
@@ -406,7 +408,15 @@ class PostgresStore(ConversationStore):
             idx += 1
 
         where = " AND ".join(conditions)
-        order_col = "(data->>'index')::int" if use_cursor else "created_at"
+
+        if before_index is not None:
+            # Fetch the last N events before cursor: order DESC, take limit, reverse
+            order_col = "(data->>'index')::int DESC"
+        elif after_index is not None:
+            order_col = "(data->>'index')::int"
+        else:
+            order_col = "created_at"
+
         query = f"SELECT data FROM events WHERE {where} ORDER BY {order_col}"  # nosec B608
 
         query += f" LIMIT ${idx}"
@@ -417,9 +427,14 @@ class PostgresStore(ConversationStore):
             query += f" OFFSET ${idx}"
             params.append(offset)
 
-        async with self._acquire() as conn:
-            rows = await conn.fetch(query, *params)
-        return [RoomEvent.model_validate_json(r["data"]) for r in rows]
+        with self._query_span("list_events", "events"):
+            async with self._acquire() as conn:
+                rows = await conn.fetch(query, *params)
+
+        events = [RoomEvent.model_validate_json(r["data"]) for r in rows]
+        if before_index is not None:
+            events.reverse()
+        return events
 
     async def check_idempotency(self, room_id: str, key: str) -> bool:
         async with self._acquire() as conn:
