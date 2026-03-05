@@ -486,3 +486,10 @@ def get_mount_fastrtc_realtime() -> Any:
     from roomkit.voice.realtime.fastrtc_transport import mount_fastrtc_realtime
 
     return mount_fastrtc_realtime
+
+
+def get_webtransport_backend() -> type:
+    """Get WebTransportBackend class (requires aioquic)."""
+    from roomkit.voice.backends.webtransport import WebTransportBackend
+
+    return WebTransportBackend
