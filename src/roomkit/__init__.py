@@ -280,6 +280,8 @@ from roomkit.telemetry import (
 from roomkit.tools.compose import compose_tool_handlers
 from roomkit.tools.policy import RoleOverride, ToolPolicy
 from roomkit.voice import (
+    AudioBridge,
+    AudioBridgeConfig,
     AudioChunk,
     AudioFrame,
     AudioPipeline,
@@ -625,6 +627,8 @@ __all__ = [
     "AuthCallback",
     "auth_context",
     # Voice
+    "AudioBridge",
+    "AudioBridgeConfig",
     "AudioChunk",
     "AudioFrame",
     "AudioPipeline",

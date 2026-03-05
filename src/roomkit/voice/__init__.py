@@ -14,6 +14,7 @@ from roomkit.voice.base import (
     VoiceSession,
     VoiceSessionState,
 )
+from roomkit.voice.bridge import AudioBridge, AudioBridgeConfig
 from roomkit.voice.events import (
     BackchannelEvent,
     BargeInEvent,
@@ -93,6 +94,9 @@ from roomkit.voice.tts.base import TTSProvider
 from roomkit.voice.tts.filters import StripBrackets, StripInternalTags, TTSStreamFilter
 
 __all__ = [
+    # Bridge
+    "AudioBridge",
+    "AudioBridgeConfig",
     # Base types
     "AudioChunk",
     "AudioFrame",

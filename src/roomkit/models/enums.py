@@ -207,6 +207,8 @@ class HookTrigger(StrEnum):
     # Realtime Voice (RFC §20)
     ON_REALTIME_TOOL_CALL = "on_realtime_tool_call"
     ON_REALTIME_TEXT_INJECTED = "on_realtime_text_injected"
+    # Audio bridging
+    BEFORE_BRIDGE_AUDIO = "before_bridge_audio"
     # AI Thinking/Reasoning
     ON_AI_THINKING = "on_ai_thinking"
     # Protocol observability

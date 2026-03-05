@@ -1210,6 +1210,16 @@ class SIPVoiceBackend(VoiceBackend):
     # Outbound audio
     # -------------------------------------------------------------------------
 
+    def send_audio_sync(self, session: VoiceSession, chunk: AudioChunk) -> None:
+        """Synchronously send a single audio chunk via SIP/RTP.
+
+        Used by the audio bridge for low-latency frame forwarding.
+        """
+        state = self._session_states.get(session.id)
+        if state is None or state.call_session is None:
+            return
+        self._send_pcm_bytes(session, state.call_session, chunk.data)
+
     def _ensure_pacer(self, session: VoiceSession) -> Any:
         """Return the existing pacer for *session*, or create one."""
         from roomkit.voice.realtime.pacer import OutboundAudioPacer

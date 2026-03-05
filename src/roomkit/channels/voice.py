@@ -27,6 +27,7 @@ from roomkit.models.enums import (
     HookTrigger,
 )
 from roomkit.voice.base import VoiceCapability
+from roomkit.voice.bridge import AudioBridge, AudioBridgeConfig
 from roomkit.voice.interruption import InterruptionConfig
 from roomkit.voice.utils import rms_db
 
@@ -144,6 +145,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         voice_map: dict[str, str] | None = None,
         max_audio_frames_per_second: int | None = None,
         tts_filter: Callable[[str], str] | None = None,
+        bridge: bool | AudioBridgeConfig | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._stt = stt
@@ -205,6 +207,13 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Dual-signal session ready: tracks sessions where the backend
         # has signalled ready but bind_session() hasn't run yet.
         self._session_ready_pending: set[str] = set()
+        # Audio bridge for session-to-session forwarding
+        if bridge is True:
+            self._bridge: AudioBridge | None = AudioBridge()
+        elif isinstance(bridge, AudioBridgeConfig):
+            self._bridge = AudioBridge(bridge)
+        else:
+            self._bridge = None
 
         # Build InterruptionHandler: explicit config > pipeline config > legacy params
         from roomkit.voice.interruption import InterruptionHandler, InterruptionStrategy
@@ -288,6 +297,10 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         if config.recorder is not None:
             self._pipeline.on_recording_started(self._on_pipeline_recording_started)
             self._pipeline.on_recording_stopped(self._on_pipeline_recording_stopped)
+
+        # Audio bridge: forward processed frames to other sessions
+        if self._bridge is not None:
+            self._pipeline.on_processed_frame(self._on_processed_frame_for_bridge)
 
         # Audio level hooks:
         # - Input: fires from pipeline processed-frame callback.
@@ -545,6 +558,11 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             name=f"output_audio_level:{session.id}",
         )
 
+    def _on_processed_frame_for_bridge(self, session: VoiceSession, frame: AudioFrame) -> None:
+        """Forward processed audio to other sessions via the bridge."""
+        if self._bridge is not None:
+            self._bridge.forward(session, frame)
+
     def _on_pipeline_speaker_change(
         self, session: VoiceSession, result: DiarizationResult
     ) -> None:
@@ -727,6 +745,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Notify pipeline of session activation
         if self._pipeline is not None:
             self._pipeline.on_session_active(session)
+        # Register session with audio bridge
+        if self._bridge is not None and self._backend is not None:
+            self._bridge.add_session(session, room_id, self._backend)
         # Initialize batch buffer for this session
         if self._batch_mode:
             self._batch_audio_buffers[session.id] = bytearray()
@@ -785,6 +806,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             binding_info = self._session_bindings.pop(session.id, None)
         if binding_info is None:
             return  # Already unbound — prevent double pipeline/telemetry calls
+        # Unregister from audio bridge
+        if self._bridge is not None:
+            self._bridge.remove_session(session.id)
         # Notify pipeline of session end
         if self._pipeline is not None:
             self._pipeline.on_session_ended(session)
@@ -1123,6 +1147,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # 3. Close pipeline (stops audio processing)
         if self._pipeline is not None:
             self._pipeline.close()
+        # 3b. Close audio bridge
+        if self._bridge is not None:
+            self._bridge.close()
         # 4. Close STT/TTS providers
         if self._stt:
             await self._stt.close()

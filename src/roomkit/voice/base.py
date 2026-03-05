@@ -57,6 +57,9 @@ class VoiceCapability(Flag):
     DTMF_SIGNALING = auto()
     """Backend receives DTMF via out-of-band signaling (e.g. SIP INFO)."""
 
+    NATIVE_BRIDGE = auto()
+    """Backend can bridge audio at the transport level (RTP relay)."""
+
 
 @dataclass
 class AudioChunk:

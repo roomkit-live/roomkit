@@ -292,6 +292,16 @@ class RTPVoiceBackend(VoiceBackend):
     # Outbound audio
     # -------------------------------------------------------------------------
 
+    def send_audio_sync(self, session: VoiceSession, chunk: AudioChunk) -> None:
+        """Synchronously send a single audio chunk via RTP.
+
+        Used by the audio bridge for low-latency frame forwarding.
+        """
+        rtp_session = self._rtp_sessions.get(session.id)
+        if rtp_session is None:
+            return
+        self._send_pcm_bytes(session, rtp_session, chunk.data)
+
     async def send_audio(
         self,
         session: VoiceSession,

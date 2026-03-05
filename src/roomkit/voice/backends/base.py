@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
@@ -33,6 +34,8 @@ TransportDisconnectCallback = Callable[["VoiceSession"], Any]
 
 # Callback for speaker change (diarization) events
 SpeakerChangeCallback = Callable[["VoiceSession", Any], Any]
+
+logger = logging.getLogger("roomkit.voice.backend")
 
 
 class VoiceBackend(ABC):
@@ -117,6 +120,30 @@ class VoiceBackend(ABC):
                 for streaming.
         """
         ...
+
+    def send_audio_sync(self, session: VoiceSession, chunk: AudioChunk) -> None:
+        """Synchronously send a single audio chunk to a session.
+
+        Used by the audio bridge for frame-by-frame forwarding from audio
+        callback threads where ``await`` is not available.  Backends that
+        support bridging SHOULD override this with an efficient
+        implementation.  The default schedules the async ``send_audio()``
+        on the event loop, which adds latency.
+
+        Args:
+            session: The target session.
+            chunk: A single audio chunk to send.
+        """
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.send_audio(session, chunk.data))
+        except RuntimeError:
+            logger.warning(
+                "send_audio_sync: no event loop for session %s",
+                session.id,
+            )
 
     def get_session(self, session_id: str) -> VoiceSession | None:
         """Get a session by ID.

@@ -210,6 +210,15 @@ class MockVoiceBackend(VoiceBackend):
             )
         )
 
+    def send_audio_sync(self, session: VoiceSession, chunk: AudioChunk) -> None:
+        self.sent_audio.append((session.id, chunk.data))
+        self.calls.append(
+            MockVoiceCall(
+                method="send_audio_sync",
+                args={"session_id": session.id, "size": len(chunk.data)},
+            )
+        )
+
     def is_playing(self, session: VoiceSession) -> bool:
         return session.id in self._playing_sessions
 
