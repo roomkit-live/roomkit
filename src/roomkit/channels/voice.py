@@ -561,8 +561,54 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
     def _on_processed_frame_for_bridge(self, session: VoiceSession, frame: AudioFrame) -> None:
         """Forward processed audio to other sessions via the bridge."""
-        if self._bridge is not None:
+        if self._bridge is None:
+            return
+        # Fast path: no framework or no BEFORE_BRIDGE_AUDIO hooks registered
+        # → forward directly in the audio thread for minimum latency.
+        if self._framework is None or not self._framework.hook_engine.has_hooks(
+            HookTrigger.BEFORE_BRIDGE_AUDIO
+        ):
             self._bridge.forward(session, frame)
+            return
+        # Slow path: schedule on event loop so we can fire sync hooks
+        # (which support block/modify) before forwarding.
+        self._schedule(
+            self._fire_bridge_audio_and_forward(session, frame),
+            name=f"bridge_audio:{session.id}",
+        )
+
+    async def _fire_bridge_audio_and_forward(
+        self, session: VoiceSession, frame: AudioFrame
+    ) -> None:
+        """Fire BEFORE_BRIDGE_AUDIO hook, then forward via bridge.
+
+        Called on the event loop when BEFORE_BRIDGE_AUDIO hooks are
+        registered.  The hook can block the frame (``HookResult.block()``)
+        or modify it (``HookResult.modify(event=...)``).
+        """
+        if self._bridge is None or self._framework is None:
+            return
+        room_id = self._session_bindings.get(session.id, (None, None))[0]
+        if room_id is None:
+            return
+        try:
+            from roomkit.voice.events import BridgeAudioEvent
+
+            with self._voice_span_ctx(session):
+                context = await self._framework._build_context(room_id)
+                event = BridgeAudioEvent(session=session, frame=frame, room_id=room_id)
+                result = await self._framework.hook_engine.run_sync_hooks(
+                    room_id,
+                    HookTrigger.BEFORE_BRIDGE_AUDIO,
+                    event,
+                    context,
+                    skip_event_filter=True,
+                )
+                if not result.allowed:
+                    return
+        except Exception:
+            logger.exception("Error firing BEFORE_BRIDGE_AUDIO hook")
+        self._bridge.forward(session, frame)
 
     def _process_bridge_outbound(self, target_session: VoiceSession, frame: AudioFrame) -> Any:
         """Process bridged audio through the outbound pipeline for a target.

@@ -23,6 +23,7 @@ from roomkit.voice.bridge import (
 from roomkit.voice.events import (
     BackchannelEvent,
     BargeInEvent,
+    BridgeAudioEvent,
     DTMFDetectedEvent,
     PartialTranscriptionEvent,
     RecordingStartedEvent,
@@ -122,6 +123,7 @@ __all__ = [
     # Event types
     "BackchannelEvent",
     "BargeInEvent",
+    "BridgeAudioEvent",
     "DTMFDetectedEvent",
     "PartialTranscriptionEvent",
     "TranscriptionEvent",

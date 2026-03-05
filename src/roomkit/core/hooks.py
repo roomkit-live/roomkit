@@ -111,6 +111,12 @@ class HookEngine:
                 return True
         return False
 
+    def has_hooks(self, trigger: HookTrigger) -> bool:
+        """Check if any hooks are registered for a trigger (fast, no filtering)."""
+        return any(h.trigger == trigger for h in self._global_hooks) or any(
+            h.trigger == trigger for hooks in self._room_hooks.values() for h in hooks
+        )
+
     def _hook_matches_event(self, hook: HookRegistration, event: RoomEvent) -> bool:
         """Check if a hook's filters match the given event."""
         source = event.source

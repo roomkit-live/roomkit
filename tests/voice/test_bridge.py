@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import struct
 
 import pytest
@@ -1025,3 +1026,370 @@ class TestCrossRateResampling:
 
         bridge.forward(s1, _make_frame([1000] * 160))
         assert len(backend.sent_audio) == 0
+
+
+# ======================================================================
+# Phase 1.2: BEFORE_BRIDGE_AUDIO hook wiring
+# ======================================================================
+
+
+class TestBeforeBridgeAudioHook:
+    """Tests for BEFORE_BRIDGE_AUDIO hook via RoomKit integration."""
+
+    async def _setup_bridged_kit(self, *, with_vad: bool = False):
+        """Create a RoomKit with a bridged VoiceChannel and two sessions."""
+        from roomkit import RoomKit, VoiceChannel
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelType
+        from roomkit.voice.pipeline.config import AudioPipelineConfig
+
+        backend = MockVoiceBackend()
+        pipeline_cfg = AudioPipelineConfig()
+        if with_vad:
+            from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+            from roomkit.voice.pipeline.vad.mock import MockVADProvider
+
+            pipeline_cfg = AudioPipelineConfig(
+                vad=MockVADProvider(
+                    events=[
+                        VADEvent(type=VADEventType.SPEECH_START),
+                        VADEvent(
+                            type=VADEventType.SPEECH_END,
+                            audio_bytes=b"speech",
+                            duration_ms=500.0,
+                        ),
+                    ]
+                )
+            )
+
+        voice = VoiceChannel(
+            "voice",
+            backend=backend,
+            bridge=True,
+            pipeline=pipeline_cfg,
+        )
+        kit = RoomKit()
+        kit.register_channel(voice)
+        room = await kit.create_room(room_id="room-1")
+        await kit.attach_channel(room.id, "voice")
+
+        s1 = await backend.connect("room-1", "user-1", "voice")
+        s2 = await backend.connect("room-1", "user-2", "voice")
+        binding = ChannelBinding(
+            room_id="room-1", channel_id="voice", channel_type=ChannelType.VOICE
+        )
+        voice.bind_session(s1, "room-1", binding)
+        voice.bind_session(s2, "room-1", binding)
+
+        return kit, voice, backend, s1, s2
+
+    async def test_hook_fires_before_forwarding(self) -> None:
+        """BEFORE_BRIDGE_AUDIO hook fires for bridged frames."""
+        from roomkit import HookExecution, HookResult, HookTrigger
+
+        kit, voice, backend, s1, s2 = await self._setup_bridged_kit()
+        captured = []
+
+        @kit.hook(HookTrigger.BEFORE_BRIDGE_AUDIO, execution=HookExecution.SYNC)
+        async def on_bridge(event, ctx):
+            captured.append(event)
+            return HookResult.allow()
+
+        frame = AudioFrame(data=b"\x01\x02" * 160, sample_rate=16000)
+        await backend.simulate_audio_received(s1, frame)
+        await asyncio.sleep(0.1)
+
+        assert len(captured) >= 1
+        assert captured[0].session.id == s1.id
+        assert captured[0].frame is frame
+
+        # Audio should still be forwarded
+        forwarded = [sid for sid, _ in backend.sent_audio if sid == s2.id]
+        assert len(forwarded) >= 1
+        await kit.close()
+
+    async def test_hook_blocks_frame(self) -> None:
+        """BEFORE_BRIDGE_AUDIO hook can block a frame from being forwarded."""
+        from roomkit import HookExecution, HookResult, HookTrigger
+
+        kit, voice, backend, s1, s2 = await self._setup_bridged_kit()
+
+        @kit.hook(HookTrigger.BEFORE_BRIDGE_AUDIO, execution=HookExecution.SYNC)
+        async def block_all(event, ctx):
+            return HookResult.block(reason="muted")
+
+        frame = AudioFrame(data=b"\x01\x02" * 160, sample_rate=16000)
+        await backend.simulate_audio_received(s1, frame)
+        await asyncio.sleep(0.1)
+
+        # No audio should have been forwarded
+        forwarded = [sid for sid, _ in backend.sent_audio if sid == s2.id]
+        assert len(forwarded) == 0
+        await kit.close()
+
+    async def test_hook_selective_block(self) -> None:
+        """BEFORE_BRIDGE_AUDIO hook can selectively block by session."""
+        from roomkit import HookExecution, HookResult, HookTrigger
+
+        kit, voice, backend, s1, s2 = await self._setup_bridged_kit()
+
+        @kit.hook(HookTrigger.BEFORE_BRIDGE_AUDIO, execution=HookExecution.SYNC)
+        async def block_s1_only(event, ctx):
+            if event.session.id == s1.id:
+                return HookResult.block(reason="s1_muted")
+            return HookResult.allow()
+
+        # Audio from s1 should be blocked
+        frame = AudioFrame(data=b"\x01\x02" * 160, sample_rate=16000)
+        await backend.simulate_audio_received(s1, frame)
+        await asyncio.sleep(0.1)
+
+        forwarded_from_s1 = [sid for sid, _ in backend.sent_audio if sid == s2.id]
+        assert len(forwarded_from_s1) == 0, "Audio from s1 should be blocked"
+
+        # Audio from s2 should pass through
+        await backend.simulate_audio_received(s2, frame)
+        await asyncio.sleep(0.1)
+
+        forwarded_from_s2 = [sid for sid, _ in backend.sent_audio if sid == s1.id]
+        assert len(forwarded_from_s2) >= 1, "Audio from s2 should pass through"
+        await kit.close()
+
+    async def test_no_hook_fast_path(self) -> None:
+        """Without hooks, bridge forwards directly (no event-loop scheduling)."""
+        kit, voice, backend, s1, s2 = await self._setup_bridged_kit()
+
+        # No BEFORE_BRIDGE_AUDIO hook registered — fast path
+        frame = AudioFrame(data=b"\x01\x02" * 160, sample_rate=16000)
+        await backend.simulate_audio_received(s1, frame)
+
+        # Audio forwarded immediately (sync path)
+        forwarded = [(sid, data) for sid, data in backend.sent_audio if sid == s2.id]
+        assert len(forwarded) >= 1
+        assert forwarded[0][1] == frame.data
+        await kit.close()
+
+
+# ======================================================================
+# Phase 3.1: Bridge + STT (transcription alongside bridge)
+# ======================================================================
+
+
+class TestBridgeWithSTT:
+    """Verify bridge forwarding and STT transcription fire from the same frames."""
+
+    async def test_bridge_and_stt_both_fire(self) -> None:
+        """Audio frames trigger both bridge forwarding and STT transcription."""
+        from roomkit import (
+            HookExecution,
+            HookResult,
+            HookTrigger,
+            RoomKit,
+            VoiceChannel,
+        )
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelType
+        from roomkit.voice.pipeline.config import AudioPipelineConfig
+        from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+        from roomkit.voice.pipeline.vad.mock import MockVADProvider
+        from roomkit.voice.stt.mock import MockSTTProvider
+
+        backend = MockVoiceBackend()
+        stt = MockSTTProvider(transcripts=["Hello from Alice"])
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_START),
+                None,
+                None,
+                VADEvent(
+                    type=VADEventType.SPEECH_END,
+                    audio_bytes=b"speech-alice",
+                    duration_ms=1000.0,
+                ),
+            ]
+        )
+
+        voice = VoiceChannel(
+            "voice",
+            backend=backend,
+            stt=stt,
+            bridge=True,
+            pipeline=AudioPipelineConfig(vad=vad),
+        )
+        kit = RoomKit()
+        kit.register_channel(voice)
+        room = await kit.create_room(room_id="room-1")
+        await kit.attach_channel(room.id, "voice")
+
+        s1 = await backend.connect("room-1", "alice", "voice")
+        s2 = await backend.connect("room-1", "bob", "voice")
+        binding = ChannelBinding(
+            room_id="room-1", channel_id="voice", channel_type=ChannelType.VOICE
+        )
+        voice.bind_session(s1, "room-1", binding)
+        voice.bind_session(s2, "room-1", binding)
+
+        transcripts = []
+
+        @kit.hook(HookTrigger.ON_TRANSCRIPTION, execution=HookExecution.SYNC)
+        async def on_transcription(event, ctx):
+            transcripts.append(event.text)
+            return HookResult.allow()
+
+        # Send 4 frames from Alice to trigger VAD cycle
+        frame = AudioFrame(data=b"\x00\x80" * 160, sample_rate=16000)
+        for _ in range(4):
+            await backend.simulate_audio_received(s1, frame)
+
+        await asyncio.sleep(0.2)
+
+        # Bridge: Bob should have received forwarded audio
+        forwarded_to_bob = [sid for sid, _ in backend.sent_audio if sid == s2.id]
+        assert len(forwarded_to_bob) >= 1, "Bridge did not forward audio to Bob"
+
+        # STT: Transcription hook should have fired
+        assert len(transcripts) >= 1, "STT transcription did not fire"
+        assert transcripts[0] == "Hello from Alice"
+
+        await kit.close()
+
+
+# ======================================================================
+# Phase 3.2: Bridge + TTS (AI speaking into bridged call)
+# ======================================================================
+
+
+class TestBridgeWithTTS:
+    """Verify TTS audio and bridge audio work concurrently."""
+
+    async def test_tts_and_bridge_coexist(self) -> None:
+        """TTS say() works while bridge is active — both produce audio."""
+        from roomkit import RoomKit, VoiceChannel
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelType
+        from roomkit.voice.pipeline.config import AudioPipelineConfig
+        from roomkit.voice.tts.mock import MockTTSProvider
+
+        backend = MockVoiceBackend()
+        tts = MockTTSProvider()
+
+        voice = VoiceChannel(
+            "voice",
+            backend=backend,
+            tts=tts,
+            bridge=True,
+            pipeline=AudioPipelineConfig(),
+        )
+        kit = RoomKit()
+        kit.register_channel(voice)
+        room = await kit.create_room(room_id="room-1")
+        await kit.attach_channel(room.id, "voice")
+
+        s1 = await backend.connect("room-1", "alice", "voice")
+        s2 = await backend.connect("room-1", "bob", "voice")
+        binding = ChannelBinding(
+            room_id="room-1", channel_id="voice", channel_type=ChannelType.VOICE
+        )
+        voice.bind_session(s1, "room-1", binding)
+        voice.bind_session(s2, "room-1", binding)
+
+        # Bridge: Alice sends audio, Bob should receive it
+        frame = AudioFrame(data=b"\x01\x02" * 160, sample_rate=16000)
+        await backend.simulate_audio_received(s1, frame)
+
+        forwarded_to_bob = [sid for sid, _ in backend.sent_audio if sid == s2.id]
+        assert len(forwarded_to_bob) >= 1, "Bridge should forward Alice's audio to Bob"
+
+        # TTS: AI speaks into the call for session s1
+        backend.sent_audio.clear()
+        await voice.say(s1, "Hello Alice, I am the AI moderator.")
+        await asyncio.sleep(0.1)
+
+        # TTS should have produced audio sent to s1
+        tts_to_alice = [sid for sid, _ in backend.sent_audio if sid == s1.id]
+        assert len(tts_to_alice) >= 1, "TTS should send audio to Alice"
+
+        await kit.close()
+
+
+# ======================================================================
+# Phase 3.3: Bridge + Interruption
+# ======================================================================
+
+
+class TestBridgeWithInterruption:
+    """Verify barge-in cancels TTS but bridge audio continues."""
+
+    async def test_interruption_does_not_stop_bridge(self) -> None:
+        """When TTS is cancelled by barge-in, bridge forwarding continues."""
+        from roomkit import RoomKit, VoiceChannel
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelType
+        from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
+        from roomkit.voice.pipeline.config import AudioPipelineConfig
+        from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+        from roomkit.voice.pipeline.vad.mock import MockVADProvider
+        from roomkit.voice.tts.mock import MockTTSProvider
+
+        backend = MockVoiceBackend()
+        tts = MockTTSProvider()
+        # VAD events: speech start triggers barge-in during TTS playback
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_START),
+                None,
+                None,
+                VADEvent(
+                    type=VADEventType.SPEECH_END,
+                    audio_bytes=b"speech",
+                    duration_ms=500.0,
+                ),
+            ]
+        )
+
+        voice = VoiceChannel(
+            "voice",
+            backend=backend,
+            tts=tts,
+            bridge=True,
+            pipeline=AudioPipelineConfig(vad=vad),
+            interruption=InterruptionConfig(strategy=InterruptionStrategy.IMMEDIATE),
+        )
+        kit = RoomKit()
+        kit.register_channel(voice)
+        room = await kit.create_room(room_id="room-1")
+        await kit.attach_channel(room.id, "voice")
+
+        s1 = await backend.connect("room-1", "alice", "voice")
+        s2 = await backend.connect("room-1", "bob", "voice")
+        binding = ChannelBinding(
+            room_id="room-1", channel_id="voice", channel_type=ChannelType.VOICE
+        )
+        voice.bind_session(s1, "room-1", binding)
+        voice.bind_session(s2, "room-1", binding)
+
+        # Start TTS for Alice (simulates AI speaking)
+        await voice.say(s1, "Hello Alice, this is a long message from the AI.")
+        await asyncio.sleep(0.05)
+
+        # Alice speaks (barge-in) — this should cancel TTS
+        frame = AudioFrame(data=b"\x00\x80" * 160, sample_rate=16000)
+        for _ in range(4):
+            await backend.simulate_audio_received(s1, frame)
+        await asyncio.sleep(0.1)
+
+        # Bridge should still forward Alice's audio to Bob
+        forwarded_to_bob = [sid for sid, _ in backend.sent_audio if sid == s2.id]
+        assert len(forwarded_to_bob) >= 1, (
+            "Bridge should continue forwarding after TTS interruption"
+        )
+
+        # Bridge should still be functional — verify with a new frame
+        backend.sent_audio.clear()
+        frame2 = AudioFrame(data=b"\x02\x03" * 160, sample_rate=16000)
+        await backend.simulate_audio_received(s1, frame2)
+
+        forwarded_after = [sid for sid, _ in backend.sent_audio if sid == s2.id]
+        assert len(forwarded_after) >= 1, "Bridge should still work after interruption"
+
+        await kit.close()

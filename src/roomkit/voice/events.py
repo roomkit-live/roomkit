@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
+    from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.base import VoiceSession
 
 
@@ -303,3 +304,29 @@ class RecordingStoppedEvent:
 
     timestamp: datetime = field(default_factory=_utcnow)
     """When the recording stopped."""
+
+
+@dataclass
+class BridgeAudioEvent:
+    """Audio frame about to be forwarded via the bridge.
+
+    Passed to ``BEFORE_BRIDGE_AUDIO`` hooks.  Return
+    ``HookResult.block()`` to drop the frame, or
+    ``HookResult.allow()`` to let it through.
+
+    For frame *modification*, use
+    :meth:`~roomkit.channels.voice.VoiceChannel.set_bridge_filter`
+    which runs synchronously in the audio thread.
+    """
+
+    session: VoiceSession
+    """The source voice session producing this audio."""
+
+    frame: AudioFrame
+    """The audio frame about to be forwarded."""
+
+    room_id: str = ""
+    """The room where the bridge is active."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the event was created."""
