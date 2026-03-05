@@ -28,6 +28,7 @@ from roomkit.voice.pipeline.diarization import (
 )
 from roomkit.voice.pipeline.dtmf import DTMFDetector, DTMFEvent, MockDTMFDetector
 from roomkit.voice.pipeline.engine import AudioPipeline
+from roomkit.voice.pipeline.mixer import MixerProvider, PythonMixerProvider
 from roomkit.voice.pipeline.postprocessor import AudioPostProcessor
 from roomkit.voice.pipeline.recorder import (
     AudioRecorder,
@@ -72,6 +73,9 @@ __all__ = [
     # Engine
     "AudioPipeline",
     # Provider ABCs + implementations
+    "MixerProvider",
+    "PythonMixerProvider",
+    "NumpyMixerProvider",
     "AECProvider",
     "SpeexAECProvider",
     "EnergyVADProvider",
@@ -122,3 +126,11 @@ __all__ = [
     "MockTurnDetector",
     "MockVADProvider",
 ]
+
+
+def __getattr__(name: str) -> object:
+    if name == "NumpyMixerProvider":
+        from roomkit.voice.pipeline.mixer.numpy import NumpyMixerProvider
+
+        return NumpyMixerProvider
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

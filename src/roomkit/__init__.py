@@ -294,10 +294,12 @@ from roomkit.voice import (
     DenoiserProvider,
     DiarizationProvider,
     DiarizationResult,
+    MixerProvider,
     MockDenoiserProvider,
     MockDiarizationProvider,
     MockVADProvider,
     PartialTranscriptionEvent,
+    PythonMixerProvider,
     SpeakerChangeEvent,
     StripBrackets,
     StripInternalTags,
@@ -644,6 +646,9 @@ __all__ = [
     "DenoiserProvider",
     "DiarizationProvider",
     "DiarizationResult",
+    "MixerProvider",
+    "NumpyMixerProvider",
+    "PythonMixerProvider",
     "MockDenoiserProvider",
     "MockDiarizationProvider",
     "MockSTTProvider",
@@ -728,4 +733,8 @@ def __getattr__(name: str) -> object:
         from roomkit.tools.mcp import MCPToolProvider
 
         return MCPToolProvider
+    if name == "NumpyMixerProvider":
+        from roomkit.voice.pipeline.mixer.numpy import NumpyMixerProvider
+
+        return NumpyMixerProvider
     raise AttributeError(f"module 'roomkit' has no attribute {name}")

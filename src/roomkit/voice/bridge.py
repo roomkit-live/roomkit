@@ -5,13 +5,15 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import AudioChunk, VoiceSession
+    from roomkit.voice.pipeline.mixer.base import MixerProvider
+    from roomkit.voice.pipeline.resampler.base import ResamplerProvider
 
 logger = logging.getLogger("roomkit.voice.bridge")
 
@@ -34,11 +36,16 @@ class AudioBridgeConfig:
         max_participants: Maximum sessions per room.
         mixing_strategy: ``"forward"`` for 2-party direct forwarding,
             ``"mix"`` for N-party additive mixing.
+        mixer: Mixer provider for PCM frame mixing.  Defaults to
+            :class:`~roomkit.voice.pipeline.mixer.numpy.NumpyMixerProvider`
+            when NumPy is available, otherwise falls back to
+            :class:`~roomkit.voice.pipeline.mixer.python.PythonMixerProvider`.
     """
 
     enabled: bool = True
     max_participants: int = 10
     mixing_strategy: Literal["forward", "mix"] = "forward"
+    mixer: MixerProvider | None = None
 
 
 @dataclass
@@ -48,6 +55,16 @@ class _BridgedSession:
     session: VoiceSession
     room_id: str
     backend: VoiceBackend
+    sample_rate: int = 16000
+    """Native sample rate for this session (from backend/metadata)."""
+
+
+@dataclass
+class _MixingBuffer:
+    """Per-room buffer holding the latest frame from each session."""
+
+    frames: dict[str, AudioFrame] = field(default_factory=dict)
+    """session_id -> latest AudioFrame."""
 
 
 class AudioBridge:
@@ -55,8 +72,8 @@ class AudioBridge:
 
     For 2-party rooms (``mixing_strategy="forward"``), audio from session A
     is sent directly to session B and vice versa.  For N-party rooms
-    (``mixing_strategy="mix"``), audio from each session is mixed with all
-    other sessions' audio before forwarding.
+    (``mixing_strategy="mix"``), audio from each session is mixed so that
+    each participant hears all others but not themselves.
 
     All public methods are thread-safe — ``forward()`` is called from audio
     callback threads.
@@ -69,6 +86,10 @@ class AudioBridge:
         self._lock = threading.Lock()
         self._frame_filter: BridgeFrameFilter | None = None
         self._frame_processor: BridgeFrameProcessor | None = None
+        # Mixing buffers for "mix" strategy
+        self._mix_buffers: dict[str, _MixingBuffer] = {}
+        # Mixer: explicit > auto-detect (numpy > python)
+        self._mixer = self._config.mixer or _get_default_mixer()
 
     @property
     def config(self) -> AudioBridgeConfig:
@@ -109,6 +130,7 @@ class AudioBridge:
         Raises:
             RuntimeError: If the room has reached ``max_participants``.
         """
+        sample_rate = session.metadata.get("input_sample_rate", 16000)
         with self._lock:
             room = self._rooms.setdefault(room_id, {})
             if session.id not in room and len(room) >= self._config.max_participants:
@@ -120,12 +142,16 @@ class AudioBridge:
                 session=session,
                 room_id=room_id,
                 backend=backend,
+                sample_rate=sample_rate,
             )
+            if self._config.mixing_strategy == "mix":
+                self._mix_buffers.setdefault(room_id, _MixingBuffer())
             logger.info(
-                "Bridge: added session %s to room %s (%d participants)",
+                "Bridge: added session %s to room %s (%d participants, rate=%d)",
                 session.id,
                 room_id,
                 len(room),
+                sample_rate,
             )
 
     def remove_session(self, session_id: str) -> None:
@@ -142,8 +168,13 @@ class AudioBridge:
                     found_room_id = room_id
                     break
             if found_room_id is not None:
+                # Clean up mixing buffer entry
+                buf = self._mix_buffers.get(found_room_id)
+                if buf is not None:
+                    buf.frames.pop(session_id, None)
                 if not self._rooms[found_room_id]:
                     del self._rooms[found_room_id]
+                    self._mix_buffers.pop(found_room_id, None)
                 logger.info(
                     "Bridge: removed session %s from room %s",
                     session_id,
@@ -153,14 +184,18 @@ class AudioBridge:
     def forward(self, session: VoiceSession, frame: AudioFrame) -> None:
         """Forward audio from this session to other sessions in the room.
 
-        For ``"forward"`` strategy: sends directly to the other session
-        (must be exactly 2 sessions).  For ``"mix"`` strategy: sends to
-        all other sessions individually (mixing is future work for N>2).
+        For ``"forward"`` strategy: sends the source frame directly to
+        every other session.  For ``"mix"`` strategy: stores the frame
+        and sends each target a mix of all *other* sessions' latest
+        frames (excluding the target's own audio).
 
         Args:
             session: The source session.
             frame: The processed audio frame to forward.
         """
+        if not self._config.enabled:
+            return
+
         # Pre-forward filter (BEFORE_BRIDGE_AUDIO)
         if self._frame_filter is not None:
             filtered = self._frame_filter(session, frame)
@@ -168,25 +203,10 @@ class AudioBridge:
                 return  # frame dropped
             frame = filtered
 
-        with self._lock:
-            targets = self._get_targets(session.id)
-
-        if not targets:
-            return
-
-        for target in targets:
-            try:
-                if self._frame_processor is not None:
-                    chunk = self._frame_processor(target.session, frame)
-                else:
-                    chunk = self._frame_to_chunk(frame)
-                target.backend.send_audio_sync(target.session, chunk)
-            except Exception:
-                logger.exception(
-                    "Bridge: failed to forward audio from %s to %s",
-                    session.id,
-                    target.session.id,
-                )
+        if self._config.mixing_strategy == "mix":
+            self._forward_mix(session, frame)
+        else:
+            self._forward_direct(session, frame)
 
     def get_participant_count(self, room_id: str) -> int:
         """Return the number of bridged sessions in a room."""
@@ -198,6 +218,94 @@ class AudioBridge:
         """Remove all sessions and clean up."""
         with self._lock:
             self._rooms.clear()
+            self._mix_buffers.clear()
+
+    # ------------------------------------------------------------------
+    # Forward strategy: send source frame directly to each target
+    # ------------------------------------------------------------------
+
+    def _forward_direct(self, session: VoiceSession, frame: AudioFrame) -> None:
+        with self._lock:
+            targets = self._get_targets(session.id)
+
+        if not targets:
+            return
+
+        for target in targets:
+            self._send_to_target(session, target, frame)
+
+    # ------------------------------------------------------------------
+    # Mix strategy: store frame, send mixed audio to each target
+    # ------------------------------------------------------------------
+
+    def _forward_mix(self, session: VoiceSession, frame: AudioFrame) -> None:
+        with self._lock:
+            room_id = self._find_room_id(session.id)
+            if room_id is None:
+                return
+            buf = self._mix_buffers.get(room_id)
+            if buf is None:
+                return
+            # Store latest frame from this source
+            buf.frames[session.id] = frame
+            # Collect targets and their mix frames
+            room = self._rooms.get(room_id, {})
+            mix_jobs: list[tuple[_BridgedSession, list[AudioFrame]]] = []
+            for sid, bs in room.items():
+                if sid == session.id:
+                    continue
+                # Collect frames from all sessions except this target
+                others = [f for s, f in buf.frames.items() if s != sid]
+                if others:
+                    mix_jobs.append((bs, others))
+
+        for target, frames_to_mix in mix_jobs:
+            # Resample all source frames to the target's native rate before
+            # mixing so that samples are temporally aligned.
+            target_rate = target.sample_rate
+            resampled = [
+                self._resample(f, target_rate) if f.sample_rate != target_rate else f
+                for f in frames_to_mix
+            ]
+            mixed = resampled[0] if len(resampled) == 1 else self._mixer.mix(resampled)
+            self._send_to_target(session, target, mixed)
+
+    # ------------------------------------------------------------------
+    # Shared send logic
+    # ------------------------------------------------------------------
+
+    def _send_to_target(
+        self,
+        source: VoiceSession,
+        target: _BridgedSession,
+        frame: AudioFrame,
+    ) -> None:
+        try:
+            if self._frame_processor is not None:
+                chunk = self._frame_processor(target.session, frame)
+            else:
+                # Resample if source and target rates differ
+                if frame.sample_rate != target.sample_rate:
+                    frame = self._resample(frame, target.sample_rate)
+                chunk = self._frame_to_chunk(frame)
+            target.backend.send_audio_sync(target.session, chunk)
+        except Exception:
+            logger.exception(
+                "Bridge: failed to forward audio from %s to %s",
+                source.id,
+                target.session.id,
+            )
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _find_room_id(self, session_id: str) -> str | None:
+        """Find room for a session (caller holds lock)."""
+        for room_id, room in self._rooms.items():
+            if session_id in room:
+                return room_id
+        return None
 
     def _get_targets(self, source_id: str) -> list[_BridgedSession]:
         """Get target sessions for forwarding (caller holds lock)."""
@@ -205,6 +313,16 @@ class AudioBridge:
             if source_id in room:
                 return [bs for sid, bs in room.items() if sid != source_id]
         return []
+
+    @staticmethod
+    def _resample(frame: AudioFrame, target_rate: int) -> AudioFrame:
+        """Resample a frame to the target sample rate using the linear resampler."""
+        return _get_resampler().resample(
+            frame,
+            target_rate=target_rate,
+            target_channels=frame.channels,
+            target_width=frame.sample_width,
+        )
 
     @staticmethod
     def _frame_to_chunk(frame: AudioFrame) -> AudioChunk:
@@ -216,3 +334,32 @@ class AudioBridge:
             sample_rate=frame.sample_rate,
             channels=frame.channels,
         )
+
+
+# ======================================================================
+# Cached singletons (module-level, lazy)
+# ======================================================================
+
+_resampler_instance: ResamplerProvider | None = None
+
+
+def _get_resampler() -> ResamplerProvider:
+    """Return a cached LinearResamplerProvider (created on first use)."""
+    global _resampler_instance  # noqa: PLW0603
+    if _resampler_instance is None:
+        from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
+
+        _resampler_instance = LinearResamplerProvider()
+    return _resampler_instance
+
+
+def _get_default_mixer() -> MixerProvider:
+    """Return the best available mixer: NumPy if installed, else pure Python."""
+    try:
+        from roomkit.voice.pipeline.mixer.numpy import NumpyMixerProvider
+
+        return NumpyMixerProvider()
+    except ImportError:
+        from roomkit.voice.pipeline.mixer.python import PythonMixerProvider
+
+        return PythonMixerProvider()

@@ -62,6 +62,7 @@ from roomkit.voice.pipeline import (
     DTMFEvent,
     EnergyVADProvider,
     LinearResamplerProvider,
+    MixerProvider,
     MockAECProvider,
     MockAGCProvider,
     MockAudioRecorder,
@@ -72,6 +73,7 @@ from roomkit.voice.pipeline import (
     MockResamplerProvider,
     MockTurnDetector,
     MockVADProvider,
+    PythonMixerProvider,
     RecordingChannelMode,
     RecordingConfig,
     RecordingHandle,
@@ -155,6 +157,9 @@ __all__ = [
     "SherpaOnnxDenoiserProvider",
     "DiarizationProvider",
     "DTMFDetector",
+    "MixerProvider",
+    "NumpyMixerProvider",
+    "PythonMixerProvider",
     "TurnDetector",
     "VADProvider",
     # Data types
@@ -201,6 +206,17 @@ __all__ = [
     "StripInternalTags",
     "TTSStreamFilter",
 ]
+
+# Lazy imports for optional dependencies
+
+
+def __getattr__(name: str) -> object:
+    if name == "NumpyMixerProvider":
+        from roomkit.voice.pipeline.mixer.numpy import NumpyMixerProvider
+
+        return NumpyMixerProvider
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # Optional providers (lazy imports to avoid requiring dependencies)
 
