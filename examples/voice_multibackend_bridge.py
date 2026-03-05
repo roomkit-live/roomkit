@@ -342,9 +342,16 @@ async def lifespan(app: Any):
 
 def create_app():
     from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse
 
     app = FastAPI(lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # Mount FastRTC endpoints at /voice
     mount_fastrtc_voice(
