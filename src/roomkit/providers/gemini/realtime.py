@@ -135,8 +135,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         pc = provider_config or {}
 
+        # Response modalities: ["AUDIO"], ["TEXT"], or ["AUDIO", "TEXT"]
+        # Future: ["VIDEO"] when supported by the API.
+        response_modalities = pc.get("response_modalities", ["AUDIO"])
+
         config: dict[str, Any] = {
-            "response_modalities": ["AUDIO"],
+            "response_modalities": response_modalities,
             "input_audio_transcription": types.AudioTranscriptionConfig(),
             "output_audio_transcription": types.AudioTranscriptionConfig(),
         }
