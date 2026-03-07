@@ -202,6 +202,26 @@ class ChannelOpsMixin(HelpersMixin):
             )
             return result
 
+    async def mute_output(self, room_id: str, channel_id: str) -> ChannelBinding:
+        """Mute AI/provider output for a channel — audio from the provider
+        will not be forwarded to the transport."""
+        async with self._lock_manager.locked(room_id):
+            binding = await self._get_binding(room_id, channel_id)
+            updated = binding.model_copy(update={"output_muted": True})
+            result = await self._store.update_binding(updated)
+            self._notify_binding_updated(room_id, channel_id, result)
+            return result
+
+    async def unmute_output(self, room_id: str, channel_id: str) -> ChannelBinding:
+        """Unmute AI/provider output for a channel — audio from the provider
+        will be forwarded to the transport."""
+        async with self._lock_manager.locked(room_id):
+            binding = await self._get_binding(room_id, channel_id)
+            updated = binding.model_copy(update={"output_muted": False})
+            result = await self._store.update_binding(updated)
+            self._notify_binding_updated(room_id, channel_id, result)
+            return result
+
     async def set_visibility(
         self, room_id: str, channel_id: str, visibility: str
     ) -> ChannelBinding:

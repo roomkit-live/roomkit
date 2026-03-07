@@ -881,6 +881,10 @@ class RealtimeVoiceChannel(Channel):
             resamplers = self._session_resamplers.get(session.id)
             transport_rate = self._session_transport_rates.get(session.id)
             gen = self._audio_generation.get(session.id, 0)
+            # Early gate: skip resampling + task creation if output is muted
+            binding = self._session_bindings.get(session.id)
+            if binding is not None and binding.output_muted:
+                return
         audio = self._resample_outbound_with(audio, resamplers, transport_rate)
         if not audio:
             return
@@ -899,11 +903,17 @@ class RealtimeVoiceChannel(Channel):
         )
 
     async def _send_outbound_audio(self, session: VoiceSession, audio: bytes, gen: int) -> None:
-        """Send audio to transport, skipping if the generation is stale."""
+        """Send audio to transport, skipping if the generation is stale or output is muted."""
         with self._state_lock:
             current_gen = self._audio_generation.get(session.id, 0)
         if current_gen != gen:
             return
+
+        # Enforce output_muted on the channel binding
+        binding = self._session_bindings.get(session.id)
+        if binding is not None and binding.output_muted:
+            return
+
         await self._transport.send_audio(session, audio)
         # Fallback: fire output level at queue-insertion time for transports
         # without playback callbacks (WebSocket, WebRTC).  For transports

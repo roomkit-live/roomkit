@@ -76,6 +76,7 @@ class ChannelBinding(BaseModel):
     direction: ChannelDirection = ChannelDirection.BIDIRECTIONAL
     access: Access = Access.READ_WRITE
     muted: bool = False
+    output_muted: bool = False
     visibility: str = "all"
     participant_id: str | None = None
     last_read_index: int | None = Field(default=None, ge=0)
