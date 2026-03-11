@@ -44,6 +44,7 @@ class _GeminiSessionState:
     started_at: float = 0.0
     turn_count: int = 0
     tool_result_bytes: int = 0
+    input_sample_rate: int = 16000
 
 
 class _GoAwayError(Exception):
@@ -283,6 +284,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             ctxmgr=ctxmgr,
             live_config=live_config,
             started_at=time.monotonic(),
+            input_sample_rate=input_sample_rate,
         )
         self._sessions[session.id] = state
 
@@ -315,7 +317,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         try:
             await state.live_session.send_realtime_input(
-                audio=types.Blob(data=audio, mime_type="audio/pcm"),
+                audio=types.Blob(data=audio, mime_type=f"audio/pcm;rate={state.input_sample_rate}"),
             )
             # Successful send — reset suppression so next failure fires callback
             state.error_suppressed = False
@@ -721,7 +723,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             try:
                 for chunk in state.audio_buffer:
                     await live_session.send_realtime_input(
-                        audio=types.Blob(data=chunk, mime_type="audio/pcm"),
+                        audio=types.Blob(data=chunk, mime_type=f"audio/pcm;rate={state.input_sample_rate}"),
                     )
             finally:
                 state.audio_buffer.clear()
