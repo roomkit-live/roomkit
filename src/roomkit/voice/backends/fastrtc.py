@@ -375,12 +375,19 @@ class FastRTCVoiceBackend(VoiceBackend):
         """Send audio to a WebSocket using the configured format."""
         if not self._ws_is_connected(websocket):
             return
-        if self._audio_format == "pcm":
-            await websocket.send_bytes(pcm_data)
-        else:
-            mulaw_data = _pcm16_to_mulaw(pcm_data)
-            payload = base64.b64encode(mulaw_data).decode("utf-8")
-            await websocket.send_json({"event": "media", "media": {"payload": payload}})
+        try:
+            if self._audio_format == "pcm":
+                await websocket.send_bytes(pcm_data)
+            else:
+                mulaw_data = _pcm16_to_mulaw(pcm_data)
+                payload = base64.b64encode(mulaw_data).decode("utf-8")
+                await websocket.send_json({"event": "media", "media": {"payload": payload}})
+        except RuntimeError:
+            # WebSocket closed between the _ws_is_connected check and the
+            # actual send (Starlette raises RuntimeError once a close frame
+            # has been sent).  Nothing to do — the disconnect handler will
+            # clean up the session.
+            logger.debug("WebSocket already closed for send, ignoring")
 
     def _prepare_ws_sync(self, pcm_data: bytes) -> tuple[str, bytes | dict[str, Any]]:
         """Prepare a WebSocket message synchronously (for audio thread).
@@ -468,6 +475,8 @@ class FastRTCVoiceBackend(VoiceBackend):
                 return
             try:
                 await websocket.send_json(message)
+            except RuntimeError:
+                logger.debug("WebSocket already closed for transcription send, ignoring")
             except Exception:
                 logger.exception("Error sending transcription")
         else:
