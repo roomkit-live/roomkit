@@ -4554,6 +4554,11 @@ telegram = [
 twilio = [
     { name = "twilio" },
 ]
+video = [
+    { name = "av" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts' or extra != 'extra-7-roomkit-neutts'" },
+]
 vllm = [
     { name = "openai" },
 ]
@@ -4587,6 +4592,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'providers'", specifier = ">=0.30" },
     { name = "asyncpg", marker = "extra == 'dev'", specifier = ">=0.29" },
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.29" },
+    { name = "av", marker = "extra == 'video'", specifier = ">=12.0.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7" },
     { name = "botbuilder-core", marker = "extra == 'all'", specifier = ">=4.14" },
     { name = "botbuilder-core", marker = "extra == 'dev'", specifier = ">=4.14" },
@@ -4632,6 +4638,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'fastrtc'" },
     { name = "numpy", marker = "extra == 'local-audio'" },
     { name = "numpy", marker = "extra == 'smart-turn'" },
+    { name = "numpy", marker = "extra == 'video'" },
     { name = "onnxruntime", marker = "extra == 'smart-turn'" },
     { name = "openai", marker = "extra == 'all'", specifier = ">=2.21" },
     { name = "openai", marker = "extra == 'azure'", specifier = ">=2.21" },
@@ -4668,7 +4675,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["all", "anthropic", "azure", "dev", "docs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal"]
+provides-extras = ["all", "anthropic", "azure", "dev", "docs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]

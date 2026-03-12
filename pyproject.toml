@@ -40,6 +40,7 @@ fastrtc = ["fastrtc", "numpy"]
 webrtc-aec = ["aec-audio-processing>=0.1"]
 local-audio = ["sounddevice", "numpy"]
 local-video = ["opencv-python-headless>=4.8"]
+video = ["av>=12.0.0", "numpy"]
 rtp = ["aiortp>=0.1.0"]
 sip = ["aiosipua[rtp]>=0.2.0"]
 webtransport = ["aioquic>=1.0"]
@@ -260,6 +261,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["PIL", "PIL.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["av", "av.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -20,6 +19,8 @@ from roomkit.video.recorder.base import (
     VideoRecordingConfig,
     VideoRecordingHandle,
     VideoRecordingResult,
+    safe_filename,
+    validate_storage_path,
 )
 
 if TYPE_CHECKING:
@@ -40,11 +41,6 @@ def _import_cv2() -> Any:
             "opencv-python-headless is required for OpenCVVideoRecorder. "
             "Install with: pip install roomkit[local-video]"
         ) from exc
-
-
-def _safe_filename(session_id: str) -> str:
-    """Sanitize session ID for use in filenames."""
-    return re.sub(r"[^\w\-]", "_", session_id)
 
 
 class _ActiveRecording:
@@ -77,15 +73,13 @@ class OpenCVVideoRecorder(VideoRecorder):
 
     def start(self, session: VideoSession, config: VideoRecordingConfig) -> VideoRecordingHandle:
         rec_id = uuid4().hex[:12]
-        safe_id = _safe_filename(session.id[:16])
+        safe_id = safe_filename(session.id[:16])
         ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         filename = f"{safe_id}_{ts}.{config.format}"
 
         storage = config.storage or os.path.join(os.getcwd(), "recordings")
-        if ".." in storage:
-            raise ValueError(f"Storage path must not contain '..': {storage}")
-        os.makedirs(storage, exist_ok=True)
-        path = os.path.join(storage, filename)
+        resolved = validate_storage_path(storage)
+        path = os.path.join(resolved, filename)
 
         # Writer is created lazily on first frame (need dimensions)
         handle = VideoRecordingHandle(

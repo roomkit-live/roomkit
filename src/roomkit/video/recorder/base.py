@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -12,6 +14,24 @@ if TYPE_CHECKING:
     from roomkit.video.video_frame import VideoFrame
 
 
+def safe_filename(session_id: str) -> str:
+    """Sanitize session ID for use in filenames."""
+    return re.sub(r"[^\w\-]", "_", session_id)
+
+
+def validate_storage_path(storage: str) -> str:
+    """Validate and resolve a storage directory path.
+
+    Rejects paths containing '..' components to prevent traversal.
+    Creates the directory if it doesn't exist. Returns the resolved path.
+    """
+    resolved = os.path.normpath(storage)
+    if ".." in resolved.split(os.sep):
+        raise ValueError(f"Storage path must not contain '..': {storage}")
+    os.makedirs(resolved, exist_ok=True)
+    return resolved
+
+
 @dataclass
 class VideoRecordingConfig:
     """Configuration for video recording.
@@ -19,14 +39,16 @@ class VideoRecordingConfig:
     Attributes:
         storage: Directory path for recording files.
         format: Output container format (``mp4``, ``avi``, ``mkv``).
-        codec: Video codec (``mp4v``, ``XVID``, ``avc1``).
-        fps: Output frame rate. If 0, uses the frame timestamps.
+        codec: Video codec. For PyAV: ``auto`` (NVENC if available,
+            else libx264), ``libx264``, ``h264_nvenc``, ``libx265``.
+            For OpenCV: ``mp4v``, ``XVID``.
+        fps: Output frame rate.
         metadata: Provider-specific extra configuration.
     """
 
     storage: str = ""
     format: str = "mp4"
-    codec: str = "mp4v"
+    codec: str = "auto"
     fps: float = 15.0
     metadata: dict[str, object] = field(default_factory=dict)
 
