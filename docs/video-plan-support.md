@@ -208,6 +208,8 @@ Key risks: WebRTC video negotiation is significantly more complex than audio. Co
 
 **Goal:** Pluggable server-side video processing stages.
 
+**Status:** 2.1 🔲 | 2.2 partial (Recorder ✅) | 2.3 🔲 | 2.4 🔲
+
 #### 2.1 VideoPipeline Engine
 
 Located at `video/pipeline/engine.py`, analogous to `AudioPipeline`:
@@ -230,7 +232,7 @@ Each stage follows the ABC + mock + implementation pattern under `video/pipeline
 | **Overlay** | `VideoOverlayProvider` | Watermarks, names, timestamps | OpenCV, Pillow |
 | **BackgroundBlur** | `BackgroundBlurProvider` | Blur/replace background | MediaPipe, ONNX |
 | **FaceDetector** | `FaceDetectorProvider` | Detect and optionally blur faces | MediaPipe, MTCNN |
-| **Recorder** | `VideoRecorder` | Record to MP4/WebM file or S3 | FFmpeg, OpenCV |
+| **Recorder** | `VideoRecorder` | Record to MP4/WebM file or S3 | **OpenCV ✅**, FFmpeg |
 | **NoiseFilter** | `VideoNoiseFilter` | Reduce compression artifacts | OpenCV |
 
 #### 2.3 Pipeline Contract
@@ -556,11 +558,10 @@ video-vision = []  # Provider SDKs (openai, google-genai) already in ai extras
 
 - [ ] WebRTC video call between two participants in a room
 - [ ] Video forwarding to 4+ participants via SFU
-- [ ] Video recording to file (MP4)
+- [x] Video recording to file (MP4)
 - [x] Vision AI can describe video call content to AIChannel
 - [ ] Screen sharing works as a separate video track
 - [ ] Graceful fallback: video degrades to audio-only under poor network
 - [x] All new components have tests, docs, and examples
 - [x] RFC updated with video transport specification
 - [x] `make all` passes with video extras installed
-- [ ] `make all` passes with video extras installed
