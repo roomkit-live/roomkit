@@ -14,6 +14,13 @@ from roomkit.video.base import (
     VideoSessionReadyCallback,
     VideoSessionState,
 )
+from roomkit.video.recorder import (
+    MockVideoRecorder,
+    VideoRecorder,
+    VideoRecordingConfig,
+    VideoRecordingHandle,
+    VideoRecordingResult,
+)
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.base import FaceDetection, VisionProvider, VisionResult
 from roomkit.video.vision.gemini import GeminiVisionConfig, GeminiVisionProvider
@@ -40,6 +47,12 @@ __all__ = [
     "OpenAIVisionProvider",
     "VisionProvider",
     "VisionResult",
+    # Recording
+    "MockVideoRecorder",
+    "VideoRecorder",
+    "VideoRecordingConfig",
+    "VideoRecordingHandle",
+    "VideoRecordingResult",
     # Mocks
     "MockVideoBackend",
     "MockVideoCall",
