@@ -27,6 +27,11 @@ if TYPE_CHECKING:
     from roomkit.models.event import RoomEvent
     from roomkit.video.backends.base import VideoBackend
     from roomkit.video.base import VideoSession
+    from roomkit.video.recorder.base import (
+        VideoRecorder,
+        VideoRecordingConfig,
+        VideoRecordingHandle,
+    )
     from roomkit.video.video_frame import VideoFrame
     from roomkit.video.vision.base import VisionProvider, VisionResult
 
@@ -52,11 +57,15 @@ class VideoChannel(VideoHooksMixin, Channel):
         backend: VideoBackend,
         vision: VisionProvider | None = None,
         vision_interval_ms: int = 2000,
+        recorder: VideoRecorder | None = None,
+        recording_config: VideoRecordingConfig | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._backend = backend
         self._vision = vision
         self._vision_interval_ms = vision_interval_ms
+        self._recorder = recorder
+        self._recording_config = recording_config
         self._framework: RoomKit | None = None
 
         # Map session_id -> (room_id, binding) for routing
@@ -71,6 +80,8 @@ class VideoChannel(VideoHooksMixin, Channel):
         self._session_ready_pending: set[str] = set()
         # Cached event loop for cross-thread scheduling
         self._event_loop: asyncio.AbstractEventLoop | None = None
+        # Active recording handles per session
+        self._recording_handles: dict[str, VideoRecordingHandle] = {}
 
         # Wire backend callbacks
         backend.on_video_received(self._on_video_received)
@@ -170,6 +181,14 @@ class VideoChannel(VideoHooksMixin, Channel):
                 self._emit_session_event("video_session_started", session, room_id),
                 name=f"video_session_started:{session.id}",
             )
+        # Start recording if configured
+        if self._recorder and self._recording_config:
+            from roomkit.video.recorder.base import VideoRecordingConfig
+
+            config = self._recording_config or VideoRecordingConfig()
+            handle = self._recorder.start(session, config)
+            self._recording_handles[session.id] = handle
+            logger.info("Recording started: %s for session %s", handle.id, session.id[:8])
         # Fire hook if backend was already ready
         if was_ready_pending and self._framework:
             self._schedule(
@@ -180,6 +199,16 @@ class VideoChannel(VideoHooksMixin, Channel):
     def unbind_session(self, session: VideoSession) -> None:
         """Remove session binding and clean up state."""
         self._session_ready_pending.discard(session.id)
+        # Stop recording
+        handle = self._recording_handles.pop(session.id, None)
+        if handle and self._recorder:
+            result = self._recorder.stop(handle)
+            logger.info(
+                "Recording stopped: %s (%d frames, %.1fs)",
+                result.id,
+                result.frame_count,
+                result.duration_seconds,
+            )
         binding_info = self._session_bindings.pop(session.id, None)
         self._last_vision_results.pop(session.id, None)
         self._last_vision_ts.pop(session.id, None)
@@ -221,6 +250,10 @@ class VideoChannel(VideoHooksMixin, Channel):
         binding_info = self._session_bindings.get(session.id)
         if binding_info is None:
             return
+        # Recorder tap runs on every frame
+        rec_handle = self._recording_handles.get(session.id)
+        if rec_handle and self._recorder:
+            self._recorder.tap_frame(rec_handle, frame)
         if self._vision is None:
             return
         # Throttle before creating a task — avoids O(fps) task allocation
@@ -291,6 +324,12 @@ class VideoChannel(VideoHooksMixin, Channel):
         if self._scheduled_tasks:
             await asyncio.gather(*self._scheduled_tasks, return_exceptions=True)
         self._scheduled_tasks.clear()
+        # Stop active recordings
+        if self._recorder:
+            for handle in self._recording_handles.values():
+                self._recorder.stop(handle)
+            self._recorder.close()
+        self._recording_handles.clear()
         # Close vision provider
         if self._vision:
             await self._vision.close()

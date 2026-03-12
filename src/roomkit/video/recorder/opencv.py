@@ -1,0 +1,171 @@
+"""OpenCV video recorder — writes frames to MP4/AVI files.
+
+Requires ``opencv-python-headless``::
+
+    pip install roomkit[local-video]
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+import time
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
+
+from roomkit.video.recorder.base import (
+    VideoRecorder,
+    VideoRecordingConfig,
+    VideoRecordingHandle,
+    VideoRecordingResult,
+)
+
+if TYPE_CHECKING:
+    from roomkit.video.base import VideoSession
+    from roomkit.video.video_frame import VideoFrame
+
+logger = logging.getLogger("roomkit.video.recorder.opencv")
+
+
+def _import_cv2() -> Any:
+    """Import OpenCV, raising a clear error if missing."""
+    try:
+        import cv2
+
+        return cv2
+    except ImportError as exc:
+        raise ImportError(
+            "opencv-python-headless is required for OpenCVVideoRecorder. "
+            "Install with: pip install roomkit[local-video]"
+        ) from exc
+
+
+def _safe_filename(session_id: str) -> str:
+    """Sanitize session ID for use in filenames."""
+    return re.sub(r"[^\w\-]", "_", session_id)
+
+
+class _ActiveRecording:
+    """Internal state for an active recording."""
+
+    __slots__ = ("writer", "frame_count", "start_time", "path", "cv2")
+
+    def __init__(self, writer: Any, path: str, cv2_mod: Any) -> None:
+        self.writer = writer
+        self.path = path
+        self.cv2 = cv2_mod
+        self.frame_count = 0
+        self.start_time = time.monotonic()
+
+
+class OpenCVVideoRecorder(VideoRecorder):
+    """Video recorder using OpenCV's VideoWriter.
+
+    Writes raw RGB frames to MP4 (or AVI) files. Frames are
+    converted from RGB to BGR (OpenCV native) before writing.
+    """
+
+    def __init__(self) -> None:
+        self._cv2 = _import_cv2()
+        self._active: dict[str, _ActiveRecording] = {}
+
+    @property
+    def name(self) -> str:
+        return "OpenCVVideoRecorder"
+
+    def start(self, session: VideoSession, config: VideoRecordingConfig) -> VideoRecordingHandle:
+        rec_id = uuid4().hex[:12]
+        safe_id = _safe_filename(session.id[:16])
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+        filename = f"{safe_id}_{ts}.{config.format}"
+
+        storage = config.storage or os.path.join(os.getcwd(), "recordings")
+        if ".." in storage:
+            raise ValueError(f"Storage path must not contain '..': {storage}")
+        os.makedirs(storage, exist_ok=True)
+        path = os.path.join(storage, filename)
+
+        # Writer is created lazily on first frame (need dimensions)
+        handle = VideoRecordingHandle(
+            id=rec_id,
+            session_id=session.id,
+            started_at=datetime.now(UTC),
+            path=path,
+        )
+        self._active[rec_id] = _ActiveRecording(writer=None, path=path, cv2_mod=self._cv2)
+        logger.info("Recording started: %s → %s", rec_id, path)
+        return handle
+
+    def stop(self, handle: VideoRecordingHandle) -> VideoRecordingResult:
+        handle.state = "stopped"
+        active = self._active.pop(handle.id, None)
+        if active is None:
+            return VideoRecordingResult(id=handle.id)
+
+        if active.writer is not None:
+            active.writer.release()
+
+        elapsed = time.monotonic() - active.start_time
+        size = 0
+        if os.path.exists(active.path):
+            size = os.path.getsize(active.path)
+
+        logger.info(
+            "Recording stopped: %s (%d frames, %.1fs, %d bytes)",
+            handle.id,
+            active.frame_count,
+            elapsed,
+            size,
+        )
+        return VideoRecordingResult(
+            id=handle.id,
+            url=active.path,
+            frame_count=active.frame_count,
+            duration_seconds=round(elapsed, 2),
+            format=os.path.splitext(active.path)[1].lstrip("."),
+            size_bytes=size,
+        )
+
+    def tap_frame(self, handle: VideoRecordingHandle, frame: VideoFrame) -> None:
+        active = self._active.get(handle.id)
+        if active is None:
+            return
+
+        cv2 = active.cv2
+
+        # Lazy-create writer on first frame (now we know dimensions)
+        if active.writer is None:
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            active.writer = cv2.VideoWriter(active.path, fourcc, 15.0, (frame.width, frame.height))
+            if not active.writer.isOpened():
+                logger.error("Failed to open VideoWriter for %s", active.path)
+                return
+
+        # Convert raw RGB to BGR for OpenCV
+        if frame.codec == "raw_rgb24":
+            import numpy as np
+
+            pixels = np.frombuffer(frame.data, dtype=np.uint8).reshape(
+                frame.height, frame.width, 3
+            )
+            bgr = cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR)
+            active.writer.write(bgr)
+            active.frame_count += 1
+        elif frame.codec == "raw_bgr24":
+            import numpy as np
+
+            bgr = np.frombuffer(frame.data, dtype=np.uint8).reshape(frame.height, frame.width, 3)
+            active.writer.write(bgr)
+            active.frame_count += 1
+        else:
+            # Encoded frames can't be written directly by VideoWriter
+            logger.debug("Skipping encoded frame (codec=%s)", frame.codec)
+
+    def close(self) -> None:
+        for rec_id, active in list(self._active.items()):
+            if active.writer is not None:
+                active.writer.release()
+            logger.info("Recording closed: %s", rec_id)
+        self._active.clear()
