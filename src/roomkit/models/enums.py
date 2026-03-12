@@ -22,6 +22,7 @@ class ChannelType(StrEnum):
     TELEGRAM = "telegram"
     TEAMS = "teams"
     WEBHOOK = "webhook"
+    VIDEO = "video"
     SYSTEM = "system"
 
 
@@ -220,6 +221,13 @@ class HookTrigger(StrEnum):
     # Delegation (background tasks)
     ON_TASK_DELEGATED = "on_task_delegated"
     ON_TASK_COMPLETED = "on_task_completed"
+    # Video
+    ON_VIDEO_SESSION_STARTED = "on_video_session_started"
+    ON_VIDEO_SESSION_ENDED = "on_video_session_ended"
+    ON_VIDEO_TRACK_ADDED = "on_video_track_added"
+    ON_VIDEO_TRACK_REMOVED = "on_video_track_removed"
+    ON_SCREEN_SHARE_STARTED = "on_screen_share_started"
+    ON_SCREEN_SHARE_STOPPED = "on_screen_share_stopped"
 
 
 @unique

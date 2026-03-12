@@ -28,8 +28,8 @@ class TestChannelType:
         assert ChannelType.AI == "ai"
 
     def test_count(self) -> None:
-        # Includes MMS, RCS, REALTIME_VOICE, WHATSAPP_PERSONAL, TEAMS, TELEGRAM
-        assert len(ChannelType) == 16
+        # Includes MMS, RCS, REALTIME_VOICE, WHATSAPP_PERSONAL, TEAMS, TELEGRAM, VIDEO
+        assert len(ChannelType) == 17
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):
@@ -146,13 +146,8 @@ class TestHookTrigger:
         assert HookTrigger.ON_DELIVERY_STATUS == "on_delivery_status"
 
     def test_count(self) -> None:
-        # 11 voice hooks (RFC §18 + §19 + §12.3) + 2 realtime + 1 trace + 2 audio level
-        # + 3 orchestration (on_phase_transition, on_handoff, on_handoff_rejected)
-        # + 2 delegation (on_task_delegated, on_task_completed)
-        # + 1 AI thinking (on_ai_thinking)
-        # + 1 voice session ready (on_voice_session_ready)
-        # + 1 bridge (before_bridge_audio)
-        assert len(HookTrigger) == 45
+        # 45 base hooks + 6 video hooks
+        assert len(HookTrigger) == 51
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):
