@@ -316,8 +316,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             return
 
         try:
+            mime = f"audio/pcm;rate={state.input_sample_rate}"
             await state.live_session.send_realtime_input(
-                audio=types.Blob(data=audio, mime_type=f"audio/pcm;rate={state.input_sample_rate}"),
+                audio=types.Blob(data=audio, mime_type=mime),
             )
             # Successful send — reset suppression so next failure fires callback
             state.error_suppressed = False
@@ -721,9 +722,10 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 session.id,
             )
             try:
+                mime = f"audio/pcm;rate={state.input_sample_rate}"
                 for chunk in state.audio_buffer:
                     await live_session.send_realtime_input(
-                        audio=types.Blob(data=chunk, mime_type=f"audio/pcm;rate={state.input_sample_rate}"),
+                        audio=types.Blob(data=chunk, mime_type=mime),
                     )
             finally:
                 state.audio_buffer.clear()

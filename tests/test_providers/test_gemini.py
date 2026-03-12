@@ -195,7 +195,7 @@ class TestGeminiAIProvider:
             result = await provider.generate(_context())
 
             assert result.content == "Hi there!"
-            assert result.metadata["model"] == "gemini-2.0-flash"
+            assert result.metadata["model"] == "gemini-2.5-flash"
 
     @pytest.mark.asyncio
     async def test_generate_with_system_prompt(self) -> None:
@@ -288,7 +288,7 @@ class TestGeminiAIProvider:
 
     def test_config_defaults(self) -> None:
         cfg = _config()
-        assert cfg.model == "gemini-2.0-flash"
+        assert cfg.model == "gemini-2.5-flash"
         assert cfg.max_tokens == 1024
         assert cfg.temperature == 1.0
 
@@ -352,7 +352,7 @@ class TestGeminiAIProvider:
             assert events[1].text == " world"
             assert isinstance(events[2], StreamDone)
             assert events[2].usage == {"prompt_tokens": 5, "completion_tokens": 10}
-            assert events[2].metadata["model"] == "gemini-2.0-flash"
+            assert events[2].metadata["model"] == "gemini-2.5-flash"
 
     @pytest.mark.asyncio
     async def test_generate_stream_yields_text(self) -> None:

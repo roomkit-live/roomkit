@@ -109,7 +109,7 @@ class VideoHooksMixin:
         logger.info(
             "Vision analysis: %.0fms (%s, session %s)",
             elapsed_ms,
-            self._vision.name,  # type: ignore[union-attr]
+            self._vision.name,
             session.id[:8],
         )
 
