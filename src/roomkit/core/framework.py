@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from roomkit.providers.sms.meta import WebhookMeta
     from roomkit.telemetry.base import TelemetryProvider
     from roomkit.telemetry.config import TelemetryConfig
+    from roomkit.video.base import VideoSession
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import TranscriptionResult, VoiceSession
     from roomkit.voice.stt.base import STTProvider
@@ -402,6 +403,68 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 "channel_id": session.channel_id,
             },
         )
+
+    async def connect_video(
+        self,
+        room_id: str,
+        participant_id: str,
+        channel_id: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> VideoSession:
+        """Connect a participant to a video session.
+
+        Creates a video session via the channel's VideoBackend and binds
+        it to the specified room and video channel for event routing.
+
+        Args:
+            room_id: The room to join.
+            participant_id: The participant's ID.
+            channel_id: The video channel ID.
+            metadata: Optional session metadata.
+
+        Returns:
+            A VideoSession representing the connection.
+
+        Raises:
+            ChannelNotRegisteredError: If the channel is not a VideoChannel.
+            RoomNotFoundError: If the room doesn't exist.
+        """
+        from roomkit.channels.video import VideoChannel
+
+        await self.get_room(room_id)
+
+        channel = self._channels.get(channel_id)
+        if not isinstance(channel, VideoChannel):
+            raise ChannelNotRegisteredError(
+                f"Channel {channel_id} is not a registered VideoChannel"
+            )
+
+        binding = await self._store.get_binding(room_id, channel_id)
+        if binding is None:
+            raise ChannelNotFoundError(f"Channel {channel_id} not attached to room {room_id}")
+
+        session = await channel.backend.connect(
+            room_id, participant_id, channel_id, metadata=metadata
+        )
+        channel.bind_session(session, room_id, binding)
+        return session
+
+    async def disconnect_video(self, session: VideoSession) -> None:
+        """Disconnect a video session.
+
+        Args:
+            session: The session to disconnect.
+
+        Raises:
+            ChannelNotRegisteredError: If the channel is not a VideoChannel.
+        """
+        from roomkit.channels.video import VideoChannel
+
+        channel = self._channels.get(session.channel_id)
+        if isinstance(channel, VideoChannel):
+            channel.unbind_session(session)
+            await channel.backend.disconnect(session)
 
     async def send_greeting(
         self,

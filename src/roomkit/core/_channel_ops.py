@@ -54,8 +54,10 @@ class ChannelOpsMixin(HelpersMixin):
         if hasattr(channel, "_propagate_telemetry"):
             channel._propagate_telemetry()
 
-        # Set framework reference on voice channels for inbound routing
-        if isinstance(channel, (VoiceChannel, RealtimeVoiceChannel)):
+        # Set framework reference on session-based channels for inbound routing
+        from roomkit.channels.video import VideoChannel
+
+        if isinstance(channel, (VoiceChannel, RealtimeVoiceChannel, VideoChannel)):
             channel.set_framework(self)  # type: ignore[arg-type]
 
         # Auto-greet: register global ON_SESSION_STARTED hook for agents

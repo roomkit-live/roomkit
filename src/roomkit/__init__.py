@@ -18,6 +18,7 @@ from roomkit.channels.base import Channel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.channels.realtime_voice import ToolHandler as ToolHandler
 from roomkit.channels.transport import TransportChannel
+from roomkit.channels.video import VideoChannel
 from roomkit.channels.voice import VoiceChannel
 from roomkit.channels.websocket import (
     StreamChunk,
@@ -279,6 +280,29 @@ from roomkit.telemetry import (
 )
 from roomkit.tools.compose import compose_tool_handlers
 from roomkit.tools.policy import RoleOverride, ToolPolicy
+from roomkit.video import (
+    FaceDetection,
+    GeminiVisionConfig,
+    GeminiVisionProvider,
+    MockVideoBackend,
+    MockVideoCall,
+    MockVisionProvider,
+    OpenAIVisionConfig,
+    OpenAIVisionProvider,
+    VideoBackend,
+    VideoCapability,
+    VideoChunk,
+    VideoDisconnectCallback,
+    VideoFrame,
+    VideoReceivedCallback,
+    VideoSession,
+    VideoSessionReadyCallback,
+    VideoSessionState,
+    VisionProvider,
+    VisionResult,
+    get_local_video_backend,
+    setup_video_vision,
+)
 from roomkit.voice import (
     AudioBridge,
     AudioBridgeConfig,
@@ -716,6 +740,29 @@ __all__ = [
     "RoleOverride",
     "ToolPolicy",
     "compose_tool_handlers",
+    # Video
+    "FaceDetection",
+    "MockVideoBackend",
+    "MockVideoCall",
+    "MockVisionProvider",
+    "GeminiVisionConfig",
+    "GeminiVisionProvider",
+    "get_local_video_backend",
+    "setup_video_vision",
+    "OpenAIVisionConfig",
+    "OpenAIVisionProvider",
+    "VideoBackend",
+    "VideoCapability",
+    "VideoChannel",
+    "VideoChunk",
+    "VideoDisconnectCallback",
+    "VideoFrame",
+    "VideoReceivedCallback",
+    "VideoSession",
+    "VideoSessionReadyCallback",
+    "VideoSessionState",
+    "VisionProvider",
+    "VisionResult",
     # AI Docs
     "get_agents_md",
     "get_ai_context",
