@@ -20,7 +20,7 @@ What is **not** supported is real-time video — video calls, live streaming, an
 |------|-------------|--------|
 | **Tier 0** | File-based video messages (send/receive video clips) | **Done** |
 | **Tier 1** | Real-time video transport (video calls via WebRTC/RTMP) | **In progress** |
-| **Tier 2** | Video processing pipeline (transcoding, scaling, overlays, recording) | Not started |
+| **Tier 2** | Video processing pipeline (transcoding, scaling, overlays, recording) | **Partial** (Recording done) |
 | **Tier 3** | Video intelligence (vision AI, frame analysis, captioning) | **In progress** |
 
 ---
@@ -208,7 +208,7 @@ Key risks: WebRTC video negotiation is significantly more complex than audio. Co
 
 **Goal:** Pluggable server-side video processing stages.
 
-**Status:** 2.1 🔲 | 2.2 partial (Recorder ✅) | 2.3 🔲 | 2.4 🔲
+**Status:** 2.1 🔲 | 2.2 partial (Recorder: OpenCV ✅ + PyAV/FFmpeg ✅) | 2.3 🔲 | 2.4 🔲
 
 #### 2.1 VideoPipeline Engine
 
@@ -232,7 +232,7 @@ Each stage follows the ABC + mock + implementation pattern under `video/pipeline
 | **Overlay** | `VideoOverlayProvider` | Watermarks, names, timestamps | OpenCV, Pillow |
 | **BackgroundBlur** | `BackgroundBlurProvider` | Blur/replace background | MediaPipe, ONNX |
 | **FaceDetector** | `FaceDetectorProvider` | Detect and optionally blur faces | MediaPipe, MTCNN |
-| **Recorder** | `VideoRecorder` | Record to MP4/WebM file or S3 | **OpenCV ✅**, FFmpeg |
+| **Recorder** | `VideoRecorder` | Record to MP4/WebM file or S3 | **OpenCV ✅**, **PyAV/FFmpeg ✅** (H.264, H.265, NVENC) |
 | **NoiseFilter** | `VideoNoiseFilter` | Reduce compression artifacts | OpenCV |
 
 #### 2.3 Pipeline Contract
@@ -522,8 +522,8 @@ Required new dependencies (all optional extras):
 | Package | Purpose | Phase |
 |---------|---------|-------|
 | `aiortc` | WebRTC video transport | Phase 1 |
-| `av` (PyAV) | FFmpeg bindings for encode/decode | Phase 2 |
-| `opencv-python-headless` | Image processing stages | Phase 2 |
+| `av` (PyAV) | FFmpeg bindings for encode/decode/record | Phase 2 (**installed**, `roomkit[video]`) |
+| `opencv-python-headless` | Image processing stages + basic recording | Phase 2 (**installed**, `roomkit[local-video]`) |
 | `mediapipe` | Background blur, face detection | Phase 2 |
 | `pillow` | Lightweight image operations | Phase 2 |
 
