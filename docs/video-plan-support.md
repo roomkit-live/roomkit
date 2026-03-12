@@ -295,43 +295,42 @@ class VisionResult:
     metadata: dict[str, Any]
 ```
 
-#### 3.2 Implementations
+#### 3.2 Implementations ✅
 
-| Provider | Model | Use Case |
-|----------|-------|----------|
-| `OpenAIVisionProvider` | GPT-4o / GPT-4V | General frame analysis |
-| `GeminiVisionProvider` | Gemini Pro Vision | General frame analysis |
-| `ClipVisionProvider` | CLIP (local) | Fast label classification |
-| `TesseractOCRProvider` | Tesseract (local) | Screen share OCR |
-| `MockVisionProvider` | — | Testing |
+| Provider | Model | Speed | Status |
+|----------|-------|-------|--------|
+| `GeminiVisionProvider` | Gemini 3.1 Flash-Lite | ~1-2s (cloud) | **Done** |
+| `OpenAIVisionProvider` | GPT-4o / Ollama / vLLM | varies | **Done** |
+| `MockVisionProvider` | — | instant | **Done** |
+| Ollama + moondream | moondream 1.8B | <1s (local) | **Works via OpenAIVisionProvider** |
+| Ollama + qwen3-vl | qwen3-vl:4b | ~6-10s (local) | **Works but slow** |
+| `ONNXVisionProvider` | YOLO / Florence-2 | ~30ms (local) | Not started |
 
-#### 3.3 Key-Frame Sampling Strategy
+#### 3.3 Key-Frame Sampling Strategy ✅
 
-Not every frame goes to vision AI. The channel samples intelligently:
+Implemented as interval-based throttle in VideoChannel._on_video_received:
 
-- **Periodic sampling** — 1 frame every N seconds (configurable, default: 2s)
-- **Scene change detection** — analyze when visual content changes significantly
-- **On-demand** — triggered by hooks or AI request
-- **Screen share mode** — higher sampling rate with OCR focus
+- **Periodic sampling** — 1 frame every N seconds (configurable via `vision_interval_ms`, default 2s)
+- Throttle check runs before task creation (no O(fps) task allocation)
+- Timing logged per frame (elapsed_ms in framework events)
 
-#### 3.4 AIChannel Integration
+Future: scene change detection, on-demand triggers.
 
-Vision context feeds into the AI conversation:
+#### 3.4 AIChannel Integration ✅
+
+Implemented via `setup_video_vision()`:
 
 ```python
-# VisionProvider produces descriptions
-# -> injected as system context into AIChannel
-# -> AI can "see" what's on screen or in the video call
+from roomkit import setup_video_vision
 
-@kit.hook(HookTrigger.ON_VIDEO_FRAME)
-async def inject_vision(event, ctx):
-    result = await vision_provider.analyze_frame(event.frame)
-    ctx.ai_context["visual_scene"] = result.description
+setup_video_vision(kit, room_id="r1", ai_channel_id="ai")
+# AI's system prompt is now live-updated with vision descriptions
 ```
 
-**Effort estimate: 1-2 weeks**
-
-Low risk. Follows the established STT/TTS provider pattern. Main decision is sampling strategy.
+- Injects vision descriptions into AI binding metadata (system_prompt)
+- Preserves base system prompt across updates (no stacking)
+- Filters by room_id
+- Configurable context_prefix
 
 ---
 
@@ -558,9 +557,10 @@ video-vision = []  # Provider SDKs (openai, google-genai) already in ai extras
 - [ ] WebRTC video call between two participants in a room
 - [ ] Video forwarding to 4+ participants via SFU
 - [ ] Video recording to file (MP4)
-- [ ] Vision AI can describe video call content to AIChannel
+- [x] Vision AI can describe video call content to AIChannel
 - [ ] Screen sharing works as a separate video track
 - [ ] Graceful fallback: video degrades to audio-only under poor network
-- [ ] All new components have tests, docs, and examples
-- [ ] RFC updated with video transport specification
+- [x] All new components have tests, docs, and examples
+- [x] RFC updated with video transport specification
+- [x] `make all` passes with video extras installed
 - [ ] `make all` passes with video extras installed
