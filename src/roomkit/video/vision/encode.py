@@ -38,7 +38,8 @@ def frame_to_jpeg(frame: VideoFrame) -> bytes:
             raise ValueError(f"JPEG encoding for codec {frame.codec!r} not implemented")
 
         _, jpeg_buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        return jpeg_buf.tobytes()
+        result: bytes = jpeg_buf.tobytes()
+        return result
     except ImportError:
         pass
 
