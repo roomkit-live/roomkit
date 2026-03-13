@@ -19,6 +19,8 @@ from roomkit.models.room import Room
 
 if TYPE_CHECKING:
     from roomkit.core.locks import RoomLockManager
+    from roomkit.recorder._room_recorder_manager import RoomRecorderManager
+    from roomkit.recorder.base import RoomRecorderBinding
     from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.framework")
@@ -29,16 +31,30 @@ class RoomLifecycleMixin(HelpersMixin):
 
     _store: ConversationStore
     _lock_manager: RoomLockManager
+    _room_recorder_mgr: RoomRecorderManager
 
     async def create_room(
-        self, room_id: str | None = None, metadata: dict[str, Any] | None = None
+        self,
+        room_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        recorders: list[RoomRecorderBinding] | None = None,
     ) -> Room:
-        """Create a new room."""
+        """Create a new room.
+
+        Args:
+            room_id: Optional explicit room ID (auto-generated if omitted).
+            metadata: Optional room metadata dict.
+            recorders: Optional list of :class:`RoomRecorderBinding` for
+                room-level media recording.
+        """
         room = Room(
             id=room_id or uuid4().hex,
             metadata=metadata or {},
         )
         result = await self._store.create_room(room)
+        # Start room-level media recorders
+        if recorders:
+            self._room_recorder_mgr.register(room.id, recorders)
         await self._fire_lifecycle_hook(
             room.id,
             HookTrigger.ON_ROOM_CREATED,
@@ -64,6 +80,8 @@ class RoomLifecycleMixin(HelpersMixin):
     async def close_room(self, room_id: str) -> Room:
         """Close a room."""
         async with self._lock_manager.locked(room_id):
+            # Stop room-level media recorders before closing
+            self._room_recorder_mgr.stop_room(room_id)
             room = await self.get_room(room_id)
             room = room.model_copy(
                 update={"status": RoomStatus.CLOSED, "closed_at": datetime.now(UTC)}

@@ -235,6 +235,16 @@ from roomkit.realtime.base import (
     RealtimeBackend,
 )
 from roomkit.realtime.memory import InMemoryRealtime
+from roomkit.recorder import (
+    ChannelRecordingConfig,
+    MediaRecorder,
+    MediaRecordingConfig,
+    MediaRecordingHandle,
+    MediaRecordingResult,
+    MockMediaRecorder,
+    RecordingTrack,
+    RoomRecorderBinding,
+)
 from roomkit.skills import (
     ScriptExecutor,
     ScriptResult,
@@ -741,6 +751,15 @@ __all__ = [
     "RoleOverride",
     "ToolPolicy",
     "compose_tool_handlers",
+    # Room-level media recording
+    "ChannelRecordingConfig",
+    "MediaRecorder",
+    "MediaRecordingConfig",
+    "MediaRecordingHandle",
+    "MediaRecordingResult",
+    "MockMediaRecorder",
+    "RecordingTrack",
+    "RoomRecorderBinding",
     # Video
     "FaceDetection",
     "MockVideoBackend",

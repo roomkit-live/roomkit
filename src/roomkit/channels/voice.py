@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from roomkit.models.context import RoomContext
     from roomkit.models.delivery import InboundMessage
     from roomkit.models.event import RoomEvent
+    from roomkit.recorder.base import ChannelRecordingConfig
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import VoiceSession
@@ -146,12 +147,14 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         max_audio_frames_per_second: int | None = None,
         tts_filter: Callable[[str], str] | None = None,
         bridge: bool | AudioBridgeConfig | None = None,
+        recording: ChannelRecordingConfig | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._stt = stt
         self._tts = tts
         self._backend = backend
         self._pipeline_config = pipeline
+        self._recording = recording
         self._streaming = streaming
         self._framework: RoomKit | None = None
         # Lock for shared state accessed from both asyncio and audio threads
@@ -938,6 +941,14 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
             for sid, (rid, _old) in self._session_bindings.items():
                 if rid == room_id:
                     self._session_bindings[sid] = (rid, binding)
+
+    def add_media_tap(self, callback: Callable[[VoiceSession, AudioFrame], None]) -> None:
+        """Register a tap on processed audio frames (for room recording).
+
+        Delegates to the pipeline's ``on_processed_frame`` callback list.
+        """
+        if self._pipeline is not None:
+            self._pipeline.on_processed_frame(callback)
 
     def unbind_session(self, session: VoiceSession) -> None:
         """Remove session binding."""

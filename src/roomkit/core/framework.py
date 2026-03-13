@@ -246,6 +246,10 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             if telemetry.metadata and hasattr(self._telemetry, "_metadata"):
                 self._telemetry._metadata = telemetry.metadata
         self._store._telemetry = self._telemetry  # type: ignore[attr-defined]
+        # Room-level media recording
+        from roomkit.recorder._room_recorder_manager import RoomRecorderManager
+
+        self._room_recorder_mgr = RoomRecorderManager()
 
     @property
     def store(self) -> ConversationStore:
@@ -361,6 +365,31 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         # Bind session to channel for routing
         channel.bind_session(session, room_id, binding)
 
+        # Wire room-level media recording for audio
+        if (
+            self._room_recorder_mgr.has_recorders(room_id)
+            and channel._recording is not None
+            and channel._recording.audio
+        ):
+            from roomkit.recorder.base import RecordingTrack
+
+            track = RecordingTrack(
+                id=f"audio:{session.id}",
+                kind="audio",
+                channel_id=channel_id,
+                participant_id=participant_id,
+                codec="pcm_s16le",
+                sample_rate=session.sample_rate if hasattr(session, "sample_rate") else 16000,
+            )
+            self._room_recorder_mgr.on_track_added(room_id, track)
+            mgr = self._room_recorder_mgr
+
+            def _audio_tap(sess: VoiceSession, frame: Any) -> None:
+                ts = frame.timestamp_ms if hasattr(frame, "timestamp_ms") else 0.0
+                mgr.on_data(room_id, track, frame.data, ts)
+
+            channel.add_media_tap(_audio_tap)
+
         await self._emit_framework_event(
             "voice_session_started",
             room_id=room_id,
@@ -385,6 +414,19 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         """
         if self._voice is None:
             raise VoiceBackendNotConfiguredError("No voice backend configured")
+
+        # Remove room-level recording track before unbind
+        if self._room_recorder_mgr.has_recorders(session.room_id):
+            from roomkit.recorder.base import RecordingTrack
+
+            track = RecordingTrack(
+                id=f"audio:{session.id}",
+                kind="audio",
+                channel_id=session.channel_id,
+                participant_id=session.participant_id,
+                codec="pcm_s16le",
+            )
+            self._room_recorder_mgr.on_track_removed(session.room_id, track)
 
         # Get the voice channel and unbind
         channel = self._channels.get(session.channel_id)
@@ -448,6 +490,32 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             room_id, participant_id, channel_id, metadata=metadata
         )
         channel.bind_session(session, room_id, binding)
+        # Wire room-level media recording for video
+        if (
+            self._room_recorder_mgr.has_recorders(room_id)
+            and channel._recording is not None
+            and channel._recording.video
+        ):
+            from roomkit.recorder.base import RecordingTrack
+
+            track = RecordingTrack(
+                id=f"video:{session.id}",
+                kind="video",
+                channel_id=channel_id,
+                participant_id=participant_id,
+            )
+            self._room_recorder_mgr.on_track_added(room_id, track)
+            mgr = self._room_recorder_mgr
+
+            def _video_tap(sess: VideoSession, frame: Any) -> None:
+                # Capture actual dimensions from first frame
+                if track.width is None and hasattr(frame, "width"):
+                    track.width = frame.width
+                    track.height = frame.height
+                ts = frame.timestamp_ms if frame.timestamp_ms is not None else 0.0
+                mgr.on_data(room_id, track, frame.data, ts)
+
+            channel.add_media_tap(_video_tap)
         return session
 
     async def disconnect_video(self, session: VideoSession) -> None:
@@ -463,6 +531,17 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
 
         channel = self._channels.get(session.channel_id)
         if isinstance(channel, VideoChannel):
+            # Remove room-level recording track before unbind
+            if self._room_recorder_mgr.has_recorders(session.room_id):
+                from roomkit.recorder.base import RecordingTrack
+
+                track = RecordingTrack(
+                    id=f"video:{session.id}",
+                    kind="video",
+                    channel_id=session.channel_id,
+                    participant_id=session.participant_id,
+                )
+                self._room_recorder_mgr.on_track_removed(session.room_id, track)
             channel.unbind_session(session)
             await channel.backend.disconnect(session)
 
@@ -956,6 +1035,8 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
 
     async def close(self) -> None:
         """Close all sources, channels, voice backend, and the realtime backend."""
+        # Stop room-level media recorders before channels close
+        self._room_recorder_mgr.close()
         # Clear stale greeting gates
         for room_id in list(self._greeting_gates):
             self._force_clear_greeting_gate(room_id)

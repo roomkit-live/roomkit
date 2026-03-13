@@ -20,11 +20,14 @@ from roomkit.models.enums import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from roomkit.core.framework import RoomKit
     from roomkit.models.channel import ChannelBinding, ChannelOutput
     from roomkit.models.context import RoomContext
     from roomkit.models.delivery import InboundMessage
     from roomkit.models.event import RoomEvent
+    from roomkit.recorder.base import ChannelRecordingConfig
     from roomkit.video.backends.base import VideoBackend
     from roomkit.video.base import VideoSession
     from roomkit.video.pipeline.config import VideoPipelineConfig
@@ -59,12 +62,14 @@ class VideoChannel(VideoHooksMixin, Channel):
         vision: VisionProvider | None = None,
         vision_interval_ms: int = 2000,
         pipeline: VideoPipelineConfig | None = None,
+        recording: ChannelRecordingConfig | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._backend = backend
         self._vision = vision
         self._vision_interval_ms = vision_interval_ms
         self._pipeline = pipeline
+        self._recording = recording
         self._framework: RoomKit | None = None
 
         # Resolve recorder from pipeline
@@ -87,6 +92,8 @@ class VideoChannel(VideoHooksMixin, Channel):
         self._event_loop: asyncio.AbstractEventLoop | None = None
         # Active recording handles per session
         self._recording_handles: dict[str, VideoRecordingHandle] = {}
+        # Room-level media recording taps
+        self._media_taps: list[Callable[[VideoSession, VideoFrame], None]] = []
 
         # Wire backend callbacks
         backend.on_video_received(self._on_video_received)
@@ -126,6 +133,10 @@ class VideoChannel(VideoHooksMixin, Channel):
             return None
         binding_info = self._session_bindings.get(session_id)
         return binding_info[0] if binding_info else None
+
+    def add_media_tap(self, callback: Callable[[VideoSession, VideoFrame], None]) -> None:
+        """Register a tap that receives every video frame (for room recording)."""
+        self._media_taps.append(callback)
 
     # -------------------------------------------------------------------------
     # Task scheduling
@@ -256,6 +267,9 @@ class VideoChannel(VideoHooksMixin, Channel):
         rec_handle = self._recording_handles.get(session.id)
         if rec_handle and self._recorder:
             self._recorder.tap_frame(rec_handle, frame)
+        # Room-level media taps
+        for tap in self._media_taps:
+            tap(session, frame)
         if self._vision is None:
             return
         # Throttle before creating a task — avoids O(fps) task allocation
