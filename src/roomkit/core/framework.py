@@ -385,8 +385,10 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             mgr = self._room_recorder_mgr
 
             def _audio_tap(sess: VoiceSession, frame: Any) -> None:
-                ts = getattr(frame, "timestamp_ms", None)
-                mgr.on_data(room_id, track, frame.data, ts)
+                import time
+
+                # Always use absolute monotonic clock to match state.t0_ms
+                mgr.on_data(room_id, track, frame.data, time.monotonic() * 1000)
 
             channel.add_media_tap(_audio_tap)
 
@@ -508,12 +510,14 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             mgr = self._room_recorder_mgr
 
             def _video_tap(sess: VideoSession, frame: Any) -> None:
+                import time
+
                 # Capture actual dimensions from first frame
                 if track.width is None and hasattr(frame, "width"):
                     track.width = frame.width
                     track.height = frame.height
-                ts = frame.timestamp_ms if frame.timestamp_ms is not None else 0.0
-                mgr.on_data(room_id, track, frame.data, ts)
+                # Always use absolute monotonic clock to match state.t0_ms
+                mgr.on_data(room_id, track, frame.data, time.monotonic() * 1000)
 
             channel.add_media_tap(_video_tap)
         return session
