@@ -132,10 +132,7 @@ async def main() -> None:
     await kit.disconnect_video(session)
     await kit.close()
 
-    # Show recording info
-    handle = list(recorder.recordings.values())[0] if hasattr(recorder, "recordings") else None
-    if handle:
-        print(f"  Recorded {frame_count} frames")
+    print(f"  Recorded {frame_count} frames")
     print("  Done.")
 
 

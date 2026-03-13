@@ -144,7 +144,19 @@ class TestPyAVVideoRecorder:
         recorder = PyAVVideoRecorder()
         handle = VideoRecordingHandle(id="nonexistent", session_id="x")
         recorder.tap_frame(handle, _make_raw_frame())
-        recorder.close()
+        assert recorder._active == {}
+
+    def test_tap_frame_after_stop_is_noop(self) -> None:
+        """Late-arriving frame after stop must not raise."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            recorder = PyAVVideoRecorder()
+            config = VideoRecordingConfig(storage=tmpdir, codec="libx264")
+            handle = recorder.start(_make_session(), config)
+            result = recorder.stop(handle)
+            assert result.frame_count == 0
+            # Frame arrives after stop — should be silently ignored
+            recorder.tap_frame(handle, _make_raw_frame())
+            assert recorder._active == {}
 
     def test_close_flushes_active(self) -> None:
         """close() flushes and finalizes all active recordings."""

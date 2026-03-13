@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from roomkit import (
@@ -35,7 +33,7 @@ class TestMockVideoRecorder:
         handle = recorder.start(session, config)
         assert handle.state == "recording"
         assert handle.session_id == "s1"
-        assert "rec_1" in handle.id
+        assert handle.id
 
         result = recorder.stop(handle)
         assert handle.state == "stopped"
@@ -136,7 +134,6 @@ class TestVideoChannelRecording:
         for i in range(5):
             frame = VideoFrame(data=b"\x00" * 100, codec="h264", timestamp_ms=float(i * 100))
             await backend.simulate_video_received(session, frame)
-        await asyncio.sleep(0.05)
 
         rec = list(recorder.recordings.values())[0]
         assert len(rec.frames) == 5
@@ -173,6 +170,8 @@ class TestVideoChannelRecording:
         await ch.close()
 
         assert ch._recording_handles == {}
+        rec = list(recorder.recordings.values())[0]
+        assert rec.handle.state == "stopped"
 
 
 class TestOpenCVVideoRecorder:

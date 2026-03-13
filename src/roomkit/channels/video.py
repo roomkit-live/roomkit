@@ -188,10 +188,7 @@ class VideoChannel(VideoHooksMixin, Channel):
             )
         # Start recording if configured
         if self._recorder and self._recording_config:
-            from roomkit.video.recorder.base import VideoRecordingConfig
-
-            config = self._recording_config or VideoRecordingConfig()
-            handle = self._recorder.start(session, config)
+            handle = self._recorder.start(session, self._recording_config)
             self._recording_handles[session.id] = handle
             logger.info("Recording started: %s for session %s", handle.id, session.id[:8])
         # Fire hook if backend was already ready
@@ -332,7 +329,13 @@ class VideoChannel(VideoHooksMixin, Channel):
         # Stop active recordings
         if self._recorder:
             for handle in self._recording_handles.values():
-                self._recorder.stop(handle)
+                result = self._recorder.stop(handle)
+                logger.info(
+                    "Recording stopped (close): %s (%d frames, %.1fs)",
+                    result.id,
+                    result.frame_count,
+                    result.duration_seconds,
+                )
             self._recorder.close()
         self._recording_handles.clear()
         # Close vision provider

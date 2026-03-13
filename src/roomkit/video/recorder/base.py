@@ -6,7 +6,7 @@ import os
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -25,11 +25,32 @@ def validate_storage_path(storage: str) -> str:
     Rejects paths containing '..' components to prevent traversal.
     Creates the directory if it doesn't exist. Returns the resolved path.
     """
-    resolved = os.path.normpath(storage)
-    if ".." in resolved.split(os.sep):
+    # Check raw parts before normpath collapses them
+    import pathlib
+
+    if ".." in pathlib.PurePath(storage).parts:
         raise ValueError(f"Storage path must not contain '..': {storage}")
+    resolved = os.path.normpath(storage)
     os.makedirs(resolved, exist_ok=True)
     return resolved
+
+
+def build_recording_path(
+    session: VideoSession,
+    config: VideoRecordingConfig,
+    *,
+    format_override: str | None = None,
+) -> str:
+    """Build and validate the output file path for a recording.
+
+    Returns the full resolved path to the recording file.
+    """
+    safe_id = safe_filename(session.id[:16])
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+    fmt = format_override or config.format
+    storage = config.storage or os.path.join(os.getcwd(), "recordings")
+    resolved = validate_storage_path(storage)
+    return os.path.join(resolved, f"{safe_id}_{ts}.{fmt}")
 
 
 @dataclass

@@ -14,7 +14,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -23,11 +22,12 @@ from roomkit.video.recorder.base import (
     VideoRecordingConfig,
     VideoRecordingHandle,
     VideoRecordingResult,
-    safe_filename,
-    validate_storage_path,
+    build_recording_path,
 )
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from roomkit.video.base import VideoSession
     from roomkit.video.video_frame import VideoFrame
 
@@ -58,6 +58,13 @@ def _pick_codec(config: VideoRecordingConfig, av_mod: Any) -> str:
     return codec
 
 
+def _to_ndarray(frame: VideoFrame) -> np.ndarray[Any, Any]:
+    """Convert VideoFrame raw bytes to numpy ndarray."""
+    import numpy as _np
+
+    return _np.frombuffer(frame.data, dtype=_np.uint8).reshape(frame.height, frame.width, 3)
+
+
 class _ActiveRecording:
     __slots__ = ("container", "stream", "frame_count", "start_time", "path", "av")
 
@@ -74,6 +81,16 @@ class _ActiveRecording:
         self.av = av_mod
         self.frame_count = 0
         self.start_time = time.monotonic()
+
+
+def _flush_and_close(active: _ActiveRecording) -> None:
+    """Flush encoder (if frames were written) and close container safely."""
+    try:
+        if active.frame_count > 0:
+            for packet in active.stream.encode():
+                active.container.mux(packet)
+    finally:
+        active.container.close()
 
 
 class PyAVVideoRecorder(VideoRecorder):
@@ -93,14 +110,8 @@ class PyAVVideoRecorder(VideoRecorder):
 
     def start(self, session: VideoSession, config: VideoRecordingConfig) -> VideoRecordingHandle:
         rec_id = uuid4().hex[:12]
-        safe_id = safe_filename(session.id[:16])
-        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
-        fmt = config.format if config.format != "mp4v" else "mp4"
-        filename = f"{safe_id}_{ts}.{fmt}"
-
-        storage = config.storage or os.path.join(os.getcwd(), "recordings")
-        resolved = validate_storage_path(storage)
-        path = os.path.join(resolved, filename)
+        fmt_override = "mp4" if config.format == "mp4v" else None
+        path = build_recording_path(session, config, format_override=fmt_override)
 
         codec = _pick_codec(config, self._av)
         container = self._av.open(path, mode="w")
@@ -117,7 +128,6 @@ class PyAVVideoRecorder(VideoRecorder):
         handle = VideoRecordingHandle(
             id=rec_id,
             session_id=session.id,
-            started_at=datetime.now(UTC),
             path=path,
         )
         self._active[rec_id] = _ActiveRecording(
@@ -132,11 +142,7 @@ class PyAVVideoRecorder(VideoRecorder):
         if active is None:
             return VideoRecordingResult(id=handle.id)
 
-        # Flush encoder only if frames were written (codec is open)
-        if active.frame_count > 0:
-            for packet in active.stream.encode():
-                active.container.mux(packet)
-        active.container.close()
+        _flush_and_close(active)
 
         elapsed = time.monotonic() - active.start_time
         size = os.path.getsize(active.path) if os.path.exists(active.path) else 0
@@ -185,16 +191,6 @@ class PyAVVideoRecorder(VideoRecorder):
 
     def close(self) -> None:
         for rec_id, active in list(self._active.items()):
-            if active.frame_count > 0:
-                for packet in active.stream.encode():
-                    active.container.mux(packet)
-            active.container.close()
+            _flush_and_close(active)
             logger.info("Recording closed: %s", rec_id)
         self._active.clear()
-
-
-def _to_ndarray(frame: VideoFrame) -> Any:
-    """Convert VideoFrame raw bytes to numpy ndarray."""
-    import numpy as np
-
-    return np.frombuffer(frame.data, dtype=np.uint8).reshape(frame.height, frame.width, 3)

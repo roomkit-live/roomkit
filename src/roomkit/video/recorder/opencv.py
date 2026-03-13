@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -19,8 +18,7 @@ from roomkit.video.recorder.base import (
     VideoRecordingConfig,
     VideoRecordingHandle,
     VideoRecordingResult,
-    safe_filename,
-    validate_storage_path,
+    build_recording_path,
 )
 
 if TYPE_CHECKING:
@@ -46,12 +44,14 @@ def _import_cv2() -> Any:
 class _ActiveRecording:
     """Internal state for an active recording."""
 
-    __slots__ = ("writer", "frame_count", "start_time", "path", "cv2")
+    __slots__ = ("writer", "frame_count", "start_time", "path", "cv2", "fps", "codec")
 
-    def __init__(self, writer: Any, path: str, cv2_mod: Any) -> None:
+    def __init__(self, writer: Any, path: str, cv2_mod: Any, *, fps: float, codec: str) -> None:
         self.writer = writer
         self.path = path
         self.cv2 = cv2_mod
+        self.fps = fps
+        self.codec = codec
         self.frame_count = 0
         self.start_time = time.monotonic()
 
@@ -73,22 +73,19 @@ class OpenCVVideoRecorder(VideoRecorder):
 
     def start(self, session: VideoSession, config: VideoRecordingConfig) -> VideoRecordingHandle:
         rec_id = uuid4().hex[:12]
-        safe_id = safe_filename(session.id[:16])
-        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
-        filename = f"{safe_id}_{ts}.{config.format}"
+        path = build_recording_path(session, config)
 
-        storage = config.storage or os.path.join(os.getcwd(), "recordings")
-        resolved = validate_storage_path(storage)
-        path = os.path.join(resolved, filename)
+        codec = config.codec if config.codec != "auto" else "mp4v"
 
-        # Writer is created lazily on first frame (need dimensions)
         handle = VideoRecordingHandle(
             id=rec_id,
             session_id=session.id,
-            started_at=datetime.now(UTC),
             path=path,
         )
-        self._active[rec_id] = _ActiveRecording(writer=None, path=path, cv2_mod=self._cv2)
+        # Writer is created lazily on first frame (need dimensions)
+        self._active[rec_id] = _ActiveRecording(
+            writer=None, path=path, cv2_mod=self._cv2, fps=config.fps, codec=codec
+        )
         logger.info("Recording started: %s → %s", rec_id, path)
         return handle
 
@@ -102,9 +99,7 @@ class OpenCVVideoRecorder(VideoRecorder):
             active.writer.release()
 
         elapsed = time.monotonic() - active.start_time
-        size = 0
-        if os.path.exists(active.path):
-            size = os.path.getsize(active.path)
+        size = os.path.getsize(active.path) if os.path.exists(active.path) else 0
 
         logger.info(
             "Recording stopped: %s (%d frames, %.1fs, %d bytes)",
@@ -131,10 +126,13 @@ class OpenCVVideoRecorder(VideoRecorder):
 
         # Lazy-create writer on first frame (now we know dimensions)
         if active.writer is None:
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            active.writer = cv2.VideoWriter(active.path, fourcc, 15.0, (frame.width, frame.height))
+            fourcc = cv2.VideoWriter_fourcc(*active.codec)
+            active.writer = cv2.VideoWriter(
+                active.path, fourcc, active.fps, (frame.width, frame.height)
+            )
             if not active.writer.isOpened():
                 logger.error("Failed to open VideoWriter for %s", active.path)
+                active.writer = None
                 return
 
         # Convert raw RGB to BGR for OpenCV
