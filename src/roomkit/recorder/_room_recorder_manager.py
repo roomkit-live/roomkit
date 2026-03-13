@@ -60,7 +60,7 @@ class RoomRecorderManager:
         room_id: str,
         track: RecordingTrack,
         data: bytes,
-        timestamp_ms: float,
+        timestamp_ms: float | None,
     ) -> None:
         """Fan out media data to all recorders in a room."""
         for binding, handle in self._registry.get(room_id, []):

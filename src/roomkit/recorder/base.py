@@ -63,6 +63,7 @@ class MediaRecordingConfig:
 
     storage: str = ""
     video_codec: str = "auto"
+    video_fps: int = 30
     audio_codec: str = "aac"
     audio_sample_rate: int = 16000
     format: str = "mp4"
@@ -140,7 +141,7 @@ class MediaRecorder(ABC):
         handle: MediaRecordingHandle,
         track: RecordingTrack,
         data: bytes,
-        timestamp_ms: float,
+        timestamp_ms: float | None,
     ) -> None:
         """Feed media data for a specific track."""
         ...

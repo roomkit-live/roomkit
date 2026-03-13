@@ -64,6 +64,7 @@ async def main() -> None:
     recording_config = MediaRecordingConfig(
         storage=args.output,
         video_codec="auto",
+        video_fps=args.fps,
         audio_codec="aac",
         audio_sample_rate=16000,
         format="mp4",

@@ -385,7 +385,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             mgr = self._room_recorder_mgr
 
             def _audio_tap(sess: VoiceSession, frame: Any) -> None:
-                ts = frame.timestamp_ms if hasattr(frame, "timestamp_ms") else 0.0
+                ts = getattr(frame, "timestamp_ms", None)
                 mgr.on_data(room_id, track, frame.data, ts)
 
             channel.add_media_tap(_audio_tap)

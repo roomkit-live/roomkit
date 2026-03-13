@@ -21,7 +21,7 @@ class MockDataChunk:
 
     track_id: str
     data: bytes
-    timestamp_ms: float
+    timestamp_ms: float | None
 
 
 class MockMediaRecorder(MediaRecorder):
@@ -74,7 +74,7 @@ class MockMediaRecorder(MediaRecorder):
         handle: MediaRecordingHandle,
         track: RecordingTrack,
         data: bytes,
-        timestamp_ms: float,
+        timestamp_ms: float | None,
     ) -> None:
         self.chunks.append(MockDataChunk(track_id=track.id, data=data, timestamp_ms=timestamp_ms))
 

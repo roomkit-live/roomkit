@@ -54,7 +54,6 @@ class _TrackState:
     stream: Any = None
     frame_count: int = 0
     ready: bool = False
-    buffer: list[tuple[bytes, float]] = field(default_factory=list)
 
 
 @dataclass
@@ -77,6 +76,11 @@ class PyAVMediaRecorder(MediaRecorder):
     received at least one ``on_data`` call.  At that point the
     container and all streams are created at once — so the MP4 header
     is written with full knowledge of every stream's parameters.
+
+    A/V sync uses a single ``time.monotonic()`` clock: both audio and
+    video PTS are derived from wall-clock elapsed time since encoding
+    started.  This keeps streams aligned regardless of pipeline
+    latency or backend timing differences.
 
     Thread-safe: each recording has its own lock so video frames from
     capture threads and audio from the event loop can write concurrently.
@@ -175,7 +179,7 @@ class PyAVMediaRecorder(MediaRecorder):
         handle: MediaRecordingHandle,
         track: RecordingTrack,
         data: bytes,
-        timestamp_ms: float,
+        timestamp_ms: float | None,
     ) -> None:
         state = self._recordings.get(handle.id)
         if state is None:
@@ -187,35 +191,39 @@ class PyAVMediaRecorder(MediaRecorder):
                 return
 
             if not state.encoding_started:
-                # Buffer data and mark track ready
-                ts.buffer.append((data, timestamp_ms))
                 ts.ready = True
                 if all(t.ready for t in state.tracks.values()):
-                    self._start_encoding(state)
+                    self._start_encoding(state, track, ts, data)
                 return
 
-            self._encode_frame(state.container, ts, track, data)
+            self._encode_frame(state, ts, track, data)
             ts.frame_count += 1
 
     # -- internal helpers ----------------------------------------------------
 
-    def _start_encoding(self, state: _RecordingState) -> None:
-        """Create container + all streams, then flush buffered data."""
+    def _start_encoding(
+        self,
+        state: _RecordingState,
+        trigger_track: RecordingTrack,
+        trigger_ts: _TrackState,
+        trigger_data: bytes,
+    ) -> None:
+        """Create container + all streams, encode the triggering frame.
+
+        Only the frame that completed readiness is encoded — all
+        earlier data from other tracks is discarded (pre-roll).
+        """
         state.container = self._av.open(state.path, mode="w")
 
-        # Create all streams at once (header written on first mux)
         for ts in state.tracks.values():
             ts.stream = self._create_stream(state.container, ts.track, state.config)
 
         state.encoding_started = True
         logger.debug("Encoding started with %d streams", len(state.tracks))
 
-        # Flush buffered data in registration order
-        for ts in state.tracks.values():
-            for data, _ts_ms in ts.buffer:
-                self._encode_frame(state.container, ts, ts.track, data)
-                ts.frame_count += 1
-            ts.buffer.clear()
+        # Encode only the triggering frame (the one that made all ready)
+        self._encode_frame(state, trigger_ts, trigger_track, trigger_data)
+        trigger_ts.frame_count += 1
 
     def _create_stream(
         self,
@@ -229,14 +237,14 @@ class PyAVMediaRecorder(MediaRecorder):
             h = track.height or 480
             codec = _resolve_video_codec(config.video_codec)
             try:
-                stream = container.add_stream(codec, rate=15)
+                stream = container.add_stream(codec, rate=config.video_fps)
                 stream.pix_fmt = "yuv420p"
                 stream.width = w
                 stream.height = h
             except Exception:
                 if codec != "libx264":
                     logger.info("Codec %s failed, falling back to libx264", codec)
-                    stream = container.add_stream("libx264", rate=15)
+                    stream = container.add_stream("libx264", rate=config.video_fps)
                     stream.pix_fmt = "yuv420p"
                     stream.width = w
                     stream.height = h
@@ -251,19 +259,23 @@ class PyAVMediaRecorder(MediaRecorder):
 
     def _encode_frame(
         self,
-        container: Any,
+        state: _RecordingState,
         ts: _TrackState,
         track: RecordingTrack,
         data: bytes,
     ) -> None:
         """Encode a single frame and mux resulting packets."""
         if track.kind == "video":
-            self._write_video(container, ts, data)
+            self._write_video(state, ts, data)
         elif track.kind == "audio":
-            self._write_audio(container, ts, data)
+            self._write_audio(state, ts, data)
 
-    def _write_video(self, container: Any, ts: _TrackState, data: bytes) -> None:
-        """Encode and mux a video frame."""
+    def _write_video(self, state: _RecordingState, ts: _TrackState, data: bytes) -> None:
+        """Encode and mux a video frame.
+
+        PTS = frame_count — advances by 1 per frame at the stream
+        rate.  Immune to event-loop scheduling jitter.
+        """
         import numpy as np
 
         stream = ts.stream
@@ -275,10 +287,14 @@ class PyAVMediaRecorder(MediaRecorder):
         frame = self._av.VideoFrame.from_ndarray(arr, format="rgb24")
         frame.pts = ts.frame_count
         for packet in stream.encode(frame):
-            container.mux(packet)
+            state.container.mux(packet)
 
-    def _write_audio(self, container: Any, ts: _TrackState, data: bytes) -> None:
-        """Encode and mux an audio frame."""
+    def _write_audio(self, state: _RecordingState, ts: _TrackState, data: bytes) -> None:
+        """Encode and mux an audio frame.
+
+        PTS = frame_count * samples_per_frame — advances by the
+        number of samples per frame at the stream rate.
+        """
         import numpy as np
 
         stream = ts.stream
@@ -287,7 +303,7 @@ class PyAVMediaRecorder(MediaRecorder):
         frame.sample_rate = stream.rate
         frame.pts = ts.frame_count * len(samples[0])
         for packet in stream.encode(frame):
-            container.mux(packet)
+            state.container.mux(packet)
 
     def close(self) -> None:
         for handle_id in list(self._recordings):
