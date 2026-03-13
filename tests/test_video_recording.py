@@ -11,6 +11,7 @@ from roomkit import (
     RoomKit,
     VideoChannel,
     VideoFrame,
+    VideoPipelineConfig,
 )
 from roomkit.video.recorder import (
     MockVideoRecorder,
@@ -76,8 +77,10 @@ class TestVideoChannelRecording:
         ch = VideoChannel(
             "video-1",
             backend=backend,
-            recorder=recorder,
-            recording_config=VideoRecordingConfig(),
+            pipeline=VideoPipelineConfig(
+                recorder=recorder,
+                recording_config=VideoRecordingConfig(),
+            ),
         )
         kit.register_channel(ch)
         await kit.create_room(room_id="r1")
@@ -95,8 +98,10 @@ class TestVideoChannelRecording:
         ch = VideoChannel(
             "video-1",
             backend=backend,
-            recorder=recorder,
-            recording_config=VideoRecordingConfig(),
+            pipeline=VideoPipelineConfig(
+                recorder=recorder,
+                recording_config=VideoRecordingConfig(),
+            ),
         )
         kit.register_channel(ch)
         await kit.create_room(room_id="r1")
@@ -116,8 +121,10 @@ class TestVideoChannelRecording:
         ch = VideoChannel(
             "video-1",
             backend=backend,
-            recorder=recorder,
-            recording_config=VideoRecordingConfig(),
+            pipeline=VideoPipelineConfig(
+                recorder=recorder,
+                recording_config=VideoRecordingConfig(),
+            ),
         )
         kit.register_channel(ch)
         await kit.create_room(room_id="r1")
@@ -153,8 +160,10 @@ class TestVideoChannelRecording:
         ch = VideoChannel(
             "video-1",
             backend=backend,
-            recorder=recorder,
-            recording_config=VideoRecordingConfig(),
+            pipeline=VideoPipelineConfig(
+                recorder=recorder,
+                recording_config=VideoRecordingConfig(),
+            ),
         )
         kit.register_channel(ch)
         await kit.create_room(room_id="r1")

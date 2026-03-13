@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from roomkit.models.event import RoomEvent
     from roomkit.video.backends.base import VideoBackend
     from roomkit.video.base import VideoSession
+    from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.recorder.base import (
         VideoRecorder,
         VideoRecordingConfig,
@@ -57,16 +58,20 @@ class VideoChannel(VideoHooksMixin, Channel):
         backend: VideoBackend,
         vision: VisionProvider | None = None,
         vision_interval_ms: int = 2000,
-        recorder: VideoRecorder | None = None,
-        recording_config: VideoRecordingConfig | None = None,
+        pipeline: VideoPipelineConfig | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._backend = backend
         self._vision = vision
         self._vision_interval_ms = vision_interval_ms
-        self._recorder = recorder
-        self._recording_config = recording_config
+        self._pipeline = pipeline
         self._framework: RoomKit | None = None
+
+        # Resolve recorder from pipeline
+        self._recorder: VideoRecorder | None = pipeline.recorder if pipeline else None
+        self._recording_config: VideoRecordingConfig | None = (
+            pipeline.recording_config if pipeline else None
+        )
 
         # Map session_id -> (room_id, binding) for routing
         self._session_bindings: dict[str, tuple[str, ChannelBinding]] = {}

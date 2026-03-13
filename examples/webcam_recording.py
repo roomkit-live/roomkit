@@ -29,6 +29,7 @@ from roomkit import (
     RoomKit,
     VideoChannel,
     VideoFrame,
+    VideoPipelineConfig,
 )
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.video.backends.local import LocalVideoBackend
@@ -66,12 +67,14 @@ async def main() -> None:
         fps=float(args.fps),
     )
 
-    # --- Video channel with recorder -----------------------------------------
+    # --- Video channel with pipeline recorder --------------------------------
     video = VideoChannel(
         "video-rec",
         backend=backend,
-        recorder=recorder,
-        recording_config=recording_config,
+        pipeline=VideoPipelineConfig(
+            recorder=recorder,
+            recording_config=recording_config,
+        ),
     )
     kit.register_channel(video)
 
