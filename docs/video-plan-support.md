@@ -271,7 +271,7 @@ Key risks: Server-side video processing requires significant CPU/GPU. Background
 
 **Goal:** Record audio and video into a single container file (MP4) with per-participant track attribution. Independent of Phase 4 — works with today's separate VoiceChannel + VideoChannel.
 
-**Status:** 🔲 Design finalized, not started
+**Status:** ✅ Complete — `MediaRecorder` ABC, `PyAVMediaRecorder`, `MockMediaRecorder`, `RoomRecorderManager`, framework wiring, tests, docs, example
 
 #### Design Principles
 
@@ -453,14 +453,23 @@ Zero wiring code — channels declare intent, room owns the recorders, framework
 | `OpenCVVideoRecorder` | Video-only, raw MP4 | **Done** |
 | `PyAVVideoRecorder` | Video-only, H.264/NVENC | **Done** |
 | `WavFileRecorder` | Audio-only, voice pipeline | **Done** |
-| `MediaRecorder` (ABC) | Multi-track, room-level | **Planned** |
-| `PyAVMediaRecorder` | A/V muxed, H.264+AAC | **Planned** |
+| `MediaRecorder` (ABC) | Multi-track, room-level | **Done** |
+| `PyAVMediaRecorder` | A/V muxed, H.264+AAC | **Done** |
 
 The existing `VideoRecorder` and `WavFileRecorder` continue to work for single-media channel-level recording. `MediaRecorder` is the evolution for room-level multi-track recording.
 
-**Effort estimate: 1-2 weeks** (MediaRecorder ABC + PyAVMediaRecorder + framework wiring + tests)
+**Effort estimate: 1-2 weeks** (MediaRecorder ABC + PyAVMediaRecorder + framework wiring + tests) — **Completed.**
 
 **Dependencies:** None — works with current separate VoiceChannel + VideoChannel. Does NOT require Phase 4 (MediaSession).
+
+#### Implementation Notes
+
+- **A/V sync**: Both audio and video PTS derived from `time.monotonic()` at tap time, referenced to a shared per-recording origin set after codec initialization. Immune to NVENC init delay (~450ms) and asyncio scheduling jitter.
+- **Pre-roll buffering**: Data buffered per-track until all registered tracks receive at least one frame. Container + all streams created at once with known parameters (avoids "Cannot rebase to zero time" error).
+- **Thread safety**: Per-recording `threading.Lock` — video frames from capture thread and audio from event loop can write concurrently.
+- **Files**: `recorder/base.py` (models + ABC), `recorder/pyav.py` (PyAV muxer), `recorder/mock.py` (testing), `recorder/_room_recorder_manager.py` (orchestration), framework wiring in `core/framework.py` and `core/_room_lifecycle.py`.
+- **Docs**: Guide at `roomkit-docs/docs/guides/room-media-recorder.md`, features.md updated.
+- **Example**: `examples/room_media_recorder.py` — mic + webcam → single MP4.
 
 ---
 
@@ -757,7 +766,7 @@ video-vision = []  # Provider SDKs (openai, google-genai) already in ai extras
 - [ ] WebRTC video call between two participants in a room
 - [ ] Video forwarding to 4+ participants via SFU
 - [x] Video recording to file (MP4) — OpenCV + PyAV/FFmpeg (H.264, NVENC)
-- [ ] Combined A/V recording to single MP4 with per-participant audio tracks
+- [x] Combined A/V recording to single MP4 with per-participant audio tracks
 - [x] Vision AI can describe video call content to AIChannel
 - [ ] Screen sharing works as a separate video track
 - [ ] Graceful fallback: video degrades to audio-only under poor network
