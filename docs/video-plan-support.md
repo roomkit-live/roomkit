@@ -267,6 +267,203 @@ Key risks: Server-side video processing requires significant CPU/GPU. Background
 
 ---
 
+### Phase 2.5 — Room-Level Media Recording (Audio+Video Muxing)
+
+**Goal:** Record audio and video into a single container file (MP4) with per-participant track attribution. Independent of Phase 4 — works with today's separate VoiceChannel + VideoChannel.
+
+**Status:** 🔲 Design finalized, not started
+
+#### Design Principles
+
+- **Event-driven** — the recorder subscribes to room lifecycle events, no explicit `tap_xxx()` methods per media type
+- **Declarative** — channels declare what they contribute via `ChannelRecordingConfig`, the framework wires everything
+- **Room-level concern** — recording is configured on the room, not on individual channels
+- **Multi-recorder** — a room can have multiple recorders (local file + cloud upload, full quality + preview)
+- **Participant attribution** — each participant gets a separate audio track, identified by `participant_id`
+
+#### Data Models
+
+All in `recorder/base.py`:
+
+```python
+@dataclass
+class RecordingTrack:
+    """A media track in a recording."""
+    id: str
+    kind: str                        # "audio", "video", "screen_share"
+    channel_id: str
+    participant_id: str | None = None
+    codec: str = ""                  # "raw_rgb24", "pcm_s16le", etc.
+    sample_rate: int | None = None   # audio only
+    width: int | None = None         # video only
+    height: int | None = None        # video only
+
+
+@dataclass
+class ChannelRecordingConfig:
+    """What a channel contributes to room recording."""
+    audio: bool = False
+    video: bool = False
+    screen_share: bool = False
+    per_participant: bool = True     # separate track per participant, or mixed
+
+
+@dataclass
+class MediaRecordingConfig:
+    """Room-level recording output configuration."""
+    storage: str = ""
+    video_codec: str = "auto"        # auto, libx264, h264_nvenc, libx265
+    audio_codec: str = "aac"         # aac, opus
+    audio_sample_rate: int = 16000
+    format: str = "mp4"
+
+
+@dataclass
+class RoomRecorderBinding:
+    """Binds a recorder to a room with its output configuration."""
+    recorder: MediaRecorder
+    config: MediaRecordingConfig
+    enabled: bool = True             # pause/resume without removing
+    name: str = ""                   # optional label ("archive", "preview", "debug")
+```
+
+#### MediaRecorder ABC
+
+```python
+class MediaRecorder(ABC):
+    """Event-driven multi-track recorder."""
+
+    @abstractmethod
+    def on_recording_start(self, config: MediaRecordingConfig) -> RecordingHandle: ...
+
+    @abstractmethod
+    def on_recording_stop(self, handle: RecordingHandle) -> RecordingResult: ...
+
+    @abstractmethod
+    def on_track_added(self, handle: RecordingHandle, track: RecordingTrack) -> None: ...
+
+    @abstractmethod
+    def on_track_removed(self, handle: RecordingHandle, track: RecordingTrack) -> None: ...
+
+    @abstractmethod
+    def on_data(self, handle: RecordingHandle, track: RecordingTrack,
+                data: bytes, timestamp_ms: float) -> None: ...
+
+    def close(self) -> None: ...
+```
+
+The recorder is **generic** — no media-type-specific methods. `on_data()` receives bytes with a `RecordingTrack` that describes the format. This extends naturally to screen share, subtitles, or any future track type without new methods.
+
+#### Framework Wiring (automatic)
+
+```
+attach_channel("door", "cam")          → cam.recording.video == True
+  connect_video(session)               → recorder.on_track_added(video_track)
+    backend delivers frame             → recorder.on_data(video_track, pixels, ts)
+
+attach_channel("door", "voice")        → voice.recording.audio == True
+  voice session starts                 → recorder.on_track_added(audio_track)
+    pipeline delivers PCM              → recorder.on_data(audio_track, pcm, ts)
+
+disconnect / detach                    → recorder.on_track_removed(track)
+room close                             → recorder.on_recording_stop(handle)
+```
+
+#### Output Structure
+
+With `per_participant=True`, the MP4 container holds separate tracks per participant:
+
+```
+recordings/door_20260312T143022.mp4
+  Track 0: H.264 video  (cam — visitor's camera)
+  Track 1: AAC audio    (voice — participant "visitor")
+  Track 2: AAC audio    (voice — participant "ai-agent")
+```
+
+#### Multi-Recorder Example
+
+A room can bind multiple recorders for different purposes:
+
+```python
+await kit.create_room(
+    room_id="door",
+    recorders=[
+        RoomRecorderBinding(
+            recorder=PyAVMediaRecorder(),
+            config=MediaRecordingConfig(
+                storage="./recordings",
+                video_codec="auto",
+                audio_codec="aac",
+            ),
+            name="local",
+        ),
+        RoomRecorderBinding(
+            recorder=PyAVMediaRecorder(),
+            config=MediaRecordingConfig(
+                storage="./archive",
+                video_codec="libx265",
+                audio_codec="opus",
+            ),
+            name="archive",
+            enabled=False,  # activate later on demand
+        ),
+    ],
+)
+```
+
+#### Usage Example
+
+```python
+video = VideoChannel("cam", backend=video_backend,
+    recording=ChannelRecordingConfig(video=True),
+)
+voice = VoiceChannel("voice", backend=audio_backend, stt=stt, tts=tts,
+    recording=ChannelRecordingConfig(audio=True, per_participant=True),
+)
+
+kit.register_channel(video)
+kit.register_channel(voice)
+
+await kit.create_room(
+    room_id="door",
+    recorders=[
+        RoomRecorderBinding(
+            recorder=PyAVMediaRecorder(),
+            config=MediaRecordingConfig(storage="./recordings", video_codec="auto", audio_codec="aac"),
+            name="local",
+        ),
+    ],
+)
+
+await kit.attach_channel("door", "cam")
+await kit.attach_channel("door", "voice")
+
+# Recording starts automatically when sessions connect
+session = await kit.connect_video("door", "visitor", "cam")
+await kit.connect_voice("door", "visitor", "voice")
+```
+
+Zero wiring code — channels declare intent, room owns the recorders, framework delivers events.
+
+#### Relationship to Existing Recorders
+
+| Recorder | Scope | Status |
+|----------|-------|--------|
+| `VideoRecorder` (ABC) | Video-only, channel-level | **Done** (backward compat) |
+| `OpenCVVideoRecorder` | Video-only, raw MP4 | **Done** |
+| `PyAVVideoRecorder` | Video-only, H.264/NVENC | **Done** |
+| `WavFileRecorder` | Audio-only, voice pipeline | **Done** |
+| `MediaRecorder` (ABC) | Multi-track, room-level | **Planned** |
+| `PyAVMediaRecorder` | A/V muxed, H.264+AAC | **Planned** |
+
+The existing `VideoRecorder` and `WavFileRecorder` continue to work for single-media channel-level recording. `MediaRecorder` is the evolution for room-level multi-track recording.
+
+**Effort estimate: 1-2 weeks** (MediaRecorder ABC + PyAVMediaRecorder + framework wiring + tests)
+
+**Dependencies:** None — works with current separate VoiceChannel + VideoChannel. Does NOT require Phase 4 (MediaSession).
+
+---
+
 ### Phase 3 — Video Intelligence (Tier 3)
 
 **Goal:** AI understanding of video content for conversation context.
@@ -394,10 +591,11 @@ class MediaSession(VoiceSession):
 |-------|-------|--------|------------|
 | **Phase 1** | Core models + WebRTC video transport | 2-4 weeks | None |
 | **Phase 2** | Video pipeline + recording + SFU | 3-5 weeks | Phase 1 |
+| **Phase 2.5** | Room-level media recording (A/V muxing) | 1-2 weeks | None |
 | **Phase 3** | Vision AI providers | 1-2 weeks | Phase 1 |
 | **Phase 4** | Combined audio+video sessions | 2-3 weeks | Phase 1 |
 
-**Total for full video support: 8-14 weeks**
+**Total for full video support: 9-16 weeks**
 **MVP (Phase 1 only): 2-4 weeks** — basic real-time video transport over WebRTC.
 **High-value fast path (Phase 1 + Phase 3): 3-6 weeks** — video calls with AI vision.
 
@@ -558,7 +756,8 @@ video-vision = []  # Provider SDKs (openai, google-genai) already in ai extras
 
 - [ ] WebRTC video call between two participants in a room
 - [ ] Video forwarding to 4+ participants via SFU
-- [x] Video recording to file (MP4)
+- [x] Video recording to file (MP4) — OpenCV + PyAV/FFmpeg (H.264, NVENC)
+- [ ] Combined A/V recording to single MP4 with per-participant audio tracks
 - [x] Vision AI can describe video call content to AIChannel
 - [ ] Screen sharing works as a separate video track
 - [ ] Graceful fallback: video degrades to audio-only under poor network
