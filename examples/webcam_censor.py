@@ -1,14 +1,17 @@
-"""RoomKit -- Webcam censor: black out video when a person is detected.
+"""RoomKit -- Webcam censor with recording.
 
-Demonstrates the video pipeline filter stage.  Vision periodically
-analyzes frames and when it detects a "person" label, the censor
-filter replaces all subsequent frames with a black image until
-the person leaves the frame.
+Demonstrates the video pipeline filter + room-level recording.
+Vision periodically analyzes frames — when "person" is detected,
+the censor filter replaces frames with black.  The recording
+captures post-filter frames, so censored content never reaches
+the MP4 file.
 
-Pipeline:  Camera → [CensorFilter] → Vision (periodic) → display/taps
+Pipeline:  Camera → [CensorFilter] → taps (recorder, vision)
+
+Output:  recordings/room_*.mp4  (censored sections are black)
 
 Prerequisites:
-    pip install roomkit[local-video]
+    pip install roomkit[local-video,video]
 
     # For Gemini vision:
     pip install roomkit[gemini]
@@ -29,15 +32,19 @@ import logging
 import signal
 
 from roomkit import (
+    ChannelRecordingConfig,
     GeminiVisionConfig,
     GeminiVisionProvider,
     HookTrigger,
+    MediaRecordingConfig,
     MockVisionProvider,
     RoomKit,
+    RoomRecorderBinding,
     VideoChannel,
     VideoPipelineConfig,
 )
 from roomkit.models.session_event import SessionStartedEvent
+from roomkit.recorder.pyav import PyAVMediaRecorder
 from roomkit.video.backends.local import LocalVideoBackend
 from roomkit.video.pipeline.filter.censor import CensorVideoFilter
 from roomkit.video.vision.base import VisionProvider
@@ -97,6 +104,9 @@ async def main() -> None:
     vision = _build_vision(args)
     censor = CensorVideoFilter(blocked_labels={"person"}, grace_frames=30)
 
+    # --- Recorder: PyAV → MP4 (records post-filter frames) -----------------
+    recorder = PyAVMediaRecorder()
+
     video = VideoChannel(
         "video-main",
         backend=backend,
@@ -105,10 +115,19 @@ async def main() -> None:
             vision=vision,
         ),
         vision_interval_ms=args.interval,
+        recording=ChannelRecordingConfig(video=True),
     )
     kit.register_channel(video)
 
-    await kit.create_room(room_id="censor-demo")
+    await kit.create_room(
+        room_id="censor-demo",
+        recorders=[
+            RoomRecorderBinding(
+                recorder=recorder,
+                config=MediaRecordingConfig(storage="./recordings"),
+            ),
+        ],
+    )
     await kit.attach_channel("censor-demo", "video-main")
 
     frame_count = 0
@@ -139,13 +158,13 @@ async def main() -> None:
 
     session = await kit.connect_video("censor-demo", "local-user", "video-main")
 
-    print("Webcam Censor Demo")
+    print("Webcam Censor + Recording Demo")
     print("=" * 60)
-    print(f"Mode: {'Gemini' if args.gemini else 'Mock'} vision")
-    print("Blocked labels: {'person'}")
-    print(f"Camera: device {args.device} at 640x480 @ {args.fps}fps")
-    print(f"Vision every {args.interval}ms")
-    print("When a person is detected, frames are replaced with black.")
+    print(f"Mode    : {'Gemini' if args.gemini else 'Mock'} vision")
+    print("Filter  : censor (blocked: person)")
+    print(f"Camera  : device {args.device} at 640x480 @ {args.fps}fps")
+    print(f"Vision  : every {args.interval}ms")
+    print("Record  : ./recordings/ (post-filter — censored = black)")
     print("Press Ctrl+C to stop.\n")
 
     await backend.start_capture(session)
@@ -159,7 +178,10 @@ async def main() -> None:
 
     print(f"\nDone. {frame_count} frames, {censored_count} censored.")
     await backend.stop_capture(session)
+    await kit.disconnect_video(session)
+    await kit.close_room("censor-demo")
     await kit.close()
+    print("Recording saved to ./recordings/")
 
 
 if __name__ == "__main__":
