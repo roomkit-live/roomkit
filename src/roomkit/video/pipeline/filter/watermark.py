@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from roomkit.video.pipeline.filter.base import FilterContext, VideoFilterProvider
 
@@ -13,7 +13,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.video.pipeline.filter")
 
-# Position presets: (horizontal_align, vertical_align)
 _POSITIONS = {
     "top-left": ("left", "top"),
     "top-right": ("right", "top"),
@@ -22,11 +21,22 @@ _POSITIONS = {
     "center": ("center", "center"),
 }
 
-# Padding from edges in pixels
 _PADDING = 10
 
 
-def _import_numpy():  # type: ignore[no-untyped-def]
+def _import_cv2() -> Any:
+    try:
+        import cv2
+
+        return cv2
+    except ImportError as exc:
+        raise ImportError(
+            "opencv is required for WatermarkFilter. "
+            "Install with: pip install roomkit[local-video]"
+        ) from exc
+
+
+def _import_numpy() -> Any:
     try:
         import numpy as np
 
@@ -40,8 +50,7 @@ def _import_numpy():  # type: ignore[no-untyped-def]
 class WatermarkFilter(VideoFilterProvider):
     """Overlay text on every video frame.
 
-    Draws text at a configurable position using a simple pixel-based
-    font renderer (no OpenCV required — uses numpy only).  Supports
+    Uses OpenCV ``putText`` for readable font rendering.  Supports
     dynamic text via ``{timestamp}`` and ``{frame}`` placeholders.
 
     Args:
@@ -52,7 +61,8 @@ class WatermarkFilter(VideoFilterProvider):
             ``bottom-right``, ``center``.
         color: RGB tuple (0-255).
         bg_color: Background RGB tuple, or None for no background.
-        font_scale: Text size multiplier (1.0 = ~16px height).
+        font_scale: OpenCV font scale (0.5 = small, 1.0 = normal, 2.0 = large).
+        thickness: Font thickness in pixels.
     """
 
     def __init__(
@@ -62,7 +72,8 @@ class WatermarkFilter(VideoFilterProvider):
         position: str = "top-right",
         color: tuple[int, int, int] = (255, 255, 255),
         bg_color: tuple[int, int, int] | None = (0, 0, 0),
-        font_scale: float = 1.0,
+        font_scale: float = 0.6,
+        thickness: int = 1,
     ) -> None:
         if position not in _POSITIONS:
             raise ValueError(f"position must be one of {sorted(_POSITIONS)}, got {position!r}")
@@ -71,9 +82,10 @@ class WatermarkFilter(VideoFilterProvider):
         self._color = color
         self._bg_color = bg_color
         self._font_scale = font_scale
+        self._thickness = thickness
+        self._cv2 = _import_cv2()
         self._np = _import_numpy()
-        self._char_w = max(1, int(8 * font_scale))
-        self._char_h = max(1, int(16 * font_scale))
+        self._font = self._cv2.FONT_HERSHEY_SIMPLEX
 
     @property
     def name(self) -> str:
@@ -84,26 +96,43 @@ class WatermarkFilter(VideoFilterProvider):
             return frame
 
         text = self._resolve_text(frame)
+        cv2 = self._cv2
         np = self._np
 
         w, h = frame.width, frame.height
         arr = np.frombuffer(frame.data, dtype=np.uint8).reshape(h, w, 3).copy()
 
-        text_w = len(text) * self._char_w
-        text_h = self._char_h
-        x, y = self._compute_position(w, h, text_w, text_h)
+        # Measure text size
+        (text_w, text_h), baseline = cv2.getTextSize(
+            text,
+            self._font,
+            self._font_scale,
+            self._thickness,
+        )
+        x, y = self._compute_position(w, h, text_w, text_h + baseline)
 
         # Draw background rectangle
         if self._bg_color is not None:
             pad = 4
-            y1 = max(0, y - pad)
-            y2 = min(h, y + text_h + pad)
-            x1 = max(0, x - pad)
-            x2 = min(w, x + text_w + pad)
-            arr[y1:y2, x1:x2] = self._bg_color
+            cv2.rectangle(
+                arr,
+                (x - pad, y - pad),
+                (x + text_w + pad, y + text_h + baseline + pad),
+                self._color_rgb_to_bgr(self._bg_color),
+                -1,  # filled
+            )
 
-        # Draw text character by character using simple block rendering
-        self._draw_text(arr, text, x, y, w, h)
+        # Draw text (OpenCV putText origin is bottom-left of text)
+        cv2.putText(
+            arr,
+            text,
+            (x, y + text_h),
+            self._font,
+            self._font_scale,
+            self._color_rgb_to_bgr(self._color),
+            self._thickness,
+            cv2.LINE_AA,
+        )
 
         from roomkit.video.video_frame import VideoFrame
 
@@ -117,11 +146,20 @@ class WatermarkFilter(VideoFilterProvider):
             sequence=frame.sequence,
         )
 
+    @staticmethod
+    def _color_rgb_to_bgr(
+        color: tuple[int, int, int],
+    ) -> tuple[int, int, int]:
+        """Our frames are RGB but OpenCV drawing functions expect BGR."""
+        return (color[2], color[1], color[0])
+
     def _resolve_text(self, frame: VideoFrame) -> str:
-        """Replace placeholders in the text template."""
         text = self._text
         if "{timestamp}" in text:
-            text = text.replace("{timestamp}", datetime.now(UTC).strftime("%H:%M:%S"))
+            text = text.replace(
+                "{timestamp}",
+                datetime.now(UTC).strftime("%H:%M:%S"),
+            )
         if "{frame}" in text:
             text = text.replace("{frame}", str(frame.sequence))
         return text
@@ -148,27 +186,3 @@ class WatermarkFilter(VideoFilterProvider):
         else:
             y = (img_h - text_h) // 2
         return max(0, x), max(0, y)
-
-    def _draw_text(
-        self,
-        arr: object,
-        text: str,
-        x: int,
-        y: int,
-        img_w: int,
-        img_h: int,
-    ) -> None:
-        """Draw text using simple block characters (no OpenCV needed)."""
-        for ch in text:
-            if x + self._char_w > img_w:
-                break
-            # Simple block font: fill character area with color
-            # Skip spaces
-            if ch != " ":
-                y1 = max(0, y + 2)
-                y2 = min(img_h, y + self._char_h - 2)
-                x1 = max(0, x + 1)
-                x2 = min(img_w, x + self._char_w - 1)
-                if y2 > y1 and x2 > x1:
-                    arr[y1:y2, x1:x2] = self._color  # type: ignore[index]
-            x += self._char_w
