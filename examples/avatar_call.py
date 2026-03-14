@@ -66,6 +66,11 @@ class SilenceTTSProvider(TTSProvider):
     def default_voice(self) -> str:
         return "silence"
 
+    async def synthesize(self, text: str, *, voice: str | None = None):  # type: ignore[override]
+        from roomkit.models.event import AudioContent
+
+        return AudioContent(url="mock://silence", mime_type="audio/pcm", transcript=text)
+
     async def synthesize_stream(
         self,
         text: str,
