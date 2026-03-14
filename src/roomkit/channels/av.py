@@ -14,16 +14,17 @@ from roomkit.video.backends.base import VideoBackend
 from roomkit.video.pipeline.engine import VideoPipeline
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import AsyncIterator, Callable
 
     from roomkit.models.channel import ChannelBinding
     from roomkit.recorder.base import ChannelRecordingConfig
+    from roomkit.video.avatar.base import AvatarProvider
     from roomkit.video.base import VideoSession
     from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.video_frame import VideoFrame
     from roomkit.video.vision.base import VisionProvider, VisionResult
     from roomkit.voice.backends.base import VoiceBackend
-    from roomkit.voice.base import VoiceSession
+    from roomkit.voice.base import AudioChunk, VoiceSession
     from roomkit.voice.pipeline.config import AudioPipelineConfig
     from roomkit.voice.stt.base import STTProvider
     from roomkit.voice.tts.base import TTSProvider
@@ -57,6 +58,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         video_pipeline: VideoPipelineConfig | None = None,
         vision: VisionProvider | None = None,
         vision_interval_ms: int = 2000,
+        avatar: AvatarProvider | None = None,
         recording: ChannelRecordingConfig | None = None,
         **voice_kwargs: Any,
     ) -> None:
@@ -90,6 +92,9 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         else:
             self._video_pipeline = None
         self._video_pipeline_config = video_pipeline
+
+        # Avatar: lip-synced video generation from TTS audio
+        self._avatar = avatar
 
         # Wire video callbacks from the combined A/V backend
         if isinstance(backend, VideoBackend):
@@ -213,7 +218,9 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         super().unbind_session(session)
 
     async def close(self) -> None:
-        """Close vision provider and video state, then delegate to parent."""
+        """Close avatar, vision, and video state, then delegate to parent."""
+        if self._avatar:
+            await self._avatar.close()
         if self._vision:
             await self._vision.close()
         self._last_vision_results.clear()
@@ -221,6 +228,51 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         self._video_media_taps.clear()
         self._session_ready_pending_video.clear()
         await super().close()
+
+    # -- Avatar: TTS audio → lip-synced video frames ---------------------------
+
+    async def _wrap_outbound(
+        self,
+        session: VoiceSession,
+        chunks: AsyncIterator[AudioChunk],
+    ) -> AsyncIterator[AudioChunk]:
+        """Wrap TTS outbound stream to feed avatar with audio chunks.
+
+        Tees each audio chunk: one copy goes to the voice backend
+        (speaker), the other feeds the avatar which generates
+        lip-synced video frames sent to the video backend.
+        """
+        # If no avatar, delegate to parent (pipeline outbound processing)
+        if self._avatar is None or not self._avatar.is_started:
+            async for chunk in super()._wrap_outbound(session, chunks):
+                yield chunk
+            return
+
+        async for chunk in super()._wrap_outbound(session, chunks):
+            # Feed audio to avatar → get video frames
+            if chunk.data:
+                frames = self._avatar.feed_audio(chunk.data, chunk.sample_rate)
+                for frame in frames:
+                    # Send through video pipeline if configured
+                    if self._video_pipeline is not None:
+                        processed = self._video_pipeline.process_inbound(
+                            session.id,
+                            frame,
+                        )
+                        if processed is not None:
+                            frame = processed
+                    # Send to video taps
+                    for tap in self._video_media_taps:
+                        tap(session, frame)  # type: ignore[arg-type]
+                    # Send to video backend
+                    if isinstance(self._backend, VideoBackend):
+                        await self._backend.send_video(session, frame)
+            yield chunk
+
+        # Flush avatar (mouth closing animation)
+        for frame in self._avatar.flush():
+            if isinstance(self._backend, VideoBackend):
+                await self._backend.send_video(session, frame)
 
     # -- Capabilities ----------------------------------------------------------
 
@@ -238,6 +290,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         parent_info = super().info
         parent_info["vision"] = self._vision.name if self._vision else None
         parent_info["vision_interval_ms"] = self._vision_interval_ms
+        parent_info["avatar"] = self._avatar.name if self._avatar else None
         return parent_info
 
     # -- Video session lookup --------------------------------------------------
