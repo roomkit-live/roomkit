@@ -97,11 +97,14 @@ class VideoHooksMixin:
 
     async def _analyze_frame(self, session: VideoSession, frame: VideoFrame, room_id: str) -> None:
         """Run vision analysis on a frame. Interval check done in caller."""
-        if self._vision is None:
+        # Pipeline vision takes precedence over direct channel vision
+        pipeline = getattr(self, "_video_pipeline", None)
+        vision = pipeline.config.vision if pipeline and pipeline.config.vision else self._vision
+        if vision is None:
             return
         t0 = time.perf_counter()
         try:
-            result = await self._vision.analyze_frame(frame)
+            result = await vision.analyze_frame(frame)
         except Exception:
             logger.exception("Vision analysis failed for session %s", session.id)
             return
@@ -109,7 +112,7 @@ class VideoHooksMixin:
         logger.info(
             "Vision analysis: %.0fms (%s, session %s)",
             elapsed_ms,
-            self._vision.name,
+            vision.name,
             session.id[:8],
         )
 

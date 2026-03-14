@@ -19,7 +19,14 @@ from roomkit.video.base import (
     VideoSessionReadyCallback,
     VideoSessionState,
 )
-from roomkit.video.pipeline import VideoPipelineConfig
+from roomkit.video.pipeline import (
+    MockVideoDecoderProvider,
+    MockVideoResizerProvider,
+    VideoDecoderProvider,
+    VideoPipeline,
+    VideoPipelineConfig,
+    VideoResizerProvider,
+)
 from roomkit.video.recorder import (
     MockVideoRecorder,
     VideoRecorder,
@@ -64,7 +71,12 @@ __all__ = [
     "MockVideoCall",
     "MockVisionProvider",
     # Pipeline
+    "MockVideoDecoderProvider",
+    "MockVideoResizerProvider",
+    "VideoDecoderProvider",
+    "VideoPipeline",
     "VideoPipelineConfig",
+    "VideoResizerProvider",
     # AI integration
     "setup_video_vision",
     # Lazy loaders

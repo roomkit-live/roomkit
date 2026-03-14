@@ -70,6 +70,14 @@ class VideoChannel(VideoHooksMixin, Channel):
         self._vision_interval_ms = vision_interval_ms
         self._pipeline = pipeline
         self._recording = recording
+
+        # Create video pipeline engine if config has processing stages
+        from roomkit.video.pipeline.engine import VideoPipeline
+
+        if pipeline is not None and (pipeline.decoder or pipeline.resizer):
+            self._video_pipeline: VideoPipeline | None = VideoPipeline(pipeline)
+        else:
+            self._video_pipeline = None
         self._framework: RoomKit | None = None
 
         # Resolve recorder from pipeline
@@ -259,10 +267,22 @@ class VideoChannel(VideoHooksMixin, Channel):
     # -------------------------------------------------------------------------
     # Backend callbacks
     def _on_video_received(self, session: VideoSession, frame: VideoFrame) -> None:
-        """Handle a raw video frame from the backend."""
+        """Handle a video frame from the backend.
+
+        If a pipeline is configured, the frame goes through decode → resize
+        before reaching taps and vision.  Otherwise it's passed as-is.
+        """
         binding_info = self._session_bindings.get(session.id)
         if binding_info is None:
             return
+
+        # Run pipeline stages (decoder, resizer) if configured
+        if self._video_pipeline is not None:
+            processed = self._video_pipeline.process_inbound(session.id, frame)
+            if processed is None:
+                return  # frame dropped (e.g., decoder needs keyframe)
+            frame = processed
+
         # Recorder tap runs on every frame
         rec_handle = self._recording_handles.get(session.id)
         if rec_handle and self._recorder:
@@ -270,7 +290,14 @@ class VideoChannel(VideoHooksMixin, Channel):
         # Room-level media taps
         for tap in self._media_taps:
             tap(session, frame)
-        if self._vision is None:
+
+        # Vision: from pipeline config, or direct on channel
+        vision = (
+            self._video_pipeline.config.vision
+            if self._video_pipeline is not None
+            else self._vision
+        )
+        if vision is None:
             return
         # Throttle before creating a task — avoids O(fps) task allocation
         if frame.timestamp_ms is not None:

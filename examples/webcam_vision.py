@@ -49,6 +49,7 @@ from roomkit import (
     OpenAIVisionProvider,
     RoomKit,
     VideoChannel,
+    VideoPipelineConfig,
     setup_video_vision,
 )
 from roomkit.channels.ai import AIChannel
@@ -163,11 +164,14 @@ async def main() -> None:
     # --- Vision provider -----------------------------------------------------
     vision = _build_vision_provider(args)
 
-    # --- Video channel -------------------------------------------------------
+    # --- Video channel with pipeline ------------------------------------------
+    # Vision runs inside the pipeline — frames are already raw (webcam),
+    # so no decoder needed.  For RTP/SIP backends, add a decoder stage
+    # to convert VP9/H.264 → raw pixels before vision analysis.
     video = VideoChannel(
         "video-main",
         backend=backend,
-        vision=vision,
+        pipeline=VideoPipelineConfig(vision=vision),
         vision_interval_ms=args.interval,
     )
     kit.register_channel(video)
