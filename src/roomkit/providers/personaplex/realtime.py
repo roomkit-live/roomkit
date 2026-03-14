@@ -117,11 +117,13 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
         ssl_verify: bool = False,
         default_voice_prompt: str = "NATF2.pt",
         response_end_timeout: float = 1.0,
+        seed: int = -1,
     ) -> None:
         self._server_url = server_url.rstrip("/")
         self._ssl_verify = ssl_verify
         self._default_voice_prompt = default_voice_prompt
         self._default_response_end_timeout = response_end_timeout
+        self._default_seed = seed
 
         self._states: dict[str, _SessionState] = {}
 
@@ -164,7 +166,7 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
         pc = provider_config or {}
         voice_prompt = voice or pc.get("voice_prompt", self._default_voice_prompt)
         text_prompt = system_prompt or ""
-        seed = pc.get("seed", -1)
+        seed = pc.get("seed", self._default_seed)
         timeout = pc.get("response_end_timeout", self._default_response_end_timeout)
 
         url = self._build_url(voice_prompt, text_prompt, seed)

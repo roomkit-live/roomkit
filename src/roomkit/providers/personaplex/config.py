@@ -25,3 +25,4 @@ class PersonaPlexConfig(BaseModel):
     ssl_verify: bool = False
     default_voice_prompt: str = "NATF2.pt"
     response_end_timeout: float = 1.0
+    seed: int = -1

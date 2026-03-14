@@ -58,7 +58,7 @@ async def main() -> None:
     kit = RoomKit()
 
     # --- PersonaPlex provider (speech-to-speech) ---
-    provider = PersonaPlexRealtimeProvider(server_url=server_url)
+    provider = PersonaPlexRealtimeProvider(server_url=server_url, seed=seed)
 
     # --- AEC (Acoustic Echo Cancellation) ---
     # PersonaPlex uses 24kHz audio natively
@@ -109,7 +109,6 @@ async def main() -> None:
         voice=voice_prompt,
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
-        provider_config={"seed": seed},
     )
     kit.register_channel(channel)
 

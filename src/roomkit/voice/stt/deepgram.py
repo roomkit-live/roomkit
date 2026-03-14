@@ -266,6 +266,7 @@ class DeepgramSTTProvider(STTProvider):
             connection.on(EventType.CLOSE, on_close)
 
             await connection.start_listening()
+            logger.info("Deepgram stream: listening started, sending audio...")
 
             # Sender task: feed audio chunks to Deepgram
             async def send_audio() -> None:
@@ -274,6 +275,9 @@ class DeepgramSTTProvider(STTProvider):
                     if first_chunk.data:
                         await connection.send_media(first_chunk.data)
                         chunks_sent += 1
+                        logger.debug(
+                            "Deepgram: sent first chunk (%d bytes)", len(first_chunk.data)
+                        )
                     async for chunk in audio_stream:
                         if chunk.data:
                             await connection.send_media(chunk.data)
