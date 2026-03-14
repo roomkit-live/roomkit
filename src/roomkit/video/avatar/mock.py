@@ -67,6 +67,19 @@ class MockAvatarProvider(AvatarProvider):
         self._width = width
         self._height = height
         self._started = True
+        # Try to decode the reference image for display
+        self._ref_frame_data: bytes | None = None
+        try:
+            import io
+
+            import numpy as np
+            from PIL import Image
+
+            img = Image.open(io.BytesIO(reference_image)).convert("RGB")
+            img = img.resize((width, height))
+            self._ref_frame_data = np.array(img).tobytes()
+        except Exception:  # nosec B110 — fall back to solid color
+            pass
 
     def feed_audio(
         self,
@@ -98,8 +111,8 @@ class MockAvatarProvider(AvatarProvider):
         from roomkit.video.video_frame import VideoFrame
 
         w, h = self._width, self._height
-        pixel = bytes(color)
-        data = pixel * (w * h)
+        # Use reference image if available, otherwise solid color
+        data = self._ref_frame_data if self._ref_frame_data else bytes(color) * (w * h)
         return VideoFrame(
             data=data,
             codec="raw_rgb24",
