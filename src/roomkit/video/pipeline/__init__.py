@@ -9,6 +9,7 @@ from roomkit.video.pipeline.filter import (
     FilterContext,
     MockVideoFilterProvider,
     VideoFilterProvider,
+    YOLODetectorFilter,
 )
 from roomkit.video.pipeline.filter.censor import CensorVideoFilter
 from roomkit.video.pipeline.resizer import MockVideoResizerProvider, VideoResizerProvider
@@ -24,4 +25,5 @@ __all__ = [
     "VideoPipeline",
     "VideoPipelineConfig",
     "VideoResizerProvider",
+    "YOLODetectorFilter",
 ]

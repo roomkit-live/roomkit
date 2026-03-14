@@ -8,6 +8,11 @@ the MP4 file.
 
 Pipeline:  Camera → [CensorFilter] → taps (recorder, vision)
 
+With --yolo:
+    Camera → [YOLODetectorFilter → CensorFilter] → taps (recorder, vision)
+    YOLO detects objects every frame, updating labels_detected.
+    CensorFilter reads labels_detected and censors immediately.
+
 Output:  recordings/room_*.mp4  (censored sections are black)
 
 Prerequisites:
@@ -17,9 +22,14 @@ Prerequisites:
     pip install roomkit[gemini]
     export GEMINI_API_KEY=AIza...
 
+    # For YOLO detection:
+    pip install ultralytics
+
 Run with:
     uv run python examples/webcam_censor.py                  # mock vision
     uv run python examples/webcam_censor.py --gemini         # real vision
+    uv run python examples/webcam_censor.py --yolo           # YOLO + mock vision
+    uv run python examples/webcam_censor.py --yolo --gemini  # YOLO + Gemini vision
 
 Press Ctrl+C to stop.
 """
@@ -46,7 +56,9 @@ from roomkit import (
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.recorder.pyav import PyAVMediaRecorder
 from roomkit.video.backends.local import LocalVideoBackend
+from roomkit.video.pipeline.filter.base import VideoFilterProvider
 from roomkit.video.pipeline.filter.censor import CensorVideoFilter
+from roomkit.video.pipeline.filter.yolo import YOLODetectorFilter
 from roomkit.video.vision.base import VisionProvider
 
 logging.basicConfig(level=logging.INFO, format="%(name)s  %(message)s")
@@ -92,6 +104,7 @@ def _build_vision(args: argparse.Namespace) -> VisionProvider:
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Webcam Censor Demo")
     parser.add_argument("--gemini", action="store_true", help="Use Gemini vision")
+    parser.add_argument("--yolo", action="store_true", help="Use YOLO object detection")
     parser.add_argument("--device", type=int, default=0, help="Camera device index")
     parser.add_argument("--fps", type=int, default=15, help="Capture FPS")
     parser.add_argument("--interval", type=int, default=3000, help="Vision interval ms")
@@ -104,6 +117,13 @@ async def main() -> None:
     vision = _build_vision(args)
     censor = CensorVideoFilter(blocked_labels={"person"}, grace_frames=30)
 
+    # Build filter chain: YOLO (optional) → Censor
+    filters: list[VideoFilterProvider] = []
+    if args.yolo:
+        yolo = YOLODetectorFilter(confidence=0.5, every_n_frames=1)
+        filters.append(yolo)
+    filters.append(censor)
+
     # --- Recorder: PyAV → MP4 (records post-filter frames) -----------------
     recorder = PyAVMediaRecorder()
 
@@ -111,7 +131,7 @@ async def main() -> None:
         "video-main",
         backend=backend,
         pipeline=VideoPipelineConfig(
-            filters=[censor],
+            filters=filters,
             vision=vision,
         ),
         vision_interval_ms=args.interval,
@@ -161,6 +181,7 @@ async def main() -> None:
     print("Webcam Censor + Recording Demo")
     print("=" * 60)
     print(f"Mode    : {'Gemini' if args.gemini else 'Mock'} vision")
+    print(f"YOLO    : {'enabled' if args.yolo else 'disabled'}")
     print("Filter  : censor (blocked: person)")
     print(f"Camera  : device {args.device} at 640x480 @ {args.fps}fps")
     print(f"Vision  : every {args.interval}ms")
