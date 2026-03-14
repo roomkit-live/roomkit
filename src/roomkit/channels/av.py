@@ -297,11 +297,19 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
 
         is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
 
-        # Send NALs directly via the video call session for proper
-        # RTP packetization (individual NALs + auto-increment timestamp)
+        # Send NALs via the video call session's underlying RTP session
+        # for proper packetization (individual NALs + auto-timestamp)
         vcs = getattr(self._backend, "_video_call_sessions", {}).get(session.id)
         if vcs is not None:
-            vcs.send_frame_auto(nals, is_key)
+            # VideoCallSession wraps a VideoRTPSession
+            rtp_session = getattr(vcs, "_video_session", None)
+            if rtp_session is not None and hasattr(rtp_session, "send_frame_auto"):
+                rtp_session.send_frame_auto(nals, is_key)
+                return
+            # Fallback: use send_frame with manual timestamp
+            self._avatar_frame_count = getattr(self, "_avatar_frame_count", 0) + 1
+            ts = self._avatar_frame_count * 3000  # 90kHz / 30fps
+            vcs.send_frame(nals, ts, is_key)
             return
 
         # Fallback: try the public send_video API
