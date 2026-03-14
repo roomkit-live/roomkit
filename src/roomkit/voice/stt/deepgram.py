@@ -43,7 +43,7 @@ class DeepgramConfig:
     api_key: str
 
     # Model & language
-    model: str = "nova-3"
+    model: str = "nova-2"
     language: str = "en"
     version: str | None = None
 
