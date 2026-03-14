@@ -120,6 +120,15 @@ class VideoHooksMixin:
 
         self._last_vision_results[session.id] = result
 
+        # Update pipeline filter context with latest vision result
+        pipeline = getattr(self, "_video_pipeline", None)
+        if pipeline is not None and pipeline._config.filter is not None:
+            from roomkit.video.pipeline.filter.base import FilterContext
+
+            ctx = pipeline._filter_contexts.setdefault(session.id, FilterContext())
+            ctx.last_vision_result = result
+            ctx.labels_detected = set(result.labels)
+
         if not self._framework or not result.description:
             return
 

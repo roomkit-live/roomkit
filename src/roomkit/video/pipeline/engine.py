@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from roomkit.video.pipeline.filter.base import FilterContext
+
 if TYPE_CHECKING:
     from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.video_frame import VideoFrame
@@ -17,14 +19,17 @@ class VideoPipeline:
     """Orchestrates inbound video processing through pluggable stages.
 
     Inbound processing order:
-        [Decoder] -> [Resizer] -> return processed frame
+        [Decoder] -> [Resizer] -> [Filter] -> return processed frame
 
     Stages are optional — only configured stages run.  Vision analysis
     is async and invoked separately via :meth:`process_vision`.
+    The filter stage receives a :class:`FilterContext` that is updated
+    automatically when vision results arrive.
     """
 
     def __init__(self, config: VideoPipelineConfig) -> None:
         self._config = config
+        self._filter_contexts: dict[str, FilterContext] = {}
 
     def process_inbound(self, session_id: str, frame: VideoFrame) -> VideoFrame | None:
         """Process an inbound video frame through the pipeline.
@@ -59,7 +64,14 @@ class VideoPipeline:
                 current = self._config.resizer.resize(current)
             except Exception:
                 logger.exception("Resizer error for frame seq=%d", frame.sequence)
-                # Continue with un-resized frame rather than dropping.
+
+        # Stage 3: Filter (inspect/replace based on vision context).
+        if self._config.filter is not None:
+            ctx = self._filter_contexts.setdefault(session_id, FilterContext())
+            try:
+                current = self._config.filter.filter(current, ctx)
+            except Exception:
+                logger.exception("Filter error for frame seq=%d", frame.sequence)
 
         return current
 
@@ -79,10 +91,18 @@ class VideoPipeline:
         if self._config.vision is None:
             return None
         try:
-            return await self._config.vision.analyze_frame(frame)
+            result = await self._config.vision.analyze_frame(frame)
         except Exception:
             logger.exception("Vision analysis error for session %s", session_id[:8])
             return None
+
+        # Update filter context with latest vision result
+        if result is not None and self._config.filter is not None:
+            ctx = self._filter_contexts.setdefault(session_id, FilterContext())
+            ctx.last_vision_result = result
+            ctx.labels_detected = set(result.labels)
+
+        return result
 
     def reset(self, session_id: str) -> None:
         """Reset pipeline state for a session.
@@ -92,9 +112,9 @@ class VideoPipeline:
         """
         if self._config.decoder is not None:
             self._config.decoder.reset()
-        if self._config.resizer is not None:
-            # Resizer is stateless per-frame, but close() may release caches.
-            pass
+        if self._config.filter is not None:
+            self._config.filter.reset()
+        self._filter_contexts.pop(session_id, None)
 
     def close(self) -> None:
         """Release all pipeline resources."""
@@ -102,3 +122,6 @@ class VideoPipeline:
             self._config.decoder.close()
         if self._config.resizer is not None:
             self._config.resizer.close()
+        if self._config.filter is not None:
+            self._config.filter.close()
+        self._filter_contexts.clear()

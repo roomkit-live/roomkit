@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from roomkit.video.pipeline.decoder.base import VideoDecoderProvider
+    from roomkit.video.pipeline.filter.base import VideoFilterProvider
     from roomkit.video.pipeline.resizer.base import VideoResizerProvider
     from roomkit.video.recorder.base import VideoRecorder, VideoRecordingConfig
     from roomkit.video.vision.base import VisionProvider
@@ -18,7 +19,7 @@ class VideoPipelineConfig:
 
     All stages are optional — only configured stages run.
 
-    Inbound order: [Decoder] -> [Resizer] -> taps/vision
+    Inbound order: [Decoder] -> [Resizer] -> [Filter] -> taps/vision
 
     Mirrors :class:`AudioPipelineConfig` for the voice subsystem.
     """
@@ -28,6 +29,9 @@ class VideoPipelineConfig:
 
     resizer: VideoResizerProvider | None = None
     """Optional resizer for scaling raw frames to target dimensions."""
+
+    filter: VideoFilterProvider | None = None
+    """Optional filter for inspecting/replacing frames (e.g., censor)."""
 
     vision: VisionProvider | None = None
     """Optional vision provider for periodic frame analysis."""

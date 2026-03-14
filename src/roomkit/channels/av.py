@@ -80,7 +80,9 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         self._session_ready_pending_video: set[str] = set()
 
         # Video pipeline (decoder, resizer, vision)
-        if video_pipeline is not None and (video_pipeline.decoder or video_pipeline.resizer):
+        if video_pipeline is not None and (
+            video_pipeline.decoder or video_pipeline.resizer or video_pipeline.filter
+        ):
             self._video_pipeline: VideoPipeline | None = VideoPipeline(video_pipeline)
         else:
             self._video_pipeline = None
