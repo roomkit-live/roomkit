@@ -19,12 +19,12 @@ class VideoPipeline:
     """Orchestrates inbound video processing through pluggable stages.
 
     Inbound processing order:
-        [Decoder] -> [Resizer] -> [Filter] -> return processed frame
+        [Decoder] -> [Resizer] -> [Filters...] -> return processed frame
 
     Stages are optional — only configured stages run.  Vision analysis
     is async and invoked separately via :meth:`process_vision`.
-    The filter stage receives a :class:`FilterContext` that is updated
-    automatically when vision results arrive.
+    Filters are chained — each receives a :class:`FilterContext` that
+    is updated automatically when vision results arrive.
     """
 
     def __init__(self, config: VideoPipelineConfig) -> None:
@@ -65,13 +65,14 @@ class VideoPipeline:
             except Exception:
                 logger.exception("Resizer error for frame seq=%d", frame.sequence)
 
-        # Stage 3: Filter (inspect/replace based on vision context).
-        if self._config.filter is not None:
+        # Stage 3: Filters (chained, each can inspect/replace).
+        if self._config.filters:
             ctx = self._filter_contexts.setdefault(session_id, FilterContext())
-            try:
-                current = self._config.filter.filter(current, ctx)
-            except Exception:
-                logger.exception("Filter error for frame seq=%d", frame.sequence)
+            for flt in self._config.filters:
+                try:
+                    current = flt.filter(current, ctx)
+                except Exception:
+                    logger.exception("Filter %s error for frame seq=%d", flt.name, frame.sequence)
 
         return current
 
@@ -97,7 +98,7 @@ class VideoPipeline:
             return None
 
         # Update filter context with latest vision result
-        if result is not None and self._config.filter is not None:
+        if result is not None and self._config.filters:
             ctx = self._filter_contexts.setdefault(session_id, FilterContext())
             ctx.last_vision_result = result
             ctx.labels_detected = set(result.labels)
@@ -112,8 +113,8 @@ class VideoPipeline:
         """
         if self._config.decoder is not None:
             self._config.decoder.reset()
-        if self._config.filter is not None:
-            self._config.filter.reset()
+        for flt in self._config.filters:
+            flt.reset()
         self._filter_contexts.pop(session_id, None)
 
     def close(self) -> None:
@@ -122,6 +123,6 @@ class VideoPipeline:
             self._config.decoder.close()
         if self._config.resizer is not None:
             self._config.resizer.close()
-        if self._config.filter is not None:
-            self._config.filter.close()
+        for flt in self._config.filters:
+            flt.close()
         self._filter_contexts.clear()

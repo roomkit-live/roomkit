@@ -101,7 +101,7 @@ async def main() -> None:
         "video-main",
         backend=backend,
         pipeline=VideoPipelineConfig(
-            filter=censor,
+            filters=[censor],
             vision=vision,
         ),
         vision_interval_ms=args.interval,

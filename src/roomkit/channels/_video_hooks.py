@@ -122,7 +122,7 @@ class VideoHooksMixin:
 
         # Update pipeline filter context with latest vision result
         pipeline = getattr(self, "_video_pipeline", None)
-        if pipeline is not None and pipeline._config.filter is not None:
+        if pipeline is not None and pipeline._config.filters:
             from roomkit.video.pipeline.filter.base import FilterContext
 
             ctx = pipeline._filter_contexts.setdefault(session.id, FilterContext())

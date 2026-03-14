@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,7 +19,11 @@ class VideoPipelineConfig:
 
     All stages are optional — only configured stages run.
 
-    Inbound order: [Decoder] -> [Resizer] -> [Filter] -> taps/vision
+    Inbound order: [Decoder] -> [Resizer] -> [Filters...] -> taps/vision
+
+    Filters is a list — multiple filters are chained in order
+    (e.g., censor + watermark + face blur).  Decoder, resizer,
+    and vision are singular (one per pipeline).
 
     Mirrors :class:`AudioPipelineConfig` for the voice subsystem.
     """
@@ -30,8 +34,8 @@ class VideoPipelineConfig:
     resizer: VideoResizerProvider | None = None
     """Optional resizer for scaling raw frames to target dimensions."""
 
-    filter: VideoFilterProvider | None = None
-    """Optional filter for inspecting/replacing frames (e.g., censor)."""
+    filters: list[VideoFilterProvider] = field(default_factory=list)
+    """Filters chained in order — each can inspect or replace frames."""
 
     vision: VisionProvider | None = None
     """Optional vision provider for periodic frame analysis."""
