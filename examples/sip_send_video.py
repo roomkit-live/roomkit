@@ -102,7 +102,7 @@ async def main() -> None:
         local_sip_addr=("0.0.0.0", 5060),  # nosec B104
         local_rtp_ip="0.0.0.0",  # nosec B104
         rtp_port_start=10000,
-        supported_video_codecs=["H264", "VP9"],
+        supported_video_codecs=["H264"],  # must match our encoder
     )
 
     encoder = SimpleH264Encoder(width=320, height=240, fps=15)
