@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from roomkit.video.avatar.base import AvatarProvider
     from roomkit.video.base import VideoSession
     from roomkit.video.pipeline.config import VideoPipelineConfig
+    from roomkit.video.pipeline.encoder.base import VideoEncoderProvider
     from roomkit.video.video_frame import VideoFrame
     from roomkit.video.vision.base import VisionProvider, VisionResult
     from roomkit.voice.backends.base import VoiceBackend
@@ -59,6 +60,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         vision: VisionProvider | None = None,
         vision_interval_ms: int = 2000,
         avatar: AvatarProvider | None = None,
+        avatar_encoder: VideoEncoderProvider | None = None,
         recording: ChannelRecordingConfig | None = None,
         **voice_kwargs: Any,
     ) -> None:
@@ -95,6 +97,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
 
         # Avatar: lip-synced video generation from TTS audio
         self._avatar = avatar
+        self._avatar_encoder = avatar_encoder
 
         # Wire video callbacks from the combined A/V backend
         if isinstance(backend, VideoBackend):
@@ -268,15 +271,29 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
                     # Send to video taps
                     for tap in self._video_media_taps:
                         tap(session, frame)  # type: ignore[arg-type]
-                    # Send to video backend
-                    if isinstance(self._backend, VideoBackend):
-                        await self._backend.send_video(session, frame.data)
+                    # Encode and send to video backend
+                    await self._send_avatar_frame(session, frame)
             yield chunk
 
         # Flush avatar (mouth closing animation)
         for frame in self._avatar.flush():
-            if isinstance(self._backend, VideoBackend):
-                await self._backend.send_video(session, frame.data)
+            await self._send_avatar_frame(session, frame)
+
+    async def _send_avatar_frame(self, session: VoiceSession, frame: VideoFrame) -> None:
+        """Encode a raw avatar frame and send via video backend."""
+        if not isinstance(self._backend, VideoBackend):
+            return
+        if self._avatar_encoder is not None:
+            # Encode raw → H.264 NAL units, send all NALs for this frame
+            nals = self._avatar_encoder.encode(frame)
+            if nals:
+                vcs = getattr(self._backend, "_video_call_sessions", {}).get(session.id)
+                if vcs is not None:
+                    is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
+                    vcs.send_frame(nals, 0, is_key)
+        else:
+            # Raw bytes (for backends that accept unencoded data)
+            await self._backend.send_video(session, frame.data)
 
     # -- Capabilities ----------------------------------------------------------
 

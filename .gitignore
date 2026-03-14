@@ -39,3 +39,4 @@ examples/*.onnx
 wa-session.db
 recordings/
 *.pt
+*.png

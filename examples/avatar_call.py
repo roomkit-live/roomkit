@@ -137,12 +137,16 @@ async def main() -> None:
         local_sip_addr=("0.0.0.0", args.sip_port),  # nosec B104
         local_rtp_ip=args.rtp_ip,
         rtp_port_start=10000,
-        supported_video_codecs=["H264", "VP9"],
+        supported_video_codecs=["H264"],  # must match avatar encoder
     )
 
-    # --- A/V channel with avatar -----------------------------------------------
+    # --- H.264 encoder for avatar frames → RTP ----------------------------------
     from roomkit.video.pipeline.config import VideoPipelineConfig
+    from roomkit.video.pipeline.encoder.pyav import PyAVVideoEncoder
 
+    avatar_encoder = PyAVVideoEncoder(width=512, height=512, fps=avatar.fps)
+
+    # --- A/V channel with avatar -----------------------------------------------
     av = AudioVideoChannel(
         "voice",
         stt=MockSTTProvider(),
@@ -150,6 +154,7 @@ async def main() -> None:
         backend=backend,
         pipeline=AudioPipelineConfig(),
         avatar=avatar,
+        avatar_encoder=avatar_encoder,
         video_pipeline=VideoPipelineConfig(
             filters=[WatermarkFilter(text="AI Avatar {timestamp}", position="bottom-left")],
         ),
