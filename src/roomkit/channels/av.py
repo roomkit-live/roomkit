@@ -249,13 +249,20 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         (speaker), the other feeds the avatar which generates
         lip-synced video frames sent to the video backend.
         """
+        logger.info(
+            "Avatar _wrap_outbound called (avatar=%s, started=%s)",
+            self._avatar.name if self._avatar else None,
+            self._avatar.is_started if self._avatar else False,
+        )
         # If no avatar, delegate to parent (pipeline outbound processing)
         if self._avatar is None or not self._avatar.is_started:
             async for chunk in super()._wrap_outbound(session, chunks):
                 yield chunk
             return
 
+        chunk_count = 0
         async for chunk in super()._wrap_outbound(session, chunks):
+            chunk_count += 1
             # Feed audio to avatar → get video frames
             if chunk.data:
                 frames = self._avatar.feed_audio(chunk.data, chunk.sample_rate)
@@ -274,6 +281,8 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
                     # Encode and send to video backend
                     await self._send_avatar_frame(session, frame)
             yield chunk
+
+        logger.info("Avatar wrap_outbound done: %d chunks yielded", chunk_count)
 
         # Flush avatar (mouth closing animation)
         for frame in self._avatar.flush():

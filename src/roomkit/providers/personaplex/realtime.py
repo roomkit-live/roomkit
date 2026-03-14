@@ -328,11 +328,16 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
             raise ImportError(msg) from exc
 
     def _build_url(self, voice_prompt: str, text_prompt: str, seed: int) -> str:
-        params = urlencode(
-            {"voice_prompt": voice_prompt, "text_prompt": text_prompt, "seed": str(seed)},
-            quote_via=quote,
-        )
-        return f"{self._server_url}?{params}"
+        params: dict[str, str] = {
+            "voice_prompt": voice_prompt,
+            "text_prompt": text_prompt,
+        }
+        # Only include seed when explicitly set; PersonaPlex server has a
+        # bug where presence of "seed" in query triggers a read from
+        # request._state instead of request.query.
+        if seed >= 0:
+            params["seed"] = str(seed)
+        return f"{self._server_url}?{urlencode(params, quote_via=quote)}"
 
     @staticmethod
     def _build_ssl_context(url: str) -> Any:
