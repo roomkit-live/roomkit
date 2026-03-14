@@ -280,23 +280,34 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             await self._send_avatar_frame(session, frame)
 
     async def _send_avatar_frame(self, session: VoiceSession, frame: VideoFrame) -> None:
-        """Encode a raw avatar frame and send via video backend."""
+        """Encode a raw avatar frame and send via video backend.
+
+        Uses the VideoCallSession directly for proper NAL unit handling
+        and auto-incrementing RTP timestamps.
+        """
         if not isinstance(self._backend, VideoBackend):
             return
-
-        video_session = self._backend.get_video_session(session.id)
-        if video_session is None:
+        if self._avatar_encoder is None:
             return
 
-        if self._avatar_encoder is not None:
-            # Encode raw → H.264 NAL units, concatenate for send_video
-            nals = self._avatar_encoder.encode(frame)
-            if nals:
-                nal_bytes = b"".join(nals)
-                await self._backend.send_video(video_session, nal_bytes)
-        else:
-            # Raw bytes (for backends that accept unencoded data)
-            await self._backend.send_video(video_session, frame.data)
+        # Encode raw RGB → H.264 NAL units (individual, not concatenated)
+        nals = self._avatar_encoder.encode(frame)
+        if not nals:
+            return
+
+        is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
+
+        # Send NALs directly via the video call session for proper
+        # RTP packetization (individual NALs + auto-increment timestamp)
+        vcs = getattr(self._backend, "_video_call_sessions", {}).get(session.id)
+        if vcs is not None:
+            vcs.send_frame_auto(nals, is_key)
+            return
+
+        # Fallback: try the public send_video API
+        video_session = self._backend.get_video_session(session.id)
+        if video_session is not None:
+            await self._backend.send_video(video_session, nals[0])
 
     # -- Capabilities ----------------------------------------------------------
 
