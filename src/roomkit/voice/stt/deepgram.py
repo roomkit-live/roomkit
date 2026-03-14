@@ -1,4 +1,4 @@
-"""Deepgram speech-to-text provider."""
+"""Deepgram speech-to-text provider using the official SDK."""
 
 from __future__ import annotations
 
@@ -8,8 +8,6 @@ import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
-
-import httpx
 
 from roomkit.voice.base import AudioChunk, TranscriptionResult
 from roomkit.voice.stt.base import STTProvider
@@ -21,11 +19,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _import_deepgram() -> Any:
+    """Import the Deepgram SDK, raising a clear error if missing."""
+    try:
+        import deepgram
+
+        return deepgram
+    except ImportError as exc:
+        raise ImportError(
+            "deepgram-sdk is required for DeepgramSTTProvider. "
+            "Install with: pip install roomkit[deepgram]"
+        ) from exc
+
+
 @dataclass
 class DeepgramConfig:
     """Configuration for Deepgram STT provider.
 
-    See https://developers.deepgram.com/reference/speech-to-text/listen-streaming
+    See https://developers.deepgram.com/docs/getting-started
     for the full parameter reference.
     """
 
@@ -44,8 +55,8 @@ class DeepgramConfig:
 
     # Content filtering
     profanity_filter: bool = False
-    redact: list[str] | None = None  # e.g. ["pci", "ssn"]
-    replace: list[str] | None = None  # e.g. ["old:new"]
+    redact: list[str] | None = None
+    replace: list[str] | None = None
     detect_entities: bool = False
 
     # Speech features
@@ -53,29 +64,33 @@ class DeepgramConfig:
     filler_words: bool = False
     multichannel: bool = False
 
-    # Keyword boosting (keywords uses legacy format, keyterm is Nova-3 only)
+    # Keyword boosting
     keywords: list[str] = field(default_factory=list)
     keyterm: list[str] = field(default_factory=list)
     search: list[str] = field(default_factory=list)
 
     # Real-time streaming options
     interim_results: bool = True
-    endpointing: int | bool = 300  # ms of silence, or False to disable
+    endpointing: int | bool = 300
     utterance_end_ms: int | None = None
     vad_events: bool = True
 
     # Misc
     tag: str | None = None
-    extra: list[str] = field(default_factory=list)  # e.g. ["key:value"]
+    extra: list[str] = field(default_factory=list)
     mip_opt_out: bool = False
 
 
 class DeepgramSTTProvider(STTProvider):
-    """Deepgram speech-to-text provider with streaming support."""
+    """Deepgram speech-to-text provider using the official SDK.
+
+    Uses ``deepgram-sdk`` for both batch and streaming transcription.
+    """
 
     def __init__(self, config: DeepgramConfig) -> None:
         self._config = config
-        self._client: httpx.AsyncClient | None = None
+        self._dg = _import_deepgram()
+        self._client = self._dg.AsyncDeepgramClient(api_key=config.api_key)
 
     @property
     def name(self) -> str:
@@ -85,158 +100,91 @@ class DeepgramSTTProvider(STTProvider):
     def supports_streaming(self) -> bool:
         return True
 
-    def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url="https://api.deepgram.com/v1",
-                headers={
-                    "Authorization": f"Token {self._config.api_key}",
-                    "Content-Type": "audio/wav",
-                },
-                timeout=60.0,
-            )
-        return self._client
-
-    def _build_query_params(self) -> dict[str, Any]:
-        """Build common query parameters for Deepgram API."""
+    def _build_connect_options(self, sample_rate: int = 16000) -> dict[str, Any]:
+        """Build keyword arguments for the SDK connect() call."""
         c = self._config
-        params: dict[str, Any] = {
+        opts: dict[str, Any] = {
             "model": c.model,
             "language": c.language,
+            "encoding": "linear16",
+            "sample_rate": str(sample_rate),
             "punctuate": c.punctuate,
-            "diarize": c.diarize,
             "smart_format": c.smart_format,
+            "diarize": c.diarize,
             "filler_words": c.filler_words,
             "numerals": c.numerals,
             "profanity_filter": c.profanity_filter,
             "detect_entities": c.detect_entities,
             "multichannel": c.multichannel,
             "dictation": c.dictation,
+            "interim_results": c.interim_results,
+            "vad_events": c.vad_events,
         }
-        # Optional scalar params
         if c.version is not None:
-            params["version"] = c.version
+            opts["version"] = c.version
+        if isinstance(c.endpointing, bool):
+            opts["endpointing"] = c.endpointing
+        else:
+            opts["endpointing"] = c.endpointing
+        if c.utterance_end_ms is not None:
+            opts["utterance_end_ms"] = c.utterance_end_ms
         if c.tag is not None:
-            params["tag"] = c.tag
+            opts["tag"] = c.tag
         if c.mip_opt_out:
-            params["mip_opt_out"] = True
-        # Optional list params
-        if c.keywords:
-            params["keywords"] = c.keywords
-        if c.keyterm:
-            params["keyterm"] = c.keyterm
-        if c.search:
-            params["search"] = c.search
-        if c.redact:
-            params["redact"] = c.redact
-        if c.replace:
-            params["replace"] = c.replace
-        if c.extra:
-            params["extra"] = c.extra
-        # Stringify bools
-        return {k: str(v).lower() if isinstance(v, bool) else v for k, v in params.items()}
-
-    @staticmethod
-    def _to_query_string(params: dict[str, Any]) -> str:
-        """Encode parameters as a query string, expanding list values."""
-        pairs: list[str] = []
-        for k, v in params.items():
-            if isinstance(v, list):
-                for item in v:
-                    pairs.append(f"{k}={item}")
-            else:
-                pairs.append(f"{k}={v}")
-        return "&".join(pairs)
+            opts["mip_opt_out"] = True
+        return opts
 
     async def transcribe(
-        self, audio: AudioContent | AudioChunk | AudioFrame
+        self,
+        audio: AudioContent | AudioChunk | AudioFrame,
     ) -> TranscriptionResult:
-        """Transcribe complete audio to text.
+        """Transcribe complete audio using the Deepgram REST API."""
+        t0 = time.monotonic()
 
-        Args:
-            audio: Audio content (URL), raw audio chunk, or audio frame.
-
-        Returns:
-            TranscriptionResult with text and metadata.
-        """
-        client = self._get_client()
-        params = self._build_query_params()
-
-        # Handle AudioContent (URL-based)
+        # Get audio bytes
         if hasattr(audio, "url"):
-            # Fetch audio from URL
+            import httpx
+
             async with httpx.AsyncClient() as fetch_client:
                 resp = await fetch_client.get(audio.url)
                 resp.raise_for_status()
                 audio_data = resp.content
-                content_type = resp.headers.get("content-type", "audio/wav")
         else:
-            # Handle AudioChunk or AudioFrame (raw bytes)
             audio_data = audio.data
-            audio_format = getattr(audio, "format", "raw")
 
-            # For raw PCM formats (including AudioFrame), set encoding params for Deepgram
-            if audio_format in ("pcm_s16le", "linear16", "raw"):
-                content_type = "audio/raw"
-                params["encoding"] = "linear16"
-                params["sample_rate"] = getattr(audio, "sample_rate", 16000)
-                params["channels"] = getattr(audio, "channels", 1)
-            else:
-                content_type = f"audio/{audio_format}"
+        sample_rate = getattr(audio, "sample_rate", 16000)
 
-        # Call Deepgram API
-        t0 = time.monotonic()
-        response = await client.post(
-            "/listen",
-            params=params,
-            content=audio_data,
-            headers={"Content-Type": content_type},
+        response = await self._client.listen.v1.media.transcribe_file(
+            request=audio_data,
+            model=self._config.model,
+            language=self._config.language,
+            smart_format=self._config.smart_format,
+            punctuate=self._config.punctuate,
+            encoding="linear16",
+            sample_rate=str(sample_rate),
         )
-        response.raise_for_status()
-        result = response.json()
 
         ttfb_ms = (time.monotonic() - t0) * 1000
-        from roomkit.telemetry.noop import NoopTelemetryProvider
+        logger.debug("Deepgram batch transcription: %.0fms", ttfb_ms)
 
-        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
-        telemetry.record_metric(
-            "roomkit.stt.ttfb_ms",
-            ttfb_ms,
-            unit="ms",
-            attributes={"provider": "deepgram", "model": self._config.model},
-        )
-
-        # Extract transcript
         try:
-            alt = result["results"]["channels"][0]["alternatives"][0]
-            transcript: str = alt.get("transcript", "")
-            confidence = alt.get("confidence")
-            language = result["results"]["channels"][0].get("detected_language")
+            alt = response.results.channels[0].alternatives[0]
             return TranscriptionResult(
-                text=transcript.strip(),
-                confidence=confidence,
-                language=language,
+                text=alt.transcript.strip(),
+                confidence=alt.confidence,
             )
-        except (KeyError, IndexError):
-            logger.warning("No transcript in Deepgram response: %s", result)
+        except (AttributeError, IndexError):
+            logger.warning("No transcript in Deepgram response")
             return TranscriptionResult(text="")
 
     async def transcribe_stream(
-        self, audio_stream: AsyncIterator[AudioChunk]
+        self,
+        audio_stream: AsyncIterator[AudioChunk],
     ) -> AsyncIterator[TranscriptionResult]:
-        """Stream transcription with partial results using WebSocket.
+        """Stream transcription using the Deepgram SDK WebSocket client."""
+        event_type = self._dg.core.events.EventType
 
-        Args:
-            audio_stream: Async iterator of audio chunks.
-
-        Yields:
-            TranscriptionResult with partial and final transcripts.
-        """
-        import json
-
-        import websockets
-
-        # Read the first chunk to detect the actual sample rate.
+        # Read first chunk to detect sample rate
         first_chunk: AudioChunk | None = None
         async for chunk in audio_stream:
             first_chunk = chunk
@@ -253,117 +201,77 @@ class DeepgramSTTProvider(STTProvider):
             sample_rate,
         )
 
-        # Build WebSocket URL with query params
-        params = self._build_query_params()
-        params["interim_results"] = str(self._config.interim_results).lower()
-        if isinstance(self._config.endpointing, bool):
-            params["endpointing"] = str(self._config.endpointing).lower()
-        else:
-            params["endpointing"] = self._config.endpointing
-        params["vad_events"] = str(self._config.vad_events).lower()
-        if self._config.utterance_end_ms is not None:
-            params["utterance_end_ms"] = self._config.utterance_end_ms
-        params["encoding"] = "linear16"
-        params["sample_rate"] = str(sample_rate)
+        opts = self._build_connect_options(sample_rate)
 
-        query_string = self._to_query_string(params)
-        ws_url = f"wss://api.deepgram.com/v1/listen?{query_string}"
+        # Results queue — SDK callbacks push, our async generator pulls
+        result_queue: asyncio.Queue[TranscriptionResult | None] = asyncio.Queue()
 
-        headers = [("Authorization", f"Token {self._config.api_key}")]
+        def on_message(message: Any) -> None:
+            """Handle transcription results from the SDK."""
+            try:
+                if not hasattr(message, "channel"):
+                    return
+                alt = message.channel.alternatives[0]
+                transcript = alt.transcript
+                if not transcript:
+                    return
+                is_final = getattr(message, "is_final", False)
+                confidence = getattr(alt, "confidence", None)
+                words = getattr(alt, "words", [])
+                result_queue.put_nowait(
+                    TranscriptionResult(
+                        text=transcript,
+                        is_final=is_final,
+                        confidence=confidence,
+                        words=words,
+                    )
+                )
+            except (AttributeError, IndexError):
+                pass
 
-        logger.debug("Deepgram stream: connecting to %s", ws_url[:80])
-        async with websockets.connect(ws_url, additional_headers=headers, open_timeout=30) as ws:
-            logger.debug("Deepgram stream: WebSocket connected")
+        def on_error(error: Any) -> None:
+            logger.error("Deepgram stream error: %s", error)
 
-            # Start sender task
-            chunks_sent = 0
+        def on_close(_: Any) -> None:
+            result_queue.put_nowait(None)  # sentinel
 
+        async with self._client.listen.v1.connect(**opts) as connection:
+            connection.on(event_type.MESSAGE, on_message)
+            connection.on(event_type.ERROR, on_error)
+            connection.on(event_type.CLOSE, on_close)
+
+            await connection.start_listening()
+
+            # Sender task: feed audio chunks to Deepgram
             async def send_audio() -> None:
-                nonlocal chunks_sent
+                chunks_sent = 0
                 try:
-                    # Send the first chunk that was consumed to detect sample rate
                     if first_chunk.data:
-                        await ws.send(first_chunk.data)
+                        await connection.send_media(first_chunk.data)
                         chunks_sent += 1
                     async for chunk in audio_stream:
                         if chunk.data:
-                            await ws.send(chunk.data)
+                            await connection.send_media(chunk.data)
                             chunks_sent += 1
                         if chunk.is_final:
                             break
-                    logger.debug("Deepgram stream: sender done, %d chunks sent", chunks_sent)
-                    # Tell Deepgram to flush remaining audio and close
-                    await ws.send(json.dumps({"type": "CloseStream"}))
-                except Exception as e:
-                    logger.error(
-                        "Error sending audio to Deepgram (%d chunks sent): %s", chunks_sent, e
+                    logger.debug(
+                        "Deepgram stream: sender done, %d chunks",
+                        chunks_sent,
                     )
-
-                # NOTE: Do NOT call ws.close() here — let Deepgram close
-                # from its side after flushing final results.  Calling
-                # ws.close() races with the receiver loop and can drop
-                # final transcriptions.
+                except Exception as e:
+                    logger.error("Error sending audio to Deepgram: %s", e)
+                finally:
+                    connection.finish()
 
             sender_task = asyncio.create_task(send_audio())
 
             try:
-                msg_count = 0
-                async for message in ws:
-                    if isinstance(message, bytes):
-                        continue
-
-                    data = json.loads(message)
-                    msg_count += 1
-                    msg_type = data.get("type", "unknown")
-
-                    # Handle transcription results
-                    if msg_type == "Results":
-                        channel = data.get("channel", {})
-                        alternatives = channel.get("alternatives", [])
-                        if alternatives:
-                            alt = alternatives[0]
-                            transcript = alt.get("transcript", "")
-                            confidence = alt.get("confidence")
-                            words = alt.get("words", [])
-                            is_final = data.get("is_final", False)
-
-                            logger.debug(
-                                "Deepgram stream msg #%d: type=%s, final=%s, text=%r",
-                                msg_count,
-                                msg_type,
-                                is_final,
-                                transcript[:80] if transcript else "",
-                            )
-
-                            if transcript:
-                                yield TranscriptionResult(
-                                    text=transcript,
-                                    is_final=is_final,
-                                    confidence=confidence,
-                                    language=data.get("channel", {}).get("detected_language"),
-                                    words=words,
-                                )
-                        else:
-                            logger.debug(
-                                "Deepgram stream msg #%d: type=%s, no alternatives",
-                                msg_count,
-                                msg_type,
-                            )
-
-                    # Handle speech events
-                    elif msg_type == "SpeechStarted":
-                        logger.debug("Deepgram stream msg #%d: SpeechStarted", msg_count)
-                    elif msg_type == "UtteranceEnd":
-                        logger.debug("Deepgram stream msg #%d: UtteranceEnd", msg_count)
-                    else:
-                        logger.debug("Deepgram stream msg #%d: type=%s", msg_count, msg_type)
-
-                logger.debug(
-                    "Deepgram stream: WebSocket closed after %d messages, %d chunks sent",
-                    msg_count,
-                    chunks_sent,
-                )
-
+                while True:
+                    result = await result_queue.get()
+                    if result is None:
+                        break
+                    yield result
             finally:
                 sender_task.cancel()
                 import contextlib
@@ -371,8 +279,6 @@ class DeepgramSTTProvider(STTProvider):
                 with contextlib.suppress(asyncio.CancelledError):
                     await sender_task
 
-    async def close(self) -> None:  # noqa: B027
+    async def close(self) -> None:
         """Release resources."""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        pass

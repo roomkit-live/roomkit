@@ -21,6 +21,8 @@ Environment variables:
     DENOISE             Enable RNNoise noise suppression: 1 | 0 (default: 0)
     MUTE_MIC            Mute mic during playback: 1 | 0 (default: auto,
                         off with AEC)
+    DEBUG_AUDIO         Save pipeline stage WAVs to ./debug_audio/: 1 | 0
+                        (default: 0)
 
 Press Ctrl+C to stop.
 """
@@ -77,8 +79,8 @@ async def main() -> None:
     if aec_mode in ("1", "webrtc"):
         from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 
-        aec = WebRTCAECProvider(sample_rate=sample_rate)
-        logger.info("AEC enabled (WebRTC AEC3)")
+        aec = WebRTCAECProvider(sample_rate=sample_rate, enable_ns=True)
+        logger.info("AEC enabled (WebRTC AEC3 + noise suppression)")
     elif aec_mode == "speex":
         from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
 
@@ -96,10 +98,22 @@ async def main() -> None:
 
         denoiser = RNNoiseDenoiserProvider(sample_rate=sample_rate)
 
+    # --- Debug taps (save WAVs at each pipeline stage for debugging) ---
+    debug_taps = None
+    if os.environ.get("DEBUG_AUDIO", "0") == "1":
+        from roomkit.voice.pipeline.debug_taps import PipelineDebugTaps
+
+        debug_taps = PipelineDebugTaps(output_dir="./debug_audio/", stages=["all"])
+        logger.info("Debug audio taps enabled → ./debug_audio/")
+
     # --- Audio pipeline (sidecar for AEC + denoiser processing) ---
     from roomkit.voice.pipeline.config import AudioPipelineConfig
 
-    pipeline = AudioPipelineConfig(aec=aec, denoiser=denoiser) if (aec or denoiser) else None
+    pipeline = (
+        AudioPipelineConfig(aec=aec, denoiser=denoiser, debug_taps=debug_taps)
+        if (aec or denoiser or debug_taps)
+        else None
+    )
 
     # When AEC is active it removes speaker echo from the mic signal, so we
     # can keep the mic open during playback.  Without AEC the mic is muted

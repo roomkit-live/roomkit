@@ -935,6 +935,18 @@ class RealtimeVoiceChannel(Channel):
         raw = audio if isinstance(audio, bytes) else audio.data
         self._fire_audio_level_task(session, rms_db(raw), HookTrigger.ON_OUTPUT_AUDIO_LEVEL)
 
+    def _set_aec_active(self, active: bool) -> None:
+        """Toggle AEC bypass on the transport's pipeline (if present)."""
+        pipeline_cfg = getattr(self._transport, "_pipeline_config", None)
+        if pipeline_cfg is not None and pipeline_cfg.aec is not None:
+            pipeline_cfg.aec.set_active(active)
+
+    def _reset_aec(self) -> None:
+        """Reset AEC adaptive filter on barge-in to avoid transient artifacts."""
+        pipeline_cfg = getattr(self._transport, "_pipeline_config", None)
+        if pipeline_cfg is not None and pipeline_cfg.aec is not None:
+            pipeline_cfg.aec.reset()
+
     def _resample_outbound(self, session: VoiceSession, audio: bytes) -> bytes:
         """Resample outbound audio from provider rate to transport rate."""
         with self._state_lock:
@@ -1104,6 +1116,17 @@ class RealtimeVoiceChannel(Channel):
         # Discard outbound resampler state so stale audio doesn't leak
         if resamplers:
             resamplers[1].reset()
+
+        # Only reset AEC on actual barge-in (user speaks while AI audio
+        # is playing).  Normal turn-taking should not reset the filter.
+        with self._state_lock:
+            is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
+        if is_barge_in:
+            self._reset_aec()
+            # Re-activate immediately so the fresh filter is ready.
+            # Speaker is silent after interrupt so the clean filter
+            # passes audio through without artifacts.
+            self._set_aec_active(True)
 
         self._transport.interrupt(session)
 
@@ -1334,7 +1357,8 @@ class RealtimeVoiceChannel(Channel):
                 reset_span(_rt_tok)
 
     def _on_provider_response_start(self, session: VoiceSession) -> Any:
-        """Handle AI response start — publish typing indicator."""
+        """Handle AI response start — activate AEC, publish typing indicator."""
+        self._set_aec_active(True)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -1346,7 +1370,7 @@ class RealtimeVoiceChannel(Channel):
         )
 
     def _on_provider_response_end(self, session: VoiceSession) -> Any:
-        """Handle AI response end — flush resampler, signal transport, clear indicator.
+        """Handle AI response end — flush, signal, clear indicator.
 
         IMPORTANT: end_of_response is scheduled as a task (not called
         synchronously) so it runs AFTER all pending ``_send_outbound_audio``
@@ -1374,6 +1398,10 @@ class RealtimeVoiceChannel(Channel):
                         self._transport.send_audio(session, flushed.data),
                         name=f"rt_flush_audio:{session.id}",
                     )
+
+        # NOTE: do NOT deactivate AEC here — the speaker is still playing
+        # buffered audio chunks.  AEC stays active for the session lifetime;
+        # the algorithm handles silence correctly (passthrough when no echo).
 
         # Schedule end_of_response as a task so it runs AFTER all pending
         # audio tasks (flush above + any _send_outbound_audio still queued).

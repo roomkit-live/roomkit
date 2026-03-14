@@ -32,6 +32,7 @@ azure = ["openai>=2.28"]
 vllm = ["openai>=2.28"]
 gemini = ["google-genai>=1.0.0"]
 mistral = ["mistralai>=1.0"]
+deepgram = ["deepgram-sdk>=6.0.0"]
 sherpa-onnx = ["sherpa-onnx>=1.10"]
 qwen-tts = ["qwen-tts>=0.1"]
 qwen-asr = ["qwen-asr>=0.0.4"]
@@ -275,6 +276,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["ultralytics", "ultralytics.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["deepgram", "deepgram.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

@@ -118,54 +118,40 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
 
         pc = provider_config or {}
 
-        # Configure session (GA API requires "type": "realtime")
+        # Build GA session config — audio settings nest under audio.input / audio.output
+        # noise_reduction: "near_field" for headphones/close mic,
+        # "far_field" for laptop/conference room speakers.
+        nr_type = pc.get("noise_reduction", "far_field")
+        audio_input: dict[str, Any] = {
+            "format": {"type": "audio/pcm", "rate": 24000},
+            "transcription": {"model": pc.get("stt_model", "gpt-4o-transcribe")},
+            "noise_reduction": {"type": nr_type},
+        }
+        audio_output: dict[str, Any] = {"format": {"type": "audio/pcm", "rate": 24000}}
+        if voice:
+            audio_output["voice"] = voice
+
+        # --- Turn detection / VAD (nested under audio.input in GA) ---
+        td_type = pc.get("turn_detection_type", "server_vad" if server_vad else None)
+        turn_detection = self._build_turn_detection(td_type, pc)
+        if turn_detection is not None:
+            audio_input["turn_detection"] = turn_detection
+
         session_config: dict[str, Any] = {
             "type": "realtime",
-            "modalities": ["text", "audio"],
-            "input_audio_format": "pcm16",
-            "output_audio_format": "pcm16",
-            "input_audio_transcription": {"model": pc.get("stt_model", "gpt-4o-transcribe")},
+            "output_modalities": ["audio"],
+            "audio": {"input": audio_input, "output": audio_output},
         }
 
-        if voice:
-            session_config["voice"] = voice
         if system_prompt:
             session_config["instructions"] = system_prompt
         if tools:
             session_config["tools"] = tools
 
-        # --- Turn detection / VAD ---
-        td_type = pc.get("turn_detection_type", "server_vad" if server_vad else None)
-        if td_type == "semantic_vad":
-            td: dict[str, Any] = {"type": "semantic_vad"}
-            eagerness = pc.get("eagerness")
-            if eagerness:
-                td["eagerness"] = eagerness
-            if pc.get("interrupt_response") is not None:
-                td["interrupt_response"] = bool(pc["interrupt_response"])
-            if pc.get("create_response") is not None:
-                td["create_response"] = bool(pc["create_response"])
-            session_config["turn_detection"] = td
-        elif td_type == "server_vad":
-            td = {"type": "server_vad"}
-            if pc.get("threshold") is not None:
-                td["threshold"] = float(pc["threshold"])
-            if pc.get("silence_duration_ms") is not None:
-                td["silence_duration_ms"] = int(pc["silence_duration_ms"])
-            if pc.get("prefix_padding_ms") is not None:
-                td["prefix_padding_ms"] = int(pc["prefix_padding_ms"])
-            if pc.get("interrupt_response") is not None:
-                td["interrupt_response"] = bool(pc["interrupt_response"])
-            if pc.get("create_response") is not None:
-                td["create_response"] = bool(pc["create_response"])
-            session_config["turn_detection"] = td
-        else:
-            session_config["turn_detection"] = None
-
         logger.info(
             "Sending session.update: turn_detection=%s, voice=%s",
-            session_config.get("turn_detection"),
-            session_config.get("voice"),
+            turn_detection,
+            voice,
         )
 
         await ws.send(
@@ -206,7 +192,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         if ws is None:
             return
 
-        # Create a conversation item with the injected text
+        logger.debug("[OpenAI →] conversation.item.create (input_text, role=%s)", role)
         await ws.send(
             json.dumps(
                 {
@@ -220,7 +206,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             )
         )
 
-        # Trigger a response
+        logger.debug("[OpenAI →] response.create")
         await ws.send(json.dumps({"type": "response.create"}))
 
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
@@ -241,13 +227,14 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             )
         )
 
-        # Trigger a response after tool result
+        logger.debug("[OpenAI →] response.create (after tool result)")
         await ws.send(json.dumps({"type": "response.create"}))
 
     async def interrupt(self, session: VoiceSession) -> None:
         ws = self._connections.get(session.id)
         if ws is None:
             return
+        logger.debug("[OpenAI →] response.cancel")
         await ws.send(json.dumps({"type": "response.cancel"}))
 
     async def send_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
@@ -266,12 +253,12 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
 
-        # Close WebSocket
+        # Close WebSocket (short timeout to avoid blocking on close handshake)
         ws = self._connections.pop(session.id, None)
         self._sessions.pop(session.id, None)
         if ws is not None:
             with contextlib.suppress(Exception):
-                await ws.close()
+                await asyncio.wait_for(ws.close(), timeout=2.0)
 
         session.state = VoiceSessionState.ENDED
 
@@ -280,6 +267,35 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             session = self._sessions.get(session_id)
             if session:
                 await self.disconnect(session)
+
+    # -- Turn detection builder --
+
+    @staticmethod
+    def _build_turn_detection(td_type: str | None, pc: dict[str, Any]) -> dict[str, Any] | None:
+        """Build the turn_detection dict for the GA session config."""
+        if td_type == "semantic_vad":
+            td: dict[str, Any] = {"type": "semantic_vad"}
+            if pc.get("eagerness"):
+                td["eagerness"] = pc["eagerness"]
+            if pc.get("interrupt_response") is not None:
+                td["interrupt_response"] = bool(pc["interrupt_response"])
+            if pc.get("create_response") is not None:
+                td["create_response"] = bool(pc["create_response"])
+            return td
+        if td_type == "server_vad":
+            td = {"type": "server_vad"}
+            if pc.get("threshold") is not None:
+                td["threshold"] = float(pc["threshold"])
+            if pc.get("silence_duration_ms") is not None:
+                td["silence_duration_ms"] = int(pc["silence_duration_ms"])
+            if pc.get("prefix_padding_ms") is not None:
+                td["prefix_padding_ms"] = int(pc["prefix_padding_ms"])
+            if pc.get("interrupt_response") is not None:
+                td["interrupt_response"] = bool(pc["interrupt_response"])
+            if pc.get("create_response") is not None:
+                td["create_response"] = bool(pc["create_response"])
+            return td
+        return None
 
     # -- Callback registration --
 
@@ -338,9 +354,25 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             else:
                 logger.debug("OpenAI WebSocket closed for session %s", session.id)
 
+    # Server event types that carry bulk audio data — skip in protocol log.
+    _NOISY_EVENTS = frozenset(
+        {
+            "response.output_audio.delta",
+            "response.output_audio_transcript.delta",
+        }
+    )
+
     async def _handle_server_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
         """Map OpenAI server events to callbacks."""
         event_type = event.get("type", "")
+
+        # Protocol-level log: show every event except high-frequency audio deltas.
+        if event_type not in self._NOISY_EVENTS:
+            logger.debug(
+                "[OpenAI ←] %s %s",
+                event_type,
+                {k: v for k, v in event.items() if k not in ("type", "delta", "audio")},
+            )
 
         if event_type == "input_audio_buffer.speech_started":
             logger.info("[VAD] speech_start (session %s)", session.id)
@@ -350,13 +382,13 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             logger.info("[VAD] speech_end (session %s)", session.id)
             await self._fire_callbacks(self._speech_end_callbacks, session)
 
-        elif event_type == "response.audio.delta":
+        elif event_type == "response.output_audio.delta":
             audio_b64 = event.get("delta", "")
             if audio_b64:
                 audio_bytes = base64.b64decode(audio_b64)
                 await self._fire_audio_callbacks(session, audio_bytes)
 
-        elif event_type == "response.audio_transcript.delta":
+        elif event_type == "response.output_audio_transcript.delta":
             text = event.get("delta", "")
             if text:
                 await self._fire_transcription_callbacks(session, text, "assistant", False)
@@ -366,7 +398,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             if text:
                 await self._fire_transcription_callbacks(session, text, "user", True)
 
-        elif event_type == "response.audio_transcript.done":
+        elif event_type == "response.output_audio_transcript.done":
             text = event.get("transcript", "")
             if text:
                 await self._fire_transcription_callbacks(session, text, "assistant", True)
@@ -407,18 +439,30 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             await self._fire_callbacks(self._response_end_callbacks, session)
 
         elif event_type == "session.created":
-            td = event.get("session", {}).get("turn_detection", {})
+            td_type = (
+                event.get("session", {})
+                .get("audio", {})
+                .get("input", {})
+                .get("turn_detection", {})
+                .get("type")
+            )
             logger.info(
                 "[OpenAI] session.created: turn_detection=%s (session %s)",
-                td,
+                td_type,
                 session.id,
             )
 
         elif event_type == "session.updated":
-            td = event.get("session", {}).get("turn_detection", {})
+            td_type = (
+                event.get("session", {})
+                .get("audio", {})
+                .get("input", {})
+                .get("turn_detection", {})
+                .get("type")
+            )
             logger.info(
                 "[OpenAI] session.updated: turn_detection=%s (session %s)",
-                td,
+                td_type,
                 session.id,
             )
 
