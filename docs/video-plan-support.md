@@ -19,9 +19,10 @@ What is **not** supported is real-time video — video calls, live streaming, an
 | Tier | Description | Status |
 |------|-------------|--------|
 | **Tier 0** | File-based video messages (send/receive video clips) | **Done** |
-| **Tier 1** | Real-time video transport (video calls via WebRTC/RTMP) | **In progress** |
-| **Tier 2** | Video processing pipeline (transcoding, scaling, overlays, recording) | **Partial** (Recording done) |
-| **Tier 3** | Video intelligence (vision AI, frame analysis, captioning) | **In progress** |
+| **Tier 1** | Real-time video transport (RTP/SIP video calls) | **Done** (RTP, SIP, Local, Screen) |
+| **Tier 2** | Video processing pipeline (transcoding, scaling, overlays, recording) | **Partial** (Recording + VP9 transcode done) |
+| **Tier 3** | Video intelligence (vision AI, frame analysis, captioning) | **Done** (OpenAI, Gemini, Mock) |
+| **Tier 4** | Combined A/V channel | **Done** (AudioVideoChannel for SIP) |
 
 ---
 
@@ -88,7 +89,7 @@ MCU (Multipoint Control Unit):
 
 **Goal:** Real-time video frames flowing through the framework.
 
-**Status:** 1.1 ✅ | 1.2 ✅ | 1.3 ✅ | 1.4 partial (LocalVideoBackend) | 1.5 ✅ | 1.6 ✅
+**Status:** 1.1 ✅ | 1.2 ✅ | 1.3 ✅ | 1.4 ✅ (Local + RTP + SIP) | 1.5 ✅ | 1.6 ✅
 
 #### 1.1 Core Models ✅
 
@@ -165,14 +166,24 @@ Located at `channels/video.py`, minimal orchestrator:
 - Fires hook triggers on video events
 - Forwards frames to `VideoBridge` for multi-party
 
-#### 1.4 WebRTC Video Backend 🔲
+#### 1.4 Video Backends ✅
 
-Extend `FastRTCVoiceBackend` or build on `aiortc`:
+| Backend | Transport | Codecs | Status |
+|---------|-----------|--------|--------|
+| `LocalVideoBackend` | Webcam (OpenCV) | raw_rgb24 | ✅ Done |
+| `RTPVideoBackend` | RTP/UDP (aiortp) | H.264, VP9, VP8 | ✅ Done |
+| `SIPVideoBackend` | SIP+RTP (aiosipua) | H.264, VP9, VP8 | ✅ Done |
+| `ScreenCaptureBackend` | Screen capture (mss) | raw_rgb24 | ✅ Done |
+| WebRTC Backend | WebRTC (aiortc) | VP8/VP9/H.264 | 🔲 Future |
 
-- Video track negotiation (codec, resolution, framerate)
-- ICE/DTLS/SRTP for video
-- Simulcast support (multiple quality layers)
-- Bandwidth estimation and adaptation
+**RTP/SIP highlights:**
+- VP9 RTP depacketization (RFC 9628) with B/E-bit frame boundaries
+- H.264 FU-A depacketization (RFC 6184)
+- Jitter buffer with marker-bit frame delivery (instant, no next-timestamp wait)
+- PLI-based keyframe recovery on packet loss
+- NACK for packet retransmission
+- PortAllocator for multi-session port management
+- SDP codec negotiation (offerer preference order)
 
 #### 1.5 New Hook Triggers ✅
 
@@ -208,7 +219,7 @@ Key risks: WebRTC video negotiation is significantly more complex than audio. Co
 
 **Goal:** Pluggable server-side video processing stages.
 
-**Status:** 2.1 🔲 | 2.2 partial (Recorder: OpenCV ✅ + PyAV/FFmpeg ✅) | 2.3 🔲 | 2.4 🔲
+**Status:** 2.1 🔲 | 2.2 partial (Recorder: OpenCV ✅ + PyAV/FFmpeg ✅ + VP9 transcode ✅) | 2.3 🔲 | 2.4 🔲
 
 #### 2.1 VideoPipeline Engine
 
@@ -312,7 +323,7 @@ class ChannelRecordingConfig:
 class MediaRecordingConfig:
     """Room-level recording output configuration."""
     storage: str = ""
-    video_codec: str = "auto"        # auto, libx264, h264_nvenc, libx265
+    video_codec: str = "libx264"     # libx264 (default), h264_nvenc, libx265
     audio_codec: str = "aac"         # aac, opus
     audio_sample_rate: int = 16000
     format: str = "mp4"
@@ -464,12 +475,18 @@ The existing `VideoRecorder` and `WavFileRecorder` continue to work for single-m
 
 #### Implementation Notes
 
-- **A/V sync**: Both audio and video PTS derived from `time.monotonic()` at tap time, referenced to a shared per-recording origin set after codec initialization. Immune to NVENC init delay (~450ms) and asyncio scheduling jitter.
-- **Pre-roll buffering**: Data buffered per-track until all registered tracks receive at least one frame. Container + all streams created at once with known parameters (avoids "Cannot rebase to zero time" error).
+- **A/V sync**: Per-track PTS — each stream starts at PTS=0 from its own first frame timestamp. Eliminates startup offset between mic and camera (or audio/video RTP).
+- **VP9 transcode**: VP9 frames from RTP are decoded then re-encoded as H.264 for MP4. Dimensions probed from the first decodable VP9 keyframe before creating the encoder stream.
+- **libx264 zerolatency**: Forces immediate output from first frame to prevent MP4 muxer EINVAL (the muxer rejects audio when video stream has zero packets).
+- **Encoded frame handling**: H.264 gets Annex B start codes; VP9/VP8/AV1 are fed as raw bitstream. Codec-specific start code detection is idempotent.
+- **Pre-roll buffering**: Data buffered per-track until all registered tracks receive at least one frame. Container + all streams created at once with known parameters.
+- **Keyframe gating**: For encoded video, if the probe can't decode frames (e.g., first frame is a P-frame), the video stream is skipped and audio records solo.
 - **Thread safety**: Per-recording `threading.Lock` — video frames from capture thread and audio from event loop can write concurrently.
-- **Files**: `recorder/base.py` (models + ABC), `recorder/pyav.py` (PyAV muxer), `recorder/mock.py` (testing), `recorder/_room_recorder_manager.py` (orchestration), framework wiring in `core/framework.py` and `core/_room_lifecycle.py`.
+- **Mux error gating**: First mux error logged with full traceback; subsequent errors suppressed to prevent log flooding.
+- **Recording lifecycle**: Tied to `close_room()` — `disconnect_voice()` removes tracks but does NOT stop the recording.
+- **Files**: `recorder/base.py` (models + ABC), `recorder/pyav.py` (PyAV muxer), `recorder/_pyav_mux.py` (mux helpers — probe, stream creation, PTS, safe_mux), `recorder/mock.py` (testing), `recorder/_room_recorder_manager.py` (orchestration), framework wiring in `core/framework.py` and `core/_room_lifecycle.py`.
 - **Docs**: Guide at `roomkit-docs/docs/guides/room-media-recorder.md`, features.md updated.
-- **Example**: `examples/room_media_recorder.py` — mic + webcam → single MP4.
+- **Examples**: `examples/room_media_recorder.py` (mic + webcam → MP4), `examples/sip_video_call.py` (SIP A/V call recording).
 
 ---
 
@@ -546,67 +563,64 @@ setup_video_vision(kit, room_id="r1", ai_channel_id="ai")
 
 **Goal:** Unified media session for voice + video calls.
 
-#### 4.1 Approach Options
+**Status:** ✅ Core done (AudioVideoChannel for SIP A/V) | 4.3 🔲
 
-**Option A — Separate channels, shared session:**
+#### 4.1 AudioVideoChannel ✅
 
-```python
-voice = VoiceChannel("voice", backend=audio_backend, stt=stt, tts=tts)
-video = VideoChannel("video", backend=video_backend, vision=vision)
-# Both bound to same room, share MediaSession
-```
-
-**Option B — Unified MediaChannel:**
+Implemented as `AudioVideoChannel` (`channels/av.py`), extending `VoiceChannel` with `VideoBackend` integration:
 
 ```python
-media = MediaChannel(
-    "media",
-    audio_backend=audio_backend,
-    video_backend=video_backend,
-    stt=stt, tts=tts, vision=vision,
-    pipeline=MediaPipelineConfig(audio=audio_config, video=video_config),
+av = AudioVideoChannel(
+    "voice",
+    stt=stt, tts=tts,
+    backend=SIPVideoBackend(
+        local_sip_addr=("0.0.0.0", 5060),
+        supported_video_codecs=["H264", "VP9"],
+    ),
+    pipeline=AudioPipelineConfig(),
+    recording=ChannelRecordingConfig(audio=True, video=True),
 )
 ```
 
-**Recommendation:** Option A for flexibility. A `MediaSession` model extends `VoiceSession` with video track state, and both channels reference the same session. A convenience `MediaChannel` factory can compose them.
+- SIP backend handles both audio and video RTP sessions
+- Video frames delivered via backend taps (not a separate channel)
+- Recording wired automatically for both audio and video tracks
+- Works with SIPVideoBackend (combined A/V) or separate backends
 
 #### 4.2 Track Management
 
-```python
-@dataclass
-class MediaSession(VoiceSession):
-    video_enabled: bool = False
-    screen_share_enabled: bool = False
-    video_track_id: str | None = None
-    screen_share_track_id: str | None = None
-    video_codec: str | None = None
-    video_resolution: tuple[int, int] | None = None
-```
+Video session state is tracked per-voice-session in the backend:
 
-#### 4.3 Bandwidth Adaptation
+- `SIPVideoBackend._video_call_sessions` — VP9/H.264 RTP sessions
+- `SIPVideoBackend._video_sessions` — VideoSession objects
+- Video codec and resolution learned from first decoded frame
+- Video track added/removed alongside audio track in recording
+
+#### 4.3 Bandwidth Adaptation 🔲
 
 - Monitor network quality via RTCP feedback
 - Degrade video quality before audio quality
 - Switch simulcast layers based on available bandwidth
 - Pause video entirely under severe congestion (audio-only fallback)
 
-**Effort estimate: 2-3 weeks**
+**Remaining effort: 1-2 weeks** (bandwidth adaptation only)
 
 ---
 
 ## Effort Summary
 
-| Phase | Scope | Effort | Dependency |
-|-------|-------|--------|------------|
-| **Phase 1** | Core models + WebRTC video transport | 2-4 weeks | None |
-| **Phase 2** | Video pipeline + recording + SFU | 3-5 weeks | Phase 1 |
-| **Phase 2.5** | Room-level media recording (A/V muxing) | 1-2 weeks | None |
-| **Phase 3** | Vision AI providers | 1-2 weeks | Phase 1 |
-| **Phase 4** | Combined audio+video sessions | 2-3 weeks | Phase 1 |
+| Phase | Scope | Effort | Status |
+|-------|-------|--------|--------|
+| **Phase 1** | Core models + video transport | 2-4 weeks | **✅ Done** (RTP/SIP/Local/Screen) |
+| **Phase 2** | Video pipeline + recording + SFU | 3-5 weeks | **Partial** (recording done, pipeline/SFU remaining) |
+| **Phase 2.5** | Room-level media recording (A/V muxing) | 1-2 weeks | **✅ Done** (VP9 transcode, per-track sync) |
+| **Phase 3** | Vision AI providers | 1-2 weeks | **✅ Done** (OpenAI, Gemini, Mock) |
+| **Phase 4** | Combined audio+video sessions | 2-3 weeks | **✅ Done** (AudioVideoChannel, SIP A/V) |
 
-**Total for full video support: 9-16 weeks**
-**MVP (Phase 1 only): 2-4 weeks** — basic real-time video transport over WebRTC.
-**High-value fast path (Phase 1 + Phase 3): 3-6 weeks** — video calls with AI vision.
+**Remaining work:**
+- Phase 2: VideoPipeline engine, SFU/VideoBridge, processing stages (decoder, resizer, overlay, background blur, face detection) — **3-5 weeks**
+- WebRTC backend (aiortc) — **2-3 weeks**
+- Bandwidth adaptation — **1-2 weeks**
 
 ---
 
@@ -665,15 +679,22 @@ Video processing is 10-100x more expensive than audio processing.
 
 ```
 src/roomkit/
-  video/                          # New top-level video subsystem
+  channels/
+    av.py                         # AudioVideoChannel (combined A/V for SIP)
+    video.py                      # VideoChannel
+  video/                          # Video subsystem
     __init__.py
-    base.py                       # VideoChunk, VideoCapability, MediaSession
+    base.py                       # VideoChunk, VideoCapability, VideoSession
     video_frame.py                # VideoFrame dataclass
     backends/
       __init__.py
-      base.py                     # VideoBackend ABC
-      webrtc.py                   # WebRTC video backend (aiortc or extend FastRTC)
+      base.py                     # VideoBackend ABC + get_video_session()
+      local.py                    # LocalVideoBackend (webcam via OpenCV)
+      rtp.py                      # RTPVideoBackend (aiortp, H.264/VP9)
+      sip.py                      # SIPVideoBackend (aiosipua, SIP+RTP A/V)
+      screen.py                   # ScreenCaptureBackend (mss)
       mock.py                     # MockVideoBackend for testing
+      webrtc.py                   # 🔲 WebRTC video backend (future)
     pipeline/
       __init__.py
       engine.py                   # VideoPipeline orchestrator
@@ -726,13 +747,15 @@ src/roomkit/
 
 Required new dependencies (all optional extras):
 
-| Package | Purpose | Phase |
-|---------|---------|-------|
-| `aiortc` | WebRTC video transport | Phase 1 |
-| `av` (PyAV) | FFmpeg bindings for encode/decode/record | Phase 2 (**installed**, `roomkit[video]`) |
-| `opencv-python-headless` | Image processing stages + basic recording | Phase 2 (**installed**, `roomkit[local-video]`) |
-| `mediapipe` | Background blur, face detection | Phase 2 |
-| `pillow` | Lightweight image operations | Phase 2 |
+| Package | Purpose | Phase | Status |
+|---------|---------|-------|--------|
+| `aiortp>=0.3.0` | RTP video transport (VP9/H.264/VP8) | Phase 1 | **Installed** (`roomkit[rtp]`) |
+| `aiosipua>=0.4.0` | SIP signaling + RTP bridge | Phase 1 | **Installed** (`roomkit[sip]`) |
+| `av>=12.0.0` (PyAV) | FFmpeg bindings for encode/decode/record | Phase 2 | **Installed** (`roomkit[video]`) |
+| `opencv-python-headless` | Image processing + basic recording | Phase 2 | **Installed** (`roomkit[local-video]`) |
+| `aiortc` | WebRTC video transport | Future | Not started |
+| `mediapipe` | Background blur, face detection | Future | Not started |
+| `pillow` | Lightweight image operations | Future | Not started |
 
 All should be optional extras in `pyproject.toml`:
 
@@ -767,8 +790,13 @@ video-vision = []  # Provider SDKs (openai, google-genai) already in ai extras
 - [ ] Video forwarding to 4+ participants via SFU
 - [x] Video recording to file (MP4) — OpenCV + PyAV/FFmpeg (H.264, NVENC)
 - [x] Combined A/V recording to single MP4 with per-participant audio tracks
+- [x] SIP A/V call with VP9 video → H.264 recording with synced audio
+- [x] VP9 RTP depacketization with instant frame delivery (marker-bit jitter buffer)
+- [x] PLI-based keyframe recovery on packet loss
+- [x] AudioVideoChannel for combined SIP audio+video sessions
 - [x] Vision AI can describe video call content to AIChannel
-- [ ] Screen sharing works as a separate video track
+- [x] Screen capture backend for screen sharing
+- [ ] Screen sharing works as a separate video track in multi-party
 - [ ] Graceful fallback: video degrades to audio-only under poor network
 - [x] All new components have tests, docs, and examples
 - [x] RFC updated with video transport specification
