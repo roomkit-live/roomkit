@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from fractions import Fraction
 
 import pytest
 
@@ -163,6 +164,69 @@ class TestPyAVMediaRecorder:
         recorder.close()
         # After close, internal state should be empty
         assert len(recorder._recordings) == 0
+
+    def test_encoded_video_h264(self, tmp_path: object) -> None:
+        """Encoded H.264 NAL data is decoded and re-encoded to output."""
+        recorder = _get_recorder()
+        config = MediaRecordingConfig(
+            storage=str(tmp_path),
+            video_codec="libx264",
+            video_fps=30,
+        )
+        handle = recorder.on_recording_start(config)
+
+        track = RecordingTrack(
+            id="video:s1",
+            kind="video",
+            channel_id="voice-1",
+            codec="h264",
+            # No width/height — should be learned from decoded frames
+        )
+        recorder.on_track_added(handle, track)
+
+        # Generate valid H.264 NALs by encoding a frame with PyAV
+        enc = av.CodecContext.create("libx264", "w")
+        enc.width = 64
+        enc.height = 48
+        enc.pix_fmt = "yuv420p"
+        enc.time_base = Fraction(1, 30)
+        enc.open()
+
+        for i in range(5):
+            frame = av.VideoFrame(64, 48, "yuv420p")
+            frame.pts = i
+            for pkt in enc.encode(frame):
+                # Strip Annex B start codes — _write_encoded_video prepends them
+                nal_data = bytes(pkt)
+                recorder.on_data(handle, track, nal_data, i * 33.3)
+
+        # Flush encoder to get remaining packets
+        for pkt in enc.encode(None):
+            nal_data = bytes(pkt)
+            recorder.on_data(handle, track, nal_data, 5 * 33.3)
+
+        result = recorder.on_recording_stop(handle)
+        assert result.size_bytes > 0
+        assert os.path.exists(result.url)
+
+        # Track dimensions should have been learned from decoded frames
+        assert track.width == 64
+        assert track.height == 48
+
+    def test_encoded_video_codec_populated(self, tmp_path: object) -> None:
+        """Track codec is set correctly for encoded video."""
+        recorder = _get_recorder()
+        config = MediaRecordingConfig(storage=str(tmp_path), video_codec="libx264")
+        handle = recorder.on_recording_start(config)
+
+        track = RecordingTrack(
+            id="video:s1",
+            kind="video",
+            channel_id="voice-1",
+            codec="h264",
+        )
+        recorder.on_track_added(handle, track)
+        assert track.codec == "h264"
 
     def test_stop_without_data(self, tmp_path: object) -> None:
         """Stop a recording that never received any data."""

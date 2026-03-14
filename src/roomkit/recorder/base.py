@@ -24,7 +24,7 @@ def validate_storage_path(storage: str) -> str:
 
     if ".." in pathlib.PurePath(storage).parts:
         raise ValueError(f"Storage path must not contain '..': {storage}")
-    resolved = os.path.normpath(storage)
+    resolved = str(pathlib.Path(storage).resolve())
     os.makedirs(resolved, exist_ok=True)
     return resolved
 
@@ -62,7 +62,7 @@ class MediaRecordingConfig:
     """Configuration for a room-level media recording session."""
 
     storage: str = ""
-    video_codec: str = "auto"
+    video_codec: str = "libx264"
     video_fps: int = 30
     audio_codec: str = "aac"
     audio_sample_rate: int = 16000

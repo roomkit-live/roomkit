@@ -23,6 +23,7 @@ class ChannelType(StrEnum):
     TEAMS = "teams"
     WEBHOOK = "webhook"
     VIDEO = "video"
+    AUDIO_VIDEO = "audio_video"
     SYSTEM = "system"
 
 

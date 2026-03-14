@@ -117,6 +117,15 @@ class VideoBackend(ABC):
         """
         return None
 
+    def get_video_session(self, session_id: str) -> VideoSession | None:
+        """Get a video session by ID.
+
+        Alias for :meth:`get_session` that avoids return-type conflicts
+        in combined A/V backends where the voice parent also defines
+        ``get_session`` with a ``VoiceSession`` return type.
+        """
+        return self.get_session(session_id)
+
     def list_sessions(self, room_id: str) -> list[VideoSession]:
         """List all active sessions in a room.
 
@@ -161,6 +170,16 @@ class VideoBackend(ABC):
 
         The pipeline or channel calls this to receive every video frame
         produced by the transport.
+
+        Args:
+            callback: Function called with (session, video_frame).
+        """
+
+    def add_video_tap(self, callback: VideoReceivedCallback) -> None:  # noqa: B027
+        """Register an additional video frame consumer (e.g. recording).
+
+        Unlike :meth:`on_video_received` (single primary consumer), taps
+        are additive — multiple taps can coexist.
 
         Args:
             callback: Function called with (session, video_frame).

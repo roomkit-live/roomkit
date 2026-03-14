@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -364,33 +365,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
 
         # Bind session to channel for routing
         channel.bind_session(session, room_id, binding)
-
-        # Wire room-level media recording for audio
-        if (
-            self._room_recorder_mgr.has_recorders(room_id)
-            and channel._recording is not None
-            and channel._recording.audio
-        ):
-            from roomkit.recorder.base import RecordingTrack
-
-            track = RecordingTrack(
-                id=f"audio:{session.id}",
-                kind="audio",
-                channel_id=channel_id,
-                participant_id=participant_id,
-                codec="pcm_s16le",
-                sample_rate=session.sample_rate if hasattr(session, "sample_rate") else 16000,
-            )
-            self._room_recorder_mgr.on_track_added(room_id, track)
-            mgr = self._room_recorder_mgr
-
-            def _audio_tap(sess: VoiceSession, frame: Any) -> None:
-                import time
-
-                # Always use absolute monotonic clock to match state.t0_ms
-                mgr.on_data(room_id, track, frame.data, time.monotonic() * 1000)
-
-            channel.add_media_tap(_audio_tap)
+        self._wire_audio_recording(room_id, channel_id, session, channel)
 
         await self._emit_framework_event(
             "voice_session_started",
@@ -417,18 +392,27 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         if self._voice is None:
             raise VoiceBackendNotConfiguredError("No voice backend configured")
 
-        # Remove room-level recording track before unbind
+        # Remove room-level recording tracks before unbind
         if self._room_recorder_mgr.has_recorders(session.room_id):
             from roomkit.recorder.base import RecordingTrack
 
-            track = RecordingTrack(
+            audio_track = RecordingTrack(
                 id=f"audio:{session.id}",
                 kind="audio",
                 channel_id=session.channel_id,
                 participant_id=session.participant_id,
                 codec="pcm_s16le",
             )
-            self._room_recorder_mgr.on_track_removed(session.room_id, track)
+            self._room_recorder_mgr.on_track_removed(session.room_id, audio_track)
+
+            # Combined A/V backend (SIPVideoBackend) — also remove video track
+            video_track = RecordingTrack(
+                id=f"video:{session.id}",
+                kind="video",
+                channel_id=session.channel_id,
+                participant_id=session.participant_id,
+            )
+            self._room_recorder_mgr.on_track_removed(session.room_id, video_track)
 
         # Get the voice channel and unbind
         channel = self._channels.get(session.channel_id)
@@ -492,34 +476,7 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
             room_id, participant_id, channel_id, metadata=metadata
         )
         channel.bind_session(session, room_id, binding)
-        # Wire room-level media recording for video
-        if (
-            self._room_recorder_mgr.has_recorders(room_id)
-            and channel._recording is not None
-            and channel._recording.video
-        ):
-            from roomkit.recorder.base import RecordingTrack
-
-            track = RecordingTrack(
-                id=f"video:{session.id}",
-                kind="video",
-                channel_id=channel_id,
-                participant_id=participant_id,
-            )
-            self._room_recorder_mgr.on_track_added(room_id, track)
-            mgr = self._room_recorder_mgr
-
-            def _video_tap(sess: VideoSession, frame: Any) -> None:
-                import time
-
-                # Capture actual dimensions from first frame
-                if track.width is None and hasattr(frame, "width"):
-                    track.width = frame.width
-                    track.height = frame.height
-                # Always use absolute monotonic clock to match state.t0_ms
-                mgr.on_data(room_id, track, frame.data, time.monotonic() * 1000)
-
-            channel.add_media_tap(_video_tap)
+        self._wire_video_recording(room_id, channel_id, session, channel)
         return session
 
     async def disconnect_video(self, session: VideoSession) -> None:
@@ -548,6 +505,208 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
                 self._room_recorder_mgr.on_track_removed(session.room_id, track)
             channel.unbind_session(session)
             await channel.backend.disconnect(session)
+
+    # -------------------------------------------------------------------------
+    # Recording wiring helpers
+    # -------------------------------------------------------------------------
+
+    def _wire_audio_recording(
+        self,
+        room_id: str,
+        channel_id: str,
+        session: VoiceSession,
+        channel: VoiceChannel,
+    ) -> None:
+        """Wire room-level audio recording tap on a VoiceChannel."""
+        if not (
+            self._room_recorder_mgr.has_recorders(room_id)
+            and channel._recording is not None
+            and channel._recording.audio
+        ):
+            return
+
+        from roomkit.recorder.base import RecordingTrack
+
+        track = RecordingTrack(
+            id=f"audio:{session.id}",
+            kind="audio",
+            channel_id=channel_id,
+            participant_id=session.participant_id,
+            codec="pcm_s16le",
+            sample_rate=session.sample_rate if hasattr(session, "sample_rate") else 16000,
+        )
+        self._room_recorder_mgr.on_track_added(room_id, track)
+        mgr = self._room_recorder_mgr
+
+        def _audio_tap(sess: VoiceSession, frame: Any) -> None:
+            mgr.on_data(room_id, track, frame.data, time.monotonic() * 1000)
+
+        channel.add_media_tap(_audio_tap)
+
+    def _make_video_recording_tap(
+        self,
+        room_id: str,
+        track: Any,
+    ) -> Any:
+        """Build a video recording tap closure for the given room and track.
+
+        The returned callable updates *track* metadata from the frame
+        (codec, dimensions) and feeds data to the room recorder manager.
+        """
+        mgr = self._room_recorder_mgr
+
+        def _video_tap(sess: Any, frame: Any) -> None:
+            if not track.codec and hasattr(frame, "codec"):
+                track.codec = frame.codec
+            # Only copy dimensions from raw (uncompressed) frames —
+            # encoded frames have meaningless defaults (640x480).
+            # The recorder probes actual dimensions from the bitstream.
+            if (
+                track.width is None
+                and hasattr(frame, "width")
+                and not getattr(frame, "is_encoded", False)
+            ):
+                track.width = frame.width
+                track.height = frame.height
+            mgr.on_data(room_id, track, frame.data, time.monotonic() * 1000)
+
+        return _video_tap
+
+    def _wire_video_recording(
+        self,
+        room_id: str,
+        channel_id: str,
+        session: Any,
+        channel: Any,
+    ) -> None:
+        """Wire room-level video recording tap on a VideoChannel."""
+        if not (
+            self._room_recorder_mgr.has_recorders(room_id)
+            and channel._recording is not None
+            and channel._recording.video
+        ):
+            return
+
+        from roomkit.recorder.base import RecordingTrack
+
+        track = RecordingTrack(
+            id=f"video:{session.id}",
+            kind="video",
+            channel_id=channel_id,
+            participant_id=session.participant_id,
+        )
+        self._room_recorder_mgr.on_track_added(room_id, track)
+        channel.add_media_tap(self._make_video_recording_tap(room_id, track))
+
+    def _wire_backend_video_recording(
+        self,
+        room_id: str,
+        channel_id: str,
+        session: VoiceSession,
+        backend: Any,
+    ) -> None:
+        """Wire room-level video recording tap directly on a VideoBackend.
+
+        Used for combined A/V backends (e.g. SIPVideoBackend) where
+        video frames come from the backend rather than a VideoChannel.
+        """
+        if not self._room_recorder_mgr.has_recorders(room_id):
+            return
+
+        from roomkit.recorder.base import RecordingTrack
+
+        track = RecordingTrack(
+            id=f"video:{session.id}",
+            kind="video",
+            channel_id=channel_id,
+            participant_id=session.participant_id,
+        )
+        self._room_recorder_mgr.on_track_added(room_id, track)
+        backend.add_video_tap(self._make_video_recording_tap(room_id, track))
+
+    def _wire_av_video_recording(
+        self,
+        room_id: str,
+        channel_id: str,
+        session: VoiceSession,
+        channel: Any,
+    ) -> None:
+        """Wire room-level video recording via AudioVideoChannel tap."""
+        if not (
+            self._room_recorder_mgr.has_recorders(room_id)
+            and channel._recording is not None
+            and channel._recording.video
+        ):
+            return
+
+        from roomkit.recorder.base import RecordingTrack
+
+        track = RecordingTrack(
+            id=f"video:{session.id}",
+            kind="video",
+            channel_id=channel_id,
+            participant_id=session.participant_id,
+        )
+        self._room_recorder_mgr.on_track_added(room_id, track)
+        channel.add_video_media_tap(self._make_video_recording_tap(room_id, track))
+
+    # -------------------------------------------------------------------------
+    # Push-model session binding
+    # -------------------------------------------------------------------------
+
+    async def bind_voice_session(
+        self,
+        session: VoiceSession,
+        room_id: str,
+        channel_id: str,
+    ) -> None:
+        """Bind an externally-created voice session (push model).
+
+        SIP ``on_call`` handlers should call this instead of
+        ``channel.bind_session()`` directly — it wires recording taps
+        for both audio and video (when the backend is a combined A/V
+        backend like :class:`SIPVideoBackend`).
+
+        Args:
+            session: The voice session from the backend's on_call.
+            room_id: The room to bind into.
+            channel_id: The voice channel ID.
+
+        Raises:
+            ChannelNotRegisteredError: If the channel is not a VoiceChannel.
+            ChannelNotFoundError: If the channel is not attached to the room.
+        """
+        channel = self._channels.get(channel_id)
+        if not isinstance(channel, VoiceChannel):
+            raise ChannelNotRegisteredError(
+                f"Channel {channel_id} is not a registered VoiceChannel"
+            )
+
+        binding = await self._store.get_binding(room_id, channel_id)
+        if binding is None:
+            raise ChannelNotFoundError(f"Channel {channel_id} not attached to room {room_id}")
+
+        channel.bind_session(session, room_id, binding)
+        self._wire_audio_recording(room_id, channel_id, session, channel)
+
+        # AudioVideoChannel — wire video via channel tap
+        from roomkit.channels.av import AudioVideoChannel
+
+        if isinstance(channel, AudioVideoChannel):
+            self._wire_av_video_recording(room_id, channel_id, session, channel)
+        else:
+            # Legacy fallback: plain VoiceChannel with combined A/V backend
+            from roomkit.video.backends.base import VideoBackend
+
+            if isinstance(channel._backend, VideoBackend):
+                video_session = channel._backend.get_video_session(session.id)
+                if video_session is not None:
+                    self._wire_backend_video_recording(
+                        room_id,
+                        channel_id,
+                        session,
+                        channel._backend,
+                    )
 
     async def send_greeting(
         self,

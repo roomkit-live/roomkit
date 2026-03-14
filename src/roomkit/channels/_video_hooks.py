@@ -39,7 +39,7 @@ class VideoHooksMixin:
             event = SessionStartedEvent(
                 room_id=room_id,
                 channel_id=self.channel_id,
-                channel_type=ChannelType.VIDEO,
+                channel_type=getattr(self, "channel_type", ChannelType.VIDEO),
                 participant_id=session.participant_id,
                 session=session,
             )

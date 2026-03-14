@@ -5,11 +5,21 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from roomkit.recorder._pyav_mux import (
+    ENCODED_VIDEO_CODECS,
+    compute_pts,
+    create_stream,
+    h264_annex_b,
+    import_av,
+    probe_encoded_dimensions,
+    safe_mux,
+)
 from roomkit.recorder.base import (
     MediaRecorder,
     MediaRecordingConfig,
@@ -22,30 +32,6 @@ from roomkit.recorder.base import (
 logger = logging.getLogger("roomkit.recorder.pyav")
 
 
-def _import_av() -> Any:
-    """Import PyAV, raising a clear error if missing."""
-    try:
-        import av
-
-        return av
-    except ImportError as exc:
-        raise ImportError(
-            "av (PyAV) is required for PyAVMediaRecorder. Install with: pip install roomkit[video]"
-        ) from exc
-
-
-def _resolve_video_codec(codec: str) -> str:
-    """Resolve 'auto' to a concrete video codec name."""
-    if codec != "auto":
-        return codec
-    try:
-        av = _import_av()
-        av.codec.Codec("h264_nvenc", "w")
-        return "h264_nvenc"
-    except Exception:
-        return "libx264"
-
-
 @dataclass
 class _TrackState:
     """Per-track muxing state."""
@@ -53,9 +39,11 @@ class _TrackState:
     track: RecordingTrack
     stream: Any = None
     frame_count: int = 0
-    ready: bool = False
     last_pts: int = -1  # monotonic guard for PTS
-    fps: int = 30  # stream rate for video timestamp→PTS conversion
+    video_fps: int = 30  # stream rate for video timestamp→PTS conversion
+    decoder: Any = None  # codec context for decoding encoded video
+    pending: list[tuple[bytes, float | None]] = field(default_factory=list)
+    t0_ms: float = 0.0  # per-track timestamp origin
 
 
 @dataclass
@@ -69,16 +57,22 @@ class _RecordingState:
     path: str = ""
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     encoding_started: bool = False
-    t0_ms: float = 0.0  # shared timestamp origin for all tracks
+    _mux_error_flag: list[bool] = field(default_factory=lambda: [False])
 
 
 class PyAVMediaRecorder(MediaRecorder):
-    """Muxes audio (AAC) and video (H.264) into a single MP4 via PyAV.
+    """Muxes audio (AAC) and video (H.264/VP9) into a single MP4 via PyAV.
 
-    Data is buffered per-track until every registered track has
-    received at least one ``on_data`` call.  At that point the
-    container and all streams are created at once — so the MP4 header
-    is written with full knowledge of every stream's parameters.
+    MP4 requires all streams to exist before any data is muxed.
+    Streams are created when all registered tracks are "ready":
+
+    - Audio tracks are ready immediately (codec is known at registration).
+    - Video tracks become ready when the first frame arrives (the tap
+      populates ``track.codec`` from the frame).
+
+    If only some tracks have data, frames are buffered until all tracks
+    are ready.  Once ready, all streams are created and buffered frames
+    are flushed.
 
     A/V sync strategy: both audio and video PTS are derived from each
     frame's capture timestamp (set at acquisition time), so playback
@@ -95,7 +89,7 @@ class PyAVMediaRecorder(MediaRecorder):
         return "pyav"
 
     def __init__(self) -> None:
-        self._av = _import_av()
+        self._av = import_av()
         self._recordings: dict[str, _RecordingState] = {}
 
     # -- lifecycle -----------------------------------------------------------
@@ -136,6 +130,18 @@ class PyAVMediaRecorder(MediaRecorder):
                                 state.container.mux(packet)
                         except Exception:
                             logger.debug("Flush error for track %s", ts.track.id)
+                    ts.decoder = None
+                frame_counts = {
+                    t.id: state.tracks[t.id].frame_count
+                    for t in result_tracks
+                    if t.id in state.tracks
+                }
+                logger.info(
+                    "Closing container %s (%d tracks, %s frames)",
+                    state.path,
+                    len(result_tracks),
+                    frame_counts,
+                )
                 state.container.close()
                 state.container = None
 
@@ -195,79 +201,126 @@ class PyAVMediaRecorder(MediaRecorder):
                 return
 
             if not state.encoding_started:
-                ts.ready = True
-                if all(t.ready for t in state.tracks.values()):
-                    self._start_encoding(state, track, ts, data, timestamp_ms)
+                ts.pending.append((data, timestamp_ms))
+                if self._all_tracks_ready(state):
+                    self._start_encoding(state)
                 return
 
+            # Set per-track t0 on first frame if not set from pending
+            if ts.frame_count == 0 and timestamp_ms is not None:
+                ts.t0_ms = timestamp_ms
             self._encode_frame(state, ts, track, data, timestamp_ms)
             ts.frame_count += 1
 
     # -- internal helpers ----------------------------------------------------
 
-    def _start_encoding(
-        self,
-        state: _RecordingState,
-        trigger_track: RecordingTrack,
-        trigger_ts: _TrackState,
-        trigger_data: bytes,
-        timestamp_ms: float | None,
-    ) -> None:
-        """Create container + all streams, encode the triggering frame.
+    @staticmethod
+    def _track_ready(ts: _TrackState) -> bool:
+        if ts.track.kind != "video":
+            return True
+        if ts.track.codec:
+            return True
+        if ts.track.width is not None and ts.track.height is not None:
+            return True
+        return bool(ts.pending)
 
-        Only the frame that completed readiness is encoded — all
-        earlier data from other tracks is discarded (pre-roll).
-        """
-        state.container = self._av.open(state.path, mode="w")
+    def _all_tracks_ready(self, state: _RecordingState) -> bool:
+        return all(self._track_ready(ts) for ts in state.tracks.values())
 
+    def _start_encoding(self, state: _RecordingState) -> None:
+        # Probe dimensions for encoded video tracks
         for ts in state.tracks.values():
-            ts.stream = self._create_stream(state.container, ts.track, state.config)
-            if ts.track.kind == "video":
-                ts.fps = state.config.video_fps
+            if (
+                ts.track.kind == "video"
+                and ts.track.codec in ENCODED_VIDEO_CODECS
+                and ts.track.width is None
+                and ts.pending
+            ):
+                dims = probe_encoded_dimensions(
+                    self._av,
+                    ts.pending,
+                    ts.track.codec,
+                )
+                if dims:
+                    ts.track.width, ts.track.height = dims
+                    logger.info(
+                        "Probed video %s: %s %dx%d",
+                        ts.track.id,
+                        ts.track.codec,
+                        dims[0],
+                        dims[1],
+                    )
 
-        import time
+        # Skip video tracks whose dimensions are still unknown
+        skipped: set[str] = set()
+        for ts in state.tracks.values():
+            if (
+                ts.track.kind == "video"
+                and ts.track.codec in ENCODED_VIDEO_CODECS
+                and (ts.track.width is None or ts.track.height is None)
+            ):
+                skipped.add(ts.track.id)
+                logger.warning(
+                    "Skipping video track %s — unknown dimensions",
+                    ts.track.id,
+                )
+
+        # Disable strict interleaving — video encoders (libx264) buffer
+        # frames, so audio can advance well ahead before any video packets
+        # are produced.  Without this, the MP4 muxer rejects audio with
+        # EINVAL once the interleave gap exceeds ~1 second.
+        state.container = self._av.open(
+            state.path,
+            mode="w",
+            options={"max_interleave_delta": "0"},
+        )
+        for ts in state.tracks.values():
+            if ts.track.id not in skipped:
+                ts.stream = create_stream(
+                    state.container,
+                    ts.track,
+                    state.config,
+                )
+                if ts.track.kind == "video":
+                    ts.video_fps = state.config.video_fps
 
         state.encoding_started = True
-        # Set shared t0 AFTER stream creation (which may include slow
-        # codec init like NVENC).  All tracks reference the same origin.
-        state.t0_ms = time.monotonic() * 1000
-        logger.debug("Encoding started with %d streams", len(state.tracks))
 
-        # Encode only the triggering frame (the one that made all ready)
-        self._encode_frame(state, trigger_ts, trigger_track, trigger_data, timestamp_ms)
-        trigger_ts.frame_count += 1
+        # Per-track t0: each stream starts at PTS=0 from its own first
+        # frame.  This avoids A/V offset caused by startup timing
+        # differences (mic starts before camera, audio RTP arrives
+        # before video RTP).
+        now = time.monotonic() * 1000
+        for ts in state.tracks.values():
+            first_ts: float | None = None
+            for _, ts_ms in ts.pending:
+                if ts_ms is not None and (first_ts is None or ts_ms < first_ts):
+                    first_ts = ts_ms
+            ts.t0_ms = first_ts if first_ts is not None else now
+        pending_counts = {ts.track.id: len(ts.pending) for ts in state.tracks.values()}
+        logger.info(
+            "Encoding started: pending=%s",
+            pending_counts,
+        )
 
-    def _create_stream(
-        self,
-        container: Any,
-        track: RecordingTrack,
-        config: MediaRecordingConfig,
-    ) -> Any:
-        """Add a stream to the container with known parameters."""
-        if track.kind == "video":
-            w = track.width or 640
-            h = track.height or 480
-            codec = _resolve_video_codec(config.video_codec)
-            try:
-                stream = container.add_stream(codec, rate=config.video_fps)
-                stream.pix_fmt = "yuv420p"
-                stream.width = w
-                stream.height = h
-            except Exception:
-                if codec != "libx264":
-                    logger.info("Codec %s failed, falling back to libx264", codec)
-                    stream = container.add_stream("libx264", rate=config.video_fps)
-                    stream.pix_fmt = "yuv420p"
-                    stream.width = w
-                    stream.height = h
-                else:
-                    raise
-            return stream
-        # audio
-        rate = track.sample_rate or config.audio_sample_rate
-        stream = container.add_stream(config.audio_codec, rate=rate)
-        stream.layout = "mono"
-        return stream
+        # Flush buffered frames
+        for ts in state.tracks.values():
+            if ts.stream is None:
+                ts.pending.clear()
+                continue
+            for data, ts_ms in ts.pending:
+                try:
+                    self._encode_frame(state, ts, ts.track, data, ts_ms)
+                    ts.frame_count += 1
+                except Exception:
+                    logger.error(
+                        "Flush failed for track %s at frame %d",
+                        ts.track.id,
+                        ts.frame_count,
+                        exc_info=True,
+                    )
+                    break
+            ts.pending.clear()
 
     def _encode_frame(
         self,
@@ -277,7 +330,6 @@ class PyAVMediaRecorder(MediaRecorder):
         data: bytes,
         timestamp_ms: float | None,
     ) -> None:
-        """Encode a single frame and mux resulting packets."""
         if track.kind == "video":
             self._write_video(state, ts, data, timestamp_ms)
         elif track.kind == "audio":
@@ -290,34 +342,81 @@ class PyAVMediaRecorder(MediaRecorder):
         data: bytes,
         timestamp_ms: float | None,
     ) -> None:
-        """Encode and mux a video frame.
+        if ts.stream is None:
+            return
+        if ts.track.codec in ENCODED_VIDEO_CODECS:
+            self._write_encoded_video(state, ts, data, timestamp_ms)
+        else:
+            self._write_raw_video(state, ts, data, timestamp_ms)
 
-        PTS is derived from the frame's capture timestamp so playback
-        speed matches real time regardless of the configured stream
-        rate.  Falls back to frame-count PTS when no timestamp is
-        available.
-        """
+    def _write_raw_video(
+        self,
+        state: _RecordingState,
+        ts: _TrackState,
+        data: bytes,
+        timestamp_ms: float | None,
+    ) -> None:
         import numpy as np
 
-        stream = ts.stream
-        w, h = stream.width, stream.height
+        w, h = ts.stream.width, ts.stream.height
         expected = w * h * 3
         if len(data) < expected:
             data = data + b"\x00" * (expected - len(data))
         arr = np.frombuffer(data[:expected], dtype=np.uint8).reshape(h, w, 3)
         frame = self._av.VideoFrame.from_ndarray(arr, format="rgb24")
-
-        if timestamp_ms is not None:
-            elapsed_s = (timestamp_ms - state.t0_ms) / 1000.0
-            pts = max(round(elapsed_s * ts.fps), 0)
-            # Ensure strictly monotonic
-            frame.pts = max(pts, ts.last_pts + 1)
-        else:
-            frame.pts = ts.frame_count
+        frame.pts = compute_pts(
+            timestamp_ms,
+            ts.t0_ms,
+            ts.video_fps,
+            ts.last_pts,
+            ts.frame_count,
+        )
         ts.last_pts = frame.pts
+        safe_mux(
+            ts.stream,
+            state.container,
+            frame,
+            state._mux_error_flag,
+            state.path,
+            label="raw_video",
+        )
 
-        for packet in stream.encode(frame):
-            state.container.mux(packet)
+    def _write_encoded_video(
+        self,
+        state: _RecordingState,
+        ts: _TrackState,
+        data: bytes,
+        timestamp_ms: float | None,
+    ) -> None:
+        if ts.stream is None:
+            return
+        if ts.decoder is None:
+            ts.decoder = self._av.CodecContext.create(ts.track.codec, "r")
+
+        raw = h264_annex_b(data) if ts.track.codec == "h264" else data
+        try:
+            decoded_frames = ts.decoder.decode(self._av.Packet(raw))
+        except Exception:
+            logger.debug("Decode error for track %s", ts.track.id)
+            return
+
+        for decoded_frame in decoded_frames:
+            decoded_frame.pts = compute_pts(
+                timestamp_ms,
+                ts.t0_ms,
+                ts.video_fps,
+                ts.last_pts,
+                ts.frame_count,
+            )
+            ts.last_pts = decoded_frame.pts
+            safe_mux(
+                ts.stream,
+                state.container,
+                decoded_frame,
+                state._mux_error_flag,
+                state.path,
+                label=f"encoded_video:{ts.track.codec}",
+            )
 
     def _write_audio(
         self,
@@ -326,29 +425,32 @@ class PyAVMediaRecorder(MediaRecorder):
         data: bytes,
         timestamp_ms: float | None,
     ) -> None:
-        """Encode and mux an audio frame.
-
-        PTS is derived from the frame's timestamp when available
-        (samples = elapsed_s * sample_rate), ensuring audio stays
-        aligned with video.  Falls back to sample-count PTS.
-        """
         import numpy as np
 
         stream = ts.stream
         samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
-        frame = self._av.audio.frame.AudioFrame.from_ndarray(samples, format="s16", layout="mono")
+        frame = self._av.audio.frame.AudioFrame.from_ndarray(
+            samples,
+            format="s16",
+            layout="mono",
+        )
         frame.sample_rate = stream.rate
-
-        if timestamp_ms is not None:
-            elapsed_s = (timestamp_ms - state.t0_ms) / 1000.0
-            pts = max(round(elapsed_s * stream.rate), 0)
-            frame.pts = max(pts, ts.last_pts + 1)
-        else:
-            frame.pts = ts.frame_count * len(samples[0])
+        frame.pts = compute_pts(
+            timestamp_ms,
+            ts.t0_ms,
+            stream.rate,
+            ts.last_pts,
+            ts.frame_count * len(samples[0]),
+        )
         ts.last_pts = frame.pts
-
-        for packet in stream.encode(frame):
-            state.container.mux(packet)
+        safe_mux(
+            stream,
+            state.container,
+            frame,
+            state._mux_error_flag,
+            state.path,
+            label="audio",
+        )
 
     def close(self) -> None:
         for handle_id in list(self._recordings):
