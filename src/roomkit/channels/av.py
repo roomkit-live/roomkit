@@ -297,25 +297,22 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
 
         is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
 
-        # Send NALs via the video call session's underlying RTP session
-        # for proper packetization (individual NALs + auto-timestamp)
-        vcs = getattr(self._backend, "_video_call_sessions", {}).get(session.id)
-        if vcs is not None:
-            # VideoCallSession wraps a VideoRTPSession
-            rtp_session = getattr(vcs, "_video_session", None)
-            if rtp_session is not None and hasattr(rtp_session, "send_frame_auto"):
-                rtp_session.send_frame_auto(nals, is_key)
-                return
-            # Fallback: use send_frame with manual timestamp
-            self._avatar_frame_count = getattr(self, "_avatar_frame_count", 0) + 1
-            ts = self._avatar_frame_count * 3000  # 90kHz / 30fps
-            vcs.send_frame(nals, ts, is_key)
-            return
-
-        # Fallback: try the public send_video API
-        video_session = self._backend.get_video_session(session.id)
-        if video_session is not None:
-            await self._backend.send_video(video_session, nals[0])
+        try:
+            # Access the VideoCallSession's underlying VideoRTPSession
+            # for proper NAL list + auto-timestamp handling
+            vcs = getattr(self._backend, "_video_call_sessions", {}).get(session.id)
+            if vcs is not None:
+                rtp_session = getattr(vcs, "_session", None)
+                if rtp_session is not None and hasattr(rtp_session, "send_frame_auto"):
+                    rtp_session.send_frame_auto(nals, is_key)
+                    return
+                # Fallback: use send_frame on VideoCallSession
+                self._avatar_frame_count = getattr(self, "_avatar_frame_count", 0) + 1
+                ts = self._avatar_frame_count * 3000  # 90kHz / 30fps
+                vcs.send_frame(nals, ts, is_key)
+        except Exception:
+            # Never let avatar errors kill the audio stream
+            logger.debug("Avatar frame send failed", exc_info=True)
 
     # -- Capabilities ----------------------------------------------------------
 
