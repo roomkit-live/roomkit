@@ -14,6 +14,7 @@ from roomkit.channels import (
 )
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
+from roomkit.channels.av import AudioVideoChannel
 from roomkit.channels.base import Channel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.channels.realtime_voice import ToolHandler as ToolHandler
@@ -312,6 +313,9 @@ from roomkit.video import (
     VisionProvider,
     VisionResult,
     get_local_video_backend,
+    get_rtp_video_backend,
+    get_screen_capture_backend,
+    get_sip_video_backend,
     setup_video_vision,
 )
 from roomkit.voice import (
@@ -425,6 +429,7 @@ __all__ = [
     "Channel",
     "TransportChannel",
     "AIChannel",
+    "AudioVideoChannel",
     "EmailChannel",
     "RCSChannel",
     "SMSChannel",
@@ -768,6 +773,9 @@ __all__ = [
     "GeminiVisionConfig",
     "GeminiVisionProvider",
     "get_local_video_backend",
+    "get_rtp_video_backend",
+    "get_screen_capture_backend",
+    "get_sip_video_backend",
     "setup_video_vision",
     "OpenAIVisionConfig",
     "OpenAIVisionProvider",

@@ -204,10 +204,17 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         vad_kwargs: dict[str, Any] = {}
         start_sensitivity = pc.get("start_of_speech_sensitivity")
         if start_sensitivity:
-            vad_kwargs["start_of_speech_sensitivity"] = start_sensitivity.upper()
+            val = start_sensitivity.upper()
+            # Accept short form "LOW"/"HIGH" → expand to full enum name
+            if val in ("LOW", "HIGH"):
+                val = f"START_SENSITIVITY_{val}"
+            vad_kwargs["start_of_speech_sensitivity"] = val
         end_sensitivity = pc.get("end_of_speech_sensitivity")
         if end_sensitivity:
-            vad_kwargs["end_of_speech_sensitivity"] = end_sensitivity.upper()
+            val = end_sensitivity.upper()
+            if val in ("LOW", "HIGH"):
+                val = f"END_SENSITIVITY_{val}"
+            vad_kwargs["end_of_speech_sensitivity"] = val
         silence_duration_ms = pc.get("silence_duration_ms")
         if silence_duration_ms is not None:
             vad_kwargs["silence_duration_ms"] = int(silence_duration_ms)

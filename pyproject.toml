@@ -40,6 +40,7 @@ fastrtc = ["fastrtc", "numpy"]
 webrtc-aec = ["aec-audio-processing>=0.1"]
 local-audio = ["sounddevice", "numpy"]
 local-video = ["opencv-python-headless>=4.8"]
+screen-capture = ["mss>=9.0"]
 video = ["av>=12.0.0", "numpy"]
 rtp = ["aiortp>=0.1.0"]
 sip = ["aiosipua[rtp]>=0.2.0"]
@@ -253,6 +254,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["starlette", "starlette.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["mss", "mss.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from roomkit.video.ai_integration import setup_video_vision
+from roomkit.video.backends import (
+    get_rtp_video_backend,
+    get_screen_capture_backend,
+    get_sip_video_backend,
+)
 from roomkit.video.backends.base import VideoBackend
 from roomkit.video.backends.mock import MockVideoBackend, MockVideoCall
 from roomkit.video.base import (
@@ -64,6 +69,9 @@ __all__ = [
     "setup_video_vision",
     # Lazy loaders
     "get_local_video_backend",
+    "get_rtp_video_backend",
+    "get_screen_capture_backend",
+    "get_sip_video_backend",
 ]
 
 
