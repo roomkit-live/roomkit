@@ -104,7 +104,7 @@ async def main() -> None:
     stt = DeepgramSTTProvider(
         config=DeepgramConfig(
             api_key=deepgram_key,
-            model="nova-3",
+            model=os.environ.get("DEEPGRAM_MODEL", "nova-2"),
             language=os.environ.get("LANGUAGE", "en"),
             punctuate=True,
             smart_format=True,
