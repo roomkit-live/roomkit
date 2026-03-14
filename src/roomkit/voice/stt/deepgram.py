@@ -278,7 +278,7 @@ class DeepgramSTTProvider(STTProvider):
                 except Exception as e:
                     logger.error("Error sending audio to Deepgram: %s", e)
                 finally:
-                    connection.finish()
+                    await connection.send_close_stream()
 
             sender_task = asyncio.create_task(send_audio())
 
