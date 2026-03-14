@@ -219,11 +219,14 @@ class DeepgramSTTProvider(STTProvider):
 
         opts = self._build_connect_options(sample_rate)
         logger.info(
-            "Deepgram stream: connecting with model=%s, sample_rate=%s, encoding=%s",
+            "Deepgram stream: connecting with model=%s, sample_rate=%s, opts=%s",
             opts.get("model"),
             opts.get("sample_rate"),
-            opts.get("encoding"),
+            {k: v for k, v in opts.items() if k not in ("model", "sample_rate", "encoding")},
         )
+
+        # Fresh client per stream to avoid stale SDK state
+        client = self._dg.AsyncDeepgramClient(api_key=self._config.api_key)
 
         # Results queue — SDK callbacks push, our async generator pulls
         result_queue: asyncio.Queue[TranscriptionResult | None] = asyncio.Queue()
@@ -257,7 +260,7 @@ class DeepgramSTTProvider(STTProvider):
         def on_close(_: Any) -> None:
             result_queue.put_nowait(None)  # sentinel
 
-        async with self._client.listen.v1.connect(**opts) as connection:
+        async with client.listen.v1.connect(**opts) as connection:
             connection.on(EventType.MESSAGE, on_message)
             connection.on(EventType.ERROR, on_error)
             connection.on(EventType.CLOSE, on_close)
