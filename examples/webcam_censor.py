@@ -58,6 +58,7 @@ from roomkit.recorder.pyav import PyAVMediaRecorder
 from roomkit.video.backends.local import LocalVideoBackend
 from roomkit.video.pipeline.filter.base import VideoFilterProvider
 from roomkit.video.pipeline.filter.censor import CensorVideoFilter
+from roomkit.video.pipeline.filter.watermark import WatermarkFilter
 from roomkit.video.pipeline.filter.yolo import YOLODetectorFilter
 from roomkit.video.vision.base import VisionProvider
 
@@ -117,12 +118,18 @@ async def main() -> None:
     vision = _build_vision(args)
     censor = CensorVideoFilter(blocked_labels={"person"}, grace_frames=30)
 
-    # Build filter chain: YOLO (optional) → Censor
+    # Build filter chain: YOLO (optional) → Censor → Watermark
     filters: list[VideoFilterProvider] = []
     if args.yolo:
         yolo = YOLODetectorFilter(confidence=0.5, every_n_frames=1)
         filters.append(yolo)
     filters.append(censor)
+    filters.append(
+        WatermarkFilter(
+            text="RoomKit {timestamp}",
+            position="bottom-right",
+        )
+    )
 
     # --- Recorder: PyAV → MP4 (records post-filter frames) -----------------
     recorder = PyAVMediaRecorder()

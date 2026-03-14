@@ -38,3 +38,4 @@ examples/smart-turn/
 examples/*.onnx
 wa-session.db
 recordings/
+*.pt
