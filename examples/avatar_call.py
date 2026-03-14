@@ -170,20 +170,19 @@ async def main() -> None:
         return HookResult.allow(event=event)
 
     # --- Route incoming calls ---------------------------------------------------
-    recorder = PyAVMediaRecorder()
-
     async def on_call(session: VoiceSession) -> None:
-        room_id = session.metadata.get("room_id", session.id)
+        # Use session ID as room ID to avoid conflicts on repeated calls
+        room_id = session.id
         caller = session.metadata.get("caller", "unknown")
         has_video = session.metadata.get("has_video", False)
 
-        logger.info("Incoming call: room=%s, caller=%s, video=%s", room_id, caller, has_video)
+        logger.info("Incoming call: room=%s, caller=%s, video=%s", room_id[:8], caller, has_video)
 
         await kit.create_room(
             room_id=room_id,
             recorders=[
                 RoomRecorderBinding(
-                    recorder=recorder,
+                    recorder=PyAVMediaRecorder(),
                     config=MediaRecordingConfig(storage="recordings"),
                 ),
             ],
