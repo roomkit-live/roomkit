@@ -218,6 +218,12 @@ class DeepgramSTTProvider(STTProvider):
         )
 
         opts = self._build_connect_options(sample_rate)
+        logger.info(
+            "Deepgram stream: connecting with model=%s, sample_rate=%s, encoding=%s",
+            opts.get("model"),
+            opts.get("sample_rate"),
+            opts.get("encoding"),
+        )
 
         # Results queue — SDK callbacks push, our async generator pulls
         result_queue: asyncio.Queue[TranscriptionResult | None] = asyncio.Queue()

@@ -175,6 +175,8 @@ from roomkit.providers.mistral.ai import MistralAIProvider
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
+from roomkit.providers.personaplex.config import PersonaPlexConfig
+from roomkit.providers.personaplex.realtime import PersonaPlexRealtimeProvider
 from roomkit.providers.rcs.base import RCSDeliveryResult, RCSProvider
 from roomkit.providers.rcs.mock import MockRCSProvider
 from roomkit.providers.sinch.config import SinchConfig
@@ -587,6 +589,9 @@ __all__ = [
     # AI – OpenAI
     "OpenAIAIProvider",
     "OpenAIConfig",
+    # Realtime – PersonaPlex (NVIDIA)
+    "PersonaPlexConfig",
+    "PersonaPlexRealtimeProvider",
     # AI – vLLM (local)
     "VLLMConfig",
     "create_vllm_provider",

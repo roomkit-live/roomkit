@@ -307,8 +307,6 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         logger.info("Gemini Live session connected: %s", session.id)
 
     async def send_audio(self, session: VoiceSession, audio: bytes) -> None:
-        from google.genai import types
-
         state = self._sessions.get(session.id)
         if state is None or state.live_session is None:
             return
@@ -323,9 +321,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             return
 
         try:
-            mime = f"audio/pcm;rate={state.input_sample_rate}"
             await state.live_session.send_realtime_input(
-                audio=types.Blob(data=audio, mime_type=mime),
+                audio=self._make_audio_blob(audio, state.input_sample_rate),
             )
             # Successful send — reset suppression so next failure fires callback
             state.error_suppressed = False
@@ -511,6 +508,23 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             state = self._sessions.get(session_id)
             if state:
                 await self.disconnect(state.session)
+
+    # -- Hot-path helpers (avoid per-call imports and string formatting) --
+
+    _blob_cls: Any = None
+    _mime_cache: dict[int, str] = {}
+
+    def _make_audio_blob(self, data: bytes, sample_rate: int) -> Any:
+        """Create a Blob without per-call import or string formatting."""
+        if self._blob_cls is None:
+            from google.genai import types
+
+            self.__class__._blob_cls = types.Blob
+        mime = self._mime_cache.get(sample_rate)
+        if mime is None:
+            mime = f"audio/pcm;rate={sample_rate}"
+            self._mime_cache[sample_rate] = mime
+        return self._blob_cls(data=data, mime_type=mime)
 
     # -- Callback registration --
 

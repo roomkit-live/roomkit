@@ -132,7 +132,11 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             audio_output["voice"] = voice
 
         # --- Turn detection / VAD (nested under audio.input in GA) ---
-        td_type = pc.get("turn_detection_type", "server_vad" if server_vad else None)
+        # Default to semantic_vad — it uses a turn detection model that
+        # distinguishes real speech from echo/noise residuals, which is
+        # critical for laptop mic+speaker setups where AEC can't suppress
+        # 100% of the echo.  server_vad (energy-based) is too sensitive.
+        td_type = pc.get("turn_detection_type", "semantic_vad" if server_vad else None)
         turn_detection = self._build_turn_detection(td_type, pc)
         if turn_detection is not None:
             audio_input["turn_detection"] = turn_detection
