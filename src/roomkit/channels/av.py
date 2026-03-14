@@ -243,84 +243,48 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         session: VoiceSession,
         chunks: AsyncIterator[AudioChunk],
     ) -> AsyncIterator[AudioChunk]:
-        """Wrap TTS outbound stream to feed avatar with audio chunks.
+        """Wrap TTS stream to feed avatar with audio chunks.
 
-        Tees each audio chunk: one copy goes to the voice backend
-        (speaker), the other feeds the avatar which generates
-        lip-synced video frames sent to the video backend.
+        Does NOT call super()._wrap_outbound() — iterates chunks
+        directly to avoid async generator chaining issues.  Pipeline
+        outbound processing is skipped when avatar is active (the
+        avatar path is the outbound processing).
         """
-        logger.info(
-            "Avatar _wrap_outbound called (avatar=%s, started=%s)",
-            self._avatar.name if self._avatar else None,
-            self._avatar.is_started if self._avatar else False,
-        )
-        # If no avatar, delegate to parent (pipeline outbound processing)
         if self._avatar is None or not self._avatar.is_started:
-            async for chunk in super()._wrap_outbound(session, chunks):
+            async for chunk in chunks:
                 yield chunk
             return
 
-        chunk_count = 0
-        async for chunk in super()._wrap_outbound(session, chunks):
-            chunk_count += 1
-            # Feed audio to avatar → get video frames
-            if chunk.data:
-                frames = self._avatar.feed_audio(chunk.data, chunk.sample_rate)
-                for frame in frames:
-                    # Send through video pipeline if configured
-                    if self._video_pipeline is not None:
-                        processed = self._video_pipeline.process_inbound(
-                            session.id,
-                            frame,
-                        )
-                        if processed is not None:
-                            frame = processed
-                    # Send to video taps
-                    for tap in self._video_media_taps:
-                        tap(session, frame)  # type: ignore[arg-type]
-                    # Encode and send to video backend
-                    await self._send_avatar_frame(session, frame)
+        async for chunk in chunks:
+            # Feed audio to avatar → generate video frames
+            if chunk.data and self._avatar_encoder is not None:
+                try:
+                    frames = self._avatar.feed_audio(chunk.data, chunk.sample_rate)
+                    for frame in frames:
+                        self._send_avatar_frame_sync(session, frame)
+                except Exception:
+                    logger.debug("Avatar feed error", exc_info=True)
             yield chunk
 
-        logger.info("Avatar wrap_outbound done: %d chunks yielded", chunk_count)
-
-        # Flush avatar (mouth closing animation)
-        for frame in self._avatar.flush():
-            await self._send_avatar_frame(session, frame)
-
-    async def _send_avatar_frame(self, session: VoiceSession, frame: VideoFrame) -> None:
-        """Encode a raw avatar frame and send via video backend.
-
-        Uses the VideoCallSession directly for proper NAL unit handling
-        and auto-incrementing RTP timestamps.
-        """
-        if not isinstance(self._backend, VideoBackend):
-            return
-        if self._avatar_encoder is None:
-            return
-
-        # Encode raw RGB → H.264 NAL units (individual, not concatenated)
-        nals = self._avatar_encoder.encode(frame)
+    def _send_avatar_frame_sync(self, session: VoiceSession, frame: VideoFrame) -> None:
+        """Encode and send a single avatar frame (synchronous)."""
+        nals = self._avatar_encoder.encode(frame)  # type: ignore[union-attr]
         if not nals:
             return
 
         is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
 
         try:
-            # Access the VideoCallSession's underlying VideoRTPSession
-            # for proper NAL list + auto-timestamp handling
             vcs = getattr(self._backend, "_video_call_sessions", {}).get(session.id)
             if vcs is not None:
                 rtp_session = getattr(vcs, "_session", None)
                 if rtp_session is not None and hasattr(rtp_session, "send_frame_auto"):
                     rtp_session.send_frame_auto(nals, is_key)
                     return
-                # Fallback: use send_frame on VideoCallSession
                 self._avatar_frame_count = getattr(self, "_avatar_frame_count", 0) + 1
-                ts = self._avatar_frame_count * 3000  # 90kHz / 30fps
+                ts = self._avatar_frame_count * 3000
                 vcs.send_frame(nals, ts, is_key)
         except Exception:
-            # Never let avatar errors kill the audio stream
             logger.debug("Avatar frame send failed", exc_info=True)
 
     # -- Capabilities ----------------------------------------------------------
