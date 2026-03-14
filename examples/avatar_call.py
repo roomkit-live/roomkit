@@ -199,11 +199,12 @@ async def main() -> None:
 
     # --- Disconnect handler (finalize recording) --------------------------------
     def on_call_ended(session: object) -> None:
-        session_id = getattr(session, "id", "unknown")
-        room_id = getattr(session, "room_id", None)
-        logger.info("Call ended: session=%s", session_id)
-        if room_id:
-            asyncio.ensure_future(kit.close_room(room_id))
+        # Room ID = session ID (set in on_call)
+        session_id = getattr(session, "id", None)
+        if not session_id:
+            return
+        logger.info("Call ended: session=%s", session_id[:8])
+        asyncio.ensure_future(kit.close_room(session_id))
 
     backend.on_client_disconnected(on_call_ended)
 
