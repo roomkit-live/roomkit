@@ -182,7 +182,7 @@ class DeepgramSTTProvider(STTProvider):
         audio_stream: AsyncIterator[AudioChunk],
     ) -> AsyncIterator[TranscriptionResult]:
         """Stream transcription using the Deepgram SDK WebSocket client."""
-        event_type = self._dg.core.events.EventType
+        from deepgram.core.events import EventType  # noqa: N813
 
         # Read first chunk to detect sample rate
         first_chunk: AudioChunk | None = None
@@ -236,9 +236,9 @@ class DeepgramSTTProvider(STTProvider):
             result_queue.put_nowait(None)  # sentinel
 
         async with self._client.listen.v1.connect(**opts) as connection:
-            connection.on(event_type.MESSAGE, on_message)
-            connection.on(event_type.ERROR, on_error)
-            connection.on(event_type.CLOSE, on_close)
+            connection.on(EventType.MESSAGE, on_message)
+            connection.on(EventType.ERROR, on_error)
+            connection.on(EventType.CLOSE, on_close)
 
             await connection.start_listening()
 
