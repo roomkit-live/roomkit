@@ -101,37 +101,53 @@ class DeepgramSTTProvider(STTProvider):
         return True
 
     def _build_connect_options(self, sample_rate: int = 16000) -> dict[str, Any]:
-        """Build keyword arguments for the SDK connect() call."""
+        """Build keyword arguments for the SDK connect() call.
+
+        The SDK v6 connect() accepts all values as Optional[str].
+        """
         c = self._config
+
+        def _b(v: bool) -> str:
+            return str(v).lower()
+
         opts: dict[str, Any] = {
             "model": c.model,
             "language": c.language,
             "encoding": "linear16",
             "sample_rate": str(sample_rate),
-            "punctuate": c.punctuate,
-            "smart_format": c.smart_format,
-            "diarize": c.diarize,
-            "filler_words": c.filler_words,
-            "numerals": c.numerals,
-            "profanity_filter": c.profanity_filter,
-            "detect_entities": c.detect_entities,
-            "multichannel": c.multichannel,
-            "dictation": c.dictation,
-            "interim_results": c.interim_results,
-            "vad_events": c.vad_events,
+            "punctuate": _b(c.punctuate),
+            "smart_format": _b(c.smart_format),
+            "diarize": _b(c.diarize),
+            "numerals": _b(c.numerals),
+            "profanity_filter": _b(c.profanity_filter),
+            "detect_entities": _b(c.detect_entities),
+            "multichannel": _b(c.multichannel),
+            "dictation": _b(c.dictation),
+            "interim_results": _b(c.interim_results),
+            "vad_events": _b(c.vad_events),
         }
         if c.version is not None:
             opts["version"] = c.version
         if isinstance(c.endpointing, bool):
-            opts["endpointing"] = c.endpointing
+            opts["endpointing"] = _b(c.endpointing)
         else:
-            opts["endpointing"] = c.endpointing
+            opts["endpointing"] = str(c.endpointing)
         if c.utterance_end_ms is not None:
-            opts["utterance_end_ms"] = c.utterance_end_ms
+            opts["utterance_end_ms"] = str(c.utterance_end_ms)
         if c.tag is not None:
             opts["tag"] = c.tag
         if c.mip_opt_out:
-            opts["mip_opt_out"] = True
+            opts["mip_opt_out"] = "true"
+        if c.keywords:
+            opts["keywords"] = c.keywords
+        if c.keyterm:
+            opts["keyterm"] = c.keyterm
+        if c.search:
+            opts["search"] = c.search
+        if c.redact:
+            opts["redact"] = c.redact
+        if c.replace:
+            opts["replace"] = c.replace
         return opts
 
     async def transcribe(
