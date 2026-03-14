@@ -19,7 +19,11 @@ _H264_START_CODE_3 = b"\x00\x00\x01"
 
 
 def h264_annex_b(data: bytes) -> bytes:
-    """Prepend Annex B start code if not already present (single NAL only)."""
+    """Prepend Annex B start code if not already present.
+
+    Expects a single NAL unit (as produced by RTP depacketization).
+    Multi-NAL aggregation packets must be split before calling this.
+    """
     if data[:4] == _H264_START_CODE_4 or data[:3] == _H264_START_CODE_3:
         return data
     return _H264_START_CODE_4 + data
@@ -67,18 +71,24 @@ def safe_mux(
     stream: Any,
     container: Any,
     frame: Any,
-    mux_error_logged: list[bool],
+    track_state: Any,
     path: str,
     *,
     label: str = "",
 ) -> None:
-    """Encode frame and mux packets; log first error then suppress."""
+    """Encode frame and mux packets; log first error per track then suppress.
+
+    Args:
+        track_state: Object with a ``mux_error_logged`` bool attribute
+            (typically ``_TrackState``).  Set to ``True`` after the
+            first error to suppress subsequent log spam.
+    """
     try:
         for packet in stream.encode(frame):
             container.mux(packet)
     except Exception:
-        if not mux_error_logged[0]:
-            mux_error_logged[0] = True
+        if not track_state.mux_error_logged:
+            track_state.mux_error_logged = True
             frame_pts = getattr(frame, "pts", "?")
             frame_sr = getattr(frame, "sample_rate", None)
             logger.error(
@@ -108,6 +118,7 @@ def probe_encoded_dimensions(
     decoder = av_mod.CodecContext.create(codec_name, "r")
     try:
         for data, _ in pending:
+            # Each data blob is a single NAL from RTP depacketization
             raw = h264_annex_b(data) if codec_name == "h264" else data
             try:
                 for frame in decoder.decode(av_mod.Packet(raw)):

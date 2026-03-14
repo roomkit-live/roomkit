@@ -32,14 +32,14 @@ _DEFAULT_BASE_URL = "wss://api.openai.com/v1/realtime"
 class OpenAIRealtimeProvider(RealtimeVoiceProvider):
     """Realtime voice provider using the OpenAI Realtime API.
 
-    Connects via WebSocket to OpenAI's speech-to-speech API,
+    Connects via WebSocket to OpenAI's Realtime API (GA),
     handling bidirectional audio streaming with built-in VAD,
     transcription, and AI responses.
 
     Requires the ``websockets`` package.
 
     Example:
-        provider = OpenAIRealtimeProvider(api_key="sk-...", model="gpt-4o-realtime-preview")
+        provider = OpenAIRealtimeProvider(api_key="sk-...", model="gpt-realtime-1.5")
         provider.on_audio(handle_output_audio)
         provider.on_transcription(handle_transcription)
 
@@ -51,7 +51,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         self,
         *,
         api_key: str | SecretStr,
-        model: str = "gpt-4o-realtime-preview",
+        model: str = "gpt-realtime-1.5",
         base_url: str | None = None,
     ) -> None:
         self._api_key = SecretStr(api_key) if isinstance(api_key, str) else api_key
@@ -98,10 +98,14 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
                 "Install with: pip install 'roomkit[realtime-openai]'"
             ) from exc
 
+        if temperature is not None:
+            logger.warning(
+                "OpenAI Realtime GA API no longer supports the temperature parameter; ignoring"
+            )
+
         url = f"{self._base_url}?model={self._model}"
         headers = {
             "Authorization": f"Bearer {self._api_key.get_secret_value()}",
-            "OpenAI-Beta": "realtime=v1",
         }
 
         ws = await asyncio.wait_for(
@@ -114,8 +118,9 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
 
         pc = provider_config or {}
 
-        # Configure session
+        # Configure session (GA API requires "type": "realtime")
         session_config: dict[str, Any] = {
+            "type": "realtime",
             "modalities": ["text", "audio"],
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
@@ -124,8 +129,6 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
 
         if voice:
             session_config["voice"] = voice
-        if temperature is not None:
-            session_config["temperature"] = temperature
         if system_prompt:
             session_config["instructions"] = system_prompt
         if tools:

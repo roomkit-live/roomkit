@@ -36,6 +36,9 @@ class MockVideoResizerProvider(VideoResizerProvider):
         self.frames.append(frame)
         return frame
 
-    def close(self) -> None:
+    def reset(self) -> None:
         self.call_count = 0
         self.frames.clear()
+
+    def close(self) -> None:
+        pass

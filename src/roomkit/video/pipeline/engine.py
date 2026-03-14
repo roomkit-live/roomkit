@@ -113,6 +113,22 @@ class VideoPipeline:
 
         return result
 
+    def update_filter_context(self, session_id: str, result: VisionResult) -> None:
+        """Update the filter context for a session with a new vision result.
+
+        Called by VideoHooksMixin after vision analysis completes, so
+        external code doesn't need to reach into private attributes.
+
+        Args:
+            session_id: Active session identifier.
+            result: The latest vision analysis result.
+        """
+        if not self._config.filters:
+            return
+        ctx = self._filter_contexts.setdefault(session_id, FilterContext())
+        ctx.last_vision_result = result
+        ctx.labels_detected = set(result.labels)
+
     def reset(self, session_id: str) -> None:
         """Reset pipeline state for a session.
 

@@ -111,9 +111,10 @@ class PyAVVideoResizer(VideoResizerProvider):
     ) -> VideoFrame:
         """Perform the actual resize via PyAV."""
         import av
+        import numpy as np
 
-        av_frame = av.VideoFrame(frame.width, frame.height, pix_fmt)
-        av_frame.planes[0].update(frame.data)
+        arr = np.frombuffer(frame.data, dtype=np.uint8).reshape(frame.height, frame.width, 3)
+        av_frame = av.VideoFrame.from_ndarray(arr, format=pix_fmt)
 
         resized = av_frame.reformat(width=new_w, height=new_h, format=pix_fmt)
         raw_bytes = resized.to_ndarray().tobytes()

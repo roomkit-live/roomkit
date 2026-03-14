@@ -24,6 +24,7 @@ def kit() -> RoomKit:
     return RoomKit()
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 class TestSetupVideoVision:
     async def test_vision_updates_ai_system_prompt(self, kit: RoomKit) -> None:
         """Vision results are injected into the AI's system prompt."""
@@ -40,7 +41,7 @@ class TestSetupVideoVision:
         await kit.attach_channel("r1", "video-1")
         await kit.attach_channel("r1", "ai-1", category=ChannelCategory.INTELLIGENCE)
 
-        # Wire vision → AI
+        # Wire vision → AI (deprecated but still functional)
         setup_video_vision(kit, room_id="r1", ai_channel_id="ai-1")
 
         # Connect and send a frame

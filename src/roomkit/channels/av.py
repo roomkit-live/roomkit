@@ -283,17 +283,20 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         """Encode a raw avatar frame and send via video backend."""
         if not isinstance(self._backend, VideoBackend):
             return
+
+        video_session = self._backend.get_video_session(session.id)
+        if video_session is None:
+            return
+
         if self._avatar_encoder is not None:
-            # Encode raw → H.264 NAL units, send all NALs for this frame
+            # Encode raw → H.264 NAL units, concatenate for send_video
             nals = self._avatar_encoder.encode(frame)
             if nals:
-                vcs = getattr(self._backend, "_video_call_sessions", {}).get(session.id)
-                if vcs is not None:
-                    is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
-                    vcs.send_frame(nals, 0, is_key)
+                nal_bytes = b"".join(nals)
+                await self._backend.send_video(video_session, nal_bytes)
         else:
             # Raw bytes (for backends that accept unencoded data)
-            await self._backend.send_video(session, frame.data)
+            await self._backend.send_video(video_session, frame.data)
 
     # -- Capabilities ----------------------------------------------------------
 

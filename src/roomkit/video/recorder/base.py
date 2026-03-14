@@ -3,36 +3,16 @@
 from __future__ import annotations
 
 import os
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from roomkit.recorder.base import safe_filename, validate_storage_path
+
 if TYPE_CHECKING:
     from roomkit.video.base import VideoSession
     from roomkit.video.video_frame import VideoFrame
-
-
-def safe_filename(session_id: str) -> str:
-    """Sanitize session ID for use in filenames."""
-    return re.sub(r"[^\w\-]", "_", session_id)
-
-
-def validate_storage_path(storage: str) -> str:
-    """Validate and resolve a storage directory path.
-
-    Rejects paths containing '..' components to prevent traversal.
-    Creates the directory if it doesn't exist. Returns the resolved path.
-    """
-    # Check raw parts before normpath collapses them
-    import pathlib
-
-    if ".." in pathlib.PurePath(storage).parts:
-        raise ValueError(f"Storage path must not contain '..': {storage}")
-    resolved = os.path.normpath(storage)
-    os.makedirs(resolved, exist_ok=True)
-    return resolved
 
 
 def build_recording_path(

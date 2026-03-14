@@ -76,6 +76,12 @@ class MuseTalkAvatarProvider(AvatarProvider):
         # Lazy-loaded MuseTalk internals
         self._avatar: Any = None  # MuseTalk Avatar instance
         self._audio_processor: Any = None
+        self._vae: Any = None
+        self._unet: Any = None
+        self._pe: Any = None
+        self._ref_image: Any = None
+        self._coord: Any = None
+        self._ref_latent: Any = None
         self._started = False
         self._width = 512
         self._height = 512
@@ -272,7 +278,12 @@ class MuseTalkAvatarProvider(AvatarProvider):
         return None
 
     def flush(self) -> list:
-        """Flush remaining audio buffer."""
+        """Flush remaining audio buffer.
+
+        Thread safety: feed_audio/flush are called from a single async
+        context (the TTS outbound wrapper in AudioVideoChannel), so
+        concurrent access is not expected.
+        """
         if not self._started or not self._audio_buffer:
             return []
         # Generate frames from remaining audio (pad if needed)
@@ -289,5 +300,7 @@ class MuseTalkAvatarProvider(AvatarProvider):
         self._started = False
         self._avatar = None
         self._audio_processor = None
+        self._vae = self._unet = self._pe = None
+        self._ref_image = self._coord = self._ref_latent = None
         self._audio_buffer.clear()
         logger.info("MuseTalk avatar stopped")

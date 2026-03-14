@@ -1,7 +1,7 @@
 """RoomKit — Speech-to-speech with OpenAI Realtime using local mic/speakers.
 
-Talk to GPT-4o using your system microphone — AI audio plays through
-your speakers.  Uses OpenAI's semantic VAD for smarter turn detection.
+Talk to GPT Realtime 1.5 using your system microphone — AI audio plays
+through your speakers.  Uses OpenAI's semantic VAD for smarter turn detection.
 
 Requirements:
     pip install roomkit[realtime-openai,local-audio]
@@ -13,7 +13,7 @@ Run with:
 
 Environment variables:
     OPENAI_API_KEY      (required) OpenAI API key
-    OPENAI_MODEL        Model name (default: gpt-4o-realtime-preview)
+    OPENAI_MODEL        Model name (default: gpt-realtime-1.5)
     OPENAI_VOICE        Voice preset (default: alloy)
     SYSTEM_PROMPT       Custom system prompt
     VAD_TYPE            Turn detection: semantic_vad | server_vad (default: semantic_vad)
@@ -57,7 +57,7 @@ async def main() -> None:
     # --- OpenAI Realtime provider (speech-to-speech) ---
     provider = OpenAIRealtimeProvider(
         api_key=api_key,
-        model=os.environ.get("OPENAI_MODEL", "gpt-4o-realtime-preview"),
+        model=os.environ.get("OPENAI_MODEL", "gpt-realtime-1.5"),
     )
 
     # --- AEC (Acoustic Echo Cancellation) ---

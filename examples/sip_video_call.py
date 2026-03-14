@@ -150,7 +150,7 @@ async def main() -> None:
         room_id = getattr(session, "room_id", None)
         logger.info("Call ended: session=%s, video_frames=%d", session_id, frame_count)
         if room_id:
-            asyncio.ensure_future(kit.close_room(room_id))
+            asyncio.create_task(kit.close_room(room_id))
 
     backend.on_client_disconnected(on_call_ended)
 

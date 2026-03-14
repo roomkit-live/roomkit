@@ -37,6 +37,12 @@ def setup_video_vision(
 ) -> None:
     """Wire video vision results into an AIChannel's context.
 
+    .. deprecated::
+        Auto-injection via ``VideoHooksMixin._update_ai_vision_context``
+        is now the default for any room with a video+AI channel pair.
+        Use this function only for custom ``context_prefix`` or to
+        target a specific AI channel in multi-AI setups.
+
     Registers a framework event handler that listens for
     ``video_vision_result`` events and updates the AI channel's
     binding metadata with the latest vision description. The AI
@@ -49,6 +55,15 @@ def setup_video_vision(
         context_prefix: Text prepended to the vision description
             in the system prompt supplement.
     """
+    import warnings
+
+    warnings.warn(
+        "setup_video_vision() is deprecated — auto-injection via "
+        "VideoHooksMixin._update_ai_vision_context is now the default. "
+        "Use this only for custom context_prefix or multi-AI targeting.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     # Cache the base system prompt (resolved once on first vision event)
     _base_prompt: list[str | None] = [None]

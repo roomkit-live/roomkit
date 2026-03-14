@@ -463,6 +463,8 @@ class RoomKit(InboundMixin, ChannelOpsMixin, RoomLifecycleMixin, HelpersMixin):
         await self.get_room(room_id)
 
         channel = self._channels.get(channel_id)
+        # AudioVideoChannel sessions are bound via bind_voice_session,
+        # not connect_video.  This path is for standalone VideoChannel only.
         if not isinstance(channel, VideoChannel):
             raise ChannelNotRegisteredError(
                 f"Channel {channel_id} is not a registered VideoChannel"

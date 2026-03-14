@@ -44,6 +44,7 @@ class _TrackState:
     decoder: Any = None  # codec context for decoding encoded video
     pending: list[tuple[bytes, float | None]] = field(default_factory=list)
     t0_ms: float = 0.0  # per-track timestamp origin
+    mux_error_logged: bool = False  # per-track first-error suppression flag
 
 
 @dataclass
@@ -57,7 +58,6 @@ class _RecordingState:
     path: str = ""
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     encoding_started: bool = False
-    _mux_error_flag: list[bool] = field(default_factory=lambda: [False])
 
 
 class PyAVMediaRecorder(MediaRecorder):
@@ -376,7 +376,7 @@ class PyAVMediaRecorder(MediaRecorder):
             ts.stream,
             state.container,
             frame,
-            state._mux_error_flag,
+            ts,
             state.path,
             label="raw_video",
         )
@@ -393,6 +393,7 @@ class PyAVMediaRecorder(MediaRecorder):
         if ts.decoder is None:
             ts.decoder = self._av.CodecContext.create(ts.track.codec, "r")
 
+        # Each data blob is a single NAL from RTP depacketization
         raw = h264_annex_b(data) if ts.track.codec == "h264" else data
         try:
             decoded_frames = ts.decoder.decode(self._av.Packet(raw))
@@ -413,7 +414,7 @@ class PyAVMediaRecorder(MediaRecorder):
                 ts.stream,
                 state.container,
                 decoded_frame,
-                state._mux_error_flag,
+                ts,
                 state.path,
                 label=f"encoded_video:{ts.track.codec}",
             )
@@ -447,7 +448,7 @@ class PyAVMediaRecorder(MediaRecorder):
             stream,
             state.container,
             frame,
-            state._mux_error_flag,
+            ts,
             state.path,
             label="audio",
         )

@@ -371,9 +371,15 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
                 session_id[:8],
                 stats,
             )
-            loop = self._loop or asyncio.get_running_loop()
-            task = loop.create_task(vcs.close(), name=f"sip_video_close:{session_id}")
-            task.add_done_callback(self._log_task_exception)
+            loop = self._loop
+            if loop is None:
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    logger.warning("Video session close skipped — no event loop")
+            if loop is not None:
+                task = loop.create_task(vcs.close(), name=f"sip_video_close:{session_id}")
+                task.add_done_callback(self._log_task_exception)
 
         video_rtp_port = self._video_rtp_ports.pop(session_id, None)
         if video_rtp_port is not None:
@@ -387,7 +393,7 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
 
         self._combined_answers.pop(session_id, None)
         frame_count = self._frame_sequences.pop(session_id, None)
-        if frame_count == 0:
+        if frame_count is not None and frame_count == 0:
             logger.warning(
                 "No video frames received for session %s — remote may not be sending video RTP",
                 session_id[:8],

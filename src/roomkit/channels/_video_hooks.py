@@ -95,13 +95,24 @@ class VideoHooksMixin:
             },
         )
 
+    @property
+    def _vision_provider(self) -> VisionProvider | None:
+        """Resolve the active vision provider.
+
+        Checks video pipeline config first, then falls back to
+        the direct ``_vision`` attribute set on the channel.
+        Subclasses can override for custom resolution logic.
+        """
+        pipeline_cfg = getattr(self, "_video_pipeline_config", None) or getattr(
+            self, "_pipeline", None
+        )
+        if pipeline_cfg and pipeline_cfg.vision:
+            return pipeline_cfg.vision
+        return self._vision
+
     async def _analyze_frame(self, session: VideoSession, frame: VideoFrame, room_id: str) -> None:
         """Run vision analysis on a frame. Interval check done in caller."""
-        # Pipeline config vision > direct channel vision
-        pipeline_cfg = getattr(self, "_pipeline", None) or getattr(
-            self, "_video_pipeline_config", None
-        )
-        vision = pipeline_cfg.vision if pipeline_cfg and pipeline_cfg.vision else self._vision
+        vision = self._vision_provider
         if vision is None:
             return
         t0 = time.perf_counter()
@@ -122,12 +133,8 @@ class VideoHooksMixin:
 
         # Update pipeline filter context with latest vision result
         pipeline = getattr(self, "_video_pipeline", None)
-        if pipeline is not None and pipeline._config.filters:
-            from roomkit.video.pipeline.filter.base import FilterContext
-
-            ctx = pipeline._filter_contexts.setdefault(session.id, FilterContext())
-            ctx.last_vision_result = result
-            ctx.labels_detected = set(result.labels)
+        if pipeline is not None:
+            pipeline.update_filter_context(session.id, result)
 
         if not self._framework or not result.description:
             return

@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from roomkit.video.pipeline.encoder.base import VideoEncoderProvider
+from roomkit.video.video_frame import ENCODED_CODECS, VideoFrame
 
 logger = logging.getLogger("roomkit.video.pipeline.encoder")
 
@@ -82,17 +83,15 @@ class PyAVVideoEncoder(VideoEncoderProvider):
     def name(self) -> str:
         return "pyav-h264"
 
-    def encode(self, frame: Any) -> list[bytes]:
+    def encode(self, frame: VideoFrame) -> list[bytes]:
         """Encode a raw VideoFrame, return H.264 NAL units."""
-        from roomkit.video.video_frame import ENCODED_CODECS
-
         # Skip already-encoded frames
-        if hasattr(frame, "codec") and frame.codec in ENCODED_CODECS:
+        if frame.codec in ENCODED_CODECS:
             return [frame.data]
 
-        w = frame.width if hasattr(frame, "width") else self._width
-        h = frame.height if hasattr(frame, "height") else self._height
-        data = frame.data if hasattr(frame, "data") else frame
+        w = frame.width
+        h = frame.height
+        data = frame.data
 
         self._ensure_ctx(w, h)
 

@@ -69,7 +69,7 @@ class VideoChunk:
     codec: str = "h264"
     width: int = 640
     height: int = 480
-    timestamp_ms: int | None = None
+    timestamp_ms: float | None = None
     keyframe: bool = False
     is_final: bool = False
 

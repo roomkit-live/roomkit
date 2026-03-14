@@ -204,7 +204,7 @@ async def main() -> None:
         if not session_id:
             return
         logger.info("Call ended: session=%s", session_id[:8])
-        asyncio.ensure_future(kit.close_room(session_id))
+        asyncio.create_task(kit.close_room(session_id))
 
     backend.on_client_disconnected(on_call_ended)
 

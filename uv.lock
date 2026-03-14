@@ -3328,7 +3328,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "2.21.0"
+version = "2.28.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -3340,9 +3340,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/92/e5/3d197a0947a166649f566706d7a4c8f7fe38f1fa7b24c9bcffe4c7591d44/openai-2.21.0.tar.gz", hash = "sha256:81b48ce4b8bbb2cc3af02047ceb19561f7b1dc0d4e52d1de7f02abfd15aa59b7", size = 644374, upload-time = "2026-02-14T00:12:01.577Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/87/eb0abb4ef88ddb95b3c13149384c4c288f584f3be17d6a4f63f8c3e3c226/openai-2.28.0.tar.gz", hash = "sha256:bb7fdff384d2a787fa82e8822d1dd3c02e8cf901d60f1df523b7da03cbb6d48d", size = 670334, upload-time = "2026-03-13T19:56:27.306Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/56/0a89092a453bb2c676d66abee44f863e742b2110d4dbb1dbcca3f7e5fc33/openai-2.21.0-py3-none-any.whl", hash = "sha256:0bc1c775e5b1536c294eded39ee08f8407656537ccc71b1004104fe1602e267c", size = 1103065, upload-time = "2026-02-14T00:11:59.603Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/5a/df122348638885526e53140e9c6b0d844af7312682b3bde9587eebc28b47/openai-2.28.0-py3-none-any.whl", hash = "sha256:79aa5c45dba7fef84085701c235cf13ba88485e1ef4f8dfcedc44fc2a698fc1d", size = 1141218, upload-time = "2026-03-13T19:56:25.46Z" },
 ]
 
 [[package]]
@@ -4963,13 +4963,13 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'smart-turn'" },
     { name = "numpy", marker = "extra == 'video'" },
     { name = "onnxruntime", marker = "extra == 'smart-turn'" },
-    { name = "openai", marker = "extra == 'all'", specifier = ">=2.21" },
-    { name = "openai", marker = "extra == 'azure'", specifier = ">=2.21" },
-    { name = "openai", marker = "extra == 'dev'", specifier = ">=2.21" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=2.21" },
-    { name = "openai", marker = "extra == 'providers'", specifier = ">=2.21" },
-    { name = "openai", marker = "extra == 'realtime-openai'", specifier = ">=2.21" },
-    { name = "openai", marker = "extra == 'vllm'", specifier = ">=2.21" },
+    { name = "openai", marker = "extra == 'all'", specifier = ">=2.28" },
+    { name = "openai", marker = "extra == 'azure'", specifier = ">=2.28" },
+    { name = "openai", marker = "extra == 'dev'", specifier = ">=2.28" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=2.28" },
+    { name = "openai", marker = "extra == 'providers'", specifier = ">=2.28" },
+    { name = "openai", marker = "extra == 'realtime-openai'", specifier = ">=2.28" },
+    { name = "openai", marker = "extra == 'vllm'", specifier = ">=2.28" },
     { name = "opencv-python-headless", marker = "extra == 'local-video'", specifier = ">=4.8" },
     { name = "opentelemetry-api", marker = "extra == 'opentelemetry'", specifier = ">=1.20" },
     { name = "opentelemetry-sdk", marker = "extra == 'opentelemetry'", specifier = ">=1.20" },
