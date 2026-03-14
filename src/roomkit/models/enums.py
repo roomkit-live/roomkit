@@ -227,6 +227,7 @@ class HookTrigger(StrEnum):
     ON_VIDEO_SESSION_ENDED = "on_video_session_ended"
     ON_VIDEO_TRACK_ADDED = "on_video_track_added"
     ON_VIDEO_TRACK_REMOVED = "on_video_track_removed"
+    ON_VISION_RESULT = "on_vision_result"
     ON_SCREEN_SHARE_STARTED = "on_screen_share_started"
     ON_SCREEN_SHARE_STOPPED = "on_screen_share_stopped"
 

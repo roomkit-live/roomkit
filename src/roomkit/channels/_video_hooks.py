@@ -97,9 +97,11 @@ class VideoHooksMixin:
 
     async def _analyze_frame(self, session: VideoSession, frame: VideoFrame, room_id: str) -> None:
         """Run vision analysis on a frame. Interval check done in caller."""
-        # Pipeline vision takes precedence over direct channel vision
-        pipeline = getattr(self, "_video_pipeline", None)
-        vision = pipeline.config.vision if pipeline and pipeline.config.vision else self._vision
+        # Pipeline config vision > direct channel vision
+        pipeline_cfg = getattr(self, "_pipeline", None) or getattr(
+            self, "_video_pipeline_config", None
+        )
+        vision = pipeline_cfg.vision if pipeline_cfg and pipeline_cfg.vision else self._vision
         if vision is None:
             return
         t0 = time.perf_counter()
@@ -118,5 +120,73 @@ class VideoHooksMixin:
 
         self._last_vision_results[session.id] = result
 
-        if self._framework and result.description:
-            await self._inject_vision_event(session, result, room_id, elapsed_ms)
+        if not self._framework or not result.description:
+            return
+
+        # Fire ON_VISION_RESULT sync hook — can block or modify the result
+        context = await self._framework._build_context(room_id)
+        from roomkit.models.vision_event import VisionEvent
+
+        vision_event = VisionEvent(
+            session=session,
+            description=result.description,
+            labels=result.labels,
+            confidence=result.confidence,
+            text=result.text,
+            faces=result.faces,
+            elapsed_ms=round(elapsed_ms),
+        )
+        hook_result = await self._framework.hook_engine.run_sync_hooks(
+            room_id,
+            HookTrigger.ON_VISION_RESULT,
+            vision_event,
+            context,
+            skip_event_filter=True,
+        )
+        if not hook_result.allowed:
+            logger.info("Vision result blocked by hook: %s", hook_result.reason)
+            return
+
+        # Update result from hook (hooks may modify description)
+        if isinstance(hook_result.event, VisionEvent):
+            result = result.__class__(
+                description=hook_result.event.description,
+                labels=hook_result.event.labels,
+                confidence=hook_result.event.confidence,
+                text=hook_result.event.text,
+                faces=hook_result.event.faces,
+                metadata=result.metadata,
+            )
+
+        await self._inject_vision_event(session, result, room_id, elapsed_ms)
+        await self._update_ai_vision_context(result, room_id)
+
+    async def _update_ai_vision_context(self, result: VisionResult, room_id: str) -> None:
+        """Auto-inject vision description into AI channels in the same room."""
+        if not self._framework:
+            return
+        parts = [f"You can see a live camera feed. Current view: {result.description}"]
+        if result.labels:
+            parts.append(f"Objects detected: {', '.join(result.labels)}")
+        if result.text:
+            parts.append(f"Text visible: {result.text}")
+        vision_context = "\n".join(parts)
+
+        try:
+            from roomkit.channels.ai import AIChannel
+
+            bindings = await self._framework._store.list_bindings(room_id)
+            for binding in bindings:
+                ch = self._framework._channels.get(binding.channel_id)
+                if not isinstance(ch, AIChannel):
+                    continue
+                meta = dict(binding.metadata)
+                base = meta.get("_base_system_prompt")
+                if base is None:
+                    base = meta.get("system_prompt", "") or getattr(ch, "_system_prompt", "") or ""
+                    meta["_base_system_prompt"] = base
+                meta["system_prompt"] = f"{base}\n\n{vision_context}" if base else vision_context
+                updated = binding.model_copy(update={"metadata": meta})
+                await self._framework._store.update_binding(updated)
+        except Exception:
+            logger.debug("Failed to auto-inject vision context", exc_info=True)

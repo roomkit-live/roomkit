@@ -291,12 +291,12 @@ class VideoChannel(VideoHooksMixin, Channel):
         for tap in self._media_taps:
             tap(session, frame)
 
-        # Vision: from pipeline config, or direct on channel
-        vision = (
-            self._video_pipeline.config.vision
-            if self._video_pipeline is not None
-            else self._vision
-        )
+        # Vision: pipeline config > direct channel param
+        vision = None
+        if self._pipeline is not None and self._pipeline.vision is not None:
+            vision = self._pipeline.vision
+        if vision is None:
+            vision = self._vision
         if vision is None:
             return
         # Throttle before creating a task — avoids O(fps) task allocation

@@ -10,6 +10,8 @@ from roomkit.channels._video_hooks import VideoHooksMixin
 from roomkit.channels.voice import VoiceChannel
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import ChannelMediaType, ChannelType, HookTrigger
+from roomkit.video.backends.base import VideoBackend
+from roomkit.video.pipeline.engine import VideoPipeline
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -17,6 +19,7 @@ if TYPE_CHECKING:
     from roomkit.models.channel import ChannelBinding
     from roomkit.recorder.base import ChannelRecordingConfig
     from roomkit.video.base import VideoSession
+    from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.video_frame import VideoFrame
     from roomkit.video.vision.base import VisionProvider, VisionResult
     from roomkit.voice.backends.base import VoiceBackend
@@ -51,6 +54,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         tts: TTSProvider | None = None,
         backend: VoiceBackend,
         pipeline: AudioPipelineConfig | None = None,
+        video_pipeline: VideoPipelineConfig | None = None,
         vision: VisionProvider | None = None,
         vision_interval_ms: int = 2000,
         recording: ChannelRecordingConfig | None = None,
@@ -75,9 +79,14 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         # before bind_session completed
         self._session_ready_pending_video: set[str] = set()
 
-        # Wire video callbacks from the combined A/V backend
-        from roomkit.video.backends.base import VideoBackend
+        # Video pipeline (decoder, resizer, vision)
+        if video_pipeline is not None and (video_pipeline.decoder or video_pipeline.resizer):
+            self._video_pipeline: VideoPipeline | None = VideoPipeline(video_pipeline)
+        else:
+            self._video_pipeline = None
+        self._video_pipeline_config = video_pipeline
 
+        # Wire video callbacks from the combined A/V backend
         if isinstance(backend, VideoBackend):
             backend.on_video_received(self._on_video_received)
 
@@ -90,16 +99,34 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
     # -- Backend video callback ------------------------------------------------
 
     def _on_video_received(self, session: VideoSession, frame: VideoFrame) -> None:
-        """Handle a raw video frame from the A/V backend."""
+        """Handle a video frame from the A/V backend.
+
+        If a video pipeline is configured, the frame goes through
+        decode → resize before reaching taps and vision.
+        """
         binding_info = self._session_bindings.get(session.id)
         if binding_info is None:
             logger.debug("Video frame dropped (no binding): session=%s", session.id[:8])
             return
+
+        # Run pipeline stages (decoder, resizer) if configured
+        if self._video_pipeline is not None:
+            processed = self._video_pipeline.process_inbound(session.id, frame)
+            if processed is None:
+                return
+            frame = processed
+
         # Deliver to all video taps
         for tap in self._video_media_taps:
             tap(session, frame)
-        # Throttled vision analysis
-        if self._vision is None:
+
+        # Vision: from pipeline config, or direct on channel
+        vision = (
+            self._video_pipeline_config.vision
+            if self._video_pipeline_config is not None and self._video_pipeline_config.vision
+            else self._vision
+        )
+        if vision is None:
             return
         if frame.timestamp_ms is not None:
             now_ms = frame.timestamp_ms
@@ -212,8 +239,6 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
 
     def _get_video_session(self, session_id: str) -> VideoSession | None:
         """Look up the VideoSession from the combined backend."""
-        from roomkit.video.backends.base import VideoBackend
-
         if isinstance(self._backend, VideoBackend):
             return self._backend.get_video_session(session_id)
         return None

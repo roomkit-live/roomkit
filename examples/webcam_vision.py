@@ -50,7 +50,6 @@ from roomkit import (
     RoomKit,
     VideoChannel,
     VideoPipelineConfig,
-    setup_video_vision,
 )
 from roomkit.channels.ai import AIChannel
 from roomkit.models.session_event import SessionStartedEvent
@@ -198,8 +197,7 @@ async def main() -> None:
     await kit.attach_channel("webcam-demo", "video-main")
     await kit.attach_channel("webcam-demo", "ai", category=ChannelCategory.INTELLIGENCE)
 
-    # Wire vision results into AI context
-    setup_video_vision(kit, room_id="webcam-demo", ai_channel_id="ai")
+    # Vision results are auto-injected into AI channels in the same room.
 
     # --- Hooks: log video events ---------------------------------------------
 
