@@ -34,6 +34,7 @@ import asyncio
 import logging
 import os
 import signal
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from roomkit import (
@@ -52,10 +53,36 @@ from roomkit.video.avatar.base import AvatarProvider
 from roomkit.video.avatar.mock import MockAvatarProvider
 from roomkit.video.backends.sip import SIPVideoBackend
 from roomkit.video.pipeline.filter.watermark import WatermarkFilter
-from roomkit.voice.base import VoiceSession
+from roomkit.voice.base import AudioChunk, VoiceSession
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.stt.mock import MockSTTProvider
-from roomkit.voice.tts.mock import MockTTSProvider
+from roomkit.voice.tts.base import TTSProvider
+
+
+class SilenceTTSProvider(TTSProvider):
+    """TTS that produces real PCM silence — triggers avatar frame generation."""
+
+    @property
+    def default_voice(self) -> str:
+        return "silence"
+
+    async def synthesize_stream(
+        self,
+        text: str,
+        *,
+        voice: str | None = None,
+    ) -> AsyncIterator[AudioChunk]:
+        # Generate ~2 seconds of 16kHz PCM silence (100 chunks × 20ms)
+        chunk_samples = 320  # 20ms at 16kHz
+        chunk_bytes = b"\x00" * (chunk_samples * 2)  # 16-bit PCM
+        for i in range(100):
+            yield AudioChunk(
+                data=chunk_bytes,
+                sample_rate=16000,
+                is_final=(i == 99),
+            )
+            await asyncio.sleep(0.02)  # simulate real-time pacing
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -114,7 +141,7 @@ async def main() -> None:
     av = AudioVideoChannel(
         "voice",
         stt=MockSTTProvider(),
-        tts=MockTTSProvider(),
+        tts=SilenceTTSProvider(),
         backend=backend,
         pipeline=AudioPipelineConfig(),
         avatar=avatar,
@@ -129,7 +156,8 @@ async def main() -> None:
     @kit.hook(HookTrigger.ON_TRANSCRIPTION)
     async def on_transcription(event, ctx):
         logger.info("User said: %s", event.text)
-        return HookResult.block("demo — mock AI")
+        # Trigger TTS response so avatar generates video frames
+        return HookResult.allow(event=event)
 
     # --- Route incoming calls ---------------------------------------------------
     recorder = PyAVMediaRecorder()
@@ -152,6 +180,11 @@ async def main() -> None:
         )
         await kit.attach_channel(room_id, "voice")
         await kit.bind_voice_session(session, room_id, "voice")
+
+        # Send a greeting via TTS — this triggers the avatar to generate
+        # lip-synced video frames from the TTS audio output.
+        logger.info("Sending greeting TTS (triggers avatar)...")
+        await av._send_tts(session, "Hello, welcome to our service.")
 
     backend.on_call(on_call)
 
