@@ -229,6 +229,10 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         self._session_ready_pending_video.clear()
         await super().close()
 
+    def _needs_outbound_wrap(self) -> bool:
+        """Avatar needs outbound wrapping even without an audio pipeline."""
+        return self._avatar is not None and self._avatar.is_started
+
     # -- Avatar: TTS audio → lip-synced video frames ---------------------------
 
     async def _wrap_outbound(
