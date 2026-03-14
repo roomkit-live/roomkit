@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -265,10 +266,9 @@ class DeepgramSTTProvider(STTProvider):
             connection.on(EventType.ERROR, on_error)
             connection.on(EventType.CLOSE, on_close)
 
-            # Note: do NOT call start_listening() — it blocks forever
-            # running the receive loop. The async context manager handles
-            # receiving automatically; callbacks fire from the SDK's
-            # internal task.
+            # start_listening() runs the receive loop — must be a background
+            # task so it doesn't block audio sending.
+            listen_task = asyncio.create_task(connection.start_listening())
             logger.info("Deepgram stream: connected, sending audio...")
 
             # Sender task: feed audio chunks to Deepgram
@@ -306,10 +306,11 @@ class DeepgramSTTProvider(STTProvider):
                     yield result
             finally:
                 sender_task.cancel()
-                import contextlib
-
+                listen_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await sender_task
+                with contextlib.suppress(asyncio.CancelledError):
+                    await listen_task
 
     async def close(self) -> None:
         """Release resources."""
