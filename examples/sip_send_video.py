@@ -34,7 +34,12 @@ logger = logging.getLogger("sip_send_video")
 
 
 class SimpleH264Encoder:
-    """Encode raw RGB frames to H.264 NAL units using PyAV."""
+    """Encode raw RGB frames to H.264 NAL units using PyAV.
+
+    Outputs individual NAL units (split from Annex B stream) suitable
+    for RTP packetization.  Uses Constrained Baseline profile for
+    WebRTC compatibility.
+    """
 
     def __init__(self, width: int = 320, height: int = 240, fps: int = 30) -> None:
         self._width = width
@@ -46,12 +51,17 @@ class SimpleH264Encoder:
         from fractions import Fraction
 
         self._codec_ctx.time_base = Fraction(1, fps)
-        self._codec_ctx.options = {"tune": "zerolatency", "preset": "ultrafast"}
+        self._codec_ctx.options = {
+            "tune": "zerolatency",
+            "preset": "ultrafast",
+            "profile": "baseline",
+            "level": "3.1",
+        }
         self._codec_ctx.open()
         self._pts = 0
 
     def encode(self, rgb_data: bytes) -> list[bytes]:
-        """Encode one RGB frame, return H.264 NAL unit bytes."""
+        """Encode one RGB frame, return individual H.264 NAL units."""
         arr = np.frombuffer(rgb_data, dtype=np.uint8).reshape(
             self._height,
             self._width,
@@ -62,11 +72,41 @@ class SimpleH264Encoder:
         self._pts += 1
 
         packets = self._codec_ctx.encode(frame)
-        return [bytes(pkt) for pkt in packets]
+        nals: list[bytes] = []
+        for pkt in packets:
+            nals.extend(self._split_annex_b(bytes(pkt)))
+        return nals
 
     def flush(self) -> list[bytes]:
         packets = self._codec_ctx.encode(None)
-        return [bytes(pkt) for pkt in packets]
+        nals: list[bytes] = []
+        for pkt in packets:
+            nals.extend(self._split_annex_b(bytes(pkt)))
+        return nals
+
+    @staticmethod
+    def _split_annex_b(data: bytes) -> list[bytes]:
+        """Split Annex B byte stream into individual NAL units."""
+        nals: list[bytes] = []
+        i = 0
+        start = -1
+        while i < len(data):
+            # Look for 3-byte or 4-byte start codes
+            if i + 3 <= len(data) and data[i : i + 3] == b"\x00\x00\x01":
+                if start >= 0:
+                    nals.append(data[start:i])
+                start = i + 3
+                i += 3
+            elif i + 4 <= len(data) and data[i : i + 4] == b"\x00\x00\x00\x01":
+                if start >= 0:
+                    nals.append(data[start:i])
+                start = i + 4
+                i += 4
+            else:
+                i += 1
+        if start >= 0 and start < len(data):
+            nals.append(data[start:])
+        return nals
 
 
 def make_test_frame(
@@ -125,13 +165,15 @@ async def main() -> None:
             while True:
                 rgb = make_test_frame(320, 240, frame_num)
                 nals = encoder.encode(rgb)
-                for nal in nals:
+                if nals:
                     vcs = backend._video_call_sessions.get(session.id)
                     if vcs is None:
                         return
-                    # Send H.264 NAL units via RTP
+                    # Send all NAL units for this frame at once
+                    # (send_frame sets marker=1 on last RTP packet)
                     ts = frame_num * (90000 // 15)  # 90kHz clock, 15fps
-                    vcs.send_frame([nal], ts, keyframe=(frame_num % 30 == 0))
+                    is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
+                    vcs.send_frame(nals, ts, is_key)
 
                 frame_num += 1
                 if frame_num % 30 == 0:
