@@ -29,7 +29,10 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from roomkit.video.video_frame import VideoFrame
 
 from roomkit.video.avatar.base import AvatarProvider
 
@@ -140,7 +143,7 @@ class MuseTalkAvatarProvider(AvatarProvider):
     def _load_models(self) -> None:
         """Load MuseTalk models (whisper, VAE, UNet)."""
         # Import MuseTalk modules from the cloned directory
-        from musetalk.utils.utils import load_all_model  # type: ignore[import-not-found]
+        from musetalk.utils.utils import load_all_model
 
         (
             self._audio_processor,
@@ -161,7 +164,7 @@ class MuseTalkAvatarProvider(AvatarProvider):
 
         import numpy as np
         from musetalk.utils.preprocessing import (
-            get_landmark_and_bbox,  # type: ignore[import-not-found]
+            get_landmark_and_bbox,
         )
         from PIL import Image
 
@@ -185,7 +188,7 @@ class MuseTalkAvatarProvider(AvatarProvider):
         """VAE-encode the face region from the reference image."""
 
         from musetalk.utils.utils import (
-            get_image_prepare_material,  # type: ignore[import-not-found]
+            get_image_prepare_material,
         )
 
         input_latent = get_image_prepare_material(
@@ -200,7 +203,7 @@ class MuseTalkAvatarProvider(AvatarProvider):
         self,
         pcm_data: bytes,
         sample_rate: int = 16000,
-    ) -> list:
+    ) -> list[VideoFrame]:
         """Feed audio and generate lip-synced frames."""
         if not self._started:
             return []
@@ -242,7 +245,7 @@ class MuseTalkAvatarProvider(AvatarProvider):
         """Generate a single lip-synced frame from an audio chunk."""
         import numpy as np
         import torch
-        from musetalk.utils.utils import datagen  # type: ignore[import-not-found]
+        from musetalk.utils.utils import datagen
 
         # Extract audio features using whisper
         audio_np = np.frombuffer(audio_chunk, dtype=np.int16).astype(np.float32) / 32768.0
@@ -277,7 +280,7 @@ class MuseTalkAvatarProvider(AvatarProvider):
 
         return None
 
-    def flush(self) -> list:
+    def flush(self) -> list[VideoFrame]:
         """Flush remaining audio buffer.
 
         Thread safety: feed_audio/flush are called from a single async
