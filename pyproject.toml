@@ -274,6 +274,10 @@ module = ["av", "av.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["ultralytics", "ultralytics.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["roomkit.sources.neonize"]
 disallow_untyped_decorators = false
 
