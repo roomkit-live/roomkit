@@ -131,13 +131,11 @@ async def main() -> None:
     def on_frame(session: object, frame: object) -> None:
         nonlocal frame_count, censored_count
         frame_count += 1
-        # Check if frame was replaced by censor (all black = raw_rgb24 all zeros)
-        if getattr(frame, "codec", "") == "raw_rgb24":
-            data = getattr(frame, "data", b"")
-            if data and all(b == 0 for b in data[:100]):
-                censored_count += 1
+        if censor._censoring:
+            censored_count += 1
 
-    backend.on_video_received(on_frame)
+    # Tap on the channel (post-pipeline) to see filtered frames
+    video.add_media_tap(on_frame)
 
     session = await kit.connect_video("censor-demo", "local-user", "video-main")
 
