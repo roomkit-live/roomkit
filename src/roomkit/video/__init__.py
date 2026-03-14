@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from roomkit.video.ai_integration import setup_video_vision
+from roomkit.video.avatar import AvatarProvider, MockAvatarProvider
 from roomkit.video.backends import (
     get_rtp_video_backend,
     get_screen_capture_backend,
@@ -77,6 +78,9 @@ __all__ = [
     "VideoPipeline",
     "VideoPipelineConfig",
     "VideoResizerProvider",
+    # Avatar
+    "AvatarProvider",
+    "MockAvatarProvider",
     # AI integration
     "setup_video_vision",
     # Lazy loaders
