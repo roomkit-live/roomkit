@@ -26,6 +26,7 @@ def _make_mock_rtp_session() -> MagicMock:
     session.on_audio = None
     session.on_dtmf = None
     session.send_audio_pcm = MagicMock()
+    session.send_audio_pcm_auto = MagicMock()
     session.close = AsyncMock()
     return session
 
@@ -269,7 +270,7 @@ class TestRTPVoiceBackend:
         pcm = b"\x00\x01" * 160
         await backend.send_audio(session, pcm)
 
-        mock_rtp_session.send_audio_pcm.assert_called_once_with(pcm, 0)
+        mock_rtp_session.send_audio_pcm_auto.assert_called_once_with(pcm)
 
     async def test_send_audio_bytes_multiple_frames(
         self, backend: RTPVoiceBackend, mock_rtp_session: MagicMock
@@ -280,11 +281,11 @@ class TestRTPVoiceBackend:
         pcm = b"\x00\x01" * 320
         await backend.send_audio(session, pcm)
 
-        calls = mock_rtp_session.send_audio_pcm.call_args_list
+        calls = mock_rtp_session.send_audio_pcm_auto.call_args_list
         assert len(calls) == 2
-        # First frame: timestamp 0, second: timestamp 160
-        assert calls[0].args == (pcm[:320], 0)
-        assert calls[1].args == (pcm[320:], 160)
+        # Auto-timestamp: no explicit timestamp argument
+        assert calls[0].args == (pcm[:320],)
+        assert calls[1].args == (pcm[320:],)
 
     # -- outbound audio (streaming) --------------------------------------------
 
@@ -298,7 +299,7 @@ class TestRTPVoiceBackend:
 
         await backend.send_audio(session, _chunks_from_bytes(pcm))
 
-        mock_rtp_session.send_audio_pcm.assert_called_once_with(pcm, 0)
+        mock_rtp_session.send_audio_pcm_auto.assert_called_once_with(pcm)
 
     # -- cancel / is_playing ---------------------------------------------------
 

@@ -93,6 +93,7 @@ class RTPVoiceBackend(VoiceBackend):
         clock_rate: int = 8000,
         dtmf_payload_type: int = 101,
         rtcp_interval: float = 5.0,
+        port_allocator: Any | None = None,
     ) -> None:
         self._aiortp = _import_aiortp()
 
@@ -102,6 +103,7 @@ class RTPVoiceBackend(VoiceBackend):
         self._clock_rate = clock_rate
         self._dtmf_payload_type = dtmf_payload_type
         self._rtcp_interval = rtcp_interval
+        self._port_allocator = port_allocator
 
         # Callback registrations
         self._audio_received_callback: AudioReceivedCallback | None = None
@@ -112,9 +114,6 @@ class RTPVoiceBackend(VoiceBackend):
         # Session tracking
         self._sessions: dict[str, VoiceSession] = {}
         self._rtp_sessions: dict[str, Any] = {}  # str -> aiortp.RTPSession
-
-        # Outbound timestamp tracking per session
-        self._send_timestamps: dict[str, int] = {}
 
         # Playback tracking for interruption support
         self._playing_sessions: set[str] = set()
@@ -157,6 +156,7 @@ class RTPVoiceBackend(VoiceBackend):
             clock_rate=self._clock_rate,
             dtmf_payload_type=self._dtmf_payload_type,
             rtcp_interval=self._rtcp_interval,
+            port_allocator=self._port_allocator,
         )
 
         session_id = str(uuid.uuid4())
@@ -190,7 +190,6 @@ class RTPVoiceBackend(VoiceBackend):
 
         self._sessions[session_id] = session
         self._rtp_sessions[session_id] = rtp_session
-        self._send_timestamps[session_id] = 0
 
         # Wire inbound audio callback
         rtp_session.on_audio = self._make_audio_handler(session)
@@ -223,7 +222,6 @@ class RTPVoiceBackend(VoiceBackend):
 
         session.state = VoiceSessionState.ENDED
         self._sessions.pop(session.id, None)
-        self._send_timestamps.pop(session.id, None)
         logger.info("RTP session ended: session=%s", session.id)
 
     def get_session(self, session_id: str) -> VoiceSession | None:
@@ -327,19 +325,14 @@ class RTPVoiceBackend(VoiceBackend):
 
     def _send_pcm_bytes(self, session: VoiceSession, rtp_session: Any, pcm_data: bytes) -> None:
         """Send a complete PCM-16 LE buffer as RTP packets."""
-        # Frame size: 20ms worth of samples
         samples_per_frame = self._clock_rate // 50  # 20ms frames
         bytes_per_frame = samples_per_frame * 2  # 16-bit samples
 
-        ts = self._send_timestamps.get(session.id, 0)
         offset = 0
         while offset < len(pcm_data):
             chunk = pcm_data[offset : offset + bytes_per_frame]
-            rtp_session.send_audio_pcm(chunk, ts)
-            ts += samples_per_frame
+            rtp_session.send_audio_pcm_auto(chunk)
             offset += bytes_per_frame
-
-        self._send_timestamps[session.id] = ts
 
     async def _send_pcm_stream(
         self,
@@ -351,29 +344,23 @@ class RTPVoiceBackend(VoiceBackend):
         samples_per_frame = self._clock_rate // 50  # 20ms frames
         bytes_per_frame = samples_per_frame * 2
 
-        ts = self._send_timestamps.get(session.id, 0)
-
         async def _run() -> None:
-            nonlocal ts
             buf = bytearray()
             async for chunk in chunks:
                 if session.id not in self._playing_sessions:
                     return
                 if chunk.data:
                     buf.extend(chunk.data)
-                # Flush complete frames from buffer
                 while len(buf) >= bytes_per_frame:
                     frame_data = bytes(buf[:bytes_per_frame])
                     del buf[:bytes_per_frame]
-                    rtp_session.send_audio_pcm(frame_data, ts)
-                    ts += samples_per_frame
+                    rtp_session.send_audio_pcm_auto(frame_data)
 
-            # Flush remaining data — pad partial frame with silence to avoid codec artifacts
+            # Pad and flush remaining partial frame
             if buf and session.id in self._playing_sessions:
                 if len(buf) < bytes_per_frame:
                     buf.extend(b"\x00" * (bytes_per_frame - len(buf)))
-                rtp_session.send_audio_pcm(bytes(buf[:bytes_per_frame]), ts)
-                ts += samples_per_frame
+                rtp_session.send_audio_pcm_auto(bytes(buf[:bytes_per_frame]))
 
         task = asyncio.create_task(_run())
         self._playback_tasks[session.id] = task
@@ -383,7 +370,6 @@ class RTPVoiceBackend(VoiceBackend):
             pass
         finally:
             self._playback_tasks.pop(session.id, None)
-            self._send_timestamps[session.id] = ts
 
     async def send_transcription(
         self, session: VoiceSession, text: str, role: str = "user"

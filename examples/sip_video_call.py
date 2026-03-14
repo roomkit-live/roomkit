@@ -37,7 +37,6 @@ import signal
 
 from roomkit import (
     AudioVideoChannel,
-    HookExecution,
     HookResult,
     HookTrigger,
     RoomKit,
@@ -145,18 +144,15 @@ async def main() -> None:
 
     backend.on_call(on_call)
 
-    @kit.hook(HookTrigger.ON_VIDEO_SESSION_ENDED, execution=HookExecution.ASYNC)
-    async def on_session_ended(event, ctx):
-        session = event.session
-        session_id = session.id if session else "unknown"
+    def on_call_ended(session: object) -> None:
+        """Finalize recording when the SIP call ends (BYE received)."""
+        session_id = getattr(session, "id", "unknown")
+        room_id = getattr(session, "room_id", None)
         logger.info("Call ended: session=%s, video_frames=%d", session_id, frame_count)
-        # Close the room to finalize the recording (flushes encoder, writes MP4 moov atom).
-        room_id = ctx.room.id if ctx else None
         if room_id:
-            try:
-                await kit.close_room(room_id)
-            except Exception:
-                logger.debug("close_room after BYE: %s", room_id, exc_info=True)
+            asyncio.ensure_future(kit.close_room(room_id))
+
+    backend.on_client_disconnected(on_call_ended)
 
     # --- Start ----------------------------------------------------------------
     await backend.start()

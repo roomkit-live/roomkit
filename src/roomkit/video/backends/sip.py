@@ -42,6 +42,18 @@ from roomkit.voice.base import VoiceSession, VoiceSessionState
 logger = logging.getLogger("roomkit.video.sip")
 
 
+def _import_video_bridge() -> Any:
+    """Import aiosipua.video_bridge for VideoCallSession."""
+    try:
+        from aiosipua import video_bridge
+
+        return video_bridge
+    except ImportError as exc:
+        raise ImportError(
+            "aiosipua[rtp] is required for SIPVideoBackend. Install with: pip install roomkit[sip]"
+        ) from exc
+
+
 class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
     """SIP backend with audio + video support.
 
@@ -63,6 +75,7 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
     ) -> None:
         super().__init__(**kwargs)
         self._supported_video_codecs = supported_video_codecs or ["H264"]
+        self._video_bridge = _import_video_bridge()
 
         # Video state (keyed by voice session ID)
         self._video_call_sessions: dict[str, Any] = {}
@@ -160,7 +173,7 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
         # Video negotiation via VideoCallSession
         video_call_session = None
         try:
-            video_call_session = self._rtp_bridge.VideoCallSession(
+            video_call_session = self._video_bridge.VideoCallSession(
                 local_ip=local_ip,
                 rtp_port=video_rtp_port,
                 offer=call.sdp_offer,

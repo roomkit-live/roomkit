@@ -67,6 +67,7 @@ class RTPVideoBackend(RTPVoiceBackend, VideoBackend):  # type: ignore[misc]
         video_remote_addr: tuple[str, int] | None = None,
         video_payload_type: int = 96,
         video_clock_rate: int = 90000,
+        video_port_allocator: Any | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -75,6 +76,7 @@ class RTPVideoBackend(RTPVoiceBackend, VideoBackend):  # type: ignore[misc]
         self._video_remote_addr = video_remote_addr
         self._video_payload_type = video_payload_type
         self._video_clock_rate = video_clock_rate
+        self._video_port_allocator = video_port_allocator
 
         # Video session tracking
         self._video_sessions: dict[str, VideoSession] = {}
@@ -126,6 +128,7 @@ class RTPVideoBackend(RTPVoiceBackend, VideoBackend):  # type: ignore[misc]
             remote_addr=video_remote,
             payload_type=self._video_payload_type,
             clock_rate=self._video_clock_rate,
+            port_allocator=self._video_port_allocator,
         )
 
         video_session = VideoSession(
