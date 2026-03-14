@@ -43,7 +43,9 @@ class SimpleH264Encoder:
         self._codec_ctx.width = width
         self._codec_ctx.height = height
         self._codec_ctx.pix_fmt = "yuv420p"
-        self._codec_ctx.time_base = av.Fraction(1, fps)
+        from fractions import Fraction
+
+        self._codec_ctx.time_base = Fraction(1, fps)
         self._codec_ctx.options = {"tune": "zerolatency", "preset": "ultrafast"}
         self._codec_ctx.open()
         self._pts = 0
