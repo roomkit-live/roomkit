@@ -265,8 +265,11 @@ class DeepgramSTTProvider(STTProvider):
             connection.on(EventType.ERROR, on_error)
             connection.on(EventType.CLOSE, on_close)
 
-            await connection.start_listening()
-            logger.info("Deepgram stream: listening started, sending audio...")
+            # Note: do NOT call start_listening() — it blocks forever
+            # running the receive loop. The async context manager handles
+            # receiving automatically; callbacks fire from the SDK's
+            # internal task.
+            logger.info("Deepgram stream: connected, sending audio...")
 
             # Sender task: feed audio chunks to Deepgram
             async def send_audio() -> None:
