@@ -266,13 +266,13 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
                         tap(session, frame)  # type: ignore[arg-type]
                     # Send to video backend
                     if isinstance(self._backend, VideoBackend):
-                        await self._backend.send_video(session, frame)
+                        await self._backend.send_video(session, frame.data)
             yield chunk
 
         # Flush avatar (mouth closing animation)
         for frame in self._avatar.flush():
             if isinstance(self._backend, VideoBackend):
-                await self._backend.send_video(session, frame)
+                await self._backend.send_video(session, frame.data)
 
     # -- Capabilities ----------------------------------------------------------
 
