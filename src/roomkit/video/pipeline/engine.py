@@ -19,10 +19,11 @@ class VideoPipeline:
     """Orchestrates inbound video processing through pluggable stages.
 
     Inbound processing order:
-        [Decoder] -> [Resizer] -> [Filters...] -> return processed frame
+        [Decoder] -> [Resizer] -> [Transforms...] -> [Filters...] -> return processed frame
 
     Stages are optional — only configured stages run.  Vision analysis
     is async and invoked separately via :meth:`process_vision`.
+    Transforms modify pixel data (grayscale, blur, etc.) before filters.
     Filters are chained — each receives a :class:`FilterContext` that
     is updated automatically when vision results arrive.
     """
@@ -65,7 +66,14 @@ class VideoPipeline:
             except Exception:
                 logger.exception("Resizer error for frame seq=%d", frame.sequence)
 
-        # Stage 3: Filters (chained, each can inspect/replace).
+        # Stage 3: Transforms (chained, pixel-level modifications).
+        for txf in self._config.transforms:
+            try:
+                current = txf.transform(current)
+            except Exception:
+                logger.exception("Transform %s error for frame seq=%d", txf.name, frame.sequence)
+
+        # Stage 4: Filters (chained, each can inspect/replace).
         if self._config.filters:
             ctx = self._filter_contexts.setdefault(session_id, FilterContext())
             for flt in self._config.filters:
@@ -113,6 +121,8 @@ class VideoPipeline:
         """
         if self._config.decoder is not None:
             self._config.decoder.reset()
+        for txf in self._config.transforms:
+            txf.reset()
         for flt in self._config.filters:
             flt.reset()
         self._filter_contexts.pop(session_id, None)
@@ -123,6 +133,8 @@ class VideoPipeline:
             self._config.decoder.close()
         if self._config.resizer is not None:
             self._config.resizer.close()
+        for txf in self._config.transforms:
+            txf.close()
         for flt in self._config.filters:
             flt.close()
         self._filter_contexts.clear()

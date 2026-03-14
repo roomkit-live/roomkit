@@ -81,7 +81,10 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
 
         # Video pipeline (decoder, resizer, vision)
         if video_pipeline is not None and (
-            video_pipeline.decoder or video_pipeline.resizer or video_pipeline.filters
+            video_pipeline.decoder
+            or video_pipeline.resizer
+            or video_pipeline.transforms
+            or video_pipeline.filters
         ):
             self._video_pipeline: VideoPipeline | None = VideoPipeline(video_pipeline)
         else:

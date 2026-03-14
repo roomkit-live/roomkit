@@ -74,7 +74,9 @@ class VideoChannel(VideoHooksMixin, Channel):
         # Create video pipeline engine if config has processing stages
         from roomkit.video.pipeline.engine import VideoPipeline
 
-        if pipeline is not None and (pipeline.decoder or pipeline.resizer or pipeline.filters):
+        if pipeline is not None and (
+            pipeline.decoder or pipeline.resizer or pipeline.transforms or pipeline.filters
+        ):
             self._video_pipeline: VideoPipeline | None = VideoPipeline(pipeline)
         else:
             self._video_pipeline = None
