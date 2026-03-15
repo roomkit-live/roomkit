@@ -196,9 +196,11 @@ async def main() -> None:
         avatar_id=avatar_id,
         voice_id=voice_id,
         llm_id=llm_id,
-        system_prompt=(
+        language_code=os.environ.get("ANAM_LANGUAGE", "en"),
+        system_prompt=os.environ.get(
+            "ANAM_SYSTEM_PROMPT",
             "You are a helpful AI avatar on a video call. "
-            "Keep responses conversational and concise."
+            "Keep responses conversational and concise.",
         ),
     )
     provider = AnamRealtimeProvider(config)
