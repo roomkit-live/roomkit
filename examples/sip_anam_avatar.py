@@ -1,19 +1,15 @@
 """RoomKit — SIP-to-Anam AI Avatar bridge.
 
-Accept incoming SIP calls and connect them to an Anam AI avatar.
-The caller's audio is forwarded to Anam (via ``send_user_audio``),
-and Anam's avatar audio+video is streamed back over SIP/RTP.
+Accept incoming SIP video calls and connect them to an Anam AI avatar.
+Caller audio is forwarded to Anam, and the avatar's audio+video is
+streamed back to the caller over SIP/RTP.
 
-Architecture:
-    SIP phone → RTP audio → RealtimeAudioVideoChannel
-                                    ↕
-                             AnamRealtimeProvider
-                                    ↕  (WebRTC)
-                               Anam Cloud
-                          STT → LLM → TTS → Avatar
-                                    ↕
-                        audio → SIP/RTP → caller
-                        video → H.264 encode → SIP/RTP → caller
+Audio flow:
+    SIP phone → RTP audio → Anam (send_user_audio)
+    Anam TTS → PCM audio → SIP RTP → phone speaker
+
+Video flow:
+    Anam avatar → raw RGB → H.264 encode (PyAV) → SIP RTP → phone screen
 
 Prerequisites:
     pip install roomkit[anam,sip,video]
@@ -45,6 +41,8 @@ import asyncio
 import logging
 import os
 import signal
+import threading
+from typing import Any
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,15 +53,111 @@ logger = logging.getLogger("sip_anam_avatar")
 if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit").setLevel(logging.DEBUG)
 
-from roomkit import (
-    AnamConfig,
-    AnamRealtimeProvider,
-    RealtimeAudioVideoChannel,
-    RoomKit,
-)
+import av
+import numpy as np
+
+from roomkit import AnamConfig, AnamRealtimeProvider
 from roomkit.video.backends.sip import SIPVideoBackend
-from roomkit.voice.base import VoiceSession
-from roomkit.voice.realtime.mock import MockRealtimeTransport
+from roomkit.voice.base import VoiceSession, VoiceSessionState
+
+# ---------------------------------------------------------------------------
+# H.264 encoder (raw RGB → NAL units for SIP/RTP)
+# ---------------------------------------------------------------------------
+
+
+class H264Encoder:
+    """Encode raw RGB frames to H.264 NAL units for SIP/RTP."""
+
+    def __init__(self, width: int, height: int, fps: int = 25) -> None:
+        self._ctx = av.CodecContext.create("libx264", "w")
+        self._ctx.width = width
+        self._ctx.height = height
+        self._ctx.pix_fmt = "yuv420p"
+        self._ctx.time_base = av.Fraction(1, fps)
+        self._ctx.options = {
+            "preset": "ultrafast",
+            "tune": "zerolatency",
+            "profile": "baseline",
+        }
+        self._ctx.open()
+        self._pts = 0
+        self._lock = threading.Lock()
+
+    def encode(self, rgb_bytes: bytes) -> list[bytes]:
+        """Encode one RGB frame → list of H.264 NAL units."""
+        with self._lock:
+            arr = np.frombuffer(rgb_bytes, dtype=np.uint8).reshape(
+                self._ctx.height,
+                self._ctx.width,
+                3,
+            )
+            frame = av.VideoFrame.from_ndarray(arr, format="rgb24")
+            frame.pts = self._pts
+            self._pts += 1
+            nals: list[bytes] = []
+            for pkt in self._ctx.encode(frame):
+                nals.extend(_split_nals(bytes(pkt)))
+            return nals
+
+    def close(self) -> None:
+        with self._lock:
+            for _pkt in self._ctx.encode(None):
+                pass
+
+
+def _split_nals(data: bytes) -> list[bytes]:
+    """Split Annex-B byte stream into individual NAL units."""
+    nals: list[bytes] = []
+    i = 0
+    while i < len(data):
+        if data[i : i + 4] == b"\x00\x00\x00\x01":
+            start = i + 4
+        elif data[i : i + 3] == b"\x00\x00\x01":
+            start = i + 3
+        else:
+            i += 1
+            continue
+        # Find next start code
+        j = start
+        while j < len(data):
+            if data[j : j + 3] == b"\x00\x00\x01":
+                break
+            j += 1
+        nals.append(data[start:j])
+        i = j
+    if not nals and data:
+        nals.append(data)
+    return nals
+
+
+# ---------------------------------------------------------------------------
+# Per-call bridge state
+# ---------------------------------------------------------------------------
+
+
+class _CallBridge:
+    """Bridges one SIP call to one Anam session."""
+
+    def __init__(
+        self,
+        sip_session: VoiceSession,
+        sip_backend: SIPVideoBackend,
+        provider: AnamRealtimeProvider,
+        voice_session: VoiceSession,
+    ) -> None:
+        self.sip_session = sip_session
+        self.sip_backend = sip_backend
+        self.provider = provider
+        self.voice_session = voice_session
+        self.encoder: H264Encoder | None = None
+        self.frame_count = 0
+        self.audio_out_count = 0
+        self._frame_seq = 0
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 
 async def main() -> None:
@@ -82,7 +176,7 @@ async def main() -> None:
         logger.error("Set either ANAM_PERSONA_ID or ANAM_AVATAR_ID + ANAM_VOICE_ID + ANAM_LLM_ID")
         return
 
-    # --- SIP backend for caller audio/video -----------------------------------
+    # --- SIP backend ----------------------------------------------------------
     sip_port = int(os.environ.get("SIP_PORT", "5060"))
     rtp_ip = os.environ.get("RTP_IP", "0.0.0.0")
     rtp_port_start = int(os.environ.get("RTP_PORT_START", "10000"))
@@ -94,7 +188,7 @@ async def main() -> None:
         supported_video_codecs=["H264"],
     )
 
-    # --- Anam AI provider -----------------------------------------------------
+    # --- Anam provider --------------------------------------------------------
     config = AnamConfig(
         api_key=api_key,
         persona_id=persona_id,
@@ -108,79 +202,130 @@ async def main() -> None:
     )
     provider = AnamRealtimeProvider(config)
 
-    # --- Realtime A/V channel -------------------------------------------------
-    # The transport carries the caller's audio to/from the SIP backend.
-    # Anam provider handles the AI pipeline and avatar rendering.
-    transport = MockRealtimeTransport()
+    # Active call bridges: sip_session_id → _CallBridge
+    bridges: dict[str, _CallBridge] = {}
 
-    channel = RealtimeAudioVideoChannel(
-        "anam-sip",
-        provider=provider,
-        transport=transport,
-    )
+    # --- Anam audio output → SIP speaker --------------------------------------
+    def on_anam_audio(session: VoiceSession, audio: bytes) -> None:
+        bridge = bridges.get(session.id)
+        if bridge is None:
+            return
+        bridge.audio_out_count += 1
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(sip_backend.send_audio(bridge.sip_session, audio))
 
-    # --- Video tap: log frames ------------------------------------------------
-    frame_count = 0
+    provider.on_audio(on_anam_audio)
 
-    def on_video(session: object, frame: object) -> None:
-        nonlocal frame_count
-        frame_count += 1
-        if frame_count % 30 == 1:
-            logger.info("Avatar video frame #%d", frame_count)
+    # --- Anam video output → H.264 encode → SIP RTP --------------------------
+    def on_anam_video(session: VoiceSession, frame: Any) -> None:
+        bridge = bridges.get(session.id)
+        if bridge is None:
+            return
+        bridge.frame_count += 1
 
-    channel.add_video_media_tap(on_video)  # type: ignore[arg-type]
+        # Lazy-init encoder on first frame
+        if bridge.encoder is None:
+            bridge.encoder = H264Encoder(frame.width, frame.height, fps=25)
+            logger.info(
+                "H.264 encoder started: %dx%d (session %s)",
+                frame.width,
+                frame.height,
+                session.id,
+            )
 
-    # --- RoomKit setup --------------------------------------------------------
-    kit = RoomKit()
-    kit.register_channel(channel)
+        # Encode raw RGB → H.264 NALs
+        nals = bridge.encoder.encode(frame.data)
+        if not nals:
+            return
 
-    # --- Route incoming SIP calls to rooms ------------------------------------
-    async def on_call(session: VoiceSession) -> None:
-        room_id = session.metadata.get("room_id", session.id)
-        caller = session.metadata.get("caller", "unknown")
-        has_video = session.metadata.get("has_video", False)
+        # Send to SIP video session
+        vcs = sip_backend._video_call_sessions.get(bridge.sip_session.id)
+        if vcs is None:
+            return
+        ts = bridge._frame_seq * (90000 // 25)
+        is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
+        vcs.send_frame(nals, ts, is_key)
+        bridge._frame_seq += 1
 
-        logger.info(
-            "Incoming SIP call: room=%s, caller=%s, video=%s",
-            room_id,
-            caller,
-            has_video,
-        )
+        if bridge.frame_count % 30 == 1:
+            logger.info("Avatar → SIP video frame #%d", bridge.frame_count)
 
-        await kit.create_room(room_id=room_id)
-        await kit.attach_channel(room_id, "anam-sip")
+    provider.on_video(on_anam_video)
 
-        # Start the Anam avatar session for this caller
-        await channel.start_session(
-            room_id,
+    # --- Anam transcription → log ---------------------------------------------
+    def on_transcription(
+        session: VoiceSession,
+        text: str,
+        role: str,
+        is_final: bool,
+    ) -> None:
+        if is_final:
+            logger.info("[%s] %s", role.upper(), text)
+
+    provider.on_transcription(on_transcription)
+
+    # --- SIP audio → Anam microphone -----------------------------------------
+    def on_sip_audio(session: VoiceSession, audio: bytes) -> None:
+        bridge = bridges.get(session.id)
+        if bridge is None:
+            return
+        # Forward caller's audio to Anam for STT processing
+        bridge.provider._states.get(bridge.voice_session.id)
+        anam_state = bridge.provider._states.get(bridge.voice_session.id)
+        if anam_state and anam_state.anam_session:
+            anam_state.anam_session.send_user_audio(audio, 16000, 1)
+
+    sip_backend.on_audio_received(on_sip_audio)
+
+    # --- On SIP INVITE: create Anam session -----------------------------------
+    async def on_call(sip_session: VoiceSession) -> None:
+        caller = sip_session.metadata.get("caller", "unknown")
+        has_video = sip_session.metadata.get("has_video", False)
+        logger.info("SIP call from %s (video=%s)", caller, has_video)
+
+        # Create a VoiceSession for the Anam provider
+        voice_session = VoiceSession(
+            id=sip_session.id,
+            room_id=sip_session.id,
             participant_id=caller,
-            connection=session,
+            channel_id="anam-bridge",
+            state=VoiceSessionState.CONNECTING,
         )
-        logger.info("Anam avatar session started for caller %s", caller)
+
+        bridge = _CallBridge(sip_session, sip_backend, provider, voice_session)
+        bridges[sip_session.id] = bridge
+
+        # Connect to Anam
+        await provider.connect(voice_session)
+        logger.info("Anam avatar active for caller %s", caller)
 
     sip_backend.on_call(on_call)
 
+    # --- On SIP BYE: tear down Anam session -----------------------------------
     def on_call_ended(session: object) -> None:
-        session_id = getattr(session, "id", "unknown")
-        room_id = getattr(session, "room_id", None)
+        sid = getattr(session, "id", "unknown")
+        bridge = bridges.pop(sid, None)
+        if bridge is None:
+            return
         logger.info(
-            "Call ended: session=%s, avatar_frames=%d",
-            session_id,
-            frame_count,
+            "Call ended: session=%s, video_frames=%d, audio_chunks=%d",
+            sid,
+            bridge.frame_count,
+            bridge.audio_out_count,
         )
-        if room_id:
-            asyncio.create_task(kit.close_room(room_id))
+        if bridge.encoder:
+            bridge.encoder.close()
+        asyncio.create_task(provider.disconnect(bridge.voice_session))
 
     sip_backend.on_client_disconnected(on_call_ended)
 
     # --- Start ----------------------------------------------------------------
     await sip_backend.start()
-
-    logger.info("SIP + Anam Avatar bridge listening on 0.0.0.0:%d", sip_port)
-    logger.info("Send a SIP INVITE to test.")
+    logger.info("SIP + Anam Avatar bridge on 0.0.0.0:%d", sip_port)
+    logger.info("Call this SIP endpoint with a video phone to talk to the avatar.")
     logger.info("Press Ctrl+C to stop.\n")
 
-    # --- Keep running until Ctrl+C --------------------------------------------
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -190,8 +335,13 @@ async def main() -> None:
 
     # --- Cleanup --------------------------------------------------------------
     logger.info("\nStopping...")
+    for bridge in bridges.values():
+        if bridge.encoder:
+            bridge.encoder.close()
+        await provider.disconnect(bridge.voice_session)
+    bridges.clear()
+    await provider.close()
     await sip_backend.close()
-    await kit.close()
     logger.info("Done.")
 
 
