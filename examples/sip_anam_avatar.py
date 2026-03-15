@@ -208,19 +208,32 @@ async def main() -> None:
 
     # --- Anam audio output → resample → SIP speaker ---------------------------
     # Anam produces 48kHz mono int16 PCM (after _av_audio_to_pcm downmix).
-    # SIP needs 16kHz (G.722) or 8kHz (G.711). Resample 48k → 16k.
-    def _resample_48_to_16(pcm_48k: bytes) -> bytes:
-        """Resample 48kHz int16 PCM to 16kHz (simple decimation by 3)."""
-        samples = np.frombuffer(pcm_48k, dtype=np.int16)
-        resampled = samples[::3]  # 48000 / 3 = 16000
-        return resampled.tobytes()
+    # SIP needs audio at codec_rate: 16kHz (G.722) or 8kHz (G.711).
+    # Resample using linear interpolation for proper quality.
+    _anam_rate = 48000
+
+    def _resample(pcm: bytes, target_rate: int) -> bytes:
+        """Resample int16 PCM from 48kHz to target_rate."""
+        if target_rate == _anam_rate:
+            return pcm
+        src = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+        ratio = target_rate / _anam_rate
+        n_out = int(len(src) * ratio)
+        if n_out == 0:
+            return b""
+        x_old = np.linspace(0, 1, len(src))
+        x_new = np.linspace(0, 1, n_out)
+        resampled = np.interp(x_new, x_old, src)
+        return resampled.astype(np.int16).tobytes()
 
     def on_anam_audio(session: VoiceSession, audio: bytes) -> None:
         bridge = bridges.get(session.id)
         if bridge is None:
             return
         bridge.audio_out_count += 1
-        resampled = _resample_48_to_16(audio)
+        # Get SIP codec rate from session metadata
+        codec_rate = bridge.sip_session.metadata.get("codec_sample_rate", 16000)
+        resampled = _resample(audio, codec_rate)
         loop = asyncio.get_event_loop()
         if loop.is_running():
             loop.create_task(sip_backend.send_audio(bridge.sip_session, resampled))
