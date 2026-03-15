@@ -6,11 +6,22 @@ from roomkit.voice.realtime.events import (
     RealtimeToolCallEvent,
     RealtimeTranscriptionEvent,
 )
-from roomkit.voice.realtime.mock import MockCall, MockRealtimeProvider, MockRealtimeTransport
-from roomkit.voice.realtime.provider import RealtimeVoiceProvider
+from roomkit.voice.realtime.mock import (
+    MockCall,
+    MockRealtimeAudioVideoProvider,
+    MockRealtimeProvider,
+    MockRealtimeTransport,
+)
+from roomkit.voice.realtime.provider import (
+    RealtimeAudioVideoProvider,
+    RealtimeVideoCallback,
+    RealtimeVoiceProvider,
+)
 
 __all__ = [
     # ABCs
+    "RealtimeAudioVideoProvider",
+    "RealtimeVideoCallback",
     "RealtimeVoiceProvider",
     # Events
     "RealtimeErrorEvent",
@@ -19,6 +30,7 @@ __all__ = [
     "RealtimeTranscriptionEvent",
     # Mocks
     "MockCall",
+    "MockRealtimeAudioVideoProvider",
     "MockRealtimeProvider",
     "MockRealtimeTransport",
 ]

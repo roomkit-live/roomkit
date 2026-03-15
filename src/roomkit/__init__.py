@@ -16,6 +16,7 @@ from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.av import AudioVideoChannel
 from roomkit.channels.base import Channel
+from roomkit.channels.realtime_av import RealtimeAudioVideoChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.channels.realtime_voice import ToolHandler as ToolHandler
 from roomkit.channels.transport import TransportChannel
@@ -151,6 +152,8 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.providers.anam.config import AnamConfig
+from roomkit.providers.anam.realtime import AnamRealtimeProvider
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.azure.ai import AzureAIProvider
@@ -371,12 +374,15 @@ from roomkit.voice import (
 from roomkit.voice.auth import AuthCallback, auth_context
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.realtime import (
+    MockRealtimeAudioVideoProvider,
     MockRealtimeProvider,
     MockRealtimeTransport,
+    RealtimeAudioVideoProvider,
     RealtimeErrorEvent,
     RealtimeSpeechEvent,
     RealtimeToolCallEvent,
     RealtimeTranscriptionEvent,
+    RealtimeVideoCallback,
     RealtimeVoiceProvider,
 )
 from roomkit.voice.stt.mock import MockSTTProvider
@@ -437,6 +443,7 @@ __all__ = [
     "TransportChannel",
     "AIChannel",
     "AudioVideoChannel",
+    "RealtimeAudioVideoChannel",
     "EmailChannel",
     "RCSChannel",
     "SMSChannel",
@@ -589,6 +596,9 @@ __all__ = [
     # AI – OpenAI
     "OpenAIAIProvider",
     "OpenAIConfig",
+    # Realtime – Anam AI (Avatar)
+    "AnamConfig",
+    "AnamRealtimeProvider",
     # Realtime – PersonaPlex (NVIDIA)
     "PersonaPlexConfig",
     "PersonaPlexRealtimeProvider",
@@ -730,12 +740,15 @@ __all__ = [
     "VoiceSessionState",
     "SessionStartedEvent",
     # Realtime Voice
+    "MockRealtimeAudioVideoProvider",
     "MockRealtimeProvider",
     "MockRealtimeTransport",
+    "RealtimeAudioVideoProvider",
     "RealtimeErrorEvent",
     "RealtimeSpeechEvent",
     "RealtimeToolCallEvent",
     "RealtimeTranscriptionEvent",
+    "RealtimeVideoCallback",
     "RealtimeVoiceProvider",
     # Skills
     "ScriptExecutor",

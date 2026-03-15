@@ -18,6 +18,7 @@ from roomkit.voice.base import (
 )
 from roomkit.voice.realtime.provider import (
     RealtimeAudioCallback,
+    RealtimeAudioVideoProvider,
     RealtimeErrorCallback,
     RealtimeResponseEndCallback,
     RealtimeResponseStartCallback,
@@ -25,6 +26,7 @@ from roomkit.voice.realtime.provider import (
     RealtimeSpeechStartCallback,
     RealtimeToolCallCallback,
     RealtimeTranscriptionCallback,
+    RealtimeVideoCallback,
     RealtimeVoiceProvider,
 )
 
@@ -238,6 +240,37 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
         """Simulate a provider error."""
         for cb in self._error_callbacks:
             result = cb(session, code, message)
+            if hasattr(result, "__await__"):
+                await result
+
+
+class MockRealtimeAudioVideoProvider(MockRealtimeProvider, RealtimeAudioVideoProvider):
+    """Mock realtime audio+video provider for testing.
+
+    Extends :class:`MockRealtimeProvider` with video callback support.
+    Use ``simulate_video()`` to fire video frames in tests.
+
+    Example:
+        provider = MockRealtimeAudioVideoProvider()
+        provider.on_video(handle_video)
+        await provider.simulate_video(session, video_frame)
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._video_callbacks: list[RealtimeVideoCallback] = []
+
+    @property
+    def name(self) -> str:
+        return "MockRealtimeAudioVideoProvider"
+
+    def on_video(self, callback: RealtimeVideoCallback) -> None:
+        self._video_callbacks.append(callback)
+
+    async def simulate_video(self, session: VoiceSession, video_frame: Any) -> None:
+        """Simulate a video frame from the provider."""
+        for cb in self._video_callbacks:
+            result = cb(session, video_frame)
             if hasattr(result, "__await__"):
                 await result
 

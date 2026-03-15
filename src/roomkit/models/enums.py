@@ -17,6 +17,7 @@ class ChannelType(StrEnum):
     AI = "ai"
     VOICE = "voice"
     REALTIME_VOICE = "realtime_voice"
+    REALTIME_AUDIO_VIDEO = "realtime_audio_video"
     PUSH = "push"
     MESSENGER = "messenger"
     TELEGRAM = "telegram"

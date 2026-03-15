@@ -42,6 +42,7 @@ webrtc-aec = ["aec-audio-processing>=0.1"]
 local-audio = ["sounddevice", "numpy"]
 local-video = ["opencv-python-headless>=4.8"]
 screen-capture = ["mss>=9.0"]
+anam = ["anam", "av>=12.0.0", "numpy"]
 video = ["av>=12.0.0", "numpy"]
 yolo = ["ultralytics>=8.3"]
 rtp = ["aiortp>=0.3.0"]
@@ -271,6 +272,10 @@ module = ["PIL", "PIL.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["anam", "anam.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["av", "av.*"]
 ignore_missing_imports = true
 
@@ -341,6 +346,7 @@ omit = [
     "src/roomkit/voice/tts/qwen3.py",
     "src/roomkit/voice/stt/qwen3.py",
     "src/roomkit/providers/openai/realtime.py",
+    "src/roomkit/providers/anam/realtime.py",
     "src/roomkit/providers/gemini/realtime.py",
 
     "src/roomkit/voice/backends/rtp.py",

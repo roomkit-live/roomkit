@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.base import VoiceSession
+
+if TYPE_CHECKING:
+    from roomkit.video.video_frame import VideoFrame
 
 # Callback type aliases
 RealtimeAudioCallback = Callable[[VoiceSession, bytes], Any]
@@ -241,4 +244,30 @@ class RealtimeVoiceProvider(ABC):
 
         Args:
             callback: Called with (session, code, message).
+        """
+
+
+# Video callback: (session, VideoFrame) — used by RealtimeAudioVideoProvider
+RealtimeVideoCallback = Callable[[VoiceSession, "VideoFrame"], Any]
+"""(session, video_frame)"""
+
+
+class RealtimeAudioVideoProvider(RealtimeVoiceProvider):
+    """Realtime provider that produces both audio and video output.
+
+    Extends :class:`RealtimeVoiceProvider` with an ``on_video`` callback
+    for providers (e.g. Anam AI) that deliver synchronized audio+video
+    from a cloud avatar pipeline.
+
+    Subclasses implement the same abstract methods as
+    :class:`RealtimeVoiceProvider`; the only addition is the video
+    callback registration.
+    """
+
+    def on_video(self, callback: RealtimeVideoCallback) -> None:
+        """Register callback for video frames from the provider.
+
+        Args:
+            callback: Called with (session, video_frame) when the provider
+                produces a video frame.
         """
