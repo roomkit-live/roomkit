@@ -157,6 +157,13 @@ async def main() -> None:
         supported_video_codecs=["H264"],
     )
 
+    # --- AEC (echo cancellation) ------------------------------------------------
+    # Prevents TTS audio reflecting back through the mic from triggering
+    # false barge-in interruptions.
+    from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
+
+    aec = WebRTCAECProvider(sample_rate=16000)
+
     # --- H.264 encoder for avatar → RTP ----------------------------------------
     from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.pipeline.encoder.pyav import PyAVVideoEncoder
@@ -169,7 +176,7 @@ async def main() -> None:
         stt=stt,
         tts=tts,
         backend=backend,
-        pipeline=AudioPipelineConfig(),
+        pipeline=AudioPipelineConfig(aec=aec),
         avatar=avatar,
         avatar_encoder=avatar_encoder,
         video_pipeline=VideoPipelineConfig(
