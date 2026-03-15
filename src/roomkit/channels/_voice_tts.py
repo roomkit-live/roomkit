@@ -95,13 +95,6 @@ class VoiceTTSMixin:
         """Look up TTS voice override for *channel_id* via voice_map."""
         return self._voice_map.get(channel_id) if self._voice_map else None
 
-    def _needs_outbound_wrap(self) -> bool:
-        """Override in subclasses that need outbound wrapping without a pipeline.
-
-        Used by AudioVideoChannel to feed TTS audio to the avatar.
-        """
-        return False
-
     async def _wrap_outbound(
         self, session: VoiceSession, chunks: AsyncIterator[AudioChunk]
     ) -> AsyncIterator[AudioChunk]:
@@ -120,6 +113,11 @@ class VoiceTTSMixin:
         total_out_bytes = 0
         async for chunk in chunks:
             if not chunk.data or self._pipeline is None:
+                for cb in getattr(self, "_outbound_audio_taps", []):
+                    try:
+                        cb(session, chunk.data, chunk.sample_rate)
+                    except Exception:
+                        logger.debug("Outbound audio tap error", exc_info=True)
                 yield chunk
                 continue
             frame = AudioFrame(
@@ -142,6 +140,12 @@ class VoiceTTSMixin:
                     processed.sample_rate,
                 )
             chunk_idx += 1
+            # Fire outbound audio taps (e.g. avatar lip-sync)
+            for cb in getattr(self, "_outbound_audio_taps", []):
+                try:
+                    cb(session, processed.data, processed.sample_rate)
+                except Exception:
+                    logger.debug("Outbound audio tap error", exc_info=True)
             # Fire ON_OUTPUT_AUDIO_LEVEL from the outbound pipeline path.
             # This works regardless of backend playback-callback support.
             self._fire_output_level(session, processed.data)
@@ -326,7 +330,7 @@ class VoiceTTSMixin:
                         yield sentence
 
                 audio = self._tts.synthesize_stream_input(relay_sentences(sentences), voice=voice)
-                if self._pipeline is not None or self._needs_outbound_wrap():
+                if self._pipeline is not None or getattr(self, "_outbound_audio_taps", []):
                     audio = self._wrap_outbound(session, audio)
                 await self._backend.send_audio(session, audio)
             except Exception:
@@ -479,7 +483,7 @@ class VoiceTTSMixin:
         t0 = _time.monotonic()
         try:
             audio_stream = self._tts.synthesize_stream(text, voice=voice)
-            if self._pipeline is not None or self._needs_outbound_wrap():
+            if self._pipeline is not None or getattr(self, "_outbound_audio_taps", []):
                 audio_stream = self._wrap_outbound(session, audio_stream)
             await self._backend.send_audio(session, audio_stream)
         except NotImplementedError:
@@ -750,7 +754,7 @@ class VoiceTTSMixin:
                 )
 
             audio_stream: AsyncIterator[OutChunk] = _pcm_stream()
-            if self._pipeline is not None or self._needs_outbound_wrap():
+            if self._pipeline is not None or getattr(self, "_outbound_audio_taps", []):
                 audio_stream = self._wrap_outbound(session, audio_stream)
             await self._backend.send_audio(session, audio_stream)
         finally:

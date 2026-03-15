@@ -79,35 +79,27 @@ def _make_session(session_id: str = "test-sess") -> VoiceSession:
 
 @dataclass
 class _MockOpusWriter:
-    """Fake Opus encoder that returns the raw PCM bytes as-is."""
+    """Fake Opus encoder — append_pcm returns encoded bytes directly."""
 
-    _buf: bytes = b""
-
-    def append_pcm(self, pcm: Any) -> None:
-        self._buf += pcm.tobytes()
+    def append_pcm(self, pcm: Any) -> bytes:
+        return pcm.tobytes()
 
     def read_bytes(self) -> bytes:
-        out = self._buf
-        self._buf = b""
-        return out
+        return b""
 
 
 @dataclass
 class _MockOpusReader:
-    """Fake Opus decoder that converts bytes back to float32."""
+    """Fake Opus decoder — append_bytes returns decoded PCM directly."""
 
-    _buf: bytes = b""
-
-    def append_bytes(self, data: bytes) -> None:
-        self._buf += data
-
-    def read_pcm(self) -> np.ndarray:
-        if not self._buf:
+    def append_bytes(self, data: bytes) -> np.ndarray:
+        if not data:
             return np.array([], dtype=np.float32)
         # Treat stored bytes as float32
-        out = np.frombuffer(self._buf, dtype=np.float32).copy()
-        self._buf = b""
-        return out
+        return np.frombuffer(data, dtype=np.float32).copy()
+
+    def read_pcm(self) -> np.ndarray:
+        return np.array([], dtype=np.float32)
 
 
 # -- Fixtures --
@@ -121,8 +113,8 @@ def mock_ws() -> MockWebSocket:
 @pytest.fixture
 def mock_sphn() -> MagicMock:
     m = MagicMock()
-    m.OpusStreamWriter = lambda **_kw: _MockOpusWriter()
-    m.OpusStreamReader = lambda **_kw: _MockOpusReader()
+    m.OpusStreamWriter = lambda *_a, **_kw: _MockOpusWriter()
+    m.OpusStreamReader = lambda *_a, **_kw: _MockOpusReader()
     return m
 
 

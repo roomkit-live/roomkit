@@ -73,6 +73,7 @@ class _SessionState:
     response_end_task: asyncio.Task[None] | None = None
     text_buffer: list[str] = field(default_factory=list)
     response_end_timeout: float = 1.0
+    _logged_first_frame: bool = False
 
 
 class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
@@ -189,8 +190,8 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
         state = _SessionState(
             session=session,
             ws=ws,
-            opus_writer=sphn.OpusStreamWriter(sample_rate=NATIVE_SAMPLE_RATE),
-            opus_reader=sphn.OpusStreamReader(sample_rate=NATIVE_SAMPLE_RATE),
+            opus_writer=sphn.OpusStreamWriter(NATIVE_SAMPLE_RATE),
+            opus_reader=sphn.OpusStreamReader(NATIVE_SAMPLE_RATE),
             response_end_timeout=timeout,
         )
         self._states[session.id] = state
@@ -213,10 +214,13 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
             return
         # Convert int16 PCM to float32 for Opus encoder
         pcm = np.frombuffer(audio, dtype=np.int16).astype(np.float32) / 32768.0
-        state.opus_writer.append_pcm(pcm)
-        opus_bytes = state.opus_writer.read_bytes()
-        if opus_bytes:
-            await state.ws.send(bytes([_MSG_AUDIO]) + opus_bytes)
+        # sphn.append_pcm returns encoded Ogg/Opus bytes directly;
+        # also try read_bytes() for API compatibility across sphn versions.
+        encoded = state.opus_writer.append_pcm(pcm)
+        if not encoded:
+            encoded = state.opus_writer.read_bytes()
+        if encoded:
+            await state.ws.send(bytes([_MSG_AUDIO]) + bytes(encoded))
 
     async def inject_text(self, session: VoiceSession, text: str, *, role: str = "user") -> None:
         logger.warning(
@@ -339,13 +343,14 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
             params["seed"] = str(seed)
         return f"{self._server_url}?{urlencode(params, quote_via=quote)}"
 
-    @staticmethod
-    def _build_ssl_context(url: str) -> Any:
+    def _build_ssl_context(self, url: str) -> Any:
         if not url.startswith("wss://"):
             return None
-        # PersonaPlex default: self-signed certs
         import ssl
 
+        if self._ssl_verify:
+            return ssl.create_default_context()
+        # PersonaPlex default: self-signed certs
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -396,9 +401,20 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
         if not state.responding:
             state.responding = True
             await self._fire_callbacks(self._response_start_cbs, state.session)
-        state.opus_reader.append_bytes(opus_data)
-        pcm_float = state.opus_reader.read_pcm()
-        if pcm_float is not None and len(pcm_float) > 0:
+        # sphn.append_bytes returns decoded PCM directly in some versions;
+        # in others it buffers and read_pcm() drains.  Try both.
+        pcm_float = state.opus_reader.append_bytes(opus_data)
+        if pcm_float is None or not hasattr(pcm_float, "shape") or pcm_float.shape[-1] == 0:
+            pcm_float = state.opus_reader.read_pcm()
+        if pcm_float is not None and hasattr(pcm_float, "shape") and pcm_float.shape[-1] > 0:
+            if not state._logged_first_frame:
+                state._logged_first_frame = True
+                logger.info(
+                    "First audio frame: %d samples, shape=%s (session %s)",
+                    pcm_float.shape[-1],
+                    pcm_float.shape,
+                    state.session.id,
+                )
             pcm_int16 = (pcm_float * 32768.0).clip(-32768, 32767).astype(np.int16)
             await self._fire_audio_cbs(state.session, pcm_int16.tobytes())
         self._schedule_response_end(state)

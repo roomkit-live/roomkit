@@ -14,7 +14,7 @@ from roomkit.video.backends.base import VideoBackend
 from roomkit.video.pipeline.engine import VideoPipeline
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable
+    from collections.abc import Callable
 
     from roomkit.models.channel import ChannelBinding
     from roomkit.recorder.base import ChannelRecordingConfig
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from roomkit.video.video_frame import VideoFrame
     from roomkit.video.vision.base import VisionProvider, VisionResult
     from roomkit.voice.backends.base import VoiceBackend
-    from roomkit.voice.base import AudioChunk, VoiceSession
+    from roomkit.voice.base import VoiceSession
     from roomkit.voice.pipeline.config import AudioPipelineConfig
     from roomkit.voice.stt.base import STTProvider
     from roomkit.voice.tts.base import TTSProvider
@@ -98,6 +98,11 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         # Avatar: lip-synced video generation from TTS audio
         self._avatar = avatar
         self._avatar_encoder = avatar_encoder
+
+        # Wire avatar as an outbound audio tap (side-effect, not in audio chain)
+        self._outbound_audio_taps: list[Callable[..., None]] = (
+            [self._feed_avatar_audio] if avatar is not None else []
+        )
 
         # Wire video callbacks from the combined A/V backend
         if isinstance(backend, VideoBackend):
@@ -232,39 +237,18 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         self._session_ready_pending_video.clear()
         await super().close()
 
-    def _needs_outbound_wrap(self) -> bool:
-        """Avatar needs outbound wrapping even without an audio pipeline."""
-        return self._avatar is not None and self._avatar.is_started
-
     # -- Avatar: TTS audio → lip-synced video frames ---------------------------
 
-    async def _wrap_outbound(
-        self,
-        session: VoiceSession,
-        chunks: AsyncIterator[AudioChunk],
-    ) -> AsyncIterator[AudioChunk]:
-        """Wrap TTS stream to feed avatar with audio chunks.
-
-        Does NOT call super()._wrap_outbound() — iterates chunks
-        directly to avoid async generator chaining issues.  Pipeline
-        outbound processing is skipped when avatar is active (the
-        avatar path is the outbound processing).
-        """
+    def _feed_avatar_audio(self, session: VoiceSession, data: bytes, sample_rate: int) -> None:
+        """Feed TTS audio to avatar for lip-sync video generation."""
         if self._avatar is None or not self._avatar.is_started:
-            async for chunk in chunks:
-                yield chunk
+            return
+        if self._avatar_encoder is None:
             return
 
-        async for chunk in chunks:
-            # Feed audio to avatar → generate video frames
-            if chunk.data and self._avatar_encoder is not None:
-                try:
-                    frames = self._avatar.feed_audio(chunk.data, chunk.sample_rate)
-                    for frame in frames:
-                        self._send_avatar_frame_sync(session, frame)
-                except Exception:
-                    logger.debug("Avatar feed error", exc_info=True)
-            yield chunk
+        frames = self._avatar.feed_audio(data, sample_rate)
+        for frame in frames:
+            self._send_avatar_frame_sync(session, frame)
 
     def _send_avatar_frame_sync(self, session: VoiceSession, frame: VideoFrame) -> None:
         """Encode and send a single avatar frame (synchronous)."""
