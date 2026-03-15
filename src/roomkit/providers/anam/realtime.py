@@ -319,30 +319,10 @@ class AnamRealtimeProvider(RealtimeAudioVideoProvider):
             return
         session = state.session
 
-        audio_frame_num = 0
         try:
             async for av_frame in state.anam_session.audio_frames():
                 if state._closed:
                     break
-                audio_frame_num += 1
-
-                # Debug: log raw PyAV frame properties on first few frames
-                if audio_frame_num <= 3:
-                    ndarray = av_frame.to_ndarray()
-                    logger.info(
-                        "RAW PyAV audio #%d: format=%s rate=%s "
-                        "layout=%s samples=%s ndarray.shape=%s "
-                        "dtype=%s min=%.4f max=%.4f",
-                        audio_frame_num,
-                        getattr(av_frame, "format", "?"),
-                        getattr(av_frame, "sample_rate", "?"),
-                        getattr(av_frame, "layout", "?"),
-                        getattr(av_frame, "samples", "?"),
-                        ndarray.shape,
-                        ndarray.dtype,
-                        float(ndarray.min()),
-                        float(ndarray.max()),
-                    )
 
                 # Signal response start on first audio frame
                 if not state.responding:

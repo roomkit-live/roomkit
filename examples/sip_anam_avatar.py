@@ -234,28 +234,6 @@ async def main() -> None:
             return
         bridge.audio_out_count += 1
         codec_rate = bridge.sip_session.metadata.get("codec_sample_rate", 16000)
-
-        # Debug: log first few audio chunks in detail
-        if bridge.audio_out_count <= 3:
-            samples = np.frombuffer(audio, dtype=np.int16)
-            logger.info(
-                "AUDIO DEBUG out #%d: %d bytes, %d samples (%.1fms@48k), "
-                "min=%d max=%d rms=%.0f, sip_codec_rate=%d, metadata=%s",
-                bridge.audio_out_count,
-                len(audio),
-                len(samples),
-                len(samples) / 48.0,  # ms at 48kHz
-                samples.min(),
-                samples.max(),
-                np.sqrt(np.mean(samples.astype(np.float64) ** 2)),
-                codec_rate,
-                {
-                    k: v
-                    for k, v in bridge.sip_session.metadata.items()
-                    if "rate" in k or "codec" in k
-                },
-            )
-
         resampled = _resample(audio, codec_rate)
         loop = asyncio.get_event_loop()
         if loop.is_running():
@@ -312,30 +290,12 @@ async def main() -> None:
     provider.on_transcription(on_transcription)
 
     # --- SIP audio → Anam microphone -----------------------------------------
-    _sip_in_count = 0
-
     def on_sip_audio(session: VoiceSession, audio: Any) -> None:
-        nonlocal _sip_in_count
         bridge = bridges.get(session.id)
         if bridge is None:
             return
-        # SIP backend passes AudioFrame objects, extract raw PCM bytes
         raw = audio.data if hasattr(audio, "data") else audio
         sample_rate = getattr(audio, "sample_rate", 16000)
-
-        _sip_in_count += 1
-        if _sip_in_count <= 3:
-            logger.info(
-                "AUDIO DEBUG in #%d: type=%s, raw_type=%s, %d bytes, "
-                "sample_rate=%d, audio_attrs=%s",
-                _sip_in_count,
-                type(audio).__name__,
-                type(raw).__name__,
-                len(raw) if isinstance(raw, (bytes, bytearray)) else -1,
-                sample_rate,
-                [a for a in dir(audio) if not a.startswith("_")],
-            )
-
         anam_state = bridge.provider._states.get(bridge.voice_session.id)
         if anam_state and anam_state.anam_session:
             anam_state.anam_session.send_user_audio(raw, sample_rate, 1)
