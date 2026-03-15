@@ -38,6 +38,7 @@ Press Ctrl+C to stop.
 from __future__ import annotations
 
 import asyncio
+import fractions
 import logging
 import os
 import signal
@@ -73,7 +74,7 @@ class H264Encoder:
         self._ctx.width = width
         self._ctx.height = height
         self._ctx.pix_fmt = "yuv420p"
-        self._ctx.time_base = av.Fraction(1, fps)
+        self._ctx.time_base = fractions.Fraction(1, fps)
         self._ctx.options = {
             "preset": "ultrafast",
             "tune": "zerolatency",
@@ -266,15 +267,16 @@ async def main() -> None:
     provider.on_transcription(on_transcription)
 
     # --- SIP audio → Anam microphone -----------------------------------------
-    def on_sip_audio(session: VoiceSession, audio: bytes) -> None:
+    def on_sip_audio(session: VoiceSession, audio: Any) -> None:
         bridge = bridges.get(session.id)
         if bridge is None:
             return
-        # Forward caller's audio to Anam for STT processing
-        bridge.provider._states.get(bridge.voice_session.id)
+        # SIP backend passes AudioFrame objects, extract raw PCM bytes
+        raw = audio.data if hasattr(audio, "data") else audio
+        sample_rate = getattr(audio, "sample_rate", 16000)
         anam_state = bridge.provider._states.get(bridge.voice_session.id)
         if anam_state and anam_state.anam_session:
-            anam_state.anam_session.send_user_audio(audio, 16000, 1)
+            anam_state.anam_session.send_user_audio(raw, sample_rate, 1)
 
     sip_backend.on_audio_received(on_sip_audio)
 
