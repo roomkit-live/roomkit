@@ -206,15 +206,24 @@ async def main() -> None:
     # Active call bridges: sip_session_id → _CallBridge
     bridges: dict[str, _CallBridge] = {}
 
-    # --- Anam audio output → SIP speaker --------------------------------------
+    # --- Anam audio output → resample → SIP speaker ---------------------------
+    # Anam produces 48kHz mono int16 PCM (after _av_audio_to_pcm downmix).
+    # SIP needs 16kHz (G.722) or 8kHz (G.711). Resample 48k → 16k.
+    def _resample_48_to_16(pcm_48k: bytes) -> bytes:
+        """Resample 48kHz int16 PCM to 16kHz (simple decimation by 3)."""
+        samples = np.frombuffer(pcm_48k, dtype=np.int16)
+        resampled = samples[::3]  # 48000 / 3 = 16000
+        return resampled.tobytes()
+
     def on_anam_audio(session: VoiceSession, audio: bytes) -> None:
         bridge = bridges.get(session.id)
         if bridge is None:
             return
         bridge.audio_out_count += 1
+        resampled = _resample_48_to_16(audio)
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            loop.create_task(sip_backend.send_audio(bridge.sip_session, audio))
+            loop.create_task(sip_backend.send_audio(bridge.sip_session, resampled))
 
     provider.on_audio(on_anam_audio)
 
