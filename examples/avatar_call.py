@@ -171,12 +171,17 @@ async def main() -> None:
     avatar_encoder = PyAVVideoEncoder(width=512, height=512, fps=avatar.fps)
 
     # --- A/V channel with avatar ------------------------------------------------
+    # Disable interruption — SIP echo cancellation can't handle the
+    # variable network delay, causing false barge-in triggers.
+    from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy
+
     av = AudioVideoChannel(
         "voice",
         stt=stt,
         tts=tts,
         backend=backend,
         pipeline=AudioPipelineConfig(aec=aec),
+        interruption=InterruptionConfig(strategy=InterruptionStrategy.DISABLED),
         avatar=avatar,
         avatar_encoder=avatar_encoder,
         video_pipeline=VideoPipelineConfig(
