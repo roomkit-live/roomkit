@@ -227,6 +227,9 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
 
     async def close(self) -> None:
         """Close avatar, vision, and video state, then delegate to parent."""
+        pool = getattr(self, "_avatar_pool", None)
+        if pool is not None:
+            pool.shutdown(wait=False)
         if self._avatar:
             await self._avatar.close()
         if self._vision:
@@ -240,15 +243,30 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
     # -- Avatar: TTS audio → lip-synced video frames ---------------------------
 
     def _feed_avatar_audio(self, session: VoiceSession, data: bytes, sample_rate: int) -> None:
-        """Feed TTS audio to avatar for lip-sync video generation."""
+        """Feed TTS audio to avatar for lip-sync video generation.
+
+        Runs encoding in a thread to avoid blocking the event loop
+        (H.264 encoding takes ~30ms per frame, which would delay
+        audio chunk delivery and cause false barge-in triggers).
+        """
         if self._avatar is None or not self._avatar.is_started:
             return
         if self._avatar_encoder is None:
             return
 
         frames = self._avatar.feed_audio(data, sample_rate)
+        if not frames:
+            return
+
+        import concurrent.futures
+
+        pool = getattr(self, "_avatar_pool", None)
+        if pool is None:
+            pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            self._avatar_pool = pool
+
         for frame in frames:
-            self._send_avatar_frame_sync(session, frame)
+            pool.submit(self._send_avatar_frame_sync, session, frame)
 
     def _send_avatar_frame_sync(self, session: VoiceSession, frame: VideoFrame) -> None:
         """Encode and send a single avatar frame (synchronous)."""
