@@ -76,20 +76,28 @@ def _require_env(key: str) -> str:
 
 
 def _build_avatar(args: argparse.Namespace) -> AvatarProvider:
-    if args.musetalk:
-        from roomkit.video.avatar.musetalk import MuseTalkAvatarProvider
+    if args.avatar_url:
+        from roomkit.video.avatar.http import HTTPAvatarProvider
 
-        return MuseTalkAvatarProvider(musetalk_dir=args.musetalk, fps=30)
+        return HTTPAvatarProvider(base_url=args.avatar_url, fps=30)
     return MockAvatarProvider(fps=30, color=(0, 200, 0), idle_color=(80, 80, 80))
 
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Avatar Video Call Demo")
-    parser.add_argument("--musetalk", default=None, help="Path to MuseTalk directory")
+    parser.add_argument("--avatar-url", default=None, help="Avatar service URL")
     parser.add_argument("--image", default=None, help="Reference portrait image")
+    parser.add_argument(
+        "--size",
+        default="512x512",
+        help="Avatar video size WxH (default 512x512)",
+    )
     parser.add_argument("--sip-port", type=int, default=5060, help="SIP port")
     parser.add_argument("--rtp-ip", default="0.0.0.0", help="RTP IP")
     args = parser.parse_args()
+
+    # Parse size
+    avatar_width, avatar_height = (int(x) for x in args.size.split("x"))
 
     # --- API keys ---------------------------------------------------------------
     deepgram_key = _require_env("DEEPGRAM_API_KEY")
@@ -146,8 +154,11 @@ async def main() -> None:
 
     # --- Avatar -----------------------------------------------------------------
     avatar = _build_avatar(args)
-    image_bytes = Path(args.image).read_bytes() if args.image else b"\x00\x00\x80" * (512 * 512)
-    await avatar.start(image_bytes, width=512, height=512)
+    if args.image:
+        image_bytes = Path(args.image).read_bytes()
+    else:
+        image_bytes = b"\x00\x00\x80" * (avatar_width * avatar_height)
+    await avatar.start(image_bytes, width=avatar_width, height=avatar_height)
 
     # --- SIP A/V backend --------------------------------------------------------
     backend = SIPVideoBackend(
@@ -168,7 +179,7 @@ async def main() -> None:
     from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.pipeline.encoder.pyav import PyAVVideoEncoder
 
-    avatar_encoder = PyAVVideoEncoder(width=512, height=512, fps=avatar.fps)
+    avatar_encoder = PyAVVideoEncoder(width=avatar_width, height=avatar_height, fps=avatar.fps)
 
     # --- A/V channel with avatar ------------------------------------------------
     # Disable interruption — SIP echo cancellation can't handle the
@@ -230,10 +241,10 @@ async def main() -> None:
     # --- Start ------------------------------------------------------------------
     await backend.start()
 
-    mode = "MuseTalk" if args.musetalk else "Mock"
+    mode = f"HTTP ({args.avatar_url})" if args.avatar_url else "Mock"
     print("Avatar Video Call Demo")
     print("=" * 60)
-    print(f"Avatar  : {mode} ({avatar.name}, {avatar.fps}fps)")
+    print(f"Avatar  : {mode} ({avatar.name}, {avatar.fps}fps, {avatar_width}x{avatar_height})")
     print("STT     : Deepgram nova-3")
     print("TTS     : ElevenLabs")
     print("AI      : Claude")

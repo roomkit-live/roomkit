@@ -888,6 +888,15 @@ class RealtimeVoiceChannel(Channel):
         audio = self._resample_outbound_with(audio, resamplers, transport_rate)
         if not audio:
             return
+
+        # Fire outbound audio taps (e.g. avatar lip-sync)
+        rate = transport_rate or self._output_sample_rate
+        for cb in getattr(self, "_outbound_audio_taps", []):
+            try:
+                cb(session, audio, rate)
+            except Exception:
+                logger.debug("Outbound audio tap error", exc_info=True)
+
         with self._state_lock:
             self._audio_forward_count[session.id] = (
                 self._audio_forward_count.get(session.id, 0) + 1

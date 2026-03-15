@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import logging
+import queue as _queue_mod
+import threading
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -104,6 +108,13 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             [self._feed_avatar_audio] if avatar is not None else []
         )
 
+        # Idle frame loop: sends avatar idle frames when TTS is not playing
+        self._avatar_idle_tasks: dict[str, asyncio.Task[None]] = {}
+        # Per-session audio queues for async avatar inference
+        self._avatar_queues: dict[str, Any] = {}
+        # Lock to serialize H.264 encoding (x264 is not thread-safe)
+        self._encoder_lock = threading.Lock()
+
         # Wire video callbacks from the combined A/V backend
         if isinstance(backend, VideoBackend):
             backend.on_video_received(self._on_video_received)
@@ -177,6 +188,9 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         if video_session is None:
             return
 
+        # Start avatar idle frame loop (shows reference image when not speaking)
+        self._start_avatar_idle_loop(session)
+
         was_ready_pending = session.id in self._session_ready_pending_video
         self._session_ready_pending_video.discard(session.id)
 
@@ -195,6 +209,11 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
 
     def unbind_session(self, session: VoiceSession) -> None:
         """Clean up video state before unbinding the voice session."""
+        self._stop_avatar_idle_loop(session.id)
+        # Signal avatar worker to stop
+        q = self._avatar_queues.pop(session.id, None)
+        if q is not None:
+            q.put(None)
         self._session_ready_pending_video.discard(session.id)
         binding_info = self._session_bindings.get(session.id)
 
@@ -227,6 +246,8 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
 
     async def close(self) -> None:
         """Close avatar, vision, and video state, then delegate to parent."""
+        for sid in list(self._avatar_idle_tasks):
+            self._stop_avatar_idle_loop(sid)
         pool = getattr(self, "_avatar_pool", None)
         if pool is not None:
             pool.shutdown(wait=False)
@@ -240,37 +261,140 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         self._session_ready_pending_video.clear()
         await super().close()
 
+    # -- Avatar idle frame loop ------------------------------------------------
+
+    def _start_avatar_idle_loop(self, session: VoiceSession) -> None:
+        """Start sending idle frames for a session (reference image visible)."""
+        if self._avatar is None or not self._avatar.is_started:
+            return
+        if self._avatar_encoder is None:
+            return
+        if session.id in self._avatar_idle_tasks:
+            return
+        task = asyncio.get_running_loop().create_task(
+            self._avatar_idle_loop(session),
+            name=f"avatar_idle:{session.id}",
+        )
+        self._avatar_idle_tasks[session.id] = task
+
+    def _stop_avatar_idle_loop(self, session_id: str) -> None:
+        """Cancel the idle frame loop for a session."""
+        task = self._avatar_idle_tasks.pop(session_id, None)
+        if task is not None:
+            task.cancel()
+
+    async def _avatar_idle_loop(self, session: VoiceSession) -> None:
+        """Send idle frames at avatar fps while TTS is not playing.
+
+        Automatically pauses when TTS is active (session in
+        ``_playing_sessions``) and resumes when TTS finishes.
+        """
+        if self._avatar is None:
+            return
+        interval = 1.0 / self._avatar.fps
+        logger.info(
+            "Avatar idle loop started: session=%s, fps=%d", session.id[:8], self._avatar.fps
+        )
+        try:
+            while True:
+                # Skip idle frames while TTS is playing or avatar worker
+                # is running — the worker handles video during speech.
+                if (
+                    session.id not in self._playing_sessions
+                    and session.id not in self._avatar_queues
+                ):
+                    frame = self._avatar.get_idle_frame()
+                    if frame is not None:
+                        self._submit_avatar_frame(session, frame)
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            pass
+        logger.debug("Avatar idle loop stopped: session=%s", session.id[:8])
+
     # -- Avatar: TTS audio → lip-synced video frames ---------------------------
 
     def _feed_avatar_audio(self, session: VoiceSession, data: bytes, sample_rate: int) -> None:
-        """Feed TTS audio to avatar for lip-sync video generation.
+        """Queue TTS audio for async avatar inference.
 
-        Runs encoding in a thread to avoid blocking the event loop
-        (H.264 encoding takes ~30ms per frame, which would delay
-        audio chunk delivery and cause false barge-in triggers).
+        This tap is called synchronously from the TTS outbound path.
+        It MUST NOT block — all heavy work (inference, encoding) runs
+        in a background thread via ``_avatar_worker``.
         """
         if self._avatar is None or not self._avatar.is_started:
             return
         if self._avatar_encoder is None:
             return
 
-        frames = self._avatar.feed_audio(data, sample_rate)
-        if not frames:
+        q = self._avatar_queues.get(session.id)
+        if q is None:
+            q = _queue_mod.Queue()
+            self._avatar_queues[session.id] = q
+            pool = self._ensure_avatar_pool()
+            pool.submit(self._avatar_worker, session, q, sample_rate)
+        q.put(data)
+
+    def _avatar_worker(
+        self,
+        session: VoiceSession,
+        q: Any,
+        sample_rate: int,
+    ) -> None:
+        """Background thread: drain audio queue → inference → encode → send.
+
+        Exits after 2 seconds of queue inactivity so the idle loop
+        can resume.  A new worker is spawned on the next TTS response.
+        """
+        if self._avatar is None:
             return
+        logger.info("Avatar worker started: session=%s", session.id[:8])
+        total_frames = 0
+        while True:
+            try:
+                data = q.get(timeout=2.0)
+            except Exception:
+                # No audio for 2s — TTS likely ended, exit so idle resumes
+                break
+            if data is None:
+                break
+            try:
+                t0 = time.monotonic()
+                frames = self._avatar.feed_audio(data, sample_rate)
+                dt = time.monotonic() - t0
+                logger.info(
+                    "Avatar inference: %d bytes → %d frames in %.1fs",
+                    len(data),
+                    len(frames),
+                    dt,
+                )
+                for frame in frames:
+                    self._send_avatar_frame_sync(session, frame)
+                    total_frames += 1
+            except Exception:
+                logger.warning("Avatar worker error", exc_info=True)
+        self._avatar_queues.pop(session.id, None)
+        logger.info(
+            "Avatar worker stopped: session=%s, total_frames=%d",
+            session.id[:8],
+            total_frames,
+        )
 
-        import concurrent.futures
-
+    def _ensure_avatar_pool(self) -> concurrent.futures.ThreadPoolExecutor:
+        """Return or create the avatar thread pool."""
         pool = getattr(self, "_avatar_pool", None)
         if pool is None:
-            pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
             self._avatar_pool = pool
+        return pool
 
-        for frame in frames:
-            pool.submit(self._send_avatar_frame_sync, session, frame)
+    def _submit_avatar_frame(self, session: VoiceSession, frame: VideoFrame) -> None:
+        """Submit a video frame for encoding + RTP send in the thread pool."""
+        pool = self._ensure_avatar_pool()
+        pool.submit(self._send_avatar_frame_sync, session, frame)
 
     def _send_avatar_frame_sync(self, session: VoiceSession, frame: VideoFrame) -> None:
-        """Encode and send a single avatar frame (synchronous)."""
-        nals = self._avatar_encoder.encode(frame)  # type: ignore[union-attr]
+        """Encode and send a single avatar frame (synchronous, thread-safe)."""
+        with self._encoder_lock:
+            nals = self._avatar_encoder.encode(frame)  # type: ignore[union-attr]
         if not nals:
             return
 

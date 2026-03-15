@@ -13,6 +13,7 @@ from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
 from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.voice.base import TranscriptionResult
 from roomkit.voice.events import TranscriptionEvent
+from roomkit.voice.interruption import InterruptionHandler
 
 _NOOP = NoopTelemetryProvider()
 
@@ -277,6 +278,15 @@ class VoiceSTTMixin:
                 binding_info = self._session_bindings.get(session.id)
             if binding_info:
                 room_id, _ = binding_info
+                # Consult the interruption handler before firing barge-in
+                # (respects InterruptionStrategy.DISABLED and other policies).
+                handler: InterruptionHandler = self._interruption_handler  # type: ignore[attr-defined]
+                decision = handler.evaluate(
+                    playback_position_ms=playback.position_ms,
+                    speech_duration_ms=0,
+                )
+                if not decision.should_interrupt:
+                    return
                 logger.info(
                     "Energy barge-in (post-denoiser): rms=%.0f, threshold=%.0f, pos=%dms",
                     rms,
@@ -485,8 +495,6 @@ class VoiceSTTMixin:
                                 # returned, waiting for echo decay).
                                 drain_ev = self._playback_done_events.get(session.id)
                                 if playback and not (drain_ev is not None and drain_ev.is_set()):
-                                    from roomkit.voice.interruption import InterruptionHandler
-
                                     handler: InterruptionHandler = self._interruption_handler  # type: ignore[attr-defined]
                                     decision = handler.evaluate(
                                         playback_position_ms=(playback.position_ms),
