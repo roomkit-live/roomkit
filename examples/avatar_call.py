@@ -9,7 +9,7 @@ Video flow:  TTS audio → Avatar → H.264 encode → RTP video → caller sees
 
 Modes:
   - **Mock avatar** (default): displays reference image as static frame.
-  - **MuseTalk**: real lip-sync from portrait photo (GPU required).
+  - **WebSocket avatar**: connects to a remote animation server (any model).
 
 Prerequisites:
     pip install roomkit[sip,video,deepgram,elevenlabs,anthropic]
@@ -19,13 +19,9 @@ Prerequisites:
         ELEVENLABS_API_KEY=...
         ANTHROPIC_API_KEY=...
 
-    # For MuseTalk mode:
-    git clone https://github.com/TMElyralab/MuseTalk.git
-    cd MuseTalk && pip install -r requirements.txt
-
 Run with:
     uv run python examples/avatar_call.py --image avatar.png
-    uv run python examples/avatar_call.py --image avatar.png --musetalk /path/to/MuseTalk
+    uv run python examples/avatar_call.py --image avatar.png --avatar-url http://gpu-server:8765
 
 Press Ctrl+C to stop.
 """
@@ -77,9 +73,9 @@ def _require_env(key: str) -> str:
 
 def _build_avatar(args: argparse.Namespace) -> AvatarProvider:
     if args.avatar_url:
-        from roomkit.video.avatar.http import HTTPAvatarProvider
+        from roomkit.video.avatar.websocket import WebSocketAvatarProvider
 
-        return HTTPAvatarProvider(base_url=args.avatar_url, fps=30)
+        return WebSocketAvatarProvider(base_url=args.avatar_url, fps=30)
     return MockAvatarProvider(fps=30, color=(0, 200, 0), idle_color=(80, 80, 80))
 
 
@@ -241,7 +237,7 @@ async def main() -> None:
     # --- Start ------------------------------------------------------------------
     await backend.start()
 
-    mode = f"HTTP ({args.avatar_url})" if args.avatar_url else "Mock"
+    mode = f"WebSocket ({args.avatar_url})" if args.avatar_url else "Mock"
     print("Avatar Video Call Demo")
     print("=" * 60)
     print(f"Avatar  : {mode} ({avatar.name}, {avatar.fps}fps, {avatar_width}x{avatar_height})")
