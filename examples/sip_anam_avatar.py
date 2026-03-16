@@ -94,7 +94,7 @@ async def main() -> None:
     bridge = RealtimeAVBridge(
         provider,
         sip,
-        encoder=PyAVVideoEncoder(fps=25, bitrate=3_000_000),
+        encoder=PyAVVideoEncoder(fps=25, bitrate=3_000_000, preset="medium"),
         provider_sample_rate=48000,
         on_transcription=lambda role, text, _: logger.info("[%s] %s", role.upper(), text),
     )

@@ -188,6 +188,7 @@ Each of the 10 pipeline stages lives in `voice/pipeline/<stage>/`:
 ### Code Style
 
 - `from __future__ import annotations` — always first import
+- **All imports at the top of the file** — never import inside functions or methods (except lazy imports for optional dependencies behind `try/except ImportError`)
 - Python 3.12+ — use `X | None` unions, not `Optional[X]`
 - Type hints required on all public methods
 - Ruff: 99-char line length, `E/F/I/N/UP/B/SIM` rules

@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -218,8 +219,14 @@ class RealtimeAVBridge:
             with contextlib.suppress(Exception):
                 ensure_pacer(backend_session)
 
+        t0 = time.monotonic()
         await self._provider.connect(provider_session)
-        logger.info("Bridge connected: %s (%s)", backend_session.id[:8], caller)
+        logger.info(
+            "Bridge connected: %s (%s) in %.0fms",
+            backend_session.id[:8],
+            caller,
+            (time.monotonic() - t0) * 1000,
+        )
         return provider_session
 
     async def disconnect(self, session_id: str) -> None:
