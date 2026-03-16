@@ -329,6 +329,7 @@ from roomkit.video import (
     get_rtp_video_backend,
     get_screen_capture_backend,
     get_sip_video_backend,
+    make_text_frame,
     setup_video_vision,
 )
 from roomkit.voice import (
@@ -381,6 +382,7 @@ from roomkit.voice.realtime import (
     MockRealtimeProvider,
     MockRealtimeTransport,
     RealtimeAudioVideoProvider,
+    RealtimeAVBridge,
     RealtimeErrorEvent,
     RealtimeSpeechEvent,
     RealtimeToolCallEvent,
@@ -747,6 +749,7 @@ __all__ = [
     "MockRealtimeProvider",
     "MockRealtimeTransport",
     "RealtimeAudioVideoProvider",
+    "RealtimeAVBridge",
     "RealtimeErrorEvent",
     "RealtimeSpeechEvent",
     "RealtimeToolCallEvent",
@@ -806,6 +809,7 @@ __all__ = [
     "get_rtp_video_backend",
     "get_screen_capture_backend",
     "get_sip_video_backend",
+    "make_text_frame",
     "setup_video_vision",
     "OpenAIVisionConfig",
     "OpenAIVisionProvider",
