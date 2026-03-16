@@ -161,11 +161,12 @@ Instructions:
 - Find the VISUAL element (icon, button, widget) matching the description.
 - Ignore text displayed inside application windows (terminal, editor, browser, file manager).
 - Focus on toolbars, taskbar, dock, sidebar, desktop, system menus.
-- IMPORTANT: cx must be an integer between 0 and {w}. cy must be an integer between 0 and {h}.
-- IMPORTANT: Do NOT normalize coordinates between 0 and 1. Return absolute pixels.
+- IMPORTANT: All coordinates must be integers in absolute pixels (NOT normalized 0-1).
+- IMPORTANT: cx and cy must be the CENTER of the element's bounding box.
+- cx must be between 0 and {w}. cy must be between 0 and {h}.
 
 Return ONLY this JSON (no markdown, no text around):
-{{"found": true, "cx": <absolute pixels x>, "cy": <absolute pixels y>, \
+{{"found": true, "cx": <center x in pixels>, "cy": <center y in pixels>, \
 "box": {{"x1": <int>, "y1": <int>, "x2": <int>, "y2": <int>}}, "label": "<visible name>"}}
 
 If not found:
