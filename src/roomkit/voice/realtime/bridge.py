@@ -265,6 +265,17 @@ class RealtimeAVBridge:
 
         t0 = time.monotonic()
         await self._provider.connect(provider_session)
+
+        # If the backend session died during the provider negotiation
+        # (e.g. SIP BYE during the 3-4s WebRTC handshake), disconnect
+        # the provider immediately to stop its consume loops.
+        if backend_session.id not in self._calls:
+            logger.info(
+                "Backend session ended during provider negotiation, disconnecting",
+            )
+            await self._provider.disconnect(provider_session)
+            return provider_session
+
         logger.info(
             "Bridge connected: %s (%s) in %.0fms",
             backend_session.id[:8],
