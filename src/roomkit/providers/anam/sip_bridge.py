@@ -62,15 +62,23 @@ def _ensure_deps() -> None:
 class _H264Encoder:
     """Encode raw RGB frames to H.264 NAL units for SIP/RTP."""
 
-    def __init__(self, width: int, height: int, fps: int = 25) -> None:
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        fps: int = 25,
+        bitrate: int = 1_500_000,
+    ) -> None:
         _ensure_deps()
         self._ctx = _av.CodecContext.create("libx264", "w")
         self._ctx.width = width
         self._ctx.height = height
         self._ctx.pix_fmt = "yuv420p"
         self._ctx.time_base = fractions.Fraction(1, fps)
+        self._ctx.bit_rate = bitrate
+        self._ctx.gop_size = fps * 2  # Keyframe every 2 seconds
         self._ctx.options = {
-            "preset": "ultrafast",
+            "preset": "veryfast",
             "tune": "zerolatency",
             "profile": "baseline",
         }
@@ -196,6 +204,7 @@ class AnamSIPBridge:
         sip_backend: SIPVideoBackend,
         *,
         video_fps: int = 25,
+        video_bitrate: int = 1_500_000,
         on_call: Callable[[VoiceSession], Any] | None = None,
         on_call_ended: Callable[[str, int, int], Any] | None = None,
         on_transcription: Callable[[str, str, bool], Any] | None = None,
@@ -204,6 +213,7 @@ class AnamSIPBridge:
         self._provider = provider
         self._sip = sip_backend
         self._video_fps = video_fps
+        self._video_bitrate = video_bitrate
         self._calls: dict[str, _CallState] = {}
         self._on_call = on_call
         self._on_call_ended = on_call_ended
@@ -295,7 +305,12 @@ class AnamSIPBridge:
         state.frame_count += 1
 
         if state.encoder is None:
-            state.encoder = _H264Encoder(frame.width, frame.height, self._video_fps)
+            state.encoder = _H264Encoder(
+                frame.width,
+                frame.height,
+                self._video_fps,
+                self._video_bitrate,
+            )
             logger.info("H.264 encoder: %dx%d", frame.width, frame.height)
 
         nals = state.encoder.encode(frame.data)
