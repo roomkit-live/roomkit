@@ -1,5 +1,6 @@
 """Realtime voice support for speech-to-speech AI providers."""
 
+from roomkit.voice.realtime.bridge import RealtimeAVBridge
 from roomkit.voice.realtime.events import (
     RealtimeErrorEvent,
     RealtimeSpeechEvent,
@@ -21,6 +22,7 @@ from roomkit.voice.realtime.provider import (
 __all__ = [
     # ABCs
     "RealtimeAudioVideoProvider",
+    "RealtimeAVBridge",
     "RealtimeVideoCallback",
     "RealtimeVoiceProvider",
     # Events

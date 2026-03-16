@@ -44,12 +44,16 @@ class PyAVVideoEncoder(VideoEncoderProvider):
         height: int = 512,
         fps: int = 30,
         codec: str = "libx264",
+        bitrate: int = 1_500_000,
+        preset: str = "veryfast",
     ) -> None:
         self._av, self._np = _import_deps()
         self._width = width
         self._height = height
         self._fps = fps
         self._codec_name = codec
+        self._bitrate = bitrate
+        self._preset = preset
         self._ctx: Any = None
         self._pts = 0
 
@@ -68,9 +72,11 @@ class PyAVVideoEncoder(VideoEncoderProvider):
         ctx.height = height
         ctx.pix_fmt = "yuv420p"
         ctx.time_base = Fraction(1, self._fps)
+        ctx.bit_rate = self._bitrate
+        ctx.gop_size = self._fps * 2
         ctx.options = {
             "tune": "zerolatency",
-            "preset": "ultrafast",
+            "preset": self._preset,
             "profile": "baseline",
             "level": "3.1",
         }

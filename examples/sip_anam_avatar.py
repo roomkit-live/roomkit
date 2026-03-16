@@ -45,8 +45,9 @@ if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit").setLevel(logging.DEBUG)
 
 from roomkit import AnamConfig, AnamRealtimeProvider
-from roomkit.providers.anam.sip_bridge import AnamSIPBridge
 from roomkit.video.backends.sip import SIPVideoBackend
+from roomkit.video.pipeline.encoder.pyav import PyAVVideoEncoder
+from roomkit.voice.realtime.bridge import RealtimeAVBridge
 
 
 async def main() -> None:
@@ -89,17 +90,18 @@ async def main() -> None:
         )
     )
 
-    # --- Bridge: wires SIP ↔ Anam automatically --------------------------------
-    bridge = AnamSIPBridge(
+    # --- Bridge: SIP ↔ Anam (with H.264 encoding) ----------------------------
+    bridge = RealtimeAVBridge(
         provider,
         sip,
+        encoder=PyAVVideoEncoder(fps=25),
+        provider_sample_rate=48000,
         on_transcription=lambda role, text, _: logger.info("[%s] %s", role.upper(), text),
     )
 
     # --- Start ----------------------------------------------------------------
     await sip.start()
-    sip_port = os.environ.get("SIP_PORT", "5060")
-    logger.info("SIP + Anam Avatar bridge on 0.0.0.0:%s", sip_port)
+    logger.info("SIP + Anam Avatar bridge on 0.0.0.0:%s", os.environ.get("SIP_PORT", "5060"))
     logger.info("Call this SIP endpoint with a video phone.")
     logger.info("Press Ctrl+C to stop.\n")
 
@@ -109,7 +111,6 @@ async def main() -> None:
         loop.add_signal_handler(sig, stop.set)
     await stop.wait()
 
-    # --- Cleanup --------------------------------------------------------------
     await bridge.close()
     await sip.close()
     logger.info("Done.")
