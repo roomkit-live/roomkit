@@ -35,6 +35,7 @@ from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import RealtimeAudioVideoProvider
 
 if TYPE_CHECKING:
+    from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.pipeline.encoder.base import VideoEncoderProvider
     from roomkit.voice.backends.base import VoiceBackend
 
@@ -109,12 +110,16 @@ class RealtimeAVBridge:
 
     - Backend audio → ``provider.send_audio()`` (user speech to AI)
     - Provider audio → resample → ``backend.send_audio()`` (AI speech to user)
-    - Provider video → encode → backend video send (avatar to user)
+    - Provider video → pipeline → encode → backend video send (avatar to user)
     - Backend disconnect → ``provider.disconnect()`` (session cleanup)
 
     Works with any :class:`VoiceBackend` (SIP, RTP, local mic, WebSocket).
     If the backend also implements :class:`VideoBackend` and an encoder is
     provided, encoded video frames are sent back to the caller.
+
+    An optional :class:`VideoPipelineConfig` inserts processing stages
+    (resize, filters, vision) between the provider's raw frames and the
+    encoder.
 
     Example::
 
@@ -125,18 +130,32 @@ class RealtimeAVBridge:
 
         sip = SIPVideoBackend(...)
         provider = AnamRealtimeProvider(AnamConfig(...))
-        encoder = PyAVVideoEncoder(fps=25)
 
         bridge = RealtimeAVBridge(
             provider, sip,
-            encoder=encoder,
+            encoder=PyAVVideoEncoder(fps=25),
             provider_sample_rate=48000,
         )
         await sip.start()
 
+    Example with video pipeline (resize + watermark)::
+
+        from roomkit import VideoPipelineConfig
+
+        bridge = RealtimeAVBridge(
+            provider, sip,
+            video_pipeline=VideoPipelineConfig(
+                resizer=MyResizer(width=640, height=480),
+                filters=[WatermarkFilter("logo.png")],
+            ),
+            encoder=PyAVVideoEncoder(fps=25),
+        )
+
     Args:
         provider: The realtime audio+video provider.
         backend: The voice backend (and optionally video backend).
+        video_pipeline: Optional video processing pipeline applied to
+            provider frames before encoding (resize, filters, vision).
         encoder: Optional video encoder for outbound video. Without it,
             provider video goes to taps only (passthrough mode).
         provider_sample_rate: Sample rate of provider audio output (Hz).
@@ -152,6 +171,7 @@ class RealtimeAVBridge:
         provider: RealtimeAudioVideoProvider,
         backend: VoiceBackend,
         *,
+        video_pipeline: VideoPipelineConfig | None = None,
         encoder: VideoEncoderProvider | None = None,
         provider_sample_rate: int = 48000,
         video_fps: int = 25,
@@ -169,6 +189,21 @@ class RealtimeAVBridge:
         self._on_call = on_call
         self._on_call_ended = on_call_ended
         self._on_transcription = on_transcription
+
+        # Build video pipeline if configured
+        if video_pipeline is not None and (
+            video_pipeline.decoder
+            or video_pipeline.resizer
+            or video_pipeline.transforms
+            or video_pipeline.filters
+        ):
+            from roomkit.video.pipeline.engine import VideoPipeline
+
+            self._video_pipeline: Any = VideoPipeline(video_pipeline)
+        else:
+            self._video_pipeline = None
+        self._video_pipeline_config = video_pipeline
+
         # Thread pool for H.264 encoding — avoids blocking the event loop
         # which would starve audio callbacks and cause dropped/delayed audio.
         self._encode_pool: concurrent.futures.ThreadPoolExecutor | None = (
@@ -337,6 +372,13 @@ class RealtimeAVBridge:
         if state is None:
             return
         state.frame_count += 1
+
+        # Run through video pipeline (resize, filters, vision) if configured
+        if self._video_pipeline is not None:
+            processed = self._video_pipeline.process_inbound(session.id, frame)
+            if processed is None:
+                return
+            frame = processed
 
         # Deliver to taps (display, recording)
         for tap in self._video_taps:
