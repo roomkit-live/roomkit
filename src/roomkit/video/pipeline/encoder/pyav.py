@@ -77,7 +77,7 @@ class PyAVVideoEncoder(VideoEncoderProvider):
         ctx.options = {
             "tune": "zerolatency",
             "preset": self._preset,
-            "profile": "constrained_baseline",
+            "profile": "baseline",
             "level": "3.1",
             # Force IDR on first frame and at GOP boundaries
             "forced-idr": "1",
