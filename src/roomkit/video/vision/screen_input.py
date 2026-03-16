@@ -261,16 +261,16 @@ def _parse_json_response(text: str) -> dict[str, Any] | None:
     return None
 
 
-async def _find_element_gemini(
+def _find_element_sync(
     api_key: str,
     model: str,
     element: str,
     monitor: int,
 ) -> tuple[int, int] | None:
-    """Locate a UI element using Gemini Vision directly.
+    """Locate a UI element using Gemini Vision (synchronous).
 
-    Sends PNG screenshot with system instruction — same approach as
-    VisionClick (test-click.py) which produces accurate coordinates.
+    Uses the exact same approach as VisionClick (test-click.py):
+    sync client, PNG screenshot, system instruction, denormalize.
     """
     try:
         from google import genai
@@ -287,7 +287,7 @@ async def _find_element_gemini(
     prompt = _LOCATE_USER.format(w=img_w, h=img_h, element=element)
 
     client = genai.Client(api_key=api_key)
-    response = await client.aio.models.generate_content(
+    response = client.models.generate_content(
         model=model,
         contents=[
             types.Part.from_bytes(data=png_bytes, mime_type="image/png"),
@@ -306,18 +306,18 @@ async def _find_element_gemini(
         logger.warning("Element not found: %s (raw: %s)", element, raw[:300])
         return None
 
+    parsed = _denormalize(parsed, img_w, img_h)
+    cx, cy = int(parsed["cx"]), int(parsed["cy"])
+
     logger.info(
-        "Gemini parsed for '%s': cx=%s cy=%s box=%s (img %dx%d)",
+        "Gemini locate '%s': cx=%d cy=%d box=%s (img %dx%d)",
         element,
-        parsed.get("cx"),
-        parsed.get("cy"),
+        cx,
+        cy,
         parsed.get("box"),
         img_w,
         img_h,
     )
-
-    parsed = _denormalize(parsed, img_w, img_h)
-    cx, cy = int(parsed["cx"]), int(parsed["cy"])
 
     scale_x, scale_y = _get_scale_factor()
     screen_x = int(cx * scale_x)
@@ -333,6 +333,19 @@ async def _find_element_gemini(
         parsed.get("label", ""),
     )
     return screen_x, screen_y
+
+
+async def _find_element_gemini(
+    api_key: str,
+    model: str,
+    element: str,
+    monitor: int,
+) -> tuple[int, int] | None:
+    """Async wrapper — runs the sync Gemini call in a thread pool."""
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _find_element_sync, api_key, model, element, monitor)
 
 
 # ---------------------------------------------------------------------------
