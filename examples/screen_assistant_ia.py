@@ -4,26 +4,30 @@ Talk to Gemini while it sees your screen in real time. The AI observes
 what's on your display and guides you through tasks step by step using
 natural voice conversation.
 
-Uses Gemini Live for voice + periodic screen vision, and OpenAI GPT-4o
-for the on-demand ``describe_screen`` tool (higher accuracy for text/icons).
+The ``describe_screen`` tool uses whichever vision API key is available:
+OpenAI (preferred) or Gemini (fallback). If both are set, you choose.
 
 Demo task: open Google Chrome, search "roomkit python conversation ai",
 and navigate to the RoomKit website.
 
 Requirements:
-    pip install roomkit[screen-capture,realtime-gemini,local-audio,gemini,openai,sherpa-onnx]
-    pip install aec-audio-processing    # WebRTC echo cancellation (CRITICAL)
+    pip install roomkit[screen-capture,realtime-gemini,local-audio,gemini,sherpa-onnx]
+    pip install roomkit[openai]          # optional, for OpenAI vision tool
+    pip install aec-audio-processing     # WebRTC echo cancellation (CRITICAL)
 
 Run with:
+    GOOGLE_API_KEY=... uv run python examples/screen_assistant_ia.py
+    # or with OpenAI for the vision tool:
     GOOGLE_API_KEY=... OPENAI_API_KEY=... uv run python examples/screen_assistant_ia.py
 
 Environment variables:
     GOOGLE_API_KEY       (required) Google API key (voice + periodic vision)
-    OPENAI_API_KEY       (required) OpenAI API key (describe_screen tool)
+    OPENAI_API_KEY       (optional) OpenAI API key (describe_screen tool)
+    VISION_TOOL          Force tool provider: openai | gemini (auto if unset)
     GEMINI_MODEL         Speech model (default: gemini-2.5-flash-native-audio-preview-12-2025)
     GEMINI_VOICE         Voice preset (default: Aoede)
     GEMINI_VISION_MODEL  Periodic vision model (default: gemini-3.1-flash-image-preview)
-    OPENAI_VISION_MODEL  Tool vision model (default: gpt-4o)
+    OPENAI_VISION_MODEL  OpenAI tool model (default: gpt-4o)
     SCALE                Capture scale 0.0-1.0 (default: 0.75, higher = sharper text)
     AEC                  Echo cancellation: webrtc | speex | 0 (default: webrtc)
     DENOISE              Noise suppression: 1 | 0 (default: 1, uses sherpa-onnx GTCRN)
@@ -210,16 +214,73 @@ def _build_vision(api_key: str) -> GeminiVisionProvider:
     )
 
 
+def _pick_vision_tool_provider() -> str:
+    """Decide which provider to use for the describe_screen tool.
+
+    Returns "openai" or "gemini".
+    """
+    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+    has_gemini = bool(os.environ.get("GOOGLE_API_KEY"))
+    forced = os.environ.get("VISION_TOOL", "").lower()
+
+    if forced in ("openai", "gemini"):
+        return forced
+    if has_openai and has_gemini:
+        print("Both OPENAI_API_KEY and GOOGLE_API_KEY are set.")
+        print("Which provider for the describe_screen tool?")
+        print("  1) OpenAI  (gpt-4o)")
+        print("  2) Gemini")
+        choice = input("Choice [1]: ").strip()
+        return "gemini" if choice == "2" else "openai"
+    if has_openai:
+        return "openai"
+    return "gemini"
+
+
+def _build_screen_tool(
+    tool_provider: str,
+    google_api_key: str,
+    monitor: int,
+) -> DescribeScreenTool:
+    """Build DescribeScreenTool with the chosen vision provider."""
+    if tool_provider == "openai":
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        model = os.environ.get("OPENAI_VISION_MODEL", "gpt-4o")
+        return DescribeScreenTool(
+            lambda query: OpenAIVisionProvider(
+                OpenAIVisionConfig(
+                    api_key=openai_key,
+                    base_url="https://api.openai.com/v1",
+                    model=model,
+                    prompt=query,
+                    max_tokens=4096,
+                    detail="high",
+                )
+            ),
+            monitor=monitor,
+        )
+    model = os.environ.get(
+        "GEMINI_VISION_MODEL",
+        "gemini-3.1-flash-image-preview",
+    )
+    return DescribeScreenTool(
+        lambda query: GeminiVisionProvider(
+            GeminiVisionConfig(
+                api_key=google_api_key,
+                model=model,
+                prompt=query,
+                max_tokens=4096,
+            )
+        ),
+        monitor=monitor,
+    )
+
+
 async def main() -> None:
     api_key = os.environ.get("GOOGLE_API_KEY", "")
-    run_cmd = "GOOGLE_API_KEY=... OPENAI_API_KEY=... uv run python examples/screen_assistant_ia.py"
     if not api_key:
         print("Set GOOGLE_API_KEY to run this example.")
-        print(f"  {run_cmd}")
-        return
-    if not os.environ.get("OPENAI_API_KEY"):
-        print("Set OPENAI_API_KEY for the describe_screen tool.")
-        print(f"  {run_cmd}")
+        print("  GOOGLE_API_KEY=... uv run python examples/screen_assistant_ia.py")
         return
 
     lang = os.environ.get("LANG_VOICE", os.environ.get("LANG", "en")).lower()[:2]
@@ -257,22 +318,8 @@ async def main() -> None:
     # downscaled periodic frames) so the vision model can read text accurately.
     # A fresh provider is created per call so the query becomes the vision prompt.
 
-    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
-    openai_vision_model = os.environ.get("OPENAI_VISION_MODEL", "gpt-4o")
-
-    screen_tool = DescribeScreenTool(
-        lambda query: OpenAIVisionProvider(
-            OpenAIVisionConfig(
-                api_key=openai_api_key,
-                base_url="https://api.openai.com/v1",
-                model=openai_vision_model,
-                prompt=query,
-                max_tokens=4096,
-                detail="high",
-            )
-        ),
-        monitor=monitor,
-    )
+    tool_provider = _pick_vision_tool_provider()
+    screen_tool = _build_screen_tool(tool_provider, api_key, monitor)
 
     # --- Gemini speech-to-speech ---------------------------------------------
     sample_rate = 24000
@@ -423,12 +470,14 @@ async def main() -> None:
 
     # --- Banner --------------------------------------------------------------
     print()
-    print("Screen Assistant (Gemini Speech-to-Speech + OpenAI Vision Tool)")
+    tool_label = "OpenAI" if tool_provider == "openai" else "Gemini"
+    print(f"Screen Assistant (Gemini Voice + {tool_label} Vision Tool)")
     print("=" * 60)
     lang_label = LANG_NAMES.get(lang, lang)
     print(f"Monitor: {monitor} | Vision every {vision_interval}ms | Scale {scale}")
     print(f"Language: {lang_label}")
     print(f"Voice: {os.environ.get('GEMINI_VOICE', 'Aoede')}")
+    print(f"Vision tool: {tool_label}")
     print(f"AEC: {'enabled' if aec else 'disabled'}")
     print(f"Denoiser: {'enabled' if denoiser else 'disabled'}")
     print(f"Mic mute during playback: {'yes (half-duplex)' if mute_mic else 'no (full-duplex)'}")
