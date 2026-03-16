@@ -192,15 +192,20 @@ verbal instructions instead.
 ## Mouse and keyboard control
 
 When the user gives permission, you can:
-- **click(x, y)** — click on a specific screen position.
+- **locate_element(element)** — find the exact pixel coordinates of a UI \
+element. Returns {{x, y}}. You MUST call this before every click or \
+move_mouse action.
+- **click(x, y)** — click at the coordinates returned by locate_element.
 - **type_text(text)** — type text into the currently focused field.
 - **press_key(key)** — press keys like 'enter', 'tab', 'escape', \
 or combos like 'ctrl+a', 'ctrl+c'.
 - **scroll(clicks)** — scroll up (positive) or down (negative).
-- **move_mouse(x, y)** — move the cursor without clicking.
+- **move_mouse(x, y)** — move cursor to coordinates from locate_element.
 
-IMPORTANT: Before any action, ALWAYS call describe_screen to verify the \
-exact position. Never guess coordinates.
+CRITICAL workflow for clicking:
+1. Call locate_element("the Chrome icon in the taskbar") → get {{x, y}}
+2. Call click(x, y) with the EXACT coordinates returned
+NEVER invent or guess coordinates. ALWAYS use locate_element first.
 
 ## Guiding the user
 
@@ -431,11 +436,11 @@ async def main() -> None:
     )
 
     voice_name = _get_voice_name(voice_choice)
-    all_tools = [screen_tool.definition, *input_tools.definitions]
+    all_tools = [*screen_tool.definitions, *input_tools.definitions]
 
     async def tool_handler(session: object, name: str, arguments: dict[str, object]) -> str:
         """Route tool calls to the right handler."""
-        if name == "describe_screen":
+        if name in ("describe_screen", "locate_element"):
             return await screen_tool.handler(session, name, arguments)  # type: ignore[arg-type]
         return await input_tools.handler(session, name, arguments)  # type: ignore[arg-type]
 
