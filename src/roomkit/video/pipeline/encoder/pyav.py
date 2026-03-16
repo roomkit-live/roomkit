@@ -73,7 +73,6 @@ class PyAVVideoEncoder(VideoEncoderProvider):
         ctx.pix_fmt = "yuv420p"
         ctx.time_base = Fraction(1, self._fps)
         ctx.bit_rate = self._bitrate
-        ctx.max_rate = self._bitrate
         ctx.gop_size = self._fps * 2
         ctx.options = {
             "tune": "zerolatency",
