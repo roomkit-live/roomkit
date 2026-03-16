@@ -297,6 +297,7 @@ from roomkit.telemetry import (
 from roomkit.tools.compose import compose_tool_handlers
 from roomkit.tools.policy import RoleOverride, ToolPolicy
 from roomkit.video import (
+    DescribeScreenTool,
     FaceDetection,
     GeminiVisionConfig,
     GeminiVisionProvider,
@@ -322,6 +323,7 @@ from roomkit.video import (
     VideoSessionState,
     VisionProvider,
     VisionResult,
+    capture_screen_frame,
     get_local_video_backend,
     get_rtp_video_backend,
     get_screen_capture_backend,
@@ -789,6 +791,7 @@ __all__ = [
     "RecordingTrack",
     "RoomRecorderBinding",
     # Video
+    "DescribeScreenTool",
     "FaceDetection",
     "MockVideoBackend",
     "MockVideoCall",
@@ -820,6 +823,7 @@ __all__ = [
     "VideoSessionState",
     "VisionProvider",
     "VisionResult",
+    "capture_screen_frame",
     # AI Docs
     "get_agents_md",
     "get_ai_context",

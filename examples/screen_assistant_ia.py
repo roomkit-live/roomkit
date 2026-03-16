@@ -4,30 +4,35 @@ Talk to Gemini while it sees your screen in real time. The AI observes
 what's on your display and guides you through tasks step by step using
 natural voice conversation.
 
+Uses Gemini Live for voice + periodic screen vision, and OpenAI GPT-4o
+for the on-demand ``describe_screen`` tool (higher accuracy for text/icons).
+
 Demo task: open Google Chrome, search "roomkit python conversation ai",
 and navigate to the RoomKit website.
 
 Requirements:
-    pip install roomkit[screen-capture,realtime-gemini,local-audio,gemini,sherpa-onnx]
+    pip install roomkit[screen-capture,realtime-gemini,local-audio,gemini,openai,sherpa-onnx]
     pip install aec-audio-processing    # WebRTC echo cancellation (CRITICAL)
 
 Run with:
-    GOOGLE_API_KEY=... uv run python examples/screen_assistant_gemini.py
+    GOOGLE_API_KEY=... OPENAI_API_KEY=... uv run python examples/screen_assistant_ia.py
 
 Environment variables:
-    GOOGLE_API_KEY      (required) Google API key
-    GEMINI_MODEL        Speech model (default: gemini-2.5-flash-native-audio-preview-12-2025)
-    GEMINI_VOICE        Voice preset (default: Aoede)
-    GEMINI_VISION_MODEL Vision model (default: gemini-3.1-flash-image-preview)
-    SCALE               Capture scale 0.0-1.0 (default: 0.75, higher = sharper text)
-    AEC                 Echo cancellation: webrtc | speex | 0 (default: webrtc)
-    DENOISE             Noise suppression: 1 | 0 (default: 1, uses sherpa-onnx GTCRN)
-    DENOISE_MODEL       ONNX model file (default: gtcrn_simple.onnx)
-    MUTE_MIC            Mute mic during AI playback: 1 | 0 (default: 1)
-    LANG_VOICE          Language for voice conversation (default: en)
-                        Examples: fr, es, de, it, pt, ja, ko, zh, ar, ru
-    MONITOR             Monitor index: 1=primary (default: 1)
-    VISION_INTERVAL     Vision analysis interval in ms (default: 10000)
+    GOOGLE_API_KEY       (required) Google API key (voice + periodic vision)
+    OPENAI_API_KEY       (required) OpenAI API key (describe_screen tool)
+    GEMINI_MODEL         Speech model (default: gemini-2.5-flash-native-audio-preview-12-2025)
+    GEMINI_VOICE         Voice preset (default: Aoede)
+    GEMINI_VISION_MODEL  Periodic vision model (default: gemini-3.1-flash-image-preview)
+    OPENAI_VISION_MODEL  Tool vision model (default: gpt-4o)
+    SCALE                Capture scale 0.0-1.0 (default: 0.75, higher = sharper text)
+    AEC                  Echo cancellation: webrtc | speex | 0 (default: webrtc)
+    DENOISE              Noise suppression: 1 | 0 (default: 1, uses sherpa-onnx GTCRN)
+    DENOISE_MODEL        ONNX model file (default: gtcrn_simple.onnx)
+    MUTE_MIC             Mute mic during AI playback: 1 | 0 (default: 1)
+    LANG_VOICE           Language for voice conversation (default: en)
+                         Examples: fr, es, de, it, pt, ja, ko, zh, ar, ru
+    MONITOR              Monitor index: 1=primary (default: 1)
+    VISION_INTERVAL      Vision analysis interval in ms (default: 10000)
 
 Press Ctrl+C to stop.
 """
@@ -41,8 +46,11 @@ import signal
 import time
 
 from roomkit import (
+    DescribeScreenTool,
     GeminiVisionConfig,
     GeminiVisionProvider,
+    OpenAIVisionConfig,
+    OpenAIVisionProvider,
     RealtimeVoiceChannel,
     RoomKit,
     VideoChannel,
@@ -55,7 +63,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
-logger = logging.getLogger("screen_assistant_gemini")
+logger = logging.getLogger("screen_assistant_ia")
 
 LANG_NAMES = {
     "fr": "French",
@@ -204,9 +212,14 @@ def _build_vision(api_key: str) -> GeminiVisionProvider:
 
 async def main() -> None:
     api_key = os.environ.get("GOOGLE_API_KEY", "")
+    run_cmd = "GOOGLE_API_KEY=... OPENAI_API_KEY=... uv run python examples/screen_assistant_ia.py"
     if not api_key:
         print("Set GOOGLE_API_KEY to run this example.")
-        print("  GOOGLE_API_KEY=... uv run python examples/screen_assistant_gemini.py")
+        print(f"  {run_cmd}")
+        return
+    if not os.environ.get("OPENAI_API_KEY"):
+        print("Set OPENAI_API_KEY for the describe_screen tool.")
+        print(f"  {run_cmd}")
         return
 
     lang = os.environ.get("LANG_VOICE", os.environ.get("LANG", "en")).lower()[:2]
@@ -242,90 +255,24 @@ async def main() -> None:
     #
     # IMPORTANT: The tool captures a FRESH full-resolution screenshot (not the
     # downscaled periodic frames) so the vision model can read text accurately.
+    # A fresh provider is created per call so the query becomes the vision prompt.
 
-    import mss as _mss_mod
+    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    openai_vision_model = os.environ.get("OPENAI_VISION_MODEL", "gpt-4o")
 
-    from roomkit.video.video_frame import VideoFrame as _VideoFrame
-
-    def _capture_full_res_frame() -> _VideoFrame | None:
-        """Grab a fresh full-resolution screenshot for tool calls."""
-        try:
-            with _mss_mod.mss() as sct:
-                mon = sct.monitors[monitor]
-                shot = sct.grab(mon)
-                return _VideoFrame(
-                    data=shot.rgb,
-                    codec="raw_rgb24",
-                    width=shot.width,
-                    height=shot.height,
-                )
-        except Exception:
-            logger.exception("Failed to capture full-res screenshot")
-            return None
-
-    _vision_model = os.environ.get("GEMINI_VISION_MODEL", "gemini-3.1-flash-image-preview")
-
-    async def _analyze_screen_with_query(query: str) -> str:
-        """Capture a fresh full-res screenshot and analyze with a custom query.
-
-        Creates a fresh GeminiVisionProvider per call to avoid race conditions
-        when multiple tool calls could be in flight concurrently.
-        """
-        frame = _capture_full_res_frame()
-        if frame is None:
-            return "No screen frame available. Please wait a moment."
-
-        provider = GeminiVisionProvider(
-            GeminiVisionConfig(
-                api_key=api_key,
-                model=_vision_model,
+    screen_tool = DescribeScreenTool(
+        lambda query: OpenAIVisionProvider(
+            OpenAIVisionConfig(
+                api_key=openai_api_key,
+                base_url="https://api.openai.com/v1",
+                model=openai_vision_model,
                 prompt=query,
                 max_tokens=4096,
+                detail="high",
             )
-        )
-        result = await provider.analyze_frame(frame)
-        return result.description or "Could not analyze the screen."
-
-    describe_screen_tool = {
-        "name": "describe_screen",
-        "description": (
-            "Look at the user's screen right now and answer a specific visual question. "
-            "You MUST call this tool whenever the user asks about anything visible on "
-            "their screen: icon positions, button labels, menu items, text content, "
-            "element ordering, colors, or layout. NEVER guess — always look first. "
-            "Ask a precise, detailed question for accurate results."
         ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": (
-                        "A precise visual question about the screen. "
-                        "Be specific about what you want to know. "
-                        "Examples: "
-                        "'List all icons in the taskbar from left to right with their names', "
-                        "'Where exactly is the Google Chrome icon? Describe its position "
-                        "relative to other icons', "
-                        "'What URL is shown in the browser address bar?', "
-                        "'What text is visible in the main content area?', "
-                        "'Is the Chrome icon to the left or right of the file manager icon?'"
-                    ),
-                },
-            },
-            "required": ["query"],
-        },
-    }
-
-    async def tool_handler(session: object, name: str, arguments: dict[str, object]) -> str:
-        """Handle tool calls from the voice agent."""
-        if name == "describe_screen":
-            query = str(arguments.get("query", "Describe what is on this screen."))
-            logger.info("Tool call: describe_screen(query='%s')", query[:100])
-            result = await _analyze_screen_with_query(query)
-            logger.info("Tool result: %s", result[:200])
-            return result
-        return f"Unknown tool: {name}"
+        monitor=monitor,
+    )
 
     # --- Gemini speech-to-speech ---------------------------------------------
     sample_rate = 24000
@@ -367,8 +314,8 @@ async def main() -> None:
         system_prompt=system_prompt,
         voice=os.environ.get("GEMINI_VOICE", "Aoede"),
         input_sample_rate=sample_rate,
-        tools=[describe_screen_tool],
-        tool_handler=tool_handler,
+        tools=[screen_tool.definition],
+        tool_handler=screen_tool.handler,
         mute_on_tool_call=True,  # Mute mic during vision API call
     )
     kit.register_channel(voice_channel)
@@ -476,7 +423,7 @@ async def main() -> None:
 
     # --- Banner --------------------------------------------------------------
     print()
-    print("Screen Assistant (Gemini Speech-to-Speech + Vision)")
+    print("Screen Assistant (Gemini Speech-to-Speech + OpenAI Vision Tool)")
     print("=" * 60)
     lang_label = LANG_NAMES.get(lang, lang)
     print(f"Monitor: {monitor} | Vision every {vision_interval}ms | Scale {scale}")
