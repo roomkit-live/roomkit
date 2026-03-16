@@ -307,14 +307,21 @@ def _find_element_sync(
         return None
 
     parsed = _denormalize(parsed, img_w, img_h)
-    cx, cy = int(parsed["cx"]), int(parsed["cy"])
+
+    # Compute center from bounding box (more stable than model's cx/cy)
+    box = parsed.get("box", {})
+    if box and box.get("x2", 0) > box.get("x1", 0):
+        cx = (int(box["x1"]) + int(box["x2"])) // 2
+        cy = (int(box["y1"]) + int(box["y2"])) // 2
+    else:
+        cx, cy = int(parsed["cx"]), int(parsed["cy"])
 
     logger.info(
-        "Gemini locate '%s': cx=%d cy=%d box=%s (img %dx%d)",
+        "Gemini locate '%s': center=(%d,%d) box=%s (img %dx%d)",
         element,
         cx,
         cy,
-        parsed.get("box"),
+        box,
         img_w,
         img_h,
     )
