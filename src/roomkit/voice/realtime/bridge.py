@@ -32,9 +32,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.base import VoiceSession, VoiceSessionState
-from roomkit.voice.realtime.provider import RealtimeAudioVideoProvider
+from roomkit.voice.realtime.provider import RealtimeAudioVideoProvider, RealtimeVoiceProvider
 
 if TYPE_CHECKING:
+    from roomkit.video.avatar.base import AvatarProvider
     from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.pipeline.encoder.base import VideoEncoderProvider
     from roomkit.video.video_frame import VideoFrame
@@ -106,66 +107,55 @@ class _CallState:
 
 
 class RealtimeAVBridge:
-    """Bridge a voice/video backend to a realtime audio+video provider.
+    """Bridge a voice/video backend to a realtime voice or audio+video provider.
 
-    Automatically wires:
+    Supports two video modes:
+
+    **Provider video** (e.g. Anam full mode):
+        Provider implements :class:`RealtimeAudioVideoProvider` and delivers
+        both audio and video.  Video goes through the pipeline and encoder.
+
+    **Avatar video** (e.g. OpenAI Realtime + Anam passthrough):
+        Provider implements :class:`RealtimeVoiceProvider` (audio only).
+        An :class:`AvatarProvider` receives the provider's TTS audio via
+        ``feed_audio()`` and produces lip-synced video frames.
+
+    In both cases, audio flows bidirectionally:
 
     - Backend audio → ``provider.send_audio()`` (user speech to AI)
     - Provider audio → resample → ``backend.send_audio()`` (AI speech to user)
-    - Provider video → pipeline → encode → backend video send (avatar to user)
-    - Backend disconnect → ``provider.disconnect()`` (session cleanup)
 
-    Works with any :class:`VoiceBackend` (SIP, RTP, local mic, WebSocket).
-    If the backend also implements :class:`VideoBackend` and an encoder is
-    provided, encoded video frames are sent back to the caller.
-
-    An optional :class:`VideoPipelineConfig` inserts processing stages
-    (resize, filters, vision) between the provider's raw frames and the
-    encoder.
-
-    Example::
-
-        from roomkit.providers.anam import AnamConfig, AnamRealtimeProvider
-        from roomkit.video.backends.sip import SIPVideoBackend
-        from roomkit.video.pipeline.encoder.pyav import PyAVVideoEncoder
-        from roomkit.voice.realtime.bridge import RealtimeAVBridge
-
-        sip = SIPVideoBackend(...)
-        provider = AnamRealtimeProvider(AnamConfig(...))
+    Example (Anam full — provider delivers audio+video)::
 
         bridge = RealtimeAVBridge(
-            provider, sip,
+            AnamRealtimeProvider(config), sip,
             encoder=PyAVVideoEncoder(fps=25),
-            provider_sample_rate=48000,
         )
-        await sip.start()
 
-    Example with video pipeline (resize + watermark)::
-
-        from roomkit import VideoPipelineConfig
+    Example (OpenAI + Anam avatar — provider delivers audio, avatar renders video)::
 
         bridge = RealtimeAVBridge(
-            provider, sip,
-            video_pipeline=VideoPipelineConfig(
-                resizer=MyResizer(width=640, height=480),
-                filters=[WatermarkFilter("logo.png")],
-            ),
+            OpenAIRealtimeProvider(api_key="..."), sip,
+            avatar=AnamAvatarProvider(anam_config),
             encoder=PyAVVideoEncoder(fps=25),
         )
 
     Args:
-        provider: The realtime audio+video provider.
+        provider: The realtime voice provider. Can be audio-only
+            (:class:`RealtimeVoiceProvider`) or audio+video
+            (:class:`RealtimeAudioVideoProvider`).
         backend: The voice backend (and optionally video backend).
+        avatar: Optional :class:`AvatarProvider` for lip-synced video
+            from the provider's audio output.  Used when the provider
+            is audio-only (e.g. OpenAI Realtime + Anam passthrough).
         video_pipeline: Optional video processing pipeline applied to
-            provider frames before encoding (resize, filters, vision).
-        encoder: Optional video encoder for outbound video. Without it,
-            provider video goes to taps only (passthrough mode).
-        connecting_frame: Optional :class:`VideoFrame` sent to the backend
-            while the provider negotiates (3-5s for Anam WebRTC). Shows
-            a "please wait" image instead of black screen.
+            video frames before encoding (resize, filters, vision).
+        encoder: Optional video encoder for outbound video.
+        connecting_frame: Optional :class:`VideoFrame` shown while
+            the provider negotiates (3-5s for WebRTC).
         connecting_fps: Frame rate for the connecting placeholder (default: 5).
         provider_sample_rate: Sample rate of provider audio output (Hz).
-            Anam outputs 48000. Default: 48000.
+            Anam outputs 48000, OpenAI outputs 24000.  Default: 24000.
         video_fps: Frames per second for RTP timestamp calculation.
         on_call: Callback when a new call is connected.
         on_call_ended: Callback ``(session_id, video_frames, audio_chunks)``.
@@ -174,14 +164,15 @@ class RealtimeAVBridge:
 
     def __init__(
         self,
-        provider: RealtimeAudioVideoProvider,
+        provider: RealtimeVoiceProvider,
         backend: VoiceBackend,
         *,
+        avatar: AvatarProvider | None = None,
         video_pipeline: VideoPipelineConfig | None = None,
         encoder: VideoEncoderProvider | None = None,
         connecting_frame: VideoFrame | None = None,
         connecting_fps: int = 5,
-        provider_sample_rate: int = 48000,
+        provider_sample_rate: int = 24000,
         video_fps: int = 25,
         on_call: Callable[[VoiceSession], Any] | None = None,
         on_call_ended: Callable[[str, int, int], Any] | None = None,
@@ -189,6 +180,7 @@ class RealtimeAVBridge:
     ) -> None:
         self._provider = provider
         self._backend = backend
+        self._avatar = avatar
         self._encoder = encoder
         self._connecting_frame = connecting_frame
         self._connecting_fps = connecting_fps
@@ -220,10 +212,17 @@ class RealtimeAVBridge:
             concurrent.futures.ThreadPoolExecutor(max_workers=1) if encoder else None
         )
 
-        # Wire provider → backend
+        # Wire provider audio → backend + avatar
         provider.on_audio(self._on_provider_audio)
-        provider.on_video(self._on_provider_video)
         provider.on_transcription(self._on_provider_transcription)
+
+        # Wire video source: either from provider (RealtimeAudioVideoProvider)
+        # or from avatar (AvatarProvider in passthrough mode)
+        if isinstance(provider, RealtimeAudioVideoProvider):
+            provider.on_video(self._on_provider_video)
+        if avatar is not None:
+            avatar.on_video(self._on_avatar_video)
+            provider.on_response_end(self._on_provider_response_end)
 
         # Wire backend → provider
         backend.on_audio_received(self._on_backend_audio)
@@ -278,6 +277,10 @@ class RealtimeAVBridge:
             backend_session=backend_session,
             provider_session=provider_session,
         )
+        # Start avatar if not yet started (first call triggers it)
+        if self._avatar is not None and not self._avatar.is_started:
+            await self._avatar.start(b"")
+
         # Pre-warm the SIP audio pacer so the first audio chunk isn't delayed
         ensure_pacer = getattr(self._backend, "_ensure_pacer", None)
         if ensure_pacer is not None:
@@ -341,6 +344,8 @@ class RealtimeAVBridge:
             self._encode_pool.shutdown(wait=False)
         if self._encoder:
             self._encoder.close()
+        if self._avatar is not None:
+            await self._avatar.close()
         await self._provider.close()
 
     # -- Backend → Provider (user audio in) ------------------------------------
@@ -423,6 +428,35 @@ class RealtimeAVBridge:
         loop = asyncio.get_event_loop()
         if loop.is_running():
             loop.create_task(self._backend.send_audio(state.backend_session, resampled))
+
+        # Feed audio to avatar for lip-sync (if configured)
+        if self._avatar is not None and self._avatar.is_started:
+            self._avatar.feed_audio(audio)
+
+    def _on_provider_response_end(self, session: VoiceSession) -> None:
+        """Signal end of response to avatar so it doesn't freeze."""
+        if self._avatar is not None and self._avatar.is_started:
+            self._avatar.end_turn()
+
+    def _on_avatar_video(self, frame: Any) -> None:
+        """Handle video from the avatar provider (passthrough mode)."""
+        # Route to all active calls — avatar is shared across sessions
+        for state in self._calls.values():
+            if state.closed:
+                continue
+            state.frame_count += 1
+
+            processed = frame
+            if self._video_pipeline is not None:
+                processed = self._video_pipeline.process_inbound("avatar", frame)
+                if processed is None:
+                    continue
+
+            for tap in self._video_taps:
+                tap(state.provider_session, processed)
+
+            if self._encoder is not None and self._encode_pool is not None:
+                self._encode_pool.submit(self._send_encoded_video, state, processed)
 
     def _on_provider_video(self, session: VoiceSession, frame: Any) -> None:
         state = self._calls.get(session.id)
