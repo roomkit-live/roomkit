@@ -161,8 +161,12 @@ click_element("the Chrome icon in the taskbar")
 - **press_key(key)** — press keys: 'enter', 'ctrl+l', 'alt+tab'
 - **type_text(text)** — type into the focused field
 
-Typical workflow: click_element("Chrome icon") → press_key('ctrl+l') → \
-type_text('roomkit.live') → press_key('enter')\
+Typical workflow: click_element("Chrome icon") → describe_screen() to \
+verify Chrome opened → press_key('ctrl+l') → type_text('roomkit.live') → \
+press_key('enter') → describe_screen() to verify page loaded.
+
+IMPORTANT: After every click_element, call describe_screen() to check \
+what happened and tell the user the result.\
 """
 
 

@@ -451,4 +451,4 @@ class ScreenInputTools:
         pag.click(x, y, clicks=clicks, button=button)
 
         action = "Double-clicked" if double else "Clicked"
-        return f"{action} on '{element}' at ({x}, {y})."
+        return f"{action} on '{element}' at ({x}, {y}). Call describe_screen to verify the result."
