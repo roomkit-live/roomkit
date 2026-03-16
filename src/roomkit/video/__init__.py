@@ -89,12 +89,27 @@ __all__ = [
     "WebSocketAvatarProvider",
     # AI integration
     "setup_video_vision",
+    # Utilities
+    "make_text_frame",
     # Lazy loaders
     "get_local_video_backend",
     "get_rtp_video_backend",
     "get_screen_capture_backend",
     "get_sip_video_backend",
 ]
+
+
+def make_text_frame(
+    text: str,
+    **kwargs: object,
+) -> VideoFrame:
+    """Generate a VideoFrame with centered text on a solid background.
+
+    Requires ``opencv-python-headless`` (``pip install roomkit[local-video]``).
+    """
+    from roomkit.video.utils import make_text_frame as _make
+
+    return _make(text, **kwargs)  # type: ignore[arg-type]
 
 
 def get_local_video_backend() -> type:

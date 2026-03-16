@@ -1,7 +1,7 @@
-"""Reusable screen tools for AI voice/chat agents.
+"""Reusable ``describe_screen`` tool for AI voice/chat agents.
 
-Provides ``describe_screen`` and ``locate_element`` tools that capture
-a full-resolution screenshot and analyze it with a :class:`VisionProvider`.
+Captures a full-resolution screenshot and analyzes it with a
+:class:`VisionProvider`, returning a natural-language description.
 
 Example with RealtimeVoiceChannel::
 
@@ -14,16 +14,14 @@ Example with RealtimeVoiceChannel::
         "voice",
         provider=provider,
         transport=backend,
-        tools=screen_tool.definitions,
+        tools=[screen_tool.definition],
         tool_handler=screen_tool.handler,
     )
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
 from roomkit.video.video_frame import VideoFrame
@@ -34,12 +32,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.video.vision.screen_tool")
 
-# ---------------------------------------------------------------------------
-# Tool definitions
-# ---------------------------------------------------------------------------
+TOOL_NAME = "describe_screen"
 
-DESCRIBE_SCREEN_TOOL: dict[str, Any] = {
-    "name": "describe_screen",
+TOOL_DEFINITION: dict[str, Any] = {
+    "name": TOOL_NAME,
     "description": (
         "Look at the user's screen right now and answer a specific visual question. "
         "You MUST call this tool whenever the user asks about anything visible on "
@@ -62,50 +58,6 @@ DESCRIBE_SCREEN_TOOL: dict[str, Any] = {
         "required": ["query"],
     },
 }
-
-LOCATE_ELEMENT_TOOL: dict[str, Any] = {
-    "name": "locate_element",
-    "description": (
-        "Find the exact pixel coordinates of a UI element on screen. "
-        "You MUST call this tool before every click, move_mouse, or scroll "
-        "action. Returns {x, y} center coordinates. "
-        "Describe the element precisely: its label, icon, position context."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "element": {
-                "type": "string",
-                "description": (
-                    "Precise description of the element to find. "
-                    "Examples: 'the Chrome icon in the taskbar', "
-                    "'the address bar in the browser', "
-                    "'the Search button next to the text field', "
-                    "'the first link in the search results'"
-                ),
-            },
-        },
-        "required": ["element"],
-    },
-}
-
-_LOCATE_PROMPT_TEMPLATE = """\
-Find the UI element described below in this screenshot.
-The screenshot is {width}x{height} pixels.
-
-Element to find: {element}
-
-Return ONLY a JSON object with the center coordinates:
-{{"x": <integer>, "y": <integer>}}
-
-Rules:
-- x is horizontal (0=left edge, {width}=right edge)
-- y is vertical (0=top edge, {height}=bottom edge)
-- Return the CENTER of the element, not a corner
-- Be as precise as possible
-- If the element is not visible, return {{"x": -1, "y": -1, "error": "not found"}}
-- Return ONLY the JSON, no other text\
-"""
 
 
 def capture_screen_frame(monitor: int = 1) -> VideoFrame | None:
@@ -149,36 +101,11 @@ def capture_screen_frame(monitor: int = 1) -> VideoFrame | None:
         return None
 
 
-def _parse_coordinates(text: str) -> tuple[int, int] | None:
-    """Extract (x, y) coordinates from vision model response."""
-    # Try JSON parse first
-    try:
-        data = json.loads(text.strip())
-        x, y = int(data["x"]), int(data["y"])
-        if x >= 0 and y >= 0:
-            return (x, y)
-        return None
-    except (json.JSONDecodeError, KeyError, ValueError, TypeError):
-        pass
-
-    # Try extracting JSON from surrounding text
-    match = re.search(r'\{[^}]*"x"\s*:\s*(\d+)[^}]*"y"\s*:\s*(\d+)[^}]*\}', text)
-    if match:
-        return (int(match.group(1)), int(match.group(2)))
-
-    # Try simple "x, y" pattern
-    match = re.search(r"(\d{2,5})\s*,\s*(\d{2,5})", text)
-    if match:
-        return (int(match.group(1)), int(match.group(2)))
-
-    return None
-
-
 class DescribeScreenTool:
-    """Screen vision tools for AI agents: describe and locate elements.
+    """Screen vision tool for AI agents.
 
-    Provides ``describe_screen`` and ``locate_element`` tool definitions
-    and a unified handler.  Reuses a single :class:`VisionProvider`.
+    Captures a fresh full-resolution screenshot and analyzes it with
+    a :class:`VisionProvider`, passing the query as a per-call prompt.
 
     Args:
         vision: Vision provider for frame analysis.
@@ -191,7 +118,7 @@ class DescribeScreenTool:
 
         channel = RealtimeVoiceChannel(
             "voice",
-            tools=tool.definitions,
+            tools=[tool.definition],
             tool_handler=tool.handler,
         )
     """
@@ -202,13 +129,8 @@ class DescribeScreenTool:
 
     @property
     def definition(self) -> dict[str, Any]:
-        """Single tool definition (describe_screen only, for compat)."""
-        return DESCRIBE_SCREEN_TOOL
-
-    @property
-    def definitions(self) -> list[dict[str, Any]]:
-        """All tool definitions: describe_screen + locate_element."""
-        return [DESCRIBE_SCREEN_TOOL, LOCATE_ELEMENT_TOOL]
+        """Tool definition dict for ``RealtimeVoiceChannel(tools=[...])``."""
+        return TOOL_DEFINITION
 
     async def analyze(self, query: str) -> str:
         """Capture a fresh screenshot and analyze it with *query*."""
@@ -219,49 +141,18 @@ class DescribeScreenTool:
         result = await self._vision.analyze_frame(frame, prompt=query)
         return result.description or "Could not analyze the screen."
 
-    async def locate(self, element: str) -> str:
-        """Find element coordinates on screen via vision model.
-
-        Returns a JSON string with ``x``, ``y`` keys, or an error.
-        """
-        frame = capture_screen_frame(self._monitor)
-        if frame is None:
-            return json.dumps({"error": "No screen frame available."})
-
-        prompt = _LOCATE_PROMPT_TEMPLATE.format(
-            width=frame.width,
-            height=frame.height,
-            element=element,
-        )
-        result = await self._vision.analyze_frame(frame, prompt=prompt)
-        raw = result.description or ""
-
-        coords = _parse_coordinates(raw)
-        if coords is None:
-            logger.warning("locate_element: could not parse coords from: %s", raw[:200])
-            return json.dumps({"error": f"Could not locate: {element}"})
-
-        x, y = coords
-        logger.info("locate_element(%s) → (%d, %d)", element, x, y)
-        return json.dumps({"x": x, "y": y})
-
     async def handler(
         self,
         session: VoiceSession,
         name: str,
         arguments: dict[str, Any],
     ) -> str:
-        """Unified handler for describe_screen and locate_element."""
-        if name == "describe_screen":
-            query = str(arguments.get("query", "Describe what is on this screen."))
-            logger.info("describe_screen(query='%s')", query[:100])
-            result = await self.analyze(query)
-            logger.info("describe_screen result: %s", result[:200])
-            return result
+        """Tool handler for describe_screen."""
+        if name != TOOL_NAME:
+            return f"Unknown tool: {name}"
 
-        if name == "locate_element":
-            element = str(arguments.get("element", ""))
-            logger.info("locate_element(element='%s')", element[:100])
-            return await self.locate(element)
-
-        return f"Unknown tool: {name}"
+        query = str(arguments.get("query", "Describe what is on this screen."))
+        logger.info("describe_screen(query='%s')", query[:100])
+        result = await self.analyze(query)
+        logger.info("describe_screen result: %s", result[:200])
+        return result

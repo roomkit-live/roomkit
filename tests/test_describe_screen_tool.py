@@ -1,8 +1,7 @@
-"""Tests for DescribeScreenTool, locate_element, and capture_screen_frame."""
+"""Tests for DescribeScreenTool and capture_screen_frame."""
 
 from __future__ import annotations
 
-import json
 import sys
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,9 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.mock import MockVisionProvider
 from roomkit.video.vision.screen_tool import (
-    DESCRIBE_SCREEN_TOOL,
+    TOOL_DEFINITION,
+    TOOL_NAME,
     DescribeScreenTool,
-    _parse_coordinates,
     capture_screen_frame,
 )
 
@@ -77,50 +76,23 @@ class TestCaptureScreenFrame:
 
 
 # ---------------------------------------------------------------------------
-# _parse_coordinates
-# ---------------------------------------------------------------------------
-
-
-class TestParseCoordinates:
-    def test_json_object(self) -> None:
-        assert _parse_coordinates('{"x": 100, "y": 200}') == (100, 200)
-
-    def test_json_with_whitespace(self) -> None:
-        assert _parse_coordinates('  {"x": 50, "y": 75}  ') == (50, 75)
-
-    def test_json_embedded_in_text(self) -> None:
-        text = 'The element is at {"x": 300, "y": 450} on the screen.'
-        assert _parse_coordinates(text) == (300, 450)
-
-    def test_comma_separated(self) -> None:
-        assert _parse_coordinates("The coordinates are 500, 600") == (500, 600)
-
-    def test_negative_coords_returns_none(self) -> None:
-        assert _parse_coordinates('{"x": -1, "y": -1}') is None
-
-    def test_garbage_returns_none(self) -> None:
-        assert _parse_coordinates("I don't know") is None
-
-    def test_json_with_error_returns_none(self) -> None:
-        text = '{"x": -1, "y": -1, "error": "not found"}'
-        assert _parse_coordinates(text) is None
-
-
-# ---------------------------------------------------------------------------
 # DescribeScreenTool
 # ---------------------------------------------------------------------------
 
 
 class TestDescribeScreenTool:
-    def test_definition_compat(self) -> None:
+    def test_definition_equals_constant(self) -> None:
         tool = DescribeScreenTool(MockVisionProvider(descriptions=["test"]))
-        assert tool.definition == DESCRIBE_SCREEN_TOOL
+        assert tool.definition == TOOL_DEFINITION
+        assert tool.definition["name"] == TOOL_NAME
 
-    def test_definitions_includes_both(self) -> None:
+    def test_definition_has_required_fields(self) -> None:
         tool = DescribeScreenTool(MockVisionProvider(descriptions=["test"]))
-        names = [d["name"] for d in tool.definitions]
-        assert "describe_screen" in names
-        assert "locate_element" in names
+        defn = tool.definition
+        assert "name" in defn
+        assert "description" in defn
+        assert "parameters" in defn
+        assert defn["parameters"]["required"] == ["query"]
 
     async def test_analyze_returns_description(self) -> None:
         vision = MockVisionProvider(descriptions=["A desktop with Chrome open"])
@@ -173,54 +145,6 @@ class TestDescribeScreenTool:
             result = await tool.analyze("What is on screen?")
         assert "No screen frame available" in result
 
-    async def test_locate_returns_coordinates(self) -> None:
-        vision = MockVisionProvider(descriptions=['{"x": 150, "y": 300}'])
-        tool = DescribeScreenTool(vision)
-
-        fake_frame = VideoFrame(
-            data=b"\x00" * (10 * 10 * 3),
-            codec="raw_rgb24",
-            width=10,
-            height=10,
-        )
-        with patch(
-            "roomkit.video.vision.screen_tool.capture_screen_frame",
-            return_value=fake_frame,
-        ):
-            result = await tool.locate("Chrome icon")
-
-        data = json.loads(result)
-        assert data["x"] == 150
-        assert data["y"] == 300
-
-    async def test_locate_returns_error_on_not_found(self) -> None:
-        vision = MockVisionProvider(descriptions=["I cannot find it"])
-        tool = DescribeScreenTool(vision)
-
-        fake_frame = VideoFrame(
-            data=b"\x00" * (10 * 10 * 3),
-            codec="raw_rgb24",
-            width=10,
-            height=10,
-        )
-        with patch(
-            "roomkit.video.vision.screen_tool.capture_screen_frame",
-            return_value=fake_frame,
-        ):
-            result = await tool.locate("nonexistent element")
-
-        data = json.loads(result)
-        assert "error" in data
-
-    async def test_handler_routes_locate_element(self) -> None:
-        tool = DescribeScreenTool(MockVisionProvider(descriptions=["x"]))
-        tool.locate = AsyncMock(return_value='{"x": 10, "y": 20}')  # type: ignore[method-assign]
-
-        session = object()
-        result = await tool.handler(session, "locate_element", {"element": "button"})  # type: ignore[arg-type]
-        assert '"x"' in result
-        tool.locate.assert_called_once_with("button")  # type: ignore[union-attr]
-
     async def test_handler_routes_describe_screen(self) -> None:
         tool = DescribeScreenTool(MockVisionProvider(descriptions=["x"]))
         tool.analyze = AsyncMock(return_value="desc")  # type: ignore[method-assign]
@@ -234,3 +158,11 @@ class TestDescribeScreenTool:
         session = object()
         result = await tool.handler(session, "other", {})  # type: ignore[arg-type]
         assert "Unknown tool" in result
+
+    async def test_handler_uses_default_query(self) -> None:
+        tool = DescribeScreenTool(MockVisionProvider(descriptions=["x"]))
+        tool.analyze = AsyncMock(return_value="desc")  # type: ignore[method-assign]
+
+        session = object()
+        await tool.handler(session, "describe_screen", {})  # type: ignore[arg-type]
+        tool.analyze.assert_called_once_with("Describe what is on this screen.")  # type: ignore[union-attr]
