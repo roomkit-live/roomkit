@@ -197,7 +197,7 @@ class AnamAvatarProvider(AvatarProvider):
             sample_rate: Ignored (uses constructor's ``audio_sample_rate``).
         """
         if self._audio_stream is not None:
-            self._audio_stream.send_audio_chunk(pcm_data)
+            self._schedule_async(self._audio_stream.send_audio_chunk(pcm_data))
         return []
 
     def end_turn(self) -> None:
@@ -207,7 +207,7 @@ class AnamAvatarProvider(AvatarProvider):
         freezes waiting for more audio.
         """
         if self._audio_stream is not None:
-            self._audio_stream.end_sequence()
+            self._schedule_async(self._audio_stream.end_sequence())
 
     def flush(self) -> list[Any]:
         """Signal end of turn and return empty (frames arrive async)."""
@@ -229,6 +229,18 @@ class AnamAvatarProvider(AvatarProvider):
         self._audio_stream = None
         self._client = None
         logger.info("Anam avatar stopped")
+
+    # -- Async scheduling ------------------------------------------------------
+
+    @staticmethod
+    def _schedule_async(coro: Any) -> None:
+        """Schedule an async coroutine from sync context."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(coro)
+        except RuntimeError:
+            pass
 
     # -- Video callbacks -------------------------------------------------------
 

@@ -126,6 +126,13 @@ async def main() -> None:
         encoder=PyAVVideoEncoder(fps=25, bitrate=3_000_000, preset="medium"),
         connecting_frame=make_text_frame("Connecting...\nPlease wait"),
         provider_sample_rate=24000,
+        system_prompt=os.environ.get(
+            "SYSTEM_PROMPT",
+            "You are a helpful AI assistant on a video call. "
+            "Respond in the same language as the user. "
+            "Keep responses conversational and concise.",
+        ),
+        voice=os.environ.get("OPENAI_VOICE", "alloy"),
         on_transcription=lambda role, text, _: logger.info("[%s] %s", role.upper(), text),
     )
 

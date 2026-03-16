@@ -173,6 +173,8 @@ class RealtimeAVBridge:
         connecting_frame: VideoFrame | None = None,
         connecting_fps: int = 5,
         provider_sample_rate: int = 24000,
+        system_prompt: str | None = None,
+        voice: str | None = None,
         video_fps: int = 25,
         on_call: Callable[[VoiceSession], Any] | None = None,
         on_call_ended: Callable[[str, int, int], Any] | None = None,
@@ -185,6 +187,8 @@ class RealtimeAVBridge:
         self._connecting_frame = connecting_frame
         self._connecting_fps = connecting_fps
         self._provider_rate = provider_sample_rate
+        self._system_prompt = system_prompt
+        self._voice = voice
         self._video_fps = video_fps
         self._calls: dict[str, _CallState] = {}
         self._video_taps: list[Callable[..., Any]] = []
@@ -298,7 +302,12 @@ class RealtimeAVBridge:
 
         t0 = time.monotonic()
         try:
-            await self._provider.connect(provider_session)
+            await self._provider.connect(
+                provider_session,
+                system_prompt=self._system_prompt,
+                voice=self._voice,
+                output_sample_rate=self._provider_rate,
+            )
         finally:
             if placeholder_task is not None:
                 placeholder_task.cancel()
