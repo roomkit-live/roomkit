@@ -104,7 +104,7 @@ async def main() -> None:
         ],
     )
 
-    # --- Bridge: SIP ↔ Anam (pipeline + H.264 encoding) --------------------
+    # --- Bridge: SIP Anam (pipeline + H.264 encoding) --------------------
     bridge = RealtimeAVBridge(
         provider,
         sip,
@@ -121,12 +121,27 @@ async def main() -> None:
     logger.info("Press Ctrl+C to stop.\n")
 
     stop = asyncio.Event()
+    force_exit = False
+
+    def _signal_handler() -> None:
+        nonlocal force_exit
+        if stop.is_set():
+            # Second Ctrl+C: force exit
+            force_exit = True
+            logger.warning("Force exit")
+            raise SystemExit(1)
+        stop.set()
+
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+        loop.add_signal_handler(sig, _signal_handler)
     await stop.wait()
 
-    await bridge.close()
+    logger.info("Shutting down (Ctrl+C again to force)...")
+    try:
+        await asyncio.wait_for(bridge.close(), timeout=5.0)
+    except TimeoutError:
+        logger.warning("Bridge close timed out")
     await sip.close()
     logger.info("Done.")
 
