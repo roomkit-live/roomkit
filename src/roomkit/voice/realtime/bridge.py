@@ -95,6 +95,7 @@ class _CallState:
     frame_count: int = 0
     audio_out_count: int = 0
     frame_seq: int = 0
+    closed: bool = False
     encode_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -299,7 +300,7 @@ class RealtimeAVBridge:
 
     def _on_backend_audio(self, session: VoiceSession, audio: Any) -> None:
         state = self._calls.get(session.id)
-        if state is None:
+        if state is None or state.closed:
             return
         # AudioFrame or raw bytes
         raw = audio.data if hasattr(audio, "data") else audio
@@ -331,6 +332,7 @@ class RealtimeAVBridge:
         state = self._calls.pop(sid, None)
         if state is None:
             return
+        state.closed = True
         logger.info(
             "Call ended: %s (video=%d, audio=%d)",
             sid[:8],
@@ -352,7 +354,7 @@ class RealtimeAVBridge:
 
     def _on_provider_audio(self, session: VoiceSession, audio: bytes) -> None:
         state = self._calls.get(session.id)
-        if state is None:
+        if state is None or state.closed:
             return
         state.audio_out_count += 1
 
@@ -369,7 +371,7 @@ class RealtimeAVBridge:
 
     def _on_provider_video(self, session: VoiceSession, frame: Any) -> None:
         state = self._calls.get(session.id)
-        if state is None:
+        if state is None or state.closed:
             return
         state.frame_count += 1
 
