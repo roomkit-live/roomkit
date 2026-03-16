@@ -1,40 +1,46 @@
-"""RoomKit — AI screen assistant with Gemini speech-to-speech.
+"""RoomKit — AI screen assistant with speech-to-speech voice.
 
-Talk to Gemini while it sees your screen in real time. The AI observes
+Talk to an AI while it sees your screen in real time. The AI observes
 what's on your display and guides you through tasks step by step using
 natural voice conversation.
 
-The ``describe_screen`` tool uses whichever vision API key is available:
-OpenAI (preferred) or Gemini (fallback). If both are set, you choose.
+Supports **OpenAI Realtime** or **Gemini Live** for voice, and
+**OpenAI** or **Gemini** for the ``describe_screen`` vision tool.
+Periodic screen vision always uses Gemini (requires GOOGLE_API_KEY).
 
 Demo task: open Google Chrome, search "roomkit python conversation ai",
 and navigate to the RoomKit website.
 
 Requirements:
-    pip install roomkit[screen-capture,realtime-gemini,local-audio,gemini,sherpa-onnx]
-    pip install roomkit[openai]          # optional, for OpenAI vision tool
-    pip install aec-audio-processing     # WebRTC echo cancellation (CRITICAL)
+    pip install roomkit[screen-capture,local-audio,gemini,sherpa-onnx]
+    pip install roomkit[realtime-openai]   # for OpenAI voice
+    pip install roomkit[realtime-gemini]   # for Gemini voice
+    pip install aec-audio-processing       # WebRTC echo cancellation
 
-Run with:
+Run with (Gemini voice + Gemini tool — only GOOGLE_API_KEY needed):
     GOOGLE_API_KEY=... uv run python examples/screen_assistant_ia.py
-    # or with OpenAI for the vision tool:
-    GOOGLE_API_KEY=... OPENAI_API_KEY=... uv run python examples/screen_assistant_ia.py
+
+Run with (OpenAI voice + Gemini tool):
+    GOOGLE_API_KEY=... OPENAI_API_KEY=... VISION_TOOL=gemini \
+        uv run python examples/screen_assistant_ia.py
 
 Environment variables:
-    GOOGLE_API_KEY       (required) Google API key (voice + periodic vision)
-    OPENAI_API_KEY       (optional) OpenAI API key (describe_screen tool)
-    VISION_TOOL          Force tool provider: openai | gemini (auto if unset)
-    GEMINI_MODEL         Speech model (default: gemini-2.5-flash-native-audio-preview-12-2025)
-    GEMINI_VOICE         Voice preset (default: Aoede)
+    GOOGLE_API_KEY       (required) Google API key (periodic vision)
+    OPENAI_API_KEY       (optional) OpenAI API key (voice / tool)
+    VOICE_PROVIDER       Force voice: openai | gemini (auto if unset)
+    VISION_TOOL          Force tool:  openai | gemini (auto if unset)
+    GEMINI_MODEL         Gemini speech model
+    GEMINI_VOICE         Gemini voice preset (default: Aoede)
     GEMINI_VISION_MODEL  Periodic vision model (default: gemini-3.1-flash-image-preview)
+    OPENAI_MODEL         OpenAI speech model (default: gpt-realtime-1.5)
+    OPENAI_VOICE         OpenAI voice preset (default: alloy)
     OPENAI_VISION_MODEL  OpenAI tool model (default: gpt-4o)
-    SCALE                Capture scale 0.0-1.0 (default: 0.75, higher = sharper text)
+    SCALE                Capture scale 0.0-1.0 (default: 0.75)
     AEC                  Echo cancellation: webrtc | speex | 0 (default: webrtc)
-    DENOISE              Noise suppression: 1 | 0 (default: 1, uses sherpa-onnx GTCRN)
+    DENOISE              Noise suppression: 1 | 0 (default: 1)
     DENOISE_MODEL        ONNX model file (default: gtcrn_simple.onnx)
     MUTE_MIC             Mute mic during AI playback: 1 | 0 (default: 1)
-    LANG_VOICE           Language for voice conversation (default: en)
-                         Examples: fr, es, de, it, pt, ja, ko, zh, ar, ru
+    LANG_VOICE           Language (default: en)
     MONITOR              Monitor index: 1=primary (default: 1)
     VISION_INTERVAL      Vision analysis interval in ms (default: 10000)
 
@@ -59,7 +65,6 @@ from roomkit import (
     RoomKit,
     VideoChannel,
 )
-from roomkit.providers.gemini.realtime import GeminiLiveProvider
 from roomkit.video.backends.screen import ScreenCaptureBackend
 from roomkit.voice.backends.local import LocalAudioBackend
 
@@ -85,6 +90,43 @@ LANG_NAMES = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Provider selection
+# ---------------------------------------------------------------------------
+
+
+def _auto_select(env_var: str, label: str) -> str:
+    """Pick openai or gemini based on available keys and env override.
+
+    Args:
+        env_var: Name of the env var that forces the choice
+                 (e.g. ``VOICE_PROVIDER``, ``VISION_TOOL``).
+        label: Human label for the interactive prompt.
+    """
+    forced = os.environ.get(env_var, "").lower()
+    if forced in ("openai", "gemini"):
+        return forced
+
+    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+    has_gemini = bool(os.environ.get("GOOGLE_API_KEY"))
+
+    if has_openai and has_gemini:
+        print("Both OPENAI_API_KEY and GOOGLE_API_KEY are set.")
+        print(f"Which provider for {label}?")
+        print("  1) OpenAI")
+        print("  2) Gemini")
+        choice = input("Choice [1]: ").strip()
+        return "gemini" if choice == "2" else "openai"
+    if has_openai:
+        return "openai"
+    return "gemini"
+
+
+# ---------------------------------------------------------------------------
+# System prompt
+# ---------------------------------------------------------------------------
+
+
 def _build_system_prompt(lang: str) -> str:
     """Build system prompt, optionally in a specific language."""
     lang_name = LANG_NAMES.get(lang, lang)
@@ -95,12 +137,10 @@ def _build_system_prompt(lang: str) -> str:
     )
 
     return f"""\
-You are a helpful screen assistant. You can see the user's screen in real time \
-and you are having a voice conversation with them.{lang_instruction}
-
-Your current task: guide the user to open Google Chrome, type \
-"roomkit python conversation ai" in the search bar, and navigate to the \
-RoomKit website (roomkit.live).
+You are a professional IT support assistant. You can see the user's screen \
+in real time and you are having a voice conversation with them. Your role is \
+to help users navigate their computer, find applications, troubleshoot issues, \
+and guide them through any task they need help with.{lang_instruction}
 
 ## How you see the screen
 
@@ -116,6 +156,10 @@ question about what is currently visible on the screen.
 - **NEVER guess or assume** what is on the screen. If the user asks about something \
 visual (an icon, a button, a menu, text, a position), you MUST call describe_screen \
 first, then answer based on the result.
+- **When the user cannot find something**, you MUST immediately call describe_screen \
+to look at their current screen yourself. Do NOT rely on old periodic updates — \
+always get a fresh view. Ask a precise question like "List all visible windows, \
+icons, and UI elements with their positions" so you can guide them accurately.
 - When the user asks "where is X?", call describe_screen with a query like \
 "Where is the X icon located? Describe its exact position relative to other elements."
 - When the user asks "is X next to Y?" or "is X before Y?", call describe_screen \
@@ -132,14 +176,20 @@ Don't say "I used my tool" — just say "I can see that..." or "Looking at your 
 
 - Give short, clear voice directions one step at a time.
 - Wait for the user to complete each step before moving to the next.
-- Use describe_screen to confirm progress (e.g. verify Chrome is open, verify the \
-search query is correct, verify the right website loaded).
-- If the user asks for help finding something, ALWAYS use describe_screen to look \
-for it, then give precise directions (e.g. "Chrome is the third icon from the left \
-in your taskbar, right after the file manager").
-- Be encouraging and patient.
+- Use describe_screen to confirm progress after each instruction.
+- If the user seems confused or says they can't find something, ALWAYS call \
+describe_screen again with a fresh, specific query to see exactly what is on \
+their screen right now, then give precise directions based on what you see \
+(e.g. "I can see Chrome is the third icon from the left in your taskbar, \
+right after the file manager").
+- Be professional, patient, and reassuring — like a real support agent.
 - Speak naturally — you are a voice assistant, not a text bot.\
 """
+
+
+# ---------------------------------------------------------------------------
+# Builder helpers
+# ---------------------------------------------------------------------------
 
 
 def _build_aec(sample_rate: int, block_ms: int) -> object | None:
@@ -198,11 +248,11 @@ def _build_denoiser() -> object | None:
         return None
 
 
-def _build_vision(api_key: str) -> GeminiVisionProvider:
-    """Build Gemini vision provider for screen analysis."""
+def _build_periodic_vision(google_api_key: str) -> GeminiVisionProvider:
+    """Build Gemini vision provider for periodic screen analysis."""
     return GeminiVisionProvider(
         GeminiVisionConfig(
-            api_key=api_key,
+            api_key=google_api_key,
             model=os.environ.get("GEMINI_VISION_MODEL", "gemini-3.1-flash-image-preview"),
             prompt=(
                 "Describe what is shown on this screen in 2-3 sentences. "
@@ -214,73 +264,84 @@ def _build_vision(api_key: str) -> GeminiVisionProvider:
     )
 
 
-def _pick_vision_tool_provider() -> str:
-    """Decide which provider to use for the describe_screen tool.
+def _build_voice_provider(voice_choice: str) -> object:
+    """Build the realtime voice provider."""
+    if voice_choice == "openai":
+        from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
 
-    Returns "openai" or "gemini".
-    """
-    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
-    has_gemini = bool(os.environ.get("GOOGLE_API_KEY"))
-    forced = os.environ.get("VISION_TOOL", "").lower()
+        return OpenAIRealtimeProvider(
+            api_key=os.environ["OPENAI_API_KEY"],
+            model=os.environ.get("OPENAI_MODEL", "gpt-realtime-1.5"),
+        )
+    from roomkit.providers.gemini.realtime import GeminiLiveProvider
 
-    if forced in ("openai", "gemini"):
-        return forced
-    if has_openai and has_gemini:
-        print("Both OPENAI_API_KEY and GOOGLE_API_KEY are set.")
-        print("Which provider for the describe_screen tool?")
-        print("  1) OpenAI  (gpt-4o)")
-        print("  2) Gemini")
-        choice = input("Choice [1]: ").strip()
-        return "gemini" if choice == "2" else "openai"
-    if has_openai:
-        return "openai"
-    return "gemini"
+    return GeminiLiveProvider(
+        api_key=os.environ["GOOGLE_API_KEY"],
+        model=os.environ.get(
+            "GEMINI_MODEL",
+            "gemini-2.5-flash-native-audio-preview-12-2025",
+        ),
+    )
 
 
 def _build_screen_tool(
-    tool_provider: str,
+    tool_choice: str,
     google_api_key: str,
     monitor: int,
 ) -> DescribeScreenTool:
     """Build DescribeScreenTool with the chosen vision provider."""
-    if tool_provider == "openai":
-        openai_key = os.environ.get("OPENAI_API_KEY", "")
-        model = os.environ.get("OPENAI_VISION_MODEL", "gpt-4o")
-        return DescribeScreenTool(
-            lambda query: OpenAIVisionProvider(
-                OpenAIVisionConfig(
-                    api_key=openai_key,
-                    base_url="https://api.openai.com/v1",
-                    model=model,
-                    prompt=query,
-                    max_tokens=4096,
-                    detail="high",
-                )
-            ),
-            monitor=monitor,
+    if tool_choice == "openai":
+        vision = OpenAIVisionProvider(
+            OpenAIVisionConfig(
+                api_key=os.environ.get("OPENAI_API_KEY", ""),
+                base_url="https://api.openai.com/v1",
+                model=os.environ.get("OPENAI_VISION_MODEL", "gpt-4o"),
+                max_tokens=4096,
+                detail="high",
+            )
         )
-    model = os.environ.get(
-        "GEMINI_VISION_MODEL",
-        "gemini-3.1-flash-image-preview",
-    )
-    return DescribeScreenTool(
-        lambda query: GeminiVisionProvider(
+    else:
+        vision = GeminiVisionProvider(
             GeminiVisionConfig(
                 api_key=google_api_key,
-                model=model,
-                prompt=query,
+                model=os.environ.get(
+                    "GEMINI_VISION_MODEL",
+                    "gemini-3.1-flash-image-preview",
+                ),
                 max_tokens=4096,
             )
-        ),
-        monitor=monitor,
-    )
+        )
+    return DescribeScreenTool(vision, monitor=monitor)
+
+
+def _get_voice_name(voice_choice: str) -> str:
+    """Get the voice preset for the chosen provider."""
+    if voice_choice == "openai":
+        return os.environ.get("OPENAI_VOICE", "alloy")
+    return os.environ.get("GEMINI_VOICE", "Aoede")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 
 async def main() -> None:
-    api_key = os.environ.get("GOOGLE_API_KEY", "")
-    if not api_key:
-        print("Set GOOGLE_API_KEY to run this example.")
+    google_api_key = os.environ.get("GOOGLE_API_KEY", "")
+    if not google_api_key:
+        print("GOOGLE_API_KEY is required (periodic screen vision).")
         print("  GOOGLE_API_KEY=... uv run python examples/screen_assistant_ia.py")
+        return
+
+    # --- Provider selection --------------------------------------------------
+    voice_choice = _auto_select("VOICE_PROVIDER", "voice")
+    tool_choice = _auto_select("VISION_TOOL", "vision tool")
+
+    if voice_choice == "openai" and not os.environ.get("OPENAI_API_KEY"):
+        print("OPENAI_API_KEY is required for OpenAI voice.")
+        return
+    if tool_choice == "openai" and not os.environ.get("OPENAI_API_KEY"):
+        print("OPENAI_API_KEY is required for OpenAI vision tool.")
         return
 
     lang = os.environ.get("LANG_VOICE", os.environ.get("LANG", "en")).lower()[:2]
@@ -300,7 +361,7 @@ async def main() -> None:
         diff_threshold=0.02,
     )
 
-    vision = _build_vision(api_key)
+    vision = _build_periodic_vision(google_api_key)
 
     video_channel = VideoChannel(
         "video-screen",
@@ -311,24 +372,13 @@ async def main() -> None:
     kit.register_channel(video_channel)
 
     # --- On-demand vision tool -----------------------------------------------
-    # The voice agent can call describe_screen(query="...") to get a detailed
-    # analysis of the current screen with a specific question.
-    #
-    # IMPORTANT: The tool captures a FRESH full-resolution screenshot (not the
-    # downscaled periodic frames) so the vision model can read text accurately.
-    # A fresh provider is created per call so the query becomes the vision prompt.
+    screen_tool = _build_screen_tool(tool_choice, google_api_key, monitor)
 
-    tool_provider = _pick_vision_tool_provider()
-    screen_tool = _build_screen_tool(tool_provider, api_key, monitor)
-
-    # --- Gemini speech-to-speech ---------------------------------------------
+    # --- Speech-to-speech voice ----------------------------------------------
     sample_rate = 24000
     block_ms = 20
 
-    provider = GeminiLiveProvider(
-        api_key=api_key,
-        model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-native-audio-preview-12-2025"),
-    )
+    provider = _build_voice_provider(voice_choice)
 
     aec = _build_aec(sample_rate, block_ms)
     denoiser = _build_denoiser()
@@ -340,7 +390,7 @@ async def main() -> None:
         pipeline = AudioPipelineConfig(aec=aec, denoiser=denoiser)
 
     # Always mute mic while AI is speaking.  Even with AEC, residual echo
-    # is enough to trigger Gemini's server-side VAD → constant barge-in.
+    # is enough to trigger server-side VAD → constant barge-in.
     # This makes conversation half-duplex (user waits for AI to finish)
     # but eliminates false interruptions.  Set MUTE_MIC=0 to try full-duplex.
     mute_env = os.environ.get("MUTE_MIC")
@@ -354,16 +404,17 @@ async def main() -> None:
         pipeline=pipeline,
     )
 
+    voice_name = _get_voice_name(voice_choice)
     voice_channel = RealtimeVoiceChannel(
         "voice",
         provider=provider,
         transport=audio_backend,
         system_prompt=system_prompt,
-        voice=os.environ.get("GEMINI_VOICE", "Aoede"),
+        voice=voice_name,
         input_sample_rate=sample_rate,
         tools=[screen_tool.definition],
         tool_handler=screen_tool.handler,
-        mute_on_tool_call=True,  # Mute mic during vision API call
+        mute_on_tool_call=True,
     )
     kit.register_channel(voice_channel)
 
@@ -373,16 +424,10 @@ async def main() -> None:
     await kit.attach_channel("screen-assistant", "voice")
 
     # --- Wire vision results → voice session via inject_text -----------------
-    # Instead of reconfigure_session (which disconnects/reconnects and kills
-    # ongoing speech), we inject vision updates as text messages.  The system
-    # prompt tells the AI to use these silently as context.
-    #
-    # Debounce: at most one injection per min_inject_interval seconds.
-    # If the AI is generating audio, we defer the injection until later.
     frame_count = 0
     last_inject_time = 0.0
     pending_vision: str | None = None
-    min_inject_interval = 15.0  # seconds — don't flood the conversation
+    min_inject_interval = 15.0
 
     @kit.on("video_vision_result")
     async def on_vision(event: object) -> None:
@@ -400,13 +445,11 @@ async def main() -> None:
         text = data.get("text")
         elapsed = data.get("elapsed_ms", 0)
 
-        # Log vision result
         desc_short = description[:200] + "..." if len(description) > 200 else description
         logger.info("[Vision %d] (%dms) %s", frame_count, elapsed, desc_short)
         if text:
             logger.info("[Vision %d] OCR: %s", frame_count, text[:200])
 
-        # Build screen context message
         parts = [f"[Screen update] {description}"]
         if labels:
             parts.append(f"Elements: {', '.join(labels)}")
@@ -414,7 +457,6 @@ async def main() -> None:
             parts.append(f"Visible text: {text}")
         pending_vision = "\n".join(parts)
 
-        # Try to inject now if enough time has passed
         await _try_inject_vision()
 
     async def _try_inject_vision() -> None:
@@ -440,7 +482,6 @@ async def main() -> None:
 
         pending_vision = None
 
-    # Periodically flush any pending vision that was deferred
     async def _vision_flush_loop() -> None:
         while True:
             await asyncio.sleep(5.0)
@@ -452,31 +493,32 @@ async def main() -> None:
     video_session = await kit.connect_video("screen-assistant", "local-user", "video-screen")
     await screen_backend.start_capture(video_session)
 
+    # Gemini-specific VAD config (ignored by OpenAI provider)
+    provider_config = {}
+    if voice_choice == "gemini":
+        provider_config = {
+            "start_of_speech_sensitivity": "START_SENSITIVITY_LOW",
+            "end_of_speech_sensitivity": "END_SENSITIVITY_LOW",
+            "silence_duration_ms": 1500,
+        }
+
     voice_session = await voice_channel.start_session(
         "screen-assistant",
         "local-user",
         connection=None,
-        metadata={
-            "provider_config": {
-                # Reduce VAD sensitivity — ambient noise won't trigger barge-in.
-                # Full enum values: START_SENSITIVITY_LOW, END_SENSITIVITY_LOW
-                "start_of_speech_sensitivity": "START_SENSITIVITY_LOW",
-                "end_of_speech_sensitivity": "END_SENSITIVITY_LOW",
-                # Wait 1500ms of silence before considering the turn done.
-                "silence_duration_ms": 1500,
-            },
-        },
+        metadata={"provider_config": provider_config} if provider_config else None,
     )
 
     # --- Banner --------------------------------------------------------------
     print()
-    tool_label = "OpenAI" if tool_provider == "openai" else "Gemini"
-    print(f"Screen Assistant (Gemini Voice + {tool_label} Vision Tool)")
+    voice_label = "OpenAI" if voice_choice == "openai" else "Gemini"
+    tool_label = "OpenAI" if tool_choice == "openai" else "Gemini"
+    print(f"Screen Assistant ({voice_label} Voice + {tool_label} Vision Tool)")
     print("=" * 60)
     lang_label = LANG_NAMES.get(lang, lang)
     print(f"Monitor: {monitor} | Vision every {vision_interval}ms | Scale {scale}")
     print(f"Language: {lang_label}")
-    print(f"Voice: {os.environ.get('GEMINI_VOICE', 'Aoede')}")
+    print(f"Voice: {voice_name} ({voice_label})")
     print(f"Vision tool: {tool_label}")
     print(f"AEC: {'enabled' if aec else 'disabled'}")
     print(f"Denoiser: {'enabled' if denoiser else 'disabled'}")

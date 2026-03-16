@@ -150,7 +150,9 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         if system_prompt:
             session_config["instructions"] = system_prompt
         if tools:
-            session_config["tools"] = tools
+            # OpenAI Realtime requires "type": "function" on each tool.
+            # Normalize tools that omit it (e.g. from DescribeScreenTool).
+            session_config["tools"] = [{**t, "type": t.get("type", "function")} for t in tools]
 
         logger.info(
             "Sending session.update: turn_detection=%s, voice=%s",

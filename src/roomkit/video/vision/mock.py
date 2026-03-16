@@ -40,7 +40,12 @@ class MockVisionProvider(VisionProvider):
         self.calls: list[VideoFrame] = []
         self._index = 0
 
-    async def analyze_frame(self, frame: VideoFrame) -> VisionResult:
+    async def analyze_frame(
+        self,
+        frame: VideoFrame,
+        *,
+        prompt: str | None = None,
+    ) -> VisionResult:
         self.calls.append(frame)
         desc = self.descriptions[self._index % len(self.descriptions)]
         frame_labels = self.labels[self._index % len(self.labels)]

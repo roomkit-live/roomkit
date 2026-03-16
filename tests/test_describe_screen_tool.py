@@ -81,27 +81,14 @@ class TestCaptureScreenFrame:
 # ---------------------------------------------------------------------------
 
 
-def _mock_factory(descriptions: list[str]) -> object:
-    """Create a vision factory that returns MockVisionProviders."""
-    idx = 0
-
-    def factory(query: str) -> MockVisionProvider:
-        nonlocal idx
-        desc = descriptions[idx % len(descriptions)]
-        idx += 1
-        return MockVisionProvider(descriptions=[desc])
-
-    return factory
-
-
 class TestDescribeScreenTool:
     def test_definition_equals_constant(self) -> None:
-        tool = DescribeScreenTool(lambda q: MockVisionProvider(descriptions=["test"]))
+        tool = DescribeScreenTool(MockVisionProvider(descriptions=["test"]))
         assert tool.definition == TOOL_DEFINITION
         assert tool.definition["name"] == TOOL_NAME
 
     def test_definition_has_required_fields(self) -> None:
-        tool = DescribeScreenTool(lambda q: MockVisionProvider(descriptions=["test"]))
+        tool = DescribeScreenTool(MockVisionProvider(descriptions=["test"]))
         defn = tool.definition
         assert "name" in defn
         assert "description" in defn
@@ -109,10 +96,8 @@ class TestDescribeScreenTool:
         assert defn["parameters"]["required"] == ["query"]
 
     async def test_analyze_returns_description(self) -> None:
-        tool = DescribeScreenTool(
-            lambda q: MockVisionProvider(descriptions=["A desktop with Chrome open"]),
-            monitor=1,
-        )
+        vision = MockVisionProvider(descriptions=["A desktop with Chrome open"])
+        tool = DescribeScreenTool(vision, monitor=1)
 
         fake_frame = VideoFrame(
             data=b"\x00" * (10 * 10 * 3),
@@ -128,23 +113,13 @@ class TestDescribeScreenTool:
 
         assert result == "A desktop with Chrome open"
 
-    async def test_analyze_returns_error_when_no_frame(self) -> None:
-        tool = DescribeScreenTool(
-            lambda q: MockVisionProvider(descriptions=["should not reach"]),
+    async def test_analyze_passes_query_as_prompt(self) -> None:
+        """The query is forwarded as the prompt kwarg to analyze_frame."""
+        vision = MockVisionProvider(descriptions=["result"])
+        vision.analyze_frame = AsyncMock(  # type: ignore[method-assign]
+            return_value=MagicMock(description="result"),
         )
-
-        with patch(
-            "roomkit.video.vision.screen_tool.capture_screen_frame",
-            return_value=None,
-        ):
-            result = await tool.analyze("What is on screen?")
-
-        assert "No screen frame available" in result
-
-    async def test_factory_receives_query(self) -> None:
-        """The vision factory is called with the user's query."""
-        factory = MagicMock(return_value=MockVisionProvider(descriptions=["result"]))
-        tool = DescribeScreenTool(factory)
+        tool = DescribeScreenTool(vision)
 
         fake_frame = VideoFrame(
             data=b"\x00" * (10 * 10 * 3),
@@ -158,12 +133,26 @@ class TestDescribeScreenTool:
         ):
             await tool.analyze("Where is the Chrome icon?")
 
-        factory.assert_called_once_with("Where is the Chrome icon?")
+        vision.analyze_frame.assert_called_once_with(  # type: ignore[union-attr]
+            fake_frame,
+            prompt="Where is the Chrome icon?",
+        )
+
+    async def test_analyze_returns_error_when_no_frame(self) -> None:
+        vision = MockVisionProvider(descriptions=["should not reach"])
+        tool = DescribeScreenTool(vision)
+
+        with patch(
+            "roomkit.video.vision.screen_tool.capture_screen_frame",
+            return_value=None,
+        ):
+            result = await tool.analyze("What is on screen?")
+
+        assert "No screen frame available" in result
 
     async def test_handler_dispatches_describe_screen(self) -> None:
-        tool = DescribeScreenTool(
-            lambda q: MockVisionProvider(descriptions=["Icons visible"]),
-        )
+        vision = MockVisionProvider(descriptions=["Icons visible"])
+        tool = DescribeScreenTool(vision)
 
         tool.analyze = AsyncMock(return_value="Icons visible")  # type: ignore[method-assign]
 
@@ -173,18 +162,16 @@ class TestDescribeScreenTool:
         tool.analyze.assert_called_once_with("List icons")  # type: ignore[union-attr]
 
     async def test_handler_returns_unknown_for_other_tools(self) -> None:
-        tool = DescribeScreenTool(
-            lambda q: MockVisionProvider(descriptions=["test"]),
-        )
+        vision = MockVisionProvider(descriptions=["test"])
+        tool = DescribeScreenTool(vision)
 
         session = object()
         result = await tool.handler(session, "other_tool", {})  # type: ignore[arg-type]
         assert "Unknown tool" in result
 
     async def test_handler_uses_default_query(self) -> None:
-        tool = DescribeScreenTool(
-            lambda q: MockVisionProvider(descriptions=["Default description"]),
-        )
+        vision = MockVisionProvider(descriptions=["Default description"])
+        tool = DescribeScreenTool(vision)
 
         tool.analyze = AsyncMock(return_value="Default description")  # type: ignore[method-assign]
 

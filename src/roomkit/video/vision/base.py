@@ -99,7 +99,12 @@ class VisionProvider(ABC):
         return False
 
     @abstractmethod
-    async def analyze_frame(self, frame: VideoFrame) -> VisionResult:
+    async def analyze_frame(
+        self,
+        frame: VideoFrame,
+        *,
+        prompt: str | None = None,
+    ) -> VisionResult:
         """Analyze a single video frame.
 
         Args:
@@ -107,6 +112,10 @@ class VisionProvider(ABC):
                 vp8) or raw (rgb24, yuv420p) depending on the pipeline.
                 Providers that require a specific format should document
                 their requirements.
+            prompt: Optional prompt override for this call.  When
+                ``None``, the provider uses its configured default
+                prompt.  Useful for on-demand queries like the
+                ``describe_screen`` tool.
 
         Returns:
             VisionResult with description, labels, and optional faces/OCR.

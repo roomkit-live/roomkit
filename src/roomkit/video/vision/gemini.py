@@ -82,13 +82,19 @@ class GeminiVisionProvider(VisionProvider):
             self._client = _genai.Client(api_key=self._config.api_key)
         return self._client
 
-    async def analyze_frame(self, frame: VideoFrame) -> VisionResult:
+    async def analyze_frame(
+        self,
+        frame: VideoFrame,
+        *,
+        prompt: str | None = None,
+    ) -> VisionResult:
         """Analyze a video frame via the Gemini API.
 
         Encodes the frame as JPEG and sends it as inline data.
 
         Args:
             frame: The video frame (raw_rgb24, raw_bgr24, or encoded).
+            prompt: Optional prompt override (defaults to config prompt).
 
         Returns:
             VisionResult with the model's description.
@@ -118,9 +124,10 @@ class GeminiVisionProvider(VisionProvider):
                 thinking_budget=0,
             )
 
+        effective_prompt = prompt or self._config.prompt
         response = await client.aio.models.generate_content(
             model=self._config.model,
-            contents=[self._config.prompt, image_part],
+            contents=[effective_prompt, image_part],
             config=types.GenerateContentConfig(**gen_config),
         )
 

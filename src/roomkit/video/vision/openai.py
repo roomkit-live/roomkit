@@ -123,7 +123,12 @@ class OpenAIVisionProvider(VisionProvider):
             )
         return self._client
 
-    async def analyze_frame(self, frame: VideoFrame) -> VisionResult:
+    async def analyze_frame(
+        self,
+        frame: VideoFrame,
+        *,
+        prompt: str | None = None,
+    ) -> VisionResult:
         """Analyze a video frame via the OpenAI-compatible vision API.
 
         Encodes the frame as JPEG, sends it as a base64 image in a
@@ -131,12 +136,14 @@ class OpenAIVisionProvider(VisionProvider):
 
         Args:
             frame: The video frame (raw_rgb24, raw_bgr24, or encoded).
+            prompt: Optional prompt override (defaults to config prompt).
 
         Returns:
             VisionResult with the model's description.
         """
         client = self._get_client()
         image_b64 = frame_to_jpeg_base64(frame)
+        effective_prompt = prompt or self._config.prompt
 
         response = await client.chat.completions.create(
             model=self._config.model,
@@ -144,7 +151,7 @@ class OpenAIVisionProvider(VisionProvider):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": self._config.prompt},
+                        {"type": "text", "text": effective_prompt},
                         {
                             "type": "image_url",
                             "image_url": {

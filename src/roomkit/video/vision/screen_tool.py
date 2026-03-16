@@ -7,24 +7,12 @@ Provides a tool definition dict and handler compatible with both
 :class:`RealtimeVoiceChannel` (``tools`` / ``tool_handler``) and
 :class:`AIChannel` (``AITool`` / ``tool_handler``).
 
-The tool accepts a *vision factory* — a callable that creates a fresh
-:class:`VisionProvider` for each query.  This allows the query text to
-be used as the vision prompt (each provider bakes the prompt into its
-config at construction time).
-
 Example with RealtimeVoiceChannel::
 
-    from roomkit.video.vision import DescribeScreenTool, OpenAIVisionConfig, OpenAIVisionProvider
+    from roomkit import DescribeScreenTool, GeminiVisionConfig, GeminiVisionProvider
 
-    screen_tool = DescribeScreenTool(
-        lambda query: OpenAIVisionProvider(OpenAIVisionConfig(
-            api_key="sk-...",
-            base_url="https://api.openai.com/v1",
-            model="gpt-4o",
-            prompt=query,
-            max_tokens=4096,
-        )),
-    )
+    vision = GeminiVisionProvider(GeminiVisionConfig(api_key="..."))
+    screen_tool = DescribeScreenTool(vision)
 
     voice = RealtimeVoiceChannel(
         "voice",
@@ -38,7 +26,6 @@ Example with RealtimeVoiceChannel::
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from roomkit.video.video_frame import VideoFrame
@@ -81,9 +68,6 @@ TOOL_DEFINITION: dict[str, Any] = {
         "required": ["query"],
     },
 }
-
-# Type alias for the vision factory callable.
-VisionFactory = Callable[[str], VisionProvider]
 
 
 def capture_screen_frame(monitor: int = 1) -> VideoFrame | None:
@@ -131,27 +115,18 @@ class DescribeScreenTool:
     """Reusable tool that lets AI agents analyze the current screen.
 
     Bundles the tool definition (JSON schema), screen capture, and
-    vision analysis into a single object.
+    vision analysis into a single object.  Reuses a single
+    :class:`VisionProvider` instance and passes the query as a
+    per-call ``prompt`` override.
 
     Args:
-        vision_factory: Callable that receives the query string and
-            returns a :class:`VisionProvider` configured with that
-            query as its prompt.  A fresh provider is created per
-            tool call so the AI's question reaches the vision model.
+        vision: Vision provider for frame analysis (Gemini, OpenAI, etc.).
         monitor: Monitor index to capture (1 = primary).
 
     Example::
 
-        tool = DescribeScreenTool(
-            lambda q: OpenAIVisionProvider(OpenAIVisionConfig(
-                api_key="sk-...",
-                base_url="https://api.openai.com/v1",
-                model="gpt-4o",
-                prompt=q,
-                max_tokens=4096,
-            )),
-            monitor=1,
-        )
+        vision = GeminiVisionProvider(GeminiVisionConfig(api_key="..."))
+        tool = DescribeScreenTool(vision, monitor=1)
 
         channel = RealtimeVoiceChannel(
             "voice",
@@ -162,8 +137,8 @@ class DescribeScreenTool:
         )
     """
 
-    def __init__(self, vision_factory: VisionFactory, *, monitor: int = 1) -> None:
-        self._factory = vision_factory
+    def __init__(self, vision: VisionProvider, *, monitor: int = 1) -> None:
+        self._vision = vision
         self._monitor = monitor
 
     @property
@@ -173,9 +148,6 @@ class DescribeScreenTool:
 
     async def analyze(self, query: str) -> str:
         """Capture a fresh screenshot and analyze it with *query*.
-
-        Creates a new :class:`VisionProvider` via the factory so the
-        query is used as the vision prompt.
 
         Args:
             query: A precise visual question about the screen.
@@ -187,8 +159,7 @@ class DescribeScreenTool:
         if frame is None:
             return "No screen frame available. Please wait a moment."
 
-        provider = self._factory(query)
-        result = await provider.analyze_frame(frame)
+        result = await self._vision.analyze_frame(frame, prompt=query)
         return result.description or "Could not analyze the screen."
 
     async def handler(
