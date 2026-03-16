@@ -328,14 +328,17 @@ async def main() -> None:
 
     # --- Periodic screen vision (background, no injection) -------------------
     monitor = int(os.environ.get("MONITOR", "1"))
-    vision_interval = int(os.environ.get("VISION_INTERVAL", "3000"))
+    # Vision interval: how often the cache is refreshed (agent uses
+    # describe_screen on demand anyway, so this is just a background update).
+    # High diff threshold (10%) avoids wasting API calls on scrolling text.
+    vision_interval = int(os.environ.get("VISION_INTERVAL", "2000"))
 
     scale = float(os.environ.get("SCALE", "0.75"))
     screen_backend = ScreenCaptureBackend(
         monitor=monitor,
         fps=2,
         scale=scale,
-        diff_threshold=0.02,
+        diff_threshold=0.10,
     )
 
     periodic_vision = _build_periodic_vision(google_api_key)
