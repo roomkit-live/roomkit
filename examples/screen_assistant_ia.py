@@ -1,12 +1,12 @@
 """RoomKit — AI screen assistant with speech-to-speech voice.
 
-Talk to an AI while it sees your screen. The AI checks the screen
-on demand (via the describe_screen tool) and can type/press keys
-on your keyboard. It guides you verbally and asks permission
-before taking any action.
+Talk to an AI while it sees your screen. Periodic vision runs in the
+background (every ~2s) and caches the latest screen description. The
+agent retrieves it instantly via describe_screen (no query = cached,
+with query = fresh analysis). No vision injection into conversation.
 
 Supports **OpenAI Realtime** or **Gemini Live** for voice, and
-**OpenAI** or **Gemini** for the ``describe_screen`` vision tool.
+**OpenAI** or **Gemini** for vision.
 
 Requirements:
     pip install roomkit[screen-capture,local-audio,gemini,sherpa-onnx]
@@ -39,6 +39,7 @@ Environment variables:
     MUTE_MIC             Mute mic during AI playback: 1 | 0 (default: 0)
     LANG_VOICE           Language (default: en)
     MONITOR              Monitor index: 1=primary (default: 1)
+    VISION_INTERVAL      Vision interval in ms (default: 3000)
 
 Press Ctrl+C to stop.
 """
@@ -59,7 +60,9 @@ from roomkit import (
     RealtimeVoiceChannel,
     RoomKit,
     ScreenInputTools,
+    VideoChannel,
 )
+from roomkit.video.backends.screen import ScreenCaptureBackend
 from roomkit.voice.backends.local import LocalAudioBackend
 
 logging.basicConfig(
@@ -116,7 +119,7 @@ def _auto_select(env_var: str, label: str) -> str:
 
 
 def _build_system_prompt(lang: str) -> str:
-    """Build system prompt, optionally in a specific language."""
+    """Build system prompt."""
     lang_name = LANG_NAMES.get(lang, lang)
     lang_instruction = f"\nIMPORTANT: You MUST speak ONLY in {lang_name}." if lang != "en" else ""
 
@@ -134,18 +137,32 @@ then give short step-by-step instructions.
 - **Be concise.** One short sentence per step. No repetition.
 - **Do NOT speak unless needed.** Only talk when giving the next step, \
 answering a question, or confirming progress.
-- **Use describe_screen only when you need to check progress** or when \
-the user asks about something on screen. Do NOT call it after every step.
-- **Ask permission once** before typing. Example: "Can I type the URL \
-for you?" — then proceed without re-asking for each keystroke.
-- **Guide with keyboard shortcuts**, not mouse. Example workflow:
-  1. "Please open your browser."
-  2. (user confirms) → press_key('ctrl+l') to focus address bar
-  3. type_text('roomkit.live')
-  4. press_key('enter')
-  5. describe_screen to verify the page loaded
 - **The user can interrupt you at any time.** Stop and listen.
-- **Never repeat what you just said.** If the user didn't respond, wait.\
+- **Never repeat what you just said.**
+
+## Screen awareness
+
+Call describe_screen to see what's on the user's screen:
+- **Without a query**: returns the latest cached screen description \
+(instant, updated every ~3 seconds in background). Use this to quickly \
+check what the user sees right now.
+- **With a specific query**: captures a fresh screenshot and analyzes it \
+with your question. Use this when you need precise details.
+
+Check the screen at key moments: after giving an instruction, when the \
+user says they did something, or when you need to confirm progress.
+
+## Taking actions
+
+Ask permission once before acting. Available tools:
+- **click_element(element)** — click on a UI element by description. \
+The tool finds it on screen automatically. Example: \
+click_element("the Chrome icon in the taskbar")
+- **press_key(key)** — press keys: 'enter', 'ctrl+l', 'alt+tab'
+- **type_text(text)** — type into the focused field
+
+Typical workflow: click_element("Chrome icon") → press_key('ctrl+l') → \
+type_text('roomkit.live') → press_key('enter')\
 """
 
 
@@ -199,6 +216,25 @@ def _build_denoiser() -> object | None:
     except ImportError:
         logger.warning("sherpa-onnx not available (DENOISE=0 to skip)")
         return None
+
+
+def _build_periodic_vision(google_api_key: str) -> GeminiVisionProvider:
+    """Build Gemini vision provider for periodic screen analysis."""
+    return GeminiVisionProvider(
+        GeminiVisionConfig(
+            api_key=google_api_key,
+            model=os.environ.get(
+                "GEMINI_VISION_MODEL",
+                "gemini-3.1-flash-image-preview",
+            ),
+            prompt=(
+                "Describe what is shown on this screen in 2-3 sentences. "
+                "Focus on the FOREGROUND application. "
+                "Include application name, visible text, URLs, "
+                "and what the user appears to be doing. Be concise."
+            ),
+        )
+    )
 
 
 def _build_voice_provider(voice_choice: str) -> object:
@@ -286,10 +322,70 @@ async def main() -> None:
 
     kit = RoomKit()
 
-    # --- Tools ---------------------------------------------------------------
+    # --- Periodic screen vision (background, no injection) -------------------
     monitor = int(os.environ.get("MONITOR", "1"))
+    vision_interval = int(os.environ.get("VISION_INTERVAL", "3000"))
+
+    scale = float(os.environ.get("SCALE", "0.75"))
+    screen_backend = ScreenCaptureBackend(
+        monitor=monitor,
+        fps=2,
+        scale=scale,
+        diff_threshold=0.02,
+    )
+
+    periodic_vision = _build_periodic_vision(google_api_key)
+    video_channel = VideoChannel(
+        "video-screen",
+        backend=screen_backend,
+        vision=periodic_vision,
+        vision_interval_ms=vision_interval,
+    )
+    kit.register_channel(video_channel)
+
+    # --- Cache latest vision result (no injection) ---------------------------
+    # The describe_screen tool reads this cache when called without a query.
+    latest_vision: dict[str, str] = {"description": ""}
+    frame_count = 0
+
+    @kit.on("video_vision_result")
+    async def on_vision(event: object) -> None:
+        nonlocal frame_count
+        data = event.data  # type: ignore[attr-defined]
+        if event.room_id != "screen-assistant":  # type: ignore[attr-defined]
+            return
+
+        description = data.get("description", "")
+        if not description:
+            return
+
+        frame_count += 1
+        latest_vision["description"] = description
+
+        elapsed = data.get("elapsed_ms", 0)
+        short = description[:150] + "..." if len(description) > 150 else description
+        logger.info("[Vision %d] (%dms) %s", frame_count, elapsed, short)
+
+    # --- Tools ---------------------------------------------------------------
     screen_tool = _build_screen_tool(tool_choice, google_api_key, monitor)
-    input_tools = ScreenInputTools()
+    input_tools = ScreenInputTools(vision=screen_tool._vision, monitor=monitor)
+
+    all_tools = [screen_tool.definition, *input_tools.definitions]
+
+    async def tool_handler(session: object, name: str, arguments: dict[str, object]) -> str:
+        """Route tool calls."""
+        if name == "describe_screen":
+            query = str(arguments.get("query", ""))
+            # No query → return cached vision (instant)
+            if not query:
+                cached = latest_vision["description"]
+                if cached:
+                    logger.info("describe_screen → cached (%d chars)", len(cached))
+                    return cached
+                return "No screen data yet. Please wait a moment."
+            # With query → fresh capture + vision API
+            return await screen_tool.handler(session, name, arguments)  # type: ignore[arg-type]
+        return await input_tools.handler(session, name, arguments)  # type: ignore[arg-type]
 
     # --- Speech-to-speech voice ----------------------------------------------
     sample_rate = 24000
@@ -306,7 +402,6 @@ async def main() -> None:
 
         pipeline = AudioPipelineConfig(aec=aec, denoiser=denoiser)
 
-    # Full-duplex: mic stays open so user can interrupt.
     mute_env = os.environ.get("MUTE_MIC")
     mute_mic = mute_env == "1" if mute_env is not None else False
     audio_backend = LocalAudioBackend(
@@ -319,14 +414,6 @@ async def main() -> None:
     )
 
     voice_name = _get_voice_name(voice_choice)
-    all_tools = [screen_tool.definition, *input_tools.definitions]
-
-    async def tool_handler(session: object, name: str, arguments: dict[str, object]) -> str:
-        """Route tool calls to the right handler."""
-        if name == "describe_screen":
-            return await screen_tool.handler(session, name, arguments)  # type: ignore[arg-type]
-        return await input_tools.handler(session, name, arguments)  # type: ignore[arg-type]
-
     voice_channel = RealtimeVoiceChannel(
         "voice",
         provider=provider,
@@ -340,11 +427,16 @@ async def main() -> None:
     )
     kit.register_channel(voice_channel)
 
-    # --- Room + session ------------------------------------------------------
+    # --- Room + sessions -----------------------------------------------------
     await kit.create_room(room_id="screen-assistant")
+    await kit.attach_channel("screen-assistant", "video-screen")
     await kit.attach_channel("screen-assistant", "voice")
 
-    # Gemini-specific VAD config
+    # Start screen capture
+    video_session = await kit.connect_video("screen-assistant", "local-user", "video-screen")
+    await screen_backend.start_capture(video_session)
+
+    # Start voice session
     provider_config = {}
     if voice_choice == "gemini":
         provider_config = {
@@ -368,10 +460,10 @@ async def main() -> None:
     print("=" * 60)
     print(f"Voice: {voice_name} | Language: {LANG_NAMES.get(lang, lang)}")
     print(f"AEC: {'on' if aec else 'off'} | Denoiser: {'on' if denoiser else 'off'}")
-    print(f"Interruption: {'off (half-duplex)' if mute_mic else 'on (full-duplex)'}")
+    print(f"Interruption: {'off' if mute_mic else 'on'}")
+    print(f"Vision: every {vision_interval}ms (cached, no injection)")
     print()
-    print("The AI checks your screen on demand (no periodic injection).")
-    print("Tools: describe_screen, type_text, press_key")
+    print("Tools: describe_screen, click_element, type_text, press_key")
     print("Press Ctrl+C to stop.")
     print()
 
@@ -385,8 +477,9 @@ async def main() -> None:
 
     # --- Cleanup -------------------------------------------------------------
     logger.info("Stopping...")
+    await screen_backend.stop_capture(video_session)
     await kit.close()
-    logger.info("Done.")
+    logger.info("Done. Vision analyzed %d frames.", frame_count)
 
 
 if __name__ == "__main__":
