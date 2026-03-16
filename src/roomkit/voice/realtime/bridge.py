@@ -37,6 +37,7 @@ from roomkit.voice.realtime.provider import RealtimeAudioVideoProvider
 if TYPE_CHECKING:
     from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.pipeline.encoder.base import VideoEncoderProvider
+    from roomkit.video.video_frame import VideoFrame
     from roomkit.voice.backends.base import VoiceBackend
 
 logger = logging.getLogger("roomkit.voice.realtime.bridge")
@@ -159,6 +160,10 @@ class RealtimeAVBridge:
             provider frames before encoding (resize, filters, vision).
         encoder: Optional video encoder for outbound video. Without it,
             provider video goes to taps only (passthrough mode).
+        connecting_frame: Optional :class:`VideoFrame` sent to the backend
+            while the provider negotiates (3-5s for Anam WebRTC). Shows
+            a "please wait" image instead of black screen.
+        connecting_fps: Frame rate for the connecting placeholder (default: 5).
         provider_sample_rate: Sample rate of provider audio output (Hz).
             Anam outputs 48000. Default: 48000.
         video_fps: Frames per second for RTP timestamp calculation.
@@ -174,6 +179,8 @@ class RealtimeAVBridge:
         *,
         video_pipeline: VideoPipelineConfig | None = None,
         encoder: VideoEncoderProvider | None = None,
+        connecting_frame: VideoFrame | None = None,
+        connecting_fps: int = 5,
         provider_sample_rate: int = 48000,
         video_fps: int = 25,
         on_call: Callable[[VoiceSession], Any] | None = None,
@@ -183,6 +190,8 @@ class RealtimeAVBridge:
         self._provider = provider
         self._backend = backend
         self._encoder = encoder
+        self._connecting_frame = connecting_frame
+        self._connecting_fps = connecting_fps
         self._provider_rate = provider_sample_rate
         self._video_fps = video_fps
         self._calls: dict[str, _CallState] = {}
@@ -231,6 +240,18 @@ class RealtimeAVBridge:
         """Register a tap that receives every provider video frame."""
         self._video_taps.append(callback)
 
+    async def _send_connecting_loop(self, state: _CallState) -> None:
+        """Send a placeholder frame while the provider negotiates."""
+        if self._connecting_frame is None or self._encoder is None:
+            return
+        interval = 1.0 / self._connecting_fps
+        try:
+            while not state.closed:
+                self._send_encoded_video(state, self._connecting_frame)
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            pass
+
     async def connect(
         self,
         backend_session: VoiceSession,
@@ -263,8 +284,23 @@ class RealtimeAVBridge:
             with contextlib.suppress(Exception):
                 ensure_pacer(backend_session)
 
+        # Send placeholder frame while provider negotiates (3-5s)
+        placeholder_task: asyncio.Task[None] | None = None
+        if self._connecting_frame is not None and self._encoder is not None:
+            state = self._calls[backend_session.id]
+            placeholder_task = asyncio.create_task(
+                self._send_connecting_loop(state),
+                name=f"connecting_placeholder:{backend_session.id}",
+            )
+
         t0 = time.monotonic()
-        await self._provider.connect(provider_session)
+        try:
+            await self._provider.connect(provider_session)
+        finally:
+            if placeholder_task is not None:
+                placeholder_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await placeholder_task
 
         # If the backend session died during the provider negotiation
         # (e.g. SIP BYE during the 3-4s WebRTC handshake), disconnect

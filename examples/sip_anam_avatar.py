@@ -44,11 +44,44 @@ logger = logging.getLogger("sip_anam_avatar")
 if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit").setLevel(logging.DEBUG)
 
+import cv2
+import numpy as np
+
 from roomkit import AnamConfig, AnamRealtimeProvider, VideoPipelineConfig
 from roomkit.video.backends.sip import SIPVideoBackend
 from roomkit.video.pipeline.encoder.pyav import PyAVVideoEncoder
 from roomkit.video.pipeline.filter.watermark import WatermarkFilter
+from roomkit.video.video_frame import VideoFrame
 from roomkit.voice.realtime.bridge import RealtimeAVBridge
+
+
+def _make_connecting_frame(width: int = 720, height: int = 480) -> VideoFrame:
+    """Generate a 'Connecting...' placeholder frame."""
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+    img[:] = (30, 30, 30)  # dark grey background
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    text = "Connecting to avatar..."
+    (tw, th), _ = cv2.getTextSize(text, font, 0.8, 2)
+    x = (width - tw) // 2
+    y = (height + th) // 2
+    # OpenCV uses BGR, but our frame is RGB — swap channels
+    cv2.putText(img, text, (x, y), font, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
+
+    sub = "Please wait"
+    (sw, sh), _ = cv2.getTextSize(sub, font, 0.5, 1)
+    cv2.putText(
+        img,
+        sub,
+        ((width - sw) // 2, y + th + 20),
+        font,
+        0.5,
+        (150, 150, 150),
+        1,
+        cv2.LINE_AA,
+    )
+
+    return VideoFrame(data=img.tobytes(), codec="raw_rgb24", width=width, height=height)
 
 
 async def main() -> None:
@@ -104,12 +137,13 @@ async def main() -> None:
         ],
     )
 
-    # --- Bridge: SIP Anam (pipeline + H.264 encoding) --------------------
+    # --- Bridge: SIP ↔ Anam (pipeline + H.264 encoding) --------------------
     bridge = RealtimeAVBridge(
         provider,
         sip,
         video_pipeline=video_pipeline,
         encoder=PyAVVideoEncoder(fps=25, bitrate=3_000_000, preset="medium"),
+        connecting_frame=_make_connecting_frame(),
         provider_sample_rate=48000,
         on_transcription=lambda role, text, _: logger.info("[%s] %s", role.upper(), text),
     )
