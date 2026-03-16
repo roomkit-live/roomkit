@@ -142,15 +142,17 @@ answering a question, or confirming progress.
 
 ## Screen awareness
 
-Call describe_screen to see what's on the user's screen:
-- **Without a query**: returns the latest cached screen description \
-(instant, updated every ~3 seconds in background). Use this to quickly \
-check what the user sees right now.
-- **With a specific query**: captures a fresh screenshot and analyzes it \
-with your question. Use this when you need precise details.
+You receive **[Screen changed]** messages when something visually \
+significant changes on the user's screen (app switch, page load, \
+new window). Use these to stay aware of what's happening. \
+Do NOT reply to every screen change — only react when it's relevant \
+to the current task or when the user needs guidance.
 
-Check the screen at key moments: after giving an instruction, when the \
-user says they did something, or when you need to confirm progress.
+You can also call **describe_screen**:
+- **Without a query**: returns the latest screen description (instant).
+- **With a specific query**: captures a fresh screenshot and analyzes it.
+
+Use describe_screen to verify progress after an action.
 
 ## Taking actions
 
@@ -350,9 +352,11 @@ async def main() -> None:
     )
     kit.register_channel(video_channel)
 
-    # --- Cache latest vision result (no injection) ---------------------------
-    # The describe_screen tool reads this cache when called without a query.
-    latest_vision: dict[str, str] = {"description": ""}
+    # --- Cache + inject vision on significant changes -----------------------
+    # The 10% diff_threshold already filters noise (scrolling text).
+    # When vision fires, it means the screen genuinely changed — notify
+    # the agent via inject_text so it can react.
+    latest_vision: dict[str, str] = {"description": "", "previous": ""}
     frame_count = 0
 
     @kit.on("video_vision_result")
@@ -367,11 +371,28 @@ async def main() -> None:
             return
 
         frame_count += 1
+        previous = latest_vision["description"]
+        latest_vision["previous"] = previous
         latest_vision["description"] = description
 
         elapsed = data.get("elapsed_ms", 0)
         short = description[:150] + "..." if len(description) > 150 else description
         logger.info("[Vision %d] (%dms) %s", frame_count, elapsed, short)
+
+        # Inject into voice session so the agent knows the screen changed.
+        # The diff_threshold ensures this only fires on real changes.
+        sessions = voice_channel.get_room_sessions("screen-assistant")
+        if not sessions:
+            logger.debug("[Vision %d] No active voice session to inject", frame_count)
+            return
+
+        context = f"[Screen changed] {description}"
+        for session in sessions:
+            try:
+                await voice_channel.inject_text(session, context, role="user")
+                logger.info("[Vision %d] Injected screen change into voice session", frame_count)
+            except Exception:
+                logger.exception("[Vision %d] Failed to inject", frame_count)
 
     # --- Tools ---------------------------------------------------------------
     screen_tool = _build_screen_tool(tool_choice, google_api_key, monitor)
