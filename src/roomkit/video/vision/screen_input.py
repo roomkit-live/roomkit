@@ -2,7 +2,7 @@
 
 Lets an AI agent type text, press keys, and click on UI elements
 described in natural language. Mouse clicks use a vision model to
-locate the element precisely (DPI-aware).
+locate the element precisely (DPI-aware, PNG, system instruction).
 
 Requires ``pyautogui`` and ``mss``::
 
@@ -10,10 +10,12 @@ Requires ``pyautogui`` and ``mss``::
 
 Example::
 
-    from roomkit.video.vision import ScreenInputTools, GeminiVisionProvider
+    from roomkit.video.vision import ScreenInputTools
 
-    vision = GeminiVisionProvider(GeminiVisionConfig(api_key="..."))
-    input_tools = ScreenInputTools(vision=vision)
+    input_tools = ScreenInputTools(
+        gemini_api_key="...",
+        gemini_model="gemini-3.1-flash-image-preview",
+    )
 
     voice = RealtimeVoiceChannel(
         "voice",
@@ -33,7 +35,6 @@ import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from roomkit.video.vision.base import VisionProvider
     from roomkit.voice.base import VoiceSession
 
 logger = logging.getLogger("roomkit.video.vision.screen_input")
@@ -108,7 +109,7 @@ CLICK_ELEMENT_TOOL: dict[str, Any] = {
         "Click on a UI element described in natural language. "
         "The tool captures the screen, uses vision AI to find the "
         "element's exact position, and clicks on it. "
-        "Describe the element precisely: its label, icon, location context."
+        "Describe the element precisely: its label, icon, location."
     ),
     "parameters": {
         "type": "object",
@@ -137,37 +138,37 @@ CLICK_ELEMENT_TOOL: dict[str, Any] = {
 }
 
 # ---------------------------------------------------------------------------
-# Vision-based element location (from VisionClick approach)
+# VisionClick — locate elements via Gemini Vision (PNG + system instruction)
 # ---------------------------------------------------------------------------
 
-_LOCATE_SYSTEM_PROMPT = """\
+_LOCATE_SYSTEM = """\
 You are specialized in locating GUI elements in screenshots.
 You analyze desktop screenshots and identify VISUAL elements: \
 icons, buttons, windows, widgets.
 
 Rules:
 - Look for GRAPHICAL elements (icons, buttons, images), NOT text in apps.
-- Coordinates must ALWAYS be in absolute pixels of the image.
+- Coordinates must ALWAYS be in absolute pixels of the provided image.
 - Return ONLY valid JSON, no markdown, no explanation.\
 """
 
-_LOCATE_USER_PROMPT = """\
+_LOCATE_USER = """\
 Image size: {w}x{h} pixels.
 
 Element to find: "{element}"
 
 Instructions:
 - Find the VISUAL element (icon, button, widget) matching the description.
-- Ignore text displayed inside application windows.
-- Focus on toolbars, taskbar, sidebar, desktop, system menus.
-- cx must be an integer between 0 and {w}. cy between 0 and {h}.
-- Return ABSOLUTE pixel coordinates, NOT normalized 0-1.
+- Ignore text displayed inside application windows (terminal, editor, browser content).
+- Focus on toolbars, taskbar, dock, sidebar, desktop, system menus.
+- IMPORTANT: cx must be an integer between 0 and {w}. cy between 0 and {h}.
+- IMPORTANT: Return ABSOLUTE pixel coordinates, NOT normalized 0-1.
 
-Return ONLY this JSON:
-{{"found": true, "cx": <int>, "cy": <int>}}
+Return ONLY this JSON (no markdown):
+{{"found": true, "cx": <int>, "cy": <int>, "label": "<name>"}}\
 
 If not found:
-{{"found": false, "cx": 0, "cy": 0}}\
+{{"found": false, "cx": 0, "cy": 0, "label": ""}}\
 """
 
 
@@ -209,7 +210,7 @@ def _capture_png(monitor: int = 1) -> tuple[bytes, int, int] | None:
         import mss
         from PIL import Image
     except ImportError:
-        logger.error("mss + Pillow required — pip install roomkit[screen-capture] Pillow")
+        logger.error("mss + Pillow required")
         return None
 
     try:
@@ -227,7 +228,7 @@ def _capture_png(monitor: int = 1) -> tuple[bytes, int, int] | None:
 
 
 def _denormalize(result: dict[str, Any], w: int, h: int) -> dict[str, Any]:
-    """Convert 0-1 normalized coords to pixels if the model ignored instructions."""
+    """Convert 0-1 normalized coords to pixels if model ignored instructions."""
     cx, cy = result.get("cx", 0), result.get("cy", 0)
     if 0 < cx <= 1 and 0 < cy <= 1:
         result["cx"] = int(cx * w)
@@ -235,7 +236,7 @@ def _denormalize(result: dict[str, Any], w: int, h: int) -> dict[str, Any]:
     return result
 
 
-def _parse_locate_response(text: str) -> dict[str, Any] | None:
+def _parse_json_response(text: str) -> dict[str, Any] | None:
     """Extract JSON from vision model response."""
     try:
         return json.loads(text.strip())
@@ -250,48 +251,45 @@ def _parse_locate_response(text: str) -> dict[str, Any] | None:
     return None
 
 
-async def _find_element(
-    vision: VisionProvider,
+async def _find_element_gemini(
+    api_key: str,
+    model: str,
     element: str,
     monitor: int,
 ) -> tuple[int, int] | None:
-    """Locate a UI element on screen using vision AI.
+    """Locate a UI element using Gemini Vision directly.
 
-    Returns screen coordinates (x, y) adjusted for DPI, or None.
+    Sends PNG screenshot with system instruction — same approach as
+    VisionClick (test-click.py) which produces accurate coordinates.
     """
-    from roomkit.video.video_frame import VideoFrame
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        logger.error("google-genai required — pip install roomkit[gemini]")
+        return None
 
     capture = _capture_png(monitor)
     if capture is None:
         return None
-
     png_bytes, img_w, img_h = capture
 
-    # Send as raw RGB frame (vision providers encode to JPEG internally)
-    # But we have PNG — create a VideoFrame with the raw pixels
-    # Actually, let's use the vision provider directly with a custom prompt
-    # We need to send the PNG as a frame. Let's use PIL to get raw RGB.
-    try:
-        from PIL import Image
+    prompt = _LOCATE_USER.format(w=img_w, h=img_h, element=element)
 
-        img = Image.open(io.BytesIO(png_bytes))
-        rgb_data = img.tobytes()
-    except Exception:
-        logger.exception("Failed to convert PNG to RGB")
-        return None
-
-    frame = VideoFrame(
-        data=rgb_data,
-        codec="raw_rgb24",
-        width=img_w,
-        height=img_h,
+    client = genai.Client(api_key=api_key)
+    response = await client.aio.models.generate_content(
+        model=model,
+        contents=[
+            types.Part.from_bytes(data=png_bytes, mime_type="image/png"),
+            prompt,
+        ],
+        config=types.GenerateContentConfig(
+            system_instruction=_LOCATE_SYSTEM,
+        ),
     )
 
-    prompt = _LOCATE_USER_PROMPT.format(w=img_w, h=img_h, element=element)
-    result = await vision.analyze_frame(frame, prompt=prompt)
-    raw = result.description or ""
-
-    parsed = _parse_locate_response(raw)
+    raw = response.text or ""
+    parsed = _parse_json_response(raw)
     if parsed is None or not parsed.get("found"):
         logger.warning("Element not found: %s (raw: %s)", element, raw[:200])
         return None
@@ -299,18 +297,18 @@ async def _find_element(
     parsed = _denormalize(parsed, img_w, img_h)
     cx, cy = int(parsed["cx"]), int(parsed["cy"])
 
-    # Apply DPI scale
     scale_x, scale_y = _get_scale_factor()
     screen_x = int(cx * scale_x)
     screen_y = int(cy * scale_y)
 
     logger.info(
-        "click_element(%s) → img(%d,%d) → screen(%d,%d)",
+        "click_element(%s) → img(%d,%d) → screen(%d,%d) label=%s",
         element,
         cx,
         cy,
         screen_x,
         screen_y,
+        parsed.get("label", ""),
     )
     return screen_x, screen_y
 
@@ -339,19 +337,19 @@ def _get_pyautogui() -> Any:
 class ScreenInputTools:
     """Keyboard and mouse tools for AI agents.
 
-    Provides ``type_text``, ``press_key``, and ``click_element`` tools.
-    ``click_element`` uses a vision provider to locate UI elements
-    by description before clicking.
+    Provides ``type_text``, ``press_key``, ``scroll``, and
+    ``click_element`` tools. ``click_element`` uses Gemini Vision
+    directly (PNG + system instruction) for accurate element location.
 
     Args:
-        vision: Vision provider for element location (optional).
-            Required for ``click_element``. If None, only keyboard
-            tools are available.
+        gemini_api_key: API key for Gemini Vision (for click_element).
+            If None, click_element is not available.
+        gemini_model: Gemini model for element location.
         monitor: Monitor index for screenshots (1 = primary).
 
     Example::
 
-        input_tools = ScreenInputTools(vision=vision_provider)
+        input_tools = ScreenInputTools(gemini_api_key="...")
 
         channel = RealtimeVoiceChannel(
             "voice",
@@ -362,18 +360,20 @@ class ScreenInputTools:
 
     def __init__(
         self,
-        vision: VisionProvider | None = None,
         *,
+        gemini_api_key: str | None = None,
+        gemini_model: str = "gemini-3.1-flash-image-preview",
         monitor: int = 1,
     ) -> None:
-        self._vision = vision
+        self._gemini_api_key = gemini_api_key
+        self._gemini_model = gemini_model
         self._monitor = monitor
 
     @property
     def definitions(self) -> list[dict[str, Any]]:
-        """Tool definitions. Includes click_element only if vision is set."""
+        """Tool definitions. Includes click_element if Gemini key is set."""
         tools = [TYPE_TEXT_TOOL, PRESS_KEY_TOOL, SCROLL_TOOL]
-        if self._vision is not None:
+        if self._gemini_api_key:
             tools.append(CLICK_ELEMENT_TOOL)
         return tools
 
@@ -423,15 +423,25 @@ class ScreenInputTools:
         return f"Scrolled {clicks} clicks."
 
     async def _click_element(self, args: dict[str, Any]) -> str:
-        if self._vision is None:
-            return "click_element unavailable: no vision provider configured."
+        if not self._gemini_api_key:
+            return "click_element unavailable: no Gemini API key."
 
         element = str(args["element"])
         button = args.get("button", "left")
         double = args.get("double", False)
 
-        logger.info("click_element(%r, button=%s, double=%s)", element, button, double)
-        coords = await _find_element(self._vision, element, self._monitor)
+        logger.info(
+            "click_element(%r, button=%s, double=%s)",
+            element,
+            button,
+            double,
+        )
+        coords = await _find_element_gemini(
+            self._gemini_api_key,
+            self._gemini_model,
+            element,
+            self._monitor,
+        )
         if coords is None:
             return f"Could not find element: {element}"
 

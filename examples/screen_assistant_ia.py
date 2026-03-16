@@ -368,7 +368,10 @@ async def main() -> None:
 
     # --- Tools ---------------------------------------------------------------
     screen_tool = _build_screen_tool(tool_choice, google_api_key, monitor)
-    input_tools = ScreenInputTools(vision=screen_tool._vision, monitor=monitor)
+    input_tools = ScreenInputTools(
+        gemini_api_key=google_api_key,
+        monitor=monitor,
+    )
 
     all_tools = [screen_tool.definition, *input_tools.definitions]
 
