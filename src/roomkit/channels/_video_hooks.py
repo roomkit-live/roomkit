@@ -123,6 +123,15 @@ class VideoHooksMixin:
         except Exception:
             logger.exception("Vision analysis failed for session %s", session.id)
             return
+        finally:
+            # Reset interval timer AFTER completion so the next interval
+            # starts from when the API call finished, not when it started.
+            # Use frame timestamp if available (matches the interval check
+            # in _on_video_received), fall back to wall clock.
+            ts = (
+                frame.timestamp_ms if frame.timestamp_ms is not None else time.monotonic() * 1000.0
+            )
+            self._last_vision_ts[session.id] = ts
         elapsed_ms = (time.perf_counter() - t0) * 1000
         logger.info(
             "Vision analysis: %.0fms (%s, session %s)",

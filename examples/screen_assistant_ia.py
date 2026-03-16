@@ -178,30 +178,14 @@ what happened and tell the user the result.\
 
 def _build_aec(sample_rate: int, block_ms: int) -> object | None:
     """Build AEC provider based on AEC env var."""
-    aec_mode = os.environ.get("AEC", "webrtc").lower()
-    if aec_mode in ("1", "webrtc"):
-        try:
-            from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
+    try:
+        from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 
-            logger.info("AEC enabled (WebRTC AEC3)")
-            return WebRTCAECProvider(sample_rate=sample_rate)
-        except ImportError:
-            print("\n  >>> Install AEC: pip install aec-audio-processing <<<\n")
-            return None
-    if aec_mode == "speex":
-        try:
-            from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
-
-            frame_size = sample_rate * block_ms // 1000
-            logger.info("AEC enabled (Speex)")
-            return SpeexAECProvider(
-                frame_size=frame_size,
-                filter_length=frame_size * 10,
-                sample_rate=sample_rate,
-            )
-        except ImportError:
-            print("\n  >>> Install Speex: apt install libspeexdsp1 <<<\n")
-            return None
+        logger.info("AEC enabled (WebRTC AEC3)")
+        return WebRTCAECProvider(sample_rate=sample_rate)
+    except ImportError:
+        print("\n  >>> Install AEC: pip install aec-audio-processing <<<\n")
+        return None
     return None
 
 

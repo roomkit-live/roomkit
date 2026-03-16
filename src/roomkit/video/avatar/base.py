@@ -1,9 +1,17 @@
 """AvatarProvider ABC — generate lip-synced video frames from audio.
 
-An avatar takes a static reference image (portrait photo) and TTS
-audio chunks, producing video frames with realistic lip movements
-synchronized to the speech.  This is the video equivalent of TTS
-for audio — it makes the AI "visible" to the user.
+An avatar takes TTS audio chunks and produces video frames with
+realistic lip movements synchronized to the speech.  This is the
+video equivalent of TTS for audio — it makes the AI "visible".
+
+Two delivery modes are supported:
+
+**Synchronous** (local inference — MuseTalk, WebSocket):
+    ``feed_audio(pcm)`` returns ``list[VideoFrame]`` immediately.
+
+**Asynchronous** (cloud inference — Anam):
+    ``feed_audio(pcm)`` returns ``[]``, video frames arrive later
+    via ``on_video()`` callbacks.  ``is_async`` property returns True.
 
 Pipeline integration::
 
@@ -16,7 +24,8 @@ Pipeline integration::
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from roomkit.video.video_frame import VideoFrame
@@ -26,11 +35,12 @@ class AvatarProvider(ABC):
     """Generate lip-synced video frames from audio input.
 
     Lifecycle:
-        1. ``start(reference_image)`` — load model, preprocess face
-        2. ``feed_audio(pcm)`` → video frames (called per TTS chunk)
-        3. ``get_idle_frame()`` → idle animation when not speaking
-        4. ``flush()`` → remaining frames after speech ends
-        5. ``stop()`` — release GPU/resources
+        1. ``start(reference_image)`` — load model / connect to cloud
+        2. ``feed_audio(pcm)`` → video frames (sync) or ``[]`` (async)
+        3. ``end_turn()`` — signal end of TTS response
+        4. ``get_idle_frame()`` → idle animation when not speaking
+        5. ``flush()`` → remaining frames after speech ends
+        6. ``stop()`` — release resources / disconnect
     """
 
     @property
@@ -48,6 +58,18 @@ class AvatarProvider(ABC):
         """Whether the provider has been started with a reference image."""
         return False
 
+    @property
+    def is_async(self) -> bool:
+        """Whether this provider delivers frames via callbacks.
+
+        If True, ``feed_audio()`` returns ``[]`` and frames arrive
+        asynchronously via ``on_video()`` callbacks.  The channel
+        should wire the callback instead of processing the return value.
+
+        Default: False (synchronous delivery via return value).
+        """
+        return False
+
     @abstractmethod
     async def start(
         self,
@@ -56,10 +78,12 @@ class AvatarProvider(ABC):
         width: int = 512,
         height: int = 512,
     ) -> None:
-        """Initialize with a portrait image.
+        """Initialize the avatar provider.
 
-        Preprocesses the face (landmarks, base latent) for real-time
-        synthesis.  Must be called before ``feed_audio``.
+        For local providers: load model and preprocess face from the
+        reference image.  For cloud providers: connect to the service
+        (reference image may be ignored if the service uses a pre-configured
+        avatar model).
 
         Args:
             reference_image: PNG or JPEG portrait image bytes.
@@ -73,19 +97,36 @@ class AvatarProvider(ABC):
         pcm_data: bytes,
         sample_rate: int = 16000,
     ) -> list[VideoFrame]:
-        """Feed an audio chunk and get back lip-synced video frames.
+        """Feed an audio chunk for lip-sync processing.
 
-        May return 0 frames (buffering audio) or multiple frames
-        (catching up).  Audio-to-video timing: at 16kHz audio and
-        30fps video, each 20ms audio chunk (320 samples) produces
-        roughly 0.6 frames — so expect ~2 frames per 3 audio chunks.
+        **Synchronous providers** return video frames immediately.
+        **Async providers** return ``[]`` — frames arrive later via
+        ``on_video()`` callbacks.
 
         Args:
             pcm_data: Raw PCM-16 LE audio bytes.
             sample_rate: Audio sample rate in Hz.
 
         Returns:
-            List of ``VideoFrame`` with ``codec="raw_rgb24"``.
+            List of ``VideoFrame`` (sync) or empty list (async).
+        """
+
+    def end_turn(self) -> None:  # noqa: B027
+        """Signal end of a TTS/response turn.
+
+        Cloud providers (Anam) require this to stop the avatar from
+        freezing while waiting for more audio.  Local providers can
+        ignore this (default is a no-op).
+        """
+
+    def on_video(self, callback: Callable[[VideoFrame], Any]) -> None:  # noqa: B027
+        """Register a callback for async video frame delivery.
+
+        Only used by async providers (``is_async == True``).  The callback
+        is called with each ``VideoFrame`` as it becomes available.
+
+        Args:
+            callback: Called with a ``VideoFrame`` for each avatar frame.
         """
 
     def get_idle_frame(self) -> VideoFrame | None:
@@ -101,13 +142,14 @@ class AvatarProvider(ABC):
         """Flush remaining frames after speech ends.
 
         Returns closing animation frames (mouth closing, return to
-        neutral expression).  Default returns empty list.
+        neutral expression).  Async providers should call ``end_turn()``
+        internally and return ``[]``.
         """
         return []
 
     @abstractmethod
     async def stop(self) -> None:
-        """Release model and GPU resources."""
+        """Release model/GPU resources or disconnect from cloud service."""
 
     async def close(self) -> None:
         """Alias for ``stop()``."""

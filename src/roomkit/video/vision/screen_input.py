@@ -146,10 +146,10 @@ You are specialized in locating GUI elements in screenshots.
 You analyze desktop screenshots and identify VISUAL elements: \
 icons, buttons, windows, widgets.
 
-Rules:
-- Look for GRAPHICAL elements (icons, buttons, images), NOT text in apps.
+Important rules:
+- Look for GRAPHICAL elements (icons, buttons, images), NOT text displayed in applications.
 - Coordinates must ALWAYS be in absolute pixels of the provided image.
-- Return ONLY valid JSON, no markdown, no explanation.\
+- Return ONLY a valid JSON object, no markdown, no explanation.\
 """
 
 _LOCATE_USER = """\
@@ -159,16 +159,18 @@ Element to find: "{element}"
 
 Instructions:
 - Find the VISUAL element (icon, button, widget) matching the description.
-- Ignore text displayed inside application windows (terminal, editor, browser content).
+- Ignore text displayed inside application windows (terminal, editor, browser, file manager).
 - Focus on toolbars, taskbar, dock, sidebar, desktop, system menus.
-- IMPORTANT: cx must be an integer between 0 and {w}. cy between 0 and {h}.
-- IMPORTANT: Return ABSOLUTE pixel coordinates, NOT normalized 0-1.
+- IMPORTANT: cx must be an integer between 0 and {w}. cy must be an integer between 0 and {h}.
+- IMPORTANT: Do NOT normalize coordinates between 0 and 1. Return absolute pixels.
 
-Return ONLY this JSON (no markdown):
-{{"found": true, "cx": <int>, "cy": <int>, "label": "<name>"}}\
+Return ONLY this JSON (no markdown, no text around):
+{{"found": true, "cx": <absolute pixels x>, "cy": <absolute pixels y>, \
+"box": {{"x1": <int>, "y1": <int>, "x2": <int>, "y2": <int>}}, "label": "<visible name>"}}
 
 If not found:
-{{"found": false, "cx": 0, "cy": 0, "label": ""}}\
+{{"found": false, "cx": 0, "cy": 0, \
+"box": {{"x1": 0, "y1": 0, "x2": 0, "y2": 0}}, "label": ""}}\
 """
 
 
@@ -233,6 +235,14 @@ def _denormalize(result: dict[str, Any], w: int, h: int) -> dict[str, Any]:
     if 0 < cx <= 1 and 0 < cy <= 1:
         result["cx"] = int(cx * w)
         result["cy"] = int(cy * h)
+        box = result.get("box", {})
+        if box:
+            result["box"] = {
+                "x1": int(box.get("x1", 0) * w),
+                "y1": int(box.get("y1", 0) * h),
+                "x2": int(box.get("x2", 0) * w),
+                "y2": int(box.get("y2", 0) * h),
+            }
     return result
 
 
@@ -289,10 +299,22 @@ async def _find_element_gemini(
     )
 
     raw = response.text or ""
+    logger.debug("Gemini raw response for '%s': %s", element, raw[:500])
+
     parsed = _parse_json_response(raw)
     if parsed is None or not parsed.get("found"):
-        logger.warning("Element not found: %s (raw: %s)", element, raw[:200])
+        logger.warning("Element not found: %s (raw: %s)", element, raw[:300])
         return None
+
+    logger.info(
+        "Gemini parsed for '%s': cx=%s cy=%s box=%s (img %dx%d)",
+        element,
+        parsed.get("cx"),
+        parsed.get("cy"),
+        parsed.get("box"),
+        img_w,
+        img_h,
+    )
 
     parsed = _denormalize(parsed, img_w, img_h)
     cx, cy = int(parsed["cx"]), int(parsed["cy"])

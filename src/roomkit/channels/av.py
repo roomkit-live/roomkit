@@ -108,6 +108,10 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             [self._feed_avatar_audio] if avatar is not None else []
         )
 
+        # For async avatar providers (cloud), wire on_video callback
+        if avatar is not None and avatar.is_async:
+            avatar.on_video(self._on_async_avatar_frame)
+
         # Idle frame loop: sends avatar idle frames when TTS is not playing
         self._avatar_idle_tasks: dict[str, asyncio.Task[None]] = {}
         # Per-session audio queues for async avatar inference
@@ -341,31 +345,32 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
     ) -> None:
         """Background thread: drain audio queue → inference → encode → send.
 
+        For sync providers: feed_audio() returns frames, encode + send.
+        For async providers: feed_audio() sends to cloud, returns [].
+        Video arrives via on_video callback (wired in __init__).
+
         Exits after 2 seconds of queue inactivity so the idle loop
         can resume.  A new worker is spawned on the next TTS response.
         """
         if self._avatar is None:
             return
-        logger.info("Avatar worker started: session=%s", session.id[:8])
+        is_async = self._avatar.is_async
+        logger.info("Avatar worker started: session=%s async=%s", session.id[:8], is_async)
         total_frames = 0
         while True:
             try:
                 data = q.get(timeout=2.0)
             except Exception:
-                # No audio for 2s — TTS likely ended, exit so idle resumes
+                # No audio for 2s — TTS likely ended
+                if is_async:
+                    self._avatar.end_turn()
                 break
             if data is None:
+                if is_async:
+                    self._avatar.end_turn()
                 break
             try:
-                t0 = time.monotonic()
                 frames = self._avatar.feed_audio(data, sample_rate)
-                dt = time.monotonic() - t0
-                logger.info(
-                    "Avatar inference: %d bytes → %d frames in %.1fs",
-                    len(data),
-                    len(frames),
-                    dt,
-                )
                 for frame in frames:
                     self._send_avatar_frame_sync(session, frame)
                     total_frames += 1
@@ -377,6 +382,23 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             session.id[:8],
             total_frames,
         )
+
+    def _on_async_avatar_frame(self, frame: VideoFrame) -> None:
+        """Handle a video frame from an async avatar provider (cloud).
+
+        Encode and send to all active sessions.
+        """
+        for session_id in list(self._avatar_queues):
+            binding_info = self._session_bindings.get(session_id)
+            if binding_info is None:
+                continue
+            session = self._get_voice_session(session_id)
+            if session is not None:
+                self._send_avatar_frame_sync(session, frame)
+
+    def _get_voice_session(self, session_id: str) -> VoiceSession | None:
+        """Look up a VoiceSession by ID from the backend."""
+        return getattr(self._backend, "get_session", lambda _: None)(session_id)
 
     def _ensure_avatar_pool(self) -> concurrent.futures.ThreadPoolExecutor:
         """Return or create the avatar thread pool."""

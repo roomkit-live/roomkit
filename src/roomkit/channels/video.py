@@ -309,6 +309,9 @@ class VideoChannel(VideoHooksMixin, Channel):
         last_ts = self._last_vision_ts.get(session.id, -float("inf"))
         if now_ms - last_ts < self._vision_interval_ms:
             return
+        # Set to current time now to prevent overlapping tasks.
+        # _analyze_frame updates this again on completion so the next
+        # interval starts AFTER the API call finishes.
         self._last_vision_ts[session.id] = now_ms
         self._schedule(
             self._analyze_frame(session, frame, binding_info[0]),
