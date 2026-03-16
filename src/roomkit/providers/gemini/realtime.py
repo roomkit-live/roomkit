@@ -384,7 +384,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             )
 
         try:
-            result_dict = json.loads(result)
+            parsed = json.loads(result)
+            result_dict = parsed if isinstance(parsed, dict) else {"result": parsed}
         except (json.JSONDecodeError, ValueError):
             result_dict = {"result": result}
 
