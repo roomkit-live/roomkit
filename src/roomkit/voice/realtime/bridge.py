@@ -22,6 +22,7 @@ Requirements for video encoding:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -211,6 +212,12 @@ class RealtimeAVBridge:
             backend_session=backend_session,
             provider_session=provider_session,
         )
+        # Pre-warm the SIP audio pacer so the first audio chunk isn't delayed
+        ensure_pacer = getattr(self._backend, "_ensure_pacer", None)
+        if ensure_pacer is not None:
+            with contextlib.suppress(Exception):
+                ensure_pacer(backend_session)
+
         await self._provider.connect(provider_session)
         logger.info("Bridge connected: %s (%s)", backend_session.id[:8], caller)
         return provider_session
@@ -324,12 +331,13 @@ class RealtimeAVBridge:
         self._send_encoded_video(state, frame)
 
     def _send_encoded_video(self, state: _CallState, frame: Any) -> None:
-        """Encode a raw frame and send to the video backend."""
-        from roomkit.video.backends.base import VideoBackend
+        """Encode a raw frame and send via RTP.
+
+        Uses the ``_video_call_sessions`` pattern established by
+        :class:`AudioVideoChannel` for direct RTP frame delivery.
+        """
         from roomkit.video.video_frame import VideoFrame
 
-        if not isinstance(self._backend, VideoBackend):
-            return
         if not isinstance(frame, VideoFrame):
             return
 
@@ -337,22 +345,20 @@ class RealtimeAVBridge:
         if not nals:
             return
 
-        # Use public get_video_session() to find the RTP video session
-        video_session = self._backend.get_video_session(state.backend_session.id)
-        if video_session is None:
+        # Access internal video call session (same as AudioVideoChannel)
+        vcs = getattr(self._backend, "_video_call_sessions", {}).get(
+            state.backend_session.id,
+        )
+        if vcs is None:
             return
 
-        # send_frame is on the internal RTP session (no async needed)
-        rtp_session = getattr(video_session, "_session", None)
-        if rtp_session is not None and hasattr(rtp_session, "send_frame_auto"):
-            rtp_session.send_frame_auto(nals, any((nal[0] & 0x1F) == 5 for nal in nals if nal))
+        is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
+        rtp = getattr(vcs, "_session", None)
+        if rtp is not None and hasattr(rtp, "send_frame_auto"):
+            rtp.send_frame_auto(nals, is_key)
         else:
-            # Fallback: send via video call session
             ts = state.frame_seq * (90000 // self._video_fps)
-            is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
-            send_frame = getattr(video_session, "send_frame", None)
-            if send_frame is not None:
-                send_frame(nals, ts, is_key)
+            vcs.send_frame(nals, ts, is_key)
         state.frame_seq += 1
 
     def _on_provider_transcription(
