@@ -22,11 +22,13 @@ Requirements for video encoding:
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import logging
+import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.base import VoiceSession, VoiceSessionState
@@ -92,6 +94,7 @@ class _CallState:
     frame_count: int = 0
     audio_out_count: int = 0
     frame_seq: int = 0
+    encode_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +169,11 @@ class RealtimeAVBridge:
         self._on_call = on_call
         self._on_call_ended = on_call_ended
         self._on_transcription = on_transcription
+        # Thread pool for H.264 encoding — avoids blocking the event loop
+        # which would starve audio callbacks and cause dropped/delayed audio.
+        self._encode_pool: concurrent.futures.ThreadPoolExecutor | None = (
+            concurrent.futures.ThreadPoolExecutor(max_workers=1) if encoder else None
+        )
 
         # Wire provider → backend
         provider.on_audio(self._on_provider_audio)
@@ -246,6 +254,8 @@ class RealtimeAVBridge:
         """Disconnect all active calls and clean up."""
         for sid in list(self._calls):
             await self.disconnect(sid)
+        if self._encode_pool:
+            self._encode_pool.shutdown(wait=False)
         if self._encoder:
             self._encoder.close()
         await self._provider.close()
@@ -332,13 +342,13 @@ class RealtimeAVBridge:
         for tap in self._video_taps:
             tap(session, frame)
 
-        # Encode + send to backend if encoder and video backend available
-        if self._encoder is None:
+        # Encode in thread pool to avoid blocking audio callbacks
+        if self._encoder is None or self._encode_pool is None:
             return
-        self._send_encoded_video(state, frame)
+        self._encode_pool.submit(self._send_encoded_video, state, frame)
 
     def _send_encoded_video(self, state: _CallState, frame: Any) -> None:
-        """Encode a raw frame and send via RTP.
+        """Encode a raw frame and send via RTP (runs in thread pool).
 
         Uses the ``_video_call_sessions`` pattern established by
         :class:`AudioVideoChannel` for direct RTP frame delivery.
@@ -348,25 +358,26 @@ class RealtimeAVBridge:
         if not isinstance(frame, VideoFrame):
             return
 
-        nals = self._encoder.encode(frame)  # type: ignore[union-attr]
-        if not nals:
-            return
+        with state.encode_lock:
+            nals = self._encoder.encode(frame)  # type: ignore[union-attr]
+            if not nals:
+                return
 
-        # Access internal video call session (same as AudioVideoChannel)
-        vcs = getattr(self._backend, "_video_call_sessions", {}).get(
-            state.backend_session.id,
-        )
-        if vcs is None:
-            return
+            # Access internal video call session (same as AudioVideoChannel)
+            vcs = getattr(self._backend, "_video_call_sessions", {}).get(
+                state.backend_session.id,
+            )
+            if vcs is None:
+                return
 
-        is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
-        rtp = getattr(vcs, "_session", None)
-        if rtp is not None and hasattr(rtp, "send_frame_auto"):
-            rtp.send_frame_auto(nals, is_key)
-        else:
-            ts = state.frame_seq * (90000 // self._video_fps)
-            vcs.send_frame(nals, ts, is_key)
-        state.frame_seq += 1
+            is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
+            rtp = getattr(vcs, "_session", None)
+            if rtp is not None and hasattr(rtp, "send_frame_auto"):
+                rtp.send_frame_auto(nals, is_key)
+            else:
+                ts = state.frame_seq * (90000 // self._video_fps)
+                vcs.send_frame(nals, ts, is_key)
+            state.frame_seq += 1
 
     def _on_provider_transcription(
         self,
