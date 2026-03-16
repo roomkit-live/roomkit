@@ -44,9 +44,10 @@ logger = logging.getLogger("sip_anam_avatar")
 if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit").setLevel(logging.DEBUG)
 
-from roomkit import AnamConfig, AnamRealtimeProvider
+from roomkit import AnamConfig, AnamRealtimeProvider, VideoPipelineConfig
 from roomkit.video.backends.sip import SIPVideoBackend
 from roomkit.video.pipeline.encoder.pyav import PyAVVideoEncoder
+from roomkit.video.pipeline.filter.watermark import WatermarkFilter
 from roomkit.voice.realtime.bridge import RealtimeAVBridge
 
 
@@ -90,10 +91,24 @@ async def main() -> None:
         )
     )
 
-    # --- Bridge: SIP Anam (with H.264 encoding) ----------------------------
+    # --- Video pipeline: overlay "RoomKit" + timestamp on avatar video ------
+    video_pipeline = VideoPipelineConfig(
+        filters=[
+            WatermarkFilter(
+                "RoomKit | {timestamp}",
+                position="bottom-left",
+                color=(255, 255, 255),
+                bg_color=(0, 0, 0),
+                font_scale=0.5,
+            ),
+        ],
+    )
+
+    # --- Bridge: SIP ↔ Anam (pipeline + H.264 encoding) --------------------
     bridge = RealtimeAVBridge(
         provider,
         sip,
+        video_pipeline=video_pipeline,
         encoder=PyAVVideoEncoder(fps=25, bitrate=3_000_000, preset="medium"),
         provider_sample_rate=48000,
         on_transcription=lambda role, text, _: logger.info("[%s] %s", role.upper(), text),
