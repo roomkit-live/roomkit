@@ -372,6 +372,8 @@ class RealtimeAVBridge:
         backend_states = getattr(self._backend, "_session_states", None)
         if backend_states is not None and state.backend_session.id not in backend_states:
             state.closed = True
+            logger.info("Backend session gone, stopping bridge: %s", session.id[:8])
+            asyncio.create_task(self._provider.disconnect(state.provider_session))
             return
         state.audio_out_count += 1
 
