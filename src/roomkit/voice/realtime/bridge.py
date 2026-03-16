@@ -367,6 +367,12 @@ class RealtimeAVBridge:
         state = self._calls.get(session.id)
         if state is None or state.closed:
             return
+        # Check if backend session is still alive (SIP may have cleaned up
+        # its internal state before firing the disconnect callback)
+        backend_states = getattr(self._backend, "_session_states", None)
+        if backend_states is not None and state.backend_session.id not in backend_states:
+            state.closed = True
+            return
         state.audio_out_count += 1
 
         # Resample from provider rate to backend codec rate
