@@ -73,6 +73,9 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         self._response_end_callbacks: list[RealtimeResponseEndCallback] = []
         self._error_callbacks: list[RealtimeErrorCallback] = []
 
+        # Track active responses per session to avoid inject_text conflicts
+        self._responding: set[str] = set()
+
     @property
     def name(self) -> str:
         return "OpenAIRealtimeProvider"
@@ -212,6 +215,16 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             )
         )
 
+        # Only request a new response if none is in progress.
+        # The injected item stays in the conversation and will be
+        # visible to the model on its next turn.
+        if session.id in self._responding:
+            logger.debug(
+                "[OpenAI] Skipping response.create — response already active (session %s)",
+                session.id,
+            )
+            return
+
         logger.debug("[OpenAI →] response.create")
         await ws.send(json.dumps({"type": "response.create"}))
 
@@ -262,6 +275,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         # Close WebSocket (short timeout to avoid blocking on close handshake)
         ws = self._connections.pop(session.id, None)
         self._sessions.pop(session.id, None)
+        self._responding.discard(session.id)
         if ws is not None:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(ws.close(), timeout=2.0)
@@ -420,6 +434,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             await self._fire_tool_call_callbacks(session, call_id, name, arguments)
 
         elif event_type == "response.created":
+            self._responding.add(session.id)
             logger.info("[OpenAI] response_start (session %s)", session.id)
             await self._fire_callbacks(self._response_start_callbacks, session)
 
@@ -442,6 +457,7 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
                 await self._fire_error_callbacks(session, err_code or err_type, err_message)
             else:
                 logger.info("[OpenAI] response_done status=%s (session %s)", status, session.id)
+            self._responding.discard(session.id)
             await self._fire_callbacks(self._response_end_callbacks, session)
 
         elif event_type == "session.created":

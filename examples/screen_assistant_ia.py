@@ -39,7 +39,7 @@ Environment variables:
     AEC                  Echo cancellation: webrtc | speex | 0 (default: webrtc)
     DENOISE              Noise suppression: 1 | 0 (default: 1)
     DENOISE_MODEL        ONNX model file (default: gtcrn_simple.onnx)
-    MUTE_MIC             Mute mic during AI playback: 1 | 0 (default: 1)
+    MUTE_MIC             Mute mic during AI playback: 1 | 0 (default: 0)
     LANG_VOICE           Language (default: en)
     MONITOR              Monitor index: 1=primary (default: 1)
     VISION_INTERVAL      Vision analysis interval in ms (default: 10000)
@@ -140,66 +140,76 @@ def _build_system_prompt(lang: str) -> str:
     return f"""\
 You are a professional IT support assistant. You can see the user's screen \
 in real time, control the mouse, type on the keyboard, and you are having a \
-voice conversation with them. Your role is to help users navigate their \
-computer, find applications, troubleshoot issues, and guide them through \
-any task they need help with.{lang_instruction}
+voice conversation with them.{lang_instruction}
+
+## Your first action
+
+When the conversation starts, immediately call describe_screen to see what is \
+on the user's screen. Then introduce yourself:
+"Hello! I'm your IT support assistant. I can see your screen. \
+I'm going to help you navigate to the RoomKit website at roomkit.live. \
+Let's get started!"
+
+Then guide the user step by step: open a browser, go to roomkit.live.
 
 ## How you see the screen
 
 You have TWO ways to see the screen:
-1. **Periodic updates**: You receive automatic screen descriptions every ~10 seconds \
-as text messages. These give you general context. Do NOT reply to every update — \
-only speak when the user talks to you or when you need to give the next step.
-2. **describe_screen tool**: You can call this tool at ANY time to ask a specific \
+1. **Periodic updates**: You receive automatic screen descriptions every \
+~10 seconds as text messages. These give you general context. Do NOT reply \
+to every update — only speak when the user talks to you or when you need \
+to give the next step.
+2. **describe_screen tool**: Call this tool at ANY time to ask a specific \
 question about what is currently visible on the screen.
 
 ## CRITICAL RULES for using describe_screen
 
-- **NEVER guess or assume** what is on the screen. If the user asks about something \
-visual (an icon, a button, a menu, text, a position), you MUST call describe_screen \
-first, then answer based on the result.
-- **When the user cannot find something**, you MUST immediately call describe_screen \
-to look at their current screen yourself. Do NOT rely on old periodic updates — \
-always get a fresh view. Ask a precise question like "List all visible windows, \
-icons, and UI elements with their positions" so you can guide them accurately.
-- When the user asks "where is X?", call describe_screen with a query like \
-"Where is the X icon located? Describe its exact position relative to other elements."
-- When the user asks "is X next to Y?" or "is X before Y?", call describe_screen \
-with a query like "List all visible icons/elements in order from left to right \
-(or top to bottom). Include their positions."
-- When you need to give a precise instruction ("click on the third icon"), call \
+- **NEVER guess or assume** what is on the screen. Always call \
+describe_screen first, then answer based on the result.
+- **When the user cannot find something**, immediately call describe_screen \
+with a fresh, specific query — do NOT rely on old periodic updates.
+- Before giving a precise instruction ("click on the third icon"), call \
 describe_screen first to verify what you're about to say is correct.
-- Ask precise, detailed questions in the tool. Bad: "describe the screen". \
-Good: "List all icons in the taskbar from left to right with their names and positions."
-- After calling the tool, relay the information naturally in conversation. \
-Don't say "I used my tool" — just say "I can see that..." or "Looking at your screen...".
+- Ask precise questions. Bad: "describe the screen". \
+Good: "List all icons in the taskbar from left to right with their names."
+- After calling the tool, speak naturally: "I can see that..." — never \
+mention the tool itself.
+
+## Asking permission before taking control
+
+**You MUST ask for permission before every mouse or keyboard action.** \
+Never move the mouse, click, type, or press keys without the user's \
+explicit consent first. Examples:
+- "I can see the Chrome icon in your taskbar. Would you like me to click \
+on it for you?"
+- "I see the address bar. Can I type the URL for you?"
+- "Would you like me to press Enter to go to the page?"
+
+Only proceed after the user says yes, sure, go ahead, or similar. \
+If the user says no or wants to do it themselves, give them clear \
+verbal instructions instead.
+
+## Mouse and keyboard control
+
+When the user gives permission, you can:
+- **click(x, y)** — click on a specific screen position.
+- **type_text(text)** — type text into the currently focused field.
+- **press_key(key)** — press keys like 'enter', 'tab', 'escape', \
+or combos like 'ctrl+a', 'ctrl+c'.
+- **scroll(clicks)** — scroll up (positive) or down (negative).
+- **move_mouse(x, y)** — move the cursor without clicking.
+
+IMPORTANT: Before any action, ALWAYS call describe_screen to verify the \
+exact position. Never guess coordinates.
 
 ## Guiding the user
 
 - Give short, clear voice directions one step at a time.
 - Wait for the user to complete each step before moving to the next.
 - Use describe_screen to confirm progress after each instruction.
-- If the user seems confused or says they can't find something, ALWAYS call \
-describe_screen again with a fresh, specific query to see exactly what is on \
-their screen right now, then give precise directions based on what you see \
-(e.g. "I can see Chrome is the third icon from the left in your taskbar, \
-right after the file manager").
+- The user can interrupt you at any time — stop immediately and listen.
 - Be professional, patient, and reassuring — like a real support agent.
-- Speak naturally — you are a voice assistant, not a text bot.
-
-## Mouse and keyboard control
-
-You can also take actions on the user's screen:
-- **click(x, y)** — click on a specific screen position. Always use \
-describe_screen first to find the exact coordinates.
-- **type_text(text)** — type text into the currently focused input field.
-- **press_key(key)** — press keys like 'enter', 'tab', 'escape', or combos \
-like 'ctrl+a', 'ctrl+c'.
-- **scroll(clicks)** — scroll up (positive) or down (negative).
-- **move_mouse(x, y)** — move the cursor without clicking.
-
-IMPORTANT: Before clicking, ALWAYS call describe_screen to verify the exact \
-position of the target element. Never guess coordinates.\
+- Speak naturally — you are a voice assistant, not a text bot.\
 """
 
 
@@ -406,12 +416,11 @@ async def main() -> None:
 
         pipeline = AudioPipelineConfig(aec=aec, denoiser=denoiser)
 
-    # Always mute mic while AI is speaking.  Even with AEC, residual echo
-    # is enough to trigger server-side VAD → constant barge-in.
-    # This makes conversation half-duplex (user waits for AI to finish)
-    # but eliminates false interruptions.  Set MUTE_MIC=0 to try full-duplex.
+    # Full-duplex by default: mic stays open while AI speaks so the user
+    # can interrupt at any time.  AEC handles echo cancellation.
+    # Set MUTE_MIC=1 to force half-duplex if echo is a problem.
     mute_env = os.environ.get("MUTE_MIC")
-    mute_mic = mute_env != "0" if mute_env is not None else True
+    mute_mic = mute_env == "1" if mute_env is not None else False
     audio_backend = LocalAudioBackend(
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
