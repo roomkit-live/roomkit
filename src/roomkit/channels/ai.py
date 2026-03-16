@@ -116,6 +116,7 @@ class AIChannel(Channel):
         max_tokens: int = 1024,
         max_context_events: int = 50,
         tool_handler: ToolHandler | None = None,
+        tools: list[AITool] | None = None,
         max_tool_rounds: int = 200,
         tool_loop_timeout_seconds: float | None = 300.0,
         tool_loop_warn_after: int = 50,
@@ -153,7 +154,8 @@ class AIChannel(Channel):
             self._tool_handler = tool_handler
 
         # Extra tools injected by orchestration (e.g. HANDOFF_TOOL)
-        self._extra_tools: list[AITool] = []
+        # or provided directly via the tools parameter.
+        self._extra_tools: list[AITool] = list(tools) if tools else []
 
         # Active tool loops for steering (loop_id -> context)
         self._active_loops: dict[str, _ToolLoopContext] = {}
