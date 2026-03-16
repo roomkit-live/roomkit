@@ -132,6 +132,19 @@ from roomkit.orchestration.state import (
     get_conversation_state,
     set_conversation_state,
 )
+from roomkit.orchestration.status_bus import (
+    InMemoryStatusBackend,
+    StatusBackend,
+    StatusBus,
+    StatusEntry,
+)
+from roomkit.orchestration.tool_audit import (
+    ConsoleToolAuditor,
+    JSONLToolAuditor,
+    ToolAuditEntry,
+    ToolAuditor,
+    audit_tool_handler,
+)
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
