@@ -296,17 +296,24 @@ class RealtimeVoiceChannel(Channel):
         text: str,
         *,
         role: str = "user",
+        silent: bool = False,
     ) -> None:
         """Inject a text turn into the provider session.
 
-        Useful for nudging the provider when its server-side VAD
-        stalls (e.g. Gemini ignoring valid speech after turn_complete).
+        Args:
+            session: The active voice session.
+            text: Text to inject.
+            role: Role for the text ('user' or 'system').
+            silent: If True, add to conversation context without
+                requesting a response.  The agent sees the text on
+                its next turn but does not react immediately.
         """
-        await self._provider.inject_text(session, text, role=role)
+        await self._provider.inject_text(session, text, role=role, silent=silent)
         logger.info(
-            "Injected text into session %s (role=%s, len=%d)",
+            "Injected text into session %s (role=%s, silent=%s, len=%d)",
             session.id,
             role,
+            silent,
             len(text),
         )
 

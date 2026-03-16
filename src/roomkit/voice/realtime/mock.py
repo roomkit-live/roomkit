@@ -116,7 +116,9 @@ class MockRealtimeProvider(RealtimeVoiceProvider):
             MockCall(method="send_audio", args={"session_id": session.id, "size": len(audio)})
         )
 
-    async def inject_text(self, session: VoiceSession, text: str, *, role: str = "user") -> None:
+    async def inject_text(
+        self, session: VoiceSession, text: str, *, role: str = "user", silent: bool = False
+    ) -> None:
         self.injected_texts.append((session.id, text, role))
         self.calls.append(
             MockCall(

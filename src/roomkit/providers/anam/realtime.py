@@ -225,7 +225,9 @@ class AnamRealtimeProvider(RealtimeAudioVideoProvider):
         except Exception:
             logger.debug("send_audio failed (session %s)", session.id, exc_info=True)
 
-    async def inject_text(self, session: VoiceSession, text: str, *, role: str = "user") -> None:
+    async def inject_text(
+        self, session: VoiceSession, text: str, *, role: str = "user", silent: bool = False
+    ) -> None:
         state = self._states.get(session.id)
         if state is None or state.anam_session is None:
             return

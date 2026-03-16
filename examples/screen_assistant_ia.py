@@ -142,11 +142,10 @@ answering a question, or confirming progress.
 
 ## Screen awareness
 
-You receive **[Screen changed]** messages when something visually \
-significant changes on the user's screen (app switch, page load, \
-new window). Use these to stay aware of what's happening. \
-Do NOT reply to every screen change — only react when it's relevant \
-to the current task or when the user needs guidance.
+You receive silent **[Screen changed]** context updates when the screen \
+changes significantly. These are injected as background context — you \
+do NOT need to respond to them. They keep you informed so that when \
+the user speaks or you need to act, you already know what's on screen.
 
 You can also call **describe_screen**:
 - **Without a query**: returns the latest screen description (instant).
@@ -389,8 +388,8 @@ async def main() -> None:
         context = f"[Screen changed] {description}"
         for session in sessions:
             try:
-                await voice_channel.inject_text(session, context, role="user")
-                logger.info("[Vision %d] Injected screen change into voice session", frame_count)
+                await voice_channel.inject_text(session, context, role="user", silent=True)
+                logger.info("[Vision %d] Silent context update", frame_count)
             except Exception:
                 logger.exception("[Vision %d] Failed to inject", frame_count)
 

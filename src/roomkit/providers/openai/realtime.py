@@ -196,12 +196,23 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             )
         )
 
-    async def inject_text(self, session: VoiceSession, text: str, *, role: str = "user") -> None:
+    async def inject_text(
+        self,
+        session: VoiceSession,
+        text: str,
+        *,
+        role: str = "user",
+        silent: bool = False,
+    ) -> None:
         ws = self._connections.get(session.id)
         if ws is None:
             return
 
-        logger.debug("[OpenAI →] conversation.item.create (input_text, role=%s)", role)
+        logger.debug(
+            "[OpenAI →] conversation.item.create (input_text, role=%s, silent=%s)",
+            role,
+            silent,
+        )
         await ws.send(
             json.dumps(
                 {
@@ -215,9 +226,13 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             )
         )
 
+        # Silent: add to context without requesting a response.
+        # The agent sees it on the next user turn.
+        if silent:
+            logger.debug("[OpenAI] Silent inject — no response.create")
+            return
+
         # Only request a new response if none is in progress.
-        # The injected item stays in the conversation and will be
-        # visible to the model on its next turn.
         if session.id in self._responding:
             logger.debug(
                 "[OpenAI] Skipping response.create — response already active (session %s)",

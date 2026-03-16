@@ -337,19 +337,29 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 await self._fire_error_callbacks(session, "send_audio_failed", str(exc))
             return
 
-    async def inject_text(self, session: VoiceSession, text: str, *, role: str = "user") -> None:
+    async def inject_text(
+        self,
+        session: VoiceSession,
+        text: str,
+        *,
+        role: str = "user",
+        silent: bool = False,
+    ) -> None:
         from google.genai import types
 
         state = self._sessions.get(session.id)
         if state is None or state.live_session is None:
             return
 
+        # For Gemini, turn_complete=True triggers a response.
+        # Silent mode: set turn_complete=False so the text is added
+        # as context without requesting a model turn.
         await state.live_session.send_client_content(
             turns=types.Content(
                 role=role if role in ("user", "model") else "user",
                 parts=[types.Part(text=text)],
             ),
-            turn_complete=True,
+            turn_complete=not silent,
         )
 
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:

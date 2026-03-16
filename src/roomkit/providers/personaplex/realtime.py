@@ -222,7 +222,9 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
         if encoded:
             await state.ws.send(bytes([_MSG_AUDIO]) + bytes(encoded))
 
-    async def inject_text(self, session: VoiceSession, text: str, *, role: str = "user") -> None:
+    async def inject_text(
+        self, session: VoiceSession, text: str, *, role: str = "user", silent: bool = False
+    ) -> None:
         logger.warning(
             "PersonaPlex does not support text injection; ignored (session %s)", session.id
         )

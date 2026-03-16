@@ -93,13 +93,23 @@ class RealtimeVoiceProvider(ABC):
         ...
 
     @abstractmethod
-    async def inject_text(self, session: VoiceSession, text: str, *, role: str = "user") -> None:
+    async def inject_text(
+        self,
+        session: VoiceSession,
+        text: str,
+        *,
+        role: str = "user",
+        silent: bool = False,
+    ) -> None:
         """Inject text into the conversation (e.g. supervisor guidance).
 
         Args:
             session: The active session.
             text: Text to inject.
             role: Role for the injected text ('user' or 'system').
+            silent: If True, add to conversation context without
+                requesting a response.  The agent sees the text on
+                its next turn but does not react immediately.
         """
         ...
 
