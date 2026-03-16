@@ -494,15 +494,14 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
                     session.id,
                 )
                 # Store on session for telemetry span attribution
-                if not hasattr(session, "_last_usage"):
-                    object.__setattr__(session, "_last_usage", {})
-                object.__setattr__(session, "_last_usage", {
+                session._last_usage = {
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "input_token_details": input_token_details,
                     "output_token_details": output_token_details,
-                })
+                }
                 # Record via telemetry if available
+                # (_telemetry is injected by RealtimeVoiceChannel._propagate_telemetry)
                 telemetry = getattr(self, "_telemetry", None)
                 if telemetry is not None:
                     telemetry.record_metric(

@@ -514,6 +514,17 @@ __all__ = [
     "setup_handoff",
     "ConversationPipeline",
     "PipelineStage",
+    # Status Bus
+    "InMemoryStatusBackend",
+    "StatusBackend",
+    "StatusBus",
+    "StatusEntry",
+    # Tool Audit
+    "ConsoleToolAuditor",
+    "JSONLToolAuditor",
+    "ToolAuditEntry",
+    "ToolAuditor",
+    "audit_tool_handler",
     # Delegation (background tasks)
     "BackgroundTaskDeliveryStrategy",
     "ContextOnlyDelivery",

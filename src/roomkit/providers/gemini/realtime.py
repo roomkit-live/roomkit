@@ -936,11 +936,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 session.id,
             )
             # Store on session for telemetry span attribution
-            object.__setattr__(session, "_last_usage", {
+            session._last_usage = {
                 "input_tokens": prompt_tokens,
                 "output_tokens": candidates_tokens,
-            })
+            }
             # Record via telemetry if available
+            # (_telemetry is injected by RealtimeVoiceChannel._propagate_telemetry)
             telemetry = getattr(self, "_telemetry", None)
             if telemetry is not None:
                 telemetry.record_metric(

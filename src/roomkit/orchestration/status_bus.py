@@ -204,6 +204,15 @@ class StatusBus:
                 persist_path=persist_path,
             )
 
+    @staticmethod
+    def _log_task_exception(task: asyncio.Task[None]) -> None:
+        """Log unhandled exceptions from fire-and-forget publish tasks."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error("StatusBus publish task failed: %s", exc, exc_info=exc)
+
     def post(
         self,
         agent_id: str,
@@ -235,7 +244,11 @@ class StatusBus:
         # Schedule async publish
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._backend.publish(entry))
+            task = loop.create_task(
+                self._backend.publish(entry),
+                name=f"status_bus_publish:{agent_id}",
+            )
+            task.add_done_callback(self._log_task_exception)
         except RuntimeError:
             # No event loop — can happen during shutdown
             pass

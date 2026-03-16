@@ -90,6 +90,7 @@ class VoiceSession:
     provider_session_id: str | None = None
     created_at: datetime = field(default_factory=_utcnow)
     metadata: dict[str, Any] = field(default_factory=dict)
+    _last_usage: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
