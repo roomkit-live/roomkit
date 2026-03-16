@@ -49,6 +49,7 @@ from roomkit.providers.ai.base import (
     AIToolResultPart,
     ProviderError,
     StreamEvent,
+    StreamDone,
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
@@ -530,6 +531,22 @@ class AIChannel(Channel):
                         yield event.text
                     elif isinstance(event, StreamToolCall):
                         tool_calls.append(event)
+                    elif isinstance(event, StreamDone):
+                        # Capture usage from the stream for telemetry
+                        if event.usage:
+                            _round_usage = event.usage
+                            telemetry.record_metric(
+                                "roomkit.llm.input_tokens",
+                                float(_round_usage.get("input_tokens", 0)),
+                                unit="tokens",
+                                attributes={"channel_id": self.channel_id},
+                            )
+                            telemetry.record_metric(
+                                "roomkit.llm.output_tokens",
+                                float(_round_usage.get("output_tokens", 0)),
+                                unit="tokens",
+                                attributes={"channel_id": self.channel_id},
+                            )
 
                 # Flush any remaining dedup buffer (dedup matched to end
                 # of prefix but no new text followed — shouldn't happen
