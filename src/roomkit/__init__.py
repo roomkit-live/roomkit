@@ -308,6 +308,7 @@ from roomkit.video import (
     MockVisionProvider,
     OpenAIVisionConfig,
     OpenAIVisionProvider,
+    ScreenInputTools,
     VideoBackend,
     VideoCapability,
     VideoChunk,
@@ -792,6 +793,7 @@ __all__ = [
     "RoomRecorderBinding",
     # Video
     "DescribeScreenTool",
+    "ScreenInputTools",
     "FaceDetection",
     "MockVideoBackend",
     "MockVideoCall",

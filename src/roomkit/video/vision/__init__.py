@@ -6,10 +6,12 @@ from roomkit.video.vision.base import FaceDetection, VisionProvider, VisionResul
 from roomkit.video.vision.gemini import GeminiVisionConfig, GeminiVisionProvider
 from roomkit.video.vision.mock import MockVisionProvider
 from roomkit.video.vision.openai import OpenAIVisionConfig, OpenAIVisionProvider
+from roomkit.video.vision.screen_input import ScreenInputTools
 from roomkit.video.vision.screen_tool import DescribeScreenTool, capture_screen_frame
 
 __all__ = [
     "DescribeScreenTool",
+    "ScreenInputTools",
     "FaceDetection",
     "GeminiVisionConfig",
     "GeminiVisionProvider",

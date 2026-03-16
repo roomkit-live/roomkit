@@ -63,6 +63,7 @@ from roomkit import (
     OpenAIVisionProvider,
     RealtimeVoiceChannel,
     RoomKit,
+    ScreenInputTools,
     VideoChannel,
 )
 from roomkit.video.backends.screen import ScreenCaptureBackend
@@ -138,9 +139,10 @@ def _build_system_prompt(lang: str) -> str:
 
     return f"""\
 You are a professional IT support assistant. You can see the user's screen \
-in real time and you are having a voice conversation with them. Your role is \
-to help users navigate their computer, find applications, troubleshoot issues, \
-and guide them through any task they need help with.{lang_instruction}
+in real time, control the mouse, type on the keyboard, and you are having a \
+voice conversation with them. Your role is to help users navigate their \
+computer, find applications, troubleshoot issues, and guide them through \
+any task they need help with.{lang_instruction}
 
 ## How you see the screen
 
@@ -183,7 +185,21 @@ their screen right now, then give precise directions based on what you see \
 (e.g. "I can see Chrome is the third icon from the left in your taskbar, \
 right after the file manager").
 - Be professional, patient, and reassuring — like a real support agent.
-- Speak naturally — you are a voice assistant, not a text bot.\
+- Speak naturally — you are a voice assistant, not a text bot.
+
+## Mouse and keyboard control
+
+You can also take actions on the user's screen:
+- **click(x, y)** — click on a specific screen position. Always use \
+describe_screen first to find the exact coordinates.
+- **type_text(text)** — type text into the currently focused input field.
+- **press_key(key)** — press keys like 'enter', 'tab', 'escape', or combos \
+like 'ctrl+a', 'ctrl+c'.
+- **scroll(clicks)** — scroll up (positive) or down (negative).
+- **move_mouse(x, y)** — move the cursor without clicking.
+
+IMPORTANT: Before clicking, ALWAYS call describe_screen to verify the exact \
+position of the target element. Never guess coordinates.\
 """
 
 
@@ -371,8 +387,9 @@ async def main() -> None:
     )
     kit.register_channel(video_channel)
 
-    # --- On-demand vision tool -----------------------------------------------
+    # --- On-demand vision + input tools ---------------------------------------
     screen_tool = _build_screen_tool(tool_choice, google_api_key, monitor)
+    input_tools = ScreenInputTools()
 
     # --- Speech-to-speech voice ----------------------------------------------
     sample_rate = 24000
@@ -405,6 +422,14 @@ async def main() -> None:
     )
 
     voice_name = _get_voice_name(voice_choice)
+    all_tools = [screen_tool.definition, *input_tools.definitions]
+
+    async def tool_handler(session: object, name: str, arguments: dict[str, object]) -> str:
+        """Route tool calls to the right handler."""
+        if name == "describe_screen":
+            return await screen_tool.handler(session, name, arguments)  # type: ignore[arg-type]
+        return await input_tools.handler(session, name, arguments)  # type: ignore[arg-type]
+
     voice_channel = RealtimeVoiceChannel(
         "voice",
         provider=provider,
@@ -412,8 +437,8 @@ async def main() -> None:
         system_prompt=system_prompt,
         voice=voice_name,
         input_sample_rate=sample_rate,
-        tools=[screen_tool.definition],
-        tool_handler=screen_tool.handler,
+        tools=all_tools,
+        tool_handler=tool_handler,
         mute_on_tool_call=True,
     )
     kit.register_channel(voice_channel)
