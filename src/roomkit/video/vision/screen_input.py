@@ -62,23 +62,50 @@ TYPE_TEXT_TOOL: dict[str, Any] = {
     },
 }
 
-PRESS_KEY_TOOL: dict[str, Any] = {
-    "name": "press_key",
-    "description": (
+def _press_key_description() -> str:
+    """Build OS-aware press_key tool description."""
+    base = (
         "Press a keyboard key or key combination. "
         "Special keys: enter, tab, escape, backspace, delete, space, "
-        "up, down, left, right, home, end, f1-f12, ctrl, alt, shift. "
-        "Combos use + separator: 'ctrl+a', 'ctrl+c', 'alt+tab', 'ctrl+l'."
-    ),
+        "up, down, left, right, home, end, f1-f12, ctrl, alt, shift, command. "
+        "Combos use + separator."
+    )
+    if platform.system() == "Darwin":
+        return (
+            f"{base} "
+            "IMPORTANT: On macOS, use 'command' (NOT 'ctrl') for standard shortcuts. "
+            "Examples: 'command+t' (new tab), 'command+l' (address bar), "
+            "'command+c' (copy), 'command+v' (paste), 'command+space' (Spotlight)."
+        )
+    return (
+        f"{base} "
+        "Examples: 'ctrl+t' (new tab), 'ctrl+l' (address bar), "
+        "'ctrl+c' (copy), 'ctrl+v' (paste), 'alt+tab' (switch window)."
+    )
+
+
+def _press_key_param_description() -> str:
+    """Build OS-aware key parameter description."""
+    if platform.system() == "Darwin":
+        return (
+            "Key name or combo. macOS examples: 'enter', 'tab', "
+            "'command+t', 'command+l', 'command+c', 'command+space'."
+        )
+    return (
+        "Key name or combo. Examples: 'enter', 'tab', "
+        "'ctrl+a', 'ctrl+c', 'ctrl+v', 'alt+tab', 'ctrl+l'."
+    )
+
+
+PRESS_KEY_TOOL: dict[str, Any] = {
+    "name": "press_key",
+    "description": _press_key_description(),
     "parameters": {
         "type": "object",
         "properties": {
             "key": {
                 "type": "string",
-                "description": (
-                    "Key name or combo. Examples: 'enter', 'tab', "
-                    "'ctrl+a', 'ctrl+c', 'ctrl+v', 'alt+tab', 'ctrl+l'."
-                ),
+                "description": _press_key_param_description(),
             },
         },
         "required": ["key"],
@@ -216,7 +243,13 @@ def _denormalize(result: dict[str, Any], w: int, h: int) -> dict[str, Any]:
 
 
 def _parse_json_response(text: str) -> dict[str, Any] | None:
-    """Extract JSON from vision model response."""
+    """Extract JSON from vision model response.
+
+    Gemini sometimes returns malformed box JSON (e.g. missing keys,
+    stray quotes). When full JSON parsing fails, fall back to regex
+    extraction of the top-level fields (found, cx, cy).
+    """
+    # Try clean JSON first
     try:
         return json.loads(text.strip())
     except json.JSONDecodeError:
@@ -227,6 +260,20 @@ def _parse_json_response(text: str) -> dict[str, Any] | None:
             return json.loads(match.group())
         except json.JSONDecodeError:
             pass
+
+    # Fallback: extract cx/cy via regex when JSON is garbled
+    found_match = re.search(r'"found"\s*:\s*(true|false)', text, re.IGNORECASE)
+    cx_match = re.search(r'"cx"\s*:\s*(\d+)', text)
+    cy_match = re.search(r'"cy"\s*:\s*(\d+)', text)
+    if found_match and cx_match and cy_match:
+        found = found_match.group(1).lower() == "true"
+        logger.debug("Fallback JSON parse: found=%s cx=%s cy=%s", found, cx_match.group(1), cy_match.group(1))
+        return {
+            "found": found,
+            "cx": int(cx_match.group(1)),
+            "cy": int(cy_match.group(1)),
+            "box": {},
+        }
     return None
 
 
@@ -258,7 +305,12 @@ async def _find_element(
 
     # Compute center from bounding box (more stable than model's cx/cy)
     box = parsed.get("box", {})
-    if box and box.get("x2", 0) > box.get("x1", 0):
+    has_full_box = (
+        box
+        and all(k in box for k in ("x1", "y1", "x2", "y2"))
+        and box.get("x2", 0) > box.get("x1", 0)
+    )
+    if has_full_box:
         cx = (int(box["x1"]) + int(box["x2"])) // 2
         cy = (int(box["y1"]) + int(box["y2"])) // 2
     else:
@@ -273,6 +325,14 @@ async def _find_element(
         frame.width,
         frame.height,
     )
+
+    # Reject coordinates outside the captured image bounds
+    if cx < 0 or cx >= frame.width or cy < 0 or cy >= frame.height:
+        logger.warning(
+            "locate '%s': coordinates (%d,%d) outside image bounds (%dx%d)",
+            element, cx, cy, frame.width, frame.height,
+        )
+        return None
 
     scale_x, scale_y = _get_scale_factor()
     screen_x = int(cx * scale_x)

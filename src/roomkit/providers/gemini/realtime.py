@@ -801,6 +801,13 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             parts.append("go_away")
         if hasattr(response, "session_resumption_update") and response.session_resumption_update:
             parts.append("resumption_update")
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            um = response.usage_metadata
+            parts.append(
+                f"usage(prompt={getattr(um, 'prompt_token_count', '?')}"
+                f",candidates={getattr(um, 'candidates_token_count', '?')}"
+                f",total={getattr(um, 'total_token_count', '?')})"
+            )
         if not parts:
             parts.append(f"unknown_keys={[k for k in dir(response) if not k.startswith('_')]}")
         logger.debug("[Gemini] recv: %s (session %s)", ", ".join(parts), session.id)
@@ -913,6 +920,40 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 await self._flush_transcription_buffer(session, "assistant")
                 state.response_started = False
                 await self._fire_callbacks(self._response_end_callbacks, session)
+
+        # Extract usage_metadata if present (sent on turn_complete responses)
+        usage_meta = getattr(response, "usage_metadata", None)
+        if usage_meta is not None:
+            prompt_tokens = getattr(usage_meta, "prompt_token_count", 0) or 0
+            candidates_tokens = getattr(usage_meta, "candidates_token_count", 0) or 0
+            total_tokens = getattr(usage_meta, "total_token_count", 0) or 0
+            logger.info(
+                "[Gemini] usage: prompt=%d candidates=%d total=%d (session %s)",
+                prompt_tokens,
+                candidates_tokens,
+                total_tokens,
+                session.id,
+            )
+            # Store on session for telemetry span attribution
+            object.__setattr__(session, "_last_usage", {
+                "input_tokens": prompt_tokens,
+                "output_tokens": candidates_tokens,
+            })
+            # Record via telemetry if available
+            telemetry = getattr(self, "_telemetry", None)
+            if telemetry is not None:
+                telemetry.record_metric(
+                    "roomkit.realtime.input_tokens",
+                    float(prompt_tokens),
+                    unit="tokens",
+                    attributes={"session_id": session.id, "model": self._model},
+                )
+                telemetry.record_metric(
+                    "roomkit.realtime.output_tokens",
+                    float(candidates_tokens),
+                    unit="tokens",
+                    attributes={"session_id": session.id, "model": self._model},
+                )
 
         # Handle GoAway LAST — after processing all other data in this message.
         # Raising here breaks out of the receive loop and triggers proactive

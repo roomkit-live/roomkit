@@ -1460,12 +1460,15 @@ class RealtimeVoiceChannel(Channel):
                     forwarded,
                     session.id,
                 )
-            # End turn span
+            # End turn span with usage from the provider (if available)
             if turn_span_id:
-                telemetry.end_span(
-                    turn_span_id,
-                    attributes={"audio_chunks_forwarded": forwarded},
-                )
+                turn_attrs: dict[str, Any] = {"audio_chunks_forwarded": forwarded}
+                last_usage = getattr(session, "_last_usage", None)
+                if last_usage:
+                    turn_attrs[Attr.LLM_INPUT_TOKENS] = last_usage.get("input_tokens", 0)
+                    turn_attrs[Attr.LLM_OUTPUT_TOKENS] = last_usage.get("output_tokens", 0)
+                    object.__setattr__(session, "_last_usage", {})
+                telemetry.end_span(turn_span_id, attributes=turn_attrs)
         elif is_speaking:
             with self._state_lock:
                 self._audio_forward_count[session.id] = 0

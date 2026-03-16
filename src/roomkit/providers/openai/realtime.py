@@ -472,6 +472,58 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
                 await self._fire_error_callbacks(session, err_code or err_type, err_message)
             else:
                 logger.info("[OpenAI] response_done status=%s (session %s)", status, session.id)
+
+            # Extract token usage from response.done and record via telemetry
+            usage = response.get("usage", {})
+            if usage:
+                input_tokens = usage.get("input_tokens", 0)
+                output_tokens = usage.get("output_tokens", 0)
+                input_token_details = usage.get("input_token_details", {})
+                output_token_details = usage.get("output_token_details", {})
+                logger.info(
+                    "[OpenAI] usage: input=%d output=%d "
+                    "(cached_input=%d, text_input=%d, audio_input=%d, "
+                    "text_output=%d, audio_output=%d) (session %s)",
+                    input_tokens,
+                    output_tokens,
+                    input_token_details.get("cached_tokens", 0),
+                    input_token_details.get("text_tokens", 0),
+                    input_token_details.get("audio_tokens", 0),
+                    output_token_details.get("text_tokens", 0),
+                    output_token_details.get("audio_tokens", 0),
+                    session.id,
+                )
+                # Store on session for telemetry span attribution
+                if not hasattr(session, "_last_usage"):
+                    object.__setattr__(session, "_last_usage", {})
+                object.__setattr__(session, "_last_usage", {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "input_token_details": input_token_details,
+                    "output_token_details": output_token_details,
+                })
+                # Record via telemetry if available
+                telemetry = getattr(self, "_telemetry", None)
+                if telemetry is not None:
+                    telemetry.record_metric(
+                        "roomkit.realtime.input_tokens",
+                        float(input_tokens),
+                        unit="tokens",
+                        attributes={
+                            "session_id": session.id,
+                            "model": self._model,
+                        },
+                    )
+                    telemetry.record_metric(
+                        "roomkit.realtime.output_tokens",
+                        float(output_tokens),
+                        unit="tokens",
+                        attributes={
+                            "session_id": session.id,
+                            "model": self._model,
+                        },
+                    )
+
             self._responding.discard(session.id)
             await self._fire_callbacks(self._response_end_callbacks, session)
 
