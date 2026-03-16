@@ -84,6 +84,24 @@ PRESS_KEY_TOOL: dict[str, Any] = {
     },
 }
 
+SCROLL_TOOL: dict[str, Any] = {
+    "name": "scroll",
+    "description": (
+        "Scroll the mouse wheel at the current position. "
+        "Positive clicks scroll up, negative scroll down."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "clicks": {
+                "type": "integer",
+                "description": "Scroll amount (positive=up, negative=down).",
+            },
+        },
+        "required": ["clicks"],
+    },
+}
+
 CLICK_ELEMENT_TOOL: dict[str, Any] = {
     "name": "click_element",
     "description": (
@@ -354,7 +372,7 @@ class ScreenInputTools:
     @property
     def definitions(self) -> list[dict[str, Any]]:
         """Tool definitions. Includes click_element only if vision is set."""
-        tools = [TYPE_TEXT_TOOL, PRESS_KEY_TOOL]
+        tools = [TYPE_TEXT_TOOL, PRESS_KEY_TOOL, SCROLL_TOOL]
         if self._vision is not None:
             tools.append(CLICK_ELEMENT_TOOL)
         return tools
@@ -370,6 +388,8 @@ class ScreenInputTools:
             return self._type_text(arguments)
         if name == "press_key":
             return self._press_key(arguments)
+        if name == "scroll":
+            return self._scroll(arguments)
         if name == "click_element":
             return await self._click_element(arguments)
         return f"Unknown tool: {name}"
@@ -393,6 +413,14 @@ class ScreenInputTools:
             return f"Pressed key combo: {key}"
         pag.press(key)
         return f"Pressed key: {key}"
+
+    @staticmethod
+    def _scroll(args: dict[str, Any]) -> str:
+        pag = _get_pyautogui()
+        clicks = int(args["clicks"])
+        logger.info("scroll(%d)", clicks)
+        pag.scroll(clicks)
+        return f"Scrolled {clicks} clicks."
 
     async def _click_element(self, args: dict[str, Any]) -> str:
         if self._vision is None:

@@ -463,7 +463,7 @@ async def main() -> None:
     print(f"Interruption: {'off' if mute_mic else 'on'}")
     print(f"Vision: every {vision_interval}ms (cached, no injection)")
     print()
-    print("Tools: describe_screen, click_element, type_text, press_key")
+    print("Tools: describe_screen, click_element, type_text, press_key, scroll")
     print("Press Ctrl+C to stop.")
     print()
 
