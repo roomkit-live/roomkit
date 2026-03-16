@@ -337,15 +337,22 @@ class RealtimeAVBridge:
         if not nals:
             return
 
-        # Send via backend's internal video session
-        vcs = getattr(self._backend, "_video_call_sessions", {}).get(
-            state.backend_session.id,
-        )
-        if vcs is None:
+        # Use public get_video_session() to find the RTP video session
+        video_session = self._backend.get_video_session(state.backend_session.id)
+        if video_session is None:
             return
-        ts = state.frame_seq * (90000 // self._video_fps)
-        is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
-        vcs.send_frame(nals, ts, is_key)
+
+        # send_frame is on the internal RTP session (no async needed)
+        rtp_session = getattr(video_session, "_session", None)
+        if rtp_session is not None and hasattr(rtp_session, "send_frame_auto"):
+            rtp_session.send_frame_auto(nals, any((nal[0] & 0x1F) == 5 for nal in nals if nal))
+        else:
+            # Fallback: send via video call session
+            ts = state.frame_seq * (90000 // self._video_fps)
+            is_key = any((nal[0] & 0x1F) == 5 for nal in nals if nal)
+            send_frame = getattr(video_session, "send_frame", None)
+            if send_frame is not None:
+                send_frame(nals, ts, is_key)
         state.frame_seq += 1
 
     def _on_provider_transcription(

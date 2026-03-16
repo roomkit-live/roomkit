@@ -90,11 +90,11 @@ async def main() -> None:
         )
     )
 
-    # --- Bridge: SIP ↔ Anam (with H.264 encoding) ----------------------------
+    # --- Bridge: SIP Anam (with H.264 encoding) ----------------------------
     bridge = RealtimeAVBridge(
         provider,
         sip,
-        encoder=PyAVVideoEncoder(fps=25),
+        encoder=PyAVVideoEncoder(fps=25, bitrate=3_000_000),
         provider_sample_rate=48000,
         on_transcription=lambda role, text, _: logger.info("[%s] %s", role.upper(), text),
     )
