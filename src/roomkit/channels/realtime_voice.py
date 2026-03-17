@@ -99,6 +99,7 @@ class RealtimeVoiceChannel(Channel):
         tool_handler: ToolHandler | None = None,
         mute_on_tool_call: bool = False,
         tool_result_max_length: int = 16384,
+        recording: Any | None = None,
     ) -> None:
         """Initialize realtime voice channel.
 
@@ -129,10 +130,14 @@ class RealtimeVoiceChannel(Channel):
             tool_result_max_length: Maximum character length of tool results
                 before truncation.  Large results (e.g. SVG payloads) can
                 overflow the provider's context window.  Defaults to 16384.
+            recording: Optional ``ChannelRecordingConfig`` to enable
+                room-level audio recording from this channel. Records
+                both input (mic) and output (AI) audio tracks.
         """
         super().__init__(channel_id)
         self._provider: RealtimeVoiceProvider = provider
         self._transport = transport
+        self._recording = recording
         self._system_prompt = system_prompt
         self._voice = voice
         self._tools = tools
@@ -154,6 +159,9 @@ class RealtimeVoiceChannel(Channel):
         self._session_rooms: dict[str, str] = {}  # session_id -> room_id
         # Cached bindings for audio gating (access/muted enforcement)
         self._session_bindings: dict[str, ChannelBinding] = {}
+
+        # Per-session recording tracks: session_id -> (input_track, output_track, room_id)
+        self._recording_tracks: dict[str, tuple[Any, Any, str]] = {}
 
         # Per-session resamplers: (inbound, outbound) pairs
         self._session_resamplers: dict[str, tuple[Any, Any]] = {}
@@ -460,6 +468,9 @@ class RealtimeVoiceChannel(Channel):
                     "provider": self._provider.name,
                 },
             )
+
+        # Wire room-level audio recording if configured
+        self._wire_realtime_recording(room_id, session)
 
         logger.info(
             "Realtime session %s started: room=%s, participant=%s, provider=%s",
@@ -811,10 +822,71 @@ class RealtimeVoiceChannel(Channel):
 
     # -- Internal callbacks --
 
+    # -------------------------------------------------------------------------
+    # Room-level audio recording
+    # -------------------------------------------------------------------------
+
+    def _wire_realtime_recording(self, room_id: str, session: VoiceSession) -> None:
+        """Wire room-level audio recording for a realtime voice session.
+
+        Registers input (mic) and output (AI) audio tracks with the room
+        recorder manager, and installs taps on both audio paths.
+        """
+        if self._recording is None or not getattr(self._recording, "audio", False):
+            return
+        if self._framework is None:
+            return
+        mgr = self._framework._room_recorder_mgr
+        if not mgr.has_recorders(room_id):
+            return
+
+        from roomkit.recorder.base import RecordingTrack
+
+        # Input track (mic → provider)
+        input_track = RecordingTrack(
+            id=f"audio-in:{session.id}",
+            kind="audio",
+            channel_id=self.channel_id,
+            participant_id=session.participant_id,
+            codec="pcm_s16le",
+            sample_rate=self._input_sample_rate,
+        )
+        mgr.on_track_added(room_id, input_track)
+
+        # Output track (provider → speaker)
+        output_track = RecordingTrack(
+            id=f"audio-out:{session.id}",
+            kind="audio",
+            channel_id=self.channel_id,
+            participant_id=f"{session.participant_id}:ai",
+            codec="pcm_s16le",
+            sample_rate=self._output_sample_rate,
+        )
+        mgr.on_track_added(room_id, output_track)
+
+        # Store tracks for cleanup and tapping
+        with self._state_lock:
+            self._recording_tracks[session.id] = (input_track, output_track, room_id)
+
+        logger.info(
+            "Realtime recording wired for session %s (input=%dHz, output=%dHz)",
+            session.id, self._input_sample_rate, self._output_sample_rate,
+        )
+
     def _on_client_audio(self, session: VoiceSession, audio: AudioFrame | bytes) -> Any:
         """Forward client audio to provider."""
         if not isinstance(audio, bytes):
             audio = audio.data
+
+        # Recording tap: send mic audio to room recorder
+        with self._state_lock:
+            rec = self._recording_tracks.get(session.id)
+        if rec is not None:
+            input_track, _, room_id = rec
+            self._framework._room_recorder_mgr.on_data(  # type: ignore[union-attr]
+                room_id, input_track, audio, time.monotonic() * 1000,
+            )
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -903,6 +975,15 @@ class RealtimeVoiceChannel(Channel):
                 cb(session, audio, rate)
             except Exception:
                 logger.debug("Outbound audio tap error", exc_info=True)
+
+        # Recording tap: send AI audio to room recorder
+        with self._state_lock:
+            rec = self._recording_tracks.get(session.id)
+        if rec is not None:
+            _, output_track, room_id = rec
+            self._framework._room_recorder_mgr.on_data(  # type: ignore[union-attr]
+                room_id, output_track, audio, time.monotonic() * 1000,
+            )
 
         with self._state_lock:
             self._audio_forward_count[session.id] = (
