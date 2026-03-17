@@ -303,62 +303,37 @@ class PyAVMediaRecorder(MediaRecorder):
 
         state.encoding_started = True
 
-        # Shared t0: earliest pending timestamp across all tracks.
-        # PTS=0 maps to the same real-world moment for every stream.
-        # Streams that started later are padded (black frames / silence).
+        # Per-track t0: each stream starts at PTS=0 from its own first
+        # frame.  Camera init is slower than mic so audio pending frames
+        # captured before the first video frame are dropped.  This keeps
+        # both streams aligned — PTS=0 is the moment the LAST track
+        # became ready (typically the camera).
         now = time.monotonic() * 1000
-        global_t0: float = now
+        latest_first: float | None = None
         for ts in state.tracks.values():
             for _, ts_ms in ts.pending:
-                if ts_ms is not None and ts_ms < global_t0:
-                    global_t0 = ts_ms
+                if ts_ms is not None:
+                    if latest_first is None or ts_ms > latest_first:
+                        latest_first = ts_ms
+                    break  # only need first pending per track
+        sync_t0 = latest_first if latest_first is not None else now
         for ts in state.tracks.values():
-            ts.t0_ms = global_t0
+            ts.t0_ms = sync_t0
         pending_counts = {ts.track.id: len(ts.pending) for ts in state.tracks.values()}
         logger.info(
             "Encoding started: pending=%s",
             pending_counts,
         )
 
-        # Pad late-starting streams so all tracks begin at PTS=0.
-        # Camera init is slower than mic, so video often starts seconds
-        # after audio.  Without padding the player shows video from
-        # PTS=0 alongside audio captured seconds earlier → desync.
-        for ts in state.tracks.values():
-            if ts.stream is None or not ts.pending:
-                continue
-            first_ts = ts.pending[0][1]
-            if first_ts is None:
-                continue
-            gap_ms = first_ts - global_t0
-            if gap_ms < 50:
-                continue
-            if ts.track.kind == "video":
-                self._pad_black_frames(state, ts, gap_ms)
-            elif ts.track.kind == "audio":
-                gap_samples = round(gap_ms / 1000.0 * ts.stream.rate)
-                if gap_samples > 0:
-                    self._write_silence(state, ts, gap_samples)
-
-        # Flush buffered frames.
-        # Audio: reconstruct evenly-spaced timestamps starting from
-        # the track's first pending frame time (after any silence pad).
+        # Flush buffered frames, dropping audio captured before sync_t0.
         for ts in state.tracks.values():
             if ts.stream is None:
                 ts.pending.clear()
                 continue
-            # Start reconstructed timestamps from the first pending
-            # frame's real capture time (not t0, which may be earlier).
-            first_pending_ts = ts.pending[0][1] if ts.pending else None
-            base_ms = (first_pending_ts - ts.t0_ms) * 1000.0 if first_pending_ts is not None else 0.0
-            # base_ms is already in ms offset from t0
-            base_ms = (first_pending_ts - ts.t0_ms) if first_pending_ts is not None else 0.0
-            cumulative_ms = max(base_ms, 0.0)
             for data, ts_ms in ts.pending:
-                if ts.track.kind == "audio" and ts.stream is not None:
-                    num_s = len(data) // 2  # 16-bit mono samples
-                    ts_ms = ts.t0_ms + cumulative_ms
-                    cumulative_ms += num_s / ts.stream.rate * 1000.0
+                # Drop audio frames from before the sync point
+                if ts.track.kind == "audio" and ts_ms is not None and ts_ms < sync_t0:
+                    continue
                 try:
                     self._encode_frame(state, ts, ts.track, data, ts_ms)
                     ts.frame_count += 1
@@ -552,32 +527,6 @@ class PyAVMediaRecorder(MediaRecorder):
             ):
                 break
             remaining -= n
-
-    def _pad_black_frames(
-        self,
-        state: _RecordingState,
-        ts: _TrackState,
-        duration_ms: float,
-    ) -> None:
-        """Inject black video frames to pad a late-starting video stream."""
-        import numpy as np
-
-        stream = ts.stream
-        if stream is None:
-            return
-        w, h = stream.width, stream.height
-        fps = ts.video_fps
-        num_frames = max(1, round(duration_ms / 1000.0 * fps))
-        black = np.zeros((h, w, 3), dtype=np.uint8)
-        for i in range(num_frames):
-            frame = self._av.VideoFrame.from_ndarray(black, format="rgb24")
-            frame.pts = i
-            ts.last_pts = frame.pts
-            ts.frame_count += 1
-            if not safe_mux(
-                stream, state.container, frame, ts, state.path, label="black",
-            ):
-                break
 
     def close(self) -> None:
         for handle_id in list(self._recordings):
