@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from roomkit.video.pipeline.filter.base import FilterContext, VideoFilterProvider
@@ -55,7 +55,7 @@ class WatermarkFilter(VideoFilterProvider):
 
     Args:
         text: Text to overlay.  Supports placeholders:
-            ``{timestamp}`` — current UTC time (HH:MM:SS),
+            ``{timestamp}`` — current local time (HH:MM:SS),
             ``{frame}`` — frame sequence number.
         position: One of ``top-left``, ``top-right``, ``bottom-left``,
             ``bottom-right``, ``center``.
@@ -158,7 +158,7 @@ class WatermarkFilter(VideoFilterProvider):
         if "{timestamp}" in text:
             text = text.replace(
                 "{timestamp}",
-                datetime.now(UTC).strftime("%H:%M:%S"),
+                datetime.now().astimezone().strftime("%H:%M:%S"),
             )
         if "{frame}" in text:
             text = text.replace("{frame}", str(frame.sequence))
