@@ -829,8 +829,10 @@ class RealtimeVoiceChannel(Channel):
     def _wire_realtime_recording(self, room_id: str, session: VoiceSession) -> None:
         """Wire room-level audio recording for a realtime voice session.
 
-        Registers input (mic) and output (AI) audio tracks with the room
-        recorder manager, and installs taps on both audio paths.
+        Registers a single audio track that receives both mic input and
+        AI output.  The recorder injects silence to fill gaps between
+        speech segments, keeping the audio stream continuous and in sync
+        with video.
         """
         if self._recording is None or not getattr(self._recording, "audio", False):
             return
@@ -842,9 +844,8 @@ class RealtimeVoiceChannel(Channel):
 
         from roomkit.recorder.base import RecordingTrack
 
-        # Single mixed audio track — records the output (AI) audio
-        # which is what matters for the recording. Input (mic) audio
-        # would create interleaving issues with two audio streams.
+        # Single audio track — both mic and AI output feed into it.
+        # The recorder fills silence gaps to keep continuous audio.
         audio_track = RecordingTrack(
             id=f"audio:{session.id}",
             kind="audio",
@@ -868,7 +869,14 @@ class RealtimeVoiceChannel(Channel):
         if not isinstance(audio, bytes):
             audio = audio.data
 
-        # No input recording tap — only output (AI) audio is recorded
+        # Recording tap: send mic audio to room recorder
+        with self._state_lock:
+            rec = self._recording_tracks.get(session.id)
+        if rec is not None and self._framework is not None:
+            audio_track, rec_room_id = rec
+            self._framework._room_recorder_mgr.on_data(  # type: ignore[union-attr]
+                rec_room_id, audio_track, audio, time.monotonic() * 1000,
+            )
 
         try:
             loop = asyncio.get_running_loop()

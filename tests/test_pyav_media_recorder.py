@@ -251,7 +251,6 @@ class TestPyAVMediaRecorder:
             video_fps=5,
             audio_codec="aac",
             audio_sample_rate=24000,
-            min_tracks=2,
         )
         handle = recorder.on_recording_start(config)
 
@@ -333,7 +332,6 @@ class TestPyAVMediaRecorder:
             video_fps=5,
             audio_codec="aac",
             audio_sample_rate=24000,
-            min_tracks=2,
         )
         handle = recorder.on_recording_start(config)
 

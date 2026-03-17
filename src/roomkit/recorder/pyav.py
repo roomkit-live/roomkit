@@ -217,22 +217,13 @@ class PyAVMediaRecorder(MediaRecorder):
 
             if not state.encoding_started:
                 ts.pending.append((data, timestamp_ms))
-                # Wait for all tracks AND a minimum startup delay so late
-                # tracks (e.g. voice connecting after video) can register.
-                min_tracks = state.config.min_tracks if hasattr(state.config, "min_tracks") else 1
-                registered = len(state.tracks)
-                if registered >= min_tracks and self._all_tracks_ready(state):
+                if self._all_tracks_ready(state):
                     logger.info(
-                        "Encoding started: %d/%d tracks ready, pending=%s",
-                        registered, min_tracks,
+                        "Encoding started: %d tracks, pending=%s",
+                        len(state.tracks),
                         {tid: len(t.pending) for tid, t in state.tracks.items()},
                     )
                     self._start_encoding(state)
-                elif registered < min_tracks:
-                    logger.debug(
-                        "Waiting for tracks: %d/%d registered",
-                        registered, min_tracks,
-                    )
                 return
 
             # Set per-track t0 on first frame if not set from pending
@@ -460,25 +451,30 @@ class PyAVMediaRecorder(MediaRecorder):
         stream = ts.stream
         if stream is None:
             return
+
+        # Fill silence gap so the audio stream is continuous.
+        # Without this, audio only exists when data is provided (e.g.
+        # AI speaking), causing playback to stitch speech together and
+        # breaking A/V sync with the video track.
+        if timestamp_ms is not None and ts.total_samples > 0:
+            expected = round((timestamp_ms - ts.t0_ms) / 1000.0 * stream.rate)
+            gap = expected - ts.total_samples
+            if gap > stream.rate // 10:  # fill gaps > 100 ms
+                self._write_silence(state, ts, gap)
+
         samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
+        num_samples = len(samples[0])
         frame = self._av.audio.frame.AudioFrame.from_ndarray(
             samples,
             format="s16",
             layout="mono",
         )
         frame.sample_rate = stream.rate
-        # Audio PTS must advance by exactly nb_samples per frame.
-        # The AAC encoder's internal af_queue adjusts partial-frame
-        # entries by adding consumed samples to PTS.  When wall-clock
-        # timestamps cause PTS to advance slower than samples (burst
-        # delivery), the adjustment creates af_queue entries whose PTS
-        # is HIGHER than the next full entry — producing non-monotonic
-        # output packet DTS that the MP4 muxer rejects (EINVAL).
-        # Using cumulative sample count guarantees PTS advances at
-        # exactly the sample rate, matching the af_queue's expectation.
-        # Must use cumulative count (not frame_count * nb_samples)
-        # because realtime voice providers send variable-size chunks.
-        num_samples = len(samples[0])
+        # Audio PTS must use cumulative sample count — not wall-clock
+        # timestamps.  The AAC encoder's af_queue adjusts partial-frame
+        # PTS by adding consumed samples; if PTS advances slower than
+        # samples (burst delivery), the adjustment produces non-monotonic
+        # output DTS that the MP4 muxer rejects (EINVAL).
         frame.pts = ts.total_samples
         ts.total_samples += num_samples
         ts.last_pts = frame.pts
@@ -490,6 +486,39 @@ class PyAVMediaRecorder(MediaRecorder):
             state.path,
             label="audio",
         )
+
+    def _write_silence(
+        self,
+        state: _RecordingState,
+        ts: _TrackState,
+        num_samples: int,
+    ) -> None:
+        """Inject silence frames to fill a gap in the audio stream."""
+        import numpy as np
+
+        stream = ts.stream
+        if stream is None:
+            return
+        # Write in 1-second chunks to avoid huge encoder buffers
+        chunk = min(num_samples, stream.rate)
+        remaining = num_samples
+        while remaining > 0:
+            n = min(remaining, chunk)
+            silence = np.zeros((1, n), dtype=np.int16)
+            frame = self._av.audio.frame.AudioFrame.from_ndarray(
+                silence,
+                format="s16",
+                layout="mono",
+            )
+            frame.sample_rate = stream.rate
+            frame.pts = ts.total_samples
+            ts.total_samples += n
+            ts.last_pts = frame.pts
+            if not safe_mux(
+                stream, state.container, frame, ts, state.path, label="audio",
+            ):
+                break
+            remaining -= n
 
     def close(self) -> None:
         for handle_id in list(self._recordings):
