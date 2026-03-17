@@ -166,8 +166,39 @@ class PyAVMediaRecorder(MediaRecorder):
         if state is None:
             return
         with state.lock:
-            state.tracks[track.id] = _TrackState(track=track)
+            ts = _TrackState(track=track)
+            state.tracks[track.id] = ts
+
+            # If encoding already started (late track addition), create the
+            # stream now and send a silent frame so the muxer accepts it.
+            if state.encoding_started and state.container is not None:
+                ts.stream = create_stream(state.container, track, state.config)
+                if ts.stream is not None and track.kind == "audio":
+                    self._send_silent_audio_frame(state, ts)
+
         logger.debug("Track registered: %s (%s)", track.id, track.kind)
+
+    def _send_silent_audio_frame(self, state: _RecordingState, ts: _TrackState) -> None:
+        """Send a silent audio frame to initialize the stream's time_base."""
+        try:
+            import numpy as np
+
+            sample_rate = ts.track.sample_rate or state.config.audio_sample_rate
+            # 20ms of silence
+            num_samples = sample_rate // 50
+            silence = np.zeros((1, num_samples), dtype=np.int16)
+            frame = self._av.audio.frame.AudioFrame.from_ndarray(
+                silence, format="s16", layout="mono",
+            )
+            frame.sample_rate = ts.stream.rate
+            frame.pts = 0
+            ts.t0_ms = time.monotonic() * 1000
+            safe_mux(ts.stream, state.container, frame)
+            ts.frame_count = 1
+            ts.last_pts = 0
+            logger.debug("Sent silent init frame for late audio track %s", ts.track.id)
+        except Exception:
+            logger.warning("Failed to init late audio track %s", ts.track.id, exc_info=True)
 
     def on_track_removed(self, handle: MediaRecordingHandle, track: RecordingTrack) -> None:
         state = self._recordings.get(handle.id)
@@ -430,16 +461,6 @@ class PyAVMediaRecorder(MediaRecorder):
 
         stream = ts.stream
         if stream is None:
-            # Track was added after encoding started. MP4 containers can't
-            # reliably add streams after the header is written. Log a warning
-            # and skip this data. To fix: start the voice session before
-            # video capture, or use a format that supports late track addition.
-            if ts.frame_count == 0:
-                logger.warning(
-                    "Audio track %s has no stream — was it added after encoding started? "
-                    "Start voice sessions before video capture to ensure all tracks are registered.",
-                    ts.track.id,
-                )
             return
         samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
         frame = self._av.audio.frame.AudioFrame.from_ndarray(
