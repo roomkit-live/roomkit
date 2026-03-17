@@ -190,13 +190,15 @@ class PyAVMediaRecorder(MediaRecorder):
             frame = self._av.audio.frame.AudioFrame.from_ndarray(
                 silence, format="s16", layout="mono",
             )
-            frame.sample_rate = ts.stream.rate
+            frame.sample_rate = sample_rate
             frame.pts = 0
+            # Encode and mux directly (bypass safe_mux to avoid logging noise)
+            for packet in ts.stream.encode(frame):
+                state.container.mux(packet)
             ts.t0_ms = time.monotonic() * 1000
-            safe_mux(ts.stream, state.container, frame)
             ts.frame_count = 1
             ts.last_pts = 0
-            logger.debug("Sent silent init frame for late audio track %s", ts.track.id)
+            logger.debug("Sent silent init frame for late audio track %s (rate=%d)", ts.track.id, sample_rate)
         except Exception:
             logger.warning("Failed to init late audio track %s", ts.track.id, exc_info=True)
 
