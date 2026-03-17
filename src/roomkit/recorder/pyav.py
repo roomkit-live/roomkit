@@ -226,9 +226,6 @@ class PyAVMediaRecorder(MediaRecorder):
                     self._start_encoding(state)
                 return
 
-            # Set per-track t0 on first frame if not set from pending
-            if ts.frame_count == 0 and timestamp_ms is not None:
-                ts.t0_ms = timestamp_ms
             self._encode_frame(state, ts, track, data, timestamp_ms)
             ts.frame_count += 1
 
@@ -306,17 +303,17 @@ class PyAVMediaRecorder(MediaRecorder):
 
         state.encoding_started = True
 
-        # Per-track t0: each stream starts at PTS=0 from its own first
-        # frame.  This avoids A/V offset caused by startup timing
-        # differences (mic starts before camera, audio RTP arrives
-        # before video RTP).
+        # Shared t0: all streams use the same origin so PTS=0 maps to
+        # the same real-world moment across audio and video.  We pick
+        # the earliest pending timestamp across all tracks.
         now = time.monotonic() * 1000
+        global_t0: float = now
         for ts in state.tracks.values():
-            first_ts: float | None = None
             for _, ts_ms in ts.pending:
-                if ts_ms is not None and (first_ts is None or ts_ms < first_ts):
-                    first_ts = ts_ms
-            ts.t0_ms = first_ts if first_ts is not None else now
+                if ts_ms is not None and ts_ms < global_t0:
+                    global_t0 = ts_ms
+        for ts in state.tracks.values():
+            ts.t0_ms = global_t0
         pending_counts = {ts.track.id: len(ts.pending) for ts in state.tracks.values()}
         logger.info(
             "Encoding started: pending=%s",
@@ -452,29 +449,40 @@ class PyAVMediaRecorder(MediaRecorder):
         if stream is None:
             return
 
-        # Fill silence gap so the audio stream is continuous.
-        # Without this, audio only exists when data is provided (e.g.
-        # AI speaking), causing playback to stitch speech together and
-        # breaking A/V sync with the video track.
-        if timestamp_ms is not None and ts.total_samples > 0:
-            expected = round((timestamp_ms - ts.t0_ms) / 1000.0 * stream.rate)
-            gap = expected - ts.total_samples
-            if gap > stream.rate // 10:  # fill gaps > 100 ms
-                self._write_silence(state, ts, gap)
-
         samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
         num_samples = len(samples[0])
+
+        # Derive PTS from wall-clock timestamp for A/V sync with the
+        # video stream (which also uses wall-clock timestamps).
+        # Constraint: PTS must advance by >= nb_samples per frame,
+        # otherwise the AAC encoder's af_queue produces non-monotonic
+        # output DTS (see cumulative-PTS commit for details).
+        #
+        # max(wall_clock_pos, last_pts + nb_samples) satisfies both:
+        # - follows wall-clock when frames arrive at normal rate
+        # - falls back to sample-rate spacing during burst delivery
+        #
+        # For gaps (AI silent between responses), wall_clock_pos jumps
+        # ahead → silence is implicit in the PTS gap. The MP4 player
+        # renders silence between packets automatically.
+        if timestamp_ms is not None:
+            wall_pos = max(round((timestamp_ms - ts.t0_ms) / 1000.0 * stream.rate), 0)
+        else:
+            wall_pos = ts.total_samples
+        pts = max(wall_pos, ts.total_samples)
+        # Inject explicit silence when there is a large gap, so the
+        # AAC encoder flushes buffered samples and the audio stream
+        # stays continuous rather than relying on implicit PTS gaps.
+        gap = pts - ts.total_samples
+        if gap > stream.rate // 10:  # > 100 ms
+            self._write_silence(state, ts, gap)
+
         frame = self._av.audio.frame.AudioFrame.from_ndarray(
             samples,
             format="s16",
             layout="mono",
         )
         frame.sample_rate = stream.rate
-        # Audio PTS must use cumulative sample count — not wall-clock
-        # timestamps.  The AAC encoder's af_queue adjusts partial-frame
-        # PTS by adding consumed samples; if PTS advances slower than
-        # samples (burst delivery), the adjustment produces non-monotonic
-        # output DTS that the MP4 muxer rejects (EINVAL).
         frame.pts = ts.total_samples
         ts.total_samples += num_samples
         ts.last_pts = frame.pts
@@ -499,7 +507,6 @@ class PyAVMediaRecorder(MediaRecorder):
         stream = ts.stream
         if stream is None:
             return
-        # Write in 1-second chunks to avoid huge encoder buffers
         chunk = min(num_samples, stream.rate)
         remaining = num_samples
         while remaining > 0:
