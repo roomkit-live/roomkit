@@ -237,3 +237,160 @@ class TestPyAVMediaRecorder:
         assert result.id == handle.id
         # No container was ever opened, so no file on disk
         assert result.size_bytes == 0
+
+    def test_late_audio_after_video_24khz(self, tmp_path: object) -> None:
+        """Audio arriving after many video frames (screen-agent pattern).
+
+        Reproduces the scenario where video captures for several seconds
+        before the AI voice starts responding.  The AAC encoder's initial
+        delay packet (DTS=-1024) must be handled correctly.
+        """
+        recorder = _get_recorder()
+        config = MediaRecordingConfig(
+            storage=str(tmp_path),
+            video_fps=5,
+            audio_codec="aac",
+            audio_sample_rate=24000,
+            min_tracks=2,
+        )
+        handle = recorder.on_recording_start(config)
+
+        audio_track = RecordingTrack(
+            id="audio:s1",
+            kind="audio",
+            channel_id="voice-1",
+            codec="pcm_s16le",
+            sample_rate=24000,
+        )
+        video_track = RecordingTrack(
+            id="video:s1",
+            kind="video",
+            channel_id="video-1",
+            width=64,
+            height=48,
+        )
+        recorder.on_track_added(handle, audio_track)
+        recorder.on_track_added(handle, video_track)
+
+        # Video runs for ~4 seconds before audio arrives
+        base_ms = 100_000.0
+        for i in range(20):
+            rgb = np.zeros((48, 64, 3), dtype=np.uint8).tobytes()
+            recorder.on_data(handle, video_track, rgb, base_ms + i * 200.0)
+
+        # Audio starts late — first audio triggers encoding start
+        for i in range(200):
+            ts = base_ms + 4000.0 + i * 20.0
+            pcm = np.zeros(480, dtype=np.int16).tobytes()
+            recorder.on_data(handle, audio_track, pcm, ts)
+            if i % 40 == 0 and i > 0:
+                rgb = np.zeros((48, 64, 3), dtype=np.uint8).tobytes()
+                recorder.on_data(handle, video_track, rgb, ts)
+
+        result = recorder.on_recording_stop(handle)
+        assert result.size_bytes > 0
+        assert len(result.tracks) == 2
+
+    def test_odd_video_dimensions_rounded(self, tmp_path: object) -> None:
+        """Odd video dimensions are rounded to even for libx264 compat."""
+        recorder = _get_recorder()
+        config = MediaRecordingConfig(
+            storage=str(tmp_path),
+            video_codec="libx264",
+        )
+        handle = recorder.on_recording_start(config)
+
+        # 675 is odd — would fail libx264 without even-rounding
+        track = RecordingTrack(
+            id="video:s1",
+            kind="video",
+            channel_id="video-1",
+            width=1080,
+            height=675,
+        )
+        recorder.on_track_added(handle, track)
+
+        for i in range(5):
+            # Provide data matching the ORIGINAL odd dimensions;
+            # the recorder stream uses the rounded-down even size.
+            rgb = np.zeros((674, 1080, 3), dtype=np.uint8).tobytes()
+            recorder.on_data(handle, track, rgb, i * 200.0)
+
+        result = recorder.on_recording_stop(handle)
+        assert result.size_bytes > 0
+
+
+    def test_variable_size_audio_frames(self, tmp_path: object) -> None:
+        """Variable-size audio frames (realtime voice provider pattern).
+
+        Realtime voice providers send audio chunks of varying sizes.
+        The cumulative sample count must track correctly to produce
+        monotonic PTS for the AAC encoder's af_queue.
+        """
+        recorder = _get_recorder()
+        config = MediaRecordingConfig(
+            storage=str(tmp_path),
+            video_fps=5,
+            audio_codec="aac",
+            audio_sample_rate=24000,
+            min_tracks=2,
+        )
+        handle = recorder.on_recording_start(config)
+
+        audio_track = RecordingTrack(
+            id="audio:s1",
+            kind="audio",
+            channel_id="voice-1",
+            codec="pcm_s16le",
+            sample_rate=24000,
+        )
+        video_track = RecordingTrack(
+            id="video:s1",
+            kind="video",
+            channel_id="video-1",
+            width=64,
+            height=48,
+        )
+        recorder.on_track_added(handle, audio_track)
+        recorder.on_track_added(handle, video_track)
+
+        # 1 video frame to start encoding
+        rgb = np.zeros((48, 64, 3), dtype=np.uint8).tobytes()
+        recorder.on_data(handle, video_track, rgb, 0.0)
+
+        # Variable-size audio: mix of 7200 (300ms), 480 (20ms), 2400 (100ms)
+        chunk_sizes = [7200, 7200, 480, 480, 2400, 7200, 480, 7200, 480, 2400]
+        ts = 0.0
+        for size in chunk_sizes:
+            pcm = np.zeros(size, dtype=np.int16).tobytes()
+            recorder.on_data(handle, audio_track, pcm, ts)
+            ts += size / 24.0  # advance by chunk duration in ms
+
+        result = recorder.on_recording_stop(handle)
+        assert result.size_bytes > 0
+        assert len(result.tracks) == 2
+
+
+class TestComputePts:
+    def test_monotonic_with_timestamp(self) -> None:
+        from roomkit.recorder._pyav_mux import compute_pts
+
+        pts = compute_pts(1000.0, 1000.0, 24000, -1, 0)
+        assert pts == 0
+        pts = compute_pts(1020.0, 1000.0, 24000, 0, 480)
+        assert pts == 480
+
+    def test_monotonic_fallback(self) -> None:
+        """Fallback PTS must also enforce monotonicity."""
+        from roomkit.recorder._pyav_mux import compute_pts
+
+        # last_pts=5000, fallback_pts=3840 → must return 5001, not 3840
+        pts = compute_pts(None, 0.0, 24000, 5000, 3840)
+        assert pts == 5001
+
+    def test_jitter_clamped(self) -> None:
+        from roomkit.recorder._pyav_mux import compute_pts
+
+        # Timestamp jitter could produce a lower PTS than last_pts
+        pts = compute_pts(1019.0, 1000.0, 24000, 480, 480)
+        assert pts == 481  # clamped to last_pts + 1

@@ -40,6 +40,7 @@ class _TrackState:
     stream: Any = None
     frame_count: int = 0
     last_pts: int = -1  # monotonic guard for PTS
+    total_samples: int = 0  # cumulative audio sample count for PTS
     video_fps: int = 30  # stream rate for video timestamp→PTS conversion
     decoder: Any = None  # codec context for decoding encoded video
     pending: list[tuple[bytes, float | None]] = field(default_factory=list)
@@ -219,8 +220,19 @@ class PyAVMediaRecorder(MediaRecorder):
                 # Wait for all tracks AND a minimum startup delay so late
                 # tracks (e.g. voice connecting after video) can register.
                 min_tracks = state.config.min_tracks if hasattr(state.config, "min_tracks") else 1
-                if len(state.tracks) >= min_tracks and self._all_tracks_ready(state):
+                registered = len(state.tracks)
+                if registered >= min_tracks and self._all_tracks_ready(state):
+                    logger.info(
+                        "Encoding started: %d/%d tracks ready, pending=%s",
+                        registered, min_tracks,
+                        {tid: len(t.pending) for tid, t in state.tracks.items()},
+                    )
                     self._start_encoding(state)
+                elif registered < min_tracks:
+                    logger.debug(
+                        "Waiting for tracks: %d/%d registered",
+                        registered, min_tracks,
+                    )
                 return
 
             # Set per-track t0 on first frame if not set from pending
@@ -455,13 +467,20 @@ class PyAVMediaRecorder(MediaRecorder):
             layout="mono",
         )
         frame.sample_rate = stream.rate
-        frame.pts = compute_pts(
-            timestamp_ms,
-            ts.t0_ms,
-            stream.rate,
-            ts.last_pts,
-            ts.frame_count * len(samples[0]),
-        )
+        # Audio PTS must advance by exactly nb_samples per frame.
+        # The AAC encoder's internal af_queue adjusts partial-frame
+        # entries by adding consumed samples to PTS.  When wall-clock
+        # timestamps cause PTS to advance slower than samples (burst
+        # delivery), the adjustment creates af_queue entries whose PTS
+        # is HIGHER than the next full entry — producing non-monotonic
+        # output packet DTS that the MP4 muxer rejects (EINVAL).
+        # Using cumulative sample count guarantees PTS advances at
+        # exactly the sample rate, matching the af_queue's expectation.
+        # Must use cumulative count (not frame_count * nb_samples)
+        # because realtime voice providers send variable-size chunks.
+        num_samples = len(samples[0])
+        frame.pts = ts.total_samples
+        ts.total_samples += num_samples
         ts.last_pts = frame.pts
         safe_mux(
             stream,

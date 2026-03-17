@@ -59,12 +59,17 @@ def compute_pts(
     last_pts: int,
     fallback_pts: int,
 ) -> int:
-    """Compute monotonically increasing PTS from timestamp or fallback."""
+    """Compute monotonically increasing PTS from timestamp or fallback.
+
+    Both the timestamp and fallback paths enforce monotonicity so that
+    PTS never goes backward even when timestamps are missing or jittery.
+    """
     if timestamp_ms is not None:
         elapsed_s = (timestamp_ms - t0_ms) / 1000.0
         pts = max(round(elapsed_s * rate), 0)
-        return max(pts, last_pts + 1)
-    return fallback_pts
+    else:
+        pts = fallback_pts
+    return max(pts, last_pts + 1)
 
 
 def safe_mux(
@@ -75,30 +80,60 @@ def safe_mux(
     path: str,
     *,
     label: str = "",
-) -> None:
+) -> bool:
     """Encode frame and mux packets; log first error per track then suppress.
 
     Args:
         track_state: Object with a ``mux_error_logged`` bool attribute
             (typically ``_TrackState``).  Set to ``True`` after the
             first error to suppress subsequent log spam.
+
+    Returns:
+        ``True`` if all packets were muxed successfully, ``False`` on error.
     """
     try:
         for packet in stream.encode(frame):
-            container.mux(packet)
+            # Capture PTS/DTS before mux — FFmpeg takes ownership of the
+            # packet buffer so reading fields after a failed mux is UB.
+            pre_pts = packet.pts
+            pre_dts = packet.dts
+            pre_tb = packet.time_base
+            try:
+                container.mux(packet)
+            except Exception:
+                if not track_state.mux_error_logged:
+                    track_state.mux_error_logged = True
+                    logger.error(
+                        "Mux failed [%s] frame_pts=%s rate=%s "
+                        "pkt(pts=%s dts=%s tb=%s) frame_count=%s "
+                        "stream_tb=%s for %s",
+                        label or "unknown",
+                        getattr(frame, "pts", "?"),
+                        getattr(frame, "sample_rate", None),
+                        pre_pts,
+                        pre_dts,
+                        pre_tb,
+                        getattr(track_state, "frame_count", "?"),
+                        stream.time_base,
+                        path,
+                        exc_info=True,
+                    )
+                return False
+        return True
     except Exception:
+        # Encode itself failed (not mux)
         if not track_state.mux_error_logged:
             track_state.mux_error_logged = True
-            frame_pts = getattr(frame, "pts", "?")
-            frame_sr = getattr(frame, "sample_rate", None)
             logger.error(
-                "Mux failed [%s] pts=%s rate=%s for %s",
+                "Encode failed [%s] frame_pts=%s rate=%s frame_count=%s for %s",
                 label or "unknown",
-                frame_pts,
-                frame_sr,
+                getattr(frame, "pts", "?"),
+                getattr(frame, "sample_rate", None),
+                getattr(track_state, "frame_count", "?"),
                 path,
                 exc_info=True,
             )
+        return False
 
 
 def probe_encoded_dimensions(
@@ -153,6 +188,11 @@ def probe_encoded_dimensions(
         del decoder
 
 
+def _even(n: int) -> int:
+    """Round down to nearest even number (libx264 requires even dimensions)."""
+    return n & ~1
+
+
 def create_stream(
     container: Any,
     track: RecordingTrack,
@@ -160,8 +200,8 @@ def create_stream(
 ) -> Any:
     """Add a stream to the container with known parameters."""
     if track.kind == "video":
-        w = track.width or 640
-        h = track.height or 480
+        w = _even(track.width or 640)
+        h = _even(track.height or 480)
         codec = resolve_video_codec(config.video_codec)
         try:
             stream = container.add_stream(codec, rate=config.video_fps)
