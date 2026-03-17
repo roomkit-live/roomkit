@@ -354,6 +354,17 @@ omit = [
     "src/roomkit/voice/backends/sip.py",
     "src/roomkit/voice/backends/webtransport.py",
     "src/roomkit/voice/pipeline/aec/webrtc.py",
+    "src/roomkit/voice/pipeline/aec/speex.py",
+    "src/roomkit/voice/pipeline/denoiser/rnnoise.py",
+    "src/roomkit/voice/pipeline/diarization/sherpa_onnx.py",
+    "src/roomkit/voice/pipeline/turn/smart_turn.py",
+    "src/roomkit/voice/realtime/bridge.py",
+    "src/roomkit/video/avatar/websocket.py",
+    "src/roomkit/video/pipeline/filter/watermark.py",
+    "src/roomkit/video/pipeline/transform/effects.py",
+    "src/roomkit/video/vision/screen_input.py",
+    "src/roomkit/providers/anam/avatar.py",
+    "src/roomkit/telemetry/opentelemetry.py",
     "src/roomkit/tools/mcp.py",
 ]
 
