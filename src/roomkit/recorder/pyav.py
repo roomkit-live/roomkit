@@ -169,38 +169,19 @@ class PyAVMediaRecorder(MediaRecorder):
             ts = _TrackState(track=track)
             state.tracks[track.id] = ts
 
-            # If encoding already started (late track addition), create the
-            # stream now and send a silent frame so the muxer accepts it.
+            # If encoding already started, we can't add streams to an MP4
+            # container after muxing. Log a warning — to fix, ensure all
+            # channels connect before video capture starts, or increase
+            # the encoding_delay_seconds on MediaRecordingConfig.
             if state.encoding_started and state.container is not None:
-                ts.stream = create_stream(state.container, track, state.config)
-                if ts.stream is not None and track.kind == "audio":
-                    self._send_silent_audio_frame(state, ts)
+                logger.warning(
+                    "Late track %s (%s) added after encoding started — "
+                    "audio won't be recorded. Connect voice before video capture.",
+                    track.id, track.kind,
+                )
 
         logger.debug("Track registered: %s (%s)", track.id, track.kind)
 
-    def _send_silent_audio_frame(self, state: _RecordingState, ts: _TrackState) -> None:
-        """Send a silent audio frame to initialize the stream's time_base."""
-        try:
-            import numpy as np
-
-            sample_rate = ts.track.sample_rate or state.config.audio_sample_rate
-            # 20ms of silence
-            num_samples = sample_rate // 50
-            silence = np.zeros((1, num_samples), dtype=np.int16)
-            frame = self._av.audio.frame.AudioFrame.from_ndarray(
-                silence, format="s16", layout="mono",
-            )
-            frame.sample_rate = sample_rate
-            frame.pts = 0
-            # Encode and mux directly (bypass safe_mux to avoid logging noise)
-            for packet in ts.stream.encode(frame):
-                state.container.mux(packet)
-            ts.t0_ms = time.monotonic() * 1000
-            ts.frame_count = 1
-            ts.last_pts = 0
-            logger.debug("Sent silent init frame for late audio track %s (rate=%d)", ts.track.id, sample_rate)
-        except Exception:
-            logger.warning("Failed to init late audio track %s", ts.track.id, exc_info=True)
 
     def on_track_removed(self, handle: MediaRecordingHandle, track: RecordingTrack) -> None:
         state = self._recordings.get(handle.id)
