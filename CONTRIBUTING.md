@@ -1,6 +1,6 @@
 # Contributing to RoomKit
 
-Thank you for your interest in contributing to RoomKit, a project by Tchat N Sign.
+Thank you for your interest in contributing to RoomKit.
 
 ## Development Setup
 
