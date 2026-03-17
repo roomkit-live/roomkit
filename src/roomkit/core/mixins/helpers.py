@@ -9,6 +9,7 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
     ChannelType,
@@ -40,6 +41,7 @@ class HelpersMixin:
     """Internal helpers used by other framework mixins."""
 
     _store: ConversationStore
+    _channels: dict[str, Any]
     _hook_engine: HookEngine
     _event_handlers: list[tuple[str, FrameworkEventHandler]]
     _identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]]
@@ -258,8 +260,6 @@ class HelpersMixin:
         """Build a RoomContext for the given room."""
         room = await self._store.get_room(room_id)
         if room is None:
-            from roomkit.core.framework import RoomNotFoundError
-
             raise RoomNotFoundError(f"Room {room_id} not found")
         bindings = await self._store.list_bindings(room_id)
         participants = await self._store.list_participants(room_id)
@@ -297,7 +297,7 @@ class HelpersMixin:
 
         if not isinstance(trace, ProtocolTrace):
             return None
-        channel = self._channels.get(trace.channel_id)  # type: ignore[attr-defined]
+        channel = self._channels.get(trace.channel_id)
         if channel is not None:
             result: str | None = channel.resolve_trace_room(trace.session_id)
             return result

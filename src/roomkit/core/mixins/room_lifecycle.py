@@ -7,7 +7,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from roomkit.core._helpers import HelpersMixin
+from roomkit.core.exceptions import (
+    IdentityNotFoundError,
+    ParticipantNotFoundError,
+    RoomNotFoundError,
+)
+from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import (
     EventType,
     HookTrigger,
@@ -72,8 +77,6 @@ class RoomLifecycleMixin(HelpersMixin):
         """Get a room by ID. Raises RoomNotFoundError if missing."""
         room = await self._store.get_room(room_id)
         if room is None:
-            from roomkit.core.framework import RoomNotFoundError
-
             raise RoomNotFoundError(f"Room {room_id} not found")
         return room
 
@@ -233,16 +236,12 @@ class RoomLifecycleMixin(HelpersMixin):
         async with self._lock_manager.locked(room_id):
             participant = await self._store.get_participant(room_id, participant_id)
             if participant is None:
-                from roomkit.core.framework import ParticipantNotFoundError
-
                 raise ParticipantNotFoundError(
                     f"Participant {participant_id} not found in room {room_id}"
                 )
 
             identity = await self._store.get_identity(identity_id)
             if identity is None:
-                from roomkit.core.framework import IdentityNotFoundError
-
                 raise IdentityNotFoundError(f"Identity {identity_id} not found")
 
             # Update participant fields

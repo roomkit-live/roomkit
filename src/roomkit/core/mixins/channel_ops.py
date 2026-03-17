@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from roomkit.core._helpers import HelpersMixin
+from roomkit.core.exceptions import ChannelNotFoundError, ChannelNotRegisteredError
+from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import (
     Access,
@@ -18,8 +19,11 @@ from roomkit.models.enums import (
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
     from roomkit.core.event_router import EventRouter
+    from roomkit.core.hooks import HookEngine
     from roomkit.core.locks import RoomLockManager
+    from roomkit.realtime.base import RealtimeBackend
     from roomkit.store.base import ConversationStore
+    from roomkit.telemetry.base import TelemetryProvider
 
 
 class ChannelOpsMixin(HelpersMixin):
@@ -29,6 +33,9 @@ class ChannelOpsMixin(HelpersMixin):
     _channels: dict[str, Channel]
     _lock_manager: RoomLockManager
     _event_router: EventRouter | None
+    _hook_engine: HookEngine
+    _telemetry: TelemetryProvider
+    _realtime: RealtimeBackend
 
     def register_channel(self, channel: Channel) -> None:
         """Register a channel implementation by its ID."""
@@ -48,7 +55,7 @@ class ChannelOpsMixin(HelpersMixin):
         from roomkit.channels.ai import AIChannel
 
         if isinstance(channel, AIChannel):
-            channel._realtime = self._realtime  # type: ignore[attr-defined]
+            channel._realtime = self._realtime
 
         # Propagate telemetry to channel's sub-providers (AI, STT, TTS, etc.)
         if hasattr(channel, "_propagate_telemetry"):
@@ -77,8 +84,6 @@ class ChannelOpsMixin(HelpersMixin):
         **kwargs: Any,
     ) -> ChannelBinding:
         """Attach a registered channel to a room."""
-        from roomkit.core.framework import ChannelNotRegisteredError
-
         async with self._lock_manager.locked(room_id):
             await self.get_room(room_id)  # type: ignore[attr-defined]
             channel = self._channels.get(channel_id)
@@ -309,8 +314,6 @@ class ChannelOpsMixin(HelpersMixin):
             channel.update_binding(room_id, binding)
 
     async def _get_binding(self, room_id: str, channel_id: str) -> ChannelBinding:
-        from roomkit.core.framework import ChannelNotFoundError
-
         binding = await self._store.get_binding(room_id, channel_id)
         if binding is None:
             raise ChannelNotFoundError(f"Channel {channel_id} not in room {room_id}")
