@@ -39,8 +39,8 @@ class _TrackState:
     track: RecordingTrack
     stream: Any = None
     frame_count: int = 0
-    last_pts: int = -1  # monotonic guard for PTS
-    total_samples: int = 0  # cumulative audio sample count for PTS
+    last_pts: int = -1  # monotonic guard for PTS (video)
+    audio_end: int = 0  # next expected sample position (audio cursor)
     video_fps: int = 30  # stream rate for video timestamp→PTS conversion
     decoder: Any = None  # codec context for decoding encoded video
     pending: list[tuple[bytes, float | None]] = field(default_factory=list)
@@ -452,28 +452,21 @@ class PyAVMediaRecorder(MediaRecorder):
         samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
         num_samples = len(samples[0])
 
-        # Derive PTS from wall-clock timestamp for A/V sync with the
-        # video stream (which also uses wall-clock timestamps).
-        # Constraint: PTS must advance by >= nb_samples per frame,
-        # otherwise the AAC encoder's af_queue produces non-monotonic
-        # output DTS (see cumulative-PTS commit for details).
-        #
-        # max(wall_clock_pos, last_pts + nb_samples) satisfies both:
-        # - follows wall-clock when frames arrive at normal rate
-        # - falls back to sample-rate spacing during burst delivery
-        #
-        # For gaps (AI silent between responses), wall_clock_pos jumps
-        # ahead → silence is implicit in the PTS gap. The MP4 player
-        # renders silence between packets automatically.
+        # Where this frame should start (wall-clock position for A/V sync).
         if timestamp_ms is not None:
             wall_pos = max(round((timestamp_ms - ts.t0_ms) / 1000.0 * stream.rate), 0)
         else:
-            wall_pos = ts.total_samples
-        pts = max(wall_pos, ts.total_samples)
-        # Inject explicit silence when there is a large gap, so the
-        # AAC encoder flushes buffered samples and the audio stream
-        # stays continuous rather than relying on implicit PTS gaps.
-        gap = pts - ts.total_samples
+            wall_pos = ts.audio_end
+
+        # PTS = max(wall_clock, audio_cursor).
+        # - Normal: wall_pos ≈ audio_end → follows wall-clock (A/V sync).
+        # - Burst:  wall_pos < audio_end → sample-rate spacing (AAC safe).
+        # - After burst: wall_pos > audio_end → snaps back to clock.
+        # - Gap:    wall_pos >> audio_end → silence injected first.
+        pts = max(wall_pos, ts.audio_end)
+
+        # Inject silence for large gaps so the AAC encoder flushes.
+        gap = pts - ts.audio_end
         if gap > stream.rate // 10:  # > 100 ms
             self._write_silence(state, ts, gap)
 
@@ -483,13 +476,8 @@ class PyAVMediaRecorder(MediaRecorder):
             layout="mono",
         )
         frame.sample_rate = stream.rate
-        frame.pts = ts.total_samples
-        # Advance total_samples to the wall-clock-aligned end of this
-        # frame.  During burst delivery total_samples + num_samples wins
-        # (sample-rate spacing).  After a burst wall_pos + num_samples
-        # wins, snapping the counter back to wall-clock so it doesn't
-        # drift ahead permanently.
-        ts.total_samples = max(wall_pos + num_samples, ts.total_samples + num_samples)
+        frame.pts = max(wall_pos, ts.audio_end)
+        ts.audio_end = frame.pts + num_samples
         ts.last_pts = frame.pts
         safe_mux(
             stream,
@@ -523,8 +511,8 @@ class PyAVMediaRecorder(MediaRecorder):
                 layout="mono",
             )
             frame.sample_rate = stream.rate
-            frame.pts = ts.total_samples
-            ts.total_samples += n
+            frame.pts = ts.audio_end
+            ts.audio_end += n
             ts.last_pts = frame.pts
             if not safe_mux(
                 stream, state.container, frame, ts, state.path, label="audio",
