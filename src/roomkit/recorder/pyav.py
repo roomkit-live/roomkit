@@ -320,12 +320,23 @@ class PyAVMediaRecorder(MediaRecorder):
             pending_counts,
         )
 
-        # Flush buffered frames
+        # Flush buffered frames.
+        # For audio: reconstruct evenly-spaced timestamps from the
+        # sample duration so that wall_pos matches audio_end after
+        # the flush.  Pending audio frames arrive in a burst (delivery
+        # timestamps compressed) but each represents a fixed chunk of
+        # audio time.  Using delivery timestamps would make audio_end
+        # race ahead of wall_pos permanently.
         for ts in state.tracks.values():
             if ts.stream is None:
                 ts.pending.clear()
                 continue
+            cumulative_ms = 0.0
             for data, ts_ms in ts.pending:
+                if ts.track.kind == "audio" and ts.stream is not None:
+                    num_s = len(data) // 2  # 16-bit mono samples
+                    ts_ms = ts.t0_ms + cumulative_ms
+                    cumulative_ms += num_s / ts.stream.rate * 1000.0
                 try:
                     self._encode_frame(state, ts, ts.track, data, ts_ms)
                     ts.frame_count += 1
