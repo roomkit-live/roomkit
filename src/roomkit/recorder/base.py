@@ -67,6 +67,11 @@ class MediaRecordingConfig:
     audio_codec: str = "aac"
     audio_sample_rate: int = 16000
     format: str = "mp4"
+    min_tracks: int = 1
+    """Minimum tracks before encoding starts. Set to the expected
+    total (e.g. 3 for 1 video + 2 audio) so encoding waits for all
+    channels to connect. Required because MP4 cannot add streams
+    after the first packet is muxed."""
 
 
 @dataclass

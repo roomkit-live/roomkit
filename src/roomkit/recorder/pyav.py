@@ -216,7 +216,10 @@ class PyAVMediaRecorder(MediaRecorder):
 
             if not state.encoding_started:
                 ts.pending.append((data, timestamp_ms))
-                if self._all_tracks_ready(state):
+                # Wait for all tracks AND a minimum startup delay so late
+                # tracks (e.g. voice connecting after video) can register.
+                min_tracks = state.config.min_tracks if hasattr(state.config, "min_tracks") else 1
+                if len(state.tracks) >= min_tracks and self._all_tracks_ready(state):
                     self._start_encoding(state)
                 return
 
