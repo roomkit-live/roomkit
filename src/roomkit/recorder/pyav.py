@@ -484,7 +484,12 @@ class PyAVMediaRecorder(MediaRecorder):
         )
         frame.sample_rate = stream.rate
         frame.pts = ts.total_samples
-        ts.total_samples += num_samples
+        # Advance total_samples to the wall-clock-aligned end of this
+        # frame.  During burst delivery total_samples + num_samples wins
+        # (sample-rate spacing).  After a burst wall_pos + num_samples
+        # wins, snapping the counter back to wall-clock so it doesn't
+        # drift ahead permanently.
+        ts.total_samples = max(wall_pos + num_samples, ts.total_samples + num_samples)
         ts.last_pts = frame.pts
         safe_mux(
             stream,
