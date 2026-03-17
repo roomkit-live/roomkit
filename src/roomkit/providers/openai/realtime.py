@@ -493,35 +493,15 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
                     output_token_details.get("audio_tokens", 0),
                     session.id,
                 )
-                # Store on session for telemetry span attribution
-                session._last_usage = {
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "input_token_details": input_token_details,
-                    "output_token_details": output_token_details,
-                }
-                # Record via telemetry if available
-                # (_telemetry is injected by RealtimeVoiceChannel._propagate_telemetry)
-                telemetry = getattr(self, "_telemetry", None)
-                if telemetry is not None:
-                    telemetry.record_metric(
-                        "roomkit.realtime.input_tokens",
-                        float(input_tokens),
-                        unit="tokens",
-                        attributes={
-                            "session_id": session.id,
-                            "model": self._model,
-                        },
-                    )
-                    telemetry.record_metric(
-                        "roomkit.realtime.output_tokens",
-                        float(output_tokens),
-                        unit="tokens",
-                        attributes={
-                            "session_id": session.id,
-                            "model": self._model,
-                        },
-                    )
+                self._record_usage(
+                    session,
+                    input_tokens,
+                    output_tokens,
+                    details={
+                        "input_token_details": input_token_details,
+                        "output_token_details": output_token_details,
+                    },
+                )
 
             self._responding.discard(session.id)
             await self._fire_callbacks(self._response_end_callbacks, session)

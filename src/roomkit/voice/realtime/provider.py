@@ -197,6 +197,53 @@ class RealtimeVoiceProvider(ABC):
     async def close(self) -> None:
         """Release all provider resources."""
 
+    # -- Usage recording --
+
+    def _record_usage(
+        self,
+        session: VoiceSession,
+        input_tokens: int,
+        output_tokens: int,
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Store token usage on session and record telemetry metrics.
+
+        Called by provider implementations after parsing usage from
+        their API response. Centralises session._last_usage storage
+        and telemetry metric recording.
+
+        Args:
+            session: The active session.
+            input_tokens: Number of input tokens consumed.
+            output_tokens: Number of output tokens produced.
+            details: Optional provider-specific detail dict merged
+                into _last_usage (e.g. token breakdowns).
+        """
+        usage: dict[str, Any] = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+        }
+        if details:
+            usage.update(details)
+        session._last_usage = usage
+
+        telemetry = getattr(self, "_telemetry", None)
+        if telemetry is not None:
+            attrs = {"session_id": session.id, "model": getattr(self, "_model", self.name)}
+            telemetry.record_metric(
+                "roomkit.realtime.input_tokens",
+                float(input_tokens),
+                unit="tokens",
+                attributes=attrs,
+            )
+            telemetry.record_metric(
+                "roomkit.realtime.output_tokens",
+                float(output_tokens),
+                unit="tokens",
+                attributes=attrs,
+            )
+
     # -- Callback registration --
 
     def on_audio(self, callback: RealtimeAudioCallback) -> None:

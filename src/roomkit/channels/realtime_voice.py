@@ -1467,7 +1467,7 @@ class RealtimeVoiceChannel(Channel):
                 if last_usage:
                     turn_attrs[Attr.LLM_INPUT_TOKENS] = last_usage.get("input_tokens", 0)
                     turn_attrs[Attr.LLM_OUTPUT_TOKENS] = last_usage.get("output_tokens", 0)
-                    object.__setattr__(session, "_last_usage", {})
+                    session._last_usage = {}
                 telemetry.end_span(turn_span_id, attributes=turn_attrs)
         elif is_speaking:
             with self._state_lock:

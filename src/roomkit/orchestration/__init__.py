@@ -29,6 +29,7 @@ from roomkit.orchestration.state import (
     get_conversation_state,
     set_conversation_state,
 )
+from roomkit.orchestration.status_bus import StatusLevel
 
 __all__ = [
     # State
@@ -51,4 +52,6 @@ __all__ = [
     # Pipeline
     "ConversationPipeline",
     "PipelineStage",
+    # Status Bus (re-exported from status_bus module)
+    "StatusLevel",
 ]

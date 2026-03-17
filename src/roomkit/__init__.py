@@ -137,12 +137,14 @@ from roomkit.orchestration.status_bus import (
     StatusBackend,
     StatusBus,
     StatusEntry,
+    StatusLevel,
 )
 from roomkit.orchestration.tool_audit import (
     ConsoleToolAuditor,
     JSONLToolAuditor,
     ToolAuditEntry,
     ToolAuditor,
+    audit_realtime_tool_handler,
     audit_tool_handler,
 )
 from roomkit.providers.ai.base import (
@@ -519,11 +521,13 @@ __all__ = [
     "StatusBackend",
     "StatusBus",
     "StatusEntry",
+    "StatusLevel",
     # Tool Audit
     "ConsoleToolAuditor",
     "JSONLToolAuditor",
     "ToolAuditEntry",
     "ToolAuditor",
+    "audit_realtime_tool_handler",
     "audit_tool_handler",
     # Delegation (background tasks)
     "BackgroundTaskDeliveryStrategy",

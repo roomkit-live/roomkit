@@ -21,16 +21,18 @@ import json
 import logging
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 logger = logging.getLogger("roomkit.orchestration.tool_audit")
 
+_MAX_RESULT_LEN = 500
 
-@dataclass
-class ToolAuditEntry:
+
+class ToolAuditEntry(BaseModel):
     """A single tool execution record."""
 
     ts: str
@@ -40,19 +42,7 @@ class ToolAuditEntry:
     result: str
     status: str  # ok | failed | error
     duration_ms: float
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "ts": self.ts,
-            "agent_id": self.agent_id,
-            "tool_name": self.tool_name,
-            "arguments": self.arguments,
-            "result": self.result[:500],
-            "status": self.status,
-            "duration_ms": self.duration_ms,
-            "metadata": self.metadata,
-        }
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ToolAuditor(ABC):
@@ -98,7 +88,7 @@ class JSONLToolAuditor(ToolAuditor):
         self._entries.append(entry)
         try:
             with open(self._path, "a") as f:
-                f.write(json.dumps(entry.to_dict(), default=str) + "\n")
+                f.write(json.dumps(entry.model_dump(), default=str) + "\n")
         except Exception:
             logger.exception("Failed to write audit entry to %s", self._path)
 
@@ -163,10 +153,24 @@ class ConsoleToolAuditor(ToolAuditor):
         lines = ["\nTool Audit (console)", "=" * 60]
         for i, e in enumerate(self._entries, 1):
             status_icon = "OK" if e.status == "ok" else "FAIL"
-            lines.append(f"  {i:2d}. [{status_icon}] {e.agent_id}.{e.tool_name}  ({e.duration_ms:.0f}ms)")
+            lines.append(
+                f"  {i:2d}. [{status_icon}] {e.agent_id}.{e.tool_name}"
+                f"  ({e.duration_ms:.0f}ms)"
+            )
         total_ms = sum(e.duration_ms for e in self._entries)
         lines.append(f"\n  Total: {len(self._entries)} calls, {total_ms:.0f}ms")
         return "\n".join(lines)
+
+
+def _detect_status(result: str) -> str:
+    """Detect failed status from JSON tool results."""
+    try:
+        parsed = json.loads(result)
+        if isinstance(parsed, dict) and parsed.get("status") == "failed":
+            return "failed"
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return "ok"
 
 
 def audit_tool_handler(
@@ -190,14 +194,8 @@ def audit_tool_handler(
         status = "ok"
         result = ""
         try:
-            result = await handler(name, arguments)
-            # Detect failures from JSON result
-            try:
-                parsed = json.loads(result)
-                if isinstance(parsed, dict) and parsed.get("status") == "failed":
-                    status = "failed"
-            except (json.JSONDecodeError, TypeError):
-                pass
+            result = str(await handler(name, arguments))
+            status = _detect_status(result)
             return result
         except Exception as exc:
             status = "error"
@@ -210,7 +208,56 @@ def audit_tool_handler(
                 agent_id=agent_id,
                 tool_name=name,
                 arguments=dict(arguments),
-                result=result,
+                result=result[:_MAX_RESULT_LEN],
+                status=status,
+                duration_ms=elapsed,
+            ))
+
+    return _audited
+
+
+def audit_realtime_tool_handler(
+    handler: Any,
+    auditor: ToolAuditor,
+    agent_id: str,
+) -> Any:
+    """Wrap a realtime tool handler to automatically record audit entries.
+
+    Realtime tool handlers have signature ``(session, name, args) -> dict|str``.
+
+    Args:
+        handler: The original async handler ``(session, name, args) -> dict|str``.
+        auditor: The ToolAuditor to record entries to.
+        agent_id: Agent ID for the audit entries.
+
+    Returns:
+        A wrapped handler with the same signature.
+    """
+
+    async def _audited(session: Any, name: str, arguments: dict[str, Any]) -> dict[str, Any] | str:
+        t0 = time.monotonic()
+        status = "ok"
+        result_str = ""
+        try:
+            raw_result: dict[str, Any] | str = await handler(session, name, arguments)
+            if isinstance(raw_result, dict):
+                result_str = json.dumps(raw_result)
+            else:
+                result_str = str(raw_result)
+            status = _detect_status(result_str)
+            return raw_result
+        except Exception as exc:
+            status = "error"
+            result_str = str(exc)
+            raise
+        finally:
+            elapsed = (time.monotonic() - t0) * 1000
+            auditor.record(ToolAuditEntry(
+                ts=datetime.now(UTC).isoformat(),
+                agent_id=agent_id,
+                tool_name=name,
+                arguments=dict(arguments),
+                result=result_str[:_MAX_RESULT_LEN],
                 status=status,
                 duration_ms=elapsed,
             ))

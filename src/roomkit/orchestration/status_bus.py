@@ -12,7 +12,7 @@ Usage::
     bus = StatusBus(backend=RedisStatusBackend("redis://localhost:6379"))
 
     # Post from any agent
-    bus.post("exec", "search_google", "ok", detail="Found 7 results")
+    bus.post("exec", "search_google", StatusLevel.OK, detail="Found 7 results")
 
     # Subscribe for real-time notifications
     bus.subscribe(my_callback)
@@ -24,44 +24,44 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import inspect
 import json
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 logger = logging.getLogger("roomkit.orchestration.status_bus")
 
-StatusCallback = Callable[["StatusEntry"], Awaitable[None]]
+
+class StatusLevel(StrEnum):
+    """Status severity levels for agent status updates."""
+
+    OK = "ok"
+    FAILED = "failed"
+    PENDING = "pending"
+    INFO = "info"
+    COMPLETED = "completed"
 
 
-@dataclass
-class StatusEntry:
+StatusCallback = Callable[["StatusEntry"], Awaitable[None] | None]
+
+
+class StatusEntry(BaseModel):
     """A single status update from an agent."""
 
     ts: str
     agent_id: str
     action: str
-    status: str  # ok | failed | pending | info | completed
+    status: StatusLevel
     detail: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "ts": self.ts,
-            "agent_id": self.agent_id,
-            "action": self.action,
-            "status": self.status,
-            "detail": self.detail,
-            "metadata": self.metadata,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> StatusEntry:
-        return cls(**{k: data[k] for k in cls.__dataclass_fields__ if k in data})
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -99,13 +99,19 @@ class StatusBackend(ABC):
         """Unsubscribe from entries."""
         ...
 
-    async def close(self) -> None:
+    async def close(self) -> None:  # noqa: B027 — optional override, not required
         """Close the backend and release resources."""
 
 
 # ---------------------------------------------------------------------------
 # In-memory backend
 # ---------------------------------------------------------------------------
+
+
+def _append_jsonl(path: Path, line: str) -> None:
+    """Blocking write of a single line to a JSONL file (for asyncio.to_thread)."""
+    with open(path, "a") as f:
+        f.write(line + "\n")
 
 
 class InMemoryStatusBackend(StatusBackend):
@@ -138,18 +144,20 @@ class InMemoryStatusBackend(StatusBackend):
         if len(self._entries) > self._max_entries:
             self._entries = self._entries[-self._max_entries:]
 
-        # Persist
+        # Persist via thread to avoid blocking the event loop
         if self._persist_path is not None:
             try:
-                with open(self._persist_path, "a") as f:
-                    f.write(json.dumps(entry.to_dict(), default=str) + "\n")
+                line = json.dumps(entry.model_dump(), default=str)
+                await asyncio.to_thread(_append_jsonl, self._persist_path, line)
             except Exception:
                 logger.exception("Failed to persist status entry")
 
-        # Notify subscribers
+        # Notify subscribers (supports both sync and async callbacks)
         for cb in self._subscribers:
             try:
-                await cb(entry)
+                result = cb(entry)
+                if inspect.isawaitable(result):
+                    await result
             except Exception:
                 logger.exception("StatusBus subscriber failed")
 
@@ -167,10 +175,8 @@ class InMemoryStatusBackend(StatusBackend):
         self._subscribers.append(callback)
 
     async def unsubscribe(self, callback: StatusCallback) -> None:
-        try:
+        with contextlib.suppress(ValueError):
             self._subscribers.remove(callback)
-        except ValueError:
-            pass
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +223,7 @@ class StatusBus:
         self,
         agent_id: str,
         action: str,
-        status: str,
+        status: str | StatusLevel,
         *,
         detail: str = "",
         metadata: dict[str, Any] | None = None,
@@ -231,7 +237,7 @@ class StatusBus:
             ts=datetime.now(UTC).isoformat(),
             agent_id=agent_id,
             action=action,
-            status=status,
+            status=StatusLevel(status),
             detail=detail,
             metadata=metadata or {},
         )
@@ -259,7 +265,7 @@ class StatusBus:
         self,
         agent_id: str,
         action: str,
-        status: str,
+        status: str | StatusLevel,
         *,
         detail: str = "",
         metadata: dict[str, Any] | None = None,
@@ -269,7 +275,7 @@ class StatusBus:
             ts=datetime.now(UTC).isoformat(),
             agent_id=agent_id,
             action=action,
-            status=status,
+            status=StatusLevel(status),
             detail=detail,
             metadata=metadata or {},
         )
@@ -324,14 +330,9 @@ class StatusBus:
         """Close the backend."""
         await self._backend.close()
 
-    def print_summary(self) -> None:
-        """Print a formatted summary (sync, reads from in-memory backend)."""
-        if isinstance(self._backend, InMemoryStatusBackend):
-            entries = self._backend._entries
-        else:
-            logger.warning("print_summary only works with InMemoryStatusBackend")
-            return
-
+    async def print_summary(self) -> None:
+        """Print a formatted summary of recent status entries."""
+        entries = await self._backend.recent(500)
         if not entries:
             print("\nNo status entries.")
             return
@@ -342,7 +343,7 @@ class StatusBus:
             print(f"  {i:2d}. [{icon}] {e.agent_id:6s} {e.action}")
             if e.detail:
                 print(f"      {e.detail[:100]}")
-        ok = sum(1 for e in entries if e.status == "ok")
-        fail = sum(1 for e in entries if e.status == "failed")
-        done = sum(1 for e in entries if e.status == "completed")
+        ok = sum(1 for e in entries if e.status == StatusLevel.OK)
+        fail = sum(1 for e in entries if e.status == StatusLevel.FAILED)
+        done = sum(1 for e in entries if e.status == StatusLevel.COMPLETED)
         print(f"\n  Total: {len(entries)} entries ({ok} ok, {fail} failed, {done} completed)")

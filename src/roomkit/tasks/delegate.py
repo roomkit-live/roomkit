@@ -173,11 +173,11 @@ def setup_delegation(
         handler: The delegate handler that processes tool calls.
         tool: Optional custom delegate tool (e.g. from :func:`build_delegate_tool`).
     """
-    if any(t.name == "delegate_task" for t in channel._extra_tools):
+    if any(t.name == "delegate_task" for t in channel._injected_tools):
         msg = f"setup_delegation() already called for channel '{channel.channel_id}'"
         raise RuntimeError(msg)
 
-    channel._extra_tools.append(tool or DELEGATE_TOOL)
+    channel._injected_tools.append(tool or DELEGATE_TOOL)
 
     original = channel._tool_handler
 

@@ -97,20 +97,22 @@ def _press_key_param_description() -> str:
     )
 
 
-PRESS_KEY_TOOL: dict[str, Any] = {
-    "name": "press_key",
-    "description": _press_key_description(),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "key": {
-                "type": "string",
-                "description": _press_key_param_description(),
+def _build_press_key_tool() -> dict[str, Any]:
+    """Build the press_key tool definition lazily (OS-aware descriptions)."""
+    return {
+        "name": "press_key",
+        "description": _press_key_description(),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": _press_key_param_description(),
+                },
             },
+            "required": ["key"],
         },
-        "required": ["key"],
-    },
-}
+    }
 
 SCROLL_TOOL: dict[str, Any] = {
     "name": "scroll",
@@ -193,8 +195,13 @@ If not found:
 """
 
 
+_dpi_initialized = False
+
+
 def _get_scale_factor() -> tuple[float, float]:
     """Detect DPI scale factor per OS for coordinate conversion."""
+    global _dpi_initialized  # noqa: PLW0603
+
     system = platform.system()
     if system == "Darwin":
         try:
@@ -209,12 +216,14 @@ def _get_scale_factor() -> tuple[float, float]:
         except Exception:
             return 1.0, 1.0
     if system == "Windows":
-        try:
-            import ctypes
+        if not _dpi_initialized:
+            try:
+                import ctypes
 
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # type: ignore[attr-defined]
-        except Exception:  # nosec B110 — best-effort DPI awareness
-            pass
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)  # type: ignore[attr-defined]
+            except Exception:  # nosec B110 — best-effort DPI awareness
+                pass
+            _dpi_initialized = True
         return 1.0, 1.0
     # Linux
     gdk_scale = os.environ.get("GDK_SCALE", "1")
@@ -261,18 +270,24 @@ def _parse_json_response(text: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             pass
 
-    # Fallback: extract cx/cy via regex when JSON is garbled
+    # Fallback: extract cx/cy/label via regex when JSON is garbled
     found_match = re.search(r'"found"\s*:\s*(true|false)', text, re.IGNORECASE)
     cx_match = re.search(r'"cx"\s*:\s*(\d+)', text)
     cy_match = re.search(r'"cy"\s*:\s*(\d+)', text)
     if found_match and cx_match and cy_match:
         found = found_match.group(1).lower() == "true"
-        logger.debug("Fallback JSON parse: found=%s cx=%s cy=%s", found, cx_match.group(1), cy_match.group(1))
+        label_match = re.search(r'"label"\s*:\s*"([^"]*)"', text)
+        label = label_match.group(1) if label_match else ""
+        logger.debug(
+            "Fallback JSON parse: found=%s cx=%s cy=%s label=%s",
+            found, cx_match.group(1), cy_match.group(1), label,
+        )
         return {
             "found": found,
             "cx": int(cx_match.group(1)),
             "cy": int(cy_match.group(1)),
             "box": {},
+            "label": label,
         }
     return None
 
@@ -407,7 +422,7 @@ class ScreenInputTools:
     @property
     def definitions(self) -> list[dict[str, Any]]:
         """Tool definitions. Includes click_element if vision is set."""
-        tools = [TYPE_TEXT_TOOL, PRESS_KEY_TOOL, SCROLL_TOOL]
+        tools = [TYPE_TEXT_TOOL, _build_press_key_tool(), SCROLL_TOOL]
         if self._vision is not None:
             tools.append(CLICK_ELEMENT_TOOL)
         return tools

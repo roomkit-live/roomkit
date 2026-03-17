@@ -48,8 +48,8 @@ from roomkit.providers.ai.base import (
     AIToolCallPart,
     AIToolResultPart,
     ProviderError,
-    StreamEvent,
     StreamDone,
+    StreamEvent,
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
@@ -154,9 +154,11 @@ class AIChannel(Channel):
         else:
             self._tool_handler = tool_handler
 
-        # Extra tools injected by orchestration (e.g. HANDOFF_TOOL)
-        # or provided directly via the tools parameter.
-        self._extra_tools: list[AITool] = list(tools) if tools else []
+        # User-provided tools (from constructor) and orchestration-injected
+        # tools (e.g. HANDOFF_TOOL, DELEGATE_TOOL) are kept separate so that
+        # orchestration code can inspect/modify injected tools independently.
+        self._user_tools: list[AITool] = list(tools) if tools else []
+        self._injected_tools: list[AITool] = []
 
         # Active tool loops for steering (loop_id -> context)
         self._active_loops: dict[str, _ToolLoopContext] = {}
@@ -175,8 +177,8 @@ class AIChannel(Channel):
 
     @property
     def extra_tools(self) -> list[AITool]:
-        """Extra tools injected by orchestration (e.g. handoff tool)."""
-        return self._extra_tools
+        """All extra tools (user-provided + orchestration-injected)."""
+        return self._user_tools + self._injected_tools
 
     def _propagate_telemetry(self) -> None:
         """Propagate telemetry to AI provider."""
@@ -378,7 +380,8 @@ class AIChannel(Channel):
             raw_tools = binding.metadata.get("tools", [])
             has_tools = (
                 bool(raw_tools)
-                or bool(self._extra_tools)
+                or bool(self._user_tools)
+                or bool(self._injected_tools)
                 or (self._skills is not None and self._skills.skill_count > 0)
             )
 
@@ -419,6 +422,8 @@ class AIChannel(Channel):
 
     async def _run_streaming_tool_loop(self, context: AIContext) -> AsyncIterator[str]:
         """Stream text deltas, executing tool calls between generation rounds."""
+        from roomkit.telemetry.context import get_current_span
+
         loop_ctx = _ToolLoopContext()
         loop_ctx.loop_id = str(id(loop_ctx))
         # Inherit participant role from the on_event-level context
@@ -427,12 +432,24 @@ class AIChannel(Channel):
             loop_ctx.current_participant_role = parent_ctx.current_participant_role
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx
+        telemetry = self._telemetry_provider
+        span_id = telemetry.start_span(
+            SpanKind.LLM_GENERATE,
+            "llm.generate",
+            parent_id=get_current_span(),
+            room_id=context.room.room.id if context.room else None,
+            channel_id=self.channel_id,
+            attributes={
+                Attr.PROVIDER: type(self._provider).__name__,
+                Attr.LLM_STREAMING: True,
+            },
+        )
+        _round_usage: dict[str, Any] | None = None
         try:
             # Apply pre-queued directives (e.g. cancel enqueued before loop started)
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
                 return
-            telemetry = self._telemetry_provider
             room_id = context.room.room.id if context.room else None
             deadline = (
                 asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
@@ -643,6 +660,15 @@ class AIChannel(Channel):
                 if should_cancel:
                     logger.info("Streaming tool loop cancelled after round %d", _round_idx)
                     return
+        except Exception as exc:
+            telemetry.end_span(span_id, status="error", error_message=str(exc))
+            raise
+        else:
+            usage_attrs: dict[str, Any] = {}
+            if _round_usage:
+                usage_attrs[Attr.LLM_INPUT_TOKENS] = _round_usage.get("input_tokens", 0)
+                usage_attrs[Attr.LLM_OUTPUT_TOKENS] = _round_usage.get("output_tokens", 0)
+            telemetry.end_span(span_id, attributes=usage_attrs)
         finally:
             self._active_loops.pop(loop_ctx.loop_id, None)
             _current_loop_ctx.set(None)
@@ -1219,8 +1245,8 @@ class AIChannel(Channel):
             for t in raw_tools
         ]
 
-        # Inject extra tools (orchestration handoff, etc.)
-        tools.extend(self._extra_tools)
+        # Inject extra tools (user-provided + orchestration handoff, etc.)
+        tools.extend(self.extra_tools)
 
         # Inject skill tools and prompt (infra tools added here, gated tools later)
         if self._skills and self._skills.skill_count > 0:

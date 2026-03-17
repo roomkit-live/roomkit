@@ -675,12 +675,12 @@ def setup_handoff(
             Defaults to the generic :data:`HANDOFF_TOOL`.
     """
     # Guard against double registration
-    if any(t.name == "handoff_conversation" for t in channel.extra_tools):
+    if any(t.name == "handoff_conversation" for t in channel._injected_tools):
         msg = f"setup_handoff() already called for channel '{channel.channel_id}'"
         raise RuntimeError(msg)
 
     # Inject the handoff tool definition
-    channel.extra_tools.append(tool or HANDOFF_TOOL)
+    channel._injected_tools.append(tool or HANDOFF_TOOL)
 
     # Wrap the tool handler chain
     original = channel.tool_handler

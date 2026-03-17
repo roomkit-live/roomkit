@@ -123,7 +123,7 @@ class TestSetupDelegation:
 
         setup_delegation(channel, handler)
 
-        tool_names = [t.name for t in channel._extra_tools]
+        tool_names = [t.name for t in channel._injected_tools]
         assert "delegate_task" in tool_names
         assert channel._tool_handler is not None
 

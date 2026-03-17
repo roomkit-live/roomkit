@@ -935,27 +935,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 total_tokens,
                 session.id,
             )
-            # Store on session for telemetry span attribution
-            session._last_usage = {
-                "input_tokens": prompt_tokens,
-                "output_tokens": candidates_tokens,
-            }
-            # Record via telemetry if available
-            # (_telemetry is injected by RealtimeVoiceChannel._propagate_telemetry)
-            telemetry = getattr(self, "_telemetry", None)
-            if telemetry is not None:
-                telemetry.record_metric(
-                    "roomkit.realtime.input_tokens",
-                    float(prompt_tokens),
-                    unit="tokens",
-                    attributes={"session_id": session.id, "model": self._model},
-                )
-                telemetry.record_metric(
-                    "roomkit.realtime.output_tokens",
-                    float(candidates_tokens),
-                    unit="tokens",
-                    attributes={"session_id": session.id, "model": self._model},
-                )
+            self._record_usage(session, prompt_tokens, candidates_tokens)
 
         # Handle GoAway LAST — after processing all other data in this message.
         # Raising here breaks out of the receive loop and triggers proactive
