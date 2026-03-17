@@ -65,7 +65,10 @@ def test_status_entry_model_validate() -> None:
 
 def test_status_entry_defaults() -> None:
     entry = StatusEntry(
-        ts="t", agent_id="a", action="x", status=StatusLevel.INFO,
+        ts="t",
+        agent_id="a",
+        action="x",
+        status=StatusLevel.INFO,
     )
     assert entry.detail == ""
     assert entry.metadata == {}
@@ -79,7 +82,10 @@ def test_status_entry_defaults() -> None:
 async def test_backend_publish_and_recent() -> None:
     backend = InMemoryStatusBackend()
     entry = StatusEntry(
-        ts="t1", agent_id="a", action="act", status=StatusLevel.OK,
+        ts="t1",
+        agent_id="a",
+        action="act",
+        status=StatusLevel.OK,
     )
     await backend.publish(entry)
     recent = await backend.recent(10)
@@ -90,10 +96,14 @@ async def test_backend_publish_and_recent() -> None:
 async def test_backend_recent_filters() -> None:
     backend = InMemoryStatusBackend()
     for i, status in enumerate([StatusLevel.OK, StatusLevel.FAILED, StatusLevel.OK]):
-        await backend.publish(StatusEntry(
-            ts=f"t{i}", agent_id="a" if i < 2 else "b",
-            action="act", status=status,
-        ))
+        await backend.publish(
+            StatusEntry(
+                ts=f"t{i}",
+                agent_id="a" if i < 2 else "b",
+                action="act",
+                status=status,
+            )
+        )
     assert len(await backend.recent(10, agent_id="a")) == 2
     assert len(await backend.recent(10, status="ok")) == 2
     assert len(await backend.recent(10, agent_id="b", status="ok")) == 1
@@ -102,9 +112,14 @@ async def test_backend_recent_filters() -> None:
 async def test_backend_eviction() -> None:
     backend = InMemoryStatusBackend(max_entries=3)
     for i in range(5):
-        await backend.publish(StatusEntry(
-            ts=f"t{i}", agent_id="a", action="act", status=StatusLevel.OK,
-        ))
+        await backend.publish(
+            StatusEntry(
+                ts=f"t{i}",
+                agent_id="a",
+                action="act",
+                status=StatusLevel.OK,
+            )
+        )
     entries = await backend.recent(10)
     assert len(entries) == 3
     assert entries[0].ts == "t2"
@@ -118,9 +133,14 @@ async def test_backend_subscribe_receives_entries() -> None:
         received.append(entry)
 
     await backend.subscribe(cb)
-    await backend.publish(StatusEntry(
-        ts="t", agent_id="a", action="act", status=StatusLevel.OK,
-    ))
+    await backend.publish(
+        StatusEntry(
+            ts="t",
+            agent_id="a",
+            action="act",
+            status=StatusLevel.OK,
+        )
+    )
     assert len(received) == 1
 
 
@@ -130,9 +150,14 @@ async def test_backend_persistence(tmp_path: object) -> None:
 
     p = Path(str(tmp_path)) / "status.jsonl"
     backend = InMemoryStatusBackend(persist_path=p)
-    await backend.publish(StatusEntry(
-        ts="t", agent_id="a", action="act", status=StatusLevel.OK,
-    ))
+    await backend.publish(
+        StatusEntry(
+            ts="t",
+            agent_id="a",
+            action="act",
+            status=StatusLevel.OK,
+        )
+    )
     lines = p.read_text().strip().split("\n")
     assert len(lines) == 1
     data = json.loads(lines[0])

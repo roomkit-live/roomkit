@@ -134,7 +134,7 @@ class MuseTalkAvatarProvider(AvatarProvider):
         import torch
 
         _original_load = torch.load
-        torch.load = lambda *a, **kw: _original_load(  # type: ignore[assignment]
+        torch.load = lambda *a, **kw: _original_load(
             *a,
             **{**kw, "weights_only": False},
         )
@@ -203,7 +203,7 @@ class MuseTalkAvatarProvider(AvatarProvider):
         from PIL import Image
 
         img = Image.open(io.BytesIO(reference_image)).convert("RGB")
-        img.thumbnail((self._width, self._height), Image.LANCZOS)
+        img.thumbnail((self._width, self._height), Image.Resampling.LANCZOS)
         canvas = Image.new("RGB", (self._width, self._height), (0, 0, 0))
         offset_x = (self._width - img.width) // 2
         offset_y = (self._height - img.height) // 2
@@ -257,7 +257,7 @@ class MuseTalkAvatarProvider(AvatarProvider):
         h, w = image.shape[:2]
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml",
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml",  # type: ignore[attr-defined]
         )
         faces = cascade.detectMultiScale(
             gray,

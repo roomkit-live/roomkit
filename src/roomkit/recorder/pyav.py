@@ -178,11 +178,11 @@ class PyAVMediaRecorder(MediaRecorder):
                 logger.warning(
                     "Late track %s (%s) added after encoding started — "
                     "audio won't be recorded. Connect voice before video capture.",
-                    track.id, track.kind,
+                    track.id,
+                    track.kind,
                 )
 
         logger.debug("Track registered: %s (%s)", track.id, track.kind)
-
 
     def on_track_removed(self, handle: MediaRecordingHandle, track: RecordingTrack) -> None:
         state = self._recordings.get(handle.id)
@@ -523,7 +523,12 @@ class PyAVMediaRecorder(MediaRecorder):
             ts.audio_end += n
             ts.last_pts = frame.pts
             if not safe_mux(
-                stream, state.container, frame, ts, state.path, label="audio",
+                stream,
+                state.container,
+                frame,
+                ts,
+                state.path,
+                label="audio",
             ):
                 break
             remaining -= n

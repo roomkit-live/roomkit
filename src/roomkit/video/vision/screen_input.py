@@ -62,6 +62,7 @@ TYPE_TEXT_TOOL: dict[str, Any] = {
     },
 }
 
+
 def _press_key_description() -> str:
     """Build OS-aware press_key tool description."""
     base = (
@@ -113,6 +114,7 @@ def _build_press_key_tool() -> dict[str, Any]:
             "required": ["key"],
         },
     }
+
 
 SCROLL_TOOL: dict[str, Any] = {
     "name": "scroll",
@@ -206,7 +208,7 @@ def _get_scale_factor() -> tuple[float, float]:
     if system == "Darwin":
         try:
             import mss
-            import pyautogui
+            import pyautogui  # type: ignore[import-untyped]
 
             with mss.mss() as sct:
                 mon = sct.monitors[1]
@@ -260,13 +262,15 @@ def _parse_json_response(text: str) -> dict[str, Any] | None:
     """
     # Try clean JSON first
     try:
-        return json.loads(text.strip())
+        result: dict[str, Any] = json.loads(text.strip())
+        return result
     except json.JSONDecodeError:
         pass
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group())
+            result = json.loads(match.group())
+            return result
         except json.JSONDecodeError:
             pass
 
@@ -280,7 +284,10 @@ def _parse_json_response(text: str) -> dict[str, Any] | None:
         label = label_match.group(1) if label_match else ""
         logger.debug(
             "Fallback JSON parse: found=%s cx=%s cy=%s label=%s",
-            found, cx_match.group(1), cy_match.group(1), label,
+            found,
+            cx_match.group(1),
+            cy_match.group(1),
+            label,
         )
         return {
             "found": found,
@@ -345,7 +352,11 @@ async def _find_element(
     if cx < 0 or cx >= frame.width or cy < 0 or cy >= frame.height:
         logger.warning(
             "locate '%s': coordinates (%d,%d) outside image bounds (%dx%d)",
-            element, cx, cy, frame.width, frame.height,
+            element,
+            cx,
+            cy,
+            frame.width,
+            frame.height,
         )
         return None
 

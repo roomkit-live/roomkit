@@ -154,8 +154,7 @@ class ConsoleToolAuditor(ToolAuditor):
         for i, e in enumerate(self._entries, 1):
             status_icon = "OK" if e.status == "ok" else "FAIL"
             lines.append(
-                f"  {i:2d}. [{status_icon}] {e.agent_id}.{e.tool_name}"
-                f"  ({e.duration_ms:.0f}ms)"
+                f"  {i:2d}. [{status_icon}] {e.agent_id}.{e.tool_name}  ({e.duration_ms:.0f}ms)"
             )
         total_ms = sum(e.duration_ms for e in self._entries)
         lines.append(f"\n  Total: {len(self._entries)} calls, {total_ms:.0f}ms")
@@ -203,15 +202,17 @@ def audit_tool_handler(
             raise
         finally:
             elapsed = (time.monotonic() - t0) * 1000
-            auditor.record(ToolAuditEntry(
-                ts=datetime.now(UTC).isoformat(),
-                agent_id=agent_id,
-                tool_name=name,
-                arguments=dict(arguments),
-                result=result[:_MAX_RESULT_LEN],
-                status=status,
-                duration_ms=elapsed,
-            ))
+            auditor.record(
+                ToolAuditEntry(
+                    ts=datetime.now(UTC).isoformat(),
+                    agent_id=agent_id,
+                    tool_name=name,
+                    arguments=dict(arguments),
+                    result=result[:_MAX_RESULT_LEN],
+                    status=status,
+                    duration_ms=elapsed,
+                )
+            )
 
     return _audited
 
@@ -252,14 +253,16 @@ def audit_realtime_tool_handler(
             raise
         finally:
             elapsed = (time.monotonic() - t0) * 1000
-            auditor.record(ToolAuditEntry(
-                ts=datetime.now(UTC).isoformat(),
-                agent_id=agent_id,
-                tool_name=name,
-                arguments=dict(arguments),
-                result=result_str[:_MAX_RESULT_LEN],
-                status=status,
-                duration_ms=elapsed,
-            ))
+            auditor.record(
+                ToolAuditEntry(
+                    ts=datetime.now(UTC).isoformat(),
+                    agent_id=agent_id,
+                    tool_name=name,
+                    arguments=dict(arguments),
+                    result=result_str[:_MAX_RESULT_LEN],
+                    status=status,
+                    duration_ms=elapsed,
+                )
+            )
 
     return _audited

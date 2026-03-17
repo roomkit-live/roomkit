@@ -59,6 +59,7 @@ class TestPyAVVideoRecorder:
 
     def test_start_creates_handle(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
+            real_tmpdir = os.path.realpath(tmpdir)
             recorder = PyAVVideoRecorder()
             session = _make_session()
             config = VideoRecordingConfig(storage=tmpdir, codec="libx264")
@@ -66,7 +67,7 @@ class TestPyAVVideoRecorder:
             handle = recorder.start(session, config)
             assert handle.state == "recording"
             assert handle.session_id == "sess-1"
-            assert handle.path.startswith(tmpdir)
+            assert handle.path.startswith(real_tmpdir)
             assert handle.path.endswith(".mp4")
 
             recorder.close()
@@ -204,12 +205,13 @@ class TestPyAVVideoRecorder:
     def test_default_storage_uses_cwd(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """When no storage path, defaults to ./recordings."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            real_tmpdir = os.path.realpath(tmpdir)
             monkeypatch.chdir(tmpdir)
             recorder = PyAVVideoRecorder()
             session = _make_session()
             config = VideoRecordingConfig(codec="libx264")
 
             handle = recorder.start(session, config)
-            expected_dir = os.path.join(tmpdir, "recordings")
+            expected_dir = os.path.join(real_tmpdir, "recordings")
             assert handle.path.startswith(expected_dir)
             recorder.close()

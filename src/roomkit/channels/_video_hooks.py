@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from roomkit.video.base import VideoSession
     from roomkit.video.video_frame import VideoFrame
     from roomkit.video.vision.base import VisionProvider, VisionResult
+    from roomkit.voice.base import VoiceSession
 
 logger = logging.getLogger("roomkit.video")
 
@@ -25,10 +26,11 @@ class VideoHooksMixin:
     _framework: RoomKit | None
     _vision: VisionProvider | None
     _last_vision_results: dict[str, Any]
+    _last_vision_ts: dict[str, float]
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
 
     async def _fire_session_hook(
-        self, trigger: HookTrigger, session: VideoSession, room_id: str
+        self, trigger: HookTrigger, session: VideoSession | VoiceSession, room_id: str
     ) -> None:
         if not self._framework:
             return
@@ -54,7 +56,7 @@ class VideoHooksMixin:
             logger.exception("Error firing %s hook", trigger.value)
 
     async def _emit_session_event(
-        self, event_type: str, session: VideoSession, room_id: str
+        self, event_type: str, session: VideoSession | VoiceSession, room_id: str
     ) -> None:
         if not self._framework:
             return

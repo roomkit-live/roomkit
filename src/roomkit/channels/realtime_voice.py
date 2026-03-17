@@ -160,8 +160,8 @@ class RealtimeVoiceChannel(Channel):
         # Cached bindings for audio gating (access/muted enforcement)
         self._session_bindings: dict[str, ChannelBinding] = {}
 
-        # Per-session recording tracks: session_id -> (input_track, output_track, room_id)
-        self._recording_tracks: dict[str, tuple[Any, Any, str]] = {}
+        # Per-session recording tracks: session_id -> (audio_track, room_id)
+        self._recording_tracks: dict[str, tuple[Any, str]] = {}
 
         # Per-session resamplers: (inbound, outbound) pairs
         self._session_resamplers: dict[str, tuple[Any, Any]] = {}
@@ -861,7 +861,8 @@ class RealtimeVoiceChannel(Channel):
 
         logger.info(
             "Realtime recording wired for session %s (rate=%dHz)",
-            session.id, self._output_sample_rate,
+            session.id,
+            self._output_sample_rate,
         )
 
     def _on_client_audio(self, session: VoiceSession, audio: AudioFrame | bytes) -> Any:
@@ -874,8 +875,11 @@ class RealtimeVoiceChannel(Channel):
             rec = self._recording_tracks.get(session.id)
         if rec is not None and self._framework is not None:
             audio_track, rec_room_id = rec
-            self._framework._room_recorder_mgr.on_data(  # type: ignore[union-attr]
-                rec_room_id, audio_track, audio, time.monotonic() * 1000,
+            self._framework._room_recorder_mgr.on_data(
+                rec_room_id,
+                audio_track,
+                audio,
+                time.monotonic() * 1000,
             )
 
         try:
@@ -970,10 +974,13 @@ class RealtimeVoiceChannel(Channel):
         # Recording tap: send AI audio to room recorder
         with self._state_lock:
             rec = self._recording_tracks.get(session.id)
-        if rec is not None:
+        if rec is not None and self._framework is not None:
             audio_track, rec_room_id = rec
-            self._framework._room_recorder_mgr.on_data(  # type: ignore[union-attr]
-                rec_room_id, audio_track, audio, time.monotonic() * 1000,
+            self._framework._room_recorder_mgr.on_data(
+                rec_room_id,
+                audio_track,
+                audio,
+                time.monotonic() * 1000,
             )
 
         with self._state_lock:

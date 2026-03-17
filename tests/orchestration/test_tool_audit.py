@@ -57,10 +57,17 @@ def test_audit_entry_model_validate() -> None:
 def test_jsonl_auditor_record_and_summary(tmp_path: Path) -> None:
     p = tmp_path / "audit.jsonl"
     auditor = JSONLToolAuditor(p)
-    auditor.record(ToolAuditEntry(
-        ts="t", agent_id="a", tool_name="search",
-        arguments={"q": "x"}, result="done", status="ok", duration_ms=10,
-    ))
+    auditor.record(
+        ToolAuditEntry(
+            ts="t",
+            agent_id="a",
+            tool_name="search",
+            arguments={"q": "x"},
+            result="done",
+            status="ok",
+            duration_ms=10,
+        )
+    )
     assert len(auditor.entries) == 1
 
     lines = p.read_text().strip().split("\n")

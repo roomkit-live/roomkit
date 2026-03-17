@@ -28,14 +28,13 @@ import base64
 import contextlib
 import logging
 import struct
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
-
-import httpx
 
 from roomkit.video.avatar.base import AvatarProvider
 
 if TYPE_CHECKING:
+    import httpx
     from websockets.sync.client import ClientConnection
 
     from roomkit.video.video_frame import VideoFrame
@@ -110,6 +109,8 @@ class WebSocketAvatarProvider(AvatarProvider):
         width: int = 512,
         height: int = 512,
     ) -> None:
+        import httpx
+
         self._width = width
         self._height = height
         self._reference_image = reference_image
@@ -139,7 +140,7 @@ class WebSocketAvatarProvider(AvatarProvider):
         self._idle_frame_cache = None
         self._idle_error_logged = False
 
-    def _build_start_payload(self) -> dict:
+    def _build_start_payload(self) -> dict[str, Any]:
         """Build the JSON payload for POST /start."""
         return {
             "reference_image": base64.b64encode(self._reference_image or b"").decode(),

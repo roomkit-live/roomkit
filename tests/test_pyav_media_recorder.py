@@ -318,7 +318,6 @@ class TestPyAVMediaRecorder:
         result = recorder.on_recording_stop(handle)
         assert result.size_bytes > 0
 
-
     def test_variable_size_audio_frames(self, tmp_path: object) -> None:
         """Variable-size audio frames (realtime voice provider pattern).
 

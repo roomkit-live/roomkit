@@ -142,7 +142,7 @@ class InMemoryStatusBackend(StatusBackend):
     async def publish(self, entry: StatusEntry) -> None:
         self._entries.append(entry)
         if len(self._entries) > self._max_entries:
-            self._entries = self._entries[-self._max_entries:]
+            self._entries = self._entries[-self._max_entries :]
 
         # Persist via thread to avoid blocking the event loop
         if self._persist_path is not None:
@@ -244,7 +244,10 @@ class StatusBus:
 
         logger.info(
             "[%s] %s → %s | %s",
-            agent_id, action, status, detail[:80] if detail else "",
+            agent_id,
+            action,
+            status,
+            detail[:80] if detail else "",
         )
 
         # Schedule async publish
@@ -282,7 +285,10 @@ class StatusBus:
 
         logger.info(
             "[%s] %s → %s | %s",
-            agent_id, action, status, detail[:80] if detail else "",
+            agent_id,
+            action,
+            status,
+            detail[:80] if detail else "",
         )
 
         await self._backend.publish(entry)

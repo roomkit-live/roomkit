@@ -171,12 +171,12 @@ class RealtimeAudioVideoChannel(VideoHooksMixin, RealtimeVoiceChannel):  # type:
             await self._emit_session_event(
                 "video_session_started",
                 session,
-                room_id,  # type: ignore[arg-type]
+                room_id,
             )
             await self._fire_session_hook(
                 HookTrigger.ON_VIDEO_SESSION_STARTED,
                 session,
-                room_id,  # type: ignore[arg-type]
+                room_id,
             )
 
         return session
@@ -191,12 +191,12 @@ class RealtimeAudioVideoChannel(VideoHooksMixin, RealtimeVoiceChannel):  # type:
             await self._emit_session_event(
                 "video_session_ended",
                 session,
-                room_id,  # type: ignore[arg-type]
+                room_id,
             )
             await self._fire_session_hook(
                 HookTrigger.ON_VIDEO_SESSION_ENDED,
                 session,
-                room_id,  # type: ignore[arg-type]
+                room_id,
             )
 
         # Clean up video state

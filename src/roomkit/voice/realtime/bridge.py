@@ -82,7 +82,8 @@ def resample_pcm(pcm: bytes, from_rate: int, to_rate: int) -> bytes:
     x_old = np.linspace(0, 1, len(src))
     x_new = np.linspace(0, 1, n_out)
     resampled = np.interp(x_new, x_old, src)
-    return resampled.astype(np.int16).tobytes()
+    result: bytes = resampled.astype(np.int16).tobytes()
+    return result
 
 
 # ---------------------------------------------------------------------------
