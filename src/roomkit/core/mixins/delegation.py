@@ -254,6 +254,4 @@ class DelegationMixin(HelpersMixin):
                 )
                 await strategy.deliver(ctx)
             except Exception:
-                _tasks_logger.exception(
-                    "Delivery strategy failed for task %s", result.task_id
-                )
+                _tasks_logger.exception("Delivery strategy failed for task %s", result.task_id)

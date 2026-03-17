@@ -111,9 +111,7 @@ class InboundIdentityMixin(HelpersMixin):
             raise
         finally:
             if _identity_error:
-                telemetry.end_span(
-                    identity_span, status="error", error_message=_identity_error
-                )
+                telemetry.end_span(identity_span, status="error", error_message=_identity_error)
             else:
                 telemetry.end_span(
                     identity_span,
@@ -148,8 +146,8 @@ class InboundIdentityMixin(HelpersMixin):
             IdentificationStatus.AMBIGUOUS,
             IdentificationStatus.PENDING,
         ):
-            event, resolved_identity, pending_id_result = (
-                await self._handle_ambiguous_identity(id_result, event, room_id, context)
+            event, resolved_identity, pending_id_result = await self._handle_ambiguous_identity(
+                id_result, event, room_id, context
             )
 
         elif id_result.status in (

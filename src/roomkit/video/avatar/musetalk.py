@@ -257,7 +257,7 @@ class MuseTalkAvatarProvider(AvatarProvider):
         h, w = image.shape[:2]
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml",  # type: ignore[attr-defined]
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml",
         )
         faces = cascade.detectMultiScale(
             gray,
