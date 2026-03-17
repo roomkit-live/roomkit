@@ -842,35 +842,25 @@ class RealtimeVoiceChannel(Channel):
 
         from roomkit.recorder.base import RecordingTrack
 
-        # Input track (mic → provider)
-        input_track = RecordingTrack(
-            id=f"audio-in:{session.id}",
+        # Single mixed audio track — records the output (AI) audio
+        # which is what matters for the recording. Input (mic) audio
+        # would create interleaving issues with two audio streams.
+        audio_track = RecordingTrack(
+            id=f"audio:{session.id}",
             kind="audio",
             channel_id=self.channel_id,
             participant_id=session.participant_id,
             codec="pcm_s16le",
-            sample_rate=self._input_sample_rate,
-        )
-        mgr.on_track_added(room_id, input_track)
-
-        # Output track (provider → speaker)
-        output_track = RecordingTrack(
-            id=f"audio-out:{session.id}",
-            kind="audio",
-            channel_id=self.channel_id,
-            participant_id=f"{session.participant_id}:ai",
-            codec="pcm_s16le",
             sample_rate=self._output_sample_rate,
         )
-        mgr.on_track_added(room_id, output_track)
+        mgr.on_track_added(room_id, audio_track)
 
-        # Store tracks for cleanup and tapping
         with self._state_lock:
-            self._recording_tracks[session.id] = (input_track, output_track, room_id)
+            self._recording_tracks[session.id] = (audio_track, room_id)
 
         logger.info(
-            "Realtime recording wired for session %s (input=%dHz, output=%dHz)",
-            session.id, self._input_sample_rate, self._output_sample_rate,
+            "Realtime recording wired for session %s (rate=%dHz)",
+            session.id, self._output_sample_rate,
         )
 
     def _on_client_audio(self, session: VoiceSession, audio: AudioFrame | bytes) -> Any:
@@ -878,14 +868,7 @@ class RealtimeVoiceChannel(Channel):
         if not isinstance(audio, bytes):
             audio = audio.data
 
-        # Recording tap: send mic audio to room recorder
-        with self._state_lock:
-            rec = self._recording_tracks.get(session.id)
-        if rec is not None:
-            input_track, _, room_id = rec
-            self._framework._room_recorder_mgr.on_data(  # type: ignore[union-attr]
-                room_id, input_track, audio, time.monotonic() * 1000,
-            )
+        # No input recording tap — only output (AI) audio is recorded
 
         try:
             loop = asyncio.get_running_loop()
@@ -980,9 +963,9 @@ class RealtimeVoiceChannel(Channel):
         with self._state_lock:
             rec = self._recording_tracks.get(session.id)
         if rec is not None:
-            _, output_track, room_id = rec
+            audio_track, rec_room_id = rec
             self._framework._room_recorder_mgr.on_data(  # type: ignore[union-attr]
-                room_id, output_track, audio, time.monotonic() * 1000,
+                rec_room_id, audio_track, audio, time.monotonic() * 1000,
             )
 
         with self._state_lock:
