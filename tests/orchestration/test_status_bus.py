@@ -211,23 +211,26 @@ async def test_bus_subscribe_async_callback() -> None:
     assert len(received) == 1
 
 
-async def test_bus_print_summary(capsys: object) -> None:
+async def test_bus_print_summary(caplog: object) -> None:
+    import logging
+
     bus = StatusBus()
     await bus.post_async("a", "search", StatusLevel.OK, detail="found 3")
     await bus.post_async("b", "fail_op", StatusLevel.FAILED)
-    await bus.print_summary()
-    # capsys is pytest's capsys fixture
-    captured = capsys.readouterr()  # type: ignore[union-attr]
-    assert "Status Log" in captured.out
-    assert "search" in captured.out
-    assert "2 entries" in captured.out
+    with caplog.at_level(logging.INFO, logger="roomkit.orchestration.status_bus"):  # type: ignore[union-attr]
+        await bus.print_summary()
+    assert "Status Log" in caplog.text  # type: ignore[union-attr]
+    assert "search" in caplog.text  # type: ignore[union-attr]
+    assert "2 entries" in caplog.text  # type: ignore[union-attr]
 
 
-async def test_bus_print_summary_empty(capsys: object) -> None:
+async def test_bus_print_summary_empty(caplog: object) -> None:
+    import logging
+
     bus = StatusBus()
-    await bus.print_summary()
-    captured = capsys.readouterr()  # type: ignore[union-attr]
-    assert "No status entries" in captured.out
+    with caplog.at_level(logging.INFO, logger="roomkit.orchestration.status_bus"):  # type: ignore[union-attr]
+        await bus.print_summary()
+    assert "No status entries" in caplog.text  # type: ignore[union-attr]
 
 
 async def test_bus_post_accepts_string_status() -> None:

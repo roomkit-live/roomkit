@@ -337,19 +337,19 @@ class StatusBus:
         await self._backend.close()
 
     async def print_summary(self) -> None:
-        """Print a formatted summary of recent status entries."""
+        """Log a formatted summary of recent status entries."""
         entries = await self._backend.recent(500)
         if not entries:
-            print("\nNo status entries.")
+            logger.info("No status entries.")
             return
-        print("\nStatus Log")
-        print("=" * 60)
+        lines = ["\nStatus Log", "=" * 60]
         for i, e in enumerate(entries, 1):
             icon = {"ok": "+", "failed": "x", "info": "~", "completed": "*"}.get(e.status, "?")
-            print(f"  {i:2d}. [{icon}] {e.agent_id:6s} {e.action}")
+            lines.append(f"  {i:2d}. [{icon}] {e.agent_id:6s} {e.action}")
             if e.detail:
-                print(f"      {e.detail[:100]}")
+                lines.append(f"      {e.detail[:100]}")
         ok = sum(1 for e in entries if e.status == StatusLevel.OK)
         fail = sum(1 for e in entries if e.status == StatusLevel.FAILED)
         done = sum(1 for e in entries if e.status == StatusLevel.COMPLETED)
-        print(f"\n  Total: {len(entries)} entries ({ok} ok, {fail} failed, {done} completed)")
+        lines.append(f"\n  Total: {len(entries)} entries ({ok} ok, {fail} fail, {done} done)")
+        logger.info("\n".join(lines))

@@ -9,7 +9,8 @@ description = "Pure async Python library for multi-channel conversations"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-authors = [{ name = "Sylvain Boily" }]
+authors = [{ name = "Sylvain Boily", email = "sylvainboilydroid@gmail.com" }]
+keywords = ["async", "multi-channel", "chat", "voice", "sms", "rcs", "whatsapp", "ai", "rooms"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: AsyncIO",
@@ -37,14 +38,14 @@ sherpa-onnx = ["sherpa-onnx>=1.10"]
 qwen-tts = ["qwen-tts>=0.1"]
 qwen-asr = ["qwen-asr>=0.0.4"]
 neutts = ["neutts>=0.1"]
-fastrtc = ["fastrtc", "numpy"]
+fastrtc = ["fastrtc>=0.0.18", "numpy>=1.26"]
 webrtc-aec = ["aec-audio-processing>=0.1"]
-local-audio = ["sounddevice", "numpy"]
+local-audio = ["sounddevice>=0.4", "numpy>=1.26"]
 local-video = ["opencv-python-headless>=4.8"]
 screen-capture = ["mss>=9.0"]
 screen-input = ["pyautogui>=0.9"]
-anam = ["anam", "av>=12.0.0", "numpy"]
-video = ["av>=12.0.0", "numpy"]
+anam = ["anam>=0.1", "av>=12.0.0", "numpy>=1.26"]
+video = ["av>=12.0.0", "numpy>=1.26"]
 yolo = ["ultralytics>=8.3"]
 rtp = ["aiortp>=0.3.0"]
 sip = ["aiosipua[rtp]>=0.4.0"]
@@ -59,7 +60,7 @@ sse = ["httpx>=0.27", "httpx-sse>=0.4"]
 gradium = ["gradium>=0.5.7"]
 opentelemetry = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
 pyroscope = ["pyroscope-io>=1.0"]
-smart-turn = ["numpy", "onnxruntime", "transformers"]
+smart-turn = ["numpy>=1.26", "onnxruntime", "transformers"]
 telegram = ["httpx>=0.27"]
 teams = ["botbuilder-core>=4.14"]
 whatsapp-personal = ["neonize>=0.3.14"]

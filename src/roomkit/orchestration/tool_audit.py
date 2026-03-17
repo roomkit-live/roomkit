@@ -68,8 +68,8 @@ class ToolAuditor(ABC):
         ...
 
     def print_summary(self) -> None:
-        """Print the summary to stdout."""
-        print(self.summary())
+        """Log the summary via the module logger."""
+        logger.info(self.summary())
 
 
 class JSONLToolAuditor(ToolAuditor):
