@@ -429,6 +429,18 @@ class PyAVMediaRecorder(MediaRecorder):
         import numpy as np
 
         stream = ts.stream
+        if stream is None:
+            # Track was added after encoding started. MP4 containers can't
+            # reliably add streams after the header is written. Log a warning
+            # and skip this data. To fix: start the voice session before
+            # video capture, or use a format that supports late track addition.
+            if ts.frame_count == 0:
+                logger.warning(
+                    "Audio track %s has no stream — was it added after encoding started? "
+                    "Start voice sessions before video capture to ensure all tracks are registered.",
+                    ts.track.id,
+                )
+            return
         samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
         frame = self._av.audio.frame.AudioFrame.from_ndarray(
             samples,
