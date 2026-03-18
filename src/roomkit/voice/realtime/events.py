@@ -44,10 +44,10 @@ class RealtimeTranscriptionEvent:
 
 @dataclass(frozen=True)
 class RealtimeToolCallEvent:
-    """The realtime provider is requesting a function call.
+    """Deprecated — use :class:`roomkit.models.tool_call.ToolCallEvent` instead.
 
-    Fired through ON_REALTIME_TOOL_CALL hooks (sync). The hook
-    must return a result that gets submitted back to the provider.
+    Kept for backward compatibility. The unified ``ON_TOOL_CALL`` hook
+    fires :class:`ToolCallEvent` from both AIChannel and RealtimeVoiceChannel.
     """
 
     session: VoiceSession

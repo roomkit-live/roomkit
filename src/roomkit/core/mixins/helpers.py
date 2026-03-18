@@ -342,6 +342,53 @@ class HelpersMixin:
                 skip_event_filter=True,
             )
 
+    def _build_tool_call_hook(self, channel_id: str) -> Any:
+        """Build a ToolCallCallback closure for an AIChannel.
+
+        The returned callback runs ON_TOOL_CALL sync hooks against the
+        framework's hook engine and emits a ``tool_call`` framework event.
+        Returns the hook-provided result (str) or None to keep the original.
+        """
+        from roomkit.models.enums import HookTrigger
+        from roomkit.models.tool_call import ToolCallEvent
+
+        kit_ref = self
+
+        async def _callback(event: ToolCallEvent) -> str | None:
+            if not event.room_id:
+                return None
+            try:
+                context = await kit_ref._build_context(event.room_id)
+            except Exception:
+                return None
+
+            hook_result = await kit_ref._hook_engine.run_sync_hooks(
+                event.room_id,
+                HookTrigger.ON_TOOL_CALL,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+
+            await kit_ref._emit_framework_event(
+                "tool_call",
+                room_id=event.room_id,
+                channel_id=channel_id,
+                data={
+                    "tool_name": event.name,
+                    "tool_call_id": event.tool_call_id,
+                    "channel_type": str(event.channel_type),
+                },
+            )
+
+            if not hook_result.allowed:
+                import json
+
+                return json.dumps({"error": hook_result.reason or "blocked"})
+            return hook_result.metadata.get("result")
+
+        return _callback
+
     async def _emit_framework_event(
         self,
         event_type: str,

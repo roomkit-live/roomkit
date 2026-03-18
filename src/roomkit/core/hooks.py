@@ -79,6 +79,7 @@ class SyncPipelineResult:
     tasks: list[Task] = field(default_factory=list)
     observations: list[Observation] = field(default_factory=list)
     hook_errors: list[dict[str, str]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class HookEngine:
@@ -260,6 +261,8 @@ class HookEngine:
             result.injected_events.extend(hook_result.injected_events)
             result.tasks.extend(hook_result.tasks)
             result.observations.extend(hook_result.observations)
+            if hook_result.metadata:
+                result.metadata.update(hook_result.metadata)
 
             if hook_result.action == "block":
                 result.allowed = False

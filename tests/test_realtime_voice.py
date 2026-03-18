@@ -282,7 +282,7 @@ class TestToolCalls:
 
         # Register a tool call hook
         @kit.hook(
-            HookTrigger.ON_REALTIME_TOOL_CALL,
+            HookTrigger.ON_TOOL_CALL,
             execution=HookExecution.SYNC,
             name="handle_tool",
         )

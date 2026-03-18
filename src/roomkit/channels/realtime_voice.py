@@ -136,7 +136,7 @@ class RealtimeVoiceChannel(Channel):
             tool_handler: Async callable to execute tool calls.
                 Signature: ``async (name, arguments) -> str``.
                 If not set, falls back to handlers extracted from Tool
-                objects, or ``ON_REALTIME_TOOL_CALL`` hooks.
+                objects, or ``ON_TOOL_CALL`` hooks.
             mute_on_tool_call: If True, mute the transport microphone during
                 tool execution to prevent barge-in that causes providers
                 (e.g. Gemini) to silently drop the tool result.  Defaults
@@ -1369,7 +1369,8 @@ class RealtimeVoiceChannel(Channel):
         """Execute a tool call and submit the result to the provider.
 
         If a ``tool_handler`` was provided, it is called directly.
-        Otherwise, the ``ON_REALTIME_TOOL_CALL`` hook is fired.
+        The ``ON_TOOL_CALL`` hook is then fired (handler result, if any,
+        is passed as ``event.result`` so the hook can observe or override).
         """
         with self._state_lock:
             room_id = self._session_rooms.get(session.id)
@@ -1403,8 +1404,9 @@ class RealtimeVoiceChannel(Channel):
         try:
             result_str: str
 
+            # Step 1: Run tool_handler (if exists)
+            handler_result: str | None = None
             if self._tool_handler is not None:
-                # Use the tool handler callback
                 logger.info(
                     "Executing tool %s(%s) via handler for session %s",
                     name,
@@ -1416,38 +1418,58 @@ class RealtimeVoiceChannel(Channel):
                     raw = await self._tool_handler(name, arguments)
                 finally:
                     _current_voice_session.reset(token)
-                result_str = raw if isinstance(raw, str) else json.dumps(raw)
-            elif self._framework and room_id:
-                # Fall back to hooks
+                handler_result = raw if isinstance(raw, str) else json.dumps(raw)
+
+            # Step 2: Run ON_TOOL_CALL hook (if framework + room)
+            from roomkit.models.tool_call import ToolCallEvent
+
+            tool_event = ToolCallEvent(
+                channel_id=self.channel_id,
+                channel_type=ChannelType.REALTIME_VOICE,
+                tool_call_id=call_id,
+                name=name,
+                arguments=arguments,
+                result=handler_result,
+                room_id=room_id,
+                session=session,
+            )
+
+            if self._framework and room_id:
                 context = await self._framework._build_context(room_id)
-
-                from roomkit.voice.realtime.events import RealtimeToolCallEvent
-
-                tool_event = RealtimeToolCallEvent(
-                    session=session,
-                    tool_call_id=call_id,
-                    name=name,
-                    arguments=arguments,
-                )
-
                 hook_result = await self._framework.hook_engine.run_sync_hooks(
                     room_id,
-                    HookTrigger.ON_REALTIME_TOOL_CALL,
+                    HookTrigger.ON_TOOL_CALL,
                     tool_event,
                     context,
                     skip_event_filter=True,
                 )
 
-                if hook_result.allowed:
-                    result_str = json.dumps(
-                        hook_result.event.metadata.get("result", {"status": "ok"})
-                        if hook_result.event is not None and hasattr(hook_result.event, "metadata")
-                        else {"status": "ok"}
-                    )
-                else:
+                if not hook_result.allowed:
                     result_str = json.dumps(
                         {"error": hook_result.reason or "Tool call blocked by hook"}
                     )
+                elif "result" in hook_result.metadata:
+                    # Hook provided/overrode the result
+                    hook_val = hook_result.metadata["result"]
+                    result_str = hook_val if isinstance(hook_val, str) else json.dumps(hook_val)
+                elif handler_result is not None:
+                    result_str = handler_result
+                else:
+                    result_str = json.dumps({"status": "ok"})
+
+                # Emit framework event for observability
+                await self._framework._emit_framework_event(
+                    "tool_call",
+                    room_id=room_id,
+                    channel_id=self.channel_id,
+                    data={
+                        "tool_name": name,
+                        "tool_call_id": call_id,
+                        "channel_type": str(ChannelType.REALTIME_VOICE),
+                    },
+                )
+            elif handler_result is not None:
+                result_str = handler_result
             else:
                 result_str = json.dumps({"error": f"No handler for tool {name}"})
 

@@ -106,6 +106,7 @@ from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
 from roomkit.models.task import Observation, Task
+from roomkit.models.tool_call import ToolCallCallback, ToolCallEvent
 from roomkit.models.trace import ProtocolTrace
 from roomkit.orchestration.handoff import (
     HANDOFF_TOOL,
@@ -592,6 +593,9 @@ __all__ = [
     "TemplateContent",
     "TextContent",
     "VideoContent",
+    # Tool Call (unified)
+    "ToolCallCallback",
+    "ToolCallEvent",
     # Hooks
     "HookEngine",
     "HookRegistration",

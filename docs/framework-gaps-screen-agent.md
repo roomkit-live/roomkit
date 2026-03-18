@@ -31,10 +31,8 @@ Identified during development of `screen_assistant_ia.py` and `screen_agent_orch
 
 ## Open Gaps (not yet fixed)
 
-### 6. No hook-based tool execution for RealtimeVoiceChannel
-- **Impact**: High
-- **Issue**: `RealtimeVoiceChannel` supports `tool_handler` callback OR `ON_REALTIME_TOOL_CALL` hook, but not both. The hook path returns results via `HookResult.modify(event)` with metadata, which is fragile (requires constructing a full `RoomEvent`). The callback path is simpler but bypasses the hook pipeline.
-- **Suggestion**: Add a simpler hook return path — let the hook return a plain string/dict result instead of requiring a full `RoomEvent`. Or support both callback AND hook (callback first, hook as fallback).
+### ~~6. No hook-based tool execution for RealtimeVoiceChannel~~ ✅ Fixed
+- **Fix**: Replaced `ON_REALTIME_TOOL_CALL` with unified `ON_TOOL_CALL` hook that fires from both AIChannel and RealtimeVoiceChannel. `tool_handler` and hooks now coexist (handler runs first, hook observes/overrides). Result return simplified: `HookResult(action="allow", metadata={"result": "..."})` instead of constructing a full `RoomEvent`. New `ToolCallEvent` dataclass carries `channel_type`, `session`, `room_id`.
 
 ### ~~7. Delegation doesn't work with RealtimeVoiceChannel natively~~ ✅ Fixed
 - **Fix**: Added `setup_realtime_delegation()` that injects the delegate tool dict into `_tools` and wraps `_tool_handler` with session-aware room_id resolution via `get_current_voice_session()`.
@@ -110,7 +108,7 @@ Identified during development of `screen_assistant_ia.py` and `screen_agent_orch
   - `Agent(auditor=JSONLToolAuditor("/tmp/audit.jsonl"))` — one line to enable
   - Captures timing, input/output, status without any per-tool boilerplate
   - Integrates with telemetry: `ToolAuditEntry` → telemetry span attributes
-  - `ON_REALTIME_TOOL_CALL` hook also feeds into the auditor for voice channel tools
+  - `ON_TOOL_CALL` hook also feeds into the auditor for voice channel tools
 
 ### 19. High-level tools dramatically improve agent efficiency
 - **Impact**: Observation

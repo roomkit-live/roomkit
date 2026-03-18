@@ -60,6 +60,7 @@ from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.tools.policy import ToolPolicy
 
 if TYPE_CHECKING:
+    from roomkit.models.tool_call import ToolCallCallback
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
     from roomkit.tools.base import Tool
@@ -183,6 +184,10 @@ class AIChannel(Channel):
 
         # Realtime backend for ephemeral tool call events (set by register_channel)
         self._realtime: RealtimeBackend | None = None
+        # Unified tool call hook callback (injected by framework on register_channel)
+        self._tool_call_hook: ToolCallCallback | None = None
+        # Current room ID (set per on_event invocation for tool hook context)
+        self._current_room_id: str | None = None
 
     @property
     def tool_handler(self) -> ToolHandler | None:
@@ -387,6 +392,9 @@ class AIChannel(Channel):
         """
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
+
+        # Track current room for tool call hooks
+        self._current_room_id = context.room.id if context.room else None
 
         # Resolve participant role for role-based tool policy.
         # Set on a per-invocation _ToolLoopContext visible via contextvar so that
@@ -997,6 +1005,24 @@ class AIChannel(Channel):
             try:
                 result = await handler(tc.name, tc.arguments)
                 result = self._maybe_truncate_result(result)
+
+                # Fire unified ON_TOOL_CALL hook (if framework injected callback)
+                if self._tool_call_hook is not None:
+                    from roomkit.models.tool_call import ToolCallEvent
+
+                    event = ToolCallEvent(
+                        channel_id=self.channel_id,
+                        channel_type=ChannelType.AI,
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        arguments=tc.arguments,
+                        result=result,
+                        room_id=self._current_room_id,
+                    )
+                    override = await self._tool_call_hook(event)
+                    if override is not None:
+                        result = override
+
                 telemetry.end_span(tool_span_id)
             except Exception as exc:
                 telemetry.end_span(tool_span_id, status="error", error_message=str(exc))

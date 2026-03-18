@@ -57,6 +57,7 @@ from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.task import Observation, Task
+from roomkit.models.tool_call import ToolCallCallback, ToolCallEvent
 from roomkit.models.trace import ProtocolTrace
 
 __all__ = [
@@ -114,5 +115,7 @@ __all__ = [
     "TaskStatus",
     "TemplateContent",
     "TextContent",
+    "ToolCallCallback",
+    "ToolCallEvent",
     "VideoContent",
 ]

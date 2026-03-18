@@ -782,6 +782,7 @@ Voice Pipeline:      ON_VAD_SILENCE, ON_VAD_AUDIO_LEVEL, ON_SPEAKER_CHANGE, ON_B
                      ON_DTMF, ON_TURN_COMPLETE, ON_TURN_INCOMPLETE, ON_BACKCHANNEL,
                      ON_RECORDING_STARTED, ON_RECORDING_STOPPED
 Audio Levels:        ON_INPUT_AUDIO_LEVEL, ON_OUTPUT_AUDIO_LEVEL
-Realtime Voice:      ON_REALTIME_TOOL_CALL, ON_REALTIME_TEXT_INJECTED
+Tool Execution:      ON_TOOL_CALL (unified — fires from AIChannel and RealtimeVoiceChannel)
+Realtime Voice:      ON_REALTIME_TEXT_INJECTED
 Observability:       ON_OBSERVATION
 ```
