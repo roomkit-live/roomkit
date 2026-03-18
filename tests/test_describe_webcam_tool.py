@@ -29,7 +29,11 @@ from roomkit.video.vision.webcam_tool import (
 
 
 def _make_mock_cv2(
-    *, open_ok: bool = True, read_ok: bool = True, w: int = 100, h: int = 100,
+    *,
+    open_ok: bool = True,
+    read_ok: bool = True,
+    w: int = 100,
+    h: int = 100,
 ) -> object:
     """Build a mock cv2 module with configurable camera behaviour."""
     bgr_frame = np.zeros((h, w, 3), dtype=np.uint8)
@@ -284,10 +288,14 @@ class TestDescribeWebcamTool:
 
         session = object()
         await tool.handler(  # type: ignore[arg-type]
-            session, "describe_webcam", {"query": "look", "device": 2},
+            session,
+            "describe_webcam",
+            {"query": "look", "device": 2},
         )
         tool.analyze.assert_called_once_with(  # type: ignore[union-attr]
-            "look", device=2, save_path=None,
+            "look",
+            device=2,
+            save_path=None,
         )
 
     async def test_handler_passes_save_path_to_analyze(self) -> None:
@@ -301,7 +309,9 @@ class TestDescribeWebcamTool:
             {"query": "read", "save_path": "/tmp/shot.jpg"},
         )
         tool.analyze.assert_called_once_with(  # type: ignore[union-attr]
-            "read", device=None, save_path="/tmp/shot.jpg",
+            "read",
+            device=None,
+            save_path="/tmp/shot.jpg",
         )
 
 

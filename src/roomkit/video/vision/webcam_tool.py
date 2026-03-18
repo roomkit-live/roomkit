@@ -164,6 +164,7 @@ def save_frame(frame: VideoFrame, path: str | Path) -> Path:
 # List available webcams
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class WebcamInfo:
     """Information about a detected webcam device."""
@@ -346,9 +347,7 @@ class DescribeWebcamTool:
                 save_msg = f"\n\n[Image saved to {saved}]"
                 logger.info("Frame saved to %s", saved)
             except Exception as exc:
-                save_msg = (
-                    f"\n\n[ERROR: Failed to save image to {save_path}: {exc}]"
-                )
+                save_msg = f"\n\n[ERROR: Failed to save image to {save_path}: {exc}]"
                 logger.warning("Failed to save frame to %s: %s", save_path, exc)
 
         result = await self._vision.analyze_frame(frame, prompt=query)
@@ -372,7 +371,9 @@ class DescribeWebcamTool:
         path = str(raw_path) if raw_path is not None else None
         logger.info(
             "describe_webcam(query='%s', device=%s, save_path=%s)",
-            query[:100], device, path,
+            query[:100],
+            device,
+            path,
         )
         result = await self.analyze(query, device=device, save_path=path)
         logger.info("describe_webcam result: %s", result[:200])
