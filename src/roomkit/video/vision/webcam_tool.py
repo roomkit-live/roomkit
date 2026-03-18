@@ -27,14 +27,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.base import VisionProvider
 from roomkit.video.vision.encode import frame_to_jpeg
-
-if TYPE_CHECKING:
-    from roomkit.voice.base import VoiceSession
 
 logger = logging.getLogger("roomkit.video.vision.webcam_tool")
 
@@ -274,7 +271,6 @@ class ListWebcamsTool:
 
     async def handler(
         self,
-        session: VoiceSession,
         name: str,
         arguments: dict[str, Any],
     ) -> str:
@@ -356,7 +352,6 @@ class DescribeWebcamTool:
 
     async def handler(
         self,
-        session: VoiceSession,
         name: str,
         arguments: dict[str, Any],
     ) -> str:

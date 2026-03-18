@@ -17,7 +17,7 @@ from roomkit.channels.ai import AIChannel
 from roomkit.channels.av import AudioVideoChannel
 from roomkit.channels.base import Channel
 from roomkit.channels.realtime_av import RealtimeAudioVideoChannel
-from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel, get_current_voice_session
 from roomkit.channels.realtime_voice import ToolHandler as ToolHandler
 from roomkit.channels.transport import TransportChannel
 from roomkit.channels.video import VideoChannel
@@ -790,6 +790,8 @@ __all__ = [
     "RealtimeTranscriptionEvent",
     "RealtimeVideoCallback",
     "RealtimeVoiceProvider",
+    "ToolHandler",
+    "get_current_voice_session",
     # Skills
     "ScriptExecutor",
     "ScriptResult",

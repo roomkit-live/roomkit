@@ -77,7 +77,7 @@ TOOLS = [
 ]
 
 
-async def handle_tool_call(session, name: str, arguments: dict) -> str:
+async def handle_tool_call(name: str, arguments: dict) -> str:
     """Execute tool calls from the AI."""
     if name == "get_current_datetime":
         now = datetime.now(UTC).astimezone()

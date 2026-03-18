@@ -645,7 +645,7 @@ class TestRealtimeVoiceTelemetry:
         provider = MockRealtimeProvider()
         transport = MockRealtimeTransport()
 
-        async def tool_handler(session: object, name: str, arguments: dict) -> str:
+        async def tool_handler(name: str, arguments: dict) -> str:
             return '{"result": "ok"}'
 
         channel = RealtimeVoiceChannel(

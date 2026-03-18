@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -151,12 +152,14 @@ async def test_audit_tool_handler_truncates(tmp_path: Path) -> None:
 async def test_audit_realtime_tool_handler(tmp_path: Path) -> None:
     auditor = JSONLToolAuditor(tmp_path / "audit.jsonl")
 
-    async def handler(session: Any, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        return {"status": "ok", "data": "hello"}
+    async def handler(name: str, args: dict[str, Any]) -> str:
+        return '{"status": "ok", "data": "hello"}'
 
-    wrapped = audit_realtime_tool_handler(handler, auditor, "rt-agent")
-    result = await wrapped("fake-session", "my_tool", {"x": 1})
-    assert result == {"status": "ok", "data": "hello"}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        wrapped = audit_realtime_tool_handler(handler, auditor, "rt-agent")
+    result = await wrapped("my_tool", {"x": 1})
+    assert result == '{"status": "ok", "data": "hello"}'
     assert len(auditor.entries) == 1
     assert auditor.entries[0].tool_name == "my_tool"
     assert auditor.entries[0].agent_id == "rt-agent"
@@ -165,22 +168,26 @@ async def test_audit_realtime_tool_handler(tmp_path: Path) -> None:
 async def test_audit_realtime_tool_handler_error(tmp_path: Path) -> None:
     auditor = JSONLToolAuditor(tmp_path / "audit.jsonl")
 
-    async def handler(session: Any, name: str, args: dict[str, Any]) -> str:
+    async def handler(name: str, args: dict[str, Any]) -> str:
         raise RuntimeError("fail")
 
-    wrapped = audit_realtime_tool_handler(handler, auditor, "a")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        wrapped = audit_realtime_tool_handler(handler, auditor, "a")
     with contextlib.suppress(RuntimeError):
-        await wrapped("session", "tool", {})
+        await wrapped("tool", {})
     assert auditor.entries[0].status == "error"
 
 
 async def test_audit_realtime_tool_handler_truncates(tmp_path: Path) -> None:
     auditor = JSONLToolAuditor(tmp_path / "audit.jsonl")
 
-    async def handler(session: Any, name: str, args: dict[str, Any]) -> str:
+    async def handler(name: str, args: dict[str, Any]) -> str:
         return "y" * 1000
 
-    wrapped = audit_realtime_tool_handler(handler, auditor, "a")
-    result = await wrapped("session", "tool", {})
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        wrapped = audit_realtime_tool_handler(handler, auditor, "a")
+    result = await wrapped("tool", {})
     assert len(result) == 1000
     assert len(auditor.entries[0].result) == 500

@@ -35,7 +35,6 @@ from roomkit.video.vision.screen_tool import capture_screen_frame
 
 if TYPE_CHECKING:
     from roomkit.video.vision.base import VisionProvider
-    from roomkit.voice.base import VoiceSession
 
 logger = logging.getLogger("roomkit.video.vision.screen_input")
 
@@ -440,7 +439,6 @@ class ScreenInputTools:
 
     async def handler(
         self,
-        session: VoiceSession,
         name: str,
         arguments: dict[str, Any],
     ) -> str:

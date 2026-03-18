@@ -305,7 +305,7 @@ class TestToolCalls:
         """Tool handler returning a huge string gets truncated before submission."""
         max_len = 500
 
-        async def big_handler(session: object, name: str, arguments: dict[str, Any]) -> str:
+        async def big_handler(name: str, arguments: dict[str, Any]) -> str:
             return "x" * 100_000
 
         ch = RealtimeVoiceChannel(
@@ -341,7 +341,7 @@ class TestToolCalls:
         """Normal-sized tool results pass through unchanged."""
         small_result = '{"status": "ok", "data": "hello"}'
 
-        async def small_handler(session: object, name: str, arguments: dict[str, Any]) -> str:
+        async def small_handler(name: str, arguments: dict[str, Any]) -> str:
             return small_result
 
         ch = RealtimeVoiceChannel(

@@ -222,47 +222,20 @@ def audit_realtime_tool_handler(
     auditor: ToolAuditor,
     agent_id: str,
 ) -> Any:
-    """Wrap a realtime tool handler to automatically record audit entries.
+    """Deprecated alias for :func:`audit_tool_handler`.
 
-    Realtime tool handlers have signature ``(session, name, args) -> dict|str``.
+    Realtime tool handlers now share the same ``(name, args) -> str``
+    signature as regular tool handlers. Use ``audit_tool_handler`` instead.
 
-    Args:
-        handler: The original async handler ``(session, name, args) -> dict|str``.
-        auditor: The ToolAuditor to record entries to.
-        agent_id: Agent ID for the audit entries.
-
-    Returns:
-        A wrapped handler with the same signature.
+    .. deprecated::
+        Will be removed in a future release.
     """
+    import warnings
 
-    async def _audited(session: Any, name: str, arguments: dict[str, Any]) -> dict[str, Any] | str:
-        t0 = time.monotonic()
-        status = "ok"
-        result_str = ""
-        try:
-            raw_result: dict[str, Any] | str = await handler(session, name, arguments)
-            if isinstance(raw_result, dict):
-                result_str = json.dumps(raw_result)
-            else:
-                result_str = str(raw_result)
-            status = _detect_status(result_str)
-            return raw_result
-        except Exception as exc:
-            status = "error"
-            result_str = str(exc)
-            raise
-        finally:
-            elapsed = (time.monotonic() - t0) * 1000
-            auditor.record(
-                ToolAuditEntry(
-                    ts=datetime.now(UTC).isoformat(),
-                    agent_id=agent_id,
-                    tool_name=name,
-                    arguments=dict(arguments),
-                    result=result_str[:_MAX_RESULT_LEN],
-                    status=status,
-                    duration_ms=elapsed,
-                )
-            )
-
-    return _audited
+    warnings.warn(
+        "audit_realtime_tool_handler is deprecated — "
+        "use audit_tool_handler instead (same signature)",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return audit_tool_handler(handler, auditor, agent_id)

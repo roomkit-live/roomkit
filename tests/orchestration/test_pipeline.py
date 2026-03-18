@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from roomkit.channels.agent import Agent
-from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel, _current_voice_session
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType, HookExecution, HookTrigger
@@ -1020,7 +1021,6 @@ class TestRealtimeInstall:
     async def test_wire_realtime_tool_handler_handoff(self):
         """Tool handler intercepts handoff_conversation and calls handler."""
         from roomkit.orchestration.state import ConversationState
-        from roomkit.voice.base import VoiceSession
 
         pipeline = ConversationPipeline(
             stages=[
@@ -1070,21 +1070,24 @@ class TestRealtimeInstall:
         rtv._sessions["s1"] = session
         rtv._session_rooms["s1"] = "r1"
 
-        # Call the tool handler
-        result = await rtv.tool_handler(
-            session,
-            "handoff_conversation",
-            {"target": "agent-advisor", "reason": "needs help", "summary": "context"},
-        )
+        # Call the tool handler with session set via contextvar
+        token = _current_voice_session.set(session)
+        try:
+            result = await rtv.tool_handler(
+                "handoff_conversation",
+                {"target": "agent-advisor", "reason": "needs help", "summary": "context"},
+            )
+        finally:
+            _current_voice_session.reset(token)
 
-        assert isinstance(result, dict)
-        assert result["accepted"] is True
-        assert result["new_agent_id"] == "agent-advisor"
+        assert isinstance(result, str)
+        parsed = json.loads(result)
+        assert parsed["accepted"] is True
+        assert parsed["new_agent_id"] == "agent-advisor"
 
     async def test_wire_realtime_reconfigures_on_handoff(self):
         """on_handoff_complete reconfigures the RTV session."""
         from roomkit.orchestration.state import ConversationState
-        from roomkit.voice.base import VoiceSession
 
         pipeline = ConversationPipeline(
             stages=[
@@ -1134,12 +1137,15 @@ class TestRealtimeInstall:
         rtv._sessions["s1"] = session
         rtv._session_rooms["s1"] = "r1"
 
-        # Trigger handoff via tool handler
-        await rtv.tool_handler(
-            session,
-            "handoff_conversation",
-            {"target": "agent-advisor", "reason": "help", "summary": "ctx"},
-        )
+        # Trigger handoff via tool handler with session set via contextvar
+        token = _current_voice_session.set(session)
+        try:
+            await rtv.tool_handler(
+                "handoff_conversation",
+                {"target": "agent-advisor", "reason": "help", "summary": "ctx"},
+            )
+        finally:
+            _current_voice_session.reset(token)
 
         # Provider should have been reconfigured (disconnect + reconnect)
         provider = rtv.provider
@@ -1149,7 +1155,6 @@ class TestRealtimeInstall:
     async def test_wire_realtime_greet_on_handoff(self):
         """When greet_on_handoff=True, tool result includes greeting message."""
         from roomkit.orchestration.state import ConversationState
-        from roomkit.voice.base import VoiceSession
 
         pipeline = ConversationPipeline(
             stages=[
@@ -1199,13 +1204,17 @@ class TestRealtimeInstall:
         rtv._sessions["s1"] = session
         rtv._session_rooms["s1"] = "r1"
 
-        result = await rtv.tool_handler(
-            session,
-            "handoff_conversation",
-            {"target": "agent-advisor", "reason": "help", "summary": "ctx"},
-        )
+        token = _current_voice_session.set(session)
+        try:
+            result = await rtv.tool_handler(
+                "handoff_conversation",
+                {"target": "agent-advisor", "reason": "help", "summary": "ctx"},
+            )
+        finally:
+            _current_voice_session.reset(token)
 
-        assert "introduce yourself" in result["message"].lower()
+        parsed = json.loads(result)
+        assert "introduce yourself" in parsed["message"].lower()
 
     async def test_wire_realtime_non_handoff_tool_delegates(self):
         """Non-handoff tools are delegated to the original handler."""
@@ -1220,25 +1229,18 @@ class TestRealtimeInstall:
         # Set up an original tool handler
         original_called = {}
 
-        async def original_handler(session, name, args):
+        async def original_handler(name, args):
             original_called["name"] = name
-            return {"result": "from_original"}
+            return "from_original"
 
         rtv.tool_handler = original_handler
 
         pipeline.install(kit, [a], voice_channel_id="rtv")
 
-        session = VoiceSession(
-            id="s1",
-            room_id="r1",
-            participant_id="user1",
-            channel_id="rtv",
-        )
-
-        result = await rtv.tool_handler(session, "get_weather", {"city": "NYC"})
+        result = await rtv.tool_handler("get_weather", {"city": "NYC"})
 
         assert original_called["name"] == "get_weather"
-        assert result == {"result": "from_original"}
+        assert result == "from_original"
 
     def test_traditional_mode_not_affected(self):
         """When voice_channel_id points to VoiceChannel (not RTV), traditional wiring."""

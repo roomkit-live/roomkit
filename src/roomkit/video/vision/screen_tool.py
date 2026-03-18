@@ -22,13 +22,10 @@ Example with RealtimeVoiceChannel::
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from roomkit.video.video_frame import VideoFrame
 from roomkit.video.vision.base import VisionProvider
-
-if TYPE_CHECKING:
-    from roomkit.voice.base import VoiceSession
 
 logger = logging.getLogger("roomkit.video.vision.screen_tool")
 
@@ -143,7 +140,6 @@ class DescribeScreenTool:
 
     async def handler(
         self,
-        session: VoiceSession,
         name: str,
         arguments: dict[str, Any],
     ) -> str:

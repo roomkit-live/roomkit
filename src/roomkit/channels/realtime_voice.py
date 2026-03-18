@@ -42,11 +42,23 @@ if TYPE_CHECKING:
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
-# Tool handler: async callable (session, name, arguments) -> result dict or str
-ToolHandler = Callable[
-    ["VoiceSession", str, dict[str, Any]],
-    Awaitable[dict[str, Any] | str],
-]
+# Tool handler: async callable (name, arguments) -> result string
+ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
+
+_current_voice_session: contextvars.ContextVar[VoiceSession | None] = contextvars.ContextVar(
+    "_current_voice_session",
+    default=None,
+)
+
+
+def get_current_voice_session() -> VoiceSession | None:
+    """Get the voice session for the current tool call.
+
+    Available inside tool handlers called by RealtimeVoiceChannel.
+    Returns None outside of a tool call context.
+    """
+    return _current_voice_session.get()
+
 
 logger = logging.getLogger("roomkit.channels.realtime_voice")
 
@@ -120,7 +132,7 @@ class RealtimeVoiceChannel(Channel):
             emit_transcription_events: If True, emit final transcriptions
                 as RoomEvents so other channels see them.
             tool_handler: Async callable to execute tool calls.
-                Signature: ``async (session, name, arguments) -> result``.
+                Signature: ``async (name, arguments) -> result``.
                 Return a dict or JSON string.  If not set, falls back to
                 ``ON_REALTIME_TOOL_CALL`` hooks.
             mute_on_tool_call: If True, mute the transport microphone during
@@ -1369,7 +1381,11 @@ class RealtimeVoiceChannel(Channel):
                     call_id,
                     session.id,
                 )
-                raw = await self._tool_handler(session, name, arguments)
+                token = _current_voice_session.set(session)
+                try:
+                    raw = await self._tool_handler(name, arguments)
+                finally:
+                    _current_voice_session.reset(token)
                 result_str = raw if isinstance(raw, str) else json.dumps(raw)
             elif self._framework and room_id:
                 # Fall back to hooks

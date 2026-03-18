@@ -211,14 +211,12 @@ class TestDescribeWebcamTool:
         tool = DescribeWebcamTool(MockVisionProvider(descriptions=["x"]))
         tool.analyze = AsyncMock(return_value="desc")  # type: ignore[method-assign]
 
-        session = object()
-        result = await tool.handler(session, "describe_webcam", {"query": "q"})  # type: ignore[arg-type]
+        result = await tool.handler("describe_webcam", {"query": "q"})
         assert result == "desc"
 
     async def test_handler_returns_unknown(self) -> None:
         tool = DescribeWebcamTool(MockVisionProvider(descriptions=["x"]))
-        session = object()
-        result = await tool.handler(session, "other", {})  # type: ignore[arg-type]
+        result = await tool.handler("other", {})
         assert "Unknown tool" in result
 
     async def test_analyze_saves_frame_when_save_path_given(self, tmp_path: Path) -> None:
@@ -274,8 +272,7 @@ class TestDescribeWebcamTool:
         tool = DescribeWebcamTool(MockVisionProvider(descriptions=["x"]))
         tool.analyze = AsyncMock(return_value="desc")  # type: ignore[method-assign]
 
-        session = object()
-        await tool.handler(session, "describe_webcam", {})  # type: ignore[arg-type]
+        await tool.handler("describe_webcam", {})
         tool.analyze.assert_called_once_with(  # type: ignore[union-attr]
             "Describe what you see through the webcam.",
             device=None,
@@ -286,9 +283,7 @@ class TestDescribeWebcamTool:
         tool = DescribeWebcamTool(MockVisionProvider(descriptions=["x"]))
         tool.analyze = AsyncMock(return_value="desc")  # type: ignore[method-assign]
 
-        session = object()
-        await tool.handler(  # type: ignore[arg-type]
-            session,
+        await tool.handler(
             "describe_webcam",
             {"query": "look", "device": 2},
         )
@@ -302,9 +297,7 @@ class TestDescribeWebcamTool:
         tool = DescribeWebcamTool(MockVisionProvider(descriptions=["x"]))
         tool.analyze = AsyncMock(return_value="desc")  # type: ignore[method-assign]
 
-        session = object()
-        await tool.handler(  # type: ignore[arg-type]
-            session,
+        await tool.handler(
             "describe_webcam",
             {"query": "read", "save_path": "/tmp/shot.jpg"},
         )
@@ -404,14 +397,12 @@ class TestListWebcamsTool:
     async def test_handler_routes_list_webcams(self) -> None:
         tool = ListWebcamsTool()
         with patch.object(tool, "list", return_value="Found 1 camera(s):"):
-            session = object()
-            result = await tool.handler(session, "list_webcams", {})  # type: ignore[arg-type]
+            result = await tool.handler("list_webcams", {})
         assert "Found 1" in result
 
     async def test_handler_returns_unknown(self) -> None:
         tool = ListWebcamsTool()
-        session = object()
-        result = await tool.handler(session, "other_tool", {})  # type: ignore[arg-type]
+        result = await tool.handler("other_tool", {})
         assert "Unknown tool" in result
 
 

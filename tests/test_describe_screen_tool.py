@@ -149,20 +149,17 @@ class TestDescribeScreenTool:
         tool = DescribeScreenTool(MockVisionProvider(descriptions=["x"]))
         tool.analyze = AsyncMock(return_value="desc")  # type: ignore[method-assign]
 
-        session = object()
-        result = await tool.handler(session, "describe_screen", {"query": "q"})  # type: ignore[arg-type]
+        result = await tool.handler("describe_screen", {"query": "q"})
         assert result == "desc"
 
     async def test_handler_returns_unknown(self) -> None:
         tool = DescribeScreenTool(MockVisionProvider(descriptions=["x"]))
-        session = object()
-        result = await tool.handler(session, "other", {})  # type: ignore[arg-type]
+        result = await tool.handler("other", {})
         assert "Unknown tool" in result
 
     async def test_handler_uses_default_query(self) -> None:
         tool = DescribeScreenTool(MockVisionProvider(descriptions=["x"]))
         tool.analyze = AsyncMock(return_value="desc")  # type: ignore[method-assign]
 
-        session = object()
-        await tool.handler(session, "describe_screen", {})  # type: ignore[arg-type]
+        await tool.handler("describe_screen", {})
         tool.analyze.assert_called_once_with("Describe what is on this screen.")  # type: ignore[union-attr]

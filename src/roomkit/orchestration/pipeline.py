@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -375,22 +376,22 @@ class ConversationPipeline:
         original_handler = rtv.tool_handler
 
         async def _realtime_tool_handler(
-            session: Any,
             name: str,
             arguments: dict[str, Any],
-        ) -> dict[str, Any] | str:
+        ) -> str:
             if name != "handoff_conversation":
                 if original_handler:
-                    return await original_handler(
-                        session,
-                        name,
-                        arguments,
-                    )
-                return {"error": f"Unknown tool: {name}"}
+                    return await original_handler(name, arguments)
+                return json.dumps({"error": f"Unknown tool: {name}"})
 
-            room_id = rtv.session_rooms.get(session.id)
+            # Lazy import to avoid circular dependency
+            from roomkit.channels.realtime_voice import get_current_voice_session
+
+            session = get_current_voice_session()
+            session_id = session.id if session else None
+            room_id = rtv.session_rooms.get(session_id) if session_id else None
             if not room_id:
-                return {"error": "No room context for this session"}
+                return json.dumps({"error": "No room context for this session"})
 
             room = await kit.get_room(room_id)
             state = get_conversation_state(room)
@@ -409,7 +410,7 @@ class ConversationPipeline:
                 room = await kit.get_room(room_id)
                 lang = handler.get_room_language(room, target)
                 output["message"] = _build_greet(target, language=lang)
-            return output
+            return json.dumps(output)
 
         rtv.tool_handler = _realtime_tool_handler
 
