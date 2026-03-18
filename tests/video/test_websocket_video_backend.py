@@ -151,12 +151,15 @@ class TestWebSocketVideoBackendJsonConfig:
         session = await backend.connect("room-1", "user-1", "video")
         backend._connection_sessions["conn-1"] = session.id
 
-        backend._handle_json_message("conn-1", {
-            "type": "config",
-            "codec": "vp8",
-            "width": 1280,
-            "height": 720,
-        })
+        backend._handle_json_message(
+            "conn-1",
+            {
+                "type": "config",
+                "codec": "vp8",
+                "width": 1280,
+                "height": 720,
+            },
+        )
 
         config = backend._connection_config["conn-1"]
         assert config["codec"] == "vp8"
@@ -168,11 +171,14 @@ class TestWebSocketVideoBackendJsonConfig:
         session = await backend.connect("room-1", "user-1", "video")
         backend._connection_sessions["conn-1"] = session.id
 
-        backend._handle_json_message("conn-1", {
-            "type": "config",
-            "width": 1920,
-            "height": 1080,
-        })
+        backend._handle_json_message(
+            "conn-1",
+            {
+                "type": "config",
+                "width": 1920,
+                "height": 1080,
+            },
+        )
 
         received = []
         backend.on_video_received(lambda s, f: received.append(f))

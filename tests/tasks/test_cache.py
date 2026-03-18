@@ -68,12 +68,17 @@ class TestDelegateHandlerWithCache:
         """Should return cached result instead of re-delegating."""
         kit = MagicMock()
         cache = CompletedTaskCache()
-        cache.put("room-1", "exec-agent", "search cats", {
-            "status": "delegated",
-            "task_id": "t-old",
-            "child_room_id": "child-old",
-            "agent_id": "exec-agent",
-        })
+        cache.put(
+            "room-1",
+            "exec-agent",
+            "search cats",
+            {
+                "status": "delegated",
+                "task_id": "t-old",
+                "child_room_id": "child-old",
+                "agent_id": "exec-agent",
+            },
+        )
 
         handler = DelegateHandler(kit, cache=cache)
         result = await handler.handle(
@@ -166,16 +171,20 @@ class TestDelegateHandlerSerialization:
         handler = DelegateHandler(kit, serialize_per_room=True)
 
         # Launch two concurrent delegations for the same room
-        t1 = asyncio.create_task(handler.handle(
-            room_id="room-1",
-            calling_agent_id="voice",
-            arguments={"agent": "agent-a", "task": "task a"},
-        ))
-        t2 = asyncio.create_task(handler.handle(
-            room_id="room-1",
-            calling_agent_id="voice",
-            arguments={"agent": "agent-b", "task": "task b"},
-        ))
+        t1 = asyncio.create_task(
+            handler.handle(
+                room_id="room-1",
+                calling_agent_id="voice",
+                arguments={"agent": "agent-a", "task": "task a"},
+            )
+        )
+        t2 = asyncio.create_task(
+            handler.handle(
+                room_id="room-1",
+                calling_agent_id="voice",
+                arguments={"agent": "agent-b", "task": "task b"},
+            )
+        )
 
         await asyncio.gather(t1, t2)
 

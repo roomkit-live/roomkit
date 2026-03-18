@@ -98,9 +98,7 @@ async def kit_with_ai(ai_channel: AIChannel) -> RoomKit:
 
 
 @pytest.fixture
-async def kit_with_both(
-    rt_channel: RealtimeVoiceChannel, ai_channel: AIChannel
-) -> RoomKit:
+async def kit_with_both(rt_channel: RealtimeVoiceChannel, ai_channel: AIChannel) -> RoomKit:
     kit = RoomKit()
     kit.register_channel(rt_channel)
     kit.register_channel(ai_channel)
@@ -145,6 +143,7 @@ class TestRealtimeVoiceToolCallHook:
         rt_transport: MockRealtimeTransport,
     ) -> None:
         """tool_handler runs first, hook observes and can override."""
+
         async def handler(name: str, args: dict[str, Any]) -> str:
             return json.dumps({"handler_ran": True})
 

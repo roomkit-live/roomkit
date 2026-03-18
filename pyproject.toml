@@ -328,7 +328,7 @@ known-first-party = ["roomkit"]
 "src/roomkit/voice/backends/base.py" = ["B027"]  # Optional callback hooks with default no-ops
 "src/roomkit/voice/realtime/provider.py" = ["B027"]  # Optional callback hooks with default no-ops
 "src/roomkit/voice/realtime/transport.py" = ["B027"]  # Optional callback hooks with default no-ops
-"examples/*.py" = ["E402"]  # Logging config before imports is intentional
+"examples/*.py" = ["E402", "E501", "N806", "ASYNC210", "ASYNC221", "F841", "SIM102", "SIM105"]  # Examples: relaxed style
 "tests/*.py" = ["N817", "PT011", "PT012", "PT018", "PT019"]  # Allow short aliases + relaxed pytest style
 
 [tool.bandit]

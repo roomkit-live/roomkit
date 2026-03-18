@@ -181,9 +181,7 @@ class VideoBridge:
             room = self._rooms.get(room_id)
             return len(room) if room else 0
 
-    def get_bridged_sessions(
-        self, room_id: str
-    ) -> list[tuple[VideoSession, VideoBackend]]:
+    def get_bridged_sessions(self, room_id: str) -> list[tuple[VideoSession, VideoBackend]]:
         """Return ``(session, backend)`` pairs for all sessions in a room."""
         with self._lock:
             room = self._rooms.get(room_id)

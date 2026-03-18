@@ -54,8 +54,7 @@ import logging
 import os
 import platform
 import signal
-import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -93,7 +92,6 @@ from roomkit.models.hook import HookResult
 from roomkit.video.vision.screen_tool import capture_screen_frame
 from roomkit.voice.backends.local import LocalAudioBackend
 
-
 # ---------------------------------------------------------------------------
 # OmniView client — calls the GPU vision service
 # ---------------------------------------------------------------------------
@@ -111,10 +109,12 @@ class OmniViewClient:
         """Capture screen as base64 PNG."""
         import base64
         import io
+
         frame = capture_screen_frame(self.monitor)
         if frame is None:
             return None
         from PIL import Image
+
         img = Image.frombytes("RGB", (frame.width, frame.height), frame.data)
         buf = io.BytesIO()
         img.save(buf, format="PNG")
@@ -123,6 +123,7 @@ class OmniViewClient:
     async def parse(self) -> dict[str, object]:
         """Capture screen → OmniView /parse → all elements."""
         import urllib.request
+
         b64 = self._capture_b64()
         if b64 is None:
             return {"status": "error", "error": "No screen frame"}
@@ -135,7 +136,8 @@ class OmniViewClient:
         )
         loop = asyncio.get_running_loop()
         resp = await loop.run_in_executor(
-            None, lambda: urllib.request.urlopen(req, timeout=30)
+            None,
+            lambda: urllib.request.urlopen(req, timeout=30),  # noqa: ASYNC210
         )
         result = json.loads(resp.read())
         self.last_elements = result.get("elements", [])
@@ -144,6 +146,7 @@ class OmniViewClient:
     async def locate(self, query: str) -> dict[str, object]:
         """Capture screen → OmniView /locate → best matching element."""
         import urllib.request
+
         b64 = self._capture_b64()
         if b64 is None:
             return {"found": False, "error": "No screen frame"}
@@ -156,7 +159,8 @@ class OmniViewClient:
         )
         loop = asyncio.get_running_loop()
         resp = await loop.run_in_executor(
-            None, lambda: urllib.request.urlopen(req, timeout=30)
+            None,
+            lambda: urllib.request.urlopen(req, timeout=30),  # noqa: ASYNC210
         )
         result = json.loads(resp.read())
         return result
@@ -193,34 +197,45 @@ def _build_exec_provider() -> object:
 
     if choice == "anthropic":
         from roomkit.providers.anthropic.ai import AnthropicAIProvider, AnthropicConfig
-        return AnthropicAIProvider(AnthropicConfig(
-            api_key=os.environ["ANTHROPIC_API_KEY"],
-            model=os.environ.get("EXEC_MODEL", "claude-sonnet-4-20250514"),
-            max_tokens=2048,
-        ))
+
+        return AnthropicAIProvider(
+            AnthropicConfig(
+                api_key=os.environ["ANTHROPIC_API_KEY"],
+                model=os.environ.get("EXEC_MODEL", "claude-sonnet-4-20250514"),
+                max_tokens=2048,
+            )
+        )
     if choice == "openai":
         from roomkit.providers.openai.ai import OpenAIAIProvider, OpenAIConfig
-        return OpenAIAIProvider(OpenAIConfig(
-            api_key=os.environ["OPENAI_API_KEY"],
-            model=os.environ.get("EXEC_MODEL", "gpt-4o"),
-            max_tokens=2048,
-        ))
+
+        return OpenAIAIProvider(
+            OpenAIConfig(
+                api_key=os.environ["OPENAI_API_KEY"],
+                model=os.environ.get("EXEC_MODEL", "gpt-4o"),
+                max_tokens=2048,
+            )
+        )
     from roomkit import GeminiAIProvider, GeminiConfig
-    return GeminiAIProvider(GeminiConfig(
-        api_key=os.environ["GOOGLE_API_KEY"],
-        model=os.environ.get("EXEC_MODEL", "gemini-2.0-flash"),
-        max_tokens=2048,
-    ))
+
+    return GeminiAIProvider(
+        GeminiConfig(
+            api_key=os.environ["GOOGLE_API_KEY"],
+            model=os.environ.get("EXEC_MODEL", "gemini-2.0-flash"),
+            max_tokens=2048,
+        )
+    )
 
 
 def _build_voice_provider(voice_choice: str) -> object:
     if voice_choice == "openai":
         from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
+
         return OpenAIRealtimeProvider(
             api_key=os.environ["OPENAI_API_KEY"],
             model=os.environ.get("OPENAI_MODEL", "gpt-realtime-1.5"),
         )
     from roomkit.providers.gemini.realtime import GeminiLiveProvider
+
     return GeminiLiveProvider(
         api_key=os.environ["GOOGLE_API_KEY"],
         model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-native-audio-preview-12-2025"),
@@ -304,16 +319,18 @@ async def main() -> None:
     monitor = int(os.environ.get("MONITOR", "1"))
 
     # --- Telemetry -----------------------------------------------------------
-    from roomkit.telemetry.base import Attr, SpanKind
     from roomkit.telemetry.console import ConsoleTelemetryProvider
 
     class CostTracker(ConsoleTelemetryProvider):
         def __init__(self) -> None:
             super().__init__(level=logging.DEBUG)
             self.totals: dict[str, int] = {
-                "vision_calls": 0, "vision_tokens": 0,
-                "realtime_input": 0, "realtime_output": 0,
-                "exec_input": 0, "exec_output": 0,
+                "vision_calls": 0,
+                "vision_tokens": 0,
+                "realtime_input": 0,
+                "realtime_output": 0,
+                "exec_input": 0,
+                "exec_output": 0,
             }
 
         def record_metric(self, name: str, value: float, **kwargs: object) -> None:
@@ -334,8 +351,12 @@ async def main() -> None:
             print("\nSession Cost Summary")
             print("-" * 50)
             print(f"  Vision:    {v:>8,} tokens ({self.totals['vision_calls']} calls)")
-            print(f"  Voice:     {r:>8,} tokens ({self.totals['realtime_input']:,} in / {self.totals['realtime_output']:,} out)")
-            print(f"  Exec agent:{e:>8,} tokens ({self.totals['exec_input']:,} in / {self.totals['exec_output']:,} out)")
+            print(
+                f"  Voice:     {r:>8,} tokens ({self.totals['realtime_input']:,} in / {self.totals['realtime_output']:,} out)"
+            )
+            print(
+                f"  Exec agent:{e:>8,} tokens ({self.totals['exec_input']:,} in / {self.totals['exec_output']:,} out)"
+            )
             print(f"  Total:     {v + r + e:>8,} tokens")
 
     cost = CostTracker()
@@ -343,7 +364,8 @@ async def main() -> None:
 
     # --- StatusBus (shared between all agents) --------------------------------
     status_bus = StatusBus(
-        persist_path=Path("/tmp/screen_ai") / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_status.jsonl",
+        persist_path=Path("/tmp/screen_ai")
+        / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_status.jsonl",
     )
 
     # --- ToolAuditor (automatic tool call logging) ----------------------------
@@ -358,11 +380,13 @@ async def main() -> None:
     google_api_key = os.environ.get("GOOGLE_API_KEY", "")
     gemini_vision = None
     if google_api_key:
-        gemini_vision = GeminiVisionProvider(GeminiVisionConfig(
-            api_key=google_api_key,
-            model="gemini-3.1-flash-image-preview",
-            max_tokens=4096,
-        ))
+        gemini_vision = GeminiVisionProvider(
+            GeminiVisionConfig(
+                api_key=google_api_key,
+                model="gemini-3.1-flash-image-preview",
+                max_tokens=4096,
+            )
+        )
         logger.info("Gemini vision: enabled (read_screen)")
     else:
         logger.warning("GOOGLE_API_KEY not set — read_screen() will be unavailable")
@@ -373,7 +397,9 @@ async def main() -> None:
     # --- Exec agent tool handler ---------------------------------------------
     async def _exec_tool_handler(name: str, arguments: dict[str, object]) -> str:
         import subprocess
+
         import pyautogui
+
         pyautogui.FAILSAFE = False
 
         key = "command" if platform.system() == "Darwin" else "ctrl"
@@ -381,19 +407,24 @@ async def main() -> None:
         if name == "search_google":
             """High-level: open Chrome → new tab → type query → enter → return results."""
             query = str(arguments.get("query", ""))
-            status_bus.post("exec", f"search_google(\"{query[:40]}\")", "info", detail="Starting...")
+            status_bus.post("exec", f'search_google("{query[:40]}")', "info", detail="Starting...")
 
             # Step 1: Open Chrome
             try:
-                subprocess.run(["open", "-a", "Google Chrome"], check=True, capture_output=True, timeout=5)
+                subprocess.run(
+                    ["open", "-a", "Google Chrome"], check=True, capture_output=True, timeout=5
+                )
                 await asyncio.sleep(1.5)
                 subprocess.run(
                     ["osascript", "-e", 'tell application "Google Chrome" to activate'],
-                    capture_output=True, timeout=3,
+                    capture_output=True,
+                    timeout=3,
                 )
                 await asyncio.sleep(0.5)
             except Exception as e:
-                status_bus.post("exec", "search_google", "failed", detail=f"Can't open Chrome: {e}")
+                status_bus.post(
+                    "exec", "search_google", "failed", detail=f"Can't open Chrome: {e}"
+                )
                 return json.dumps({"status": "failed", "error": f"Can't open Chrome: {e}"})
 
             # Step 2: New tab
@@ -402,6 +433,7 @@ async def main() -> None:
 
             # Step 3: Type search query via clipboard (handles all keyboard layouts)
             import subprocess as _sp
+
             _sp.run(["pbcopy"], input=query.encode(), check=True)
             pyautogui.hotkey(key, "v")
             await asyncio.sleep(0.5)
@@ -422,31 +454,44 @@ async def main() -> None:
                 if len(content) > 15 and el.get("element_type") == "text":
                     eid = el.get("id")
                     center = el.get("center", [0, 0])
-                    results.append({
-                        "id": eid,
-                        "text": content[:80],
-                        "center": center,
-                    })
+                    results.append(
+                        {
+                            "id": eid,
+                            "text": content[:80],
+                            "center": center,
+                        }
+                    )
 
             status_bus.post(
-                "exec", f"search_google(\"{query[:40]}\")", "ok",
+                "exec",
+                f'search_google("{query[:40]}")',
+                "ok",
                 detail=f"Found {len(results)} text elements on results page",
             )
-            return json.dumps({
-                "status": "ok",
-                "query": query,
-                "results": results[:15],  # top 15 most relevant
-                "total_elements": len(elements),
-                "note": "Use click_result(element_id=N) to click a result.",
-            })
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "query": query,
+                    "results": results[:15],  # top 15 most relevant
+                    "total_elements": len(elements),
+                    "note": "Use click_result(element_id=N) to click a result.",
+                }
+            )
 
         if name == "click_result":
             """Click a search result by element ID."""
             element_id = int(arguments.get("element_id", -1))
             el = omniview.get_element_by_id(element_id)
             if el is None:
-                status_bus.post("exec", f"click_result({element_id})", "failed", detail="ID not found")
-                return json.dumps({"status": "failed", "error": f"Element {element_id} not found. Run search_google or observe first."})
+                status_bus.post(
+                    "exec", f"click_result({element_id})", "failed", detail="ID not found"
+                )
+                return json.dumps(
+                    {
+                        "status": "failed",
+                        "error": f"Element {element_id} not found. Run search_google or observe first.",
+                    }
+                )
 
             cx, cy = int(el["center"][0]), int(el["center"][1])
             content = str(el.get("content", ""))
@@ -459,19 +504,33 @@ async def main() -> None:
             result = await omniview.parse()
             elements = result.get("elements", [])
             # Find URL-like elements
-            urls = [e.get("content", "") for e in elements if "http" in str(e.get("content", "")) or ".com" in str(e.get("content", "")) or ".live" in str(e.get("content", ""))]
-            page_texts = [str(e.get("content", ""))[:60] for e in elements if len(str(e.get("content", ""))) > 20][:5]
+            urls = [
+                e.get("content", "")
+                for e in elements
+                if "http" in str(e.get("content", ""))
+                or ".com" in str(e.get("content", ""))
+                or ".live" in str(e.get("content", ""))
+            ]
+            page_texts = [
+                str(e.get("content", ""))[:60]
+                for e in elements
+                if len(str(e.get("content", ""))) > 20
+            ][:5]
 
             status_bus.post(
-                "exec", f"click_result({element_id})", "ok",
-                detail=f"Clicked \"{content[:40]}\" at ({cx},{cy})",
+                "exec",
+                f"click_result({element_id})",
+                "ok",
+                detail=f'Clicked "{content[:40]}" at ({cx},{cy})',
             )
-            return json.dumps({
-                "status": "ok",
-                "clicked": content[:60],
-                "page_hints": page_texts,
-                "urls_found": urls[:3],
-            })
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "clicked": content[:60],
+                    "page_hints": page_texts,
+                    "urls_found": urls[:3],
+                }
+            )
 
         if name == "observe":
             """Filtered observation with URL/title extraction and OCR cleanup."""
@@ -481,10 +540,11 @@ async def main() -> None:
 
             # Fix 5: OCR cleanup
             import re
+
             def _clean_ocr(text: str) -> str:
-                text = re.sub(r'Jl(?=www|[a-z])', '//', text)
-                text = re.sub(r'https?\s*:\s*//', 'https://', text)
-                text = text.replace(' .', '.').replace('. ', '.')
+                text = re.sub(r"Jl(?=www|[a-z])", "//", text)
+                text = re.sub(r"https?\s*:\s*//", "https://", text)
+                text = text.replace(" .", ".").replace(". ", ".")
                 return text
 
             # Fix 6: Extract URL and title from elements
@@ -502,37 +562,49 @@ async def main() -> None:
                 # Detect title (first long text that's not a URL)
                 if not title and len(content) > 20 and "http" not in content:
                     title = content[:80]
-                filtered.append({
-                    "id": el.get("id"),
-                    "type": el.get("element_type"),
-                    "text": content[:60],
-                    "center": el.get("center"),
-                })
+                filtered.append(
+                    {
+                        "id": el.get("id"),
+                        "type": el.get("element_type"),
+                        "text": content[:60],
+                        "center": el.get("center"),
+                    }
+                )
 
-            status_bus.post("exec", "observe", "ok",
-                           detail=f"url={url[:40]} title={title[:40]} ({len(filtered)} elements)")
-            return json.dumps({
-                "status": "ok",
-                "current_url": url,
-                "page_title": title,
-                "elements": filtered[:20],
-                "total_raw": len(elements),
-            })
+            status_bus.post(
+                "exec",
+                "observe",
+                "ok",
+                detail=f"url={url[:40]} title={title[:40]} ({len(filtered)} elements)",
+            )
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "current_url": url,
+                    "page_title": title,
+                    "elements": filtered[:20],
+                    "total_raw": len(elements),
+                }
+            )
 
         if name == "navigate":
             """Open a URL directly in a new tab."""
             url = str(arguments.get("url", ""))
             try:
-                subprocess.run(["open", "-a", "Google Chrome"], check=True, capture_output=True, timeout=5)
+                subprocess.run(
+                    ["open", "-a", "Google Chrome"], check=True, capture_output=True, timeout=5
+                )
                 await asyncio.sleep(1.0)
                 subprocess.run(
                     ["osascript", "-e", 'tell application "Google Chrome" to activate'],
-                    capture_output=True, timeout=3,
+                    capture_output=True,
+                    timeout=3,
                 )
                 await asyncio.sleep(0.5)
                 pyautogui.hotkey(key, "t")
                 await asyncio.sleep(0.5)
                 import subprocess as _sp
+
                 _sp.run(["pbcopy"], input=url.encode(), check=True)
                 pyautogui.hotkey(key, "v")
                 await asyncio.sleep(0.3)
@@ -550,9 +622,10 @@ async def main() -> None:
         if name == "read_screen":
             """Semantic understanding of the screen via Gemini vision."""
             if gemini_vision is None:
-                return json.dumps({"status": "failed", "error": "No GOOGLE_API_KEY — read_screen unavailable"})
+                return json.dumps(
+                    {"status": "failed", "error": "No GOOGLE_API_KEY — read_screen unavailable"}
+                )
             query = str(arguments.get("query", "Describe what is currently on screen."))
-            from PIL import Image
             frame = capture_screen_frame(monitor)
             if frame is None:
                 return json.dumps({"status": "failed", "error": "No screen frame"})
@@ -589,7 +662,10 @@ async def main() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "element_id": {"type": "integer", "description": "Element ID from search results."},
+                "element_id": {
+                    "type": "integer",
+                    "description": "Element ID from search results.",
+                },
             },
             "required": ["element_id"],
         },
@@ -610,7 +686,10 @@ async def main() -> None:
         parameters={
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Specific question about the screen (optional)."},
+                "query": {
+                    "type": "string",
+                    "description": "Specific question about the screen (optional).",
+                },
             },
         },
     )
@@ -647,7 +726,14 @@ async def main() -> None:
         description="Executes browser tasks using high-level tools",
         system_prompt=_exec_system_prompt(),
         tool_handler=audited_handler,
-        tools=[SEARCH_TOOL, CLICK_RESULT_TOOL, OBSERVE_TOOL, READ_SCREEN_TOOL, NAVIGATE_TOOL, LOG_TOOL],
+        tools=[
+            SEARCH_TOOL,
+            CLICK_RESULT_TOOL,
+            OBSERVE_TOOL,
+            READ_SCREEN_TOOL,
+            NAVIGATE_TOOL,
+            LOG_TOOL,
+        ],
         memory=SlidingWindowMemory(max_events=20),
         max_tool_rounds=10,
     )
@@ -660,6 +746,7 @@ async def main() -> None:
     aec = None
     try:
         from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
+
         aec = WebRTCAECProvider(sample_rate=sample_rate)
     except ImportError:
         pass
@@ -684,9 +771,11 @@ async def main() -> None:
         "parameters": {"type": "object", "properties": {}},
     }
 
-    delegate_tool = build_delegate_tool([
-        ("agent-browser", "Executes browser and desktop automation tasks"),
-    ])
+    delegate_tool = build_delegate_tool(
+        [
+            ("agent-browser", "Executes browser and desktop automation tasks"),
+        ]
+    )
 
     voice_system_prompt = f"""\
 You are a friendly IT support voice assistant. You speak {lang_name}.
@@ -757,17 +846,22 @@ their browser. Delegate all computer actions to agent-browser.
             # Fix 1: Delegation lock — prevent re-delegation if task just completed
             completed = await status_bus.recent(1, status="completed")
             if completed:
-                from datetime import timezone
                 last_ts = datetime.fromisoformat(completed[0].ts)
-                age = (datetime.now(timezone.utc) - last_ts).total_seconds()
+                age = (datetime.now(UTC) - last_ts).total_seconds()
                 if age < 5:
-                    status_bus.post("voice", "delegate_task", "info",
-                                   detail=f"Skipped — task completed {age:.0f}s ago: {completed[0].detail}")
-                    result_str = json.dumps({
-                        "status": "already_done",
-                        "message": f"Previous task completed {age:.0f}s ago: {completed[0].detail}. "
-                                   "Ask the user if they need something different.",
-                    })
+                    status_bus.post(
+                        "voice",
+                        "delegate_task",
+                        "info",
+                        detail=f"Skipped — task completed {age:.0f}s ago: {completed[0].detail}",
+                    )
+                    result_str = json.dumps(
+                        {
+                            "status": "already_done",
+                            "message": f"Previous task completed {age:.0f}s ago: {completed[0].detail}. "
+                            "Ask the user if they need something different.",
+                        }
+                    )
                     return HookResult(action="allow", metadata={"result": result_str})
 
             try:
@@ -809,19 +903,23 @@ their browser. Delegate all computer actions to agent-browser.
     @kit.hook(HookTrigger.ON_TASK_COMPLETED, execution=HookExecution.ASYNC)
     async def on_completed(event, ctx):
         duration = event.metadata.get("duration_ms", 0)
-        status_bus.post("system", "task_completed", "completed", detail=f"Duration: {duration:.0f}ms")
+        status_bus.post(
+            "system", "task_completed", "completed", detail=f"Duration: {duration:.0f}ms"
+        )
 
     # --- Screen recording with watermark ------------------------------------
+    from roomkit.recorder import RoomRecorderBinding
     from roomkit.video.backends.screen import ScreenCaptureBackend
     from roomkit.video.pipeline.filter.watermark import WatermarkFilter
-    from roomkit.recorder import RoomRecorderBinding
 
     try:
         from roomkit.recorder.pyav import PyAVMediaRecorder
+
         recorder = PyAVMediaRecorder()
         recorder_label = "PyAV → MP4"
     except ImportError:
         from roomkit.recorder import MockMediaRecorder
+
         recorder = MockMediaRecorder()
         recorder_label = "Mock (install roomkit[video] for MP4)"
 
@@ -886,7 +984,9 @@ their browser. Delegate all computer actions to agent-browser.
         }
 
     await voice_channel.start_session(
-        "screen-room", "local-user", connection=None,
+        "screen-room",
+        "local-user",
+        connection=None,
         metadata={"provider_config": provider_config} if provider_config else None,
     )
 

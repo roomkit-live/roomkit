@@ -626,7 +626,7 @@ async def main() -> None:
     auto_verify = os.environ.get("AUTO_VERIFY", "1") != "0"
 
     # --- Telemetry: token cost tracking via RoomKit's telemetry system ------
-    from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
+    from roomkit.telemetry.base import Attr, SpanKind  # noqa: F401
     from roomkit.telemetry.console import ConsoleTelemetryProvider
 
     class CostTrackingTelemetry(ConsoleTelemetryProvider):
@@ -1015,8 +1015,6 @@ async def main() -> None:
     )
     async def screen_tool_hook(event: object, ctx: object) -> HookResult:
         """Handle all tool calls via the hook pipeline with audit logging."""
-        from roomkit.models.event import RoomEvent
-
         tool_event = event  # type: ignore[assignment]
         name = tool_event.name  # type: ignore[attr-defined]
         arguments = tool_event.arguments  # type: ignore[attr-defined]

@@ -188,9 +188,7 @@ class WebSocketVideoBackend(VideoBackend):
         session.state = VideoSessionState.ENDED
 
         # Clean up connection mapping
-        to_remove = [
-            cid for cid, sid in self._connection_sessions.items() if sid == session.id
-        ]
+        to_remove = [cid for cid, sid in self._connection_sessions.items() if sid == session.id]
         for cid in to_remove:
             self._connection_sessions.pop(cid, None)
             self._connection_config.pop(cid, None)
@@ -228,7 +226,10 @@ class WebSocketVideoBackend(VideoBackend):
         else:
             async for chunk in video:
                 await self._send_frame_binary(
-                    session, websocket, chunk.data, keyframe=chunk.keyframe,
+                    session,
+                    websocket,
+                    chunk.data,
+                    keyframe=chunk.keyframe,
                     codec=chunk.codec,
                 )
 
@@ -260,9 +261,7 @@ class WebSocketVideoBackend(VideoBackend):
     # Inbound video handling
     # -------------------------------------------------------------------------
 
-    def _handle_binary_frame(
-        self, connection_id: str, data: bytes
-    ) -> None:
+    def _handle_binary_frame(self, connection_id: str, data: bytes) -> None:
         """Parse a binary WebSocket message into a VideoFrame."""
         if len(data) <= _HEADER_SIZE:
             return
@@ -300,9 +299,7 @@ class WebSocketVideoBackend(VideoBackend):
         for tap in self._video_taps:
             tap(session, frame)
 
-    def _handle_json_message(
-        self, connection_id: str, message: dict[str, Any]
-    ) -> None:
+    def _handle_json_message(self, connection_id: str, message: dict[str, Any]) -> None:
         """Handle a JSON control message from a client."""
         msg_type = message.get("type")
         if msg_type == "config":
@@ -323,9 +320,7 @@ class WebSocketVideoBackend(VideoBackend):
     # WebSocket connection lifecycle
     # -------------------------------------------------------------------------
 
-    async def _on_client_connect(
-        self, connection_id: str, websocket: Any
-    ) -> VideoSession | None:
+    async def _on_client_connect(self, connection_id: str, websocket: Any) -> VideoSession | None:
         """Handle a new WebSocket client connection."""
         if self._session_factory:
             result = self._session_factory(connection_id)
@@ -422,7 +417,7 @@ def mount_websocket_video(
 
     from fastapi import WebSocket, WebSocketDisconnect
 
-    @app.websocket(path)
+    @app.websocket(path)  # type: ignore[untyped-decorator,unused-ignore]
     async def video_ws(websocket: WebSocket) -> None:
         await websocket.accept()
         connection_id = uuid4().hex

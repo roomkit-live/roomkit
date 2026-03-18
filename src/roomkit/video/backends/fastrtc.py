@@ -267,9 +267,7 @@ class FastRTCVideoBackend(FastRTCVoiceBackend, VideoBackend):  # type: ignore[mi
                 self._enqueue_video_frame(queue, arr)
 
     @staticmethod
-    def _enqueue_video_frame(
-        queue: asyncio.Queue[Any | None], data: Any
-    ) -> None:
+    def _enqueue_video_frame(queue: asyncio.Queue[Any | None], data: Any) -> None:
         """Put a video frame into an emit queue, dropping oldest if full."""
         if queue.full():
             with contextlib.suppress(asyncio.QueueEmpty):
@@ -310,9 +308,7 @@ class FastRTCVideoBackend(FastRTCVoiceBackend, VideoBackend):  # type: ignore[mi
     def _register_webrtc(self, webrtc_id: str, session_id: str) -> None:
         """Register a WebRTC session and create audio + video emit queues."""
         super()._register_webrtc(webrtc_id, session_id)
-        self._video_emit_queues[webrtc_id] = asyncio.Queue(
-            maxsize=self._video_queue_maxsize
-        )
+        self._video_emit_queues[webrtc_id] = asyncio.Queue(maxsize=self._video_queue_maxsize)
 
 
 def mount_fastrtc_av(
@@ -492,16 +488,12 @@ def mount_fastrtc_av(
 
             if not self._is_webrtc or not self._webrtc_id:
                 await asyncio.sleep(0.1)
-                return _np.zeros(
-                    (backend._video_height, backend._video_width, 3), dtype=_np.uint8
-                )
+                return _np.zeros((backend._video_height, backend._video_width, 3), dtype=_np.uint8)
 
             queue = backend._video_emit_queues.get(self._webrtc_id)
             if not queue:
                 await asyncio.sleep(0.1)
-                return _np.zeros(
-                    (backend._video_height, backend._video_width, 3), dtype=_np.uint8
-                )
+                return _np.zeros((backend._video_height, backend._video_width, 3), dtype=_np.uint8)
 
             try:
                 frame = await asyncio.wait_for(queue.get(), timeout=0.1)
@@ -512,9 +504,7 @@ def mount_fastrtc_av(
                     )
                 return frame
             except TimeoutError:
-                return _np.zeros(
-                    (backend._video_height, backend._video_width, 3), dtype=_np.uint8
-                )
+                return _np.zeros((backend._video_height, backend._video_width, 3), dtype=_np.uint8)
 
     # Create FastRTC stream with audio+video modality.
     effective_limit = concurrency_limit if concurrency_limit is not None else 2**31
