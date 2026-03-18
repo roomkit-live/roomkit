@@ -35,7 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`DelegateHandler` enhancements** — `cache` for dedup (gap 13), `serialize_per_room` lock (gap 14), previous task context injection (gap 15)
 - **AIChannel `tools` parameter** — pass tools directly to constructor
 - **Room-level audio recording** for RealtimeVoiceChannel sessions
-- **`min_tracks` recorder option** — delay encoding until all channels connect
 - **WebTransport backend** using QUIC datagrams
 - **Cursor-based pagination** — `after_index`/`before_index` on ConversationStore
 - **`output_muted` on ChannelBinding** with `mute_output`/`unmute_output` ops
