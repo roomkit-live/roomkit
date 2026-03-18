@@ -102,7 +102,7 @@ class RealtimeVoiceChannel(Channel):
         transport: VoiceBackend,
         system_prompt: str | None = None,
         voice: str | None = None,
-        tools: list[dict[str, Any]] | None = None,
+        tools: list[dict[str, Any] | Any] | None = None,
         temperature: float | None = None,
         input_sample_rate: int = 16000,
         output_sample_rate: int = 24000,
@@ -121,7 +121,9 @@ class RealtimeVoiceChannel(Channel):
             transport: The audio transport (WebSocket, etc.).
             system_prompt: Default system prompt for the AI.
             voice: Default voice ID for audio output.
-            tools: Default tool/function definitions.
+            tools: Tool definitions as dicts, or Tool objects with
+                ``.definition`` and ``.handler``.  Tool objects have
+                their handlers extracted and composed automatically.
             temperature: Default sampling temperature.
             input_sample_rate: Default input audio sample rate (Hz).
             output_sample_rate: Default output audio sample rate (Hz).
@@ -132,9 +134,9 @@ class RealtimeVoiceChannel(Channel):
             emit_transcription_events: If True, emit final transcriptions
                 as RoomEvents so other channels see them.
             tool_handler: Async callable to execute tool calls.
-                Signature: ``async (name, arguments) -> result``.
-                Return a dict or JSON string.  If not set, falls back to
-                ``ON_REALTIME_TOOL_CALL`` hooks.
+                Signature: ``async (name, arguments) -> str``.
+                If not set, falls back to handlers extracted from Tool
+                objects, or ``ON_REALTIME_TOOL_CALL`` hooks.
             mute_on_tool_call: If True, mute the transport microphone during
                 tool execution to prevent barge-in that causes providers
                 (e.g. Gemini) to silently drop the tool result.  Defaults
@@ -152,13 +154,41 @@ class RealtimeVoiceChannel(Channel):
         self._recording = recording
         self._system_prompt = system_prompt
         self._voice = voice
-        self._tools = tools
         self._temperature = temperature
         self._input_sample_rate = input_sample_rate
         self._output_sample_rate = output_sample_rate
         self._transport_sample_rate = transport_sample_rate
         self._emit_transcription_events = emit_transcription_events
-        self._tool_handler = tool_handler
+
+        # Extract Tool objects: split into definition dicts + composed handler
+        from roomkit.tools.base import Tool as _ToolProto
+
+        tool_defs: list[dict[str, Any]] | None = None
+        extracted_handler: ToolHandler | None = None
+        if tools:
+            has_tool_objects = any(isinstance(t, _ToolProto) for t in tools)
+            if has_tool_objects:
+                from roomkit.tools.compose import extract_tools
+
+                ai_tools, extracted_handler = extract_tools(tools)
+                tool_defs = [
+                    {"name": t.name, "description": t.description, "parameters": t.parameters}
+                    for t in ai_tools
+                ]
+            else:
+                tool_defs = tools  # type: ignore[assignment]
+
+        self._tools = tool_defs
+
+        # Merge explicit tool_handler with handlers extracted from Tool objects
+        effective_handler = tool_handler
+        if extracted_handler and tool_handler:
+            from roomkit.tools.compose import compose_tool_handlers
+
+            effective_handler = compose_tool_handlers(tool_handler, extracted_handler)
+        elif extracted_handler:
+            effective_handler = extracted_handler
+        self._tool_handler = effective_handler
         self._mute_on_tool_call = mute_on_tool_call
         self._tool_result_max_length = tool_result_max_length
         self._framework: RoomKit | None = None

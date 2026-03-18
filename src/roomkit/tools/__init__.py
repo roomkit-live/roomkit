@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from roomkit.tools.compose import compose_tool_handlers
+from roomkit.tools.base import Tool
+from roomkit.tools.compose import compose_tool_handlers, extract_tools
 from roomkit.tools.policy import RoleOverride, ToolPolicy
 
 __all__ = [
     "MCPToolProvider",
     "RoleOverride",
+    "Tool",
     "ToolPolicy",
     "compose_tool_handlers",
+    "extract_tools",
 ]
 
 

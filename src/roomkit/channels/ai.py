@@ -62,6 +62,7 @@ from roomkit.tools.policy import ToolPolicy
 if TYPE_CHECKING:
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
+    from roomkit.tools.base import Tool
 
 ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
 
@@ -117,7 +118,7 @@ class AIChannel(Channel):
         max_tokens: int = 1024,
         max_context_events: int = 50,
         tool_handler: ToolHandler | None = None,
-        tools: list[AITool] | None = None,
+        tools: list[AITool | Tool] | None = None,
         max_tool_rounds: int = 200,
         tool_loop_timeout_seconds: float | None = 300.0,
         tool_loop_warn_after: int = 50,
@@ -146,18 +147,35 @@ class AIChannel(Channel):
         self._memory = memory or SlidingWindowMemory(max_events=max_context_events)
         self._tool_policy = tool_policy
 
+        # Extract Tool objects: split into AITool definitions + composed handler
+        from roomkit.tools.compose import extract_tools
+
+        extracted_defs: list[AITool] = []
+        extracted_handler: ToolHandler | None = None
+        if tools:
+            extracted_defs, extracted_handler = extract_tools(tools)
+
+        # Merge explicit tool_handler with handlers extracted from Tool objects
+        effective_handler = tool_handler
+        if extracted_handler and tool_handler:
+            from roomkit.tools.compose import compose_tool_handlers
+
+            effective_handler = compose_tool_handlers(tool_handler, extracted_handler)
+        elif extracted_handler:
+            effective_handler = extracted_handler
+
         # Wrap the user's tool handler with skill-aware dispatch
-        self._user_tool_handler = tool_handler
+        self._user_tool_handler = effective_handler
         self._tool_handler: ToolHandler | None
         if skills and skills.skill_count > 0:
             self._tool_handler = self._skill_aware_tool_handler
         else:
-            self._tool_handler = tool_handler
+            self._tool_handler = effective_handler
 
         # User-provided tools (from constructor) and orchestration-injected
         # tools (e.g. HANDOFF_TOOL, DELEGATE_TOOL) are kept separate so that
         # orchestration code can inspect/modify injected tools independently.
-        self._user_tools: list[AITool] = list(tools) if tools else []
+        self._user_tools: list[AITool] = extracted_defs
         self._injected_tools: list[AITool] = []
 
         # Active tool loops for steering (loop_id -> context)

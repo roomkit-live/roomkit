@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from roomkit.providers.ai.base import AITool
+
+if TYPE_CHECKING:
+    from roomkit.tools.base import Tool
 
 logger = logging.getLogger("roomkit.tools.compose")
 
@@ -54,3 +59,58 @@ def compose_tool_handlers(*handlers: ToolHandler) -> ToolHandler:
         return await handlers[-1](name, arguments)
 
     return _composed
+
+
+def extract_tools(
+    tools: list[Tool | AITool | dict[str, Any]],
+) -> tuple[list[AITool], ToolHandler | None]:
+    """Split a mixed list of tool objects into definitions and a handler.
+
+    Accepts any mix of:
+
+    - :class:`Tool` objects (have ``.definition`` + ``.handler``)
+    - :class:`AITool` instances (definition only, no handler)
+    - Raw dicts (converted to :class:`AITool`, no handler)
+
+    Returns:
+        A tuple of ``(definitions, handler)`` where *handler* is a
+        composed handler from all :class:`Tool` objects, or ``None``
+        if no tool objects were provided.
+    """
+    from roomkit.tools.base import Tool
+
+    definitions: list[AITool] = []
+    handlers: list[ToolHandler] = []
+
+    for tool in tools:
+        if isinstance(tool, Tool):
+            defn = tool.definition
+            definitions.append(
+                AITool(
+                    name=defn["name"],
+                    description=defn.get("description", ""),
+                    parameters=defn.get("parameters", {}),
+                ),
+            )
+            handlers.append(tool.handler)
+        elif isinstance(tool, AITool):
+            definitions.append(tool)
+        elif isinstance(tool, dict):
+            definitions.append(
+                AITool(
+                    name=tool["name"],
+                    description=tool.get("description", ""),
+                    parameters=tool.get("parameters", {}),
+                ),
+            )
+        else:
+            msg = f"Expected Tool, AITool, or dict, got {type(tool).__name__}"
+            raise TypeError(msg)
+
+    handler: ToolHandler | None = None
+    if len(handlers) == 1:
+        handler = handlers[0]
+    elif len(handlers) >= 2:
+        handler = compose_tool_handlers(*handlers)
+
+    return definitions, handler

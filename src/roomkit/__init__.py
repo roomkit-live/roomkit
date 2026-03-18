@@ -308,6 +308,7 @@ from roomkit.telemetry import (
     TelemetryConfig,
     TelemetryProvider,
 )
+from roomkit.tools.base import Tool
 from roomkit.tools.compose import compose_tool_handlers
 from roomkit.tools.policy import RoleOverride, ToolPolicy
 from roomkit.video import (
@@ -817,6 +818,7 @@ __all__ = [
     # Tools
     "MCPToolProvider",
     "RoleOverride",
+    "Tool",
     "ToolPolicy",
     "compose_tool_handlers",
     # Room-level media recording
