@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Webcam vision tools** — `DescribeWebcamTool`, `ListWebcamsTool`, `capture_webcam_frame`, `save_frame` for AI agents to capture and analyze webcam frames on demand
+- **Webcam assistant example** — terminal chat with Claude + OpenAI vision via webcam
 - **Video subsystem** — vision AI, video pipeline engine, decoder/resizer/filter/transform stages
 - **Screen capture backend** with screen assistant example
 - **Vision providers** — OpenAI and Gemini vision analysis with `ON_VISION_RESULT` hook
@@ -44,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING: Unified `ToolHandler` signature** — all tool handlers now use `async (name: str, arguments: dict) -> str` across `AIChannel`, `RealtimeVoiceChannel`, and all tool classes. The old 3-arg `(session, name, arguments)` signature is removed. Use `get_current_voice_session()` contextvar for session access in voice tool handlers.
+- **`audit_realtime_tool_handler` deprecated** — use `audit_tool_handler` instead (same signature now)
 - `click_element` made generic via `VisionProvider` instead of hardcoded Gemini
 - `print_summary()` methods now log via `logger.info()` instead of `print()`
 
