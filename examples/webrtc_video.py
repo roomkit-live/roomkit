@@ -56,6 +56,12 @@ from roomkit.voice.tts.elevenlabs import ElevenLabsConfig, ElevenLabsTTSProvider
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("webrtc_video")
+# Suppress noisy transport logs
+logging.getLogger("aioice").setLevel(logging.WARNING)
+logging.getLogger("aiortc").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
 
 kit = RoomKit()
 
@@ -106,6 +112,7 @@ tts = ElevenLabsTTSProvider(
 vision = OpenAIVisionProvider(
     config=OpenAIVisionConfig(
         api_key=os.environ.get("OPENAI_API_KEY", ""),
+        base_url="https://api.openai.com/v1",
         model="gpt-4o-mini",
         max_tokens=150,
     )
@@ -259,6 +266,25 @@ async function startAV() {
 
   localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
 
+  // FastRTC requires a data channel to unblock handler processing
+  const dc = pc.createDataChannel('chat');
+  dc.onmessage = e => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'log') log('Server: ' + msg.data);
+    } catch(err) {}
+  };
+
+  // Play incoming audio/video from server
+  pc.ontrack = e => {
+    log('Received track: ' + e.track.kind);
+    if (e.track.kind === 'audio') {
+      const audio = new Audio();
+      audio.srcObject = e.streams[0];
+      audio.play();
+    }
+  };
+
   pc.onicecandidate = e => {
     if (e.candidate) log('ICE candidate: ' + e.candidate.type);
   };
@@ -266,24 +292,30 @@ async function startAV() {
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
 
-  // Wait for ICE gathering
+  // Wait for ICE gathering (2s timeout — host candidates arrive instantly)
   await new Promise(resolve => {
-    if (pc.iceGatheringState === 'complete') resolve();
-    else pc.onicegatheringstatechange = () => {
-      if (pc.iceGatheringState === 'complete') resolve();
+    if (pc.iceGatheringState === 'complete') { resolve(); return; }
+    const timeout = setTimeout(resolve, 800);
+    pc.onicegatheringstatechange = () => {
+      if (pc.iceGatheringState === 'complete') {
+        clearTimeout(timeout);
+        resolve();
+      }
     };
   });
 
+  const webrtcId = Math.random().toString(36).substring(2, 10);
   const resp = await fetch('/av/webrtc/offer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       sdp: pc.localDescription.sdp,
       type: pc.localDescription.type,
+      webrtc_id: webrtcId,
     })
   });
   const answer = await resp.json();
-  await pc.setRemoteDescription(answer);
+  await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
   document.getElementById('status').textContent = 'Connected';
   log('WebRTC connected');

@@ -337,11 +337,11 @@ def mount_fastrtc_av(
         auth: Optional async auth callback.
         concurrency_limit: Max concurrent connections (None for unlimited).
     """
-    from fastrtc import AsyncStreamHandler, Stream
+    from fastrtc import AsyncAudioVideoStreamHandler, Stream
 
     backend._session_factory = session_factory  # type: ignore[attr-defined]
 
-    class AVPassthroughHandler(AsyncStreamHandler):  # type: ignore[misc,unused-ignore]
+    class AVPassthroughHandler(AsyncAudioVideoStreamHandler):  # type: ignore[misc,unused-ignore]
         """Passes raw audio + video frames to the backend's callbacks.
 
         Each connection gets its own handler instance via ``copy()``.
@@ -354,7 +354,7 @@ def mount_fastrtc_av(
             self._webrtc_id: str | None = None
             self._is_webrtc = False
 
-        def copy(self) -> AVPassthroughHandler:
+        def copy(self) -> AVPassthroughHandler:  # type: ignore[override]
             return AVPassthroughHandler()
 
         async def shutdown(self) -> None:
@@ -388,6 +388,11 @@ def mount_fastrtc_av(
                 return
             self._webrtc_id = ctx.webrtc_id
             self._is_webrtc = ctx.websocket is None
+            logger.debug(
+                "start_up: webrtc_id=%s is_webrtc=%s",
+                self._webrtc_id,
+                self._is_webrtc,
+            )
 
             if auth is not None and ctx.websocket is not None:
                 try:
@@ -447,24 +452,19 @@ def mount_fastrtc_av(
 
             backend._handle_audio_frame(connection_id, audio_data, sample_rate)
 
-        async def video_receive(self, frame: tuple[Any, ...]) -> None:
+        async def video_receive(self, frame: Any) -> None:
             """Handle inbound video frames from FastRTC.
 
-            FastRTC delivers video as ``(numpy_array_HWC,)`` — a single
-            numpy array in Height x Width x Channels (RGB) layout.
+            FastRTC delivers video as a numpy array in HWC (RGB) layout.
             """
             if self._rejected or not self._webrtc_id:
                 return
 
-            if not frame:
+            if frame is None:
                 return
 
-            video_data = frame[0]
-            if video_data is None:
-                return
-
-            height, width = video_data.shape[:2]
-            backend._handle_video_frame(self._webrtc_id, video_data, width, height)
+            height, width = frame.shape[:2]
+            backend._handle_video_frame(self._webrtc_id, frame, width, height)
 
         async def emit(self) -> tuple[int, Any] | None:
             """Return next audio frame for WebRTC playback."""
@@ -481,24 +481,40 @@ def mount_fastrtc_av(
             await asyncio.sleep(0.1)
             return None
 
-        async def video_emit(self) -> Any | None:
+        async def video_emit(self) -> Any:
             """Return next video frame for WebRTC playback.
 
-            Returns a numpy array in HWC (RGB) format, or None.
+            Returns a numpy array in HWC (RGB) format. Must never
+            return None — aiortc's VP8 encoder crashes on NoneType.
+            Returns a blank frame when no outbound video is queued.
             """
+            import numpy as _np
+
             if not self._is_webrtc or not self._webrtc_id:
                 await asyncio.sleep(0.1)
-                return None
+                return _np.zeros(
+                    (backend._video_height, backend._video_width, 3), dtype=_np.uint8
+                )
 
             queue = backend._video_emit_queues.get(self._webrtc_id)
             if not queue:
                 await asyncio.sleep(0.1)
-                return None
+                return _np.zeros(
+                    (backend._video_height, backend._video_width, 3), dtype=_np.uint8
+                )
 
             try:
-                return await asyncio.wait_for(queue.get(), timeout=0.1)
+                frame = await asyncio.wait_for(queue.get(), timeout=0.1)
+                if frame is None:
+                    return _np.zeros(
+                        (backend._video_height, backend._video_width, 3),
+                        dtype=_np.uint8,
+                    )
+                return frame
             except TimeoutError:
-                return None
+                return _np.zeros(
+                    (backend._video_height, backend._video_width, 3), dtype=_np.uint8
+                )
 
     # Create FastRTC stream with audio+video modality.
     effective_limit = concurrency_limit if concurrency_limit is not None else 2**31

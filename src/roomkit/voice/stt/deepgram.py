@@ -170,6 +170,7 @@ class DeepgramSTTProvider(STTProvider):
             audio_data = audio.data
 
         sample_rate = getattr(audio, "sample_rate", 16000)
+        channels = getattr(audio, "channels", 1)
 
         response = await self._client.listen.v1.media.transcribe_file(
             request=audio_data,
@@ -178,7 +179,13 @@ class DeepgramSTTProvider(STTProvider):
             smart_format=self._config.smart_format,
             punctuate=self._config.punctuate,
             encoding="linear16",
-            sample_rate=str(sample_rate),
+            multichannel=channels > 1 if channels else None,
+            request_options={
+                "additional_query_parameters": {
+                    "sample_rate": str(sample_rate),
+                    "channels": str(channels),
+                },
+            },
         )
 
         ttfb_ms = (time.monotonic() - t0) * 1000
