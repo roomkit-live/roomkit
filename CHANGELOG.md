@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Video pipeline** — `VideoPipelineConfig`, `VideoFilterProvider`, `VideoTransformProvider`
 - **RealtimeAVBridge** — generic audio/video bridge for speech-to-speech + avatar
 - **ScreenInputTools** — mouse/keyboard control, vision-based `click_element`
-- **StatusBus** — shared status bus for multi-agent coordination with pluggable backends
+- **StatusBus** — shared status bus for multi-agent coordination with pluggable backends; wired into `RoomKit` as `kit.status_bus` with `status_posted` framework events via `kit.on("status_posted")`
 - **JSONLToolAuditor** — tool execution auditing ABC with JSONL recording
 - **Token usage tracking** — streaming tool loop usage, OpenAI/Gemini realtime token tracking
 - **`setup_realtime_delegation()`** — one-call delegation wiring for RealtimeVoiceChannel (resolves room_id from voice session context)

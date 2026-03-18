@@ -223,6 +223,8 @@ class HookTrigger(StrEnum):
     # Delegation (background tasks)
     ON_TASK_DELEGATED = "on_task_delegated"
     ON_TASK_COMPLETED = "on_task_completed"
+    # Status bus (multi-agent coordination)
+    ON_STATUS_POSTED = "on_status_posted"
     # Video
     ON_VIDEO_SESSION_STARTED = "on_video_session_started"
     ON_VIDEO_SESSION_ENDED = "on_video_session_ended"

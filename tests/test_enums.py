@@ -146,8 +146,8 @@ class TestHookTrigger:
         assert HookTrigger.ON_DELIVERY_STATUS == "on_delivery_status"
 
     def test_count(self) -> None:
-        # 45 base hooks + 7 video hooks (incl. ON_VISION_RESULT)
-        assert len(HookTrigger) == 52
+        # 45 base hooks + 7 video hooks (incl. ON_VISION_RESULT) + 1 status bus
+        assert len(HookTrigger) == 53
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):

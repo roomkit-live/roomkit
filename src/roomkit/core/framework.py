@@ -63,6 +63,7 @@ from roomkit.models.enums import (
 )
 from roomkit.models.event import EventSource, RoomEvent
 from roomkit.models.task import Observation, Task
+from roomkit.orchestration.status_bus import StatusBus, StatusEntry
 from roomkit.realtime.base import (
     RealtimeBackend,
 )
@@ -128,6 +129,7 @@ class RoomKit(
         voice: VoiceBackend | None = None,
         task_runner: TaskRunner | None = None,
         delivery_strategy: BackgroundTaskDeliveryStrategy | None = None,
+        status_bus: StatusBus | None = None,
         telemetry: TelemetryConfig | TelemetryProvider | None = None,
         inbound_rate_limit: RateLimit | None = None,
     ) -> None:
@@ -159,6 +161,9 @@ class RoomKit(
                 results.  When set, ``strategy.deliver()`` is called after
                 system prompt injection and the ``ON_TASK_COMPLETED`` hook.
                 Can be overridden per-task via ``delegate()``.
+            status_bus: Shared status bus for multi-agent coordination.
+                Defaults to a ``StatusBus`` with ``InMemoryStatusBackend``.
+                Access via ``kit.status_bus``.
             telemetry: Optional telemetry provider or config for span/metric
                 collection. Accepts a ``TelemetryProvider`` instance or a
                 ``TelemetryConfig``. Defaults to ``NoopTelemetryProvider``.
@@ -206,6 +211,15 @@ class RoomKit(
 
         self._task_runner: TaskRunner = task_runner or InMemoryTaskRunner()
         self._delivery_strategy = delivery_strategy
+        # Status bus for multi-agent coordination
+        self._status_bus = status_bus or StatusBus()
+
+        async def _on_status_posted(entry: StatusEntry) -> None:
+            await self._emit_framework_event("status_posted", data=entry.model_dump())
+
+        self._status_bus_callback = _on_status_posted
+        # Subscribe lazily — requires a running event loop (deferred to first use)
+        self._status_bus_subscribed = False
         # Greeting gates: block intelligence channels until greeting is stored.
         # Reference-counted so multi-agent rooms release only when ALL agents finish.
         self._greeting_gates: dict[str, asyncio.Event] = {}
@@ -281,11 +295,22 @@ class RoomKit(
         return self._lock_manager
 
     @property
+    def status_bus(self) -> StatusBus:
+        """Shared status bus for multi-agent coordination."""
+        return self._status_bus
+
+    @property
     def channels(self) -> dict[str, Channel]:
         """Registered channels keyed by channel ID."""
         return self._channels
 
     # -- Core infrastructure --
+
+    async def _ensure_status_bus_subscribed(self) -> None:
+        """Subscribe the framework event callback to the status bus (once)."""
+        if not self._status_bus_subscribed:
+            await self._status_bus.subscribe(self._status_bus_callback)
+            self._status_bus_subscribed = True
 
     def _get_router(self) -> EventRouter:
         if self._event_router is None:
@@ -323,10 +348,13 @@ class RoomKit(
         if self._voice:
             await self._voice.close()
         await self._realtime.close()
+        # Close status bus
+        await self._status_bus.close()
         # Flush telemetry (ends active spans, flushes exporter)
         self._telemetry.close()
 
     async def __aenter__(self) -> RoomKit:
+        await self._ensure_status_bus_subscribed()
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -409,6 +437,7 @@ class RoomKit(
         from roomkit.telemetry.base import SpanKind
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
 
+        await self._ensure_status_bus_subscribed()
         await self.get_room(room_id)
         binding = await self._get_binding(room_id, channel_id)
 
@@ -474,6 +503,7 @@ class RoomKit(
         stream_send_fn: StreamSendFn | None = None,
     ) -> None:
         """Register a WebSocket connection and emit framework event."""
+        await self._ensure_status_bus_subscribed()
         channel = self._channels.get(channel_id)
         if not isinstance(channel, WebSocketChannel):
             raise ChannelNotRegisteredError(
