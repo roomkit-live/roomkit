@@ -23,12 +23,9 @@ Environment variables:
 from __future__ import annotations
 
 import asyncio
-import json
 import os
-from typing import Any
 
 from roomkit import (
-    AITool,
     AnthropicAIProvider,
     AnthropicConfig,
     ChannelCategory,
@@ -44,10 +41,6 @@ from roomkit import (
 )
 from roomkit.channels.ai import AIChannel
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
 SYSTEM_PROMPT = """\
 You are a helpful assistant with access to the user's webcam.
 
@@ -58,60 +51,6 @@ If the user asks which cameras are available, use list_webcams first.
 
 Be concise and direct in your answers.\
 """
-
-
-# ---------------------------------------------------------------------------
-# Tool setup
-# ---------------------------------------------------------------------------
-
-
-def build_tools(
-    device: int,
-    openai_api_key: str,
-) -> tuple[list[AITool], Any]:
-    """Build webcam tool definitions and a unified handler."""
-    vision = OpenAIVisionProvider(
-        OpenAIVisionConfig(
-            api_key=openai_api_key,
-            base_url="https://api.openai.com/v1",
-            model="gpt-4o",
-            max_tokens=1024,
-        ),
-    )
-    webcam = DescribeWebcamTool(vision, device=device)
-    lister = ListWebcamsTool()
-
-    tools = [
-        AITool(
-            name=webcam.definition["name"],
-            description=webcam.definition["description"],
-            parameters=webcam.definition["parameters"],
-        ),
-        AITool(
-            name=lister.definition["name"],
-            description=lister.definition["description"],
-            parameters=lister.definition["parameters"],
-        ),
-    ]
-
-    async def tool_handler(name: str, arguments: dict[str, Any]) -> str:
-        if name == "describe_webcam":
-            query = arguments.get("query", "Describe what you see.")
-            raw_device = arguments.get("device")
-            dev = int(raw_device) if raw_device is not None else None
-            raw_path = arguments.get("save_path")
-            path = str(raw_path) if raw_path is not None else None
-            return await webcam.analyze(query, device=dev, save_path=path)
-        if name == "list_webcams":
-            return lister.list()
-        return json.dumps({"error": f"Unknown tool: {name}"})
-
-    return tools, tool_handler
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 async def main() -> None:
@@ -126,8 +65,17 @@ async def main() -> None:
         print("Set OPENAI_API_KEY for vision analysis.")
         return
 
-    # --- Tools ---------------------------------------------------------------
-    tools, tool_handler = build_tools(device, openai_key)
+    # --- Vision + tools ------------------------------------------------------
+    vision = OpenAIVisionProvider(
+        OpenAIVisionConfig(
+            api_key=openai_key,
+            base_url="https://api.openai.com/v1",
+            model="gpt-4o",
+            max_tokens=1024,
+        ),
+    )
+    webcam_tool = DescribeWebcamTool(vision, device=device)
+    list_tool = ListWebcamsTool()
 
     # --- RoomKit setup -------------------------------------------------------
     kit = RoomKit()
@@ -139,8 +87,7 @@ async def main() -> None:
             AnthropicConfig(api_key=anthropic_key, max_tokens=2048),
         ),
         system_prompt=SYSTEM_PROMPT,
-        tools=tools,
-        tool_handler=tool_handler,
+        tools=[webcam_tool, list_tool],
     )
 
     kit.register_channel(ws)
