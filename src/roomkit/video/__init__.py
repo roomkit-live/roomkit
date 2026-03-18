@@ -5,9 +5,11 @@ from __future__ import annotations
 from roomkit.video.ai_integration import setup_realtime_vision, setup_video_vision
 from roomkit.video.avatar import AvatarProvider, MockAvatarProvider, WebSocketAvatarProvider
 from roomkit.video.backends import (
+    get_fastrtc_video_backend,
     get_rtp_video_backend,
     get_screen_capture_backend,
     get_sip_video_backend,
+    get_websocket_video_backend,
 )
 from roomkit.video.backends.base import VideoBackend
 from roomkit.video.backends.mock import MockVideoBackend, MockVideoCall
@@ -107,10 +109,12 @@ __all__ = [
     # Utilities
     "make_text_frame",
     # Lazy loaders
+    "get_fastrtc_video_backend",
     "get_local_video_backend",
     "get_rtp_video_backend",
     "get_screen_capture_backend",
     "get_sip_video_backend",
+    "get_websocket_video_backend",
 ]
 
 
