@@ -230,7 +230,7 @@ class DelegateHandler:
                 try:
                     await task.wait(timeout=600.0)
                     cache.put(room_id, agent_id, task_text, result)
-                except Exception:
+                except Exception:  # nosec B110
                     pass  # timeout or error — don't cache
 
             t = asyncio.create_task(_cache_on_complete())

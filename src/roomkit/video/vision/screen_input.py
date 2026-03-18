@@ -29,7 +29,7 @@ import logging
 import os
 import platform
 import re
-import subprocess
+import subprocess  # nosec B404
 from typing import TYPE_CHECKING, Any
 
 from roomkit.video.vision.screen_tool import capture_screen_frame
@@ -403,13 +403,13 @@ def _clipboard_paste(text: str) -> None:
 
     try:
         if system == "Darwin":
-            subprocess.run(["pbcopy"], input=text.encode(), check=True)
+            subprocess.run(["pbcopy"], input=text.encode(), check=True)  # nosec B603 B607
             pag.hotkey("command", "v")
         elif system == "Windows":
-            subprocess.run(["clip"], input=text.encode(), check=True)
+            subprocess.run(["clip"], input=text.encode(), check=True)  # nosec B603 B607
             pag.hotkey("ctrl", "v")
         else:
-            subprocess.run(
+            subprocess.run(  # nosec B603 B607
                 ["xclip", "-selection", "clipboard"],
                 input=text.encode(),
                 check=True,

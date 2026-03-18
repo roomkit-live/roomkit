@@ -422,7 +422,7 @@ def mount_websocket_video(
 
     from fastapi import WebSocket, WebSocketDisconnect
 
-    @app.websocket(path)  # type: ignore[untyped-decorator]
+    @app.websocket(path)
     async def video_ws(websocket: WebSocket) -> None:
         await websocket.accept()
         connection_id = uuid4().hex

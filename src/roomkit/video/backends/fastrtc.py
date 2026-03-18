@@ -354,7 +354,7 @@ def mount_fastrtc_av(
             self._webrtc_id: str | None = None
             self._is_webrtc = False
 
-        def copy(self) -> AVPassthroughHandler:  # type: ignore[override]
+        def copy(self) -> AVPassthroughHandler:
             return AVPassthroughHandler()
 
         async def shutdown(self) -> None:
