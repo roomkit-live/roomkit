@@ -153,7 +153,7 @@ class AIChannel(Channel):
         extracted_defs: list[AITool] = []
         extracted_handler: ToolHandler | None = None
         if tools:
-            extracted_defs, extracted_handler = extract_tools(tools)
+            extracted_defs, extracted_handler = extract_tools(list(tools))
 
         # Merge explicit tool_handler with handlers extracted from Tool objects
         effective_handler = tool_handler

@@ -176,7 +176,7 @@ class RealtimeVoiceChannel(Channel):
                     for t in ai_tools
                 ]
             else:
-                tool_defs = tools  # type: ignore[assignment]
+                tool_defs = tools
 
         self._tools = tool_defs
 
