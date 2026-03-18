@@ -136,12 +136,15 @@ class GeminiAIProvider(AIProvider):
             gen_config.system_instruction = context.system_prompt
 
         if context.tools:
+            from roomkit.providers.gemini.schema import clean_gemini_schema
+
             func_decls = [
                 self._types.FunctionDeclaration(
                     name=t.name,
                     description=t.description,
-                    # Cast to Any: Gemini SDK accepts dict as Schema at runtime
-                    parameters=cast(Any, t.parameters) if t.parameters else None,
+                    parameters=cast(Any, clean_gemini_schema(t.parameters))
+                    if t.parameters
+                    else None,
                 )
                 for t in context.tools
             ]

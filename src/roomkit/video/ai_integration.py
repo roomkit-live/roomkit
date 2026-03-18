@@ -109,3 +109,69 @@ def setup_video_vision(
             logger.exception("Failed to inject vision context into AI channel")
 
     kit.on("video_vision_result")(_on_vision)
+
+
+def setup_realtime_vision(
+    kit: RoomKit,
+    room_id: str,
+    voice_channel_id: str,
+    *,
+    context_prefix: str = "You can see the screen. Current view:",
+) -> None:
+    """Wire video vision results into a RealtimeVoiceChannel via inject_text.
+
+    Registers a framework event handler that listens for
+    ``video_vision_result`` events and injects vision descriptions
+    into active voice sessions using ``inject_text(silent=True)``.
+
+    Includes dedup: unchanged descriptions are not re-injected.
+
+    Args:
+        kit: The RoomKit instance.
+        room_id: The room where video and voice channels are attached.
+        voice_channel_id: The RealtimeVoiceChannel to receive vision context.
+        context_prefix: Text prepended to the vision description.
+    """
+    _last_description: list[str] = [""]
+
+    async def _on_vision(event: FrameworkEvent) -> None:
+        if event.room_id != room_id:
+            return
+        description = event.data.get("description", "")
+        if not description:
+            return
+
+        # Dedup: skip if description unchanged
+        if description == _last_description[0]:
+            return
+        _last_description[0] = description
+
+        labels = event.data.get("labels", [])
+        text = event.data.get("text")
+
+        parts = [f"{context_prefix} {description}"]
+        if labels:
+            parts.append(f"Objects detected: {', '.join(labels)}")
+        if text:
+            parts.append(f"Text visible: {text}")
+        vision_context = "\n".join(parts)
+
+        try:
+            from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+            channel = kit.get_channel(voice_channel_id)
+            if not isinstance(channel, RealtimeVoiceChannel):
+                return
+
+            sessions = channel.get_room_sessions(room_id)
+            for session in sessions:
+                await channel.inject_text(session, vision_context, silent=True)
+                logger.debug(
+                    "Vision injected into realtime session %s (len=%d)",
+                    session.id,
+                    len(vision_context),
+                )
+        except Exception:
+            logger.exception("Failed to inject vision into realtime voice channel")
+
+    kit.on("video_vision_result")(_on_vision)

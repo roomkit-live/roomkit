@@ -8,6 +8,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from roomkit.channels.ai import AIChannel
+from roomkit.channels.realtime_voice import (
+    RealtimeVoiceChannel,
+    _current_voice_session,
+)
 from roomkit.orchestration.handoff import _room_id_var
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks.delegate import (
@@ -15,8 +19,10 @@ from roomkit.tasks.delegate import (
     DelegateHandler,
     build_delegate_tool,
     setup_delegation,
+    setup_realtime_delegation,
 )
 from roomkit.tasks.models import DelegatedTask
+from roomkit.voice.base import VoiceSession
 
 # -- Tool definition ----------------------------------------------------------
 
@@ -201,3 +207,134 @@ class TestSetupDelegation:
         result_str = await channel._tool_handler("some_other_tool", {})
         assert json.loads(result_str) == {"ok": True}
         assert called == ["some_other_tool"]
+
+
+# -- setup_realtime_delegation ------------------------------------------------
+
+
+class TestSetupRealtimeDelegation:
+    def test_injects_tool_dict_and_wraps_handler(self):
+        """Should add delegate tool to _tools and wrap _tool_handler."""
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-main"
+        rtv._tools = [{"name": "existing", "description": "test", "parameters": {}}]
+        rtv._tool_handler = None
+
+        kit = MagicMock()
+        handler = DelegateHandler(kit)
+
+        setup_realtime_delegation(rtv, handler)
+
+        tool_names = [t["name"] for t in rtv._tools]
+        assert "delegate_task" in tool_names
+        assert rtv._tool_handler is not None
+
+    def test_double_setup_raises(self):
+        """Should raise RuntimeError if called twice."""
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-main"
+        rtv._tools = []
+        rtv._tool_handler = None
+
+        kit = MagicMock()
+        handler = DelegateHandler(kit)
+
+        setup_realtime_delegation(rtv, handler)
+        with pytest.raises(RuntimeError, match="already called"):
+            setup_realtime_delegation(rtv, handler)
+
+    async def test_intercepts_delegate_task(self):
+        """Wrapped handler should call DelegateHandler for delegate_task."""
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-main"
+        rtv._tools = []
+        rtv._tool_handler = None
+
+        session = MagicMock(spec=VoiceSession)
+        session.id = "sess-1"
+        rtv.session_rooms = {"sess-1": "room-1"}
+
+        kit = MagicMock()
+        task_handle = DelegatedTask(
+            id="t1",
+            child_room_id="child-1",
+            parent_room_id="room-1",
+            agent_id="exec-agent",
+            task="do work",
+        )
+        kit.delegate = AsyncMock(return_value=task_handle)
+
+        handler = DelegateHandler(kit, notify="rtv-main")
+        setup_realtime_delegation(rtv, handler)
+
+        # Set voice session context
+        token = _current_voice_session.set(session)
+        try:
+            result_str = await rtv._tool_handler(
+                "delegate_task",
+                {"agent": "exec-agent", "task": "do work"},
+            )
+        finally:
+            _current_voice_session.reset(token)
+
+        result = json.loads(result_str)
+        assert result["status"] == "delegated"
+        assert result["task_id"] == "t1"
+
+    async def test_no_session_returns_error(self):
+        """Without voice session context, should return error."""
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-main"
+        rtv._tools = []
+        rtv._tool_handler = None
+
+        kit = MagicMock()
+        handler = DelegateHandler(kit)
+        setup_realtime_delegation(rtv, handler)
+
+        token = _current_voice_session.set(None)
+        try:
+            result_str = await rtv._tool_handler(
+                "delegate_task",
+                {"agent": "a", "task": "b"},
+            )
+        finally:
+            _current_voice_session.reset(token)
+
+        result = json.loads(result_str)
+        assert "error" in result
+
+    async def test_passes_through_other_tools(self):
+        """Non-delegate tools should pass through to original handler."""
+        called = []
+
+        async def original_handler(name: str, arguments: dict) -> str:
+            called.append(name)
+            return json.dumps({"ok": True})
+
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-main"
+        rtv._tools = []
+        rtv._tool_handler = original_handler
+
+        kit = MagicMock()
+        handler = DelegateHandler(kit)
+        setup_realtime_delegation(rtv, handler)
+
+        result_str = await rtv._tool_handler("some_other_tool", {})
+        assert json.loads(result_str) == {"ok": True}
+        assert called == ["some_other_tool"]
+
+    def test_none_tools_initializes_list(self):
+        """When _tools is None, should create new list with delegate tool."""
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-main"
+        rtv._tools = None
+        rtv._tool_handler = None
+
+        kit = MagicMock()
+        handler = DelegateHandler(kit)
+        setup_realtime_delegation(rtv, handler)
+
+        assert len(rtv._tools) == 1
+        assert rtv._tools[0]["name"] == "delegate_task"

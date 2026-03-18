@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -16,7 +17,10 @@ from roomkit import (
     setup_video_vision,
 )
 from roomkit.channels.ai import AIChannel
-from roomkit.models.enums import ChannelCategory
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.video.ai_integration import setup_realtime_vision
+from roomkit.voice.base import VoiceSession
 
 
 @pytest.fixture
@@ -142,6 +146,92 @@ class TestSetupVideoVision:
         binding = await kit._store.get_binding("r1", "ai-1")
         prompt = binding.metadata.get("system_prompt", "")
         assert "Camera shows: A person" in prompt
+
+
+class TestSetupRealtimeVision:
+    async def test_injects_vision_via_inject_text(self, kit: RoomKit) -> None:
+        """Vision results should be injected via inject_text(silent=True)."""
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-1"
+        rtv.channel_type = ChannelType.REALTIME_VOICE
+        rtv.close = AsyncMock()
+
+        session = MagicMock(spec=VoiceSession)
+        session.id = "sess-1"
+        rtv.get_room_sessions = MagicMock(return_value=[session])
+        rtv.inject_text = AsyncMock()
+
+        kit._channels["rtv-1"] = rtv
+        await kit.create_room(room_id="r1")
+
+        setup_realtime_vision(kit, room_id="r1", voice_channel_id="rtv-1")
+
+        # Fire a vision event
+        await kit._emit_framework_event(
+            "video_vision_result",
+            room_id="r1",
+            data={"description": "A cat on a desk"},
+        )
+        await asyncio.sleep(0.05)
+
+        rtv.inject_text.assert_called_once()
+        call_args = rtv.inject_text.call_args
+        assert call_args[0][0] is session
+        assert "A cat on a desk" in call_args[0][1]
+        assert call_args[1]["silent"] is True
+
+    async def test_dedup_skips_unchanged_description(self, kit: RoomKit) -> None:
+        """Same description should not be re-injected."""
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-1"
+        rtv.channel_type = ChannelType.REALTIME_VOICE
+        rtv.close = AsyncMock()
+
+        session = MagicMock(spec=VoiceSession)
+        session.id = "sess-1"
+        rtv.get_room_sessions = MagicMock(return_value=[session])
+        rtv.inject_text = AsyncMock()
+
+        kit._channels["rtv-1"] = rtv
+        await kit.create_room(room_id="r1")
+
+        setup_realtime_vision(kit, room_id="r1", voice_channel_id="rtv-1")
+
+        # Fire same event twice
+        for _ in range(2):
+            await kit._emit_framework_event(
+                "video_vision_result",
+                room_id="r1",
+                data={"description": "Same scene"},
+            )
+            await asyncio.sleep(0.05)
+
+        # Only injected once (dedup)
+        assert rtv.inject_text.call_count == 1
+
+    async def test_ignores_other_rooms(self, kit: RoomKit) -> None:
+        """Events from other rooms should not trigger injection."""
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-1"
+        rtv.channel_type = ChannelType.REALTIME_VOICE
+        rtv.close = AsyncMock()
+        rtv.inject_text = AsyncMock()
+
+        kit._channels["rtv-1"] = rtv
+        await kit.create_room(room_id="r1")
+        await kit.create_room(room_id="r2")
+
+        setup_realtime_vision(kit, room_id="r1", voice_channel_id="rtv-1")
+
+        # Fire event in a different room
+        await kit._emit_framework_event(
+            "video_vision_result",
+            room_id="r2",
+            data={"description": "Something"},
+        )
+        await asyncio.sleep(0.05)
+
+        rtv.inject_text.assert_not_called()
 
 
 class TestExport:

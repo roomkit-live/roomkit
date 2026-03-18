@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **StatusBus** — shared status bus for multi-agent coordination with pluggable backends
 - **JSONLToolAuditor** — tool execution auditing ABC with JSONL recording
 - **Token usage tracking** — streaming tool loop usage, OpenAI/Gemini realtime token tracking
+- **`setup_realtime_delegation()`** — one-call delegation wiring for RealtimeVoiceChannel (resolves room_id from voice session context)
+- **`setup_realtime_vision()`** — wire video vision results into RealtimeVoiceChannel via `inject_text()` with dedup
+- **`CompletedTaskCache`** — TTL-based dedup cache for delegation results, prevents re-spawning completed tasks
+- **`DelegateHandler` enhancements** — `cache` for dedup (gap 13), `serialize_per_room` lock (gap 14), previous task context injection (gap 15)
 - **AIChannel `tools` parameter** — pass tools directly to constructor
 - **Room-level audio recording** for RealtimeVoiceChannel sessions
 - **`min_tracks` recorder option** — delay encoding until all channels connect
@@ -45,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gemini realtime: include sample rate in audio/pcm MIME type
 - CI: resolve formatting, mypy, smoke test, and test failures
 - Replace `print()` with `logger.info()` in StatusBus and ToolAuditor
+- **Streaming telemetry spans** — `_run_streaming_tool_loop` now accumulates tokens across rounds and attaches summed totals to the `LLM_GENERATE` span (was only recording last round). Also fixed span not being ended in async generator due to `else` clause being skipped by `return`.
+- **Task delivery for RealtimeVoiceChannel** — `WaitForIdleDelivery` and `ImmediateDelivery` now detect RealtimeVoiceChannel and deliver via `inject_text()` instead of `process_inbound()`
+- **Gemini schema cleaning** — `clean_gemini_schema()` recursively strips `$schema`, `additionalProperties`, `default`, `title` from tool parameter schemas; applied automatically in both Gemini AI and Gemini Live providers
+- **Clipboard paste** — `ScreenInputTools._type_text()` uses clipboard paste (`pbcopy`/`xclip`/`clip`) instead of `pyautogui.typewrite()`, fixing non-US keyboard layouts
 
 ### Changed
 

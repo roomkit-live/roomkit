@@ -297,6 +297,7 @@ from roomkit.tasks import (
     WaitForIdleDelivery,
     build_delegate_tool,
     setup_delegation,
+    setup_realtime_delegation,
 )
 from roomkit.telemetry import (
     Attr,
@@ -351,6 +352,7 @@ from roomkit.video import (
     list_webcams,
     make_text_frame,
     save_frame,
+    setup_realtime_vision,
     setup_video_vision,
 )
 from roomkit.voice import (
@@ -548,6 +550,7 @@ __all__ = [
     "WaitForIdleDelivery",
     "build_delegate_tool",
     "setup_delegation",
+    "setup_realtime_delegation",
     # Models - Data
     "AudioContent",
     "ChannelBinding",
@@ -849,6 +852,7 @@ __all__ = [
     "get_screen_capture_backend",
     "get_sip_video_backend",
     "make_text_frame",
+    "setup_realtime_vision",
     "setup_video_vision",
     "OpenAIVisionConfig",
     "OpenAIVisionProvider",

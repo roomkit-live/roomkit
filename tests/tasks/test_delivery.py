@@ -11,6 +11,7 @@ from roomkit import (
 )
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
+from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelType, TaskStatus
 from roomkit.providers.ai.mock import MockAIProvider
@@ -22,6 +23,7 @@ from roomkit.tasks.delivery import (
     WaitForIdleDelivery,
 )
 from roomkit.tasks.models import DelegatedTaskResult
+from roomkit.voice.base import VoiceSession
 
 # -- Helpers ------------------------------------------------------------------
 
@@ -447,6 +449,126 @@ class TestWaitForIdleDelivery:
 
         voice_ch.wait_playback_done.assert_called_once()
         voice_ch.interrupt_all.assert_not_called()
+        await kit.close()
+
+
+# -- RealtimeVoiceChannel delivery --------------------------------------------
+
+
+class TestRealtimeVoiceDelivery:
+    """Delivery strategies should use inject_text for RealtimeVoiceChannel."""
+
+    async def test_wait_for_idle_uses_inject_text(self):
+        """WaitForIdleDelivery should inject_text instead of process_inbound."""
+        kit = RoomKit()
+        result = _make_result()
+
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-1"
+        rtv.channel_type = ChannelType.REALTIME_VOICE
+        rtv.category = ChannelCategory.TRANSPORT
+        rtv.close = AsyncMock()
+
+        session = MagicMock(spec=VoiceSession)
+        session.id = "sess-1"
+        rtv.get_room_sessions = MagicMock(return_value=[session])
+        rtv.inject_text = AsyncMock()
+
+        kit._channels["rtv-1"] = rtv
+
+        await kit.create_room(room_id="room-1")
+        binding = ChannelBinding(
+            channel_id="rtv-1",
+            room_id="room-1",
+            channel_type=ChannelType.REALTIME_VOICE,
+            category=ChannelCategory.TRANSPORT,
+        )
+        await kit.store.update_binding(binding)
+
+        kit.process_inbound = AsyncMock()
+        ctx = TaskDeliveryContext(kit=kit, result=result, notify_channel_id="agent-x")
+
+        strategy = WaitForIdleDelivery()
+        await strategy.deliver(ctx)
+
+        # Should use inject_text, not process_inbound
+        rtv.inject_text.assert_called_once()
+        kit.process_inbound.assert_not_called()
+
+        call_args = rtv.inject_text.call_args
+        assert call_args[0][0] is session
+        assert "agent-bg" in call_args[0][1]
+        await kit.close()
+
+    async def test_immediate_uses_inject_text(self):
+        """ImmediateDelivery should also use inject_text for realtime voice."""
+        kit = RoomKit()
+        result = _make_result()
+
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-1"
+        rtv.channel_type = ChannelType.REALTIME_VOICE
+        rtv.category = ChannelCategory.TRANSPORT
+        rtv.close = AsyncMock()
+
+        session = MagicMock(spec=VoiceSession)
+        session.id = "sess-1"
+        rtv.get_room_sessions = MagicMock(return_value=[session])
+        rtv.inject_text = AsyncMock()
+
+        kit._channels["rtv-1"] = rtv
+
+        await kit.create_room(room_id="room-1")
+        binding = ChannelBinding(
+            channel_id="rtv-1",
+            room_id="room-1",
+            channel_type=ChannelType.REALTIME_VOICE,
+            category=ChannelCategory.TRANSPORT,
+        )
+        await kit.store.update_binding(binding)
+
+        kit.process_inbound = AsyncMock()
+        ctx = TaskDeliveryContext(kit=kit, result=result, notify_channel_id="agent-x")
+
+        strategy = ImmediateDelivery()
+        await strategy.deliver(ctx)
+
+        rtv.inject_text.assert_called_once()
+        kit.process_inbound.assert_not_called()
+        await kit.close()
+
+    async def test_no_sessions_logs_warning(self, caplog):
+        """If no active sessions, delivery should log warning."""
+        import logging
+
+        kit = RoomKit()
+        result = _make_result()
+
+        rtv = MagicMock(spec=RealtimeVoiceChannel)
+        rtv.channel_id = "rtv-1"
+        rtv.channel_type = ChannelType.REALTIME_VOICE
+        rtv.category = ChannelCategory.TRANSPORT
+        rtv.close = AsyncMock()
+        rtv.get_room_sessions = MagicMock(return_value=[])
+        rtv.inject_text = AsyncMock()
+
+        kit._channels["rtv-1"] = rtv
+
+        await kit.create_room(room_id="room-1")
+        binding = ChannelBinding(
+            channel_id="rtv-1",
+            room_id="room-1",
+            channel_type=ChannelType.REALTIME_VOICE,
+            category=ChannelCategory.TRANSPORT,
+        )
+        await kit.store.update_binding(binding)
+
+        ctx = TaskDeliveryContext(kit=kit, result=result, notify_channel_id="agent-x")
+
+        with caplog.at_level(logging.WARNING, logger="roomkit.tasks.delivery"):
+            await WaitForIdleDelivery().deliver(ctx)
+
+        rtv.inject_text.assert_not_called()
         await kit.close()
 
 

@@ -29,6 +29,7 @@ import logging
 import os
 import platform
 import re
+import subprocess
 from typing import TYPE_CHECKING, Any
 
 from roomkit.video.vision.screen_tool import capture_screen_frame
@@ -391,6 +392,34 @@ def _get_pyautogui() -> Any:
         raise ImportError("pyautogui is required — pip install roomkit[screen-input]") from None
 
 
+def _clipboard_paste(text: str) -> None:
+    """Type text via clipboard paste — works with all keyboard layouts.
+
+    Uses platform-native clipboard commands (pbcopy/xclip/clip) and
+    keyboard paste shortcuts. Falls back to pyautogui.typewrite on failure.
+    """
+    pag = _get_pyautogui()
+    system = platform.system()
+
+    try:
+        if system == "Darwin":
+            subprocess.run(["pbcopy"], input=text.encode(), check=True)
+            pag.hotkey("command", "v")
+        elif system == "Windows":
+            subprocess.run(["clip"], input=text.encode(), check=True)
+            pag.hotkey("ctrl", "v")
+        else:
+            subprocess.run(
+                ["xclip", "-selection", "clipboard"],
+                input=text.encode(),
+                check=True,
+            )
+            pag.hotkey("ctrl", "v")
+    except (subprocess.SubprocessError, FileNotFoundError):
+        logger.warning("Clipboard paste failed, falling back to typewrite")
+        pag.typewrite(text, interval=0.02)
+
+
 # ---------------------------------------------------------------------------
 # ScreenInputTools
 # ---------------------------------------------------------------------------
@@ -455,10 +484,9 @@ class ScreenInputTools:
 
     @staticmethod
     def _type_text(args: dict[str, Any]) -> str:
-        pag = _get_pyautogui()
         text = str(args["text"])
         logger.info("type_text(%r)", text)
-        pag.typewrite(text, interval=0.02)
+        _clipboard_paste(text)
         return f"Typed: {text!r}"
 
     @staticmethod

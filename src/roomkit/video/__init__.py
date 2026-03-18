@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from roomkit.video.ai_integration import setup_video_vision
+from roomkit.video.ai_integration import setup_realtime_vision, setup_video_vision
 from roomkit.video.avatar import AvatarProvider, MockAvatarProvider, WebSocketAvatarProvider
 from roomkit.video.backends import (
     get_rtp_video_backend,
@@ -102,6 +102,7 @@ __all__ = [
     "MockAvatarProvider",
     "WebSocketAvatarProvider",
     # AI integration
+    "setup_realtime_vision",
     "setup_video_vision",
     # Utilities
     "make_text_frame",

@@ -536,3 +536,55 @@ class TestToolCallEphemeralEvents:
         assert ends[0].data["duration_ms"] >= 0
 
         await realtime.close()
+
+
+class TestStreamingTokenAccumulation:
+    """Span attributes should sum tokens across all streaming rounds."""
+
+    async def test_span_accumulates_tokens_across_rounds(self) -> None:
+        """Two rounds should have summed input/output tokens on the span."""
+        from roomkit.telemetry.base import Attr
+        from roomkit.telemetry.mock import MockTelemetryProvider
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            return "result"
+
+        responses = [
+            AIResponse(
+                content="Round 1 text.",
+                finish_reason="tool_calls",
+                usage={"input_tokens": 100, "output_tokens": 50},
+                tool_calls=[
+                    AIToolCall(id="tc1", name="search", arguments={}),
+                ],
+            ),
+            AIResponse(
+                content="Round 2 text.",
+                finish_reason="stop",
+                usage={"input_tokens": 200, "output_tokens": 75},
+            ),
+        ]
+
+        provider = MockAIProvider(ai_responses=responses, streaming=True)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+
+        telemetry = MockTelemetryProvider()
+        ch._telemetry = telemetry
+
+        output = await ch.on_event(
+            make_event(body="go", channel_id="sms1"),
+            _binding(),
+            _ctx(),
+        )
+        assert output.response_stream is not None
+        async for _ in output.response_stream:
+            pass
+
+        # Find the LLM_GENERATE span
+        llm_spans = [s for s in telemetry.spans if s.name == "llm.generate"]
+        assert len(llm_spans) == 1
+        span = llm_spans[0]
+
+        # Tokens should be summed: 100+200=300 input, 50+75=125 output
+        assert span.attributes.get(Attr.LLM_INPUT_TOKENS) == 300
+        assert span.attributes.get(Attr.LLM_OUTPUT_TOKENS) == 125

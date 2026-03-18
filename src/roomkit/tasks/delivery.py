@@ -129,6 +129,15 @@ class ImmediateDelivery(BackgroundTaskDeliveryStrategy):
             )
             return
 
+        # RealtimeVoiceChannel: deliver via inject_text
+        channel = ctx.kit.get_channel(transport_id)
+        if channel is not None and channel.channel_type in _VOICE_TYPES:
+            from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+            if isinstance(channel, RealtimeVoiceChannel):
+                await _deliver_to_realtime_voice(channel, ctx, self._build_prompt(ctx))
+                return
+
         from roomkit.models.delivery import InboundMessage
         from roomkit.models.event import TextContent
 
@@ -187,8 +196,12 @@ class WaitForIdleDelivery(BackgroundTaskDeliveryStrategy):
         # If the transport is a voice channel, wait for playback to finish
         channel = ctx.kit.get_channel(transport_id)
         if channel is not None and channel.channel_type in _VOICE_TYPES:
+            from roomkit.channels.realtime_voice import RealtimeVoiceChannel
             from roomkit.channels.voice import VoiceChannel
 
+            if isinstance(channel, RealtimeVoiceChannel):
+                await _deliver_to_realtime_voice(channel, ctx, self._build_prompt(ctx))
+                return
             if isinstance(channel, VoiceChannel):
                 if self.interrupt_playback:
                     logger.debug(
@@ -219,3 +232,32 @@ class WaitForIdleDelivery(BackgroundTaskDeliveryStrategy):
             ),
             room_id=ctx.room_id,
         )
+
+
+async def _deliver_to_realtime_voice(
+    channel: object,
+    ctx: TaskDeliveryContext,
+    prompt: str,
+) -> None:
+    """Deliver task result to a RealtimeVoiceChannel via inject_text.
+
+    Injects the prompt into all active sessions for the room.
+    """
+    from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+    assert isinstance(channel, RealtimeVoiceChannel)
+    sessions = channel.get_room_sessions(ctx.room_id)
+    if not sessions:
+        logger.warning(
+            "RealtimeVoice delivery: no active sessions in room %s",
+            ctx.room_id,
+        )
+        return
+
+    for session in sessions:
+        logger.debug(
+            "RealtimeVoice delivery: injecting into session %s in room %s",
+            session.id,
+            ctx.room_id,
+        )
+        await channel.inject_text(session, prompt)

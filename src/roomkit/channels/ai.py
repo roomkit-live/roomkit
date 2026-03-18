@@ -463,6 +463,9 @@ class AIChannel(Channel):
             },
         )
         _round_usage: dict[str, Any] | None = None
+        _total_input_tokens = 0
+        _total_output_tokens = 0
+        _span_errored = False
         try:
             # Apply pre-queued directives (e.g. cancel enqueued before loop started)
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
@@ -570,15 +573,19 @@ class AIChannel(Channel):
                         # Capture usage from the stream for telemetry
                         if event.usage:
                             _round_usage = event.usage
+                            round_in = _round_usage.get("input_tokens", 0)
+                            round_out = _round_usage.get("output_tokens", 0)
+                            _total_input_tokens += round_in
+                            _total_output_tokens += round_out
                             telemetry.record_metric(
                                 "roomkit.llm.input_tokens",
-                                float(_round_usage.get("input_tokens", 0)),
+                                float(round_in),
                                 unit="tokens",
                                 attributes={"channel_id": self.channel_id},
                             )
                             telemetry.record_metric(
                                 "roomkit.llm.output_tokens",
-                                float(_round_usage.get("output_tokens", 0)),
+                                float(round_out),
                                 unit="tokens",
                                 attributes={"channel_id": self.channel_id},
                             )
@@ -679,15 +686,18 @@ class AIChannel(Channel):
                     logger.info("Streaming tool loop cancelled after round %d", _round_idx)
                     return
         except Exception as exc:
+            _span_errored = True
             telemetry.end_span(span_id, status="error", error_message=str(exc))
             raise
-        else:
-            usage_attrs: dict[str, Any] = {}
-            if _round_usage:
-                usage_attrs[Attr.LLM_INPUT_TOKENS] = _round_usage.get("input_tokens", 0)
-                usage_attrs[Attr.LLM_OUTPUT_TOKENS] = _round_usage.get("output_tokens", 0)
-            telemetry.end_span(span_id, attributes=usage_attrs)
         finally:
+            # end_span in finally because async generator exits via return
+            # (which skips the else clause of try/except/else).
+            if not _span_errored:
+                usage_attrs: dict[str, Any] = {}
+                if _total_input_tokens or _total_output_tokens:
+                    usage_attrs[Attr.LLM_INPUT_TOKENS] = _total_input_tokens
+                    usage_attrs[Attr.LLM_OUTPUT_TOKENS] = _total_output_tokens
+                telemetry.end_span(span_id, attributes=usage_attrs)
             self._active_loops.pop(loop_ctx.loop_id, None)
             _current_loop_ctx.set(None)
 

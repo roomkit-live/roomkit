@@ -7,7 +7,7 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from pydantic import SecretStr
 
@@ -235,6 +235,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         # --- Tools ---
         if tools:
+            from roomkit.providers.gemini.schema import clean_gemini_schema
+
             genai_tools = []
             for tool in tools:
                 genai_tools.append(
@@ -243,7 +245,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                             types.FunctionDeclaration(
                                 name=tool.get("name", ""),
                                 description=tool.get("description", ""),
-                                parameters=tool.get("parameters"),
+                                parameters=cast(Any, clean_gemini_schema(tool.get("parameters"))),
                             )
                         ]
                     )

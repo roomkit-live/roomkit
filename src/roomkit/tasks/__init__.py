@@ -1,11 +1,13 @@
 """Background task delegation via child rooms."""
 
 from roomkit.tasks.base import OnCompleteCallback, TaskRunner
+from roomkit.tasks.cache import CompletedTaskCache
 from roomkit.tasks.delegate import (
     DELEGATE_TOOL,
     DelegateHandler,
     build_delegate_tool,
     setup_delegation,
+    setup_realtime_delegation,
 )
 from roomkit.tasks.delivery import (
     BackgroundTaskDeliveryStrategy,
@@ -19,6 +21,7 @@ from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
 
 __all__ = [
     "BackgroundTaskDeliveryStrategy",
+    "CompletedTaskCache",
     "ContextOnlyDelivery",
     "DELEGATE_TOOL",
     "DelegateHandler",
@@ -32,4 +35,5 @@ __all__ = [
     "WaitForIdleDelivery",
     "build_delegate_tool",
     "setup_delegation",
+    "setup_realtime_delegation",
 ]
