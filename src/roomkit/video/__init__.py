@@ -42,6 +42,14 @@ from roomkit.video.vision.mock import MockVisionProvider
 from roomkit.video.vision.openai import OpenAIVisionConfig, OpenAIVisionProvider
 from roomkit.video.vision.screen_input import ScreenInputTools
 from roomkit.video.vision.screen_tool import DescribeScreenTool, capture_screen_frame
+from roomkit.video.vision.webcam_tool import (
+    DescribeWebcamTool,
+    ListWebcamsTool,
+    WebcamInfo,
+    capture_webcam_frame,
+    list_webcams,
+    save_frame,
+)
 
 __all__ = [
     # Base types
@@ -57,7 +65,10 @@ __all__ = [
     "VideoSessionReadyCallback",
     # Vision
     "DescribeScreenTool",
+    "DescribeWebcamTool",
+    "ListWebcamsTool",
     "ScreenInputTools",
+    "WebcamInfo",
     "FaceDetection",
     "GeminiVisionConfig",
     "GeminiVisionProvider",
@@ -66,6 +77,9 @@ __all__ = [
     "VisionProvider",
     "VisionResult",
     "capture_screen_frame",
+    "capture_webcam_frame",
+    "list_webcams",
+    "save_frame",
     # Recording
     "MockVideoRecorder",
     "VideoRecorder",
