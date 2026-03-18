@@ -17,7 +17,7 @@ Real-time video is fully operational across multiple transport backends, with AI
 | **Tier 2** | Video processing pipeline | **✅ Done** (engine, decoder, encoder, resizer, filters, transforms, recording) |
 | **Tier 3** | Video intelligence (vision AI) | **✅ Done** (OpenAI, Gemini, Mock + agent tools) |
 | **Tier 4** | Combined A/V channel | **✅ Done** (AudioVideoChannel + RealtimeAudioVideoChannel) |
-| **Tier 5** | Multi-party video (SFU) | **🔲 Not started** |
+| **Tier 5** | Multi-party video (SFU) | **🟡 Partial** (1:1 forwarding done, compositing deferred) |
 
 ---
 
@@ -131,9 +131,18 @@ class VideoPipelineConfig:
     recording_config: VideoRecordingConfig | None = None
 ```
 
-### 2.4 VideoBridge (SFU) 🔲 Not Started
+### 2.4 VideoBridge (1:1 Forwarding) ✅ Complete
 
-No `video/bridge.py` exists. Multi-party video forwarding is not implemented. See [Remaining Work](#remaining-work).
+Located at `video/bridge.py`. Mirrors `AudioBridge` — registers sessions per room, forwards frames to other participants. Supports:
+- `"forward"` strategy (direct 1:1 and 1:N forwarding)
+- Per-frame filter and processor callbacks
+- `BEFORE_BRIDGE_VIDEO` hook for async block/allow decisions
+- Per-session backends (e.g. SIP → WebRTC forwarding)
+- Thread-safe operation for video callback threads
+
+Wired into `VideoChannel` (via `bridge=True`) and `AudioVideoChannel` (via `video_bridge=True`).
+
+**Not yet implemented:** N-party compositing (`"composite"` strategy) — requires a `VideoCompositor` provider. See [Remaining Work](#remaining-work).
 
 ---
 
@@ -225,16 +234,21 @@ See [Remaining Work](#remaining-work).
 
 Three areas remain unimplemented:
 
-### 1. VideoBridge / SFU — Multi-Party Video Forwarding
+### 1. VideoBridge — N-Party Compositing & SFU Enhancements
 
-**Impact:** Medium — needed for video conferencing (3+ participants).
+**Impact:** Medium — needed for video conferencing grid layouts (3+ participants).
+
+**What exists:**
+- `VideoBridge` with `"forward"` strategy — direct 1:1 and 1:N frame forwarding (✅ done)
+- Frame filter and processor callbacks for per-target adaptation
+- `BEFORE_BRIDGE_VIDEO` hook for async filtering
 
 **What's needed:**
-- `VideoBridge` class analogous to `AudioBridge`
-- SFU mode: forward encoded frames without decode (efficient)
-- MCU mode (optional): decode, composite, re-encode (CPU/GPU heavy)
-- Per-receiver quality selection (simulcast layer switching)
-- Track management: add/remove participants, screen share as separate track
+- `"composite"` strategy with `VideoCompositor` provider (grid layout, PiP)
+- Per-target transcoding via frame processor (e.g. VP9→H.264)
+- Per-target resolution adaptation (downscaling)
+- Simulcast layer switching based on bandwidth estimation
+- Screen share as separate track in multi-party
 
 **Estimated effort:** 2-3 weeks
 
@@ -288,7 +302,7 @@ Three areas remain unimplemented:
 - [x] 8 video effect transforms (grayscale, sepia, blur, cartoon, etc.)
 - [x] All components have tests, docs, and examples
 - [x] 14 runnable examples
-- [ ] Multi-party video forwarding via SFU
+- [x] Video forwarding via VideoBridge (1:1 and 1:N direct forwarding)
 - [ ] Screen sharing as separate track in multi-party
 - [ ] Graceful video → audio-only fallback under poor network
 - [ ] Background blur (server-side, MediaPipe)

@@ -18,6 +18,7 @@ from roomkit.models.enums import (
     ChannelType,
     HookTrigger,
 )
+from roomkit.video.bridge import VideoBridge, VideoBridgeConfig
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from roomkit.recorder.base import ChannelRecordingConfig
     from roomkit.video.backends.base import VideoBackend
     from roomkit.video.base import VideoSession
+    from roomkit.video.bridge import BridgeVideoFrameFilter
     from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.recorder.base import (
         VideoRecorder,
@@ -63,6 +65,7 @@ class VideoChannel(VideoHooksMixin, Channel):
         vision_interval_ms: int = 2000,
         pipeline: VideoPipelineConfig | None = None,
         recording: ChannelRecordingConfig | None = None,
+        bridge: bool | VideoBridgeConfig | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._backend = backend
@@ -81,6 +84,14 @@ class VideoChannel(VideoHooksMixin, Channel):
         else:
             self._video_pipeline = None
         self._framework: RoomKit | None = None
+
+        # Video bridge for session-to-session forwarding
+        if bridge is True:
+            self._bridge: VideoBridge | None = VideoBridge()
+        elif isinstance(bridge, VideoBridgeConfig):
+            self._bridge = VideoBridge(bridge)
+        else:
+            self._bridge = None
 
         # Resolve recorder from pipeline
         self._recorder: VideoRecorder | None = pipeline.recorder if pipeline else None
@@ -201,6 +212,9 @@ class VideoChannel(VideoHooksMixin, Channel):
         # Dual-signal: check if backend already signalled ready
         was_ready_pending = session.id in self._session_ready_pending
         self._session_ready_pending.discard(session.id)
+        # Register session with video bridge
+        if self._bridge is not None:
+            self._bridge.add_session(session, room_id, self._backend)
         # Emit framework event
         if self._framework:
             self._schedule(
@@ -222,6 +236,9 @@ class VideoChannel(VideoHooksMixin, Channel):
     def unbind_session(self, session: VideoSession) -> None:
         """Remove session binding and clean up state."""
         self._session_ready_pending.discard(session.id)
+        # Unregister from video bridge
+        if self._bridge is not None:
+            self._bridge.remove_session(session.id)
         # Stop recording
         handle = self._recording_handles.pop(session.id, None)
         if handle and self._recorder:
@@ -293,6 +310,18 @@ class VideoChannel(VideoHooksMixin, Channel):
         for tap in self._media_taps:
             tap(session, frame)
 
+        # Forward to other sessions via bridge
+        if self._bridge is not None:
+            if self._framework is None or not self._framework.hook_engine.has_hooks(
+                HookTrigger.BEFORE_BRIDGE_VIDEO
+            ):
+                self._bridge.forward(session, frame)
+            else:
+                self._schedule(
+                    self._fire_bridge_video_and_forward(session, frame),
+                    name=f"bridge_video:{session.id}",
+                )
+
         # Vision: pipeline config > direct channel param
         vision = None
         if self._pipeline is not None and self._pipeline.vision is not None:
@@ -335,6 +364,57 @@ class VideoChannel(VideoHooksMixin, Channel):
     def _on_backend_disconnected(self, session: VideoSession) -> None:
         """Backend signals the client disconnected."""
         self.unbind_session(session)
+
+    # -------------------------------------------------------------------------
+    # Bridge helpers
+
+    async def _fire_bridge_video_and_forward(
+        self, session: VideoSession, frame: VideoFrame
+    ) -> None:
+        """Fire BEFORE_BRIDGE_VIDEO hook, then forward via bridge.
+
+        Called on the event loop when BEFORE_BRIDGE_VIDEO hooks are
+        registered.  The hook can block the frame (``HookResult.block()``)
+        or modify it (``HookResult.modify(event=...)``).
+        """
+        if self._bridge is None or self._framework is None:
+            return
+        room_id = self._session_bindings.get(session.id, (None, None))[0]
+        if room_id is None:
+            return
+        try:
+            from roomkit.video.events import BridgeVideoEvent
+
+            context = await self._framework._build_context(room_id)
+            event = BridgeVideoEvent(session=session, frame=frame, room_id=room_id)
+            result = await self._framework.hook_engine.run_sync_hooks(
+                room_id,
+                HookTrigger.BEFORE_BRIDGE_VIDEO,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+            if not result.allowed:
+                return
+        except Exception:
+            logger.exception("Error firing BEFORE_BRIDGE_VIDEO hook")
+        self._bridge.forward(session, frame)
+
+    def set_bridge_filter(self, fn: BridgeVideoFrameFilter | None) -> None:
+        """Set a synchronous filter for bridged video frames.
+
+        The filter runs in the video callback thread before each frame
+        is forwarded.  It receives ``(source_session, frame)`` and
+        returns the frame (possibly modified) or ``None`` to drop it.
+
+        This is the synchronous equivalent of ``BEFORE_BRIDGE_VIDEO``
+        — use it for fast operations like per-session muting.
+
+        Args:
+            fn: Filter function, or ``None`` to remove.
+        """
+        if self._bridge is not None:
+            self._bridge.set_frame_filter(fn)
 
     # -- Channel ABC implementation --
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
@@ -384,6 +464,9 @@ class VideoChannel(VideoHooksMixin, Channel):
                 )
             self._recorder.close()
         self._recording_handles.clear()
+        # Close video bridge
+        if self._bridge is not None:
+            self._bridge.close()
         # Close vision provider
         if self._vision:
             await self._vision.close()

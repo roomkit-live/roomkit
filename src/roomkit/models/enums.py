@@ -225,6 +225,8 @@ class HookTrigger(StrEnum):
     ON_TASK_COMPLETED = "on_task_completed"
     # Status bus (multi-agent coordination)
     ON_STATUS_POSTED = "on_status_posted"
+    # Video bridging
+    BEFORE_BRIDGE_VIDEO = "before_bridge_video"
     # Video
     ON_VIDEO_SESSION_STARTED = "on_video_session_started"
     ON_VIDEO_SESSION_ENDED = "on_video_session_ended"

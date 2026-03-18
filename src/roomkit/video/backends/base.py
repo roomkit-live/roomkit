@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from roomkit.video.base import (
     VideoCapability,
@@ -15,6 +15,9 @@ from roomkit.video.base import (
     VideoSession,
     VideoSessionReadyCallback,
 )
+
+if TYPE_CHECKING:
+    from roomkit.video.video_frame import VideoFrame
 
 logger = logging.getLogger("roomkit.video.backend")
 
@@ -103,6 +106,28 @@ class VideoBackend(ABC):
                 for streaming.
         """
         ...
+
+    def send_video_sync(self, session: VideoSession, frame: VideoFrame) -> None:
+        """Synchronously send a video frame to a session.
+
+        Used by the video bridge for frame forwarding from callbacks
+        where ``await`` is not available.  The default schedules the
+        async ``send_video()`` on the event loop.
+
+        Args:
+            session: The target session.
+            frame: The video frame to send.
+        """
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.send_video(session, frame.data))
+        except RuntimeError:
+            logger.warning(
+                "send_video_sync: no event loop for session %s",
+                session.id,
+            )
 
     def get_session(self, session_id: str) -> VideoSession | None:
         """Get a session by ID.

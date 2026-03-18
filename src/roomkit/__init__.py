@@ -314,6 +314,9 @@ from roomkit.tools.base import Tool
 from roomkit.tools.compose import compose_tool_handlers
 from roomkit.tools.policy import RoleOverride, ToolPolicy
 from roomkit.video import (
+    BridgeVideoEvent,
+    BridgeVideoFrameFilter,
+    BridgeVideoFrameProcessor,
     DescribeScreenTool,
     DescribeWebcamTool,
     FaceDetection,
@@ -329,6 +332,8 @@ from roomkit.video import (
     OpenAIVisionProvider,
     ScreenInputTools,
     VideoBackend,
+    VideoBridge,
+    VideoBridgeConfig,
     VideoCapability,
     VideoChunk,
     VideoDecoderProvider,
@@ -840,6 +845,9 @@ __all__ = [
     "RecordingTrack",
     "RoomRecorderBinding",
     # Video
+    "BridgeVideoEvent",
+    "BridgeVideoFrameFilter",
+    "BridgeVideoFrameProcessor",
     "DescribeScreenTool",
     "DescribeWebcamTool",
     "ListWebcamsTool",
@@ -865,6 +873,8 @@ __all__ = [
     "OpenAIVisionConfig",
     "OpenAIVisionProvider",
     "VideoBackend",
+    "VideoBridge",
+    "VideoBridgeConfig",
     "VideoCapability",
     "VideoChannel",
     "VideoChunk",

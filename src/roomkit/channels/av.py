@@ -15,6 +15,7 @@ from roomkit.channels.voice import VoiceChannel
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import ChannelMediaType, ChannelType, HookTrigger
 from roomkit.video.backends.base import VideoBackend
+from roomkit.video.bridge import VideoBridge, VideoBridgeConfig
 from roomkit.video.pipeline.engine import VideoPipeline
 
 if TYPE_CHECKING:
@@ -66,6 +67,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         avatar: AvatarProvider | None = None,
         avatar_encoder: VideoEncoderProvider | None = None,
         recording: ChannelRecordingConfig | None = None,
+        video_bridge: bool | VideoBridgeConfig | None = None,
         **voice_kwargs: Any,
     ) -> None:
         super().__init__(
@@ -119,6 +121,14 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         # Lock to serialize H.264 encoding (x264 is not thread-safe)
         self._encoder_lock = threading.Lock()
 
+        # Video bridge for session-to-session forwarding
+        if video_bridge is True:
+            self._video_bridge: VideoBridge | None = VideoBridge()
+        elif isinstance(video_bridge, VideoBridgeConfig):
+            self._video_bridge = VideoBridge(video_bridge)
+        else:
+            self._video_bridge = None
+
         # Wire video callbacks from the combined A/V backend
         if isinstance(backend, VideoBackend):
             backend.on_video_received(self._on_video_received)
@@ -152,6 +162,18 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         # Deliver to all video taps
         for tap in self._video_media_taps:
             tap(session, frame)
+
+        # Forward to other sessions via video bridge
+        if self._video_bridge is not None:
+            if self._framework is None or not self._framework.hook_engine.has_hooks(
+                HookTrigger.BEFORE_BRIDGE_VIDEO
+            ):
+                self._video_bridge.forward(session, frame)
+            else:
+                self._schedule(
+                    self._fire_bridge_video_and_forward(session, frame),
+                    name=f"bridge_video:{session.id}",
+                )
 
         # Vision: from pipeline config, or direct on channel
         vision = (
@@ -187,10 +209,16 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         """Bind a voice session and fire video session events."""
         super().bind_session(session, room_id, binding, backend=backend)
 
-        # Fire video session started event
+        # Look up the video session from the combined backend
         video_session = self._get_video_session(session.id)
         if video_session is None:
             return
+
+        # Register video session with video bridge
+        if self._video_bridge is not None:
+            video_backend = self._backend if isinstance(self._backend, VideoBackend) else None
+            if video_backend is not None:
+                self._video_bridge.add_session(video_session, room_id, video_backend)
 
         # Start avatar idle frame loop (shows reference image when not speaking)
         self._start_avatar_idle_loop(session)
@@ -219,6 +247,9 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         if q is not None:
             q.put(None)
         self._session_ready_pending_video.discard(session.id)
+        # Unregister from video bridge
+        if self._video_bridge is not None:
+            self._video_bridge.remove_session(session.id)
         binding_info = self._session_bindings.get(session.id)
 
         # The disconnect callback from combined A/V backends passes a
@@ -249,7 +280,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         super().unbind_session(session)
 
     async def close(self) -> None:
-        """Close avatar, vision, and video state, then delegate to parent."""
+        """Close avatar, vision, video bridge, and video state, then delegate to parent."""
         for sid in list(self._avatar_idle_tasks):
             self._stop_avatar_idle_loop(sid)
         pool = getattr(self, "_avatar_pool", None)
@@ -263,6 +294,8 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         self._last_vision_ts.clear()
         self._video_media_taps.clear()
         self._session_ready_pending_video.clear()
+        if self._video_bridge is not None:
+            self._video_bridge.close()
         await super().close()
 
     # -- Avatar idle frame loop ------------------------------------------------
@@ -434,6 +467,35 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
                 vcs.send_frame(nals, ts, is_key)
         except Exception:
             logger.debug("Avatar frame send failed", exc_info=True)
+
+    # -- Video bridge helpers --------------------------------------------------
+
+    async def _fire_bridge_video_and_forward(
+        self, session: VideoSession, frame: VideoFrame
+    ) -> None:
+        """Fire BEFORE_BRIDGE_VIDEO hook, then forward via video bridge."""
+        if self._video_bridge is None or self._framework is None:
+            return
+        room_id = self._session_bindings.get(session.id, (None, None))[0]
+        if room_id is None:
+            return
+        try:
+            from roomkit.video.events import BridgeVideoEvent
+
+            context = await self._framework._build_context(room_id)
+            event = BridgeVideoEvent(session=session, frame=frame, room_id=room_id)
+            result = await self._framework.hook_engine.run_sync_hooks(
+                room_id,
+                HookTrigger.BEFORE_BRIDGE_VIDEO,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+            if not result.allowed:
+                return
+        except Exception:
+            logger.exception("Error firing BEFORE_BRIDGE_VIDEO hook")
+        self._video_bridge.forward(session, frame)
 
     # -- Capabilities ----------------------------------------------------------
 
