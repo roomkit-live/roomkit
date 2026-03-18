@@ -215,27 +215,3 @@ def audit_tool_handler(
             )
 
     return _audited
-
-
-def audit_realtime_tool_handler(
-    handler: Any,
-    auditor: ToolAuditor,
-    agent_id: str,
-) -> Any:
-    """Deprecated alias for :func:`audit_tool_handler`.
-
-    Realtime tool handlers now share the same ``(name, args) -> str``
-    signature as regular tool handlers. Use ``audit_tool_handler`` instead.
-
-    .. deprecated::
-        Will be removed in a future release.
-    """
-    import warnings
-
-    warnings.warn(
-        "audit_realtime_tool_handler is deprecated — "
-        "use audit_tool_handler instead (same signature)",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return audit_tool_handler(handler, auditor, agent_id)

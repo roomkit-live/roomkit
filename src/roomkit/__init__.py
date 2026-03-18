@@ -144,7 +144,6 @@ from roomkit.orchestration.tool_audit import (
     JSONLToolAuditor,
     ToolAuditEntry,
     ToolAuditor,
-    audit_realtime_tool_handler,
     audit_tool_handler,
 )
 from roomkit.providers.ai.base import (
@@ -533,7 +532,6 @@ __all__ = [
     "JSONLToolAuditor",
     "ToolAuditEntry",
     "ToolAuditor",
-    "audit_realtime_tool_handler",
     "audit_tool_handler",
     # Delegation (background tasks)
     "BackgroundTaskDeliveryStrategy",

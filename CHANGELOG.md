@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **BREAKING: Unified `ToolHandler` signature** — all tool handlers now use `async (name: str, arguments: dict) -> str` across `AIChannel`, `RealtimeVoiceChannel`, and all tool classes. The old 3-arg `(session, name, arguments)` signature is removed. Use `get_current_voice_session()` contextvar for session access in voice tool handlers.
-- **`audit_realtime_tool_handler` deprecated** — use `audit_tool_handler` instead (same signature now)
+- **`audit_realtime_tool_handler` removed** — use `audit_tool_handler` instead (same signature now)
 - `click_element` made generic via `VisionProvider` instead of hardcoded Gemini
 - `print_summary()` methods now log via `logger.info()` instead of `print()`
 
