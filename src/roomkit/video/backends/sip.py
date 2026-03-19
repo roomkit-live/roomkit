@@ -481,6 +481,21 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
         ts = int((frame.timestamp_ms or 0) * 90)  # ms → 90kHz RTP clock
         vcs.send_frame([frame.data], ts, frame.keyframe)
 
+    def request_keyframe(self, session: VideoSession) -> None:
+        """Send a PLI (Picture Loss Indication) to the remote endpoint.
+
+        Requests the remote encoder to produce a keyframe so a new
+        bridge participant's decoder can start immediately.
+        """
+        vcs = self._video_call_sessions.get(session.id)
+        if vcs is None:
+            return
+        try:
+            vcs.request_keyframe()
+            logger.info("PLI sent: session=%s", session.id[:8])
+        except Exception:
+            logger.debug("Failed to send PLI for session %s", session.id[:8], exc_info=True)
+
     # -------------------------------------------------------------------------
     # Callbacks
     # -------------------------------------------------------------------------

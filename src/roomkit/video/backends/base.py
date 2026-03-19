@@ -129,6 +129,17 @@ class VideoBackend(ABC):
                 session.id,
             )
 
+    def request_keyframe(self, session: VideoSession) -> None:  # noqa: B027
+        """Request a keyframe (PLI/FIR) from the remote endpoint.
+
+        Called by the video bridge when a new participant joins so
+        their decoder can start immediately.  Backends that support
+        RTCP feedback should override this.
+
+        Args:
+            session: The session to request a keyframe from.
+        """
+
     def get_session(self, session_id: str) -> VideoSession | None:
         """Get a session by ID.
 

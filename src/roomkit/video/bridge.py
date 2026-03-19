@@ -113,6 +113,10 @@ class VideoBridge:
                     f"Room {room_id} has reached max bridge participants "
                     f"({self._config.max_participants})"
                 )
+            # Collect existing sessions before adding the new one —
+            # we'll request keyframes from them so the new participant's
+            # decoder can start immediately.
+            existing = list(room.values())
             room[session.id] = _BridgedVideoSession(
                 session=session,
                 room_id=room_id,
@@ -124,6 +128,18 @@ class VideoBridge:
                 room_id,
                 len(room),
             )
+
+        # Request keyframes from all existing sessions (outside lock).
+        # Their next keyframe will be forwarded to the new participant,
+        # allowing its decoder to start without waiting for the natural
+        # keyframe interval.
+        for bs in existing:
+            try:
+                bs.backend.request_keyframe(bs.session)
+            except Exception:
+                logger.debug(
+                    "Failed to request keyframe from %s", bs.session.id[:8], exc_info=True
+                )
 
     def remove_session(self, session_id: str) -> None:
         """Unregister a session from video bridging.
