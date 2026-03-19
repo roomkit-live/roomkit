@@ -104,7 +104,7 @@ async def main() -> None:
     from roomkit.voice import get_local_audio_backend
 
     LocalAudioBackend = get_local_audio_backend()
-    backend = LocalAudioBackend(sample_rate=24000)
+    backend = LocalAudioBackend(input_sample_rate=16000, output_sample_rate=24000)
 
     voice = VoiceChannel(
         "voice",
