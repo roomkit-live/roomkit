@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import array
+import struct
+import threading
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -58,27 +61,71 @@ class RecordingMixin:
         session: VoiceSession,
         channel: VoiceChannel,
     ) -> None:
-        """Wire room-level audio recording tap on a VoiceChannel."""
-        if not (
-            self._room_recorder_mgr.has_recorders(room_id)
-            and channel._recording is not None
-            and channel._recording.audio
-        ):
+        """Wire room-level audio recording tap on a VoiceChannel.
+
+        Recording is opt-out: if the room has recorders, audio is recorded
+        by default.  Set ``ChannelRecordingConfig(audio=False)`` on the
+        channel to disable.
+        """
+        if not self._room_recorder_mgr.has_recorders(room_id):
             return
+        if channel._recording is not None and not channel._recording.audio:
+            return
+
+        sample_rate = session.sample_rate if hasattr(session, "sample_rate") else 16000
+        mgr = self._room_recorder_mgr
 
         track = self._make_audio_track(
             session.id,
             channel_id,
             session.participant_id,
-            sample_rate=session.sample_rate if hasattr(session, "sample_rate") else 16000,
+            sample_rate=sample_rate,
         )
-        self._room_recorder_mgr.on_track_added(room_id, track)
-        mgr = self._room_recorder_mgr
+        mgr.on_track_added(room_id, track)
 
-        def _audio_tap(sess: VoiceSession, frame: Any) -> None:
-            mgr.on_data(room_id, track, frame.data, time.monotonic() * 1000)
+        # Ring buffer for outbound (TTS) audio.  The inbound tap runs on
+        # the mic clock (~every 20 ms) and mixes in any pending outbound
+        # samples so both directions share a single track / PTS timeline.
+        outbound_buf = array.array("h")  # signed 16-bit ring buffer
+        buf_lock = threading.Lock()
+        max_outbound_samples = sample_rate * 5  # 5 s cap
 
-        channel.add_media_tap(_audio_tap)
+        def _inbound_tap(sess: VoiceSession, frame: Any) -> None:
+            data = frame.data
+            n_samples = len(data) // 2
+
+            with buf_lock:
+                take = min(n_samples, len(outbound_buf))
+                if take == 0:
+                    # No outbound pending — pass inbound as-is (fast path)
+                    mgr.on_data(room_id, track, data, time.monotonic() * 1000)
+                    return
+                out_samples = outbound_buf[:take]
+                del outbound_buf[:take]
+
+            # Mix inbound + outbound sample-by-sample
+            in_samples = struct.unpack(f"<{n_samples}h", data)
+            mixed = bytearray(len(data))
+            for i in range(n_samples):
+                s = in_samples[i]
+                if i < take:
+                    s += out_samples[i]
+                    s = max(-32768, min(32767, s))
+                struct.pack_into("<h", mixed, i * 2, s)
+
+            mgr.on_data(room_id, track, bytes(mixed), time.monotonic() * 1000)
+
+        def _outbound_tap(sess: VoiceSession, data: bytes, sample_rate: int) -> None:
+            n_samples = len(data) // 2
+            samples = struct.unpack(f"<{n_samples}h", data)
+            with buf_lock:
+                outbound_buf.extend(samples)
+                overflow = len(outbound_buf) - max_outbound_samples
+                if overflow > 0:
+                    del outbound_buf[:overflow]
+
+        channel.add_media_tap(_inbound_tap)
+        channel.add_outbound_media_tap(_outbound_tap)
 
     def _make_video_recording_tap(
         self,
@@ -116,12 +163,15 @@ class RecordingMixin:
         session: Any,
         channel: Any,
     ) -> None:
-        """Wire room-level video recording tap on a VideoChannel."""
-        if not (
-            self._room_recorder_mgr.has_recorders(room_id)
-            and channel._recording is not None
-            and channel._recording.video
-        ):
+        """Wire room-level video recording tap on a VideoChannel.
+
+        Recording is opt-out: if the room has recorders, video is recorded
+        by default.  Set ``ChannelRecordingConfig(video=False)`` on the
+        channel to disable.
+        """
+        if not self._room_recorder_mgr.has_recorders(room_id):
+            return
+        if channel._recording is not None and not channel._recording.video:
             return
 
         track = self._make_video_track(session.id, channel_id, session.participant_id)
@@ -154,12 +204,15 @@ class RecordingMixin:
         session: VoiceSession,
         channel: Any,
     ) -> None:
-        """Wire room-level video recording via AudioVideoChannel tap."""
-        if not (
-            self._room_recorder_mgr.has_recorders(room_id)
-            and channel._recording is not None
-            and channel._recording.video
-        ):
+        """Wire room-level video recording via AudioVideoChannel tap.
+
+        Recording is opt-out: if the room has recorders, video is recorded
+        by default.  Set ``ChannelRecordingConfig(video=False)`` on the
+        channel to disable.
+        """
+        if not self._room_recorder_mgr.has_recorders(room_id):
+            return
+        if channel._recording is not None and not channel._recording.video:
             return
 
         track = self._make_video_track(session.id, channel_id, session.participant_id)

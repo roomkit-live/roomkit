@@ -42,7 +42,6 @@ from roomkit import (
     RoomKit,
 )
 from roomkit.recorder.base import (
-    ChannelRecordingConfig,
     MediaRecordingConfig,
     RoomRecorderBinding,
 )
@@ -104,7 +103,6 @@ async def main() -> None:
         tts=MockTTSProvider(),
         backend=backend,
         pipeline=AudioPipelineConfig(),
-        recording=ChannelRecordingConfig(audio=True, video=True),
     )
     av.add_video_media_tap(on_video)
     kit.register_channel(av)

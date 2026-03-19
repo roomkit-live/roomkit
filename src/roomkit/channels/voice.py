@@ -210,6 +210,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Dual-signal session ready: tracks sessions where the backend
         # has signalled ready but bind_session() hasn't run yet.
         self._session_ready_pending: set[str] = set()
+        # Outbound audio taps (e.g. room-level recording, avatar lip-sync)
+        self._outbound_audio_taps: list[Callable[..., None]] = []
         # Audio bridge for session-to-session forwarding
         if bridge is True:
             self._bridge: AudioBridge | None = AudioBridge()
@@ -943,12 +945,20 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                     self._session_bindings[sid] = (rid, binding)
 
     def add_media_tap(self, callback: Callable[[VoiceSession, AudioFrame], None]) -> None:
-        """Register a tap on processed audio frames (for room recording).
+        """Register a tap on processed inbound audio frames (for room recording).
 
         Delegates to the pipeline's ``on_processed_frame`` callback list.
         """
         if self._pipeline is not None:
             self._pipeline.on_processed_frame(callback)
+
+    def add_outbound_media_tap(self, callback: Callable[[VoiceSession, bytes, int], None]) -> None:
+        """Register a tap on outbound TTS audio (for room recording).
+
+        The callback receives ``(session, pcm_data, sample_rate)`` for
+        every outbound chunk after pipeline processing.
+        """
+        self._outbound_audio_taps.append(callback)
 
     def unbind_session(self, session: VoiceSession) -> None:
         """Remove session binding."""

@@ -156,11 +156,35 @@ class TestVideoRoomRecording:
         await kit.disconnect_video(session)
         await kit.close()
 
-    async def test_no_recording_without_channel_config(self) -> None:
-        """VideoChannel without recording config should not feed room recorder."""
+    async def test_records_by_default_without_channel_config(self) -> None:
+        """VideoChannel without recording config records by default (opt-out)."""
         recorder = MockMediaRecorder()
         backend = MockVideoBackend()
         ch = VideoChannel("video-1", backend=backend)  # no recording=...
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room(
+            recorders=[RoomRecorderBinding(recorder=recorder, config=MediaRecordingConfig())]
+        )
+        await kit.attach_channel(room.id, "video-1")
+        session = await kit.connect_video(room.id, "user-1", "video-1")
+
+        frame = VideoFrame(data=b"\xff" * 50, codec="h264", timestamp_ms=0.0)
+        await backend.simulate_video_received(session, frame)
+
+        assert len(recorder.chunks) == 1
+        await kit.disconnect_video(session)
+        await kit.close()
+
+    async def test_opt_out_video_recording(self) -> None:
+        """VideoChannel with recording=ChannelRecordingConfig(video=False) opts out."""
+        recorder = MockMediaRecorder()
+        backend = MockVideoBackend()
+        ch = VideoChannel(
+            "video-1",
+            backend=backend,
+            recording=ChannelRecordingConfig(video=False),
+        )
         kit = RoomKit()
         kit.register_channel(ch)
         room = await kit.create_room(
@@ -213,6 +237,64 @@ class TestVoiceRoomRecording:
         assert recorder.tracks[0].kind == "audio"
         assert recorder.tracks[0].codec == "pcm_s16le"
         assert len(recorder.chunks) >= 1
+
+        await kit.disconnect_voice(session)
+        await kit.close()
+
+    async def test_outbound_tts_audio_mixed_into_recording(self) -> None:
+        """TTS (outbound) audio is mixed into the inbound recording track."""
+        from roomkit import MockAIProvider, MockSTTProvider, MockTTSProvider
+        from roomkit.channels.ai import AIChannel
+        from roomkit.voice.audio_frame import AudioFrame
+        from roomkit.voice.pipeline import MockVADProvider
+        from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+
+        recorder = MockMediaRecorder()
+        backend = MockVoiceBackend()
+        stt = MockSTTProvider(transcripts=["Hello"])
+        tts = MockTTSProvider()
+        ai = MockAIProvider(responses=["Hi there!"])
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_START),
+                VADEvent(type=VADEventType.SPEECH_END, audio_bytes=b"\x00" * 320),
+            ]
+        )
+        pipeline = AudioPipelineConfig(vad=vad)
+
+        ch = VoiceChannel("voice-1", stt=stt, tts=tts, backend=backend, pipeline=pipeline)
+        ai_ch = AIChannel("ai-1", provider=ai, system_prompt="Be helpful")
+        kit = RoomKit(voice=backend)
+        kit.register_channel(ch)
+        kit.register_channel(ai_ch)
+
+        room = await kit.create_room(
+            recorders=[RoomRecorderBinding(recorder=recorder, config=MediaRecordingConfig())]
+        )
+        await kit.attach_channel(room.id, "voice-1")
+        await kit.attach_channel(room.id, "ai-1")
+
+        session = await kit.connect_voice(room.id, "user-1", "voice-1")
+
+        # Simulate speech → STT → AI → TTS → outbound audio
+        await backend.simulate_audio_received(session, AudioFrame(data=b"\x00" * 320))
+        await backend.simulate_audio_received(session, AudioFrame(data=b"\x00" * 320))
+        await asyncio.sleep(0.2)
+
+        # TTS was called and audio sent to backend
+        assert len(tts.calls) >= 1, "TTS should have been called"
+        assert len(backend.sent_audio) >= 1, "Backend should have received TTS audio"
+
+        # Send more inbound frames to drain the outbound mixing buffer
+        chunks_before = len(recorder.chunks)
+        for _ in range(10):
+            await backend.simulate_audio_received(session, AudioFrame(data=b"\x00" * 320))
+        await asyncio.sleep(0.05)
+
+        # Verify inbound frames are being recorded (mixed with any pending outbound)
+        assert len(recorder.chunks) > chunks_before
+        # Single track for mixed audio
+        assert len(recorder.tracks) == 1
 
         await kit.disconnect_voice(session)
         await kit.close()

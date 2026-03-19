@@ -274,7 +274,9 @@ class VoiceOpsMixin(HelpersMixin):
             # Legacy fallback: plain VoiceChannel with combined A/V backend
             from roomkit.video.backends.base import VideoBackend
 
-            if isinstance(channel._backend, VideoBackend):
+            if isinstance(channel._backend, VideoBackend) and not (
+                channel._recording is not None and not channel._recording.video
+            ):
                 video_session = channel._backend.get_video_session(session.id)
                 if video_session is not None:
                     self._wire_backend_video_recording(

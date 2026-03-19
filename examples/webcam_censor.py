@@ -43,7 +43,6 @@ import logging
 import signal
 
 from roomkit import (
-    ChannelRecordingConfig,
     GeminiVisionConfig,
     GeminiVisionProvider,
     HookTrigger,
@@ -156,7 +155,6 @@ async def main() -> None:
             vision=vision,
         ),
         vision_interval_ms=args.interval,
-        recording=ChannelRecordingConfig(video=True),
     )
     kit.register_channel(video)
 

@@ -42,7 +42,6 @@ from roomkit import (
 )
 from roomkit.channels.ai import AIChannel
 from roomkit.recorder.base import (
-    ChannelRecordingConfig,
     MediaRecordingConfig,
     RoomRecorderBinding,
 )
@@ -194,7 +193,6 @@ async def main() -> None:
         video_pipeline=VideoPipelineConfig(
             filters=[WatermarkFilter(text="AI Avatar {timestamp}", position="bottom-left")],
         ),
-        recording=ChannelRecordingConfig(audio=True, video=True),
     )
     kit.register_channel(av)
 

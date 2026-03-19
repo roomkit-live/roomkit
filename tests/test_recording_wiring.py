@@ -67,7 +67,6 @@ class TestBindVoiceSession:
             tts=MockTTSProvider(),
             backend=backend,
             pipeline=AudioPipelineConfig(),
-            recording=ChannelRecordingConfig(audio=True),
         )
         kit.register_channel(channel)
 
@@ -105,7 +104,6 @@ class TestBindVoiceSession:
             tts=MockTTSProvider(),
             backend=backend,
             pipeline=AudioPipelineConfig(),
-            recording=ChannelRecordingConfig(audio=True, video=True),
         )
         kit.register_channel(channel)
 
@@ -130,6 +128,83 @@ class TestBindVoiceSession:
         # Verify a video tap was added to the backend
         assert len(backend._video_taps) == 1
 
+    async def test_bind_records_by_default_without_config(self) -> None:
+        """Recording is opt-out: no ChannelRecordingConfig = record everything."""
+        kit = RoomKit()
+        recorder = MockMediaRecorder()
+        binding = RoomRecorderBinding(
+            recorder=recorder,
+            config=MediaRecordingConfig(),
+        )
+
+        backend = MagicMock()
+        backend.name = "mock"
+        backend.capabilities = MagicMock(return_value=0)
+        channel = VoiceChannel(
+            "voice",
+            stt=MockSTTProvider(),
+            tts=MockTTSProvider(),
+            backend=backend,
+            pipeline=AudioPipelineConfig(),
+            # No recording= param — should record by default
+        )
+        kit.register_channel(channel)
+
+        await kit.create_room(room_id="room-1", recorders=[binding])
+        await kit.attach_channel("room-1", "voice")
+
+        session = VoiceSession(
+            id="session-1",
+            room_id="room-1",
+            participant_id="user-1",
+            channel_id="voice",
+            state=VoiceSessionState.ACTIVE,
+        )
+
+        await kit.bind_voice_session(session, "room-1", "voice")
+
+        # Recording should be wired even without ChannelRecordingConfig
+        track_ids = [t.id for t in recorder.tracks]
+        assert "audio:session-1" in track_ids
+
+    async def test_bind_opt_out_audio_recording(self) -> None:
+        """ChannelRecordingConfig(audio=False) opts out of audio recording."""
+        kit = RoomKit()
+        recorder = MockMediaRecorder()
+        binding = RoomRecorderBinding(
+            recorder=recorder,
+            config=MediaRecordingConfig(),
+        )
+
+        backend = MagicMock()
+        backend.name = "mock"
+        backend.capabilities = MagicMock(return_value=0)
+        channel = VoiceChannel(
+            "voice",
+            stt=MockSTTProvider(),
+            tts=MockTTSProvider(),
+            backend=backend,
+            pipeline=AudioPipelineConfig(),
+            recording=ChannelRecordingConfig(audio=False),
+        )
+        kit.register_channel(channel)
+
+        await kit.create_room(room_id="room-1", recorders=[binding])
+        await kit.attach_channel("room-1", "voice")
+
+        session = VoiceSession(
+            id="session-1",
+            room_id="room-1",
+            participant_id="user-1",
+            channel_id="voice",
+            state=VoiceSessionState.ACTIVE,
+        )
+
+        await kit.bind_voice_session(session, "room-1", "voice")
+
+        # Recording should NOT be wired — explicitly opted out
+        assert len(recorder.tracks) == 0
+
     async def test_bind_no_recording_without_recorders(self) -> None:
         """bind_voice_session doesn't wire recording without recorders."""
         kit = RoomKit()
@@ -143,7 +218,6 @@ class TestBindVoiceSession:
             tts=MockTTSProvider(),
             backend=backend,
             pipeline=AudioPipelineConfig(),
-            recording=ChannelRecordingConfig(audio=True),
         )
         kit.register_channel(channel)
 

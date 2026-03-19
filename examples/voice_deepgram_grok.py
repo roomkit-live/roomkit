@@ -22,9 +22,6 @@ Environment variables:
     AEC                 Echo cancellation: webrtc | speex | 0 (default: webrtc)
     DENOISE             Enable RNNoise denoiser: 1 | 0 (default: 1)
 
-    --- Recording (optional, requires roomkit[video] for MP4) ---
-    RECORDING_DIR       Directory for recordings (disabled if unset)
-
     --- AI (optional) ---
     SYSTEM_PROMPT       Custom system prompt for Claude
 
@@ -46,19 +43,14 @@ import sys
 from roomkit import (
     AnthropicAIProvider,
     AnthropicConfig,
-    ChannelBinding,
     ChannelCategory,
-    ChannelRecordingConfig,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
-    MediaRecordingConfig,
     RoomKit,
     VoiceChannel,
 )
 from roomkit.channels.ai import AIChannel
-from roomkit.recorder import MockMediaRecorder, RoomRecorderBinding
 from roomkit.voice.backends.local import LocalAudioBackend
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
@@ -208,17 +200,19 @@ async def main() -> None:
     # --- Media recorder (optional) --------------------------------------------
     recording_dir = os.environ.get("RECORDING_DIR", "")
     recorders = None
-    recording_cfg = None
     if recording_dir:
+        from roomkit.recorder.base import MediaRecordingConfig, RoomRecorderBinding
+
         try:
             from roomkit.recorder.pyav import PyAVMediaRecorder
 
             recorder = PyAVMediaRecorder()
             logger.info("Recording: PyAV → MP4 in %s/", recording_dir)
         except ImportError:
+            from roomkit.recorder.mock import MockMediaRecorder
+
             recorder = MockMediaRecorder()
             logger.info("Recording: Mock (pip install roomkit[video] for MP4)")
-        recording_cfg = ChannelRecordingConfig(audio=True)
         recorders = [
             RoomRecorderBinding(
                 recorder=recorder,
@@ -237,7 +231,6 @@ async def main() -> None:
         tts=tts,
         backend=backend,
         pipeline=pipeline_config,
-        recording=recording_cfg,
     )
     kit.register_channel(voice)
 
@@ -271,16 +264,7 @@ async def main() -> None:
 
     # --- Start voice session --------------------------------------------------
     session = await backend.connect("voice-demo", "local-user", "voice")
-    binding = ChannelBinding(
-        room_id="voice-demo",
-        channel_id="voice",
-        channel_type=ChannelType.VOICE,
-    )
-    voice.bind_session(session, "voice-demo", binding)
-
-    # Wire room-level audio recording if enabled
-    if recording_dir:
-        kit._wire_audio_recording("voice-demo", "voice", session, voice)
+    await kit.bind_voice_session(session, "voice-demo", "voice")
 
     logger.info("")
     logger.info("Speak into your microphone!")

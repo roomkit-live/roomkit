@@ -68,7 +68,6 @@ logging.getLogger("roomkit.core.event_router").setLevel(logging.ERROR)
 from roomkit import (
     Agent,
     ChannelCategory,
-    ChannelRecordingConfig,
     ConversationState,
     DelegateHandler,
     GeminiVisionConfig,
@@ -811,7 +810,6 @@ their browser. Delegate all computer actions to agent-browser.
         input_sample_rate=sample_rate,
         tools=[delegate_tool.model_dump(), READ_PROGRESS_TOOL],
         mute_on_tool_call=True,
-        recording=ChannelRecordingConfig(audio=True),
     )
     kit.register_channel(voice_channel)
 
@@ -948,7 +946,6 @@ their browser. Delegate all computer actions to agent-browser.
     screen_channel = VideoChannel(
         "screen-rec",
         backend=screen_backend,
-        recording=ChannelRecordingConfig(video=True),
         pipeline=VideoPipelineConfig(filters=[watermark]),
     )
     kit.register_channel(screen_channel)

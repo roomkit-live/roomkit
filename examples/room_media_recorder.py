@@ -27,7 +27,6 @@ import logging
 import signal
 
 from roomkit import (
-    ChannelRecordingConfig,
     MediaRecordingConfig,
     RoomKit,
     VideoChannel,
@@ -76,12 +75,10 @@ async def main() -> None:
         "voice-rec",
         backend=audio_backend,
         pipeline=AudioPipelineConfig(),
-        recording=ChannelRecordingConfig(audio=True),
     )
     video_ch = VideoChannel(
         "video-rec",
         backend=video_backend,
-        recording=ChannelRecordingConfig(video=True),
     )
 
     # --- Build the room --------------------------------------------------
