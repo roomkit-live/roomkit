@@ -72,7 +72,6 @@ from roomkit.models.context import RoomContext
 from roomkit.models.enums import HookTrigger
 from roomkit.models.hook import HookResult
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
-from roomkit.voice import parse_voice_session
 from roomkit.voice.backends.sip import SIPVoiceBackend
 from roomkit.voice.realtime.events import RealtimeTranscriptionEvent
 from roomkit.voice.realtime.sip_transport import SIPRealtimeTransport
@@ -211,15 +210,15 @@ async def main() -> None:
         caller = session.metadata.get("caller", "unknown")
         logger.info("Incoming call — session=%s caller=%s", session.id, caller)
 
-        result = await kit.process_inbound(
-            parse_voice_session(session, channel_id="voice"),
-            room_id=room_id,
+        actual_room_id = room_id or session.id
+        await kit.create_room(room_id=actual_room_id)
+        await kit.attach_channel(actual_room_id, "voice")
+        await kit.connect_realtime_voice(
+            actual_room_id,
+            session.participant_id or session.id,
+            "voice",
+            session,
         )
-        if result.blocked:
-            logger.warning("Call rejected: %s", result.reason)
-            return
-
-        actual_room_id = room_id or session.room_id
 
         # Initialize orchestration state to the pipeline's first stage
         room = await kit.get_room(actual_room_id)
@@ -252,7 +251,7 @@ async def main() -> None:
             state.phase,
             state.handoff_count,
         )
-        await kit.close_room(room_id)
+        await kit.disconnect_realtime_voice(session)
 
     # --- Start ---------------------------------------------------------------
 

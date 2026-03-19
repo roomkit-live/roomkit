@@ -138,7 +138,7 @@ async def main() -> None:
             recorders=[recorder_binding],
         )
         await kit.attach_channel(room_id, "voice")
-        await kit.bind_voice_session(session, room_id, "voice")
+        await kit.join(room_id, "voice", session=session)
 
     backend.on_call(on_call)
 

@@ -121,7 +121,6 @@ from roomkit import (
     setup_delegation,
 )
 from roomkit.models.context import RoomContext
-from roomkit.voice import parse_voice_session
 from roomkit.voice.backends.sip import SIPVoiceBackend
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.pipeline.vad.sherpa_onnx import (
@@ -400,15 +399,10 @@ async def main() -> None:
         caller = session.metadata.get("caller", "unknown")
         logger.info("Incoming call — session=%s caller=%s", session.id, caller)
 
-        result = await kit.process_inbound(
-            parse_voice_session(session, channel_id="voice"),
-            room_id=room_id,
-        )
-        if result.blocked:
-            logger.warning("Call rejected: %s", result.reason)
-            return
-
-        actual_room_id = room_id or session.room_id
+        actual_room_id = room_id or session.id
+        await kit.create_room(room_id=actual_room_id)
+        await kit.attach_channel(actual_room_id, "voice")
+        await kit.join(actual_room_id, "voice", session=session)
 
         # Attach BOTH agents — only one is active via ConversationRouter
         await kit.attach_channel(
@@ -453,7 +447,7 @@ async def main() -> None:
             state.phase,
             state.handoff_count,
         )
-        await kit.close_room(room_id)
+        await kit.leave(session)
 
     # --- Start ---------------------------------------------------------------
 

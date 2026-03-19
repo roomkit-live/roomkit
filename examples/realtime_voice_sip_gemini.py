@@ -35,7 +35,6 @@ from roomkit.models.event import RoomEvent, SystemContent
 from roomkit.models.hook import HookResult
 from roomkit.models.trace import ProtocolTrace
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
-from roomkit.voice import parse_voice_session
 from roomkit.voice.backends.sip import SIPVoiceBackend
 from roomkit.voice.realtime.events import RealtimeTranscriptionEvent
 from roomkit.voice.realtime.sip_transport import SIPRealtimeTransport
@@ -191,14 +190,16 @@ async def main() -> None:
 
     @sip.on_call
     async def handle_call(session):
-        result = await kit.process_inbound(
-            parse_voice_session(session, channel_id="realtime-voice"),
-            room_id=session.metadata.get("room_id"),
+        room_id = session.metadata.get("room_id", session.id)
+        await kit.create_room(room_id=room_id)
+        await kit.attach_channel(room_id, "realtime-voice")
+        await kit.connect_realtime_voice(
+            room_id,
+            session.participant_id or session.id,
+            "realtime-voice",
+            session,
         )
-        if result.blocked:
-            logger.warning("Call rejected by hooks: %s", result.reason)
-        else:
-            logger.info("SIP call connected — session=%s", session.id)
+        logger.info("SIP call connected — session=%s room=%s", session.id, room_id)
 
     # -------------------------------------------------------------------
     # Remote hangup → end realtime session + close room
@@ -207,8 +208,7 @@ async def main() -> None:
     @sip.on_call_disconnected
     async def handle_disconnect(session):
         logger.info("SIP call ended — session=%s", session.id)
-        room_id = session.metadata.get("room_id", session.id)
-        await kit.close_room(room_id)
+        await kit.disconnect_realtime_voice(session)
 
     # -------------------------------------------------------------------
     # Start

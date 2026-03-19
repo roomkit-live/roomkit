@@ -218,7 +218,7 @@ async def main() -> None:
         )
         await kit.attach_channel(room_id, "voice")
         await kit.attach_channel(room_id, "ai", category=ChannelCategory.INTELLIGENCE)
-        await kit.bind_voice_session(session, room_id, "voice")
+        await kit.join(room_id, "voice", session=session)
 
     backend.on_call(on_call)
 
