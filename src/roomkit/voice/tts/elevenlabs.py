@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 MODEL_MULTILINGUAL_V2 = "eleven_multilingual_v2"
 MODEL_TURBO_V2_5 = "eleven_turbo_v2_5"
 MODEL_FLASH_V2_5 = "eleven_flash_v2_5"
-MODEL_V3_CONVERSATIONAL = "eleven_v3_conversational"
+MODEL_V3 = "eleven_v3_conversational"
 
 # Expressive tags recognised by v3 Conversational TTS.
 EXPRESSIVE_TAGS = frozenset({"[laughs]", "[whispers]", "[sighs]", "[slow]", "[excited]"})
@@ -84,7 +84,7 @@ class ElevenLabsTTSProvider(TTSProvider):
     def __init__(self, config: ElevenLabsConfig) -> None:
         self._config = config
         if config.expressive:
-            self._config.model_id = MODEL_V3_CONVERSATIONAL
+            self._config.model_id = MODEL_V3
         self._client: httpx.AsyncClient | None = None
         self._voices_cache: dict[str, ElevenLabsVoice] | None = None
 
