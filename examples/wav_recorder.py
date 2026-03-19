@@ -24,9 +24,7 @@ import tempfile
 from pathlib import Path
 
 from roomkit import (
-    ChannelBinding,
     ChannelCategory,
-    ChannelType,
     HookExecution,
     HookTrigger,
     MockAIProvider,
@@ -97,17 +95,14 @@ async def demo_mixed(kit: RoomKit, output_dir: Path) -> None:
     await kit.attach_channel("mixed-demo", "ai-mixed", category=ChannelCategory.INTELLIGENCE)
 
     session = await backend.connect("mixed-demo", "user-1", "voice-mixed")
-    binding = ChannelBinding(
-        room_id="mixed-demo", channel_id="voice-mixed", channel_type=ChannelType.VOICE
-    )
-    voice.bind_session(session, "mixed-demo", binding)
+    await kit.join("mixed-demo", "voice-mixed", session=session)
 
     # Simulate 3 inbound audio frames
     for _ in range(3):
         await backend.simulate_audio_received(session, make_audio_frame(value=500))
 
     await asyncio.sleep(0.1)
-    voice.unbind_session(session)
+    await kit.leave(session)
     await asyncio.sleep(0.05)
 
     # Show output files
@@ -152,16 +147,13 @@ async def demo_separate(kit: RoomKit, output_dir: Path) -> None:
     await kit.attach_channel("separate-demo", "ai-separate", category=ChannelCategory.INTELLIGENCE)
 
     session = await backend.connect("separate-demo", "user-1", "voice-separate")
-    binding = ChannelBinding(
-        room_id="separate-demo", channel_id="voice-separate", channel_type=ChannelType.VOICE
-    )
-    voice.bind_session(session, "separate-demo", binding)
+    await kit.join("separate-demo", "voice-separate", session=session)
 
     for _ in range(3):
         await backend.simulate_audio_received(session, make_audio_frame(value=300))
 
     await asyncio.sleep(0.1)
-    voice.unbind_session(session)
+    await kit.leave(session)
     await asyncio.sleep(0.05)
 
     for f in sorted((output_dir / "separate").glob("*.wav")):
@@ -205,16 +197,13 @@ async def demo_stereo(kit: RoomKit, output_dir: Path) -> None:
     await kit.attach_channel("stereo-demo", "ai-stereo", category=ChannelCategory.INTELLIGENCE)
 
     session = await backend.connect("stereo-demo", "user-1", "voice-stereo")
-    binding = ChannelBinding(
-        room_id="stereo-demo", channel_id="voice-stereo", channel_type=ChannelType.VOICE
-    )
-    voice.bind_session(session, "stereo-demo", binding)
+    await kit.join("stereo-demo", "voice-stereo", session=session)
 
     for _ in range(3):
         await backend.simulate_audio_received(session, make_audio_frame(value=800))
 
     await asyncio.sleep(0.1)
-    voice.unbind_session(session)
+    await kit.leave(session)
     await asyncio.sleep(0.05)
 
     for f in sorted((output_dir / "stereo").glob("*.wav")):

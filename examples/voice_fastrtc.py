@@ -132,11 +132,11 @@ kit.register_channel(ai)
 async def session_factory(websocket_id: str):
     """Create a room and voice session when a browser connects."""
     room = await kit.create_room()
-    binding = await kit.attach_channel(room.id, "voice")
+    await kit.attach_channel(room.id, "voice")
     await kit.attach_channel(room.id, "ai", category=ChannelCategory.INTELLIGENCE)
     session = await backend.connect(room.id, "browser-user", "voice")
     session.metadata["websocket_id"] = websocket_id
-    voice.bind_session(session, room.id, binding)
+    await kit.join(room.id, "voice", session=session)
     logger.info("Session created: session=%s, room=%s", session.id, room.id)
     return session
 

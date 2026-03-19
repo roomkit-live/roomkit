@@ -26,9 +26,7 @@ import asyncio
 import logging
 
 from roomkit import (
-    ChannelBinding,
     ChannelCategory,
-    ChannelType,
     HookExecution,
     HookTrigger,
     RoomKit,
@@ -203,12 +201,7 @@ async def main() -> None:
     # ── Voice session ─────────────────────────────────────────────────
 
     session = await backend.connect("call-room", "user-1", "voice-call")
-    binding = ChannelBinding(
-        room_id="call-room",
-        channel_id="voice-call",
-        channel_type=ChannelType.VOICE,
-    )
-    voice.bind_session(session, "call-room", binding)
+    await kit.join("call-room", "voice-call", session=session)
 
     audio_data = b"\x00" * 640  # 20ms of 16kHz 16-bit mono PCM
 

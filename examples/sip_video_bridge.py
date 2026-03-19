@@ -44,8 +44,6 @@ import signal
 
 from roomkit import (
     AudioVideoChannel,
-    ChannelBinding,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -158,12 +156,7 @@ async def main() -> None:
             has_video,
         )
 
-        binding = ChannelBinding(
-            room_id=ROOM_ID,
-            channel_id="av",
-            channel_type=ChannelType.AUDIO_VIDEO,
-        )
-        av.bind_session(session, ROOM_ID, binding)
+        await kit.join(ROOM_ID, "av", session=session)
 
         audio_count = av._bridge.get_participant_count(ROOM_ID) if av._bridge else 0
         video_count = av._video_bridge.get_participant_count(ROOM_ID) if av._video_bridge else 0

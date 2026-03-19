@@ -54,8 +54,6 @@ import sys
 import wave
 
 from roomkit import (
-    ChannelBinding,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -191,12 +189,7 @@ async def main() -> None:
 
     # --- Start RTP session ----------------------------------------------------
     session = await backend.connect("rtp-stt", "rtp-caller", "voice")
-    binding = ChannelBinding(
-        room_id="rtp-stt",
-        channel_id="voice",
-        channel_type=ChannelType.VOICE,
-    )
-    voice.bind_session(session, "rtp-stt", binding)
+    await kit.join("rtp-stt", "voice", session=session)
 
     # --- Transport-level WAV recording (raw 8kHz, pre-pipeline) -----------------
     transport_wav: wave.Wave_write | None = None
@@ -242,7 +235,7 @@ async def main() -> None:
     if transport_wav is not None:
         transport_wav.close()
         logger.info("Transport recording saved.")
-    voice.unbind_session(session)
+    await kit.leave(session)
     await backend.disconnect(session)
     await kit.close()
     logger.info("Done.")

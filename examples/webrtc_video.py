@@ -152,11 +152,11 @@ kit.register_channel(ai)
 # --- Session factory ---
 async def session_factory(websocket_id: str):
     room = await kit.create_room()
-    binding = await kit.attach_channel(room.id, "av")
+    await kit.attach_channel(room.id, "av")
     await kit.attach_channel(room.id, "ai", category=ChannelCategory.INTELLIGENCE)
     session = await backend.connect(room.id, "browser-user", "av")
     session.metadata["websocket_id"] = websocket_id
-    av.bind_session(session, room.id, binding)
+    await kit.join(room.id, "av", session=session)
     logger.info("A/V session created: session=%s, room=%s", session.id, room.id)
     return session
 

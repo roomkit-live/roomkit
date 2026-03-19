@@ -26,9 +26,7 @@ import asyncio
 import logging
 
 from roomkit import (
-    ChannelBinding,
     ChannelCategory,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -147,20 +145,18 @@ async def main() -> None:
     # --- Simulate three callers joining the bridge ----------------------------
     print("\n=== Three participants join the conference ===\n")
 
-    binding = ChannelBinding(room_id=ROOM_ID, channel_id="voice", channel_type=ChannelType.VOICE)
-
     session_a = await backend.connect(ROOM_ID, "alice", "voice")
-    voice.bind_session(session_a, ROOM_ID, binding)
+    await kit.join(ROOM_ID, "voice", session=session_a)
     count = voice._bridge.get_participant_count(ROOM_ID)
     logger.info("Alice joined (participants: %d)", count)
 
     session_b = await backend.connect(ROOM_ID, "bob", "voice")
-    voice.bind_session(session_b, ROOM_ID, binding)
+    await kit.join(ROOM_ID, "voice", session=session_b)
     count = voice._bridge.get_participant_count(ROOM_ID)
     logger.info("Bob joined (participants: %d)", count)
 
     session_c = await backend.connect(ROOM_ID, "charlie", "voice")
-    voice.bind_session(session_c, ROOM_ID, binding)
+    await kit.join(ROOM_ID, "voice", session=session_c)
     count = voice._bridge.get_participant_count(ROOM_ID)
     logger.info("Charlie joined (participants: %d)", count)
 
@@ -192,7 +188,7 @@ async def main() -> None:
         (session_b, "Bob"),
         (session_a, "Alice"),
     ]:
-        voice.unbind_session(session)
+        await kit.leave(session)
         logger.info("%s left", name)
 
     # --- Generate AI summary from accumulated transcript ----------------------

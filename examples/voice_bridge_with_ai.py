@@ -28,8 +28,6 @@ import asyncio
 import logging
 
 from roomkit import (
-    ChannelBinding,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -131,14 +129,12 @@ async def main() -> None:
     # --- Simulate two callers joining ---
     print("\n=== Participants join the conference ===\n")
 
-    binding = ChannelBinding(room_id=ROOM_ID, channel_id="voice", channel_type=ChannelType.VOICE)
-
     session_a = await backend.connect(ROOM_ID, "alice", "voice")
-    voice.bind_session(session_a, ROOM_ID, binding)
+    await kit.join(ROOM_ID, "voice", session=session_a)
     logger.info("Alice joined (participants: %d)", voice._bridge.get_participant_count(ROOM_ID))
 
     session_b = await backend.connect(ROOM_ID, "bob", "voice")
-    voice.bind_session(session_b, ROOM_ID, binding)
+    await kit.join(ROOM_ID, "voice", session=session_b)
     logger.info("Bob joined (participants: %d)", voice._bridge.get_participant_count(ROOM_ID))
 
     # --- Conversation: both speak (bridge + STT active) ---
@@ -173,7 +169,7 @@ async def main() -> None:
     print("\n=== Participants leaving ===\n")
 
     for session, name in [(session_b, "Bob"), (session_a, "Alice")]:
-        voice.unbind_session(session)
+        await kit.leave(session)
         logger.info("%s left", name)
 
     # --- Display results ---

@@ -42,8 +42,6 @@ import signal
 
 from roomkit import (
     AudioVideoChannel,
-    ChannelBinding,
-    ChannelType,
     HookResult,
     HookTrigger,
     RoomKit,
@@ -120,12 +118,7 @@ async def main() -> None:
     await kit.attach_channel(room_id, "voice")
 
     session = await backend.connect(room_id, "remote-user", "voice")
-    binding = ChannelBinding(
-        room_id=room_id,
-        channel_id="voice",
-        channel_type=ChannelType.AUDIO_VIDEO,
-    )
-    av.bind_session(session, room_id, binding)
+    await kit.join(room_id, "voice", session=session)
 
     _ = backend.get_video_session(session.id)
     logger.info(
