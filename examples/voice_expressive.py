@@ -42,8 +42,7 @@ import logging
 import os
 import signal
 
-from roomkit import HookExecution, HookTrigger, Room, RoomKit
-from roomkit.channels import AIChannel, VoiceChannel
+from roomkit import AIChannel, HookExecution, HookTrigger, Room, RoomKit, VoiceChannel
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.voice.tts.elevenlabs import ElevenLabsConfig, ElevenLabsTTSProvider
 
