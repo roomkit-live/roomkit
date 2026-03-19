@@ -23,9 +23,7 @@ import logging
 import signal
 
 from roomkit import (
-    ChannelBinding,
     ChannelCategory,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -122,7 +120,6 @@ async def main() -> None:
     kit.register_channel(ai)
 
     await kit.create_room(room_id="vu-demo")
-    await kit.attach_channel("vu-demo", "voice")
     await kit.attach_channel("vu-demo", "ai", category=ChannelCategory.INTELLIGENCE)
 
     # --- Audio level hooks (VU meter) ---------------------------------------
@@ -157,18 +154,14 @@ async def main() -> None:
         print(f"  TTS: {text}\n")
         return HookResult.allow()
 
-    # --- Start voice session ------------------------------------------------
-    session = await backend.connect("vu-demo", "local-user", "voice")
-    binding = ChannelBinding(room_id="vu-demo", channel_id="voice", channel_type=ChannelType.VOICE)
-    voice.bind_session(session, "vu-demo", binding)
+    # --- Attach voice channel (auto-starts session) -------------------------
+    await kit.attach_channel("vu-demo", "voice")
 
     print("Audio Level VU Meter (Parrot Mode)")
     print("=" * 60)
     print("Speak into your microphone to see input levels.")
     print("The parrot echoes back via TTS (output levels).")
     print(f"Configured for {NUM_TURNS} turns. Press Ctrl+C to stop.\n")
-
-    await backend.start_listening(session)
 
     # --- Keep running until Ctrl+C ------------------------------------------
     stop = asyncio.Event()
@@ -180,8 +173,6 @@ async def main() -> None:
 
     # --- Cleanup ------------------------------------------------------------
     print("\nStopping...")
-    await backend.stop_listening(session)
-    await backend.disconnect(session)
     await kit.close()
     print("Done.")
 

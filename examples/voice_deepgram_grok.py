@@ -239,7 +239,6 @@ async def main() -> None:
 
     # --- Room -----------------------------------------------------------------
     await kit.create_room(room_id="voice-demo", recorders=recorders)
-    await kit.attach_channel("voice-demo", "voice")
     await kit.attach_channel("voice-demo", "ai", category=ChannelCategory.INTELLIGENCE)
 
     # --- Hooks: log speech lifecycle ------------------------------------------
@@ -262,16 +261,13 @@ async def main() -> None:
         logger.info("Claude says: %s", text)
         return HookResult.allow()
 
-    # --- Start voice session --------------------------------------------------
-    session = await backend.connect("voice-demo", "local-user", "voice")
-    await kit.bind_voice_session(session, "voice-demo", "voice")
+    # --- Attach voice channel (auto-starts session) ---------------------------
+    await kit.attach_channel("voice-demo", "voice")
 
     logger.info("")
     logger.info("Speak into your microphone!")
     logger.info("Press Ctrl+C to stop.")
     logger.info("")
-
-    await backend.start_listening(session)
 
     # --- Keep running until Ctrl+C --------------------------------------------
     stop = asyncio.Event()
@@ -283,11 +279,6 @@ async def main() -> None:
 
     # --- Cleanup --------------------------------------------------------------
     logger.info("\nStopping...")
-    await backend.stop_listening(session)
-    voice.unbind_session(session)
-    await asyncio.sleep(0.1)
-    await backend.disconnect(session)
-    await kit.close_room("voice-demo")
     await kit.close()
     logger.info("Done.")
 

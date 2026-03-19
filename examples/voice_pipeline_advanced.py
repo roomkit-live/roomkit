@@ -18,9 +18,7 @@ import asyncio
 import logging
 
 from roomkit import (
-    ChannelBinding,
     ChannelCategory,
-    ChannelType,
     HookExecution,
     HookTrigger,
     MockAIProvider,
@@ -189,9 +187,7 @@ async def main() -> None:
         return HookResult.allow()
 
     # --- Simulate session -----------------------------------------------------
-    session = await backend.connect("demo", "user-1", "voice")
-    binding = ChannelBinding(room_id="demo", channel_id="voice", channel_type=ChannelType.VOICE)
-    voice.bind_session(session, "demo", binding)
+    session = await kit.join("demo", "voice", participant_id="user-1")
 
     # Send 6 frames: two 3-frame utterances
     for _i in range(6):
@@ -216,7 +212,7 @@ async def main() -> None:
         print(f"  [{ev.source.channel_id}] {body}")
 
     # Clean up
-    voice.unbind_session(session)
+    await kit.leave(session)
     await asyncio.sleep(0.05)
     await kit.close()
 

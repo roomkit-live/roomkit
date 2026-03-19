@@ -68,9 +68,7 @@ import signal
 import sys
 
 from roomkit import (
-    ChannelBinding,
     ChannelCategory,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -223,7 +221,6 @@ async def main() -> None:
 
     # --- Room -----------------------------------------------------------------
     await kit.create_room(room_id="parakeet-demo")
-    await kit.attach_channel("parakeet-demo", "voice")
     await kit.attach_channel("parakeet-demo", "ai", category=ChannelCategory.INTELLIGENCE)
 
     # --- Hooks ----------------------------------------------------------------
@@ -250,20 +247,12 @@ async def main() -> None:
     await asyncio.gather(stt.warmup(), tts.warmup())
     logger.info("Models loaded — ready!")
 
-    # --- Start voice session --------------------------------------------------
-    session = await backend.connect("parakeet-demo", "local-user", "voice")
-    binding = ChannelBinding(
-        room_id="parakeet-demo",
-        channel_id="voice",
-        channel_type=ChannelType.VOICE,
-    )
-    voice.bind_session(session, "parakeet-demo", binding)
+    # --- Attach voice channel (auto-starts session) ---------------------------
+    await kit.attach_channel("parakeet-demo", "voice")
 
     logger.info("")
     logger.info("Speak into your microphone. Press Ctrl+C to stop.")
     logger.info("")
-
-    await backend.start_listening(session)
 
     # --- Keep running until Ctrl+C --------------------------------------------
     stop = asyncio.Event()
@@ -275,10 +264,6 @@ async def main() -> None:
 
     # --- Cleanup --------------------------------------------------------------
     logger.info("\nStopping...")
-    await backend.stop_listening(session)
-    voice.unbind_session(session)
-    await asyncio.sleep(0.1)
-    await backend.disconnect(session)
     await kit.close()
     logger.info("Done.")
 

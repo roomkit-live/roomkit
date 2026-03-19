@@ -39,9 +39,7 @@ logging.basicConfig(
 logger = logging.getLogger("voice_sip_dtmf")
 
 from roomkit import (
-    ChannelBinding,
     ChannelCategory,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -245,13 +243,8 @@ async def main() -> None:
         await backend.close()
         return
 
-    # Bind session to pipeline, then expose to the tool handler
-    binding = ChannelBinding(
-        room_id=room_id,
-        channel_id="voice",
-        channel_type=ChannelType.VOICE,
-    )
-    voice.bind_session(session, room_id, binding)
+    # Join session to room, then expose to the tool handler
+    await kit.join(room_id, "voice", session=session)
     active_session[room_id] = session
 
     logger.info(

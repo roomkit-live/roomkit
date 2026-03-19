@@ -26,9 +26,7 @@ import os
 import signal
 
 from roomkit import (
-    ChannelBinding,
     ChannelCategory,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -141,11 +139,7 @@ async def main() -> None:
         return HookResult.allow()
 
     # --- Start RTP session ----------------------------------------------------
-    session = await backend.connect("rtp-demo", "rtp-caller", "voice")
-    binding = ChannelBinding(
-        room_id="rtp-demo", channel_id="voice", channel_type=ChannelType.VOICE
-    )
-    voice.bind_session(session, "rtp-demo", binding)
+    session = await kit.join("rtp-demo", "voice", participant_id="rtp-caller")
 
     logger.info(
         "RTP listening on 0.0.0.0:%d, sending to %s:%d",
@@ -165,7 +159,7 @@ async def main() -> None:
 
     # --- Cleanup --------------------------------------------------------------
     logger.info("\nStopping...")
-    await backend.disconnect(session)
+    await kit.leave(session)
     await kit.close()
     logger.info("Done.")
 

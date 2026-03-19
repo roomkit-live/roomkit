@@ -47,9 +47,7 @@ import signal
 import sys
 
 from roomkit import (
-    ChannelBinding,
     ChannelCategory,
-    ChannelType,
     HookExecution,
     HookTrigger,
     MockAIProvider,
@@ -158,7 +156,6 @@ async def main() -> None:
 
     # --- Room -----------------------------------------------------------------
     await kit.create_room(room_id="vad-demo")
-    await kit.attach_channel("vad-demo", "voice")
     await kit.attach_channel("vad-demo", "ai", category=ChannelCategory.INTELLIGENCE)
 
     # --- Hooks ----------------------------------------------------------------
@@ -184,21 +181,13 @@ async def main() -> None:
         logger.info("AI says: %s", text)
         return HookResult.allow()
 
-    # --- Start voice session --------------------------------------------------
-    session = await backend.connect("vad-demo", "local-user", "voice")
-    binding = ChannelBinding(
-        room_id="vad-demo",
-        channel_id="voice",
-        channel_type=ChannelType.VOICE,
-    )
-    voice.bind_session(session, "vad-demo", binding)
+    # --- Attach voice channel (auto-starts session) ---------------------------
+    await kit.attach_channel("vad-demo", "voice")
 
     logger.info("")
     logger.info("Speak into your microphone!")
     logger.info("Press Ctrl+C to stop.")
     logger.info("")
-
-    await backend.start_listening(session)
 
     # --- Keep running until Ctrl+C --------------------------------------------
     stop = asyncio.Event()
@@ -210,10 +199,6 @@ async def main() -> None:
 
     # --- Cleanup --------------------------------------------------------------
     logger.info("\nStopping...")
-    await backend.stop_listening(session)
-    voice.unbind_session(session)
-    await asyncio.sleep(0.1)
-    await backend.disconnect(session)
     await kit.close()
     logger.info("Done.")
 

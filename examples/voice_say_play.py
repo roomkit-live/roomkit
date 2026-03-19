@@ -81,7 +81,7 @@ async def main() -> None:
         print(f"  [hook] AFTER_TTS: {text!r}")
 
     # --- Connect a participant ------------------------------------------------
-    session = await kit.connect_voice("demo", "user-1", "voice")
+    session = await kit.join("demo", "voice", participant_id="user-1")
     print(f"Session connected: {session.id}\n")
 
     # =========================================================================

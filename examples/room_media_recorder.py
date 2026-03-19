@@ -100,8 +100,8 @@ async def main() -> None:
     await kit.attach_channel(room.id, "video-rec")
 
     # --- Connect participant ---------------------------------------------
-    voice_session = await kit.connect_voice(room.id, "local-user", "voice-rec")
-    video_session = await kit.connect_video(room.id, "local-user", "video-rec")
+    voice_session = await kit.join(room.id, "voice-rec", participant_id="local-user")
+    video_session = await kit.join(room.id, "video-rec", participant_id="local-user")
 
     # --- Progress counter ------------------------------------------------
     frame_count = 0
@@ -151,8 +151,8 @@ async def main() -> None:
     print("\n\n  Stopping...")
     await video_backend.stop_capture(video_session)
     await audio_backend.stop_listening(voice_session)
-    await kit.disconnect_video(video_session)
-    await kit.disconnect_voice(voice_session)
+    await kit.leave(video_session)
+    await kit.leave(voice_session)
     await kit.close_room(room.id)
     await kit.close()
 

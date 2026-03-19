@@ -23,6 +23,8 @@ Usage:
     #   X-Session-ID: caller-123
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from datetime import UTC, datetime
@@ -39,7 +41,6 @@ from roomkit.models.enums import HookTrigger
 from roomkit.models.event import RoomEvent, SystemContent
 from roomkit.models.hook import HookResult
 from roomkit.models.trace import ProtocolTrace
-from roomkit.voice import parse_voice_session
 from roomkit.voice.backends.sip import SIPVoiceBackend
 
 # ---------------------------------------------------------------------------
@@ -139,7 +140,14 @@ async def main() -> None:
             )
 
     # -----------------------------------------------------------------------
-    # Incoming call → process through framework
+    # Room setup — create once at startup, not per call
+    # -----------------------------------------------------------------------
+
+    await kit.create_room(room_id="support")
+    await kit.attach_channel("support", "voice")
+
+    # -----------------------------------------------------------------------
+    # Incoming call → join session to room
     # -----------------------------------------------------------------------
 
     @backend.on_call
@@ -147,13 +155,7 @@ async def main() -> None:
         """Called when a SIP INVITE is accepted and RTP is active."""
         caller = session.metadata.get("caller")
         logger.info("Incoming call — session=%s caller=%s", session.id, caller)
-
-        result = await kit.process_inbound(
-            parse_voice_session(session, channel_id="voice"),
-            room_id=session.metadata.get("room_id"),
-        )
-        if result.blocked:
-            logger.warning("Call rejected: %s", result.reason)
+        await kit.join("support", "voice", session=session)
 
     # -----------------------------------------------------------------------
     # Disconnect handler
@@ -163,8 +165,7 @@ async def main() -> None:
     async def handle_disconnect(session):
         """Called when the remote party hangs up (BYE)."""
         logger.info("Call ended — session=%s", session.id)
-        room_id = session.metadata.get("room_id", session.id)
-        await kit.close_room(room_id)
+        await kit.leave(session)
 
     # -----------------------------------------------------------------------
     # Start

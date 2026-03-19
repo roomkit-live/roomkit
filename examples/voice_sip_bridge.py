@@ -45,8 +45,6 @@ logging.basicConfig(
 logger = logging.getLogger("voice_sip_bridge")
 
 from roomkit import (
-    ChannelBinding,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -129,12 +127,7 @@ async def main() -> None:
         meta = session.metadata
         name = meta.get("caller_display_name") or meta.get("caller_user") or session.id
         logger.info("Incoming call — session=%s, caller=%s", session.id, name)
-        binding = ChannelBinding(
-            room_id=ROOM_ID,
-            channel_id="voice",
-            channel_type=ChannelType.VOICE,
-        )
-        voice.bind_session(session, ROOM_ID, binding)
+        await kit.join(ROOM_ID, "voice", session=session)
         count = voice._bridge.get_participant_count(ROOM_ID)
         logger.info(
             "Participants in room: %d — %s",

@@ -89,9 +89,7 @@ import signal
 import sys
 
 from roomkit import (
-    ChannelBinding,
     ChannelCategory,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -243,7 +241,6 @@ async def main() -> None:
 
     # --- Room -----------------------------------------------------------------
     await kit.create_room(room_id="smart-turn-demo")
-    await kit.attach_channel("smart-turn-demo", "voice")
     await kit.attach_channel("smart-turn-demo", "ai", category=ChannelCategory.INTELLIGENCE)
 
     # --- Hooks ----------------------------------------------------------------
@@ -287,14 +284,8 @@ async def main() -> None:
     await asyncio.gather(stt.warmup(), tts.warmup())
     logger.info("Models loaded — ready!")
 
-    # --- Start voice session --------------------------------------------------
-    session = await backend.connect("smart-turn-demo", "local-user", "voice")
-    binding = ChannelBinding(
-        room_id="smart-turn-demo",
-        channel_id="voice",
-        channel_type=ChannelType.VOICE,
-    )
-    voice.bind_session(session, "smart-turn-demo", binding)
+    # --- Attach voice channel (auto-starts session) ---------------------------
+    await kit.attach_channel("smart-turn-demo", "voice")
 
     logger.info("")
     logger.info("Smart turn detection active!")
@@ -302,8 +293,6 @@ async def main() -> None:
     logger.info("for you to finish your thought before responding.")
     logger.info("Press Ctrl+C to stop.")
     logger.info("")
-
-    await backend.start_listening(session)
 
     # --- Keep running until Ctrl+C --------------------------------------------
     stop = asyncio.Event()
@@ -315,11 +304,6 @@ async def main() -> None:
 
     # --- Cleanup --------------------------------------------------------------
     logger.info("\nStopping...")
-    await backend.stop_listening(session)
-    voice.unbind_session(session)
-    turn_detector.close()
-    await asyncio.sleep(0.1)
-    await backend.disconnect(session)
     await kit.close()
     logger.info("Done.")
 

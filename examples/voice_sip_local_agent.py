@@ -90,6 +90,8 @@ Environment variables:
     ONNX_PROVIDER       ONNX execution provider: cpu | cuda (default: cpu)
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
@@ -114,7 +116,6 @@ from roomkit.channels.ai import AIChannel
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent, SystemContent
 from roomkit.models.trace import ProtocolTrace
-from roomkit.voice import parse_voice_session
 from roomkit.voice.backends.sip import SIPVoiceBackend
 from roomkit.voice.pipeline import (
     AudioFormat,
@@ -316,6 +317,14 @@ async def main() -> None:
     kit.register_channel(ai)
 
     # -------------------------------------------------------------------
+    # Room setup — create once at startup
+    # -------------------------------------------------------------------
+
+    await kit.create_room(room_id="support")
+    await kit.attach_channel("support", "voice")
+    await kit.attach_channel("support", "ai", category=ChannelCategory.INTELLIGENCE)
+
+    # -------------------------------------------------------------------
     # Hooks — same hooks work for text AND voice
     # -------------------------------------------------------------------
 
@@ -366,23 +375,13 @@ async def main() -> None:
         )
 
     # -------------------------------------------------------------------
-    # Incoming call → unified process_inbound (same as text)
+    # Incoming call → join session to room
     # -------------------------------------------------------------------
 
     @sip.on_call
     async def handle_call(session):
-        room_id = session.metadata.get("room_id")
-        result = await kit.process_inbound(
-            parse_voice_session(session, channel_id="voice"),
-            room_id=room_id,
-        )
-        if result.blocked:
-            logger.warning("Call rejected: %s", result.reason)
-        else:
-            # Attach AI channel so the room has intelligence
-            actual_room_id = room_id or session.room_id
-            await kit.attach_channel(actual_room_id, "ai", category=ChannelCategory.INTELLIGENCE)
-            logger.info("Call connected — session=%s room=%s", session.id, actual_room_id)
+        await kit.join("support", "voice", session=session)
+        logger.info("Call connected — session=%s room=support", session.id)
 
     # -------------------------------------------------------------------
     # Remote hangup → cleanup
@@ -391,8 +390,7 @@ async def main() -> None:
     @sip.on_call_disconnected
     async def handle_disconnect(session):
         logger.info("Call ended — session=%s", session.id)
-        room_id = session.metadata.get("room_id", session.id)
-        await kit.close_room(room_id)
+        await kit.leave(session)
 
     # -------------------------------------------------------------------
     # Warmup models + start

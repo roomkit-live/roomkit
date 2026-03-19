@@ -45,7 +45,6 @@ from roomkit.models.context import RoomContext
 from roomkit.models.enums import HookTrigger
 from roomkit.models.hook import HookResult
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
-from roomkit.voice import parse_voice_session
 from roomkit.voice.backends.sip import PT_G722, PT_PCMA, PT_PCMU, SIPVoiceBackend
 from roomkit.voice.realtime.events import RealtimeTranscriptionEvent
 from roomkit.voice.realtime.sip_transport import SIPRealtimeTransport
@@ -134,6 +133,14 @@ async def main() -> None:
     kit.register_channel(realtime)
 
     # -------------------------------------------------------------------
+    # Room setup — create once at startup
+    # -------------------------------------------------------------------
+
+    room_id = "sip-dial"
+    await kit.create_room(room_id=room_id)
+    await kit.attach_channel(room_id, "realtime-voice")
+
+    # -------------------------------------------------------------------
     # Hooks
     # -------------------------------------------------------------------
 
@@ -155,16 +162,14 @@ async def main() -> None:
     async def handle_call(session):
         callee = session.metadata.get("callee")
         logger.info("Call active — session=%s callee=%s", session.id, callee)
-        await kit.process_inbound(
-            parse_voice_session(session, channel_id="realtime-voice"),
-            room_id=session.room_id,
+        await kit.connect_realtime_voice(
+            room_id, session.participant_id or session.id, "realtime-voice", session
         )
 
     @backend.on_call_disconnected
     async def handle_disconnect(session):
         logger.info("Call ended — session=%s", session.id)
-        room_id = session.metadata.get("room_id", session.id)
-        await kit.close_room(room_id)
+        await kit.disconnect_realtime_voice(session)
 
     # -------------------------------------------------------------------
     # Start backend and dial

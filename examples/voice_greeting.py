@@ -87,7 +87,7 @@ async def pattern_agent_auto_greet() -> None:
     await kit.attach_channel(room.id, "agent")
 
     # Greeting fires automatically when the audio path is ready
-    session = await kit.connect_voice(room.id, "caller-1", "voice")
+    session = await kit.join(room.id, "voice", participant_id="caller-1")
     await asyncio.sleep(0.2)
 
     logger.info("Session %s greeted via Agent auto_greet", session.id)
@@ -131,7 +131,7 @@ async def pattern_explicit_hook() -> None:
             channel_type=event.channel_type,
         )
 
-    session = await kit.connect_voice(room.id, "caller-1", "voice")
+    session = await kit.join(room.id, "voice", participant_id="caller-1")
     await asyncio.sleep(0.2)
 
     logger.info("Session %s greeted via explicit hook", session.id)
@@ -162,7 +162,7 @@ async def pattern_manual_say() -> None:
         if event.session is not None:
             await voice.say(event.session, "Please hold while we connect you.")
 
-    session = await kit.connect_voice(room.id, "caller-1", "voice")
+    session = await kit.join(room.id, "voice", participant_id="caller-1")
     await asyncio.sleep(0.2)
 
     logger.info("Session %s greeted via manual say()", session.id)
@@ -214,7 +214,7 @@ async def pattern_llm_greeting() -> None:
         )
         await kit.process_inbound(inbound, room_id=room.id)
 
-    session = await kit.connect_voice(room.id, "caller-1", "voice")
+    session = await kit.join(room.id, "voice", participant_id="caller-1")
     await asyncio.sleep(0.2)
 
     logger.info("Session %s greeted via LLM-generated response", session.id)

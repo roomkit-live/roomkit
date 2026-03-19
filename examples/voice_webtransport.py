@@ -109,11 +109,7 @@ async def session_factory(connection_id: str):
     _session_counter += 1
     participant_id = f"wt-user-{_session_counter}"
 
-    session = await backend.connect(
-        room_id=ROOM_ID,
-        participant_id=participant_id,
-        channel_id="voice",
-    )
+    session = await kit.join(ROOM_ID, "voice", participant_id=participant_id)
     logger.info("New WebTransport session: %s (%s)", participant_id, connection_id)
     return session
 

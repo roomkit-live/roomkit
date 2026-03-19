@@ -53,8 +53,6 @@ logger = logging.getLogger("voice_sip_bridge_summary")
 from roomkit import (
     AnthropicAIProvider,
     AnthropicConfig,
-    ChannelBinding,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -165,12 +163,7 @@ async def main() -> None:
     async def handle_call(session):
         name = _caller_name(session)
         logger.info("Incoming call: %s (session=%s)", name, session.id)
-        binding = ChannelBinding(
-            room_id=ROOM_ID,
-            channel_id="voice",
-            channel_type=ChannelType.VOICE,
-        )
-        voice.bind_session(session, ROOM_ID, binding)
+        await kit.join(ROOM_ID, "voice", session=session)
         count = voice._bridge.get_participant_count(ROOM_ID)
         logger.info(
             "Participants in room: %d — %s",
@@ -182,7 +175,7 @@ async def main() -> None:
     @backend.on_call_disconnected
     async def handle_disconnect(session):
         name = _caller_name(session)
-        voice.unbind_session(session)
+        await kit.leave(session)
         count = voice._bridge.get_participant_count(ROOM_ID)
         logger.info("%s hung up (remaining: %d)", name, count)
 

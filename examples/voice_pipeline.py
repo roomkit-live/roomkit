@@ -22,9 +22,7 @@ import asyncio
 import logging
 
 from roomkit import (
-    ChannelBinding,
     ChannelCategory,
-    ChannelType,
     HookExecution,
     HookTrigger,
     MockAIProvider,
@@ -178,11 +176,7 @@ async def main() -> None:
         return HookResult.allow()
 
     # --- Simulate a voice session ---------------------------------------------
-    session = await backend.connect("demo", "user-1", "voice")
-
-    # Bind session to room (required for routing)
-    binding = ChannelBinding(room_id="demo", channel_id="voice", channel_type=ChannelType.VOICE)
-    voice.bind_session(session, "demo", binding)
+    session = await kit.join("demo", "voice", participant_id="user-1")
 
     # Simulate 3 audio frames arriving from the client.
     # The pipeline processes each frame through the full inbound chain:
