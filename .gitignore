@@ -1,4 +1,7 @@
 tasks/
+*.jpg
+*.jpeg
+*.png
 __pycache__/
 *.py[cod]
 *$py.class
