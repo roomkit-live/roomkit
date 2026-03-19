@@ -193,11 +193,11 @@ async def main() -> None:
         room_id = session.metadata.get("room_id", session.id)
         await kit.create_room(room_id=room_id)
         await kit.attach_channel(room_id, "realtime-voice")
-        await kit.connect_realtime_voice(
+        await kit.join(
             room_id,
-            session.participant_id or session.id,
             "realtime-voice",
-            session,
+            participant_id=session.participant_id or session.id,
+            connection=session,
         )
         logger.info("SIP call connected — session=%s room=%s", session.id, room_id)
 
@@ -208,7 +208,7 @@ async def main() -> None:
     @sip.on_call_disconnected
     async def handle_disconnect(session):
         logger.info("SIP call ended — session=%s", session.id)
-        await kit.disconnect_realtime_voice(session)
+        await kit.leave(session)
 
     # -------------------------------------------------------------------
     # Start

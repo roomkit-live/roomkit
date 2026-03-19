@@ -54,6 +54,7 @@ class VoiceOpsMixin(HelpersMixin):
         participant_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         backend: VoiceBackend | None = None,
+        connection: Any = None,
     ) -> VoiceSession | VideoSession:
         """Join a participant to a room via a channel.
 
@@ -77,6 +78,9 @@ class VoiceOpsMixin(HelpersMixin):
                 When bridging sessions from different transports
                 (e.g. SIP + WebRTC), pass the session's own backend
                 so the bridge sends audio through the correct transport.
+            connection: Protocol-specific connection for realtime voice
+                channels (e.g. WebSocket).  Required when joining a
+                :class:`RealtimeVoiceChannel`.
 
         Returns:
             The voice or video session (created or passed in).
@@ -106,6 +110,17 @@ class VoiceOpsMixin(HelpersMixin):
                 participant_id=participant_id,
                 metadata=metadata,
                 backend=backend,
+            )
+
+        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+        if isinstance(channel, RealtimeVoiceChannel):
+            pid = participant_id or f"participant-{uuid4().hex[:8]}"
+            return await channel.start_session(
+                room_id,
+                pid,
+                connection,
+                metadata=metadata,
             )
 
         from roomkit.channels.video import VideoChannel
@@ -232,6 +247,12 @@ class VoiceOpsMixin(HelpersMixin):
 
         if isinstance(channel, VoiceChannel):
             await self._leave_voice(session, channel)
+            return
+
+        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+        if isinstance(channel, RealtimeVoiceChannel):
+            await channel.end_session(session)
             return
 
         from roomkit.channels.video import VideoChannel
@@ -414,58 +435,38 @@ class VoiceOpsMixin(HelpersMixin):
     ) -> Any:
         """Connect a participant to a realtime voice session.
 
-        Creates a realtime voice session via the channel's provider and
-        transport, binding it to the specified room.
+        .. deprecated::
+            Use :meth:`join` instead::
 
-        Args:
-            room_id: The room to join.
-            participant_id: The participant's ID.
-            channel_id: The realtime voice channel ID.
-            connection: Protocol-specific connection (e.g. WebSocket).
-            metadata: Optional session metadata (may include overrides
-                for system_prompt, voice, tools, temperature).
-
-        Returns:
-            A VoiceSession representing the connection.
-
-        Raises:
-            ChannelNotRegisteredError: If the channel is not a RealtimeVoiceChannel.
-            RoomNotFoundError: If the room doesn't exist.
-            ChannelNotFoundError: If the channel is not attached to the room.
+                session = await kit.join(room_id, channel_id,
+                                         participant_id=participant_id,
+                                         connection=websocket)
         """
-        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
-
-        # Verify room exists
-        await self.get_room(room_id)  # type: ignore[attr-defined]
-
-        # Get the realtime voice channel
-        channel = self._channels.get(channel_id)
-        if not isinstance(channel, RealtimeVoiceChannel):
-            raise ChannelNotRegisteredError(
-                f"Channel {channel_id} is not a registered RealtimeVoiceChannel"
-            )
-
-        # Verify binding exists
-        binding = await self._store.get_binding(room_id, channel_id)
-        if binding is None:
-            raise ChannelNotFoundError(f"Channel {channel_id} not attached to room {room_id}")
-
-        return await channel.start_session(room_id, participant_id, connection, metadata=metadata)
+        warnings.warn(
+            "connect_realtime_voice() is deprecated. Use kit.join() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.join(
+            room_id,
+            channel_id,
+            participant_id=participant_id,
+            connection=connection,
+            metadata=metadata,
+        )
 
     async def disconnect_realtime_voice(self, session: Any) -> None:
         """Disconnect a realtime voice session.
 
-        Args:
-            session: The VoiceSession to disconnect.
-
-        Raises:
-            ChannelNotRegisteredError: If the channel is not found.
+        .. deprecated::
+            Use :meth:`leave` instead.
         """
-        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
-
-        channel = self._channels.get(session.channel_id)
-        if isinstance(channel, RealtimeVoiceChannel):
-            await channel.end_session(session)
+        warnings.warn(
+            "disconnect_realtime_voice() is deprecated. Use kit.leave() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        await self.leave(session)
 
     async def transcribe(self, audio: AudioContent) -> TranscriptionResult:
         """Transcribe audio to text using configured STT provider.

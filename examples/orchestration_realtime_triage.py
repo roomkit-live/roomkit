@@ -213,11 +213,11 @@ async def main() -> None:
         actual_room_id = room_id or session.id
         await kit.create_room(room_id=actual_room_id)
         await kit.attach_channel(actual_room_id, "voice")
-        await kit.connect_realtime_voice(
+        await kit.join(
             actual_room_id,
-            session.participant_id or session.id,
             "voice",
-            session,
+            participant_id=session.participant_id or session.id,
+            connection=session,
         )
 
         # Initialize orchestration state to the pipeline's first stage
@@ -251,7 +251,7 @@ async def main() -> None:
             state.phase,
             state.handoff_count,
         )
-        await kit.disconnect_realtime_voice(session)
+        await kit.leave(session)
 
     # --- Start ---------------------------------------------------------------
 

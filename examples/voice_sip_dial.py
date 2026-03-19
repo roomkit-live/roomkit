@@ -162,14 +162,17 @@ async def main() -> None:
     async def handle_call(session):
         callee = session.metadata.get("callee")
         logger.info("Call active — session=%s callee=%s", session.id, callee)
-        await kit.connect_realtime_voice(
-            room_id, session.participant_id or session.id, "realtime-voice", session
+        await kit.join(
+            room_id,
+            "realtime-voice",
+            participant_id=session.participant_id or session.id,
+            connection=session,
         )
 
     @backend.on_call_disconnected
     async def handle_disconnect(session):
         logger.info("Call ended — session=%s", session.id)
-        await kit.disconnect_realtime_voice(session)
+        await kit.leave(session)
 
     # -------------------------------------------------------------------
     # Start backend and dial
