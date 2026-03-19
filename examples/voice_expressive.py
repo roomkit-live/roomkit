@@ -6,7 +6,7 @@ that ElevenLabs renders with matching tone, timing, and delivery.
 
 Audio flows:
 
-  Mic -> [Denoiser] -> VAD -> STT -> Claude -> ElevenLabs v3 TTS -> Speaker
+  Mic -> Deepgram STT -> Claude -> ElevenLabs v3 TTS -> Speaker
 
 The system prompt instructs Claude to use expressive tags naturally.
 Tags last ~4-5 words before reverting to normal delivery.
@@ -25,7 +25,6 @@ Run with:
     ANTHROPIC_API_KEY=... \\
     DEEPGRAM_API_KEY=... \\
     ELEVENLABS_API_KEY=... \\
-    VAD_MODEL=path/to/ten-vad.onnx \\
     uv run python examples/voice_expressive.py
 
 Environment variables:
@@ -33,8 +32,6 @@ Environment variables:
     DEEPGRAM_API_KEY     (required) Deepgram API key
     ELEVENLABS_API_KEY   (required) ElevenLabs API key
     ELEVENLABS_VOICE_ID  Voice ID (default: Rachel)
-    VAD_MODEL            Path to sherpa-onnx VAD .onnx model
-    VAD_MODEL_TYPE       Model type: ten | silero (default: ten)
 """
 
 from __future__ import annotations
@@ -102,19 +99,9 @@ async def main() -> None:
         DeepgramConfig(api_key=os.environ["DEEPGRAM_API_KEY"], model="nova-3")
     )
 
-    # --- VAD ------------------------------------------------------------------
-    from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADConfig, SherpaOnnxVADProvider
-
-    vad_config = SherpaOnnxVADConfig(
-        model_path=os.environ["VAD_MODEL"],
-        model_type=os.environ.get("VAD_MODEL_TYPE", "ten"),
-        threshold=float(os.environ.get("VAD_THRESHOLD", "0.35")),
-    )
-    vad = SherpaOnnxVADProvider(vad_config)
-
     # --- Voice channel --------------------------------------------------------
+    # No local VAD needed — Deepgram handles endpointing natively.
     from roomkit.voice import get_local_audio_backend
-    from roomkit.voice.pipeline import AudioPipelineConfig
 
     LocalAudioBackend = get_local_audio_backend()
     backend = LocalAudioBackend(sample_rate=24000)
@@ -124,7 +111,6 @@ async def main() -> None:
         tts=tts,
         stt=stt,
         backend=backend,
-        pipeline=AudioPipelineConfig(vad=vad),
         # NOTE: do NOT use tts_filter=StripBrackets() with expressive mode
         # — it would strip the [laughs], [whispers], etc. tags.
     )
