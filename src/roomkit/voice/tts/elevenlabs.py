@@ -253,8 +253,13 @@ class ElevenLabsTTSProvider(TTSProvider):
                 logger.error("ElevenLabs stream error %d: %s", response.status_code, body.decode())
                 response.raise_for_status()
 
+            # Larger chunks for PCM reduce PortAudio buffer underruns
+            # when network jitter causes gaps between HTTP chunks.
+            # 16 KB ≈ 340 ms at 24 kHz / 170 ms at 44.1 kHz (PCM 16-bit mono).
+            read_size = 16384 if self._get_audio_format() == "pcm_s16le" else 4096
+
             chunk_index = 0
-            async for chunk in response.aiter_bytes(chunk_size=4096):
+            async for chunk in response.aiter_bytes(chunk_size=read_size):
                 if chunk:
                     yield AudioChunk(
                         data=chunk,
