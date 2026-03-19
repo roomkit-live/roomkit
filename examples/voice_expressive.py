@@ -119,8 +119,8 @@ async def main() -> None:
     # --- Logging hook ---------------------------------------------------------
     @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC)
     async def log_events(event, ctx):
-        text = event.content.text or ""
-        logger.info("[%s] %s", event.source.channel_id, text[:80])
+        body = getattr(event.content, "body", "") or ""
+        logger.info("[%s] %s", event.source.channel_id, body[:80])
 
     # --- Room -----------------------------------------------------------------
     await kit.create_room(room_id="expressive-demo")
