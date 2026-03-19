@@ -34,6 +34,8 @@ VideoPipeline (optional processing)
     │
     ├─ [Decoder] → [Resizer] → [Transforms] → [Filters]
     │
+    ├─ VideoBridge (forward frames to other sessions)
+    │
     ├─ VisionProvider (frame → text description)
     │       │
     │       ▼
@@ -94,6 +96,7 @@ ON_VIDEO_SESSION_STARTED, ON_VIDEO_SESSION_ENDED
 ON_VIDEO_TRACK_ADDED, ON_VIDEO_TRACK_REMOVED
 ON_SCREEN_SHARE_STARTED, ON_SCREEN_SHARE_STOPPED
 ON_VISION_RESULT
+BEFORE_BRIDGE_VIDEO
 ```
 
 ---
@@ -301,7 +304,7 @@ Three areas remain unimplemented:
 - [x] YOLO object detection filter, watermark filter, censor filter
 - [x] 8 video effect transforms (grayscale, sepia, blur, cartoon, etc.)
 - [x] All components have tests, docs, and examples
-- [x] 14 runnable examples
+- [x] 15 runnable examples
 - [x] Video forwarding via VideoBridge (1:1 and 1:N direct forwarding)
 - [ ] Screen sharing as separate track in multi-party
 - [ ] Graceful video → audio-only fallback under poor network
@@ -323,6 +326,8 @@ src/roomkit/
     __init__.py                   # Exports + lazy loaders
     base.py                       # VideoChunk, VideoCapability, VideoSession
     video_frame.py                # VideoFrame dataclass
+    bridge.py                     # VideoBridge, VideoBridgeConfig
+    events.py                     # BridgeVideoEvent
     ai_integration.py             # setup_video_vision(), setup_realtime_vision()
     utils.py                      # make_text_frame()
     backends/
