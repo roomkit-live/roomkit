@@ -478,29 +478,24 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
     def send_video_sync(self, session: VideoSession, frame: VideoFrame) -> None:
         """Synchronously send a video frame via SIP/RTP.
 
-        Called by the video bridge from the RTP receive thread.
-        Schedules ``vcs.send_frame()`` on the event loop via
-        ``call_soon_threadsafe`` to avoid cross-thread corruption
-        of the VP9 depacketizer state on the target session.
+        Called by the video bridge from the inbound RTP callback chain
+        (datagram_received → on_frame → bridge.forward → here), which
+        already runs in the event loop thread.  Calls ``send_frame``
+        directly to avoid the scheduling hop of ``call_soon_threadsafe``
+        that would defer each frame to the next event-loop iteration.
         """
         vcs = self._video_call_sessions.get(session.id)
         if vcs is None:
             logger.debug("send_video_sync: no VCS for session %s", session.id[:8])
             return
         ts = int((frame.timestamp_ms or 0) * 90)  # ms → 90kHz RTP clock
-        data = [frame.data]
-        is_key = frame.keyframe
-        loop = getattr(self, "_loop", None)
-        if loop is not None and loop.is_running():
-            loop.call_soon_threadsafe(vcs.send_frame, data, ts, is_key)
-        else:
-            try:
-                vcs.send_frame(data, ts, is_key)
-            except Exception:
-                logger.exception(
-                    "send_video_sync: send_frame failed for session %s",
-                    session.id[:8],
-                )
+        try:
+            vcs.send_frame([frame.data], ts, frame.keyframe)
+        except Exception:
+            logger.exception(
+                "send_video_sync: send_frame failed for session %s",
+                session.id[:8],
+            )
 
     def request_keyframe(self, session: VideoSession) -> None:
         """Send a PLI (Picture Loss Indication) to the remote endpoint.
@@ -516,6 +511,24 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
             logger.info("PLI sent: session=%s", session.id[:8])
         except Exception:
             logger.debug("Failed to send PLI for session %s", session.id[:8], exc_info=True)
+
+    def set_video_passthrough(self, session_id: str, enabled: bool = True) -> None:
+        """Enable passthrough mode on the underlying video RTP session.
+
+        In passthrough mode the awaiting-keyframe gate is disabled so
+        every assembled frame is delivered regardless of keyframe status.
+        """
+        vcs = self._video_call_sessions.get(session_id)
+        if vcs is None:
+            return
+        rtp_session = getattr(vcs, "video_session", None) or getattr(vcs, "_session", None)
+        if rtp_session is not None and hasattr(rtp_session, "set_passthrough"):
+            rtp_session.set_passthrough(enabled)
+            logger.info(
+                "Video passthrough %s: session=%s",
+                "enabled" if enabled else "disabled",
+                session_id[:8],
+            )
 
     # -------------------------------------------------------------------------
     # Callbacks

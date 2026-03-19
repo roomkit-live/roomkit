@@ -151,13 +151,13 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         if binding_info is None:
             logger.debug("Video frame dropped (no binding): session=%s", session.id[:8])
             return
-        logger.debug(
-            "Video frame: session=%s seq=%d %s %d bytes",
-            session.id[:8],
-            frame.sequence,
-            "KEY" if frame.keyframe else "delta",
-            len(frame.data),
-        )
+        if frame.keyframe:
+            logger.debug(
+                "Video keyframe: session=%s seq=%d %d bytes",
+                session.id[:8],
+                frame.sequence,
+                len(frame.data),
+            )
 
         # Run pipeline stages (decoder, resizer) if configured
         if self._video_pipeline is not None:
@@ -226,6 +226,10 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
             video_backend = self._backend if isinstance(self._backend, VideoBackend) else None
             if video_backend is not None:
                 self._video_bridge.add_session(video_session, room_id, video_backend)
+                # Enable passthrough so the bridge forwards all frames
+                # without blocking on keyframe availability — the remote
+                # decoder handles its own recovery via RTCP.
+                video_backend.set_video_passthrough(session.id, True)
 
         # Start avatar idle frame loop (shows reference image when not speaking)
         self._start_avatar_idle_loop(session)

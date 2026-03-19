@@ -11,9 +11,9 @@ from roomkit.video.bridge import VideoBridge, VideoBridgeConfig
 from roomkit.video.video_frame import VideoFrame
 
 
-def _frame(data: bytes = b"\x00" * 100) -> VideoFrame:
-    """Create a minimal test VideoFrame."""
-    return VideoFrame(data=data, codec="h264", width=640, height=480)
+def _frame(data: bytes = b"\x00" * 100, *, keyframe: bool = True) -> VideoFrame:
+    """Create a minimal test VideoFrame (keyframe by default for bridge tests)."""
+    return VideoFrame(data=data, codec="h264", width=640, height=480, keyframe=keyframe)
 
 
 class TestVideoBridge:
@@ -300,6 +300,27 @@ class TestVideoBridge:
         assert backend_b.sent_video[0][0] == s2.id
         # backend_a should NOT have received it back
         assert len(backend_a.sent_video) == 0
+
+    async def test_delta_frames_forwarded_without_keyframe(self) -> None:
+        """Delta frames are forwarded even without a preceding keyframe.
+
+        In bridge topologies the remote decoder handles recovery;
+        blocking delta frames would prevent video when the source
+        endpoint does not respond to PLI (e.g. B2BUA that doesn't
+        relay RTCP feedback).
+        """
+        backend = MockVideoBackend()
+        bridge = VideoBridge()
+
+        s1 = await backend.connect("room-1", "user-1", "video")
+        s2 = await backend.connect("room-1", "user-2", "video")
+        bridge.add_session(s1, "room-1", backend)
+        bridge.add_session(s2, "room-1", backend)
+
+        # Delta frame passes through immediately
+        bridge.forward(s1, _frame(b"\x01" * 50, keyframe=False))
+        await asyncio.sleep(0)
+        assert len(backend.sent_video) == 1
 
     async def test_readd_session_after_remove(self) -> None:
         """A session can be removed and re-added."""

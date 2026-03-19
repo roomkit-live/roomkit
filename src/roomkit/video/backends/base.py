@@ -140,6 +140,19 @@ class VideoBackend(ABC):
             session: The session to request a keyframe from.
         """
 
+    def set_video_passthrough(self, session_id: str, enabled: bool = True) -> None:  # noqa: B027
+        """Enable passthrough (bridge) mode for a session.
+
+        In passthrough mode the backend delivers every assembled frame
+        to :meth:`on_video_received` regardless of keyframe status.
+        Use this for SFU / bridge topologies where the remote decoder
+        handles its own recovery.
+
+        Args:
+            session_id: The session to configure.
+            enabled: ``True`` to enable passthrough.
+        """
+
     def get_session(self, session_id: str) -> VideoSession | None:
         """Get a session by ID.
 

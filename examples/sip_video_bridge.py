@@ -70,6 +70,7 @@ if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit.video.backend").setLevel(logging.DEBUG)
     logging.getLogger("roomkit.video.sip").setLevel(logging.DEBUG)
     logging.getLogger("roomkit.av").setLevel(logging.DEBUG)
+    logging.getLogger("aiortp.vp9").setLevel(logging.DEBUG)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -89,7 +90,7 @@ async def main() -> None:
         local_sip_addr=("0.0.0.0", SIP_PORT),
         local_rtp_ip=RTP_IP,
         rtp_port_start=RTP_PORT_START,
-        supported_video_codecs=["H264", "VP8", "VP9"],
+        supported_video_codecs=["VP9", "H264"],
     )
 
     # --- A/V channel with audio + video bridge --------------------------------

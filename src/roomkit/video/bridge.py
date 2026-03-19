@@ -77,6 +77,11 @@ class VideoBridge:
         # Per-session frame counters for debug logging
         self._frame_counts: dict[str, int] = {}
         self._keyframe_counts: dict[str, int] = {}
+        # Last keyframe per source session (for stats only)
+        self._last_keyframes: dict[str, VideoFrame] = {}
+        # Per-target: set of source IDs that have delivered a keyframe.
+        # Delta frames are gated until a keyframe initializes the decoder.
+        self._keyframe_delivered: dict[str, set[str]] = {}
 
     @property
     def config(self) -> VideoBridgeConfig:
@@ -132,6 +137,8 @@ class VideoBridge:
                 room_id=room_id,
                 backend=backend,
             )
+            # New target starts with no keyframes delivered from any source
+            self._keyframe_delivered[session.id] = set()
             logger.info(
                 "VideoBridge: added session %s to room %s (%d participants)",
                 session.id[:8],
@@ -172,6 +179,11 @@ class VideoBridge:
                 total = self._frame_counts.pop(session_id, 0)
                 keys = self._keyframe_counts.pop(session_id, 0)
                 self._last_pli_at.pop(session_id, None)
+                self._last_keyframes.pop(session_id, None)
+                self._keyframe_delivered.pop(session_id, None)
+                # Remove this session from other targets' delivered sets
+                for delivered in self._keyframe_delivered.values():
+                    delivered.discard(session_id)
                 logger.info(
                     "VideoBridge: removed session %s from room %s "
                     "(forwarded %d frames, %d keyframes)",
@@ -200,21 +212,21 @@ class VideoBridge:
                 return  # frame dropped
             frame = filtered
 
-        # Periodic PLI: request keyframes unconditionally every N seconds.
-        # We can't know if the receiver got the last keyframe (no RTCP
-        # feedback from outbound path), so we request periodically to
-        # guarantee decoder recovery after any packet loss event.
+        # Periodic PLI: request keyframes from ALL sessions in the room.
+        # Sending PLIs only to the active source is insufficient — other
+        # sessions may be stuck in awaiting-keyframe mode (due to early
+        # packet loss) and need a PLI to recover.  By sending PLIs to
+        # every session, stuck senders receive a keyframe request and
+        # resume frame delivery.
         if self._config.keyframe_interval_s > 0:
             now = time.monotonic()
-            last_pli = self._last_pli_at.get(session.id, 0.0)
-            if now - last_pli >= self._config.keyframe_interval_s:
-                self._last_pli_at[session.id] = now
-                self._request_keyframe_for(session.id)
+            self._request_periodic_keyframes(session.id, now)
 
-        # Track stats
+        # Track stats and buffer keyframes for late joiners
         self._frame_counts[session.id] = self._frame_counts.get(session.id, 0) + 1
         if frame.keyframe:
             self._keyframe_counts[session.id] = self._keyframe_counts.get(session.id, 0) + 1
+            self._last_keyframes[session.id] = frame
             logger.debug(
                 "VideoBridge: keyframe from %s (seq=%d, %d bytes)",
                 session.id[:8],
@@ -252,13 +264,44 @@ class VideoBridge:
             self._last_pli_at.clear()
             self._frame_counts.clear()
             self._keyframe_counts.clear()
+            self._last_keyframes.clear()
+            self._keyframe_delivered.clear()
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _request_periodic_keyframes(self, source_id: str, now: float) -> None:
+        """Request keyframes from all sessions in the source's room if due.
+
+        Unlike requesting only from the active source, this ensures that
+        sessions stuck in awaiting-keyframe mode (due to packet loss)
+        also receive PLI requests and can resume frame delivery.
+        """
+        sessions_to_pli: list[_BridgedVideoSession] = []
+        with self._lock:
+            for room in self._rooms.values():
+                if source_id not in room:
+                    continue
+                for sid, bs in room.items():
+                    last_pli = self._last_pli_at.get(sid, 0.0)
+                    if now - last_pli >= self._config.keyframe_interval_s:
+                        self._last_pli_at[sid] = now
+                        sessions_to_pli.append(bs)
+                break
+        for bs in sessions_to_pli:
+            try:
+                bs.backend.request_keyframe(bs.session)
+                logger.debug("VideoBridge: PLI sent to %s (periodic)", bs.session.id[:8])
+            except Exception:
+                logger.debug(
+                    "VideoBridge: PLI failed for %s",
+                    bs.session.id[:8],
+                    exc_info=True,
+                )
+
     def _request_keyframe_for(self, session_id: str) -> None:
-        """Request a keyframe from a source session's backend."""
+        """Request a keyframe from a specific session's backend."""
         with self._lock:
             for room in self._rooms.values():
                 bs = room.get(session_id)
@@ -268,7 +311,7 @@ class VideoBridge:
                 return
         try:
             bs.backend.request_keyframe(bs.session)
-            logger.debug("VideoBridge: PLI sent to %s (periodic)", session_id[:8])
+            logger.debug("VideoBridge: PLI sent to %s", session_id[:8])
         except Exception:
             logger.debug("VideoBridge: PLI failed for %s", session_id[:8], exc_info=True)
 
