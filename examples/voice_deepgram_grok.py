@@ -22,6 +22,9 @@ Environment variables:
     AEC                 Echo cancellation: webrtc | speex | 0 (default: webrtc)
     DENOISE             Enable RNNoise denoiser: 1 | 0 (default: 1)
 
+    --- Recording (optional, requires roomkit[video] for MP4) ---
+    RECORDING_DIR       Directory for recordings (disabled if unset)
+
     --- AI (optional) ---
     SYSTEM_PROMPT       Custom system prompt for Claude
 
@@ -45,14 +48,17 @@ from roomkit import (
     AnthropicConfig,
     ChannelBinding,
     ChannelCategory,
+    ChannelRecordingConfig,
     ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
+    MediaRecordingConfig,
     RoomKit,
     VoiceChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.recorder import MockMediaRecorder, RoomRecorderBinding
 from roomkit.voice.backends.local import LocalAudioBackend
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
@@ -199,6 +205,31 @@ async def main() -> None:
         "Don't overuse them — sprinkle them in where they feel natural." + lang_instruction,
     )
 
+    # --- Media recorder (optional) --------------------------------------------
+    recording_dir = os.environ.get("RECORDING_DIR", "")
+    recorders = None
+    recording_cfg = None
+    if recording_dir:
+        try:
+            from roomkit.recorder.pyav import PyAVMediaRecorder
+
+            recorder = PyAVMediaRecorder()
+            logger.info("Recording: PyAV → MP4 in %s/", recording_dir)
+        except ImportError:
+            recorder = MockMediaRecorder()
+            logger.info("Recording: Mock (pip install roomkit[video] for MP4)")
+        recording_cfg = ChannelRecordingConfig(audio=True)
+        recorders = [
+            RoomRecorderBinding(
+                recorder=recorder,
+                config=MediaRecordingConfig(
+                    storage=recording_dir,
+                    audio_sample_rate=sample_rate,
+                ),
+                name="main",
+            ),
+        ]
+
     # --- Channels -------------------------------------------------------------
     voice = VoiceChannel(
         "voice",
@@ -206,6 +237,7 @@ async def main() -> None:
         tts=tts,
         backend=backend,
         pipeline=pipeline_config,
+        recording=recording_cfg,
     )
     kit.register_channel(voice)
 
@@ -213,7 +245,7 @@ async def main() -> None:
     kit.register_channel(ai)
 
     # --- Room -----------------------------------------------------------------
-    await kit.create_room(room_id="voice-demo")
+    await kit.create_room(room_id="voice-demo", recorders=recorders)
     await kit.attach_channel("voice-demo", "voice")
     await kit.attach_channel("voice-demo", "ai", category=ChannelCategory.INTELLIGENCE)
 
