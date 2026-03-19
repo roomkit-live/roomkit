@@ -137,7 +137,8 @@ async def main() -> None:
         loop.add_signal_handler(sig, stop.set)
     await stop.wait()
 
-    await kit.shutdown()
+    logger.info("Stopping...")
+    await kit.close()
 
 
 if __name__ == "__main__":
