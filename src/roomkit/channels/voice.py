@@ -6,6 +6,7 @@ import asyncio
 import logging
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -168,7 +169,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # Sessions where speech was suppressed (echo during TTS playback)
         self._suppressed_sessions: set[str] = set()
         # Track delivered event IDs to prevent duplicate TTS delivery
-        self._delivered_tts_events: set[str] = set()
+        self._delivered_tts_events: OrderedDict[str, None] = OrderedDict()
         # The instantiated pipeline engine (if config provided)
         self._pipeline: AudioPipeline | None = None
         # Pending turns for turn detection (session_id -> list of TurnEntry)
@@ -179,8 +180,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._stt_streams: dict[str, _STTStreamState] = {}
         # Continuous STT mode: stream all audio to STT, no local VAD
         self._continuous_stt = False
-        # Post-denoiser energy barge-in state (continuous STT mode)
-        self._barge_in_energy_count = 0
+        # Post-denoiser energy barge-in state (continuous STT mode, per-session)
+        self._barge_in_energy_count: dict[str, int] = {}
         # Timestamp of last TTS playback end per session (for echo diagnostics)
         self._last_tts_ended_at: dict[str, float] = {}
         # Track scheduled fire-and-forget tasks for clean shutdown
@@ -414,8 +415,10 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
     def _on_pipeline_speech_end(self, session: VoiceSession, audio: bytes) -> None:
         """Handle speech end from pipeline — fire hooks and transcribe."""
         # If this speech segment was suppressed (echo during TTS), discard it.
-        if session.id in self._suppressed_sessions:
+        with self._state_lock:
+            was_suppressed = session.id in self._suppressed_sessions
             self._suppressed_sessions.discard(session.id)
+        if was_suppressed:
             logger.debug("Suppressed echo speech end for %s", session.id)
             return
 
@@ -468,7 +471,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                     # Drain period — TTS finished but echo decay in progress.
                     # Suppress STT to avoid transcribing residual echo.
                     suppress_speech = True
-                    self._suppressed_sessions.add(session.id)
+                    with self._state_lock:
+                        self._suppressed_sessions.add(session.id)
                 else:
                     decision = self._interruption_handler.evaluate(
                         playback_position_ms=playback.position_ms,
@@ -488,7 +492,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                         # No interruption and no backchannel — suppress STT
                         # to prevent echo loops (TTS audio picked up by mic).
                         suppress_speech = True
-                        self._suppressed_sessions.add(session.id)
+                        with self._state_lock:
+                            self._suppressed_sessions.add(session.id)
 
             if not suppress_speech:
                 # Start streaming STT if provider supports it
@@ -523,10 +528,10 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
     def _on_processed_frame_for_level(self, session: VoiceSession, frame: AudioFrame) -> None:
         """Fire ON_INPUT_AUDIO_LEVEL hook, throttled to ~10/sec per session."""
         now = time.monotonic()
-        if now - self._last_input_level_at.get(session.id, 0.0) < 0.1:
-            return
-        self._last_input_level_at[session.id] = now
         with self._state_lock:
+            if now - self._last_input_level_at.get(session.id, 0.0) < 0.1:
+                return
+            self._last_input_level_at[session.id] = now
             binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
@@ -548,10 +553,10 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         TTS mixin so they naturally deduplicate.
         """
         now = time.monotonic()
-        if now - self._last_output_level_at.get(session.id, 0.0) < 0.1:
-            return
-        self._last_output_level_at[session.id] = now
         with self._state_lock:
+            if now - self._last_output_level_at.get(session.id, 0.0) < 0.1:
+                return
+            self._last_output_level_at[session.id] = now
             binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
@@ -966,8 +971,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         """Remove session binding."""
         # Cancel any active streaming STT
         self._cancel_stt_stream(session.id)
-        self._session_ready_pending.discard(session.id)
         with self._state_lock:
+            self._session_ready_pending.discard(session.id)
             binding_info = self._session_bindings.pop(session.id, None)
         if binding_info is None:
             return  # Already unbound — prevent double pipeline/telemetry calls

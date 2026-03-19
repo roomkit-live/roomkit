@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import time
+from collections import OrderedDict
 from collections.abc import AsyncGenerator, AsyncIterator, Coroutine
 from typing import TYPE_CHECKING, Any
 
@@ -51,7 +52,7 @@ class VoiceTTSMixin:
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
     _playing_sessions: dict[str, TTSPlaybackState]
     _playback_done_events: dict[str, asyncio.Event]
-    _delivered_tts_events: set[str]
+    _delivered_tts_events: OrderedDict[str, None]
     _last_tts_ended_at: dict[str, float]
     _last_output_level_at: dict[str, float]
     _debug_frame_count: int
@@ -74,10 +75,10 @@ class VoiceTTSMixin:
     def _fire_output_level(self, session: VoiceSession, data: bytes) -> None:
         """Fire ON_OUTPUT_AUDIO_LEVEL hook from the outbound pipeline, throttled."""
         now = time.monotonic()
-        if now - self._last_output_level_at.get(session.id, 0.0) < 0.1:
-            return
-        self._last_output_level_at[session.id] = now
         with self._state_lock:  # type: ignore[attr-defined]
+            if now - self._last_output_level_at.get(session.id, 0.0) < 0.1:
+                return
+            self._last_output_level_at[session.id] = now
             binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._framework:
             return
@@ -245,10 +246,12 @@ class VoiceTTSMixin:
             return ChannelOutputModel.empty()
 
         # Track event to prevent duplicate TTS delivery (streaming + broadcast)
-        self._delivered_tts_events.add(event.id)
+        self._delivered_tts_events[event.id] = None
         if len(self._delivered_tts_events) > 200:
-            self._delivered_tts_events.clear()
-            self._delivered_tts_events.add(event.id)
+            # Evict oldest 10%
+            for _ in range(20):
+                if self._delivered_tts_events:
+                    self._delivered_tts_events.popitem(last=False)
 
         tts_name = self._tts.name  # capture before async yields (may become None)
         room_id = event.room_id
@@ -545,10 +548,12 @@ class VoiceTTSMixin:
         if event.id in self._delivered_tts_events:
             logger.debug("Skipping duplicate TTS for event %s", event.id)
             return
-        self._delivered_tts_events.add(event.id)
+        self._delivered_tts_events[event.id] = None
         if len(self._delivered_tts_events) > 200:
-            self._delivered_tts_events.clear()
-            self._delivered_tts_events.add(event.id)
+            # Evict oldest 10%
+            for _ in range(20):
+                if self._delivered_tts_events:
+                    self._delivered_tts_events.popitem(last=False)
 
         try:
             before_result = await self._framework.hook_engine.run_sync_hooks(

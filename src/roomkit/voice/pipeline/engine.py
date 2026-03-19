@@ -112,8 +112,8 @@ class AudioPipeline:
         self._segment_frame_counts: dict[str, int] = {}
         # Parent span for pipeline (session_id -> voice_session_span_id)
         self._parent_spans: dict[str, str] = {}
-        self._frame_count: int = 0
-        self._bytes_processed: int = 0
+        self._frame_count: dict[str, int] = {}
+        self._bytes_processed: dict[str, int] = {}
         self._metric_interval: int = 500  # emit metrics every N frames
         # Resolve effective resampler (auto-default when contract is set)
         self._resampler: ResamplerProvider | None
@@ -502,20 +502,24 @@ class AudioPipeline:
                 except Exception:
                     logger.exception("Processed frame callback error")
 
-        # Telemetry metrics (lightweight, periodic)
-        self._frame_count += 1
-        self._bytes_processed += len(frame.data)
-        if self._telemetry is not None and self._frame_count % self._metric_interval == 0:
+        # Telemetry metrics (lightweight, periodic) — per-session counters
+        # avoid contention when multiple sessions process concurrently.
+        sid = session.id
+        fc = self._frame_count.get(sid, 0) + 1
+        self._frame_count[sid] = fc
+        bp = self._bytes_processed.get(sid, 0) + len(frame.data)
+        self._bytes_processed[sid] = bp
+        if self._telemetry is not None and fc % self._metric_interval == 0:
             self._telemetry.record_metric(
                 "roomkit.pipeline.frame_count",
-                float(self._frame_count),
-                attributes={"session_id": session.id},
+                float(fc),
+                attributes={"session_id": sid},
             )
             self._telemetry.record_metric(
                 "roomkit.pipeline.bytes_processed",
-                float(self._bytes_processed),
+                float(bp),
                 unit="bytes",
-                attributes={"session_id": session.id},
+                attributes={"session_id": sid},
             )
 
     # -----------------------------------------------------------------
@@ -671,6 +675,8 @@ class AudioPipeline:
         self._last_speaker_id.pop(session_id, None)
         self._segment_stage_timings.pop(session_id, None)
         self._segment_frame_counts.pop(session_id, None)
+        self._frame_count.pop(session_id, None)
+        self._bytes_processed.pop(session_id, None)
         self._outbound_locks.pop(session_id, None)
         handle = self._recording_handles.pop(session_id, None)
         if handle is not None and self._config.recorder is not None:
@@ -726,6 +732,8 @@ class AudioPipeline:
         # Clean up telemetry dicts that _end_segment_span may not fully clean
         self._segment_stage_timings.pop(session.id, None)
         self._segment_frame_counts.pop(session.id, None)
+        self._frame_count.pop(session.id, None)
+        self._bytes_processed.pop(session.id, None)
 
         # Close debug taps
         dt = self._debug_tap_sessions.pop(session.id, None)
@@ -755,6 +763,8 @@ class AudioPipeline:
         self._segment_spans.clear()
         self._segment_stage_timings.clear()
         self._segment_frame_counts.clear()
+        self._frame_count.clear()
+        self._bytes_processed.clear()
         self._parent_spans.clear()
         self._outbound_locks.clear()
         self._inbound_sample_rate = None

@@ -69,7 +69,7 @@ class VoiceSTTMixin:
     _pending_turns: dict[str, list[TurnEntry]]
     _pending_audio: dict[str, bytearray]
     _debug_frame_count: int
-    _barge_in_energy_count: int
+    _barge_in_energy_count: dict[str, int]
     _scheduled_tasks: set[asyncio.Task[Any]]
 
     # -- methods provided by other mixins / main class (TYPE_CHECKING only) --
@@ -267,36 +267,44 @@ class VoiceSTTMixin:
         samples = struct.unpack(f"<{n_samples}h", frame.data)
         rms = (sum(s * s for s in samples) / n_samples) ** 0.5
 
-        if rms > self._BARGE_IN_RMS_THRESHOLD:
-            self._barge_in_energy_count += 1
-        else:
-            self._barge_in_energy_count = 0
+        with self._state_lock:  # type: ignore[attr-defined]
+            if rms > self._BARGE_IN_RMS_THRESHOLD:
+                self._barge_in_energy_count[session.id] = (
+                    self._barge_in_energy_count.get(session.id, 0) + 1
+                )
+            else:
+                self._barge_in_energy_count[session.id] = 0
 
-        if self._barge_in_energy_count >= self._BARGE_IN_FRAMES_REQUIRED:
-            self._barge_in_energy_count = 0
-            with self._state_lock:  # type: ignore[attr-defined]
-                binding_info = self._session_bindings.get(session.id)
-            if binding_info:
-                room_id, _ = binding_info
-                # Consult the interruption handler before firing barge-in
-                # (respects InterruptionStrategy.DISABLED and other policies).
-                handler: InterruptionHandler = self._interruption_handler  # type: ignore[attr-defined]
-                decision = handler.evaluate(
-                    playback_position_ms=playback.position_ms,
-                    speech_duration_ms=0,
-                )
-                if not decision.should_interrupt:
-                    return
-                logger.info(
-                    "Energy barge-in (post-denoiser): rms=%.0f, threshold=%.0f, pos=%dms",
-                    rms,
-                    self._BARGE_IN_RMS_THRESHOLD,
-                    playback.position_ms,
-                )
-                self._schedule(
-                    self._handle_barge_in(session, playback, room_id),
-                    name=f"energy_barge_in:{session.id}",
-                )
+            triggered = (
+                self._barge_in_energy_count.get(session.id, 0) >= self._BARGE_IN_FRAMES_REQUIRED
+            )
+            if triggered:
+                self._barge_in_energy_count[session.id] = 0
+            binding_info = self._session_bindings.get(session.id)
+
+        if not triggered:
+            return
+        if binding_info:
+            room_id, _ = binding_info
+            # Consult the interruption handler before firing barge-in
+            # (respects InterruptionStrategy.DISABLED and other policies).
+            handler: InterruptionHandler = self._interruption_handler  # type: ignore[attr-defined]
+            decision = handler.evaluate(
+                playback_position_ms=playback.position_ms,
+                speech_duration_ms=0,
+            )
+            if not decision.should_interrupt:
+                return
+            logger.info(
+                "Energy barge-in (post-denoiser): rms=%.0f, threshold=%.0f, pos=%dms",
+                rms,
+                self._BARGE_IN_RMS_THRESHOLD,
+                playback.position_ms,
+            )
+            self._schedule(
+                self._handle_barge_in(session, playback, room_id),
+                name=f"energy_barge_in:{session.id}",
+            )
 
     def _on_processed_frame_for_stt(self, session: VoiceSession, frame: AudioFrame) -> None:
         """Feed every processed frame to the continuous STT stream.
@@ -319,8 +327,9 @@ class VoiceSTTMixin:
             done_ev = self._playback_done_events.get(session.id)
             if done_ev is None or not done_ev.is_set():
                 self._check_energy_barge_in(session, frame, playback)
-        elif self._barge_in_energy_count > 0:
-            self._barge_in_energy_count = 0
+        elif self._barge_in_energy_count.get(session.id, 0) > 0:
+            with self._state_lock:  # type: ignore[attr-defined]
+                self._barge_in_energy_count[session.id] = 0
 
         stream_state = self._stt_streams.get(session.id)
         if stream_state is None or stream_state.cancelled:

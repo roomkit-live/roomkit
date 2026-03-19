@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import array
-import struct
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -103,21 +102,14 @@ class RecordingMixin:
                 out_samples = outbound_buf[:take]
                 del outbound_buf[:take]
 
-            # Mix inbound + outbound sample-by-sample
-            in_samples = struct.unpack(f"<{n_samples}h", data)
-            mixed = bytearray(len(data))
-            for i in range(n_samples):
-                s = in_samples[i]
-                if i < take:
-                    s += out_samples[i]
-                    s = max(-32768, min(32767, s))
-                struct.pack_into("<h", mixed, i * 2, s)
-
-            mgr.on_data(room_id, track, bytes(mixed), time.monotonic() * 1000)
+            # Mix inbound + outbound using array.array (avoids per-sample struct calls)
+            in_arr = array.array("h", data)
+            for i in range(take):
+                in_arr[i] = max(-32768, min(32767, in_arr[i] + out_samples[i]))
+            mgr.on_data(room_id, track, in_arr.tobytes(), time.monotonic() * 1000)
 
         def _outbound_tap(sess: VoiceSession, data: bytes, sample_rate: int) -> None:
-            n_samples = len(data) // 2
-            samples = struct.unpack(f"<{n_samples}h", data)
+            samples = array.array("h", data)
             with buf_lock:
                 outbound_buf.extend(samples)
                 overflow = len(outbound_buf) - max_outbound_samples

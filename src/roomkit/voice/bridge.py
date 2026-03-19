@@ -363,13 +363,22 @@ class AudioBridge:
 # Cached singletons (module-level, lazy)
 # ======================================================================
 
+_resampler_lock = threading.Lock()
 _resampler_instance: ResamplerProvider | None = None
 
 
 def _get_resampler() -> ResamplerProvider:
-    """Return the best available resampler: NumPy if installed, else pure Python."""
+    """Return the best available resampler: NumPy if installed, else pure Python.
+
+    Uses double-checked locking so the fast path (already initialized) is
+    lock-free, while concurrent first calls are serialized.
+    """
     global _resampler_instance  # noqa: PLW0603
-    if _resampler_instance is None:
+    if _resampler_instance is not None:
+        return _resampler_instance
+    with _resampler_lock:
+        if _resampler_instance is not None:
+            return _resampler_instance
         try:
             from roomkit.voice.pipeline.resampler.numpy import NumpyResamplerProvider
 
@@ -378,7 +387,7 @@ def _get_resampler() -> ResamplerProvider:
             from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
 
             _resampler_instance = LinearResamplerProvider()
-    return _resampler_instance
+        return _resampler_instance
 
 
 def _get_default_mixer() -> MixerProvider:
