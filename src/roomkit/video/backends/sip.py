@@ -476,26 +476,34 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
                 vcs.send_frame([chunk.data], ts, chunk.keyframe)
 
     def send_video_sync(self, session: VideoSession, frame: VideoFrame) -> None:
-        """Synchronously send a video frame via SIP/RTP.
+        """Schedule a video frame for sending via SIP/RTP.
 
         Called by the video bridge from the inbound RTP callback chain
         (datagram_received → on_frame → bridge.forward → here), which
-        already runs in the event loop thread.  Calls ``send_frame``
-        directly to avoid the scheduling hop of ``call_soon_threadsafe``
-        that would defer each frame to the next event-loop iteration.
+        already runs in the event loop thread.  Uses ``call_soon`` to
+        defer the actual send to the next event-loop iteration — this
+        lets audio packets and RTCP feedback (including PLI responses)
+        process between inbound and outbound video, preventing event
+        loop starvation at high frame rates.
         """
         vcs = self._video_call_sessions.get(session.id)
         if vcs is None:
             logger.debug("send_video_sync: no VCS for session %s", session.id[:8])
             return
         ts = int((frame.timestamp_ms or 0) * 90)  # ms → 90kHz RTP clock
-        try:
-            vcs.send_frame([frame.data], ts, frame.keyframe)
-        except Exception:
-            logger.exception(
-                "send_video_sync: send_frame failed for session %s",
-                session.id[:8],
-            )
+        data = [frame.data]
+        is_key = frame.keyframe
+        loop = self._loop
+        if loop is not None and loop.is_running():
+            loop.call_soon(vcs.send_frame, data, ts, is_key)
+        else:
+            try:
+                vcs.send_frame(data, ts, is_key)
+            except Exception:
+                logger.exception(
+                    "send_video_sync: send_frame failed for session %s",
+                    session.id[:8],
+                )
 
     def request_keyframe(self, session: VideoSession) -> None:
         """Send a PLI (Picture Loss Indication) to the remote endpoint.
