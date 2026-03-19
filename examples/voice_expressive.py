@@ -23,12 +23,14 @@ Requirements:
 
 Run with:
     ANTHROPIC_API_KEY=... \\
+    DEEPGRAM_API_KEY=... \\
     ELEVENLABS_API_KEY=... \\
     VAD_MODEL=path/to/ten-vad.onnx \\
     uv run python examples/voice_expressive.py
 
 Environment variables:
     ANTHROPIC_API_KEY    (required) Anthropic API key
+    DEEPGRAM_API_KEY     (required) Deepgram API key
     ELEVENLABS_API_KEY   (required) ElevenLabs API key
     ELEVENLABS_VOICE_ID  Voice ID (default: Rachel)
     VAD_MODEL            Path to sherpa-onnx VAD .onnx model
@@ -93,11 +95,12 @@ async def main() -> None:
         )
     )
 
-    # --- STT (Deepgram or sherpa-onnx) ----------------------------------------
-    from roomkit.voice.stt import get_sherpa_stt_provider
+    # --- STT (Deepgram) -------------------------------------------------------
+    from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 
-    SherpaSTTProvider = get_sherpa_stt_provider()
-    stt = SherpaSTTProvider()
+    stt = DeepgramSTTProvider(
+        DeepgramConfig(api_key=os.environ["DEEPGRAM_API_KEY"], model="nova-3")
+    )
 
     # --- VAD ------------------------------------------------------------------
     from roomkit.voice.pipeline.vad import SherpaVADConfig, SherpaVADProvider
