@@ -34,15 +34,15 @@ class VideoBridgeConfig:
         max_participants: Maximum sessions per room.
         forwarding_strategy: ``"forward"`` for direct frame forwarding.
             ``"composite"`` (grid layout) is deferred to a future release.
+        keyframe_interval_s: Send PLI to each source every N seconds.
+            Ensures decoder recovery after packet loss on the outbound
+            bridge-to-receiver path. Set to ``0`` to disable.
     """
 
     enabled: bool = True
     max_participants: int = 10
     forwarding_strategy: Literal["forward"] = "forward"
     keyframe_interval_s: float = 5.0
-    """Request a keyframe from each source if none seen within this interval.
-    Ensures decoder recovery after packet loss on the bridge→receiver path.
-    Set to ``0`` to disable periodic keyframe requests."""
 
 
 @dataclass
@@ -72,8 +72,11 @@ class VideoBridge:
         self._lock = threading.Lock()
         self._frame_filter: BridgeVideoFrameFilter | None = None
         self._frame_processor: BridgeVideoFrameProcessor | None = None
-        # Track last keyframe time per source session for periodic PLI
-        self._last_keyframe_at: dict[str, float] = {}
+        # Track last PLI request time per source session
+        self._last_pli_at: dict[str, float] = {}
+        # Per-session frame counters for debug logging
+        self._frame_counts: dict[str, int] = {}
+        self._keyframe_counts: dict[str, int] = {}
 
     @property
     def config(self) -> VideoBridgeConfig:
@@ -131,16 +134,18 @@ class VideoBridge:
             )
             logger.info(
                 "VideoBridge: added session %s to room %s (%d participants)",
-                session.id,
+                session.id[:8],
                 room_id,
                 len(room),
             )
 
         # Request keyframes from all existing sessions (outside lock).
-        # Their next keyframe will be forwarded to the new participant,
-        # allowing its decoder to start without waiting for the natural
-        # keyframe interval.
         for bs in existing:
+            logger.debug(
+                "VideoBridge: requesting initial keyframe from %s for new participant %s",
+                bs.session.id[:8],
+                session.id[:8],
+            )
             try:
                 bs.backend.request_keyframe(bs.session)
             except Exception:
@@ -164,11 +169,16 @@ class VideoBridge:
             if found_room_id is not None:
                 if not self._rooms[found_room_id]:
                     del self._rooms[found_room_id]
-                self._last_keyframe_at.pop(session_id, None)
+                total = self._frame_counts.pop(session_id, 0)
+                keys = self._keyframe_counts.pop(session_id, 0)
+                self._last_pli_at.pop(session_id, None)
                 logger.info(
-                    "VideoBridge: removed session %s from room %s",
-                    session_id,
+                    "VideoBridge: removed session %s from room %s "
+                    "(forwarded %d frames, %d keyframes)",
+                    session_id[:8],
                     found_room_id,
+                    total,
+                    keys,
                 )
 
     def forward(self, session: VideoSession, frame: VideoFrame) -> None:
@@ -190,17 +200,27 @@ class VideoBridge:
                 return  # frame dropped
             frame = filtered
 
-        # Track keyframes and request new ones when stale.
-        # Packet loss on the bridge→receiver path can freeze decoders;
-        # periodic PLI ensures recovery within keyframe_interval_s.
-        if frame.keyframe:
-            self._last_keyframe_at[session.id] = time.monotonic()
-        elif self._config.keyframe_interval_s > 0:
+        # Periodic PLI: request keyframes unconditionally every N seconds.
+        # We can't know if the receiver got the last keyframe (no RTCP
+        # feedback from outbound path), so we request periodically to
+        # guarantee decoder recovery after any packet loss event.
+        if self._config.keyframe_interval_s > 0:
             now = time.monotonic()
-            last = self._last_keyframe_at.get(session.id, 0.0)
-            if now - last >= self._config.keyframe_interval_s:
-                self._last_keyframe_at[session.id] = now
+            last_pli = self._last_pli_at.get(session.id, 0.0)
+            if now - last_pli >= self._config.keyframe_interval_s:
+                self._last_pli_at[session.id] = now
                 self._request_keyframe_for(session.id)
+
+        # Track stats
+        self._frame_counts[session.id] = self._frame_counts.get(session.id, 0) + 1
+        if frame.keyframe:
+            self._keyframe_counts[session.id] = self._keyframe_counts.get(session.id, 0) + 1
+            logger.debug(
+                "VideoBridge: keyframe from %s (seq=%d, %d bytes)",
+                session.id[:8],
+                frame.sequence,
+                len(frame.data),
+            )
 
         with self._lock:
             targets = self._get_targets(session.id)
@@ -229,7 +249,9 @@ class VideoBridge:
         """Remove all sessions and clean up."""
         with self._lock:
             self._rooms.clear()
-            self._last_keyframe_at.clear()
+            self._last_pli_at.clear()
+            self._frame_counts.clear()
+            self._keyframe_counts.clear()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -246,8 +268,9 @@ class VideoBridge:
                 return
         try:
             bs.backend.request_keyframe(bs.session)
+            logger.debug("VideoBridge: PLI sent to %s (periodic)", session_id[:8])
         except Exception:
-            logger.debug("Failed to request keyframe from %s", session_id[:8], exc_info=True)
+            logger.debug("VideoBridge: PLI failed for %s", session_id[:8], exc_info=True)
 
     def _get_targets(self, source_id: str) -> list[_BridgedVideoSession]:
         """Get target sessions for forwarding (caller holds lock)."""
@@ -269,6 +292,6 @@ class VideoBridge:
         except Exception:
             logger.exception(
                 "VideoBridge: failed to forward video from %s to %s",
-                source.id,
-                target.session.id,
+                source.id[:8],
+                target.session.id[:8],
             )

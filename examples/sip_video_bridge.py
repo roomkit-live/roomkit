@@ -66,6 +66,9 @@ logger = logging.getLogger("sip_video_bridge")
 
 if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit").setLevel(logging.DEBUG)
+    # Enable video bridge debug logging specifically
+    logging.getLogger("roomkit.video.bridge").setLevel(logging.DEBUG)
+    logging.getLogger("roomkit.video.backend").setLevel(logging.DEBUG)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -121,20 +124,20 @@ async def main() -> None:
 
     # --- Video frame counter for logging --------------------------------------
     frame_counts: dict[str, int] = {}
+    keyframe_counts: dict[str, int] = {}
 
     def on_video(session, frame):
         sid = session.id
         frame_counts[sid] = frame_counts.get(sid, 0) + 1
-        count = frame_counts[sid]
-        if count % 30 == 1:  # log every ~1s at 30fps
+        if frame.keyframe:
+            keyframe_counts[sid] = keyframe_counts.get(sid, 0) + 1
             logger.info(
-                "Video: session=%s frame=#%d codec=%s %dx%d %s",
+                "Video keyframe: session=%s codec=%s %dx%d (frame #%d)",
                 sid[:8],
-                count,
                 frame.codec,
                 frame.width,
                 frame.height,
-                "KEY" if frame.keyframe else "",
+                frame_counts[sid],
             )
 
     av.add_video_media_tap(on_video)
@@ -172,12 +175,14 @@ async def main() -> None:
     def on_call_ended(session: object) -> None:
         sid = getattr(session, "id", "unknown")
         total = frame_counts.pop(sid, 0)
+        keys = keyframe_counts.pop(sid, 0)
         audio_count = av._bridge.get_participant_count(ROOM_ID) if av._bridge else 0
         video_count = av._video_bridge.get_participant_count(ROOM_ID) if av._video_bridge else 0
         logger.info(
-            "Call ended: session=%s, video_frames=%d — room: %d audio, %d video",
+            "Call ended: session=%s, %d frames (%d keyframes) — room: %d audio, %d video",
             sid[:8],
             total,
+            keys,
             audio_count,
             video_count,
         )
