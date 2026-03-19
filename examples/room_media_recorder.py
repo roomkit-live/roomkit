@@ -26,14 +26,10 @@ import contextlib
 import logging
 import signal
 
-from roomkit import (
-    MediaRecordingConfig,
-    RoomKit,
-    VideoChannel,
-    VideoFrame,
-    VoiceChannel,
-)
+from roomkit import RoomKit, VideoChannel, VoiceChannel
 from roomkit.recorder import MockMediaRecorder, RoomRecorderBinding
+from roomkit.recorder.base import MediaRecordingConfig
+from roomkit.video import VideoFrame
 from roomkit.video.backends.local import LocalVideoBackend
 from roomkit.voice.backends.local import LocalAudioBackend
 from roomkit.voice.pipeline.config import AudioPipelineConfig

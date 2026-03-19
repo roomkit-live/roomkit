@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from roomkit import RoomKit, StatusBus
-from roomkit.orchestration.status_bus import InMemoryStatusBackend, StatusLevel
+from roomkit import RoomKit
+from roomkit.orchestration.status_bus import InMemoryStatusBackend, StatusBus, StatusLevel
 
 
 async def test_status_bus_available_by_default() -> None:

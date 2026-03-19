@@ -8,8 +8,6 @@ from collections.abc import AsyncIterator
 from roomkit import (
     HookExecution,
     HookTrigger,
-    MockSTTProvider,
-    MockVoiceBackend,
     RoomKit,
     VoiceChannel,
 )
@@ -19,9 +17,11 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelType
 from roomkit.providers.ai.base import AIContext, AIProvider, AIResponse
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import AudioChunk, VoiceCapability
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.base import TTSProvider
 
 

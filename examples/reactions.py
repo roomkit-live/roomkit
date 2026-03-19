@@ -15,14 +15,8 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 
-from roomkit import (
-    EphemeralEvent,
-    EphemeralEventType,
-    InboundMessage,
-    RoomKit,
-    TextContent,
-    WebSocketChannel,
-)
+from roomkit import InboundMessage, RoomKit, TextContent, WebSocketChannel
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 
 # Track reactions: message_id -> {emoji: set of users}
 reaction_tracker: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))

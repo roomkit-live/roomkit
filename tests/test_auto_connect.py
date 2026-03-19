@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from roomkit import (
-    MockVoiceBackend,
     RoomKit,
     VoiceChannel,
 )
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import VoiceSessionState
 from roomkit.voice.pipeline import AudioPipelineConfig
 

@@ -4,13 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
-from roomkit import (
-    EphemeralEvent,
-    EphemeralEventType,
-    InMemoryRealtime,
-    RealtimeBackend,
-    RoomKit,
-)
+from roomkit import RoomKit
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType, RealtimeBackend
+from roomkit.realtime.memory import InMemoryRealtime
 
 
 class TestEphemeralEvent:

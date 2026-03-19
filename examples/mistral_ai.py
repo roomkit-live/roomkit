@@ -12,14 +12,13 @@ import os
 from roomkit import (
     ChannelCategory,
     InboundMessage,
-    MistralAIProvider,
-    MistralConfig,
     RoomEvent,
     RoomKit,
     TextContent,
     WebSocketChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.mistral import MistralAIProvider, MistralConfig
 
 
 async def main() -> None:

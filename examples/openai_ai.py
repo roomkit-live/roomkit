@@ -12,14 +12,13 @@ import os
 from roomkit import (
     ChannelCategory,
     InboundMessage,
-    OpenAIAIProvider,
-    OpenAIConfig,
     RoomEvent,
     RoomKit,
     TextContent,
     WebSocketChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.openai import OpenAIAIProvider, OpenAIConfig
 
 
 async def main() -> None:

@@ -9,14 +9,9 @@ from __future__ import annotations
 import asyncio
 import os
 
-from roomkit import (
-    HTTPProviderConfig,
-    RoomKit,
-    WebhookHTTPProvider,
-    WebSocketChannel,
-    parse_http_webhook,
-)
+from roomkit import RoomKit, WebSocketChannel
 from roomkit.channels import HTTPChannel
+from roomkit.providers.http import HTTPProviderConfig, WebhookHTTPProvider, parse_http_webhook
 
 
 async def main() -> None:

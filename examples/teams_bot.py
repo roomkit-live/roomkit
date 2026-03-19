@@ -25,18 +25,16 @@ import os
 
 from aiohttp import web
 
-from roomkit import (
-    BotFrameworkTeamsProvider,
-    HookExecution,
-    RoomKit,
-    TeamsConfig,
+from roomkit import HookExecution, RoomKit
+from roomkit.channels import TeamsChannel
+from roomkit.models.enums import HookTrigger
+from roomkit.providers.teams import BotFrameworkTeamsProvider, TeamsConfig
+from roomkit.providers.teams.webhook import (
     is_bot_added,
     parse_teams_activity,
     parse_teams_reactions,
     parse_teams_webhook,
 )
-from roomkit.channels import TeamsChannel
-from roomkit.models.enums import HookTrigger
 
 
 async def main() -> None:

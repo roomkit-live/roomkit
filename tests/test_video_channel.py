@@ -9,14 +9,14 @@ import pytest
 from roomkit import (
     HookExecution,
     HookTrigger,
-    MockVideoBackend,
-    MockVisionProvider,
     RoomKit,
     VideoChannel,
-    VideoFrame,
 )
 from roomkit.models.enums import ChannelType
 from roomkit.models.session_event import SessionStartedEvent
+from roomkit.video.backends.mock import MockVideoBackend
+from roomkit.video.video_frame import VideoFrame
+from roomkit.video.vision.mock import MockVisionProvider
 
 
 @pytest.fixture

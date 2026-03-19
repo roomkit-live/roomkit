@@ -10,8 +10,6 @@ import asyncio
 import os
 
 from roomkit import (
-    AnthropicAIProvider,
-    AnthropicConfig,
     ChannelCategory,
     InboundMessage,
     RoomEvent,
@@ -20,6 +18,7 @@ from roomkit import (
     WebSocketChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 
 
 async def main() -> None:

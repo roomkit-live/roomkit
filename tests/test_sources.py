@@ -9,17 +9,19 @@ from typing import TYPE_CHECKING
 import pytest
 
 from roomkit import (
-    BaseSourceProvider,
     InboundMessage,
     RoomKit,
     SourceAlreadyAttachedError,
-    SourceHealth,
     SourceNotFoundError,
-    SourceProvider,
-    SourceStatus,
     TextContent,
 )
-from roomkit.sources.base import EmitCallback
+from roomkit.sources.base import (
+    BaseSourceProvider,
+    EmitCallback,
+    SourceHealth,
+    SourceProvider,
+    SourceStatus,
+)
 
 if TYPE_CHECKING:
     from roomkit.models.delivery import InboundResult

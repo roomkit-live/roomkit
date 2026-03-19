@@ -23,16 +23,11 @@ import contextlib
 import logging
 import signal
 
-from roomkit import (
-    HookExecution,
-    HookTrigger,
-    RoomKit,
-    VideoChannel,
-    VideoFrame,
-    VideoPipelineConfig,
-)
+from roomkit import HookExecution, HookTrigger, RoomKit, VideoChannel
 from roomkit.models.session_event import SessionStartedEvent
+from roomkit.video import VideoFrame
 from roomkit.video.backends.local import LocalVideoBackend
+from roomkit.video.pipeline import VideoPipelineConfig
 from roomkit.video.recorder import MockVideoRecorder, VideoRecordingConfig
 
 logging.basicConfig(level=logging.WARNING)

@@ -5,19 +5,19 @@ import asyncio
 from roomkit import (
     HookExecution,
     HookTrigger,
-    MockAIProvider,
-    MockSTTProvider,
-    MockTTSProvider,
-    MockVoiceBackend,
     RoomKit,
     VoiceChannel,
 )
 from roomkit.channels.ai import AIChannel
 from roomkit.models.event import TextContent
+from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import VoiceSessionState
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+from roomkit.voice.stt.mock import MockSTTProvider
+from roomkit.voice.tts.mock import MockTTSProvider
 
 
 def _speech_events(audio: bytes = b"fake-audio-data\x00") -> list[VADEvent | None]:

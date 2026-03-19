@@ -5,16 +5,16 @@ from __future__ import annotations
 import pytest
 
 from roomkit import (
-    MockVideoBackend,
     RoomKit,
     VideoChannel,
-    VideoFrame,
-    VideoPipelineConfig,
 )
+from roomkit.video.backends.mock import MockVideoBackend
+from roomkit.video.pipeline.config import VideoPipelineConfig
 from roomkit.video.recorder import (
     MockVideoRecorder,
     VideoRecordingConfig,
 )
+from roomkit.video.video_frame import VideoFrame
 
 
 @pytest.fixture

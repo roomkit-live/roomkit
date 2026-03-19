@@ -18,14 +18,8 @@ from __future__ import annotations
 import asyncio
 import os
 
-from roomkit import (
-    InboundMessage,
-    InMemoryStore,
-    RoomEvent,
-    RoomKit,
-    TextContent,
-    WebSocketChannel,
-)
+from roomkit import InboundMessage, RoomEvent, RoomKit, TextContent, WebSocketChannel
+from roomkit.store.memory import InMemoryStore
 
 
 async def main() -> None:

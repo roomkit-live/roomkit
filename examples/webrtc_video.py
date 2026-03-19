@@ -38,8 +38,6 @@ from fastapi.responses import HTMLResponse
 
 from roomkit import (
     AIChannel,
-    AnthropicAIProvider,
-    AnthropicConfig,
     AudioVideoChannel,
     ChannelCategory,
     HookExecution,
@@ -47,6 +45,7 @@ from roomkit import (
     HookTrigger,
     RoomKit,
 )
+from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.video.backends.fastrtc import FastRTCVideoBackend, mount_fastrtc_av
 from roomkit.video.vision.openai import OpenAIVisionConfig, OpenAIVisionProvider
 from roomkit.voice.pipeline import AudioPipelineConfig

@@ -31,12 +31,12 @@ from roomkit import (
     HookResult,
     HookTrigger,
     InboundMessage,
-    MockAIProvider,
     RoomKit,
     TextContent,
     VoiceChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.pipeline import (

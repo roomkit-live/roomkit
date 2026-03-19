@@ -103,19 +103,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sip_local_agent")
 
-from roomkit import (
-    ChannelCategory,
-    HookResult,
-    HookTrigger,
-    RoomKit,
-    VLLMConfig,
-    VoiceChannel,
-    create_vllm_provider,
-)
+from roomkit import ChannelCategory, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent, SystemContent
 from roomkit.models.trace import ProtocolTrace
+from roomkit.providers.vllm import VLLMConfig, create_vllm_provider
 from roomkit.voice.backends.sip import SIPVoiceBackend
 from roomkit.voice.pipeline import (
     AudioFormat,

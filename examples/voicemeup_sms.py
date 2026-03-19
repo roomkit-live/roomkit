@@ -8,15 +8,9 @@ from __future__ import annotations
 
 import asyncio
 
-from roomkit import (
-    InboundMessage,
-    RoomKit,
-    SMSChannel,
-    VoiceMeUpConfig,
-    VoiceMeUpSMSProvider,
-    WebSocketChannel,
-    parse_voicemeup_webhook,
-)
+from roomkit import InboundMessage, RoomKit, SMSChannel, WebSocketChannel
+from roomkit.providers.voicemeup import VoiceMeUpConfig
+from roomkit.providers.voicemeup.sms import VoiceMeUpSMSProvider, parse_voicemeup_webhook
 
 
 async def main() -> None:

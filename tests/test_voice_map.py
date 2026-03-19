@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from roomkit import MockTTSProvider, MockVoiceBackend, VoiceChannel
+from roomkit import VoiceChannel
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType, EventType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
+from roomkit.voice.backends.mock import MockVoiceBackend
+from roomkit.voice.tts.mock import MockTTSProvider
 
 # -- Helpers ------------------------------------------------------------------
 

@@ -8,18 +8,17 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from roomkit import (
-    MockAIProvider,
-    MockVideoBackend,
-    MockVisionProvider,
     RoomKit,
     VideoChannel,
-    VideoFrame,
-    setup_video_vision,
 )
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.enums import ChannelCategory, ChannelType
-from roomkit.video.ai_integration import setup_realtime_vision
+from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.video.ai_integration import setup_realtime_vision, setup_video_vision
+from roomkit.video.backends.mock import MockVideoBackend
+from roomkit.video.video_frame import VideoFrame
+from roomkit.video.vision.mock import MockVisionProvider
 from roomkit.voice.base import VoiceSession
 
 
@@ -235,7 +234,7 @@ class TestSetupRealtimeVision:
 
 
 class TestExport:
-    def test_importable_from_roomkit(self) -> None:
-        import roomkit
+    def test_importable_from_subpackage(self) -> None:
+        from roomkit.video.ai_integration import setup_video_vision
 
-        assert hasattr(roomkit, "setup_video_vision")
+        assert setup_video_vision is not None

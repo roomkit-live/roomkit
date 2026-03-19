@@ -23,14 +23,11 @@ from roomkit import (
     InboundMessage,
     RoomEvent,
     RoomKit,
-    StreamChunk,
-    StreamEnd,
-    StreamMessage,
-    StreamStart,
     TextContent,
     WebSocketChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.channels.websocket import StreamChunk, StreamEnd, StreamMessage, StreamStart
 from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 

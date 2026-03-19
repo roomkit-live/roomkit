@@ -30,14 +30,9 @@ from __future__ import annotations
 import asyncio
 import os
 
-from roomkit import (
-    RoomKit,
-    TelegramBotProvider,
-    TelegramConfig,
-    WebSocketChannel,
-    parse_telegram_webhook,
-)
+from roomkit import RoomKit, WebSocketChannel
 from roomkit.channels import TelegramChannel
+from roomkit.providers.telegram import TelegramBotProvider, TelegramConfig, parse_telegram_webhook
 
 
 async def main() -> None:

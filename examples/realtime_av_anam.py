@@ -30,12 +30,8 @@ import os
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
-from roomkit import (
-    AnamConfig,
-    AnamRealtimeProvider,
-    RealtimeAudioVideoChannel,
-    RoomKit,
-)
+from roomkit import RealtimeAudioVideoChannel, RoomKit
+from roomkit.providers.anam import AnamConfig, AnamRealtimeProvider
 from roomkit.voice.realtime.mock import MockRealtimeTransport
 
 logger = logging.getLogger(__name__)

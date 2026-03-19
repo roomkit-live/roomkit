@@ -515,23 +515,20 @@ class TestMockVisionProvider:
 
 class TestPublicExports:
     def test_imports_from_roomkit(self) -> None:
-        """Verify video types are accessible from the top-level package."""
+        """Verify video channel is accessible from the top-level package."""
         import roomkit
 
-        assert hasattr(roomkit, "VideoFrame")
-        assert hasattr(roomkit, "VideoBackend")
-        assert hasattr(roomkit, "VideoSession")
-        assert hasattr(roomkit, "VideoCapability")
-        assert hasattr(roomkit, "VideoChunk")
-        assert hasattr(roomkit, "VideoSessionState")
-        assert hasattr(roomkit, "VideoReceivedCallback")
-        assert hasattr(roomkit, "VideoSessionReadyCallback")
-        assert hasattr(roomkit, "VideoDisconnectCallback")
-        assert hasattr(roomkit, "VisionProvider")
-        assert hasattr(roomkit, "VisionResult")
-        assert hasattr(roomkit, "FaceDetection")
-        assert hasattr(roomkit, "MockVideoBackend")
-        assert hasattr(roomkit, "MockVisionProvider")
+        assert hasattr(roomkit, "VideoChannel")
+
+    def test_video_types_from_subpackages(self) -> None:
+        """Verify video types are accessible from subpackages."""
+        from roomkit.video.backends.mock import MockVideoBackend
+        from roomkit.video.video_frame import VideoFrame
+        from roomkit.video.vision.mock import MockVisionProvider
+
+        assert VideoFrame is not None
+        assert MockVideoBackend is not None
+        assert MockVisionProvider is not None
 
     def test_hook_triggers_exist(self) -> None:
         """Verify video hook triggers are defined."""

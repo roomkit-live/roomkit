@@ -5,18 +5,18 @@ from __future__ import annotations
 import asyncio
 
 from roomkit import (
-    MockSTTProvider,
-    MockTTSProvider,
-    MockVoiceBackend,
     RoomKit,
     VoiceChannel,
 )
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.models.enums import Access
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from roomkit.voice.stt.mock import MockSTTProvider
+from roomkit.voice.tts.mock import MockTTSProvider
 
 # ---------------------------------------------------------------------------
 # VoiceChannel — binding-gated audio

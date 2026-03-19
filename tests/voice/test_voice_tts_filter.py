@@ -6,14 +6,13 @@ from collections.abc import AsyncIterator
 
 from roomkit import (
     ChannelType,
-    MockTTSProvider,
-    MockVoiceBackend,
-    StripBrackets,
-    StripInternalTags,
     VoiceChannel,
 )
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import AudioChunk, VoiceSession
 from roomkit.voice.tts.base import TTSProvider
+from roomkit.voice.tts.filters import StripBrackets, StripInternalTags
+from roomkit.voice.tts.mock import MockTTSProvider
 
 
 class _StreamingMockTTS(TTSProvider):
@@ -157,7 +156,8 @@ class TestDeliverVoiceWithFilter:
         session = await backend.connect("room-1", "user-1", "voice-1")
 
         # Wire up minimal framework for _deliver_voice
-        from roomkit import AIChannel, MockAIProvider, RoomKit
+        from roomkit import AIChannel, RoomKit
+        from roomkit.providers.ai.mock import MockAIProvider
 
         kit = RoomKit()
         kit.register_channel(channel)
@@ -209,7 +209,8 @@ class TestDeliverVoiceWithFilter:
         channel = VoiceChannel("voice-1", tts=tts, backend=backend, tts_filter=StripInternalTags())
         session = await backend.connect("room-1", "user-1", "voice-1")
 
-        from roomkit import AIChannel, MockAIProvider, RoomKit
+        from roomkit import AIChannel, RoomKit
+        from roomkit.providers.ai.mock import MockAIProvider
 
         kit = RoomKit()
         kit.register_channel(channel)

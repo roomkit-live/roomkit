@@ -8,8 +8,6 @@ import wave
 import pytest
 
 from roomkit import (
-    MockTTSProvider,
-    MockVoiceBackend,
     RoomKit,
     VoiceBackendNotConfiguredError,
     VoiceChannel,
@@ -17,7 +15,9 @@ from roomkit import (
 )
 from roomkit.models.enums import HookTrigger
 from roomkit.models.hook import HookResult
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import VoiceSession
+from roomkit.voice.tts.mock import MockTTSProvider
 
 
 def _make_session(

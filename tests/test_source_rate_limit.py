@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock
 
-from roomkit import InboundResult, RateLimit
+from roomkit import InboundResult
+from roomkit.models.channel import RateLimit
 from roomkit.sources.websocket import WebSocketSource
 
 

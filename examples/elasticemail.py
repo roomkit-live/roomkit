@@ -9,15 +9,8 @@ from __future__ import annotations
 import asyncio
 import os
 
-from roomkit import (
-    ElasticEmailConfig,
-    ElasticEmailProvider,
-    EmailChannel,
-    InboundMessage,
-    RoomKit,
-    TextContent,
-    WebSocketChannel,
-)
+from roomkit import EmailChannel, InboundMessage, RoomKit, TextContent, WebSocketChannel
+from roomkit.providers.elasticemail import ElasticEmailConfig, ElasticEmailProvider
 
 
 async def main() -> None:

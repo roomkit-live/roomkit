@@ -9,14 +9,13 @@ from __future__ import annotations
 import asyncio
 import os
 
-from roomkit import (
+from roomkit import RoomKit, WebSocketChannel
+from roomkit.channels import MessengerChannel
+from roomkit.providers.messenger import (
     FacebookMessengerProvider,
     MessengerConfig,
-    RoomKit,
-    WebSocketChannel,
     parse_messenger_webhook,
 )
-from roomkit.channels import MessengerChannel
 
 
 async def main() -> None:

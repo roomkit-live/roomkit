@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 
 from roomkit import (
-    ChannelDirection,
     ChannelType,
     HookExecution,
     HookTrigger,
@@ -28,6 +27,7 @@ from roomkit import (
     WebSocketChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.models.enums import ChannelDirection
 from roomkit.providers.ai.mock import MockAIProvider
 
 # Simulated analytics log

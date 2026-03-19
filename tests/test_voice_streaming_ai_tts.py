@@ -5,17 +5,20 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
-from roomkit import MockSTTProvider, MockTTSProvider, MockVoiceBackend, RoomKit, VoiceChannel
+from roomkit import RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.providers.ai.base import AIContext, AIProvider, AIResponse
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import AudioChunk
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.base import TTSProvider
+from roomkit.voice.tts.mock import MockTTSProvider
 from roomkit.voice.tts.sentence_splitter import split_sentences
 
 # ---------------------------------------------------------------------------

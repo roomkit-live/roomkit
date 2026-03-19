@@ -14,15 +14,8 @@ from __future__ import annotations
 
 import asyncio
 
-from roomkit import (
-    EphemeralEvent,
-    EphemeralEventType,
-    InboundMessage,
-    RoomEvent,
-    RoomKit,
-    TextContent,
-    WebSocketChannel,
-)
+from roomkit import InboundMessage, RoomEvent, RoomKit, TextContent, WebSocketChannel
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 
 read_receipt_log: list[dict[str, str]] = []
 

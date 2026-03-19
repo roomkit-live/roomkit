@@ -17,14 +17,9 @@ from __future__ import annotations
 import asyncio
 import time
 
-from roomkit import (
-    InboundMessage,
-    RateLimit,
-    RoomKit,
-    TextContent,
-    WebSocketChannel,
-)
+from roomkit import InboundMessage, RoomKit, TextContent, WebSocketChannel
 from roomkit.core.rate_limiter import TokenBucketRateLimiter
+from roomkit.models.channel import RateLimit
 
 
 async def main() -> None:

@@ -3,9 +3,6 @@
 import pytest
 
 from roomkit import (
-    MockSTTProvider,
-    MockTTSProvider,
-    MockVoiceBackend,
     RoomKit,
     VoiceBackendNotConfiguredError,
     VoiceChannel,
@@ -13,7 +10,10 @@ from roomkit import (
 )
 from roomkit.models.event import AudioContent
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import AudioChunk, TranscriptionResult, VoiceCapability, VoiceSessionState
+from roomkit.voice.stt.mock import MockSTTProvider
+from roomkit.voice.tts.mock import MockTTSProvider
 
 
 class TestMockSTT:

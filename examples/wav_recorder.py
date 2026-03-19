@@ -23,15 +23,9 @@ import logging
 import tempfile
 from pathlib import Path
 
-from roomkit import (
-    ChannelCategory,
-    HookExecution,
-    HookTrigger,
-    MockAIProvider,
-    RoomKit,
-    VoiceChannel,
-)
+from roomkit import ChannelCategory, HookExecution, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.pipeline import (

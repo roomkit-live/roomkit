@@ -21,16 +21,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from roomkit import (
-    ChannelCategory,
-    HookExecution,
-    HookTrigger,
-    MockAIProvider,
-    RoomKit,
-    TextContent,
-    VoiceChannel,
-)
+from roomkit import ChannelCategory, HookExecution, HookTrigger, RoomKit, TextContent, VoiceChannel
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.interruption import InterruptionConfig, InterruptionStrategy

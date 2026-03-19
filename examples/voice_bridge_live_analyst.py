@@ -65,7 +65,6 @@ logging.basicConfig(
 logger = logging.getLogger("voice_bridge_analyst")
 
 from roomkit import (
-    AudioBridgeConfig,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -77,6 +76,7 @@ from roomkit import (
 )
 from roomkit.voice.backends.fastrtc import FastRTCVoiceBackend, mount_fastrtc_voice
 from roomkit.voice.backends.sip import SIPVoiceBackend
+from roomkit.voice.bridge import AudioBridgeConfig
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 
 # ---------------------------------------------------------------------------

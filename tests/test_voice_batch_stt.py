@@ -9,14 +9,14 @@ import pytest
 from roomkit import (
     HookExecution,
     HookTrigger,
-    MockSTTProvider,
-    MockVoiceBackend,
     RoomKit,
     VoiceChannel,
 )
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
+from roomkit.voice.stt.mock import MockSTTProvider
 
 # ---------------------------------------------------------------------------
 # Construction validation

@@ -5,16 +5,18 @@ from __future__ import annotations
 import asyncio
 
 from roomkit import (
-    ChannelRecordingConfig,
-    MediaRecordingConfig,
-    MockMediaRecorder,
-    RecordingTrack,
     RoomKit,
-    RoomRecorderBinding,
     VideoChannel,
     VoiceChannel,
 )
 from roomkit.recorder._room_recorder_manager import RoomRecorderManager
+from roomkit.recorder.base import (
+    ChannelRecordingConfig,
+    MediaRecordingConfig,
+    RecordingTrack,
+    RoomRecorderBinding,
+)
+from roomkit.recorder.mock import MockMediaRecorder
 from roomkit.video.backends.mock import MockVideoBackend
 from roomkit.video.video_frame import VideoFrame
 from roomkit.voice.backends.mock import MockVoiceBackend
@@ -243,11 +245,13 @@ class TestVoiceRoomRecording:
 
     async def test_outbound_tts_audio_mixed_into_recording(self) -> None:
         """TTS (outbound) audio is mixed into the inbound recording track."""
-        from roomkit import MockAIProvider, MockSTTProvider, MockTTSProvider
         from roomkit.channels.ai import AIChannel
+        from roomkit.providers.ai.mock import MockAIProvider
         from roomkit.voice.audio_frame import AudioFrame
         from roomkit.voice.pipeline import MockVADProvider
         from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
+        from roomkit.voice.stt.mock import MockSTTProvider
+        from roomkit.voice.tts.mock import MockTTSProvider
 
         recorder = MockMediaRecorder()
         backend = MockVoiceBackend()

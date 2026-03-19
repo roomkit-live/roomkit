@@ -13,7 +13,6 @@ from roomkit import (
     HookResult,
     HookTrigger,
     InboundMessage,
-    MockAIProvider,
     RoomContext,
     RoomEvent,
     RoomKit,
@@ -21,6 +20,7 @@ from roomkit import (
     WebSocketChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.ai.mock import MockAIProvider
 
 
 async def main() -> None:

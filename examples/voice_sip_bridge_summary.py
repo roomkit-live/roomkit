@@ -51,8 +51,6 @@ logging.basicConfig(
 logger = logging.getLogger("voice_sip_bridge_summary")
 
 from roomkit import (
-    AnthropicAIProvider,
-    AnthropicConfig,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -62,6 +60,7 @@ from roomkit import (
     VoiceChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.voice.backends.sip import SIPVoiceBackend
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 

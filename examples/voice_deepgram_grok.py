@@ -36,17 +36,9 @@ import os
 import signal
 import sys
 
-from roomkit import (
-    AnthropicAIProvider,
-    AnthropicConfig,
-    ChannelCategory,
-    HookExecution,
-    HookResult,
-    HookTrigger,
-    RoomKit,
-    VoiceChannel,
-)
+from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.voice.backends.local import LocalAudioBackend
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider

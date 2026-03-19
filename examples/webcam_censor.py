@@ -42,26 +42,20 @@ import asyncio
 import logging
 import signal
 
-from roomkit import (
-    GeminiVisionConfig,
-    GeminiVisionProvider,
-    HookTrigger,
-    MediaRecordingConfig,
-    MockVisionProvider,
-    RoomKit,
-    RoomRecorderBinding,
-    VideoChannel,
-    VideoPipelineConfig,
-)
+from roomkit import HookTrigger, RoomKit, VideoChannel
 from roomkit.models.session_event import SessionStartedEvent
+from roomkit.recorder.base import MediaRecordingConfig, RoomRecorderBinding
 from roomkit.recorder.pyav import PyAVMediaRecorder
 from roomkit.video.backends.local import LocalVideoBackend
+from roomkit.video.pipeline import VideoPipelineConfig
 from roomkit.video.pipeline.filter.base import VideoFilterProvider
 from roomkit.video.pipeline.filter.censor import CensorVideoFilter
 from roomkit.video.pipeline.filter.watermark import WatermarkFilter
 from roomkit.video.pipeline.filter.yolo import YOLODetectorFilter
 from roomkit.video.pipeline.transform.effects import VideoEffectTransform
 from roomkit.video.vision.base import VisionProvider
+from roomkit.video.vision.gemini import GeminiVisionConfig, GeminiVisionProvider
+from roomkit.video.vision.mock import MockVisionProvider
 
 logging.basicConfig(level=logging.INFO, format="%(name)s  %(message)s")
 

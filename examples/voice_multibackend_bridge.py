@@ -54,9 +54,6 @@ logging.basicConfig(
 logger = logging.getLogger("voice_multibackend_bridge")
 
 from roomkit import (
-    AnthropicAIProvider,
-    AnthropicConfig,
-    AudioBridgeConfig,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -66,8 +63,10 @@ from roomkit import (
     VoiceChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.voice.backends.fastrtc import FastRTCVoiceBackend, mount_fastrtc_voice
 from roomkit.voice.backends.sip import SIPVoiceBackend
+from roomkit.voice.bridge import AudioBridgeConfig
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 
 # ---------------------------------------------------------------------------

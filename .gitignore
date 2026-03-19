@@ -44,3 +44,4 @@ wa-session.db
 recordings/
 *.pt
 *.png
+examples/test-click.py

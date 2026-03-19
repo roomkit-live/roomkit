@@ -248,10 +248,10 @@ class TestPublicExports:
         assert hasattr(roomkit, "ChannelNotRegisteredError")
 
     def test_routing_exports(self) -> None:
-        import roomkit
+        from roomkit.core.inbound_router import DefaultInboundRoomRouter, InboundRoomRouter
 
-        assert hasattr(roomkit, "InboundRoomRouter")
-        assert hasattr(roomkit, "DefaultInboundRoomRouter")
+        assert InboundRoomRouter is not None
+        assert DefaultInboundRoomRouter is not None
 
     def test_channel_exports(self) -> None:
         import roomkit
@@ -272,10 +272,6 @@ class TestPublicExports:
         import roomkit
 
         for name in [
-            "RateLimit",
-            "RetryPolicy",
-            "Task",
-            "Observation",
             "Room",
             "RoomTimers",
             "RoomEvent",
@@ -283,35 +279,28 @@ class TestPublicExports:
             "ChannelCapabilities",
             "ChannelOutput",
             "Participant",
-            "Identity",
         ]:
             assert hasattr(roomkit, name), f"Missing export: {name}"
 
-    def test_provider_abc_exports(self) -> None:
-        import roomkit
+    def test_removed_model_exports_in_subpackages(self) -> None:
+        """Models removed from top-level are still importable from subpackages."""
+        from roomkit.models.channel import RateLimit
 
-        for name in [
-            "AIProvider",
-            "EmailProvider",
-            "HTTPProvider",
-            "MessengerProvider",
-            "SMSProvider",
-            "WhatsAppProvider",
-        ]:
-            assert hasattr(roomkit, name), f"Missing export: {name}"
+        assert RateLimit is not None
 
-    def test_mock_provider_exports(self) -> None:
-        import roomkit
+    def test_provider_abc_exports_in_subpackages(self) -> None:
+        """Provider ABCs removed from top-level are still importable from subpackages."""
+        from roomkit.providers.ai.base import AIProvider
 
-        for name in [
-            "MockAIProvider",
-            "MockEmailProvider",
-            "MockHTTPProvider",
-            "MockMessengerProvider",
-            "MockSMSProvider",
-            "MockWhatsAppProvider",
-        ]:
-            assert hasattr(roomkit, name), f"Missing export: {name}"
+        assert AIProvider is not None
+
+    def test_mock_provider_exports_in_subpackages(self) -> None:
+        """Mock providers removed from top-level are still importable from subpackages."""
+        from roomkit.providers.ai.mock import MockAIProvider
+        from roomkit.providers.sms.mock import MockSMSProvider
+
+        assert MockAIProvider is not None
+        assert MockSMSProvider is not None
 
     def test_enum_exports(self) -> None:
         import roomkit
@@ -319,20 +308,32 @@ class TestPublicExports:
         for name in [
             "Access",
             "ChannelCategory",
-            "ChannelDirection",
-            "ChannelMediaType",
             "ChannelType",
-            "DeliveryMode",
             "EventStatus",
             "EventType",
             "HookExecution",
             "HookTrigger",
-            "IdentificationStatus",
-            "ParticipantRole",
-            "ParticipantStatus",
             "RoomStatus",
         ]:
             assert hasattr(roomkit, name), f"Missing export: {name}"
+
+    def test_removed_enum_exports_in_subpackages(self) -> None:
+        """Enums removed from top-level are still importable from subpackages."""
+        from roomkit.models.enums import (
+            ChannelDirection,
+            ChannelMediaType,
+            DeliveryMode,
+            IdentificationStatus,
+            ParticipantRole,
+            ParticipantStatus,
+        )
+
+        assert ChannelDirection is not None
+        assert ChannelMediaType is not None
+        assert DeliveryMode is not None
+        assert IdentificationStatus is not None
+        assert ParticipantRole is not None
+        assert ParticipantStatus is not None
 
     def test_all_matches_dir(self) -> None:
         """Every name in __all__ should be importable."""

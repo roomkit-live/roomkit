@@ -656,7 +656,7 @@ class TestTaskStatusExport:
         assert TaskStatus.PENDING == "pending"
         assert TaskStatus.COMPLETED == "completed"
 
-    def test_task_status_importable_from_top_level(self) -> None:
-        from roomkit import TaskStatus
+    def test_task_status_importable_from_subpackage(self) -> None:
+        from roomkit.models.enums import TaskStatus
 
         assert TaskStatus.IN_PROGRESS == "in_progress"

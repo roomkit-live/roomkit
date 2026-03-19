@@ -22,14 +22,7 @@ from roomkit.channels.realtime_voice import ToolHandler as ToolHandler
 from roomkit.channels.transport import TransportChannel
 from roomkit.channels.video import VideoChannel
 from roomkit.channels.voice import VoiceChannel
-from roomkit.channels.websocket import (
-    StreamChunk,
-    StreamEnd,
-    StreamMessage,
-    StreamSendFn,
-    StreamStart,
-    WebSocketChannel,
-)
+from roomkit.channels.websocket import WebSocketChannel
 from roomkit.core.framework import (
     ChannelNotFoundError,
     ChannelNotRegisteredError,
@@ -43,19 +36,7 @@ from roomkit.core.framework import (
     VoiceBackendNotConfiguredError,
     VoiceNotConfiguredError,
 )
-from roomkit.core.hooks import HookEngine, HookRegistration
-from roomkit.core.inbound_router import DefaultInboundRoomRouter, InboundRoomRouter
-from roomkit.core.locks import InMemoryLockManager, RoomLockManager
-from roomkit.identity.base import IdentityResolver
-from roomkit.identity.mock import MockIdentityResolver
-from roomkit.memory import MemoryProvider, MemoryResult, MockMemoryProvider, SlidingWindowMemory
-from roomkit.models.channel import (
-    ChannelBinding,
-    ChannelCapabilities,
-    ChannelOutput,
-    RateLimit,
-    RetryPolicy,
-)
+from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import (
     DeliveryResult,
@@ -67,364 +48,21 @@ from roomkit.models.delivery import (
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
-    ChannelDirection,
-    ChannelMediaType,
     ChannelType,
-    DeleteType,
-    DeliveryMode,
     EventStatus,
     EventType,
     HookExecution,
     HookTrigger,
-    IdentificationStatus,
-    ParticipantRole,
-    ParticipantStatus,
     RoomStatus,
-    TaskStatus,
 )
-from roomkit.models.event import (
-    AudioContent,
-    CompositeContent,
-    DeleteContent,
-    EditContent,
-    EventContent,
-    EventSource,
-    LocationContent,
-    MediaContent,
-    RichContent,
-    RoomEvent,
-    SystemContent,
-    TemplateContent,
-    TextContent,
-    VideoContent,
-)
+from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult, InjectedEvent
-from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
-from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
-from roomkit.models.task import Observation, Task
 from roomkit.models.tool_call import ToolCallCallback, ToolCallEvent
-from roomkit.models.trace import ProtocolTrace
-from roomkit.orchestration.handoff import (
-    HANDOFF_TOOL,
-    HandoffHandler,
-    HandoffMemoryProvider,
-    HandoffRequest,
-    HandoffResult,
-    build_handoff_tool,
-    setup_handoff,
-)
-from roomkit.orchestration.pipeline import (
-    ConversationPipeline,
-    PipelineStage,
-)
-from roomkit.orchestration.router import (
-    ConversationRouter,
-    RoutingConditions,
-    RoutingRule,
-)
-from roomkit.orchestration.state import (
-    ConversationPhase,
-    ConversationState,
-    PhaseTransition,
-    get_conversation_state,
-    set_conversation_state,
-)
-from roomkit.orchestration.status_bus import (
-    InMemoryStatusBackend,
-    StatusBackend,
-    StatusBus,
-    StatusEntry,
-    StatusLevel,
-)
-from roomkit.orchestration.tool_audit import (
-    ConsoleToolAuditor,
-    JSONLToolAuditor,
-    ToolAuditEntry,
-    ToolAuditor,
-    audit_tool_handler,
-)
-from roomkit.providers.ai.base import (
-    AIContext,
-    AIImagePart,
-    AIMessage,
-    AIProvider,
-    AIResponse,
-    AITextPart,
-    AIThinkingPart,
-    AITool,
-    AIToolCall,
-    AIToolCallPart,
-    AIToolResultPart,
-    ProviderError,
-    StreamDone,
-    StreamEvent,
-    StreamTextDelta,
-    StreamThinkingDelta,
-    StreamToolCall,
-)
-from roomkit.providers.ai.mock import MockAIProvider
-from roomkit.providers.anam.config import AnamConfig
-from roomkit.providers.anam.realtime import AnamRealtimeProvider
-from roomkit.providers.anthropic.ai import AnthropicAIProvider
-from roomkit.providers.anthropic.config import AnthropicConfig
-from roomkit.providers.azure.ai import AzureAIProvider
-from roomkit.providers.azure.config import AzureAIConfig
-from roomkit.providers.elasticemail.config import ElasticEmailConfig
-from roomkit.providers.elasticemail.email import ElasticEmailProvider
-from roomkit.providers.email.base import EmailProvider
-from roomkit.providers.email.mock import MockEmailProvider
-from roomkit.providers.gemini.ai import GeminiAIProvider
-from roomkit.providers.gemini.config import GeminiConfig
-from roomkit.providers.http.base import HTTPProvider
-from roomkit.providers.http.config import HTTPProviderConfig
-from roomkit.providers.http.mock import MockHTTPProvider
-from roomkit.providers.http.provider import WebhookHTTPProvider
-from roomkit.providers.http.webhook import parse_http_webhook
-from roomkit.providers.messenger.base import MessengerProvider
-from roomkit.providers.messenger.config import MessengerConfig
-from roomkit.providers.messenger.facebook import FacebookMessengerProvider
-from roomkit.providers.messenger.mock import MockMessengerProvider
-from roomkit.providers.messenger.webhook import parse_messenger_webhook
-from roomkit.providers.mistral.ai import MistralAIProvider
-from roomkit.providers.mistral.config import MistralConfig
-from roomkit.providers.openai.ai import OpenAIAIProvider
-from roomkit.providers.openai.config import OpenAIConfig
-from roomkit.providers.personaplex.config import PersonaPlexConfig
-from roomkit.providers.personaplex.realtime import PersonaPlexRealtimeProvider
-from roomkit.providers.rcs.base import RCSDeliveryResult, RCSProvider
-from roomkit.providers.rcs.mock import MockRCSProvider
-from roomkit.providers.sinch.config import SinchConfig
-from roomkit.providers.sinch.sms import SinchSMSProvider, parse_sinch_webhook
-from roomkit.providers.sms.base import SMSProvider
-from roomkit.providers.sms.meta import WebhookMeta, extract_sms_meta
-from roomkit.providers.sms.mock import MockSMSProvider
-from roomkit.providers.sms.phone import is_valid_phone, normalize_phone
-from roomkit.providers.teams.base import TeamsProvider
-from roomkit.providers.teams.bot_framework import BotFrameworkTeamsProvider
-from roomkit.providers.teams.config import TeamsConfig
-from roomkit.providers.teams.conversation_store import (
-    ConversationReferenceStore,
-    InMemoryConversationReferenceStore,
-)
-from roomkit.providers.teams.mock import MockTeamsProvider
-from roomkit.providers.teams.webhook import (
-    is_bot_added,
-    parse_teams_activity,
-    parse_teams_reactions,
-    parse_teams_webhook,
-)
-from roomkit.providers.telegram.base import TelegramProvider
-from roomkit.providers.telegram.bot import TelegramBotProvider
-from roomkit.providers.telegram.config import TelegramConfig
-from roomkit.providers.telegram.mock import MockTelegramProvider
-from roomkit.providers.telegram.webhook import parse_telegram_webhook
-from roomkit.providers.telnyx.config import TelnyxConfig
-from roomkit.providers.telnyx.rcs import (
-    TelnyxRCSConfig,
-    TelnyxRCSProvider,
-    parse_telnyx_rcs_webhook,
-)
-from roomkit.providers.telnyx.sms import (
-    TelnyxSMSProvider,
-    parse_telnyx_webhook,
-)
-from roomkit.providers.twilio.config import TwilioConfig
-from roomkit.providers.twilio.rcs import (
-    TwilioRCSConfig,
-    TwilioRCSProvider,
-    parse_twilio_rcs_webhook,
-)
-from roomkit.providers.twilio.sms import TwilioSMSProvider, parse_twilio_webhook
-from roomkit.providers.vllm import VLLMConfig, create_vllm_provider
-from roomkit.providers.voicemeup.config import VoiceMeUpConfig
-from roomkit.providers.voicemeup.sms import (
-    VoiceMeUpSMSProvider,
-    configure_voicemeup_mms,
-    parse_voicemeup_webhook,
-)
-from roomkit.providers.whatsapp.base import WhatsAppProvider
-from roomkit.providers.whatsapp.mock import MockWhatsAppProvider
-from roomkit.providers.whatsapp.personal import WhatsAppPersonalProvider
-from roomkit.providers.xai.config import XAIRealtimeConfig
-from roomkit.providers.xai.realtime import XAIRealtimeProvider
-from roomkit.realtime.base import (
-    EphemeralCallback,
-    EphemeralEvent,
-    EphemeralEventType,
-    RealtimeBackend,
-)
-from roomkit.realtime.memory import InMemoryRealtime
-from roomkit.recorder import (
-    ChannelRecordingConfig,
-    MediaRecorder,
-    MediaRecordingConfig,
-    MediaRecordingHandle,
-    MediaRecordingResult,
-    MockMediaRecorder,
-    RecordingTrack,
-    RoomRecorderBinding,
-)
-from roomkit.skills import (
-    ScriptExecutor,
-    ScriptResult,
-    Skill,
-    SkillMetadata,
-    SkillParseError,
-    SkillRegistry,
-    SkillValidationError,
-)
-from roomkit.sources.base import (
-    BaseSourceProvider,
-    EmitCallback,
-    SourceHealth,
-    SourceProvider,
-    SourceStatus,
-)
-from roomkit.store.base import ConversationStore
-from roomkit.store.memory import InMemoryStore
-from roomkit.tasks import (
-    DELEGATE_TOOL,
-    BackgroundTaskDeliveryStrategy,
-    ContextOnlyDelivery,
-    DelegatedTask,
-    DelegatedTaskResult,
-    DelegateHandler,
-    ImmediateDelivery,
-    InMemoryTaskRunner,
-    TaskDeliveryContext,
-    TaskRunner,
-    WaitForIdleDelivery,
-    build_delegate_tool,
-    setup_delegation,
-    setup_realtime_delegation,
-)
-from roomkit.telemetry import (
-    Attr,
-    ConsoleTelemetryProvider,
-    MockTelemetryProvider,
-    NoopTelemetryProvider,
-    Span,
-    SpanKind,
-    TelemetryConfig,
-    TelemetryProvider,
-)
 from roomkit.tools.base import Tool
-from roomkit.tools.compose import compose_tool_handlers
-from roomkit.tools.policy import RoleOverride, ToolPolicy
-from roomkit.video import (
-    BridgeVideoEvent,
-    BridgeVideoFrameFilter,
-    BridgeVideoFrameProcessor,
-    DescribeScreenTool,
-    DescribeWebcamTool,
-    FaceDetection,
-    GeminiVisionConfig,
-    GeminiVisionProvider,
-    ListWebcamsTool,
-    MockVideoBackend,
-    MockVideoCall,
-    MockVideoDecoderProvider,
-    MockVideoResizerProvider,
-    MockVisionProvider,
-    OpenAIVisionConfig,
-    OpenAIVisionProvider,
-    ScreenInputTools,
-    VideoBackend,
-    VideoBridge,
-    VideoBridgeConfig,
-    VideoCapability,
-    VideoChunk,
-    VideoDecoderProvider,
-    VideoDisconnectCallback,
-    VideoFrame,
-    VideoPipeline,
-    VideoPipelineConfig,
-    VideoReceivedCallback,
-    VideoResizerProvider,
-    VideoSession,
-    VideoSessionReadyCallback,
-    VideoSessionState,
-    VisionProvider,
-    VisionResult,
-    WebcamInfo,
-    capture_screen_frame,
-    capture_webcam_frame,
-    get_fastrtc_video_backend,
-    get_local_video_backend,
-    get_rtp_video_backend,
-    get_screen_capture_backend,
-    get_sip_video_backend,
-    get_websocket_video_backend,
-    list_webcams,
-    make_text_frame,
-    save_frame,
-    setup_realtime_vision,
-    setup_video_vision,
-)
-from roomkit.voice import (
-    AudioBridge,
-    AudioBridgeConfig,
-    AudioChunk,
-    AudioFrame,
-    AudioPipeline,
-    AudioPipelineConfig,
-    AudioReceivedCallback,
-    BargeInCallback,
-    BargeInEvent,
-    BridgeAudioEvent,
-    BridgeFrameFilter,
-    BridgeFrameProcessor,
-    DenoiserProvider,
-    DiarizationProvider,
-    DiarizationResult,
-    MixerProvider,
-    MockDenoiserProvider,
-    MockDiarizationProvider,
-    MockVADProvider,
-    PartialTranscriptionEvent,
-    PythonMixerProvider,
-    SpeakerChangeEvent,
-    StripBrackets,
-    StripInternalTags,
-    STTProvider,
-    TranscriptionEvent,
-    TranscriptionResult,
-    TTSCancelledEvent,
-    TTSProvider,
-    TTSStreamFilter,
-    VADAudioLevelEvent,
-    VADConfig,
-    VADEvent,
-    VADEventType,
-    VADProvider,
-    VADSilenceEvent,
-    VoiceBackend,
-    VoiceCapability,
-    VoiceSession,
-    VoiceSessionState,
-    parse_voice_session,
-)
-from roomkit.voice.auth import AuthCallback, auth_context
-from roomkit.voice.backends.mock import MockVoiceBackend
-from roomkit.voice.realtime import (
-    MockRealtimeAudioVideoProvider,
-    MockRealtimeProvider,
-    MockRealtimeTransport,
-    RealtimeAudioVideoProvider,
-    RealtimeAVBridge,
-    RealtimeErrorEvent,
-    RealtimeSpeechEvent,
-    RealtimeToolCallEvent,
-    RealtimeTranscriptionEvent,
-    RealtimeVideoCallback,
-    RealtimeVoiceProvider,
-)
-from roomkit.voice.stt.mock import MockSTTProvider
-from roomkit.voice.tts.mock import MockTTSProvider
 
 # AI documentation helpers (lazy import to avoid file I/O at import time)
 
@@ -452,8 +90,9 @@ def get_ai_context() -> str:
 
 __all__ = [
     "__version__",
-    # Core
+    # Framework
     "RoomKit",
+    # Errors
     "RoomKitError",
     "RoomNotFoundError",
     "ChannelNotFoundError",
@@ -464,467 +103,62 @@ __all__ = [
     "SourceNotFoundError",
     "VoiceBackendNotConfiguredError",
     "VoiceNotConfiguredError",
-    "RoomLockManager",
-    "InMemoryLockManager",
-    # Sources (event-driven)
-    "BaseSourceProvider",
-    "EmitCallback",
-    "SourceHealth",
-    "SourceProvider",
-    "SourceStatus",
-    # Routing
-    "InboundRoomRouter",
-    "DefaultInboundRoomRouter",
     # Channels
     "Agent",
-    "Channel",
-    "TransportChannel",
     "AIChannel",
     "AudioVideoChannel",
-    "RealtimeAudioVideoChannel",
+    "Channel",
     "EmailChannel",
+    "HTTPChannel",
+    "MessengerChannel",
     "RCSChannel",
-    "SMSChannel",
+    "RealtimeAudioVideoChannel",
     "RealtimeVoiceChannel",
+    "SMSChannel",
+    "TeamsChannel",
+    "TelegramChannel",
+    "TransportChannel",
+    "VideoChannel",
     "VoiceChannel",
     "WebSocketChannel",
-    # WebSocket Streaming
-    "StreamChunk",
-    "StreamEnd",
-    "StreamMessage",
-    "StreamSendFn",
-    "StreamStart",
-    "MessengerChannel",
-    "TelegramChannel",
-    "TeamsChannel",
-    "HTTPChannel",
     "WhatsAppChannel",
     "WhatsAppPersonalChannel",
-    # Models - Enums
+    # Enums (core)
     "Access",
     "ChannelCategory",
-    "ChannelDirection",
-    "ChannelMediaType",
     "ChannelType",
-    "DeliveryMode",
     "EventStatus",
     "EventType",
     "HookExecution",
     "HookTrigger",
-    "IdentificationStatus",
-    "ParticipantRole",
-    "ParticipantStatus",
     "RoomStatus",
-    "TaskStatus",
-    # Orchestration
-    "ConversationPhase",
-    "ConversationRouter",
-    "ConversationState",
-    "HANDOFF_TOOL",
-    "HandoffHandler",
-    "build_handoff_tool",
-    "HandoffMemoryProvider",
-    "HandoffRequest",
-    "HandoffResult",
-    "PhaseTransition",
-    "RoutingConditions",
-    "RoutingRule",
-    "get_conversation_state",
-    "set_conversation_state",
-    "setup_handoff",
-    "ConversationPipeline",
-    "PipelineStage",
-    # Status Bus
-    "InMemoryStatusBackend",
-    "StatusBackend",
-    "StatusBus",
-    "StatusEntry",
-    "StatusLevel",
-    # Tool Audit
-    "ConsoleToolAuditor",
-    "JSONLToolAuditor",
-    "ToolAuditEntry",
-    "ToolAuditor",
-    "audit_tool_handler",
-    # Delegation (background tasks)
-    "BackgroundTaskDeliveryStrategy",
-    "ContextOnlyDelivery",
-    "DELEGATE_TOOL",
-    "DelegateHandler",
-    "DelegatedTask",
-    "DelegatedTaskResult",
-    "ImmediateDelivery",
-    "InMemoryTaskRunner",
-    "TaskDeliveryContext",
-    "TaskRunner",
-    "WaitForIdleDelivery",
-    "build_delegate_tool",
-    "setup_delegation",
-    "setup_realtime_delegation",
-    # Models - Data
-    "AudioContent",
+    # Models (core)
     "ChannelBinding",
     "ChannelCapabilities",
     "ChannelOutput",
-    "CompositeContent",
-    "DeleteContent",
-    "DeleteType",
     "DeliveryResult",
     "DeliveryStatus",
-    "EditContent",
-    "EventContent",
     "EventSource",
     "FrameworkEvent",
     "HookResult",
-    "Identity",
-    "IdentityHookResult",
-    "IdentityResult",
+    "InjectedEvent",
     "InboundMessage",
     "InboundResult",
-    "InjectedEvent",
-    "LocationContent",
-    "MediaContent",
-    "Observation",
     "Participant",
-    "ProtocolTrace",
     "ProviderResult",
-    "RateLimit",
-    "RetryPolicy",
-    "RichContent",
     "Room",
     "RoomContext",
     "RoomEvent",
     "RoomTimers",
-    "SystemContent",
-    "Task",
-    "TemplateContent",
+    "SessionStartedEvent",
     "TextContent",
-    "VideoContent",
-    # Tool Call (unified)
+    "Tool",
     "ToolCallCallback",
     "ToolCallEvent",
-    # Hooks
-    "HookEngine",
-    "HookRegistration",
-    # Provider Errors
-    "ProviderError",
-    # Provider ABCs
-    "AIProvider",
-    "EmailProvider",
-    "HTTPProvider",
-    "MessengerProvider",
-    "TelegramProvider",
-    "TeamsProvider",
-    "RCSProvider",
-    "SMSProvider",
-    "WhatsAppProvider",
-    # AI
-    "AIContext",
-    "AIImagePart",
-    "AIMessage",
-    "AIResponse",
-    "AITextPart",
-    "AIThinkingPart",
-    "AITool",
-    "AIToolCall",
-    "AIToolCallPart",
-    "AIToolResultPart",
-    "StreamDone",
-    "StreamEvent",
-    "StreamTextDelta",
-    "StreamThinkingDelta",
-    "StreamToolCall",
-    "MockAIProvider",
-    # AI – Anthropic
-    "AnthropicAIProvider",
-    "AnthropicConfig",
-    # AI – Azure
-    "AzureAIConfig",
-    "AzureAIProvider",
-    # AI – Gemini
-    "GeminiAIProvider",
-    "GeminiConfig",
-    # AI – Mistral
-    "MistralAIProvider",
-    "MistralConfig",
-    # AI – OpenAI
-    "OpenAIAIProvider",
-    "OpenAIConfig",
-    # Realtime – Anam AI (Avatar)
-    "AnamConfig",
-    "AnamRealtimeProvider",
-    # Realtime – PersonaPlex (NVIDIA)
-    "PersonaPlexConfig",
-    "PersonaPlexRealtimeProvider",
-    # Realtime – xAI (Grok)
-    "XAIRealtimeConfig",
-    "XAIRealtimeProvider",
-    # AI – vLLM (local)
-    "VLLMConfig",
-    "create_vllm_provider",
-    # HTTP – Generic Webhook
-    "HTTPProviderConfig",
-    "MockHTTPProvider",
-    "WebhookHTTPProvider",
-    "parse_http_webhook",
-    # Email
-    "ElasticEmailConfig",
-    "ElasticEmailProvider",
-    "MockEmailProvider",
-    # Messenger
-    "FacebookMessengerProvider",
-    "MessengerConfig",
-    "MockMessengerProvider",
-    "parse_messenger_webhook",
-    # Telegram
-    "MockTelegramProvider",
-    "TelegramBotProvider",
-    "TelegramConfig",
-    "parse_telegram_webhook",
-    # Teams
-    "BotFrameworkTeamsProvider",
-    "ConversationReferenceStore",
-    "InMemoryConversationReferenceStore",
-    "MockTeamsProvider",
-    "TeamsConfig",
-    "is_bot_added",
-    "parse_teams_activity",
-    "parse_teams_reactions",
-    "parse_teams_webhook",
-    # SMS
-    "MockSMSProvider",
-    "WebhookMeta",
-    "extract_sms_meta",
-    "is_valid_phone",
-    "normalize_phone",
-    # SMS - Sinch
-    "SinchConfig",
-    "SinchSMSProvider",
-    "parse_sinch_webhook",
-    # SMS - Telnyx
-    "TelnyxConfig",
-    "TelnyxSMSProvider",
-    "parse_telnyx_webhook",
-    # RCS - Telnyx
-    "TelnyxRCSConfig",
-    "TelnyxRCSProvider",
-    "parse_telnyx_rcs_webhook",
-    # SMS - Twilio
-    "TwilioConfig",
-    "TwilioSMSProvider",
-    "parse_twilio_webhook",
-    # SMS - VoiceMeUp
-    "VoiceMeUpConfig",
-    "VoiceMeUpSMSProvider",
-    "configure_voicemeup_mms",
-    "parse_voicemeup_webhook",
-    # RCS
-    "MockRCSProvider",
-    "RCSDeliveryResult",
-    # RCS - Twilio
-    "TwilioRCSConfig",
-    "TwilioRCSProvider",
-    "parse_twilio_rcs_webhook",
-    # WhatsApp
-    "MockWhatsAppProvider",
-    "WhatsAppPersonalProvider",
-    # Identity
-    "IdentityResolver",
-    "MockIdentityResolver",
-    # Memory
-    "MemoryProvider",
-    "MemoryResult",
-    "MockMemoryProvider",
-    "SlidingWindowMemory",
-    # Store
-    "ConversationStore",
-    "InMemoryStore",
-    "PostgresStore",
-    # Realtime
-    "EphemeralCallback",
-    "EphemeralEvent",
-    "EphemeralEventType",
-    "InMemoryRealtime",
-    "RealtimeBackend",
-    # Auth
-    "AuthCallback",
-    "auth_context",
-    # Voice
-    "AudioBridge",
-    "AudioBridgeConfig",
-    "BridgeFrameFilter",
-    "BridgeFrameProcessor",
-    "AudioChunk",
-    "AudioFrame",
-    "AudioPipeline",
-    "AudioPipelineConfig",
-    "AudioReceivedCallback",
-    "BargeInCallback",
-    "BargeInEvent",
-    "BridgeAudioEvent",
-    "DenoiserProvider",
-    "DiarizationProvider",
-    "DiarizationResult",
-    "MixerProvider",
-    "NumpyMixerProvider",
-    "PythonMixerProvider",
-    "MockDenoiserProvider",
-    "MockDiarizationProvider",
-    "MockSTTProvider",
-    "MockTTSProvider",
-    "MockVADProvider",
-    "MockVoiceBackend",
-    "parse_voice_session",
-    "PartialTranscriptionEvent",
-    "SpeakerChangeEvent",
-    "STTProvider",
-    "StripBrackets",
-    "StripInternalTags",
-    "TTSStreamFilter",
-    "TTSCancelledEvent",
-    "TTSProvider",
-    "TranscriptionEvent",
-    "TranscriptionResult",
-    "VADConfig",
-    "VADAudioLevelEvent",
-    "VADEvent",
-    "VADEventType",
-    "VADProvider",
-    "VADSilenceEvent",
-    "VoiceBackend",
-    "VoiceCapability",
-    "VoiceSession",
-    "VoiceSessionState",
-    "SessionStartedEvent",
-    # Realtime Voice
-    "MockRealtimeAudioVideoProvider",
-    "MockRealtimeProvider",
-    "MockRealtimeTransport",
-    "RealtimeAudioVideoProvider",
-    "RealtimeAVBridge",
-    "RealtimeErrorEvent",
-    "RealtimeSpeechEvent",
-    "RealtimeToolCallEvent",
-    "RealtimeTranscriptionEvent",
-    "RealtimeVideoCallback",
-    "RealtimeVoiceProvider",
     "ToolHandler",
     "get_current_voice_session",
-    # Skills
-    "ScriptExecutor",
-    "ScriptResult",
-    "Skill",
-    "SkillMetadata",
-    "SkillParseError",
-    "SkillRegistry",
-    "SkillValidationError",
-    # Telemetry
-    "Attr",
-    "ConsoleTelemetryProvider",
-    "MockTelemetryProvider",
-    "NoopTelemetryProvider",
-    "OpenTelemetryProvider",
-    "PyroscopeProfiler",
-    "Span",
-    "SpanKind",
-    "TelemetryConfig",
-    "TelemetryProvider",
-    # Steering
-    "Cancel",
-    "InjectMessage",
-    "SteeringDirective",
-    "UpdateSystemPrompt",
-    # Tools
-    "MCPToolProvider",
-    "RoleOverride",
-    "Tool",
-    "ToolPolicy",
-    "compose_tool_handlers",
-    # Room-level media recording
-    "ChannelRecordingConfig",
-    "MediaRecorder",
-    "MediaRecordingConfig",
-    "MediaRecordingHandle",
-    "MediaRecordingResult",
-    "MockMediaRecorder",
-    "RecordingTrack",
-    "RoomRecorderBinding",
-    # Video
-    "BridgeVideoEvent",
-    "BridgeVideoFrameFilter",
-    "BridgeVideoFrameProcessor",
-    "DescribeScreenTool",
-    "DescribeWebcamTool",
-    "ListWebcamsTool",
-    "ScreenInputTools",
-    "WebcamInfo",
-    "FaceDetection",
-    "MockVideoBackend",
-    "MockVideoCall",
-    "MockVideoDecoderProvider",
-    "MockVideoResizerProvider",
-    "MockVisionProvider",
-    "GeminiVisionConfig",
-    "GeminiVisionProvider",
-    "get_fastrtc_video_backend",
-    "get_local_video_backend",
-    "get_rtp_video_backend",
-    "get_screen_capture_backend",
-    "get_sip_video_backend",
-    "get_websocket_video_backend",
-    "make_text_frame",
-    "setup_realtime_vision",
-    "setup_video_vision",
-    "OpenAIVisionConfig",
-    "OpenAIVisionProvider",
-    "VideoBackend",
-    "VideoBridge",
-    "VideoBridgeConfig",
-    "VideoCapability",
-    "VideoChannel",
-    "VideoChunk",
-    "VideoDecoderProvider",
-    "VideoDisconnectCallback",
-    "VideoFrame",
-    "VideoPipeline",
-    "VideoPipelineConfig",
-    "VideoReceivedCallback",
-    "VideoResizerProvider",
-    "VideoSession",
-    "VideoSessionReadyCallback",
-    "VideoSessionState",
-    "VisionProvider",
-    "VisionResult",
-    "capture_screen_frame",
-    "capture_webcam_frame",
-    "list_webcams",
-    "save_frame",
-    # AI Docs
+    # AI docs
     "get_agents_md",
     "get_ai_context",
     "get_llms_txt",
 ]
-
-
-def __getattr__(name: str) -> object:
-    if name == "PostgresStore":
-        from roomkit.store.postgres import PostgresStore
-
-        return PostgresStore
-    if name == "OpenTelemetryProvider":
-        from roomkit.telemetry.opentelemetry import OpenTelemetryProvider
-
-        return OpenTelemetryProvider
-    if name == "PyroscopeProfiler":
-        from roomkit.telemetry.pyroscope import PyroscopeProfiler
-
-        return PyroscopeProfiler
-    if name == "MCPToolProvider":
-        from roomkit.tools.mcp import MCPToolProvider
-
-        return MCPToolProvider
-    if name == "NumpyMixerProvider":
-        from roomkit.voice.pipeline.mixer.numpy import NumpyMixerProvider
-
-        return NumpyMixerProvider
-    raise AttributeError(f"module 'roomkit' has no attribute {name}")

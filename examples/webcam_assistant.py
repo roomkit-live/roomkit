@@ -26,20 +26,17 @@ import asyncio
 import os
 
 from roomkit import (
-    AnthropicAIProvider,
-    AnthropicConfig,
     ChannelCategory,
-    DescribeWebcamTool,
     InboundMessage,
-    ListWebcamsTool,
-    OpenAIVisionConfig,
-    OpenAIVisionProvider,
     RoomEvent,
     RoomKit,
     TextContent,
     WebSocketChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
+from roomkit.video.vision.openai import OpenAIVisionConfig, OpenAIVisionProvider
+from roomkit.video.vision.webcam_tool import DescribeWebcamTool, ListWebcamsTool
 
 SYSTEM_PROMPT = """\
 You are a helpful assistant with access to the user's webcam.

@@ -20,14 +20,9 @@ import asyncio
 import logging
 import signal
 
-from roomkit import (
-    ChannelCategory,
-    HookExecution,
-    HookTrigger,
-    MockAIProvider,
-    RoomKit,
-)
+from roomkit import ChannelCategory, HookExecution, HookTrigger, RoomKit
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.voice.backends.local import LocalAudioBackend
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider, VADEvent, VADEventType
 from roomkit.voice.stt.mock import MockSTTProvider

@@ -693,12 +693,11 @@ class TestOpenTelemetryProvider:
             with pytest.raises(ImportError, match="opentelemetry-api"):
                 OpenTelemetryProvider()
 
-    def test_lazy_import_from_roomkit(self) -> None:
-        """Test that OpenTelemetryProvider is accessible via lazy import."""
-        import roomkit
+    def test_lazy_import_from_subpackage(self) -> None:
+        """Test that OpenTelemetryProvider is importable from its subpackage."""
+        from roomkit.telemetry.opentelemetry import OpenTelemetryProvider
 
-        cls = getattr(roomkit, "OpenTelemetryProvider", None)
-        assert cls is not None
+        assert OpenTelemetryProvider is not None
 
 
 # ---------------------------------------------------------------------------

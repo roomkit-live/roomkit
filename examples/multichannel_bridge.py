@@ -20,9 +20,6 @@ import asyncio
 from roomkit import (
     ChannelCategory,
     InboundMessage,
-    MockEmailProvider,
-    MockHTTPProvider,
-    MockSMSProvider,
     RoomEvent,
     RoomKit,
     TextContent,
@@ -31,6 +28,9 @@ from roomkit import (
 from roomkit.channels import EmailChannel, HTTPChannel, SMSChannel
 from roomkit.channels.ai import AIChannel
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.providers.email.mock import MockEmailProvider
+from roomkit.providers.http.mock import MockHTTPProvider
+from roomkit.providers.sms.mock import MockSMSProvider
 
 
 async def main() -> None:

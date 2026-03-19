@@ -18,14 +18,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from roomkit import (
-    HookExecution,
-    HookResult,
-    HookTrigger,
-    PyroscopeProfiler,
-    RoomKit,
-    VoiceChannel,
-)
+from roomkit import HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
+from roomkit.telemetry.pyroscope import PyroscopeProfiler
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.pipeline.vad.mock import MockVADProvider
 from roomkit.voice.stt.mock import MockSTTProvider

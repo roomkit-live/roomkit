@@ -19,16 +19,16 @@ from typing import Any
 
 from roomkit import (
     AIChannel,
-    AITool,
     ChannelCategory,
     InboundMessage,
-    MockAIProvider,
     RoomEvent,
     RoomKit,
     TextContent,
     WebSocketChannel,
-    compose_tool_handlers,
 )
+from roomkit.providers.ai.base import AITool
+from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.tools.compose import compose_tool_handlers
 
 logging.basicConfig(level=logging.INFO, format="%(name)s  %(message)s")
 

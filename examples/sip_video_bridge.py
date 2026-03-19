@@ -42,15 +42,9 @@ import logging
 import os
 import signal
 
-from roomkit import (
-    AudioVideoChannel,
-    HookExecution,
-    HookResult,
-    HookTrigger,
-    RoomKit,
-    VideoBridgeConfig,
-)
+from roomkit import AudioVideoChannel, HookExecution, HookResult, HookTrigger, RoomKit
 from roomkit.video.backends.sip import SIPVideoBackend
+from roomkit.video.bridge import VideoBridgeConfig
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.stt.mock import MockSTTProvider

@@ -146,11 +146,11 @@ class TestFrameToJpegBase64:
 
 
 class TestExports:
-    def test_importable_from_roomkit(self) -> None:
-        import roomkit
+    def test_importable_from_subpackage(self) -> None:
+        from roomkit.video import OpenAIVisionConfig, OpenAIVisionProvider
 
-        assert hasattr(roomkit, "OpenAIVisionProvider")
-        assert hasattr(roomkit, "OpenAIVisionConfig")
+        assert OpenAIVisionProvider is not None
+        assert OpenAIVisionConfig is not None
 
     def test_importable_from_video(self) -> None:
         from roomkit.video import OpenAIVisionConfig, OpenAIVisionProvider

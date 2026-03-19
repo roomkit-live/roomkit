@@ -14,12 +14,8 @@ from __future__ import annotations
 
 import asyncio
 
-from roomkit import (
-    EphemeralEvent,
-    EphemeralEventType,
-    RoomKit,
-    WebSocketChannel,
-)
+from roomkit import RoomKit, WebSocketChannel
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 
 # Track current presence status per user
 presence_map: dict[str, str] = {}

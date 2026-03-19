@@ -16,11 +16,8 @@ from __future__ import annotations
 import asyncio
 
 from roomkit import (
-    AIMessage,
     ChannelCategory,
     InboundMessage,
-    MemoryProvider,
-    MemoryResult,
     RoomContext,
     RoomEvent,
     RoomKit,
@@ -28,6 +25,8 @@ from roomkit import (
     WebSocketChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.memory.base import MemoryProvider, MemoryResult
+from roomkit.providers.ai.base import AIMessage
 from roomkit.providers.ai.mock import MockAIProvider
 
 # --- Custom memory provider --------------------------------------------------

@@ -15,17 +15,9 @@ from __future__ import annotations
 
 import asyncio
 
-from roomkit import (
-    DeleteContent,
-    DeleteType,
-    EditContent,
-    EventType,
-    InboundMessage,
-    RoomEvent,
-    RoomKit,
-    TextContent,
-    WebSocketChannel,
-)
+from roomkit import EventType, InboundMessage, RoomEvent, RoomKit, TextContent, WebSocketChannel
+from roomkit.models.enums import DeleteType
+from roomkit.models.event import DeleteContent, EditContent
 
 
 async def main() -> None:

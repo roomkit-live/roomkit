@@ -5,13 +5,15 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
-from roomkit import MockSTTProvider, MockVoiceBackend, RoomKit, VoiceChannel
+from roomkit import RoomKit, VoiceChannel
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import AudioChunk, TranscriptionResult, VoiceSession
 from roomkit.voice.pipeline import AudioPipelineConfig, MockVADProvider
 from roomkit.voice.pipeline.engine import AudioPipeline
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
 from roomkit.voice.stt.base import STTProvider
+from roomkit.voice.stt.mock import MockSTTProvider
 
 
 def _session(sid: str = "s1") -> VoiceSession:

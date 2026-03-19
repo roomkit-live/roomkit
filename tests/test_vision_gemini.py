@@ -107,11 +107,11 @@ class TestGeminiVisionProvider:
 
 
 class TestExports:
-    def test_importable_from_roomkit(self) -> None:
-        import roomkit
+    def test_importable_from_subpackage(self) -> None:
+        from roomkit.video import GeminiVisionConfig, GeminiVisionProvider
 
-        assert hasattr(roomkit, "GeminiVisionProvider")
-        assert hasattr(roomkit, "GeminiVisionConfig")
+        assert GeminiVisionProvider is not None
+        assert GeminiVisionConfig is not None
 
     def test_importable_from_video(self) -> None:
         from roomkit.video import GeminiVisionConfig, GeminiVisionProvider

@@ -76,20 +76,18 @@ import os
 import signal
 
 from roomkit import (
-    DescribeScreenTool,
-    GeminiVisionConfig,
-    GeminiVisionProvider,
     HookExecution,
     HookResult,
     HookTrigger,
-    OpenAIVisionConfig,
-    OpenAIVisionProvider,
     RealtimeVoiceChannel,
     RoomKit,
-    ScreenInputTools,
     VideoChannel,
 )
 from roomkit.video.backends.screen import ScreenCaptureBackend
+from roomkit.video.vision.gemini import GeminiVisionConfig, GeminiVisionProvider
+from roomkit.video.vision.openai import OpenAIVisionConfig, OpenAIVisionProvider
+from roomkit.video.vision.screen_input import ScreenInputTools
+from roomkit.video.vision.screen_tool import DescribeScreenTool
 from roomkit.voice.backends.local import LocalAudioBackend
 
 logging.basicConfig(

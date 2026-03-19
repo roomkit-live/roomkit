@@ -22,10 +22,6 @@ from roomkit import (
     InboundMessage,
     RoomEvent,
     RoomKit,
-    ScriptExecutor,
-    ScriptResult,
-    Skill,
-    SkillRegistry,
     TextContent,
     WebSocketChannel,
 )
@@ -36,6 +32,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
 )
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.skills import ScriptExecutor, ScriptResult, Skill, SkillRegistry
 
 # ---------------------------------------------------------------------------
 # 1. Create sample skill directories (in production, these already exist)

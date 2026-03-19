@@ -88,17 +88,9 @@ import os
 import signal
 import sys
 
-from roomkit import (
-    ChannelCategory,
-    HookExecution,
-    HookResult,
-    HookTrigger,
-    RoomKit,
-    VLLMConfig,
-    VoiceChannel,
-    create_vllm_provider,
-)
+from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.vllm import VLLMConfig, create_vllm_provider
 from roomkit.voice.backends.local import LocalAudioBackend
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.pipeline.turn import SmartTurnConfig, SmartTurnDetector

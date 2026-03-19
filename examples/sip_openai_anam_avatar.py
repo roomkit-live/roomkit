@@ -58,10 +58,11 @@ logger = logging.getLogger("sip_openai_anam")
 if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit").setLevel(logging.DEBUG)
 
-from roomkit import AnamConfig, VideoPipelineConfig
+from roomkit.providers.anam import AnamConfig
 from roomkit.providers.anam.avatar import AnamAvatarProvider
 from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
 from roomkit.video.backends.sip import SIPVideoBackend
+from roomkit.video.pipeline import VideoPipelineConfig
 from roomkit.video.pipeline.encoder.pyav import PyAVVideoEncoder
 from roomkit.video.pipeline.filter.watermark import WatermarkFilter
 from roomkit.video.utils import make_text_frame

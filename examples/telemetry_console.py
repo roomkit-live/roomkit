@@ -14,11 +14,9 @@ import logging
 
 from roomkit import (
     ChannelCategory,
-    ConsoleTelemetryProvider,
     HookResult,
     HookTrigger,
     InboundMessage,
-    MockAIProvider,
     RoomContext,
     RoomEvent,
     RoomKit,
@@ -26,6 +24,8 @@ from roomkit import (
     WebSocketChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.telemetry.console import ConsoleTelemetryProvider
 
 # Enable logging to see telemetry output
 logging.basicConfig(level=logging.INFO, format="%(name)s | %(message)s")

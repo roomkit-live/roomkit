@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from roomkit import InboundMessage, RateLimit, RoomKit, TextContent
+from roomkit import InboundMessage, RoomKit, TextContent
 from roomkit.channels.base import Channel
-from roomkit.models.channel import ChannelBinding, ChannelOutput
+from roomkit.models.channel import ChannelBinding, ChannelOutput, RateLimit
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent

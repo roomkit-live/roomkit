@@ -15,14 +15,8 @@ from __future__ import annotations
 
 import asyncio
 
-from roomkit import (
-    EphemeralEvent,
-    EphemeralEventType,
-    InboundMessage,
-    RoomKit,
-    TextContent,
-    WebSocketChannel,
-)
+from roomkit import InboundMessage, RoomKit, TextContent, WebSocketChannel
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 
 # Collect typing events received by each user
 alice_typing_events: list[EphemeralEvent] = []

@@ -100,27 +100,28 @@ logging.getLogger("roomkit.core.event_router").setLevel(logging.ERROR)
 from roomkit import (
     Agent,
     ChannelCategory,
-    ConversationPipeline,
-    ConversationState,
-    DelegateHandler,
-    GeminiAIProvider,
-    GeminiConfig,
-    HandoffMemoryProvider,
     HookExecution,
     HookResult,
     HookTrigger,
-    PipelineStage,
     RoomKit,
-    SlidingWindowMemory,
-    StripInternalTags,
     VoiceChannel,
+)
+from roomkit.memory.sliding_window import SlidingWindowMemory
+from roomkit.models.context import RoomContext
+from roomkit.orchestration.handoff import (
+    DelegateHandler,
+    HandoffMemoryProvider,
     WaitForIdleDelivery,
     build_delegate_tool,
-    get_conversation_state,
-    set_conversation_state,
     setup_delegation,
 )
-from roomkit.models.context import RoomContext
+from roomkit.orchestration.pipeline import ConversationPipeline, PipelineStage
+from roomkit.orchestration.state import (
+    ConversationState,
+    get_conversation_state,
+    set_conversation_state,
+)
+from roomkit.providers.gemini import GeminiAIProvider, GeminiConfig
 from roomkit.voice.backends.sip import SIPVoiceBackend
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.pipeline.vad.sherpa_onnx import (
@@ -129,6 +130,7 @@ from roomkit.voice.pipeline.vad.sherpa_onnx import (
 )
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 from roomkit.voice.tts.elevenlabs import ElevenLabsConfig, ElevenLabsTTSProvider
+from roomkit.voice.tts.filters import StripInternalTags
 
 # ---------------------------------------------------------------------------
 # Configuration

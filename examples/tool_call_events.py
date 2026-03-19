@@ -19,17 +19,15 @@ from typing import Any
 
 from roomkit import (
     AIChannel,
-    AIResponse,
-    AIToolCall,
     ChannelCategory,
-    EphemeralEvent,
-    EphemeralEventType,
     InboundMessage,
-    MockAIProvider,
     RoomKit,
     TextContent,
     WebSocketChannel,
 )
+from roomkit.providers.ai.base import AIResponse, AIToolCall
+from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 
 # Collect tool call events
 tool_events: list[EphemeralEvent] = []

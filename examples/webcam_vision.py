@@ -37,24 +37,16 @@ import asyncio
 import logging
 import signal
 
-from roomkit import (
-    ChannelCategory,
-    GeminiVisionConfig,
-    GeminiVisionProvider,
-    HookExecution,
-    HookTrigger,
-    MockAIProvider,
-    MockVisionProvider,
-    OpenAIVisionConfig,
-    OpenAIVisionProvider,
-    RoomKit,
-    VideoChannel,
-    VideoPipelineConfig,
-)
+from roomkit import ChannelCategory, HookExecution, HookTrigger, RoomKit, VideoChannel
 from roomkit.channels.ai import AIChannel
 from roomkit.models.session_event import SessionStartedEvent
+from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.video.backends.local import LocalVideoBackend
+from roomkit.video.pipeline import VideoPipelineConfig
 from roomkit.video.vision.base import VisionProvider
+from roomkit.video.vision.gemini import GeminiVisionConfig, GeminiVisionProvider
+from roomkit.video.vision.mock import MockVisionProvider
+from roomkit.video.vision.openai import OpenAIVisionConfig, OpenAIVisionProvider
 
 logging.basicConfig(level=logging.WARNING)
 

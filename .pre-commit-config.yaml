@@ -4,7 +4,9 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
+        exclude: ^examples/test-click\.py$
       - id: ruff-format
+        exclude: ^examples/test-click\.py$
   # mypy runs in CI via `uv run mypy src/` with all deps installed.
   # The pre-commit mirror lacks optional dependency stubs (httpx,
   # websockets, openai, etc.) so it produces false positives.

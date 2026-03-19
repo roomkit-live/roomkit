@@ -14,14 +14,8 @@ from __future__ import annotations
 import asyncio
 import json
 
-from roomkit import (
-    RoomEvent,
-    StreamChunk,
-    StreamEnd,
-    StreamMessage,
-    StreamStart,
-    WebSocketChannel,
-)
+from roomkit import RoomEvent, WebSocketChannel
+from roomkit.channels.websocket import StreamChunk, StreamEnd, StreamMessage, StreamStart
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelMediaType, ChannelType

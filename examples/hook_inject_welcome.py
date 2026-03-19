@@ -22,10 +22,10 @@ from roomkit import (
     RoomContext,
     RoomEvent,
     RoomKit,
-    SystemContent,
     TextContent,
     WebSocketChannel,
 )
+from roomkit.models.event import SystemContent
 
 
 async def main() -> None:

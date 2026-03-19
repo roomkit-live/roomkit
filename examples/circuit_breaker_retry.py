@@ -15,9 +15,9 @@ from __future__ import annotations
 import asyncio
 import time
 
-from roomkit import RetryPolicy
 from roomkit.core.circuit_breaker import CircuitBreaker
 from roomkit.core.retry import retry_with_backoff
+from roomkit.models.channel import RetryPolicy
 
 
 async def main() -> None:

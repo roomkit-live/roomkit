@@ -23,11 +23,11 @@ from roomkit import (
     RoomContext,
     RoomEvent,
     RoomKit,
-    SystemContent,
     TextContent,
     WebSocketChannel,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.models.event import SystemContent
 from roomkit.providers.ai.mock import MockAIProvider
 
 mute_log: list[str] = []
