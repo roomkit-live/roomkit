@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
@@ -38,6 +39,10 @@ class VideoBridgeConfig:
     enabled: bool = True
     max_participants: int = 10
     forwarding_strategy: Literal["forward"] = "forward"
+    keyframe_interval_s: float = 5.0
+    """Request a keyframe from each source if none seen within this interval.
+    Ensures decoder recovery after packet loss on the bridge→receiver path.
+    Set to ``0`` to disable periodic keyframe requests."""
 
 
 @dataclass
@@ -67,6 +72,8 @@ class VideoBridge:
         self._lock = threading.Lock()
         self._frame_filter: BridgeVideoFrameFilter | None = None
         self._frame_processor: BridgeVideoFrameProcessor | None = None
+        # Track last keyframe time per source session for periodic PLI
+        self._last_keyframe_at: dict[str, float] = {}
 
     @property
     def config(self) -> VideoBridgeConfig:
@@ -157,6 +164,7 @@ class VideoBridge:
             if found_room_id is not None:
                 if not self._rooms[found_room_id]:
                     del self._rooms[found_room_id]
+                self._last_keyframe_at.pop(session_id, None)
                 logger.info(
                     "VideoBridge: removed session %s from room %s",
                     session_id,
@@ -181,6 +189,18 @@ class VideoBridge:
             if filtered is None:
                 return  # frame dropped
             frame = filtered
+
+        # Track keyframes and request new ones when stale.
+        # Packet loss on the bridge→receiver path can freeze decoders;
+        # periodic PLI ensures recovery within keyframe_interval_s.
+        if frame.keyframe:
+            self._last_keyframe_at[session.id] = time.monotonic()
+        elif self._config.keyframe_interval_s > 0:
+            now = time.monotonic()
+            last = self._last_keyframe_at.get(session.id, 0.0)
+            if now - last >= self._config.keyframe_interval_s:
+                self._last_keyframe_at[session.id] = now
+                self._request_keyframe_for(session.id)
 
         with self._lock:
             targets = self._get_targets(session.id)
@@ -209,10 +229,25 @@ class VideoBridge:
         """Remove all sessions and clean up."""
         with self._lock:
             self._rooms.clear()
+            self._last_keyframe_at.clear()
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _request_keyframe_for(self, session_id: str) -> None:
+        """Request a keyframe from a source session's backend."""
+        with self._lock:
+            for room in self._rooms.values():
+                bs = room.get(session_id)
+                if bs is not None:
+                    break
+            else:
+                return
+        try:
+            bs.backend.request_keyframe(bs.session)
+        except Exception:
+            logger.debug("Failed to request keyframe from %s", session_id[:8], exc_info=True)
 
     def _get_targets(self, source_id: str) -> list[_BridgedVideoSession]:
         """Get target sessions for forwarding (caller holds lock)."""
