@@ -14,8 +14,8 @@ Environment variables:
     XAI_API_KEY         (required) xAI API key for Grok TTS
 
     --- Voice (optional) ---
+    LANGUAGE            Language for both STT and TTS (default: en)
     GROK_VOICE          Grok voice: eve | ara | rex | sal | leo (default: eve)
-    GROK_LANGUAGE       BCP-47 language code (default: en)
     SAMPLE_RATE         Audio sample rate in Hz (default: 16000)
 
     --- Pipeline (optional) ---
@@ -144,31 +144,33 @@ async def main() -> None:
     # --- Pipeline config ------------------------------------------------------
     pipeline_config = AudioPipelineConfig(aec=aec, denoiser=denoiser)
 
+    # --- Language (shared by STT + TTS) ----------------------------------------
+    language = os.environ.get("LANGUAGE", "en")
+
     # --- Deepgram STT ---------------------------------------------------------
     stt = DeepgramSTTProvider(
         config=DeepgramConfig(
             api_key=env["DEEPGRAM_API_KEY"],
             model="nova-2",
-            language="en",
+            language=language,
             punctuate=True,
             smart_format=True,
         )
     )
-    logger.info("STT: Deepgram (nova-2)")
+    logger.info("STT: Deepgram (nova-2, lang=%s)", language)
 
     # --- Grok TTS -------------------------------------------------------------
     grok_voice = os.environ.get("GROK_VOICE", "eve")
-    grok_language = os.environ.get("GROK_LANGUAGE", "en")
     tts = GrokTTSProvider(
         config=GrokTTSConfig(
             api_key=env["XAI_API_KEY"],
             voice_id=grok_voice,
-            language=grok_language,
+            language=language,
             codec="pcm",
             sample_rate=sample_rate,
         )
     )
-    logger.info("TTS: Grok (voice=%s, lang=%s, %dHz PCM)", grok_voice, grok_language, sample_rate)
+    logger.info("TTS: Grok (voice=%s, lang=%s, %dHz PCM)", grok_voice, language, sample_rate)
 
     # --- Claude Haiku AI ------------------------------------------------------
     ai_provider = AnthropicAIProvider(
@@ -181,6 +183,7 @@ async def main() -> None:
     )
     logger.info("AI: Claude Haiku (claude-haiku-4-5-20251001)")
 
+    lang_instruction = f"\n\nAlways respond in {language}." if language != "en" else ""
     system_prompt = os.environ.get(
         "SYSTEM_PROMPT",
         "You are a friendly voice assistant. Keep your responses "
@@ -193,7 +196,7 @@ async def main() -> None:
         "<high-pitch>...</high-pitch>, <low-pitch>...</low-pitch>\n\n"
         "Example: 'Oh [laugh] that's a great question! "
         "<soft>Let me think...</soft> [pause] Here's what I found.'\n"
-        "Don't overuse them — sprinkle them in where they feel natural.",
+        "Don't overuse them — sprinkle them in where they feel natural." + lang_instruction,
     )
 
     # --- Channels -------------------------------------------------------------
