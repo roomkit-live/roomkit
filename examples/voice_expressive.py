@@ -103,14 +103,14 @@ async def main() -> None:
     )
 
     # --- VAD ------------------------------------------------------------------
-    from roomkit.voice.pipeline.vad import SherpaVADConfig, SherpaVADProvider
+    from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADConfig, SherpaOnnxVADProvider
 
-    vad_config = SherpaVADConfig(
+    vad_config = SherpaOnnxVADConfig(
         model_path=os.environ["VAD_MODEL"],
         model_type=os.environ.get("VAD_MODEL_TYPE", "ten"),
         threshold=float(os.environ.get("VAD_THRESHOLD", "0.35")),
     )
-    vad = SherpaVADProvider(vad_config)
+    vad = SherpaOnnxVADProvider(vad_config)
 
     # --- Voice channel --------------------------------------------------------
     from roomkit.voice import get_local_audio_backend
