@@ -106,7 +106,7 @@ class VoiceOpsMixin(HelpersMixin):
                 channel_id,
                 channel,
                 binding,
-                session=session,
+                session=session,  # type: ignore[arg-type]
                 participant_id=participant_id,
                 metadata=metadata,
                 backend=backend,
@@ -193,8 +193,9 @@ class VoiceOpsMixin(HelpersMixin):
                     )
 
         # Pull model: start listening (push model backends stream already)
-        if created and hasattr(channel._backend, "start_listening"):
-            await channel._backend.start_listening(session)
+        backend_ref = channel._backend
+        if created and backend_ref is not None and hasattr(backend_ref, "start_listening"):
+            await backend_ref.start_listening(session)
 
         await self._emit_framework_event(
             "voice_session_started",
@@ -232,7 +233,7 @@ class VoiceOpsMixin(HelpersMixin):
 
         channel.bind_session(session, room_id, binding)
         self._wire_video_recording(room_id, channel_id, session, channel)  # type: ignore[attr-defined]
-        return session
+        return session  # type: ignore[no-any-return]
 
     async def leave(self, session: VoiceSession | VideoSession) -> None:
         """Remove a participant from a room.
@@ -246,13 +247,13 @@ class VoiceOpsMixin(HelpersMixin):
         channel = self._channels.get(session.channel_id)
 
         if isinstance(channel, VoiceChannel):
-            await self._leave_voice(session, channel)
+            await self._leave_voice(session, channel)  # type: ignore[arg-type]
             return
 
         from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 
         if isinstance(channel, RealtimeVoiceChannel):
-            await channel.end_session(session)
+            await channel.end_session(session)  # type: ignore[arg-type]
             return
 
         from roomkit.channels.video import VideoChannel
@@ -344,7 +345,7 @@ class VoiceOpsMixin(HelpersMixin):
                 DeprecationWarning,
                 stacklevel=2,
             )
-        return await self.join(
+        return await self.join(  # type: ignore[return-value]
             room_id,
             channel_id,
             participant_id=participant_id,
@@ -384,7 +385,7 @@ class VoiceOpsMixin(HelpersMixin):
             DeprecationWarning,
             stacklevel=2,
         )
-        return await self.join(
+        return await self.join(  # type: ignore[return-value]
             room_id,
             channel_id,
             participant_id=participant_id,
