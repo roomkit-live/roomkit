@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from roomkit.voice.tts.elevenlabs import (
     EXPRESSIVE_TAGS,
     MODEL_MULTILINGUAL_V2,
-    MODEL_V3_CONVERSATIONAL,
+    MODEL_V3,
     ElevenLabsConfig,
     ElevenLabsTTSProvider,
 )
@@ -80,7 +80,7 @@ class TestExpressiveMode:
     def test_expressive_sets_v3_model(self):
         """expressive=True should force model to v3 conversational."""
         provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k", expressive=True))
-        assert provider._config.model_id == MODEL_V3_CONVERSATIONAL
+        assert provider._config.model_id == MODEL_V3
 
     def test_expressive_overrides_explicit_model(self):
         """expressive=True overrides any explicit model_id."""
@@ -91,7 +91,7 @@ class TestExpressiveMode:
                 expressive=True,
             )
         )
-        assert provider._config.model_id == MODEL_V3_CONVERSATIONAL
+        assert provider._config.model_id == MODEL_V3
 
     def test_non_expressive_keeps_model(self):
         """Without expressive, model_id is untouched."""
@@ -105,9 +105,7 @@ class TestExpressiveMode:
         assert provider._is_v3_model() is True
 
     def test_is_v3_model_explicit(self):
-        provider = ElevenLabsTTSProvider(
-            ElevenLabsConfig(api_key="k", model_id=MODEL_V3_CONVERSATIONAL)
-        )
+        provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k", model_id=MODEL_V3))
         assert provider._is_v3_model() is True
 
     def test_is_v3_model_v2(self):
@@ -161,9 +159,7 @@ class TestVoiceSettings:
 
     def test_v3_explicit_model_omits_style(self):
         """Setting model_id to v3 directly also omits style/speaker_boost."""
-        provider = ElevenLabsTTSProvider(
-            ElevenLabsConfig(api_key="k", model_id=MODEL_V3_CONVERSATIONAL)
-        )
+        provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k", model_id=MODEL_V3))
         settings = provider._build_voice_settings()
         assert "style" not in settings
         assert "use_speaker_boost" not in settings
@@ -206,7 +202,7 @@ class TestSynthesize:
 
         call_args = mock_client.return_value.post.call_args
         payload = call_args.kwargs.get("json") or call_args[1].get("json")
-        assert payload["model_id"] == MODEL_V3_CONVERSATIONAL
+        assert payload["model_id"] == MODEL_V3
         assert payload["text"] == "[laughs] That's funny!"
         assert "style" not in payload["voice_settings"]
         assert "use_speaker_boost" not in payload["voice_settings"]
