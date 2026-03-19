@@ -249,6 +249,8 @@ from roomkit.providers.voicemeup.sms import (
 from roomkit.providers.whatsapp.base import WhatsAppProvider
 from roomkit.providers.whatsapp.mock import MockWhatsAppProvider
 from roomkit.providers.whatsapp.personal import WhatsAppPersonalProvider
+from roomkit.providers.xai.config import XAIRealtimeConfig
+from roomkit.providers.xai.realtime import XAIRealtimeProvider
 from roomkit.realtime.base import (
     EphemeralCallback,
     EphemeralEvent,
@@ -654,6 +656,9 @@ __all__ = [
     # Realtime – PersonaPlex (NVIDIA)
     "PersonaPlexConfig",
     "PersonaPlexRealtimeProvider",
+    # Realtime – xAI (Grok)
+    "XAIRealtimeConfig",
+    "XAIRealtimeProvider",
     # AI – vLLM (local)
     "VLLMConfig",
     "create_vllm_provider",

@@ -419,6 +419,20 @@ def get_openai_realtime_provider() -> type:
     return OpenAIRealtimeProvider
 
 
+def get_xai_realtime_provider() -> type:
+    """Get XAIRealtimeProvider class (requires websockets)."""
+    from roomkit.providers.xai.realtime import XAIRealtimeProvider
+
+    return XAIRealtimeProvider
+
+
+def get_xai_realtime_config() -> type:
+    """Get XAIRealtimeConfig class."""
+    from roomkit.providers.xai.config import XAIRealtimeConfig
+
+    return XAIRealtimeConfig
+
+
 def get_gemini_live_provider() -> type:
     """Get GeminiLiveProvider class (requires google-genai)."""
     from roomkit.providers.gemini.realtime import GeminiLiveProvider

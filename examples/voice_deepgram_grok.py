@@ -6,7 +6,7 @@ and xAI Grok for text-to-speech:
   Mic -> [Pipeline] -> Deepgram STT -> Claude Haiku -> Grok TTS -> Speaker
 
 Requirements:
-    pip install roomkit[local-audio,anthropic] deepgram-sdk websockets
+    pip install roomkit[local-audio,anthropic] deepgram-sdk websockets aec-audio-processing
 
 Environment variables:
     ANTHROPIC_API_KEY   (required) Anthropic API key
@@ -17,10 +17,6 @@ Environment variables:
     LANGUAGE            Language for both STT and TTS (default: en)
     GROK_VOICE          Grok voice: eve | ara | rex | sal | leo (default: eve)
     SAMPLE_RATE         Audio sample rate in Hz (default: 16000)
-
-    --- Pipeline (optional) ---
-    AEC                 Echo cancellation: webrtc | speex | 0 (default: webrtc)
-    DENOISE             Enable RNNoise denoiser: 1 | 0 (default: 1)
 
     --- AI (optional) ---
     SYSTEM_PROMPT       Custom system prompt for Claude
@@ -53,6 +49,7 @@ from roomkit import (
 from roomkit.channels.ai import AIChannel
 from roomkit.voice.backends.local import LocalAudioBackend
 from roomkit.voice.pipeline import AudioPipelineConfig
+from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 from roomkit.voice.tts.grok import GrokTTSConfig, GrokTTSProvider
 
@@ -98,49 +95,24 @@ async def main() -> None:
     sample_rate = int(os.environ.get("SAMPLE_RATE", "16000"))
     block_ms = 20
 
-    # --- AEC (echo cancellation) ----------------------------------------------
-    aec = None
-    aec_mode = os.environ.get("AEC", "webrtc").lower()
-    if aec_mode in ("1", "webrtc"):
-        from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
-
-        aec = WebRTCAECProvider(sample_rate=sample_rate)
-        logger.info("AEC enabled (WebRTC AEC3)")
-    elif aec_mode == "speex":
-        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
-
-        frame_size = sample_rate * block_ms // 1000
-        aec = SpeexAECProvider(
-            frame_size=frame_size,
-            filter_length=frame_size * 10,
-            sample_rate=sample_rate,
-        )
-        logger.info("AEC enabled (Speex)")
-
-    # --- Denoiser (optional) --------------------------------------------------
-    denoiser = None
-    if os.environ.get("DENOISE", "1") == "1":
-        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
-
-        denoiser = RNNoiseDenoiserProvider(sample_rate=sample_rate)
-        logger.info("Denoiser: RNNoise")
+    # --- WebRTC AEC (echo cancellation + noise suppression) -------------------
+    aec = WebRTCAECProvider(sample_rate=sample_rate, enable_ns=True)
 
     # --- Backend: local mic + speakers ----------------------------------------
-    mute_mic = aec is None  # mute mic during playback when no AEC
     backend = LocalAudioBackend(
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
         channels=1,
         block_duration_ms=block_ms,
         aec=aec,
-        mute_mic_during_playback=mute_mic,
+        mute_mic_during_playback=False,
     )
-    logger.info("Backend: LocalAudio (%dHz, mute_mic=%s)", sample_rate, mute_mic)
+    logger.info("Backend: LocalAudio (%dHz, WebRTC AEC)", sample_rate)
 
     kit = RoomKit()
 
     # --- Pipeline config ------------------------------------------------------
-    pipeline_config = AudioPipelineConfig(aec=aec, denoiser=denoiser)
+    pipeline_config = AudioPipelineConfig(aec=aec)
 
     # --- Language (shared by STT + TTS) ----------------------------------------
     language = os.environ.get("LANGUAGE", "en")
