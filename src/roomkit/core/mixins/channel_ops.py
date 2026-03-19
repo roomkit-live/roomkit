@@ -10,7 +10,6 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
-    ChannelType,
     EventType,
     HookExecution,
     HookTrigger,
@@ -78,7 +77,6 @@ class ChannelOpsMixin(HelpersMixin):
         self,
         room_id: str,
         channel_id: str,
-        channel_type: ChannelType | None = None,
         category: ChannelCategory = ChannelCategory.TRANSPORT,
         access: Access = Access.READ_WRITE,
         visibility: str = "all",
@@ -90,11 +88,10 @@ class ChannelOpsMixin(HelpersMixin):
             channel = self._channels.get(channel_id)
             if channel is None:
                 raise ChannelNotRegisteredError(f"Channel {channel_id} not registered")
-            ct = channel_type or channel.channel_type
             binding = ChannelBinding(
                 channel_id=channel_id,
                 room_id=room_id,
-                channel_type=ct,
+                channel_type=channel.channel_type,
                 category=category,
                 access=access,
                 visibility=visibility,
