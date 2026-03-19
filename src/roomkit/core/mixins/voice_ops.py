@@ -53,6 +53,7 @@ class VoiceOpsMixin(HelpersMixin):
         session: VoiceSession | VideoSession | None = None,
         participant_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        backend: VoiceBackend | None = None,
     ) -> VoiceSession | VideoSession:
         """Join a participant to a room via a channel.
 
@@ -72,6 +73,10 @@ class VoiceOpsMixin(HelpersMixin):
                 Omit for pull model.
             participant_id: Participant ID.  Auto-generated if omitted.
             metadata: Optional session metadata.
+            backend: Override backend for cross-transport bridging.
+                When bridging sessions from different transports
+                (e.g. SIP + WebRTC), pass the session's own backend
+                so the bridge sends audio through the correct transport.
 
         Returns:
             The voice or video session (created or passed in).
@@ -100,6 +105,7 @@ class VoiceOpsMixin(HelpersMixin):
                 session=session,
                 participant_id=participant_id,
                 metadata=metadata,
+                backend=backend,
             )
 
         from roomkit.channels.video import VideoChannel
@@ -129,15 +135,16 @@ class VoiceOpsMixin(HelpersMixin):
         session: VoiceSession | None = None,
         participant_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        backend: VoiceBackend | None = None,
     ) -> VoiceSession:
         """Join a voice session to a room (internal)."""
         created = session is None
         if created:
-            backend = channel._backend
-            if backend is None:
+            create_backend = backend or channel._backend
+            if create_backend is None:
                 raise VoiceBackendNotConfiguredError("VoiceChannel has no backend configured")
             pid = participant_id or f"participant-{uuid4().hex[:8]}"
-            session = await backend.connect(
+            session = await create_backend.connect(
                 room_id,
                 pid,
                 channel_id,
@@ -146,7 +153,7 @@ class VoiceOpsMixin(HelpersMixin):
 
         assert session is not None  # noqa: S101
 
-        channel.bind_session(session, room_id, binding)
+        channel.bind_session(session, room_id, binding, backend=backend)
         self._wire_audio_recording(room_id, channel_id, session, channel)  # type: ignore[attr-defined]
 
         # AudioVideoChannel — wire video via channel tap

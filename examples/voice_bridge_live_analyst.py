@@ -66,8 +66,6 @@ logger = logging.getLogger("voice_bridge_analyst")
 
 from roomkit import (
     AudioBridgeConfig,
-    ChannelBinding,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -330,18 +328,13 @@ async def handle_sip_call(session: Any) -> None:
     name = _participant_name(session)
     logger.info("SIP call: %s", name)
 
-    binding = ChannelBinding(
-        room_id=ROOM_ID,
-        channel_id="voice",
-        channel_type=ChannelType.VOICE,
-    )
-    voice.bind_session(session, ROOM_ID, binding, backend=sip_backend)
+    await kit.join(ROOM_ID, "voice", session=session, backend=sip_backend)
 
 
 @sip_backend.on_call_disconnected
 async def handle_sip_disconnect(session: Any) -> None:
     name = _participant_name(session)
-    voice.unbind_session(session)
+    await kit.leave(session)
     logger.info("%s left", name)
 
 
@@ -357,18 +350,7 @@ async def fastrtc_session_factory(connection_id: str) -> Any:
     _web_session_counter += 1
     participant_id = f"web-user-{_web_session_counter}"
 
-    session = await fastrtc_backend.connect(
-        room_id=ROOM_ID,
-        participant_id=participant_id,
-        channel_id="voice",
-    )
-
-    binding = ChannelBinding(
-        room_id=ROOM_ID,
-        channel_id="voice",
-        channel_type=ChannelType.VOICE,
-    )
-    voice.bind_session(session, ROOM_ID, binding)
+    session = await kit.join(ROOM_ID, "voice", participant_id=participant_id)
     return session
 
 

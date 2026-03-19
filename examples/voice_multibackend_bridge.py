@@ -57,8 +57,6 @@ from roomkit import (
     AnthropicAIProvider,
     AnthropicConfig,
     AudioBridgeConfig,
-    ChannelBinding,
-    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -190,14 +188,9 @@ async def handle_sip_call(session: Any) -> None:
     name = _participant_name(session)
     logger.info("SIP call: %s (session=%s)", name, session.id)
 
-    binding = ChannelBinding(
-        room_id=ROOM_ID,
-        channel_id="voice",
-        channel_type=ChannelType.VOICE,
-    )
-    # Bind with backend=sip_backend so the bridge sends audio to this
-    # session via the SIP backend, not the FastRTC backend.
-    voice.bind_session(session, ROOM_ID, binding, backend=sip_backend)
+    # backend=sip_backend so the bridge sends audio to this session
+    # via the SIP backend, not the FastRTC backend.
+    await kit.join(ROOM_ID, "voice", session=session, backend=sip_backend)
 
     count = voice._bridge.get_participant_count(ROOM_ID) if voice._bridge else 0
     logger.info("Participants: %d", count)
@@ -207,7 +200,7 @@ async def handle_sip_call(session: Any) -> None:
 async def handle_sip_disconnect(session: Any) -> None:
     """SIP hangup — remove from bridge, maybe summarize."""
     name = _participant_name(session)
-    voice.unbind_session(session)
+    await kit.leave(session)
     await _maybe_summarize(name)
 
 
@@ -224,18 +217,7 @@ async def fastrtc_session_factory(connection_id: str) -> Any:
     _web_session_counter += 1
     participant_id = f"web-user-{_web_session_counter}"
 
-    session = await fastrtc_backend.connect(
-        room_id=ROOM_ID,
-        participant_id=participant_id,
-        channel_id="voice",
-    )
-
-    binding = ChannelBinding(
-        room_id=ROOM_ID,
-        channel_id="voice",
-        channel_type=ChannelType.VOICE,
-    )
-    voice.bind_session(session, ROOM_ID, binding)
+    session = await kit.join(ROOM_ID, "voice", participant_id=participant_id)
 
     name = _participant_name(session)
     count = voice._bridge.get_participant_count(ROOM_ID) if voice._bridge else 0
