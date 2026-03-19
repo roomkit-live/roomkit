@@ -1,7 +1,7 @@
 tasks/
-*.jpg
-*.jpeg
-*.png
+examples/*.jpg
+examples/*.jpeg
+examples/*.png
 __pycache__/
 *.py[cod]
 *$py.class
