@@ -241,15 +241,26 @@ class RTPVideoBackend(RTPVoiceBackend, VideoBackend):  # type: ignore[misc]
     def send_video_sync(self, session: VideoSession, frame: VideoFrame) -> None:
         """Synchronously send a video frame via RTP.
 
-        Called by the video bridge from the RTP receive thread where
-        ``asyncio.get_running_loop()`` is not available.  Calls
-        ``video_rtp.send_frame()`` directly — no event loop required.
+        Called by the video bridge from the RTP receive thread.
+        Schedules ``send_frame()`` on the event loop via
+        ``call_soon_threadsafe`` to avoid cross-thread corruption.
         """
+        import asyncio
+
         video_rtp = self._video_rtp_sessions.get(session.id)
         if video_rtp is None:
             return
         ts = int((frame.timestamp_ms or 0) * 90)  # ms → 90kHz RTP clock
-        video_rtp.send_frame([frame.data], ts, frame.keyframe)
+        data = [frame.data]
+        is_key = frame.keyframe
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.call_soon_threadsafe(video_rtp.send_frame, data, ts, is_key)
+                return
+        except RuntimeError:
+            pass
+        video_rtp.send_frame(data, ts, is_key)
 
     # -------------------------------------------------------------------------
     # Callbacks

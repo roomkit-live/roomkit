@@ -478,22 +478,29 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
     def send_video_sync(self, session: VideoSession, frame: VideoFrame) -> None:
         """Synchronously send a video frame via SIP/RTP.
 
-        Called by the video bridge from the RTP receive thread where
-        ``asyncio.get_running_loop()`` is not available.  Calls
-        ``vcs.send_frame()`` directly — no event loop required.
+        Called by the video bridge from the RTP receive thread.
+        Schedules ``vcs.send_frame()`` on the event loop via
+        ``call_soon_threadsafe`` to avoid cross-thread corruption
+        of the VP9 depacketizer state on the target session.
         """
         vcs = self._video_call_sessions.get(session.id)
         if vcs is None:
             logger.debug("send_video_sync: no VCS for session %s", session.id[:8])
             return
         ts = int((frame.timestamp_ms or 0) * 90)  # ms → 90kHz RTP clock
-        try:
-            vcs.send_frame([frame.data], ts, frame.keyframe)
-        except Exception:
-            logger.exception(
-                "send_video_sync: send_frame failed for session %s",
-                session.id[:8],
-            )
+        data = [frame.data]
+        is_key = frame.keyframe
+        loop = getattr(self, "_loop", None)
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(vcs.send_frame, data, ts, is_key)
+        else:
+            try:
+                vcs.send_frame(data, ts, is_key)
+            except Exception:
+                logger.exception(
+                    "send_video_sync: send_frame failed for session %s",
+                    session.id[:8],
+                )
 
     def request_keyframe(self, session: VideoSession) -> None:
         """Send a PLI (Picture Loss Indication) to the remote endpoint.
