@@ -41,7 +41,7 @@ import logging
 import os
 import signal
 
-from roomkit import AIChannel, HookExecution, HookTrigger, Room, RoomKit, VoiceChannel
+from roomkit import AIChannel, ChannelCategory, HookExecution, HookTrigger, RoomKit, VoiceChannel
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.voice.tts.elevenlabs import ElevenLabsConfig, ElevenLabsTTSProvider
 
@@ -119,15 +119,13 @@ async def main() -> None:
     # --- Logging hook ---------------------------------------------------------
     @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC)
     async def log_events(event, ctx):
-        logger.info(
-            "[%s] %s: %s", event.channel_id, event.sender_id, event.text[:80] if event.text else ""
-        )
+        text = event.content.text or ""
+        logger.info("[%s] %s", event.source.channel_id, text[:80])
 
     # --- Room -----------------------------------------------------------------
-    room = Room(room_id="expressive-demo")
-    room = await kit.store.create_room(room)
-    await kit.join(room.room_id, "voice")
-    await kit.join(room.room_id, "ai")
+    await kit.create_room(room_id="expressive-demo")
+    await kit.attach_channel("expressive-demo", "ai", category=ChannelCategory.INTELLIGENCE)
+    await kit.attach_channel("expressive-demo", "voice")
 
     logger.info("Expressive voice assistant ready — speak into your microphone!")
     logger.info("ElevenLabs model: %s", tts._config.model_id)

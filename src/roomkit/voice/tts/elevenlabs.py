@@ -1,6 +1,6 @@
 """ElevenLabs text-to-speech provider.
 
-Supports expressive mode via the ``eleven_v3_conversational`` model.
+Supports expressive mode via the ``eleven_v3`` model.
 When ``expressive=True``, synthesis uses v3 Conversational TTS which
 understands expressive tags such as ``[laughs]``, ``[whispers]``,
 ``[sighs]``, ``[slow]``, and ``[excited]`` embedded in the text.
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 MODEL_MULTILINGUAL_V2 = "eleven_multilingual_v2"
 MODEL_TURBO_V2_5 = "eleven_turbo_v2_5"
 MODEL_FLASH_V2_5 = "eleven_flash_v2_5"
-MODEL_V3 = "eleven_v3_conversational"
+MODEL_V3 = "eleven_v3"
 
 # Expressive tags recognised by v3 Conversational TTS.
 EXPRESSIVE_TAGS = frozenset({"[laughs]", "[whispers]", "[sighs]", "[slow]", "[excited]"})
@@ -76,7 +76,7 @@ class ElevenLabsTTSProvider(TTSProvider):
     """ElevenLabs text-to-speech provider with streaming support.
 
     When *expressive mode* is enabled (``config.expressive=True``), the
-    provider uses the ``eleven_v3_conversational`` model which supports
+    provider uses the ``eleven_v3`` model which supports
     inline expressive tags (``[laughs]``, ``[whispers]``, etc.) and adapts
     tone and timing based on conversational context.
     """
@@ -98,7 +98,8 @@ class ElevenLabsTTSProvider(TTSProvider):
 
     @property
     def supports_streaming_input(self) -> bool:
-        return True
+        # v3 does not support the WebSocket stream-input endpoint.
+        return not self._is_v3_model()
 
     def _is_v3_model(self) -> bool:
         """Return True when the selected model is a v3 variant."""
