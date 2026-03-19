@@ -550,7 +550,8 @@ class TestRoomKitVoiceIntegration:
         updated = backend.get_session(session.id)
         assert updated.state == VoiceSessionState.ENDED
 
-    async def test_disconnect_voice_without_backend_raises(self) -> None:
+    async def test_disconnect_voice_without_channel_is_noop(self) -> None:
+        """leave() on an unknown channel logs a warning but does not raise."""
         kit = RoomKit()
         from roomkit.voice.base import VoiceSession
 
@@ -560,8 +561,8 @@ class TestRoomKitVoiceIntegration:
             participant_id="user-1",
             channel_id="voice-1",
         )
-        with pytest.raises(VoiceBackendNotConfiguredError):
-            await kit.disconnect_voice(session)
+        # Should not raise — leave() handles missing channels gracefully
+        await kit.leave(session)
 
 
 class TestAudioFrame:

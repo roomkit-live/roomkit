@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from roomkit.channels.voice import VoiceChannel
 from roomkit.core.exceptions import (
@@ -16,6 +18,7 @@ from roomkit.core.mixins.helpers import HelpersMixin
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
+    from roomkit.models.channel import ChannelBinding
     from roomkit.models.event import AudioContent
     from roomkit.recorder._room_recorder_manager import RoomRecorderManager
     from roomkit.store.base import ConversationStore
@@ -38,229 +41,110 @@ class VoiceOpsMixin(HelpersMixin):
     _tts: TTSProvider | None
     _room_recorder_mgr: RoomRecorderManager
 
-    async def connect_voice(
+    # ------------------------------------------------------------------
+    # join / leave — unified session lifecycle
+    # ------------------------------------------------------------------
+
+    async def join(
         self,
         room_id: str,
-        participant_id: str,
         channel_id: str,
         *,
+        session: VoiceSession | VideoSession | None = None,
+        participant_id: str | None = None,
         metadata: dict[str, Any] | None = None,
-        auto_greet: bool = False,
-    ) -> VoiceSession:
-        """Connect a participant to a voice session.
+    ) -> VoiceSession | VideoSession:
+        """Join a participant to a room via a channel.
 
-        Creates a voice session via the configured VoiceBackend and binds it
-        to the specified room and voice channel for message routing.
+        **Pull model** (``session=None``): the framework creates a session
+        via the channel's backend, binds it to the room, wires recording,
+        and starts listening.  ``participant_id`` is auto-generated if
+        omitted.
+
+        **Push model** (``session=<externally created>``): the framework
+        binds the existing session and wires recording.  Used by SIP
+        ``on_call`` handlers.
 
         Args:
             room_id: The room to join.
-            participant_id: The participant's ID.
-            channel_id: The voice channel ID.
-            metadata: Optional session metadata.
-            auto_greet: Deprecated. Use ``Agent(auto_greet=True)`` instead.
-                When ``True``, emits a :class:`DeprecationWarning`.
-
-        Returns:
-            A VoiceSession representing the connection.
-
-        Raises:
-            VoiceBackendNotConfiguredError: If no voice backend is configured.
-            ChannelNotRegisteredError: If the channel is not a VoiceChannel.
-            RoomNotFoundError: If the room doesn't exist.
-        """
-        import warnings
-
-        if self._voice is None:
-            raise VoiceBackendNotConfiguredError("No voice backend configured")
-
-        if auto_greet:
-            warnings.warn(
-                "connect_voice(auto_greet=True) is deprecated. "
-                "Set auto_greet=True on the Agent instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
-        # Verify room exists
-        await self.get_room(room_id)  # type: ignore[attr-defined]
-
-        # Get the voice channel
-        channel = self._channels.get(channel_id)
-        if not isinstance(channel, VoiceChannel):
-            raise ChannelNotRegisteredError(
-                f"Channel {channel_id} is not a registered VoiceChannel"
-            )
-
-        # Get the binding
-        binding = await self._store.get_binding(room_id, channel_id)
-        if binding is None:
-            raise ChannelNotFoundError(f"Channel {channel_id} not attached to room {room_id}")
-
-        # Create the session
-        session = await self._voice.connect(room_id, participant_id, channel_id, metadata=metadata)
-
-        # Bind session to channel for routing
-        channel.bind_session(session, room_id, binding)
-        self._wire_audio_recording(room_id, channel_id, session, channel)  # type: ignore[attr-defined]
-
-        await self._emit_framework_event(
-            "voice_session_started",
-            room_id=room_id,
-            channel_id=channel_id,
-            data={
-                "session_id": session.id,
-                "participant_id": participant_id,
-                "channel_id": channel_id,
-            },
-        )
-
-        return session
-
-    async def disconnect_voice(self, session: VoiceSession) -> None:
-        """Disconnect a voice session.
-
-        Args:
-            session: The session to disconnect.
-
-        Raises:
-            VoiceBackendNotConfiguredError: If no voice backend is configured.
-        """
-        if self._voice is None:
-            raise VoiceBackendNotConfiguredError("No voice backend configured")
-
-        # Remove room-level recording tracks before unbind
-        if self._room_recorder_mgr.has_recorders(session.room_id):
-            audio_track = self._make_audio_track(  # type: ignore[attr-defined]
-                session.id, session.channel_id, session.participant_id
-            )
-            self._room_recorder_mgr.on_track_removed(session.room_id, audio_track)
-
-            # Combined A/V backend (SIPVideoBackend) — also remove video track
-            video_track = self._make_video_track(  # type: ignore[attr-defined]
-                session.id, session.channel_id, session.participant_id
-            )
-            self._room_recorder_mgr.on_track_removed(session.room_id, video_track)
-
-        # Get the voice channel and unbind
-        channel = self._channels.get(session.channel_id)
-        if isinstance(channel, VoiceChannel):
-            channel.unbind_session(session)
-
-        await self._voice.disconnect(session)
-
-        await self._emit_framework_event(
-            "voice_session_ended",
-            room_id=session.room_id,
-            channel_id=session.channel_id,
-            data={
-                "session_id": session.id,
-                "participant_id": session.participant_id,
-                "channel_id": session.channel_id,
-            },
-        )
-
-    async def connect_video(
-        self,
-        room_id: str,
-        participant_id: str,
-        channel_id: str,
-        *,
-        metadata: dict[str, Any] | None = None,
-    ) -> VideoSession:
-        """Connect a participant to a video session.
-
-        Creates a video session via the channel's VideoBackend and binds
-        it to the specified room and video channel for event routing.
-
-        Args:
-            room_id: The room to join.
-            participant_id: The participant's ID.
-            channel_id: The video channel ID.
+            channel_id: The channel to join through.
+            session: Externally-created session (push model).
+                Omit for pull model.
+            participant_id: Participant ID.  Auto-generated if omitted.
             metadata: Optional session metadata.
 
         Returns:
-            A VideoSession representing the connection.
+            The voice or video session (created or passed in).
 
         Raises:
-            ChannelNotRegisteredError: If the channel is not a VideoChannel.
-            RoomNotFoundError: If the room doesn't exist.
-        """
-        from roomkit.channels.video import VideoChannel
-
-        await self.get_room(room_id)  # type: ignore[attr-defined]
-
-        channel = self._channels.get(channel_id)
-        # AudioVideoChannel sessions are bound via bind_voice_session,
-        # not connect_video.  This path is for standalone VideoChannel only.
-        if not isinstance(channel, VideoChannel):
-            raise ChannelNotRegisteredError(
-                f"Channel {channel_id} is not a registered VideoChannel"
-            )
-
-        binding = await self._store.get_binding(room_id, channel_id)
-        if binding is None:
-            raise ChannelNotFoundError(f"Channel {channel_id} not attached to room {room_id}")
-
-        session = await channel.backend.connect(
-            room_id, participant_id, channel_id, metadata=metadata
-        )
-        channel.bind_session(session, room_id, binding)
-        self._wire_video_recording(room_id, channel_id, session, channel)  # type: ignore[attr-defined]
-        return session
-
-    async def disconnect_video(self, session: VideoSession) -> None:
-        """Disconnect a video session.
-
-        Args:
-            session: The session to disconnect.
-
-        Raises:
-            ChannelNotRegisteredError: If the channel is not a VideoChannel.
-        """
-        from roomkit.channels.video import VideoChannel
-
-        channel = self._channels.get(session.channel_id)
-        if isinstance(channel, VideoChannel):
-            # Remove room-level recording track before unbind
-            if self._room_recorder_mgr.has_recorders(session.room_id):
-                track = self._make_video_track(  # type: ignore[attr-defined]
-                    session.id, session.channel_id, session.participant_id
-                )
-                self._room_recorder_mgr.on_track_removed(session.room_id, track)
-            channel.unbind_session(session)
-            await channel.backend.disconnect(session)
-
-    async def bind_voice_session(
-        self,
-        session: VoiceSession,
-        room_id: str,
-        channel_id: str,
-    ) -> None:
-        """Bind an externally-created voice session (push model).
-
-        SIP ``on_call`` handlers should call this instead of
-        ``channel.bind_session()`` directly — it wires recording taps
-        for both audio and video (when the backend is a combined A/V
-        backend like :class:`SIPVideoBackend`).
-
-        Args:
-            session: The voice session from the backend's on_call.
-            room_id: The room to bind into.
-            channel_id: The voice channel ID.
-
-        Raises:
-            ChannelNotRegisteredError: If the channel is not a VoiceChannel.
+            RoomNotFoundError: If the room does not exist.
+            ChannelNotRegisteredError: If the channel is not registered.
             ChannelNotFoundError: If the channel is not attached to the room.
         """
+        await self.get_room(room_id)  # type: ignore[attr-defined]
+
         channel = self._channels.get(channel_id)
-        if not isinstance(channel, VoiceChannel):
-            raise ChannelNotRegisteredError(
-                f"Channel {channel_id} is not a registered VoiceChannel"
-            )
+        if channel is None:
+            raise ChannelNotRegisteredError(f"Channel {channel_id} not registered")
 
         binding = await self._store.get_binding(room_id, channel_id)
         if binding is None:
             raise ChannelNotFoundError(f"Channel {channel_id} not attached to room {room_id}")
+
+        if isinstance(channel, VoiceChannel):
+            return await self._join_voice(
+                room_id,
+                channel_id,
+                channel,
+                binding,
+                session=session,
+                participant_id=participant_id,
+                metadata=metadata,
+            )
+
+        from roomkit.channels.video import VideoChannel
+
+        if isinstance(channel, VideoChannel):
+            return await self._join_video(
+                room_id,
+                channel_id,
+                channel,
+                binding,
+                session=session,
+                participant_id=participant_id,
+                metadata=metadata,
+            )
+
+        raise ChannelNotRegisteredError(
+            f"Channel {channel_id} ({type(channel).__name__}) does not support join()"
+        )
+
+    async def _join_voice(
+        self,
+        room_id: str,
+        channel_id: str,
+        channel: VoiceChannel,
+        binding: ChannelBinding,
+        *,
+        session: VoiceSession | None = None,
+        participant_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> VoiceSession:
+        """Join a voice session to a room (internal)."""
+        created = session is None
+        if created:
+            backend = channel._backend
+            if backend is None:
+                raise VoiceBackendNotConfiguredError("VoiceChannel has no backend configured")
+            pid = participant_id or f"participant-{uuid4().hex[:8]}"
+            session = await backend.connect(
+                room_id,
+                pid,
+                channel_id,
+                metadata=metadata,
+            )
+
+        assert session is not None  # noqa: S101
 
         channel.bind_session(session, room_id, binding)
         self._wire_audio_recording(room_id, channel_id, session, channel)  # type: ignore[attr-defined]
@@ -285,6 +169,232 @@ class VoiceOpsMixin(HelpersMixin):
                         session,
                         channel._backend,
                     )
+
+        # Pull model: start listening (push model backends stream already)
+        if created and hasattr(channel._backend, "start_listening"):
+            await channel._backend.start_listening(session)
+
+        await self._emit_framework_event(
+            "voice_session_started",
+            room_id=room_id,
+            channel_id=channel_id,
+            data={
+                "session_id": session.id,
+                "participant_id": session.participant_id,
+                "channel_id": channel_id,
+            },
+        )
+        return session
+
+    async def _join_video(
+        self,
+        room_id: str,
+        channel_id: str,
+        channel: Any,
+        binding: ChannelBinding,
+        *,
+        session: Any = None,
+        participant_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> VideoSession:
+        """Join a video session to a room (internal)."""
+        created = session is None
+        if created:
+            pid = participant_id or f"participant-{uuid4().hex[:8]}"
+            session = await channel.backend.connect(
+                room_id,
+                pid,
+                channel_id,
+                metadata=metadata,
+            )
+
+        channel.bind_session(session, room_id, binding)
+        self._wire_video_recording(room_id, channel_id, session, channel)  # type: ignore[attr-defined]
+        return session
+
+    async def leave(self, session: VoiceSession | VideoSession) -> None:
+        """Remove a participant from a room.
+
+        Stops listening, unbinds the session, removes recording tracks,
+        and disconnects the backend.
+
+        Args:
+            session: The session to leave.
+        """
+        channel = self._channels.get(session.channel_id)
+
+        if isinstance(channel, VoiceChannel):
+            await self._leave_voice(session, channel)
+            return
+
+        from roomkit.channels.video import VideoChannel
+
+        if isinstance(channel, VideoChannel):
+            await self._leave_video(session, channel)
+            return
+
+        logger.warning(
+            "leave() called for unknown channel type %s (session %s)",
+            session.channel_id,
+            session.id,
+        )
+
+    async def _leave_voice(self, session: VoiceSession, channel: VoiceChannel) -> None:
+        """Leave a voice session (internal)."""
+        # Remove recording tracks
+        if self._room_recorder_mgr.has_recorders(session.room_id):
+            audio_track = self._make_audio_track(  # type: ignore[attr-defined]
+                session.id, session.channel_id, session.participant_id
+            )
+            self._room_recorder_mgr.on_track_removed(session.room_id, audio_track)
+
+            video_track = self._make_video_track(  # type: ignore[attr-defined]
+                session.id, session.channel_id, session.participant_id
+            )
+            self._room_recorder_mgr.on_track_removed(session.room_id, video_track)
+
+        channel.unbind_session(session)
+
+        backend = channel._backend
+        if backend:
+            if hasattr(backend, "stop_listening"):
+                await backend.stop_listening(session)
+            await backend.disconnect(session)
+
+        await self._emit_framework_event(
+            "voice_session_ended",
+            room_id=session.room_id,
+            channel_id=session.channel_id,
+            data={
+                "session_id": session.id,
+                "participant_id": session.participant_id,
+                "channel_id": session.channel_id,
+            },
+        )
+
+    async def _leave_video(self, session: Any, channel: Any) -> None:
+        """Leave a video session (internal)."""
+        if self._room_recorder_mgr.has_recorders(session.room_id):
+            track = self._make_video_track(  # type: ignore[attr-defined]
+                session.id, session.channel_id, session.participant_id
+            )
+            self._room_recorder_mgr.on_track_removed(session.room_id, track)
+
+        channel.unbind_session(session)
+        await channel.backend.disconnect(session)
+
+    # ------------------------------------------------------------------
+    # Deprecated methods — delegate to join/leave
+    # ------------------------------------------------------------------
+
+    async def connect_voice(
+        self,
+        room_id: str,
+        participant_id: str,
+        channel_id: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+        auto_greet: bool = False,
+    ) -> VoiceSession:
+        """Connect a participant to a voice session.
+
+        .. deprecated::
+            Use :meth:`join` instead::
+
+                session = await kit.join(room_id, channel_id,
+                                         participant_id=participant_id)
+        """
+        warnings.warn(
+            "connect_voice() is deprecated. Use kit.join() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if auto_greet:
+            warnings.warn(
+                "connect_voice(auto_greet=True) is deprecated. "
+                "Set auto_greet=True on the Agent instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return await self.join(
+            room_id,
+            channel_id,
+            participant_id=participant_id,
+            metadata=metadata,
+        )
+
+    async def disconnect_voice(self, session: VoiceSession) -> None:
+        """Disconnect a voice session.
+
+        .. deprecated::
+            Use :meth:`leave` instead::
+
+                await kit.leave(session)
+        """
+        warnings.warn(
+            "disconnect_voice() is deprecated. Use kit.leave() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        await self.leave(session)
+
+    async def connect_video(
+        self,
+        room_id: str,
+        participant_id: str,
+        channel_id: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> VideoSession:
+        """Connect a participant to a video session.
+
+        .. deprecated::
+            Use :meth:`join` instead.
+        """
+        warnings.warn(
+            "connect_video() is deprecated. Use kit.join() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.join(
+            room_id,
+            channel_id,
+            participant_id=participant_id,
+            metadata=metadata,
+        )
+
+    async def disconnect_video(self, session: VideoSession) -> None:
+        """Disconnect a video session.
+
+        .. deprecated::
+            Use :meth:`leave` instead.
+        """
+        warnings.warn(
+            "disconnect_video() is deprecated. Use kit.leave() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        await self.leave(session)
+
+    async def bind_voice_session(
+        self,
+        session: VoiceSession,
+        room_id: str,
+        channel_id: str,
+    ) -> None:
+        """Bind an externally-created voice session (push model).
+
+        .. deprecated::
+            Use :meth:`join` instead::
+
+                await kit.join(room_id, channel_id, session=session)
+        """
+        warnings.warn(
+            "bind_voice_session() is deprecated. Use kit.join() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        await self.join(room_id, channel_id, session=session)
 
     async def connect_realtime_voice(
         self,

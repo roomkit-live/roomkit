@@ -553,9 +553,10 @@ class TestAutoGreet:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             await kit.connect_voice(room.id, "user-1", "voice-1", auto_greet=True)
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "Agent" in str(w[0].message)
+            dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            assert len(dep_warnings) >= 2  # connect_voice + auto_greet
+            auto_greet_w = [x for x in dep_warnings if "Agent" in str(x.message)]
+            assert len(auto_greet_w) == 1
 
         await kit.close()
 

@@ -93,7 +93,7 @@ class TestVideoSessionLifecycle:
 
     async def test_connect_unregistered_raises(self, kit: RoomKit) -> None:
         await kit.create_room(room_id="r1")
-        with pytest.raises(Exception, match="not a registered VideoChannel"):
+        with pytest.raises(Exception, match="not registered"):
             await kit.connect_video("r1", "user-1", "nonexistent")
 
     async def test_connect_unattached_raises(self, kit: RoomKit) -> None:

@@ -145,6 +145,12 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 filterwarnings = [
     "error",
+    "ignore:connect_voice\\(\\) is deprecated:DeprecationWarning",
+    "ignore:disconnect_voice\\(\\) is deprecated:DeprecationWarning",
+    "ignore:connect_video\\(\\) is deprecated:DeprecationWarning",
+    "ignore:disconnect_video\\(\\) is deprecated:DeprecationWarning",
+    "ignore:bind_voice_session\\(\\) is deprecated:DeprecationWarning",
+    "ignore:connect_voice\\(auto_greet=True\\) is deprecated:DeprecationWarning",
 ]
 
 [tool.mypy]

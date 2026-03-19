@@ -238,6 +238,7 @@ class TestBindVoiceSession:
     async def test_bind_invalid_channel_raises(self) -> None:
         """bind_voice_session raises for non-VoiceChannel."""
         kit = RoomKit()
+        await kit.create_room(room_id="room-1")
 
         session = VoiceSession(
             id="s1",
@@ -247,7 +248,7 @@ class TestBindVoiceSession:
             state=VoiceSessionState.ACTIVE,
         )
 
-        with pytest.raises(Exception, match="not a registered VoiceChannel"):
+        with pytest.raises(Exception, match="not registered"):
             await kit.bind_voice_session(session, "room-1", "nonexistent")
 
     async def test_disconnect_voice_removes_tracks_but_keeps_recording(self) -> None:
@@ -256,6 +257,7 @@ class TestBindVoiceSession:
 
         backend = _make_mock_sip_video_backend()
         backend.disconnect = AsyncMock()
+        backend.stop_listening = AsyncMock()
 
         kit = RoomKit(voice=backend)
         recorder = MockMediaRecorder()
