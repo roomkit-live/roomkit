@@ -31,11 +31,12 @@ class TestSlidingWindowMemory:
         ctx = RoomContext(room=Room(id="r1"), recent_events=events)
         mem = SlidingWindowMemory(max_events=3)
 
+        # current_event (events[-1]) is excluded — _build_context adds it separately
         result = await mem.retrieve("r1", events[-1], ctx)
 
-        assert len(result.events) == 3
+        assert len(result.events) == 2
         assert result.events[0].content.body == "msg7"  # type: ignore[union-attr]
-        assert result.events[2].content.body == "msg9"  # type: ignore[union-attr]
+        assert result.events[1].content.body == "msg8"  # type: ignore[union-attr]
         assert result.messages == []
 
     async def test_returns_all_when_fewer_than_max(self) -> None:
@@ -43,9 +44,10 @@ class TestSlidingWindowMemory:
         ctx = RoomContext(room=Room(id="r1"), recent_events=events)
         mem = SlidingWindowMemory(max_events=50)
 
+        # current_event (events[-1]) is excluded
         result = await mem.retrieve("r1", events[-1], ctx)
 
-        assert len(result.events) == 3
+        assert len(result.events) == 2
 
     async def test_returns_empty_when_no_events(self) -> None:
         ctx = RoomContext(room=Room(id="r1"), recent_events=[])

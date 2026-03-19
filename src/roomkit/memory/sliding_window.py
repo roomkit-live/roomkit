@@ -29,5 +29,10 @@ class SlidingWindowMemory(MemoryProvider):
         *,
         channel_id: str | None = None,
     ) -> MemoryResult:
-        events = context.recent_events[-self._max_events :]
+        # Exclude the current event — _build_context always appends it
+        # separately as the current turn.  Without this filter the event
+        # appears twice: once from history and once as the new message.
+        events = [
+            e for e in context.recent_events[-self._max_events :] if e.id != current_event.id
+        ]
         return MemoryResult(events=events)
