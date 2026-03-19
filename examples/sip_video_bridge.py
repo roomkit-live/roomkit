@@ -171,8 +171,16 @@ async def main() -> None:
 
     def on_call_ended(session: object) -> None:
         sid = getattr(session, "id", "unknown")
-        total = frame_counts.get(sid, 0)
-        logger.info("Call ended: session=%s, video_frames=%d", sid[:8], total)
+        total = frame_counts.pop(sid, 0)
+        audio_count = av._bridge.get_participant_count(ROOM_ID) if av._bridge else 0
+        video_count = av._video_bridge.get_participant_count(ROOM_ID) if av._video_bridge else 0
+        logger.info(
+            "Call ended: session=%s, video_frames=%d — room: %d audio, %d video",
+            sid[:8],
+            total,
+            audio_count,
+            video_count,
+        )
 
     backend.on_client_disconnected(on_call_ended)
 
