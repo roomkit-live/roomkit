@@ -1,4 +1,15 @@
-"""ElevenLabs text-to-speech provider."""
+"""ElevenLabs text-to-speech provider.
+
+Supports expressive mode via the ``eleven_v3_conversational`` model.
+When ``expressive=True``, synthesis uses v3 Conversational TTS which
+understands expressive tags such as ``[laughs]``, ``[whispers]``,
+``[sighs]``, ``[slow]``, and ``[excited]`` embedded in the text.
+
+.. note::
+
+    Do **not** combine expressive mode with :class:`StripBrackets` — that
+    filter removes all ``[...]`` content, including the expressive tags.
+"""
 
 from __future__ import annotations
 
@@ -18,14 +29,28 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Model ID constants
+MODEL_MULTILINGUAL_V2 = "eleven_multilingual_v2"
+MODEL_TURBO_V2_5 = "eleven_turbo_v2_5"
+MODEL_FLASH_V2_5 = "eleven_flash_v2_5"
+MODEL_V3_CONVERSATIONAL = "eleven_v3_conversational"
+
+# Expressive tags recognised by v3 Conversational TTS.
+EXPRESSIVE_TAGS = frozenset({"[laughs]", "[whispers]", "[sighs]", "[slow]", "[excited]"})
+
 
 @dataclass
 class ElevenLabsConfig:
-    """Configuration for ElevenLabs TTS provider."""
+    """Configuration for ElevenLabs TTS provider.
+
+    Set ``expressive=True`` to enable expressive mode (v3 Conversational
+    model).  This overrides ``model_id`` and disables voice settings that
+    are not supported by v3 (``style``, ``use_speaker_boost``).
+    """
 
     api_key: str
     voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel (default)
-    model_id: str = "eleven_multilingual_v2"
+    model_id: str = MODEL_MULTILINGUAL_V2
     stability: float = 0.5
     similarity_boost: float = 0.75
     style: float = 0.0
@@ -33,6 +58,8 @@ class ElevenLabsConfig:
     output_format: str = "mp3_44100_128"  # mp3, pcm_16000, pcm_22050, etc.
     # Streaming options
     optimize_streaming_latency: int = 3  # 0-4, higher = lower latency
+    # Expressive mode — uses v3 Conversational TTS with emotion/tone tags
+    expressive: bool = False
 
 
 @dataclass
@@ -46,10 +73,18 @@ class ElevenLabsVoice:
 
 
 class ElevenLabsTTSProvider(TTSProvider):
-    """ElevenLabs text-to-speech provider with streaming support."""
+    """ElevenLabs text-to-speech provider with streaming support.
+
+    When *expressive mode* is enabled (``config.expressive=True``), the
+    provider uses the ``eleven_v3_conversational`` model which supports
+    inline expressive tags (``[laughs]``, ``[whispers]``, etc.) and adapts
+    tone and timing based on conversational context.
+    """
 
     def __init__(self, config: ElevenLabsConfig) -> None:
         self._config = config
+        if config.expressive:
+            self._config.model_id = MODEL_V3_CONVERSATIONAL
         self._client: httpx.AsyncClient | None = None
         self._voices_cache: dict[str, ElevenLabsVoice] | None = None
 
@@ -65,6 +100,10 @@ class ElevenLabsTTSProvider(TTSProvider):
     def supports_streaming_input(self) -> bool:
         return True
 
+    def _is_v3_model(self) -> bool:
+        """Return True when the selected model is a v3 variant."""
+        return "v3" in self._config.model_id
+
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
@@ -78,13 +117,20 @@ class ElevenLabsTTSProvider(TTSProvider):
         return self._client
 
     def _build_voice_settings(self) -> dict[str, float | bool]:
-        """Build voice settings for synthesis."""
-        return {
+        """Build voice settings for synthesis.
+
+        v3 Conversational only supports ``stability`` and
+        ``similarity_boost``; ``style`` and ``use_speaker_boost`` are
+        omitted when a v3 model is active.
+        """
+        settings: dict[str, float | bool] = {
             "stability": self._config.stability,
             "similarity_boost": self._config.similarity_boost,
-            "style": self._config.style,
-            "use_speaker_boost": self._config.use_speaker_boost,
         }
+        if not self._is_v3_model():
+            settings["style"] = self._config.style
+            settings["use_speaker_boost"] = self._config.use_speaker_boost
+        return settings
 
     async def list_voices(self) -> list[ElevenLabsVoice]:
         """List available voices from ElevenLabs."""
@@ -187,8 +233,8 @@ class ElevenLabsTTSProvider(TTSProvider):
         params: dict[str, str | int] = {
             "output_format": self._config.output_format,
         }
-        # optimize_streaming_latency is not supported by all models (e.g. v3)
-        if not self._config.model_id.endswith("_v3"):
+        # optimize_streaming_latency is not supported by v3 models
+        if not self._is_v3_model():
             params["optimize_streaming_latency"] = self._config.optimize_streaming_latency
 
         async with client.stream(
@@ -252,7 +298,7 @@ class ElevenLabsTTSProvider(TTSProvider):
             f"?model_id={model_id}"
             f"&output_format={self._config.output_format}"
         )
-        if not model_id.endswith("_v3"):
+        if not self._is_v3_model():
             ws_url += f"&optimize_streaming_latency={self._config.optimize_streaming_latency}"
 
         async with websockets.connect(
