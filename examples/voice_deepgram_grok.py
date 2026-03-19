@@ -299,6 +299,7 @@ async def main() -> None:
     voice.unbind_session(session)
     await asyncio.sleep(0.1)
     await backend.disconnect(session)
+    await kit.close_room("voice-demo")
     await kit.close()
     logger.info("Done.")
 
