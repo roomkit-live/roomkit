@@ -223,6 +223,10 @@ class LocalAudioBackend(VoiceBackend):
         return "LocalAudio"
 
     @property
+    def auto_connect(self) -> bool:
+        return True
+
+    @property
     def capabilities(self) -> VoiceCapability:
         return VoiceCapability.INTERRUPTION
 

@@ -133,7 +133,30 @@ class ChannelOpsMixin(HelpersMixin):
             )
             # Flush traces that arrived before the room existed
             await self._flush_pending_traces(room_id)
-            return result
+
+        # Auto-start voice session for single-user backends (e.g. LocalAudioBackend).
+        # Runs AFTER the lock is released to avoid deadlocks if callbacks
+        # re-enter the framework (e.g. hooks calling get_room).
+        await self._post_attach(room_id, channel_id, channel, result)
+        return result
+
+    async def _post_attach(
+        self,
+        room_id: str,
+        channel_id: str,
+        channel: Channel,
+        binding: ChannelBinding,
+    ) -> None:
+        """Auto-start voice session when backend declares ``auto_connect``."""
+        from roomkit.channels.voice import VoiceChannel
+
+        if not isinstance(channel, VoiceChannel):
+            return
+        backend = channel._backend
+        if backend is None or not backend.auto_connect:
+            return
+
+        await self.join(room_id, channel_id)  # type: ignore[attr-defined]
 
     async def detach_channel(self, room_id: str, channel_id: str) -> bool:
         """Detach a channel from a room."""

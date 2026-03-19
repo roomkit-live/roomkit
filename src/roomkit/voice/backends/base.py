@@ -72,6 +72,17 @@ class VoiceBackend(ABC):
         """Backend name (e.g., 'webrtc', 'websocket', 'livekit')."""
         ...
 
+    @property
+    def auto_connect(self) -> bool:
+        """Whether ``attach_channel`` should auto-create a session.
+
+        Returns ``True`` for single-user backends (local mic, single-user
+        FastRTC) where the developer IS the participant.  Returns ``False``
+        for server backends (SIP, RTP, WebRTC) that accept external
+        connections.
+        """
+        return False
+
     async def connect(
         self,
         room_id: str,

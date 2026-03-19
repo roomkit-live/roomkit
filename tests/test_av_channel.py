@@ -30,6 +30,7 @@ def _make_av_backend() -> MagicMock:
     backend = MagicMock()
     backend.__class__ = type("MockAVBackend", (VoiceBackend, VideoBackend), {})
     backend.name = "mock-av"
+    backend.auto_connect = False
     backend.capabilities = MagicMock(return_value=0)
     backend.feeds_aec_reference = False
     backend.supports_playback_callback = False

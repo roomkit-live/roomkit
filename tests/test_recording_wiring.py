@@ -30,6 +30,7 @@ def _make_mock_sip_video_backend() -> MagicMock:
     # Make isinstance checks work for both VoiceBackend and VideoBackend
     backend.__class__ = type("MockSIPVideoBackend", (VoiceBackend, VideoBackend), {})
     backend.name = "SIP-AV"
+    backend.auto_connect = False
     backend._video_taps = []
 
     video_session = VideoSession(
@@ -60,6 +61,7 @@ class TestBindVoiceSession:
 
         backend = MagicMock()
         backend.name = "mock"
+        backend.auto_connect = False
         backend.capabilities = MagicMock(return_value=0)
         channel = VoiceChannel(
             "voice",
@@ -139,6 +141,7 @@ class TestBindVoiceSession:
 
         backend = MagicMock()
         backend.name = "mock"
+        backend.auto_connect = False
         backend.capabilities = MagicMock(return_value=0)
         channel = VoiceChannel(
             "voice",
@@ -178,6 +181,7 @@ class TestBindVoiceSession:
 
         backend = MagicMock()
         backend.name = "mock"
+        backend.auto_connect = False
         backend.capabilities = MagicMock(return_value=0)
         channel = VoiceChannel(
             "voice",
@@ -211,6 +215,7 @@ class TestBindVoiceSession:
 
         backend = MagicMock()
         backend.name = "mock"
+        backend.auto_connect = False
         backend.capabilities = MagicMock(return_value=0)
         channel = VoiceChannel(
             "voice",
