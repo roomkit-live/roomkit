@@ -46,8 +46,10 @@ import sys
 from roomkit import (
     AnthropicAIProvider,
     AnthropicConfig,
+    ChannelBinding,
     ChannelCategory,
     ChannelRecordingConfig,
+    ChannelType,
     HookExecution,
     HookResult,
     HookTrigger,
@@ -143,7 +145,7 @@ async def main() -> None:
     )
     logger.info("Backend: LocalAudio (%dHz, mute_mic=%s)", sample_rate, mute_mic)
 
-    kit = RoomKit(voice=backend)
+    kit = RoomKit()
 
     # --- Pipeline config ------------------------------------------------------
     pipeline_config = AudioPipelineConfig(aec=aec, denoiser=denoiser)
@@ -268,7 +270,17 @@ async def main() -> None:
         return HookResult.allow()
 
     # --- Start voice session --------------------------------------------------
-    session = await kit.connect_voice("voice-demo", "local-user", "voice")
+    session = await backend.connect("voice-demo", "local-user", "voice")
+    binding = ChannelBinding(
+        room_id="voice-demo",
+        channel_id="voice",
+        channel_type=ChannelType.VOICE,
+    )
+    voice.bind_session(session, "voice-demo", binding)
+
+    # Wire room-level audio recording if enabled
+    if recording_dir:
+        kit._wire_audio_recording("voice-demo", "voice", session, voice)
 
     logger.info("")
     logger.info("Speak into your microphone!")
@@ -288,7 +300,9 @@ async def main() -> None:
     # --- Cleanup --------------------------------------------------------------
     logger.info("\nStopping...")
     await backend.stop_listening(session)
-    await kit.disconnect_voice(session)
+    voice.unbind_session(session)
+    await asyncio.sleep(0.1)
+    await backend.disconnect(session)
     await kit.close_room("voice-demo")
     await kit.close()
     logger.info("Done.")
