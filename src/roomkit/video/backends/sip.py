@@ -440,10 +440,17 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
                 keyframe=is_keyframe,
                 sequence=seq,
             )
-            if self._video_received_callback is not None:
-                self._video_received_callback(video_session, frame)
-            for tap in self._video_taps:
-                tap(video_session, frame)
+            try:
+                if self._video_received_callback is not None:
+                    self._video_received_callback(video_session, frame)
+                for tap in self._video_taps:
+                    tap(video_session, frame)
+            except Exception:
+                logger.exception(
+                    "Error in video callback: session=%s, seq=%d",
+                    session_id[:8],
+                    seq,
+                )
 
         return _on_frame
 
@@ -477,9 +484,16 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
         """
         vcs = self._video_call_sessions.get(session.id)
         if vcs is None:
+            logger.debug("send_video_sync: no VCS for session %s", session.id[:8])
             return
         ts = int((frame.timestamp_ms or 0) * 90)  # ms → 90kHz RTP clock
-        vcs.send_frame([frame.data], ts, frame.keyframe)
+        try:
+            vcs.send_frame([frame.data], ts, frame.keyframe)
+        except Exception:
+            logger.exception(
+                "send_video_sync: send_frame failed for session %s",
+                session.id[:8],
+            )
 
     def request_keyframe(self, session: VideoSession) -> None:
         """Send a PLI (Picture Loss Indication) to the remote endpoint.

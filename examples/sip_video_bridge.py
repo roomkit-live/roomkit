@@ -65,10 +65,11 @@ logging.basicConfig(
 logger = logging.getLogger("sip_video_bridge")
 
 if os.environ.get("DEBUG") == "1":
-    logging.getLogger("roomkit").setLevel(logging.DEBUG)
-    # Enable video bridge debug logging specifically
+    # Enable video-related debug logging
     logging.getLogger("roomkit.video.bridge").setLevel(logging.DEBUG)
     logging.getLogger("roomkit.video.backend").setLevel(logging.DEBUG)
+    logging.getLogger("roomkit.video.sip").setLevel(logging.DEBUG)
+    logging.getLogger("roomkit.av").setLevel(logging.DEBUG)
 
 # ---------------------------------------------------------------------------
 # Configuration

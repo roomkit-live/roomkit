@@ -151,6 +151,13 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
         if binding_info is None:
             logger.debug("Video frame dropped (no binding): session=%s", session.id[:8])
             return
+        logger.debug(
+            "Video frame: session=%s seq=%d %s %d bytes",
+            session.id[:8],
+            frame.sequence,
+            "KEY" if frame.keyframe else "delta",
+            len(frame.data),
+        )
 
         # Run pipeline stages (decoder, resizer) if configured
         if self._video_pipeline is not None:
