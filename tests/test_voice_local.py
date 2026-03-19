@@ -335,7 +335,8 @@ class TestLocalAudioSpeakerPlayback:
         await send_task
 
         mock_stream.start.assert_called_once()
-        mock_stream.abort.assert_called_once()
+        # Normal completion uses stop() (graceful drain), not abort().
+        mock_stream.stop.assert_called_once()
         mock_stream.close.assert_called_once()
 
     async def test_is_playing_tracks_state(self) -> None:

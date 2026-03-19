@@ -37,8 +37,11 @@ Environment variables:
 from __future__ import annotations
 
 import asyncio
+import faulthandler
 import logging
 import os
+
+faulthandler.enable()
 import signal
 
 from roomkit import AIChannel, ChannelCategory, HookExecution, HookTrigger, RoomKit, VoiceChannel

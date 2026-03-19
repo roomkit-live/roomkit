@@ -520,8 +520,18 @@ class LocalAudioBackend(VoiceBackend):
         audio_buf = bytearray()
         buf_lock = threading.Lock()
         producer_done = threading.Event()
+        # Guard: prevents the callback from accessing shared state once
+        # the asyncio side begins tearing down the stream.
+        stream_closing = threading.Event()
 
         def _output_callback(outdata: bytearray, frames: int, time_info: Any, status: Any) -> None:
+            # Early exit if the stream is being torn down — avoids
+            # accessing freed memory or Python objects during close().
+            if stream_closing.is_set():
+                nbytes = frames * 2 * self._channels
+                outdata[:nbytes] = b"\x00" * nbytes
+                raise sd.CallbackStop
+
             nbytes = frames * 2 * self._channels  # int16
             stop = False
             with buf_lock:
@@ -600,16 +610,29 @@ class LocalAudioBackend(VoiceBackend):
 
         task = asyncio.create_task(_run())
         self._playback_tasks[session.id] = task
+        cancelled = False
         try:
             await task
         except asyncio.CancelledError:
-            pass  # Normal: cancelled by cancel_audio() during barge-in
+            cancelled = True  # cancel_audio() during barge-in
         finally:
             self._playback_tasks.pop(session.id, None)
             ostream = self._output_streams.pop(session.id, None)
             if ostream is not None:
-                with contextlib.suppress(Exception):
-                    ostream.abort()
+                # Signal the callback to stop immediately so it won't
+                # touch shared state while we tear down the stream.
+                stream_closing.set()
+                try:
+                    if cancelled or not ostream.active:
+                        # Barge-in or already stopped: discard buffers.
+                        ostream.abort()
+                    else:
+                        # Normal completion: let PortAudio drain its
+                        # hardware buffer so the last syllable isn't lost.
+                        ostream.stop()
+                except Exception:
+                    with contextlib.suppress(Exception):
+                        ostream.abort()
                 ostream.close()
 
     async def send_transcription(
