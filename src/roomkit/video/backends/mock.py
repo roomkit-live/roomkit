@@ -125,6 +125,11 @@ class MockVideoBackend(VideoBackend):
 
         self.calls.append(MockVideoCall(method="send_video", args={"session_id": session.id}))
 
+    def send_video_sync(self, session: VideoSession, frame: VideoFrame) -> None:
+        """Synchronous send — records directly without event loop."""
+        self.sent_video.append((session.id, frame.data))
+        self.calls.append(MockVideoCall(method="send_video", args={"session_id": session.id}))
+
     def get_session(self, session_id: str) -> VideoSession | None:
         return self._sessions.get(session_id)
 

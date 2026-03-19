@@ -468,6 +468,19 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
                 ts = int((chunk.timestamp_ms or 0) * 90)
                 vcs.send_frame([chunk.data], ts, chunk.keyframe)
 
+    def send_video_sync(self, session: VideoSession, frame: VideoFrame) -> None:
+        """Synchronously send a video frame via SIP/RTP.
+
+        Called by the video bridge from the RTP receive thread where
+        ``asyncio.get_running_loop()`` is not available.  Calls
+        ``vcs.send_frame()`` directly — no event loop required.
+        """
+        vcs = self._video_call_sessions.get(session.id)
+        if vcs is None:
+            return
+        ts = int((frame.timestamp_ms or 0) * 90)  # ms → 90kHz RTP clock
+        vcs.send_frame([frame.data], ts, frame.keyframe)
+
     # -------------------------------------------------------------------------
     # Callbacks
     # -------------------------------------------------------------------------
