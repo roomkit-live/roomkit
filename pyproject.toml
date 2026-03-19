@@ -35,6 +35,7 @@ gemini = ["google-genai>=1.0.0"]
 mistral = ["mistralai>=1.0"]
 deepgram = ["deepgram-sdk>=6.0.0"]
 sherpa-onnx = ["sherpa-onnx>=1.10"]
+elevenlabs = ["elevenlabs>=1.0"]
 qwen-tts = ["qwen-tts>=0.1"]
 qwen-asr = ["qwen-asr>=0.0.4"]
 neutts = ["neutts>=0.1"]
@@ -299,6 +300,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["musetalk", "musetalk.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["elevenlabs", "elevenlabs.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

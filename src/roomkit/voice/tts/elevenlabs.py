@@ -17,9 +17,7 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-
-import httpx
+from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.base import AudioChunk
 from roomkit.voice.tts.base import TTSProvider
@@ -85,7 +83,7 @@ class ElevenLabsTTSProvider(TTSProvider):
         self._config = config
         if config.expressive:
             self._config.model_id = MODEL_V3
-        self._client: httpx.AsyncClient | None = None
+        self._client: Any = None  # AsyncElevenLabs (lazy)
         self._voices_cache: dict[str, ElevenLabsVoice] | None = None
 
     @property
@@ -98,23 +96,18 @@ class ElevenLabsTTSProvider(TTSProvider):
 
     @property
     def supports_streaming_input(self) -> bool:
-        # v3 does not support the WebSocket stream-input endpoint.
-        return not self._is_v3_model()
+        # The official SDK does not expose WebSocket input streaming.
+        return False
 
     def _is_v3_model(self) -> bool:
         """Return True when the selected model is a v3 variant."""
         return "v3" in self._config.model_id
 
-    def _get_client(self) -> httpx.AsyncClient:
+    def _get_client(self) -> Any:
         if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url="https://api.elevenlabs.io/v1",
-                headers={
-                    "xi-api-key": self._config.api_key,
-                    "Content-Type": "application/json",
-                },
-                timeout=60.0,
-            )
+            from elevenlabs.client import AsyncElevenLabs
+
+            self._client = AsyncElevenLabs(api_key=self._config.api_key)
         return self._client
 
     def _build_voice_settings(self) -> dict[str, float | bool]:
@@ -133,23 +126,28 @@ class ElevenLabsTTSProvider(TTSProvider):
             settings["use_speaker_boost"] = self._config.use_speaker_boost
         return settings
 
+    def _make_voice_settings(self) -> Any:
+        """Build an SDK ``VoiceSettings`` object for API calls."""
+        from elevenlabs import VoiceSettings
+
+        return VoiceSettings(**self._build_voice_settings())
+
     async def list_voices(self) -> list[ElevenLabsVoice]:
         """List available voices from ElevenLabs."""
         if self._voices_cache is not None:
             return list(self._voices_cache.values())
 
         client = self._get_client()
-        response = await client.get("/voices")
-        response.raise_for_status()
-        data = response.json()
+        response = await client.voices.get_all()
 
         self._voices_cache = {}
-        for voice in data.get("voices", []):
+        for voice in response.voices:
+            labels = voice.labels if isinstance(voice.labels, dict) else {}
             v = ElevenLabsVoice(
-                voice_id=voice["voice_id"],
-                name=voice["name"],
-                category=voice.get("category", "premade"),
-                labels=voice.get("labels", {}),
+                voice_id=voice.voice_id,
+                name=voice.name,
+                category=getattr(voice, "category", "premade"),
+                labels=labels,
             )
             self._voices_cache[v.voice_id] = v
 
@@ -171,16 +169,22 @@ class ElevenLabsTTSProvider(TTSProvider):
         client = self._get_client()
 
         t0 = time.monotonic()
-        response = await client.post(
-            f"/text-to-speech/{voice_id}",
-            json={
-                "text": text,
-                "model_id": self._config.model_id,
-                "voice_settings": self._build_voice_settings(),
-            },
-            params={"output_format": self._config.output_format},
+        response = await client.text_to_speech.convert(
+            voice_id=voice_id,
+            text=text,
+            model_id=self._config.model_id,
+            voice_settings=self._make_voice_settings(),
+            output_format=self._config.output_format,
         )
-        response.raise_for_status()
+
+        # SDK convert() may return bytes or an async iterator — normalise.
+        if isinstance(response, bytes):
+            audio_bytes = response
+        else:
+            parts: list[bytes] = []
+            async for chunk in response:
+                parts.append(chunk)
+            audio_bytes = b"".join(parts)
 
         ttfb_ms = (time.monotonic() - t0) * 1000
         from roomkit.telemetry.noop import NoopTelemetryProvider
@@ -193,12 +197,8 @@ class ElevenLabsTTSProvider(TTSProvider):
             attributes={"provider": "elevenlabs", "model": self._config.model_id},
         )
 
-        # ElevenLabs returns raw audio bytes
-        # We need to save/upload this somewhere to get a URL
-        # For now, return a data URL (base64 encoded)
         import base64
 
-        audio_bytes = response.content
         mime_type = self._get_mime_type()
         data_url = f"data:{mime_type};base64,{base64.b64encode(audio_bytes).decode()}"
 
@@ -218,7 +218,7 @@ class ElevenLabsTTSProvider(TTSProvider):
     ) -> AsyncIterator[AudioChunk]:
         """Stream audio chunks as they're generated.
 
-        Uses ElevenLabs streaming API for low-latency synthesis.
+        Uses the ElevenLabs SDK streaming API for low-latency synthesis.
 
         Args:
             text: Text to synthesize.
@@ -230,146 +230,30 @@ class ElevenLabsTTSProvider(TTSProvider):
         voice_id = voice or self._config.voice_id
         client = self._get_client()
 
-        # Use streaming endpoint
-        params: dict[str, str | int] = {
-            "output_format": self._config.output_format,
-        }
-        # optimize_streaming_latency is not supported by v3 models
-        if not self._is_v3_model():
-            params["optimize_streaming_latency"] = self._config.optimize_streaming_latency
-
-        async with client.stream(
-            "POST",
-            f"/text-to-speech/{voice_id}/stream",
-            json={
-                "text": text,
-                "model_id": self._config.model_id,
-                "voice_settings": self._build_voice_settings(),
-            },
-            params=params,
-        ) as response:
-            if response.status_code >= 400:
-                body = await response.aread()
-                logger.error("ElevenLabs stream error %d: %s", response.status_code, body.decode())
-                response.raise_for_status()
-
-            # Larger chunks for PCM reduce PortAudio buffer underruns
-            # when network jitter causes gaps between HTTP chunks.
-            # 16 KB ≈ 340 ms at 24 kHz / 170 ms at 44.1 kHz (PCM 16-bit mono).
-            read_size = 16384 if self._get_audio_format() == "pcm_s16le" else 4096
-
-            chunk_index = 0
-            async for chunk in response.aiter_bytes(chunk_size=read_size):
-                if chunk:
-                    yield AudioChunk(
-                        data=chunk,
-                        sample_rate=self._get_sample_rate(),
-                        format=self._get_audio_format(),
-                        is_final=False,
-                    )
-                    chunk_index += 1
-
-            # Send final chunk marker
-            yield AudioChunk(
-                data=b"",
-                sample_rate=self._get_sample_rate(),
-                format=self._get_audio_format(),
-                is_final=True,
-            )
-
-    async def synthesize_stream_input(
-        self, text_stream: AsyncIterator[str], *, voice: str | None = None
-    ) -> AsyncIterator[AudioChunk]:
-        """Stream audio from streaming text input.
-
-        Uses ElevenLabs WebSocket API for real-time text-to-speech.
-
-        Args:
-            text_stream: Async iterator of text chunks.
-            voice: Voice ID (uses default_voice if not specified).
-
-        Yields:
-            AudioChunk with raw audio data.
-        """
-        import asyncio
-        import json
-
-        import websockets
-
-        voice_id = voice or self._config.voice_id
-        model_id = self._config.model_id
-
-        ws_url = (
-            f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input"
-            f"?model_id={model_id}"
-            f"&output_format={self._config.output_format}"
-        )
-        if not self._is_v3_model():
-            ws_url += f"&optimize_streaming_latency={self._config.optimize_streaming_latency}"
-
-        async with websockets.connect(
-            ws_url,
-            additional_headers=[("xi-api-key", self._config.api_key)],
-            open_timeout=30,
-        ) as ws:
-            # Send initial BOS (beginning of stream) message
-            await ws.send(
-                json.dumps(
-                    {
-                        "text": " ",
-                        "voice_settings": self._build_voice_settings(),
-                    }
+        chunk_index = 0
+        async for chunk in client.text_to_speech.stream(
+            voice_id=voice_id,
+            text=text,
+            model_id=self._config.model_id,
+            voice_settings=self._make_voice_settings(),
+            output_format=self._config.output_format,
+        ):
+            if chunk:
+                yield AudioChunk(
+                    data=chunk,
+                    sample_rate=self._get_sample_rate(),
+                    format=self._get_audio_format(),
+                    is_final=False,
                 )
-            )
+                chunk_index += 1
 
-            # Start text sender task
-            async def send_text() -> None:
-                try:
-                    async for text_chunk in text_stream:
-                        if text_chunk:
-                            await ws.send(json.dumps({"text": text_chunk}))
-                    # Send EOS (end of stream) message
-                    await ws.send(json.dumps({"text": ""}))
-                except websockets.exceptions.ConnectionClosed as e:
-                    logger.error("ElevenLabs WebSocket closed while sending: %s", e)
-                except Exception as e:
-                    logger.error(
-                        "Error in upstream text stream (not ElevenLabs): %s: %s",
-                        type(e).__name__,
-                        e,
-                    )
-                    await ws.close()
-
-            sender_task = asyncio.create_task(send_text())
-
-            try:
-                async for message in ws:
-                    if isinstance(message, str):
-                        data = json.loads(message)
-                        if data.get("audio"):
-                            import base64
-
-                            audio_bytes = base64.b64decode(data["audio"])
-                            yield AudioChunk(
-                                data=audio_bytes,
-                                sample_rate=self._get_sample_rate(),
-                                format=self._get_audio_format(),
-                                is_final=data.get("isFinal", False),
-                            )
-                        elif data.get("isFinal"):
-                            yield AudioChunk(
-                                data=b"",
-                                sample_rate=self._get_sample_rate(),
-                                format=self._get_audio_format(),
-                                is_final=True,
-                            )
-                            break
-            finally:
-                sender_task.cancel()
-                import contextlib
-
-                with contextlib.suppress(asyncio.CancelledError):
-                    await sender_task
+        # Send final chunk marker
+        yield AudioChunk(
+            data=b"",
+            sample_rate=self._get_sample_rate(),
+            format=self._get_audio_format(),
+            is_final=True,
+        )
 
     def _get_mime_type(self) -> str:
         """Get MIME type from output format."""
@@ -408,6 +292,4 @@ class ElevenLabsTTSProvider(TTSProvider):
 
     async def close(self) -> None:  # noqa: B027
         """Release resources."""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        self._client = None

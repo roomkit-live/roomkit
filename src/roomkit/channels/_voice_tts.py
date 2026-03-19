@@ -51,6 +51,7 @@ class VoiceTTSMixin:
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
     _playing_sessions: dict[str, TTSPlaybackState]
     _playback_done_events: dict[str, asyncio.Event]
+    _delivered_tts_events: set[str]
     _last_tts_ended_at: dict[str, float]
     _last_output_level_at: dict[str, float]
     _debug_frame_count: int
@@ -242,6 +243,12 @@ class VoiceTTSMixin:
 
         if event.type == EventType.SYSTEM or event.visibility == "internal":
             return ChannelOutputModel.empty()
+
+        # Track event to prevent duplicate TTS delivery (streaming + broadcast)
+        self._delivered_tts_events.add(event.id)
+        if len(self._delivered_tts_events) > 200:
+            self._delivered_tts_events.clear()
+            self._delivered_tts_events.add(event.id)
 
         tts_name = self._tts.name  # capture before async yields (may become None)
         room_id = event.room_id
@@ -533,6 +540,15 @@ class VoiceTTSMixin:
 
         text = event.content.body
         room_id = event.room_id
+
+        # Skip if already delivered via deliver_stream() or a prior deliver() call
+        if event.id in self._delivered_tts_events:
+            logger.debug("Skipping duplicate TTS for event %s", event.id)
+            return
+        self._delivered_tts_events.add(event.id)
+        if len(self._delivered_tts_events) > 200:
+            self._delivered_tts_events.clear()
+            self._delivered_tts_events.add(event.id)
 
         try:
             before_result = await self._framework.hook_engine.run_sync_hooks(

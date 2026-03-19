@@ -19,7 +19,7 @@ Supported tags:
   [excited]   — energetic delivery
 
 Requirements:
-    pip install roomkit[local-audio,anthropic]
+    pip install roomkit[elevenlabs,local-audio,anthropic]
 
 Run with:
     ANTHROPIC_API_KEY=... \\

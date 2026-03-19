@@ -167,6 +167,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._playback_done_events: dict[str, asyncio.Event] = {}
         # Sessions where speech was suppressed (echo during TTS playback)
         self._suppressed_sessions: set[str] = set()
+        # Track delivered event IDs to prevent duplicate TTS delivery
+        self._delivered_tts_events: set[str] = set()
         # The instantiated pipeline engine (if config provided)
         self._pipeline: AudioPipeline | None = None
         # Pending turns for turn detection (session_id -> list of TurnEntry)
@@ -1327,3 +1329,4 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         self._batch_audio_sample_rate.clear()
         self._frame_counts.clear()
         self._session_ready_pending.clear()
+        self._delivered_tts_events.clear()

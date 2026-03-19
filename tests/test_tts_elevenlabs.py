@@ -66,9 +66,14 @@ class TestProviderBasics:
         provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k", voice_id="custom"))
         assert provider.default_voice == "custom"
 
-    def test_supports_streaming_input(self):
+    def test_supports_streaming_input_always_false(self):
+        """SDK migration disables streaming input for all models."""
         provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k"))
-        assert provider.supports_streaming_input is True
+        assert provider.supports_streaming_input is False
+
+    def test_supports_streaming_input_v3_false(self):
+        provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k", expressive=True))
+        assert provider.supports_streaming_input is False
 
 
 # ---------------------------------------------------------------------------
@@ -166,46 +171,121 @@ class TestVoiceSettings:
 
 
 # ---------------------------------------------------------------------------
-# Synthesize (mocked HTTP)
+# Synthesize (mocked SDK)
 # ---------------------------------------------------------------------------
 
 
 class TestSynthesize:
     async def test_synthesize_sends_correct_payload(self):
         provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k"))
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.content = b"fake-audio-bytes"
-        mock_response.raise_for_status = MagicMock()
 
-        with patch.object(provider, "_get_client") as mock_client:
-            mock_client.return_value.post = AsyncMock(return_value=mock_response)
+        mock_client = MagicMock()
+        mock_client.text_to_speech.convert = AsyncMock(return_value=b"fake-audio-bytes")
+
+        with (
+            patch.object(provider, "_get_client", return_value=mock_client),
+            patch.object(provider, "_make_voice_settings", return_value="mock-settings"),
+        ):
             result = await provider.synthesize("Hello world")
 
-        call_args = mock_client.return_value.post.call_args
-        payload = call_args.kwargs.get("json") or call_args[1].get("json")
-        assert payload["model_id"] == MODEL_MULTILINGUAL_V2
-        assert "style" in payload["voice_settings"]
+        call_kwargs = mock_client.text_to_speech.convert.call_args.kwargs
+        assert call_kwargs["model_id"] == MODEL_MULTILINGUAL_V2
+        assert call_kwargs["text"] == "Hello world"
+        assert call_kwargs["voice_settings"] == "mock-settings"
         assert result.transcript == "Hello world"
 
     async def test_synthesize_expressive_payload(self):
-        """Expressive mode sends v3 model and stripped voice settings."""
+        """Expressive mode sends v3 model."""
         provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k", expressive=True))
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.content = b"fake-audio"
-        mock_response.raise_for_status = MagicMock()
 
-        with patch.object(provider, "_get_client") as mock_client:
-            mock_client.return_value.post = AsyncMock(return_value=mock_response)
+        mock_client = MagicMock()
+        mock_client.text_to_speech.convert = AsyncMock(return_value=b"fake-audio")
+
+        with (
+            patch.object(provider, "_get_client", return_value=mock_client),
+            patch.object(provider, "_make_voice_settings", return_value="mock-settings"),
+        ):
             await provider.synthesize("[laughs] That's funny!")
 
-        call_args = mock_client.return_value.post.call_args
-        payload = call_args.kwargs.get("json") or call_args[1].get("json")
-        assert payload["model_id"] == MODEL_V3
-        assert payload["text"] == "[laughs] That's funny!"
-        assert "style" not in payload["voice_settings"]
-        assert "use_speaker_boost" not in payload["voice_settings"]
+        call_kwargs = mock_client.text_to_speech.convert.call_args.kwargs
+        assert call_kwargs["model_id"] == MODEL_V3
+        assert call_kwargs["text"] == "[laughs] That's funny!"
+
+    async def test_synthesize_custom_voice(self):
+        """Voice override is forwarded to SDK."""
+        provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k"))
+
+        mock_client = MagicMock()
+        mock_client.text_to_speech.convert = AsyncMock(return_value=b"audio")
+
+        with (
+            patch.object(provider, "_get_client", return_value=mock_client),
+            patch.object(provider, "_make_voice_settings", return_value="s"),
+        ):
+            await provider.synthesize("Hi", voice="custom-voice-id")
+
+        call_kwargs = mock_client.text_to_speech.convert.call_args.kwargs
+        assert call_kwargs["voice_id"] == "custom-voice-id"
+
+
+# ---------------------------------------------------------------------------
+# Streaming synthesis (mocked SDK)
+# ---------------------------------------------------------------------------
+
+
+class TestSynthesizeStream:
+    async def test_synthesize_stream_yields_chunks(self):
+        provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k", output_format="pcm_24000"))
+
+        async def mock_stream(**kwargs):
+            yield b"chunk1"
+            yield b"chunk2"
+
+        mock_client = MagicMock()
+        mock_client.text_to_speech.stream = mock_stream
+
+        with (
+            patch.object(provider, "_get_client", return_value=mock_client),
+            patch.object(provider, "_make_voice_settings", return_value="s"),
+        ):
+            chunks = []
+            async for chunk in provider.synthesize_stream("Hello"):
+                chunks.append(chunk)
+
+        # 2 data chunks + 1 final marker
+        assert len(chunks) == 3
+        assert chunks[0].data == b"chunk1"
+        assert chunks[0].sample_rate == 24000
+        assert chunks[0].format == "pcm_s16le"
+        assert chunks[0].is_final is False
+        assert chunks[1].data == b"chunk2"
+        assert chunks[2].data == b""
+        assert chunks[2].is_final is True
+
+    async def test_synthesize_stream_skips_empty_chunks(self):
+        provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k"))
+
+        async def mock_stream(**kwargs):
+            yield b"data"
+            yield b""
+            yield b"more"
+
+        mock_client = MagicMock()
+        mock_client.text_to_speech.stream = mock_stream
+
+        with (
+            patch.object(provider, "_get_client", return_value=mock_client),
+            patch.object(provider, "_make_voice_settings", return_value="s"),
+        ):
+            chunks = []
+            async for chunk in provider.synthesize_stream("Hi"):
+                chunks.append(chunk)
+
+        # 2 data chunks (empty skipped) + 1 final marker
+        assert len(chunks) == 3
+        assert chunks[0].data == b"data"
+        assert chunks[1].data == b"more"
+        assert chunks[2].is_final is True
 
 
 # ---------------------------------------------------------------------------
@@ -217,9 +297,6 @@ class TestStreamingLatency:
     async def test_v2_includes_latency_param(self):
         """Non-v3 models include optimize_streaming_latency."""
         provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k"))
-
-        # We can't easily test the full stream, but we can verify the params
-        # are built correctly by checking the code path via _is_v3_model
         assert provider._is_v3_model() is False
 
     async def test_v3_excludes_latency_param(self):
@@ -229,54 +306,62 @@ class TestStreamingLatency:
 
 
 # ---------------------------------------------------------------------------
-# Voice listing (mocked HTTP)
+# Voice listing (mocked SDK)
 # ---------------------------------------------------------------------------
 
 
 class TestListVoices:
     async def test_list_voices(self):
         provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k"))
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "voices": [
-                {
-                    "voice_id": "v1",
-                    "name": "Rachel",
-                    "category": "premade",
-                    "labels": {"accent": "american"},
-                },
-                {
-                    "voice_id": "v2",
-                    "name": "Adam",
-                },
-            ]
-        }
 
-        with patch.object(provider, "_get_client") as mock_client:
-            mock_client.return_value.get = AsyncMock(return_value=mock_response)
+        mock_voice1 = MagicMock()
+        mock_voice1.voice_id = "v1"
+        mock_voice1.name = "Rachel"
+        mock_voice1.category = "premade"
+        mock_voice1.labels = {"accent": "american"}
+
+        mock_voice2 = MagicMock()
+        mock_voice2.voice_id = "v2"
+        mock_voice2.name = "Adam"
+        mock_voice2.category = "premade"
+        mock_voice2.labels = {}
+
+        mock_response = MagicMock()
+        mock_response.voices = [mock_voice1, mock_voice2]
+
+        mock_client = MagicMock()
+        mock_client.voices.get_all = AsyncMock(return_value=mock_response)
+
+        with patch.object(provider, "_get_client", return_value=mock_client):
             voices = await provider.list_voices()
 
         assert len(voices) == 2
         assert voices[0].voice_id == "v1"
         assert voices[0].name == "Rachel"
+        assert voices[0].labels == {"accent": "american"}
         assert voices[1].voice_id == "v2"
 
     async def test_list_voices_caches(self):
         provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k"))
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {"voices": [{"voice_id": "v1", "name": "R"}]}
 
-        with patch.object(provider, "_get_client") as mock_client:
-            mock_client.return_value.get = AsyncMock(return_value=mock_response)
+        mock_voice = MagicMock()
+        mock_voice.voice_id = "v1"
+        mock_voice.name = "R"
+        mock_voice.category = "premade"
+        mock_voice.labels = {}
+
+        mock_response = MagicMock()
+        mock_response.voices = [mock_voice]
+
+        mock_client = MagicMock()
+        mock_client.voices.get_all = AsyncMock(return_value=mock_response)
+
+        with patch.object(provider, "_get_client", return_value=mock_client):
             await provider.list_voices()
             await provider.list_voices()
 
         # Should only call the API once
-        assert mock_client.return_value.get.call_count == 1
+        assert mock_client.voices.get_all.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -285,18 +370,15 @@ class TestListVoices:
 
 
 class TestClose:
-    async def test_close_cleans_up_client(self):
+    async def test_close_clears_client(self):
         provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k"))
-        # Force client creation
-        provider._get_client()
-        assert provider._client is not None
+        provider._client = MagicMock()  # Simulate existing client
 
-        with patch.object(provider._client, "aclose", new_callable=AsyncMock) as mock_close:
-            await provider.close()
+        await provider.close()
 
-        mock_close.assert_awaited_once()
         assert provider._client is None
 
     async def test_close_noop_when_no_client(self):
         provider = ElevenLabsTTSProvider(ElevenLabsConfig(api_key="k"))
         await provider.close()  # should not raise
+        assert provider._client is None

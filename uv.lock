@@ -242,11 +242,11 @@ wheels = [
 
 [[package]]
 name = "aiortp"
-version = "0.3.0"
+version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/bf/71/b85e97f3474c79a71855030b25280577dffe258880b837f844727e175a05/aiortp-0.3.0.tar.gz", hash = "sha256:1f9719633bad8db1a7ed921abc4cfbfbcde6483a47e23f22b4aa351410d3a983", size = 53744, upload-time = "2026-03-14T03:29:01.323Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/be/89/0ca3c11c4e950079dc638a0714d1a7d583076498fb2cb82834757ccc45ff/aiortp-0.3.1.tar.gz", hash = "sha256:e9b04bbb917cbfabf4e1aa589bf49d48da00c40207166d85c3bdb8187f493d2e", size = 55628, upload-time = "2026-03-19T12:48:29.914Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/22/1b/fac8cb5ad6b960d2fa15165c59a44d5ec83f02f923d4a94e1c965ea46cc6/aiortp-0.3.0-py3-none-any.whl", hash = "sha256:0ceba1f7352cfc63caf4b45f2a74d3b8ba0c07ba586626bbce9d09f1d3fd1177", size = 40144, upload-time = "2026-03-14T03:29:00.123Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/e8/1290fac843d462a288a922b964150621c9bed63133d54cb21fedc7f05b41/aiortp-0.3.1-py3-none-any.whl", hash = "sha256:dfac71f6b1a35420410711fc7862273150d8fa202221f87736babc7287cb48e8", size = 40829, upload-time = "2026-03-19T12:48:28.932Z" },
 ]
 
 [[package]]
@@ -1295,6 +1295,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/95/af/2a2f83f981e969ae3ec5dc30f9b0cd1a258acabc2ff7b33eb9726e334e55/einx-0.3.0.tar.gz", hash = "sha256:17ff87c6a0f68ab358c1da489f00e95f1de106fd12ff17d0fb3e210aaa1e5f8c", size = 84758, upload-time = "2024-06-11T13:49:37.532Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/90/04/4a730d74fd908daad86d6b313f235cdf8e0cf1c255b392b7174ff63ea81a/einx-0.3.0-py3-none-any.whl", hash = "sha256:367d62bab8dbb8c4937308512abb6f746cc0920990589892ba0d281356d39345", size = 102958, upload-time = "2024-06-11T13:49:36.441Z" },
+]
+
+[[package]]
+name = "elevenlabs"
+version = "2.39.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "requests" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/87/98/06e115eb658628fc5fe19e8374a6b4b54824177f77670bf174f5be822a5c/elevenlabs-2.39.0.tar.gz", hash = "sha256:fde43cae47e499ac20888906849fbb880344aa889c605be2a5ba6ad5f878e1b1", size = 524346, upload-time = "2026-03-12T18:39:52.43Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5c/13/cf71880bcb3ee8ed0f354ef74525959a7401769dea2d280d03904f3e5f8c/elevenlabs-2.39.0-py3-none-any.whl", hash = "sha256:e7d6a291dbf31f1d5d22dfed346bd49ba0fc5e8886b31f38cd8668b4827ed508", size = 1418502, upload-time = "2026-03-12T18:39:50.434Z" },
 ]
 
 [[package]]
@@ -5001,6 +5018,9 @@ docs = [
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extra = ["python"] },
 ]
+elevenlabs = [
+    { name = "elevenlabs" },
+]
 fastrtc = [
     { name = "fastrtc" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
@@ -5149,7 +5169,7 @@ dev = [
 requires-dist = [
     { name = "aec-audio-processing", marker = "extra == 'webrtc-aec'", specifier = ">=0.1" },
     { name = "aioquic", marker = "extra == 'webtransport'", specifier = ">=1.0" },
-    { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.3.0" },
+    { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.3.1" },
     { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.4.0" },
     { name = "anam", marker = "extra == 'anam'", specifier = ">=0.1" },
     { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.30" },
@@ -5166,6 +5186,7 @@ requires-dist = [
     { name = "botbuilder-core", marker = "extra == 'providers'", specifier = ">=4.14" },
     { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.14" },
     { name = "deepgram-sdk", marker = "extra == 'deepgram'", specifier = ">=6.0.0" },
+    { name = "elevenlabs", marker = "extra == 'elevenlabs'", specifier = ">=1.0" },
     { name = "fastrtc", marker = "extra == 'fastrtc'", specifier = ">=0.0.18" },
     { name = "google-genai", marker = "extra == 'all'", specifier = ">=1.0.0" },
     { name = "google-genai", marker = "extra == 'dev'", specifier = ">=1.0.0" },
@@ -5247,7 +5268,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["all", "anam", "anthropic", "azure", "deepgram", "dev", "docs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
+provides-extras = ["all", "anam", "anthropic", "azure", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]
