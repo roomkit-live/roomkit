@@ -398,6 +398,20 @@ def get_neutts_voice_config() -> type:
     return NeuTTSVoiceConfig
 
 
+def get_grok_tts_provider() -> type:
+    """Get GrokTTSProvider class (requires httpx, websockets)."""
+    from roomkit.voice.tts.grok import GrokTTSProvider
+
+    return GrokTTSProvider
+
+
+def get_grok_tts_config() -> type:
+    """Get GrokTTSConfig class."""
+    from roomkit.voice.tts.grok import GrokTTSConfig
+
+    return GrokTTSConfig
+
+
 def get_openai_realtime_provider() -> type:
     """Get OpenAIRealtimeProvider class (requires openai, websockets)."""
     from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
