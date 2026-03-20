@@ -23,6 +23,11 @@ from roomkit.orchestration.router import (
     RoutingConditions,
     RoutingRule,
 )
+from roomkit.orchestration.session_audit import (
+    JSONLSessionAuditor,
+    SessionAuditEntry,
+    SessionAuditor,
+)
 from roomkit.orchestration.state import (
     ConversationPhase,
     ConversationState,
@@ -68,4 +73,8 @@ __all__ = [
     "PipelineStage",
     # Status Bus (re-exported from status_bus module)
     "StatusLevel",
+    # Session Audit
+    "JSONLSessionAuditor",
+    "SessionAuditEntry",
+    "SessionAuditor",
 ]

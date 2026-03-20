@@ -30,19 +30,26 @@ Press Ctrl+C to stop.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from shared import (
+    build_aec,
+    build_debug_taps,
+    build_denoiser,
+    build_pipeline,
+    run_until_stopped,
+    setup_logging,
+)
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
 from roomkit.voice.backends.local import LocalAudioBackend
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("realtime_voice_local_gemini")
+logger = setup_logging("realtime_voice_local_gemini")
 
 
 async def main() -> None:
@@ -60,60 +67,14 @@ async def main() -> None:
         model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-native-audio-preview-12-2025"),
     )
 
-    # --- AEC (Acoustic Echo Cancellation) ---
-    #
-    # Strips speaker echo from the mic signal in real time, enabling
-    # full-duplex conversation.  Disable with AEC=0 and use MUTE_MIC=1
-    # as a fallback.
-    #
-    # AEC=webrtc (default) — WebRTC AEC3 (pip install aec-audio-processing)
-    # AEC=speex            — SpeexDSP    (apt install libspeexdsp1)
-    use_denoise = os.environ.get("DENOISE", "0") == "1"
-
+    # --- Audio pipeline stages ---
     sample_rate = 24000  # Gemini outputs 24 kHz — mic must match for AEC
     block_ms = 20
-    frame_size = sample_rate * block_ms // 1000  # 480 samples
 
-    aec = None
-    aec_mode = os.environ.get("AEC", "webrtc").lower()
-    if aec_mode in ("1", "webrtc"):
-        from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
-
-        aec = WebRTCAECProvider(sample_rate=sample_rate, enable_ns=True)
-        logger.info("AEC enabled (WebRTC AEC3 + noise suppression)")
-    elif aec_mode == "speex":
-        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
-
-        aec = SpeexAECProvider(
-            frame_size=frame_size,
-            filter_length=frame_size * 10,  # 200ms echo tail
-            sample_rate=sample_rate,
-        )
-        logger.info("AEC enabled (Speex)")
-
-    # --- Denoiser (RNNoise noise suppression) ---
-    denoiser = None
-    if use_denoise:
-        from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
-
-        denoiser = RNNoiseDenoiserProvider(sample_rate=sample_rate)
-
-    # --- Debug taps (save WAVs at each pipeline stage for debugging) ---
-    debug_taps = None
-    if os.environ.get("DEBUG_AUDIO", "0") == "1":
-        from roomkit.voice.pipeline.debug_taps import PipelineDebugTaps
-
-        debug_taps = PipelineDebugTaps(output_dir="./debug_audio/", stages=["all"])
-        logger.info("Debug audio taps enabled → ./debug_audio/")
-
-    # --- Audio pipeline (sidecar for AEC + denoiser processing) ---
-    from roomkit.voice.pipeline.config import AudioPipelineConfig
-
-    pipeline = (
-        AudioPipelineConfig(aec=aec, denoiser=denoiser, debug_taps=debug_taps)
-        if (aec or denoiser or debug_taps)
-        else None
-    )
+    aec = build_aec(sample_rate, block_ms, default="webrtc")
+    denoiser = build_denoiser(sample_rate, default="rnnoise")
+    debug_taps = build_debug_taps()
+    pipeline = build_pipeline(aec=aec, denoiser=denoiser, debug_taps=debug_taps)
 
     # When AEC is active it removes speaker echo from the mic signal, so we
     # can keep the mic open during playback.  Without AEC the mic is muted
@@ -159,18 +120,10 @@ async def main() -> None:
     logger.info("Press Ctrl+C to stop.\n")
 
     # --- Keep running until Ctrl+C ---
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup() -> None:
+        await channel.end_session(session)
 
-    await stop.wait()
-
-    # --- Cleanup ---
-    logger.info("\nStopping...")
-    await channel.end_session(session)
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

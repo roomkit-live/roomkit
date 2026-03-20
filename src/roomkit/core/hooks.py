@@ -273,6 +273,28 @@ class HookEngine:
             if hook_result.action == "modify" and hook_result.event is not None:
                 result.event = hook_result.event
 
+        # Fire ASYNC observers for the same trigger (fire-and-forget).
+        # This allows ASYNC hooks to observe events from triggers that
+        # are only invoked via run_sync_hooks (e.g. ON_TRANSCRIPTION,
+        # ON_VISION_RESULT, ON_TOOL_CALL).  Only ASYNC hooks are fired
+        # — SYNC hooks already ran above.
+        final_event = result.event or event
+        filter_ev = None if skip_event_filter else final_event
+        async_hooks = self._get_hooks(
+            room_id,
+            trigger,
+            HookExecution.ASYNC,
+            event=filter_ev,
+        )
+        if async_hooks:
+            await self._run_async_hooks_list(
+                async_hooks,
+                room_id,
+                trigger,
+                final_event,
+                context,
+            )
+
         return result
 
     async def run_async_hooks(
@@ -310,6 +332,20 @@ class HookEngine:
             hooks = [h for h in hooks if h.name.startswith(name_prefix)]
         if exclude_name_prefix is not None:
             hooks = [h for h in hooks if not h.name.startswith(exclude_name_prefix)]
+        if not hooks:
+            return
+
+        await self._run_async_hooks_list(hooks, room_id, trigger, event, context)
+
+    async def _run_async_hooks_list(
+        self,
+        hooks: list[HookRegistration],
+        room_id: str,
+        trigger: HookTrigger,
+        event: RoomEvent | Any,
+        context: RoomContext,
+    ) -> None:
+        """Run a list of hooks concurrently. Errors are logged, never raised."""
         if not hooks:
             return
 
