@@ -69,6 +69,36 @@ wheels = [
 ]
 
 [[package]]
+name = "aic-sdk"
+version = "2.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts' or extra != 'extra-7-roomkit-neutts'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c9/31/1631b1c8abbdcaa5978d2561b9f13430b1e9ed2b6e27d6e9cecc890ad4bd/aic_sdk-2.1.1.tar.gz", hash = "sha256:2d56a29ea79cc5373e44bdb09db58c837b4e6b5b09ce4c8a932ef709f535230e", size = 5315222, upload-time = "2026-03-19T10:50:59.52Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/e6/526373728757dec7fdbcbcbcb44152dc9233235a03e90f27df96ba9a5960/aic_sdk-2.1.1-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:eaddc53ad93c642895beaaf04a5157b65d00b63a986a2ed60ea970017949725a", size = 3578492, upload-time = "2026-03-19T10:50:28.357Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/35/cdc914c1b0fd2292b404d689f0948d96135903f437bb20bf729dba04e899/aic_sdk-2.1.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:b790c72a278217bdbd8cbef2261d7e902684eb979dde5ec891d075d1c4c7e97e", size = 3192709, upload-time = "2026-03-19T10:50:30.617Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/88/7c00e5683a729e8294171dcb59430af7a429d54666c567b30b20be7f6174/aic_sdk-2.1.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:db6f2794db724e7f55d4cf1233d0bf802777fbf943eae9a1c05786dbe6e43910", size = 3124760, upload-time = "2026-03-19T10:50:32.587Z" },
+    { url = "https://files.pythonhosted.org/packages/42/b1/a575df4e2ee5e6f9e3dec777fd91c40b1bdcbf30a36c74eeac4e7425d085/aic_sdk-2.1.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2413fb23dceef8232cd4b4553775f1ca668e1270dd2b35b73359ac3dbd58d701", size = 3477318, upload-time = "2026-03-19T10:50:34.336Z" },
+    { url = "https://files.pythonhosted.org/packages/36/8d/6009b04f27053258673c260b0cd6f72bda8f5c50bfe6500b7f2f574dd304/aic_sdk-2.1.1-cp312-cp312-win_amd64.whl", hash = "sha256:d370ef2166675ad79e16822cc26f67d3b7e0f8fe52567dc42e77339ec11f124e", size = 2958807, upload-time = "2026-03-19T10:50:35.966Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/cb/298d765c6b62867ed3eec21dcd566e4926955041612494b793a57e08db3f/aic_sdk-2.1.1-cp312-cp312-win_arm64.whl", hash = "sha256:c60e9d8e3c363b3ba03e3d666f99c706700b3636cbc98443d08fdc2084d0651b", size = 2656909, upload-time = "2026-03-19T10:50:37.749Z" },
+    { url = "https://files.pythonhosted.org/packages/89/e2/966a72c4c0c5b771187a0494cdef1a8f27d137225ccddb5fa04612f4a7ad/aic_sdk-2.1.1-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:2db12980bf64c4a66a1d0bb469aa45c314315b8ac8328dc2a94f6e65480da359", size = 3577887, upload-time = "2026-03-19T10:50:39.126Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/78/61518fce28d058859d9065baeff6d0dbabd709245fa42a6c20286dd49fa3/aic_sdk-2.1.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:c168ed46cba940b1808ffe8a6c709b09091b918c9120f1318672fd340caa35b4", size = 3192498, upload-time = "2026-03-19T10:50:40.978Z" },
+    { url = "https://files.pythonhosted.org/packages/94/98/fbf4800329a2e51cdfd9ee19f0db998495374b16a935ae5d9183a40c5bb8/aic_sdk-2.1.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:46fe3f666f2e6488e421c6d5d8abe12e5905940cfa67ea63ca6535f51cca2233", size = 3124253, upload-time = "2026-03-19T10:50:42.518Z" },
+    { url = "https://files.pythonhosted.org/packages/90/bf/6485d64c3c2d9c579a95b05e96b08152ffa5e0d133b7ee7f1f07c10d8535/aic_sdk-2.1.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c8a3518aae32a8f60acb9ff598d2a04d1b2de82c9614990b2a20a17db38657d4", size = 3476777, upload-time = "2026-03-19T10:50:44.034Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/28/ad19c96dcba75a5cb93683d123cb2356734e39df4dd7a52545e8c494786f/aic_sdk-2.1.1-cp313-cp313-win_amd64.whl", hash = "sha256:1a706954c0bd18552703ea792f16789e9e823795c16dd8a94b5e1a54ec451d95", size = 2958541, upload-time = "2026-03-19T10:50:45.793Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/f8/36a32f14ccdf55535176a1da44619647df53fc99560869204a6e2f741926/aic_sdk-2.1.1-cp313-cp313-win_arm64.whl", hash = "sha256:e30fa36e3e516e403f0770b1e213d2217c9f3c61a36615f59316d0d6d0f81e6a", size = 2656460, upload-time = "2026-03-19T10:50:47.785Z" },
+    { url = "https://files.pythonhosted.org/packages/21/e0/3a9dd88872eae43e8885d171840f97a4a9c31578d81be588402b42fd242c/aic_sdk-2.1.1-cp314-cp314-macosx_10_12_x86_64.whl", hash = "sha256:0b54b143e34f0adaa72863999a3913faab938f3444d9ee7bb97d2edce2fb10d8", size = 3579058, upload-time = "2026-03-19T10:50:49.32Z" },
+    { url = "https://files.pythonhosted.org/packages/38/d4/58715c8188afb594a8673edfa5a04b016a62a96d18e883522667f27032e2/aic_sdk-2.1.1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:357feeee734e8338118fb6f4d8496709756006d780eaac484da06c314e133298", size = 3193006, upload-time = "2026-03-19T10:50:50.701Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/1a/bbcef1e4dad8b653516b94fab9602b8292d821d3d0ecee9a66ea6487845a/aic_sdk-2.1.1-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:85e0d5092e70fa746fd758d1c7fc9896740da0a57e698949afc10bac9fe12216", size = 3125311, upload-time = "2026-03-19T10:50:52.576Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/7f/482760d46ec39dcc91dfc8500be9e032b81124907aa6cafce22df94b6194/aic_sdk-2.1.1-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:38087d418d1ff8215ce6c634db3eb7c40f109f096e7e5736f56f7a35a751e886", size = 3478229, upload-time = "2026-03-19T10:50:54.613Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/f2/8aa7bb5c140ae2f8c0fb3e3b2e75a4125f3614b49a1da0897e301ca73446/aic_sdk-2.1.1-cp314-cp314-win_amd64.whl", hash = "sha256:7fd3e2b7f2ac79b83722abc66db0813061f6a53143cb39aaabff034ef1811665", size = 2960375, upload-time = "2026-03-19T10:50:56.467Z" },
+    { url = "https://files.pythonhosted.org/packages/92/25/76a52222b8f096218cb4dc24d3d4930bbf5769987cc6c6c4999cdbf404eb/aic_sdk-2.1.1-cp314-cp314-win_arm64.whl", hash = "sha256:ac14f55a31906e36f51d8e5585d0096a1e1de685711bb16d3f6baaac120c4102", size = 2658269, upload-time = "2026-03-19T10:50:57.96Z" },
+]
+
+[[package]]
 name = "aiofiles"
 version = "24.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4961,6 +4991,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+aicoustics = [
+    { name = "aic-sdk" },
+]
 all = [
     { name = "anthropic" },
     { name = "botbuilder-core" },
@@ -5168,6 +5201,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aec-audio-processing", marker = "extra == 'webrtc-aec'", specifier = ">=0.1" },
+    { name = "aic-sdk", marker = "extra == 'aicoustics'", specifier = ">=2.1" },
     { name = "aioquic", marker = "extra == 'webtransport'", specifier = ">=1.0" },
     { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.3.1" },
     { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.4.0" },
@@ -5268,7 +5302,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["all", "anam", "anthropic", "azure", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
+provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]

@@ -15,6 +15,8 @@ from roomkit.voice.pipeline.config import (
 )
 from roomkit.voice.pipeline.debug_taps import PipelineDebugTaps
 from roomkit.voice.pipeline.denoiser import (
+    AICousticsDenoiserConfig,
+    AICousticsDenoiserProvider,
     DenoiserProvider,
     MockDenoiserProvider,
     RNNoiseDenoiserProvider,
@@ -88,6 +90,8 @@ __all__ = [
     "AudioRecorder",
     "WavFileRecorder",
     "BackchannelDetector",
+    "AICousticsDenoiserConfig",
+    "AICousticsDenoiserProvider",
     "DenoiserProvider",
     "RNNoiseDenoiserProvider",
     "SherpaOnnxDenoiserConfig",

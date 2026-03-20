@@ -40,6 +40,7 @@ qwen-tts = ["qwen-tts>=0.1"]
 qwen-asr = ["qwen-asr>=0.0.4"]
 neutts = ["neutts>=0.1"]
 fastrtc = ["fastrtc>=0.0.18", "numpy>=1.26"]
+aicoustics = ["aic-sdk>=2.1"]
 webrtc-aec = ["aec-audio-processing>=0.1"]
 local-audio = ["sounddevice>=0.4", "numpy>=1.26"]
 local-video = ["opencv-python-headless>=4.8"]
@@ -168,6 +169,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["google", "google.genai", "google.genai.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["aic_sdk", "aic_sdk.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -369,6 +374,7 @@ omit = [
     "src/roomkit/voice/backends/webtransport.py",
     "src/roomkit/voice/pipeline/aec/webrtc.py",
     "src/roomkit/voice/pipeline/aec/speex.py",
+    "src/roomkit/voice/pipeline/denoiser/aicoustics.py",
     "src/roomkit/voice/pipeline/denoiser/rnnoise.py",
     "src/roomkit/voice/pipeline/diarization/sherpa_onnx.py",
     "src/roomkit/voice/pipeline/turn/smart_turn.py",
