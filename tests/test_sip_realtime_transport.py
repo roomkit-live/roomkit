@@ -43,9 +43,13 @@ def _make_sip_backend() -> MagicMock:
     """Create a mock SIPVoiceBackend."""
     backend = MagicMock()
     backend._audio_received_callback = None
+    backend._disconnect_callbacks: list[Any] = []
     backend._session_states = {}  # real dict so .get() returns state, not MagicMock
     backend.on_audio_received = MagicMock(
         side_effect=lambda cb: setattr(backend, "_audio_received_callback", cb)
+    )
+    backend.on_client_disconnected = MagicMock(
+        side_effect=lambda cb: backend._disconnect_callbacks.append(cb)
     )
     backend.send_audio = AsyncMock()
     backend.cancel_audio = AsyncMock(return_value=True)
@@ -74,10 +78,11 @@ class TestSIPRealtimeTransportInit:
         transport = SIPRealtimeTransport(backend)
         assert transport.name == "SIPRealtimeTransport"
 
-    def test_wires_audio_callback(self) -> None:
+    def test_wires_audio_and_disconnect_callbacks(self) -> None:
         backend = _make_sip_backend()
         SIPRealtimeTransport(backend)
         backend.on_audio_received.assert_called_once()
+        backend.on_client_disconnected.assert_called_once()
 
 
 class TestAccept:
@@ -266,6 +271,68 @@ class TestDelegation:
         transport.interrupt(rt_session)
         await asyncio.sleep(0.05)
         backend.cancel_audio.assert_not_awaited()
+
+
+class TestSIPDisconnectPropagation:
+    """When SIP BYE fires, the transport must propagate disconnect to realtime sessions."""
+
+    @pytest.mark.asyncio
+    async def test_sip_disconnect_fires_rt_disconnect_callback(self) -> None:
+        """SIP backend disconnect → transport maps to RT session → fires callbacks."""
+        backend = _make_sip_backend()
+        transport = SIPRealtimeTransport(backend)
+
+        rt_session = _make_rt_session()
+        voice_session = FakeVoiceSession(id="sip-session-1")
+        await transport.accept(rt_session, voice_session)
+
+        # Register a disconnect callback on the transport (as RealtimeVoiceChannel does)
+        disconnected: list[str] = []
+        transport.on_client_disconnected(lambda s: disconnected.append(s.id))
+
+        # Simulate SIP BYE — the backend fires its registered callbacks
+        for cb in backend._disconnect_callbacks:
+            cb(voice_session)
+
+        assert disconnected == [rt_session.id]
+
+    @pytest.mark.asyncio
+    async def test_sip_disconnect_unknown_session_ignored(self) -> None:
+        """SIP disconnect for an unknown session should be silently ignored."""
+        backend = _make_sip_backend()
+        transport = SIPRealtimeTransport(backend)
+
+        disconnected: list[str] = []
+        transport.on_client_disconnected(lambda s: disconnected.append(s.id))
+
+        # Fire disconnect for a session that was never accepted
+        unknown = FakeVoiceSession(id="unknown-sip")
+        for cb in backend._disconnect_callbacks:
+            cb(unknown)
+
+        assert disconnected == []
+
+    @pytest.mark.asyncio
+    async def test_sip_disconnect_after_transport_disconnect_ignored(self) -> None:
+        """Late SIP disconnect after transport.disconnect() should be a no-op."""
+        backend = _make_sip_backend()
+        transport = SIPRealtimeTransport(backend)
+
+        rt_session = _make_rt_session()
+        voice_session = FakeVoiceSession(id="sip-session-1")
+        await transport.accept(rt_session, voice_session)
+
+        disconnected: list[str] = []
+        transport.on_client_disconnected(lambda s: disconnected.append(s.id))
+
+        # Disconnect from transport side first (e.g. provider-initiated)
+        await transport.disconnect(rt_session)
+
+        # Then SIP BYE arrives — should not fire callback again
+        for cb in backend._disconnect_callbacks:
+            cb(voice_session)
+
+        assert disconnected == []
 
 
 class TestCallbackRegistration:

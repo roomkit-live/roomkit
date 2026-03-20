@@ -72,9 +72,10 @@ class SIPRealtimeTransport(VoiceBackend):
         self._audio_callbacks: list[AudioReceivedCallback] = []
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
 
-        # Wire into the SIP backend's audio callback
+        # Wire into the SIP backend's audio and disconnect callbacks
         self._prev_audio_callback = backend._audio_received_callback
         backend.on_audio_received(self._on_sip_audio)
+        backend.on_client_disconnected(self._on_sip_disconnect)
 
     @property
     def name(self) -> str:
@@ -179,6 +180,20 @@ class SIPRealtimeTransport(VoiceBackend):
 
         if frame.data:
             self._fire_audio_callbacks(rt_session, frame.data)
+
+    def _on_sip_disconnect(self, voice_session: Any) -> None:
+        """Translate SIP backend disconnect to realtime session disconnect."""
+        rt_session_id = self._voice_to_rt.get(voice_session.id)
+        if rt_session_id is None:
+            return
+        rt_session = self._rt_sessions.get(rt_session_id)
+        if rt_session is not None:
+            logger.info(
+                "SIP disconnect → realtime session %s (SIP %s)",
+                rt_session.id,
+                voice_session.id,
+            )
+            self._fire_disconnect_callbacks(rt_session)
 
     def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
         """Fire all registered audio callbacks (sync)."""

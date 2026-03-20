@@ -262,9 +262,11 @@ class VoiceOpsMixin(HelpersMixin):
             await self._leave_video(session, channel)
             return
 
+        channel_type = type(channel).__name__ if channel is not None else "None"
         logger.warning(
-            "leave() called for unknown channel type %s (session %s)",
+            "leave() called for unhandled channel %r (%s) (session %s)",
             session.channel_id,
+            channel_type,
             session.id,
         )
 
