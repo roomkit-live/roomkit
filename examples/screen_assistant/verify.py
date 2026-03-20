@@ -9,6 +9,13 @@ from __future__ import annotations
 
 def build_verify_question(tool_name: str, args: dict[str, object]) -> str:
     """Build a targeted verification question for the vision model."""
+    if tool_name == "click_result":
+        element_id = args.get("element_id", "")
+        return (
+            f"Answer precisely: Did clicking element {element_id} produce a visible change? "
+            "What app is in the foreground? Did a new window/page/menu appear? "
+            "State the foreground app name and URL if visible."
+        )
     if tool_name == "click_element":
         element = args.get("element", "")
         return (
@@ -143,6 +150,23 @@ def assess_action_result(
                     "verdict": "Enter did not trigger navigation or any visible change.",
                     "suggestion": "The input may not have been focused, or the typed text was lost. Start over.",
                 }
+
+    if tool_name == "click_result":
+        element_id = str(args.get("element_id", ""))
+        if "could not find" in desc_lower or "not found" in desc_lower:
+            return {
+                "status": "FAILED",
+                "verdict": f"Element {element_id} click did not produce a visible change.",
+                "suggestion": "Run observe again to get fresh element IDs, then retry.",
+            }
+        if "link" in desc_lower or "result" in desc_lower:
+            if "search results" in desc_lower or "google" in desc_lower:
+                return {
+                    "status": "UNCERTAIN",
+                    "verdict": "Still on search results page — the click may not have navigated.",
+                    "suggestion": "The click may have missed. Try observe + click_result again.",
+                }
+        return {"status": "OK", "verdict": f"Element {element_id} clicked.", "suggestion": ""}
 
     if tool_name == "click_element":
         element = str(args.get("element", "")).lower()

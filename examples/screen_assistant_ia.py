@@ -52,6 +52,7 @@ Environment variables:
     DIFF_THRESHOLD       Screen diff threshold 0.0-1.0 (default: 0.15)
     AUTO_VERIFY          Auto-verify after actions: 1 | 0 (default: 1)
     BROWSER_MODE         Browser control: vision | playwright (default: vision)
+    OMNIVIEW_URL         (optional) OmniView GPU service URL for precise element detection
 
 Press Ctrl+C to stop.
 
@@ -83,11 +84,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from screen_assistant import (
     ACTION_TOOLS,
+    CLICK_RESULT_TOOL,
     LANG_NAMES,
     LIST_SCREENS_TOOL,
+    OBSERVE_TOOL,
     OPEN_APP_TOOL,
     SWITCH_SCREEN_TOOL,
     CostTrackingTelemetry,
+    OmniViewClient,
     assess_action_result,
     build_system_prompt,
     build_verify_question,
@@ -181,6 +185,14 @@ async def main() -> None:
 
     lang = os.environ.get("LANG_VOICE", os.environ.get("LANG", "en")).lower()[:2]
     auto_verify = os.environ.get("AUTO_VERIFY", "1") != "0"
+
+    # --- OmniView (optional GPU vision) --------------------------------------
+    omniview_url = os.environ.get("OMNIVIEW_URL", "")
+    omniview: OmniViewClient | None = None
+    if omniview_url:
+        monitor_init = int(os.environ.get("MONITOR", "1"))
+        omniview = OmniViewClient(omniview_url, monitor=monitor_init)
+        logger.info("OmniView enabled: %s", omniview_url)
 
     # --- RoomKit + telemetry -------------------------------------------------
     cost_telemetry = CostTrackingTelemetry()
@@ -294,7 +306,7 @@ async def main() -> None:
     ) = await setup_playwright_mcp(voice_choice, browser_mode)
 
     # --- System prompt (built after browser_mode is resolved) ----------------
-    system_prompt = build_system_prompt(lang, browser_mode=browser_mode)
+    system_prompt = build_system_prompt(lang, browser_mode=browser_mode, omniview=omniview is not None)
 
     # --- Tool definitions + handler ------------------------------------------
     input_tools = ScreenInputTools(vision=vision, monitor=monitor)
@@ -306,6 +318,7 @@ async def main() -> None:
         OPEN_APP_TOOL,
         *input_tools.definitions,
         *playwright_tools,
+        *([] if omniview is None else [OBSERVE_TOOL, CLICK_RESULT_TOOL]),
     ]
 
     async def _list_screens() -> str:
@@ -343,6 +356,8 @@ async def main() -> None:
         screen_tool = DescribeScreenTool(vision, monitor=monitor)
         input_tools = ScreenInputTools(vision=vision, monitor=monitor)
         screen_backend._monitor = monitor
+        if omniview is not None:
+            omniview.monitor = monitor
         logger.info("Switched to monitor %d", monitor)
         return f"Switched to monitor {monitor}. All tools now target this screen."
 
@@ -414,8 +429,87 @@ async def main() -> None:
             result = await _analyze_with_cost(query)
             latest_vision["description"] = result
 
+        elif name == "observe" and omniview is not None:
+            cost_telemetry.totals["vision_calls"] += 1
+            result_data = await omniview.parse()
+            elements = result_data.get("elements", [])
+            filtered = []
+            for el in elements:
+                content = omniview.clean_ocr(str(el.get("content", "")))
+                if len(content) < 3:
+                    continue
+                filtered.append(
+                    {
+                        "id": el.get("id"),
+                        "type": el.get("element_type"),
+                        "text": content[:60],
+                        "center": el.get("center"),
+                    }
+                )
+            result = json.dumps(
+                {
+                    "status": "ok",
+                    "elements": filtered[:25],
+                    "total": len(elements),
+                    "note": "Use click_result(element_id=N) to click an element.",
+                }
+            )
+
+        elif name == "click_result" and omniview is not None:
+            element_id = int(arguments.get("element_id", -1))
+            el = omniview.get_element_by_id(element_id)
+            if el is None:
+                result = json.dumps(
+                    {
+                        "status": "failed",
+                        "error": f"Element {element_id} not found. Run observe first.",
+                    }
+                )
+            else:
+                cx, cy = int(el["center"][0]), int(el["center"][1])  # type: ignore[index]
+                content = str(el.get("content", ""))
+                button = str(arguments.get("button", "left"))
+                double = bool(arguments.get("double", False))
+                omniview.click_at(cx, cy, button=button, clicks=2 if double else 1)
+                await asyncio.sleep(0.5)
+
+                if auto_verify:
+                    verify_q = build_verify_question("click_result", arguments)
+                    screen_desc = await _analyze_with_cost(verify_q)
+                    latest_vision["description"] = screen_desc
+                    verdict = assess_action_result("click_result", arguments, screen_desc)
+                    result = (
+                        f"ACTION: click_result({element_id}) -> \"{content[:40]}\"\n"
+                        f"STATUS: {verdict['status']}\n"
+                        f"SCREEN: {screen_desc[:200]}\nVERDICT: {verdict['verdict']}"
+                    )
+                    if verdict["status"] == "FAILED":
+                        result += f"\nSUGGESTION: {verdict['suggestion']}"
+                else:
+                    result = json.dumps(
+                        {"status": "ok", "clicked": content[:60], "center": [cx, cy]}
+                    )
+
         elif name in ACTION_TOOLS:
-            action_result = await input_tools.handler(name, arguments)
+            # For click_element, try OmniView /locate first when available
+            if name == "click_element" and omniview is not None:
+                element_desc = str(arguments.get("element", ""))
+                try:
+                    locate_result = await omniview.locate(element_desc)
+                    if locate_result.get("found"):
+                        center = locate_result.get("center", [0, 0])
+                        cx, cy = int(center[0]), int(center[1])
+                        omniview.click_at(cx, cy)
+                        logger.info("click_element via OmniView: %r at (%d,%d)", element_desc, cx, cy)
+                        action_result = f"Clicked '{element_desc}' via OmniView at ({cx},{cy})."
+                    else:
+                        logger.info("OmniView /locate miss for %r, falling back to vision", element_desc)
+                        action_result = await input_tools.handler(name, arguments)
+                except Exception:
+                    logger.exception("OmniView /locate failed, falling back to vision")
+                    action_result = await input_tools.handler(name, arguments)
+            else:
+                action_result = await input_tools.handler(name, arguments)
             if auto_verify:
                 try:
                     await asyncio.sleep(0.5)
@@ -532,6 +626,7 @@ async def main() -> None:
     pw_label = (
         f"playwright ({len(playwright_tools)} tools)" if browser_mode == "playwright" else "vision"
     )
+    omniview_label = f"OmniView @ {omniview_url}" if omniview else "off"
     print()
     print(f"Screen Assistant ({voice_label} Voice + {tool_label} Vision)")
     print("=" * 60)
@@ -539,10 +634,15 @@ async def main() -> None:
     print(f"AEC: {'on' if aec else 'off'} | Denoiser: {'on' if denoiser else 'off'}")
     print(f"Interruption: {'off' if mute_mic else 'on'} | Auto-verify: {verify_label}")
     print(f"Browser: {pw_label}")
+    print(f"OmniView: {omniview_label}")
     print(f"Vision: every {vision_interval}ms (diff-gated, silent injection)")
     print()
-    print("Tools: list_screens, switch_screen, open_app, describe_screen,")
-    print("       click_element, type_text, press_key, scroll")
+    tools_line = "Tools: list_screens, switch_screen, open_app, describe_screen,"
+    tools_line2 = "       click_element, type_text, press_key, scroll"
+    if omniview:
+        tools_line2 += ", observe, click_result"
+    print(tools_line)
+    print(tools_line2)
     print("Press Ctrl+C to stop.")
     print()
 

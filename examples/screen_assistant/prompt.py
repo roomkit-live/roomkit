@@ -58,7 +58,35 @@ everything. Use vision tools ONLY for desktop/native app questions.\
 """
 
 
-def build_system_prompt(lang: str, *, browser_mode: str = "vision") -> str:
+def _omniview_section() -> str:
+    """Return OmniView-specific system prompt section."""
+    return """
+
+## OmniView precision tools (GPU-powered element detection)
+
+You have OmniView tools for precise UI element detection using YOLO + OCR.
+These are **more accurate than click_element** for hitting specific buttons,
+links, and form fields.
+
+OmniView tools:
+- **observe** — detect ALL UI elements on screen with numbered IDs. \
+Returns element IDs, types, text content, and positions.
+- **click_result(element_id)** — click an element by its ID from observe(). \
+Uses exact bounding box coordinates — very precise.
+
+### When to use which:
+- **observe + click_result** — when you need to click a specific UI element \
+precisely (buttons, links, menu items, small targets)
+- **click_element** — for quick natural-language clicks when precision \
+is less critical (large, obvious targets)
+- **describe_screen** — for understanding what is on screen (unchanged)
+
+### Typical OmniView workflow:
+observe → read the element list → click_result(element_id=N) for the target.\
+"""
+
+
+def build_system_prompt(lang: str, *, browser_mode: str = "vision", omniview: bool = False) -> str:
     """Build the full system prompt for the screen assistant."""
     lang_name = LANG_NAMES.get(lang, lang)
     lang_instruction = f"\nIMPORTANT: You MUST speak ONLY in {lang_name}." if lang != "en" else ""
@@ -150,4 +178,5 @@ press_key('{mod}+t') to open a new tab → \
 type_text('roomkit conversation AI') → \
 press_key('enter') → read search results → click the right link.\
 {_playwright_section(browser_mode)}\
+{_omniview_section() if omniview else ""}\
 """
