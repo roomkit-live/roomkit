@@ -133,6 +133,10 @@ class OmniViewClient:
         )
         result = json.loads(resp.read())
         self.last_elements = result.get("elements", [])
+        logger.info(
+            "OmniView /parse → %d elements detected",
+            len(self.last_elements),
+        )
         return result
 
     async def locate(self, query: str) -> dict[str, object]:
@@ -154,7 +158,13 @@ class OmniViewClient:
             None,
             lambda: urllib.request.urlopen(req, timeout=30),  # noqa: ASYNC210
         )
-        return json.loads(resp.read())
+        result = json.loads(resp.read())
+        logger.info(
+            "OmniView /locate query=%r → %s",
+            query,
+            json.dumps(result, default=str)[:300],
+        )
+        return result
 
     def get_element_by_id(self, element_id: int) -> dict[str, object] | None:
         """Get an element from the last parse result by ID."""
@@ -176,9 +186,11 @@ class OmniViewClient:
         Returns the /locate response with an added ``clicked`` key.
         """
         result = await self.locate(query)
-        if not result.get("found"):
+        el = result.get("element") or {}
+        center = el.get("center")
+        if not result.get("found") or not center or not center[0] or not center[1]:
+            result["clicked"] = False
             return result
-        center = result.get("center", [0, 0])
         cx, cy = int(center[0]), int(center[1])
         self.click_at(cx, cy, button=button, clicks=2 if double else 1)
         result["clicked"] = True

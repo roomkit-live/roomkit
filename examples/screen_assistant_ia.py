@@ -432,9 +432,11 @@ async def main() -> None:
             latest_vision["description"] = result
 
         elif name == "observe" and omniview is not None:
+            logger.info("observe: calling OmniView /parse")
             cost_telemetry.totals["vision_calls"] += 1
             result_data = await omniview.parse()
             elements = result_data.get("elements", [])
+            logger.info("observe: OmniView returned %d elements", len(elements))
             filtered = []
             for el in elements:
                 content = omniview.clean_ocr(str(el.get("content", "")))
@@ -460,6 +462,12 @@ async def main() -> None:
         elif name == "click_result" and omniview is not None:
             element_id = int(arguments.get("element_id", -1))
             el = omniview.get_element_by_id(element_id)
+            logger.info(
+                "click_result: element_id=%d found=%s content=%r",
+                element_id,
+                el is not None,
+                str(el.get("content", ""))[:60] if el else "N/A",
+            )
             if el is None:
                 result = json.dumps(
                     {
@@ -496,24 +504,49 @@ async def main() -> None:
             # For click_element, try OmniView /locate first when available
             if name == "click_element" and omniview is not None:
                 element_desc = str(arguments.get("element", ""))
+                logger.info(
+                    "click_element: trying OmniView /locate for %r",
+                    element_desc,
+                )
                 try:
                     locate_result = await omniview.locate(element_desc)
-                    if locate_result.get("found"):
-                        center = locate_result.get("center", [0, 0])
+                    el = locate_result.get("element") or {}
+                    center = el.get("center")
+                    logger.info(
+                        "click_element: OmniView /locate result: found=%s center=%s content=%r score=%s",
+                        locate_result.get("found"),
+                        center,
+                        str(el.get("content", ""))[:60],
+                        locate_result.get("match_score", "?"),
+                    )
+                    if locate_result.get("found") and center and center[0] and center[1]:
                         cx, cy = int(center[0]), int(center[1])
                         omniview.click_at(cx, cy)
                         logger.info(
-                            "click_element via OmniView: %r at (%d,%d)", element_desc, cx, cy
+                            "click_element via OmniView: %r → click at (%d,%d)",
+                            element_desc,
+                            cx,
+                            cy,
                         )
                         action_result = f"Clicked '{element_desc}' via OmniView at ({cx},{cy})."
                     else:
+                        reason = (
+                            "not found" if not locate_result.get("found") else "no center coords"
+                        )
                         logger.info(
-                            "OmniView /locate miss for %r, falling back to vision", element_desc
+                            "click_element: OmniView miss for %r (%s), falling back to vision",
+                            element_desc,
+                            reason,
                         )
                         action_result = await input_tools.handler(name, arguments)
                 except Exception:
-                    logger.exception("OmniView /locate failed, falling back to vision")
+                    logger.exception(
+                        "click_element: OmniView /locate failed, falling back to vision"
+                    )
                     action_result = await input_tools.handler(name, arguments)
+            elif name == "click_element":
+                logger.info("click_element: OmniView not available, using vision")
+                action_result = await input_tools.handler(name, arguments)
             else:
                 action_result = await input_tools.handler(name, arguments)
             if auto_verify:
