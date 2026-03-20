@@ -88,6 +88,13 @@ def get_agents_md() -> str:
     return _get_agents_md()
 
 
+def get_llms_full_txt() -> str:
+    """Get the contents of llms-full.txt (comprehensive documentation)."""
+    from roomkit.ai_docs import get_llms_full_txt as _get_llms_full_txt
+
+    return _get_llms_full_txt()
+
+
 def get_ai_context() -> str:
     """Get combined AI context (AGENTS.md + llms.txt)."""
     from roomkit.ai_docs import get_ai_context as _get_ai_context
@@ -173,5 +180,6 @@ __all__ = [
     # AI docs
     "get_agents_md",
     "get_ai_context",
+    "get_llms_full_txt",
     "get_llms_txt",
 ]

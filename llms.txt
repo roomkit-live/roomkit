@@ -1,5 +1,7 @@
 # RoomKit
 
+> Full documentation: [llms-full.txt](llms-full.txt)
+
 > RoomKit is a pure async Python library for building multi-channel conversation systems.
 > It provides room-based abstractions for managing conversations across SMS, Email, Voice, WebSocket,
 > AI, and other channels with pluggable storage, identity resolution, hooks, and realtime events.

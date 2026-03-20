@@ -127,6 +127,7 @@ include = [
     "/docs",
     "/AGENTS.md",
     "/llms.txt",
+    "/llms-full.txt",
     "/README.md",
     "/LICENSE",
 ]
@@ -141,6 +142,7 @@ artifacts = [
 [tool.hatch.build.targets.wheel.force-include]
 "AGENTS.md" = "roomkit/AGENTS.md"
 "llms.txt" = "roomkit/llms.txt"
+"llms-full.txt" = "roomkit/llms-full.txt"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

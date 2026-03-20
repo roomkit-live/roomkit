@@ -21,6 +21,9 @@ test:
 coverage:
 	uv run pytest --cov=roomkit --cov-report=term-missing
 
+llms-full:
+	uv run python scripts/build_llms_full.py
+
 all: lint typecheck security test
 
 clean:

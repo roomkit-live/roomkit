@@ -63,6 +63,24 @@ def get_agents_md() -> str:
     return _find_file("AGENTS.md")
 
 
+def get_llms_full_txt() -> str:
+    """Get the contents of llms-full.txt — comprehensive documentation for LLMs.
+
+    This is the full variant of llms.txt, assembled from 17 topic pages covering
+    architecture, channels, hooks, voice, orchestration, and complete API reference.
+
+    Returns:
+        The llms-full.txt content as a string.
+
+    Example:
+        >>> from roomkit.ai_docs import get_llms_full_txt
+        >>> content = get_llms_full_txt()
+        >>> print(len(content))
+        ...
+    """
+    return _find_file("llms-full.txt")
+
+
 def get_ai_context() -> str:
     """Get combined AI context (AGENTS.md + llms.txt summary).
 
