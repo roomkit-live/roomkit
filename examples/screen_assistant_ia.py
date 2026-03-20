@@ -306,7 +306,9 @@ async def main() -> None:
     ) = await setup_playwright_mcp(voice_choice, browser_mode)
 
     # --- System prompt (built after browser_mode is resolved) ----------------
-    system_prompt = build_system_prompt(lang, browser_mode=browser_mode, omniview=omniview is not None)
+    system_prompt = build_system_prompt(
+        lang, browser_mode=browser_mode, omniview=omniview is not None
+    )
 
     # --- Tool definitions + handler ------------------------------------------
     input_tools = ScreenInputTools(vision=vision, monitor=monitor)
@@ -479,7 +481,7 @@ async def main() -> None:
                     latest_vision["description"] = screen_desc
                     verdict = assess_action_result("click_result", arguments, screen_desc)
                     result = (
-                        f"ACTION: click_result({element_id}) -> \"{content[:40]}\"\n"
+                        f'ACTION: click_result({element_id}) -> "{content[:40]}"\n'
                         f"STATUS: {verdict['status']}\n"
                         f"SCREEN: {screen_desc[:200]}\nVERDICT: {verdict['verdict']}"
                     )
@@ -500,10 +502,14 @@ async def main() -> None:
                         center = locate_result.get("center", [0, 0])
                         cx, cy = int(center[0]), int(center[1])
                         omniview.click_at(cx, cy)
-                        logger.info("click_element via OmniView: %r at (%d,%d)", element_desc, cx, cy)
+                        logger.info(
+                            "click_element via OmniView: %r at (%d,%d)", element_desc, cx, cy
+                        )
                         action_result = f"Clicked '{element_desc}' via OmniView at ({cx},{cy})."
                     else:
-                        logger.info("OmniView /locate miss for %r, falling back to vision", element_desc)
+                        logger.info(
+                            "OmniView /locate miss for %r, falling back to vision", element_desc
+                        )
                         action_result = await input_tools.handler(name, arguments)
                 except Exception:
                     logger.exception("OmniView /locate failed, falling back to vision")
@@ -599,7 +605,11 @@ async def main() -> None:
     await kit.attach_channel("screen-assistant", "video-screen")
     await kit.attach_channel("screen-assistant", "voice")
 
-    video_session = await kit.connect_video("screen-assistant", "local-user", "video-screen")
+    video_session = await kit.join(
+        "screen-assistant",
+        "video-screen",
+        participant_id="local-user",
+    )
     await screen_backend.start_capture(video_session)
 
     provider_config: dict[str, object] = {}

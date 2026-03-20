@@ -86,33 +86,10 @@ def build_denoiser(sample_rate: int = 16000, *, default: str = "0") -> object | 
     if mode == "0":
         return None
 
-    # "sherpa" or "1" when default is sherpa-flavored
-    if mode in ("sherpa", "1") and default in ("sherpa", "1"):
-        model = os.environ.get("DENOISE_MODEL", "gtcrn_simple.onnx")
-        try:
-            from roomkit.voice.pipeline.denoiser.sherpa_onnx import (
-                SherpaOnnxDenoiserConfig,
-                SherpaOnnxDenoiserProvider,
-            )
+    # "1" resolves to the default backend
+    if mode == "1":
+        mode = default
 
-            logger.info("Denoiser enabled (sherpa-onnx GTCRN, model=%s)", model)
-            return SherpaOnnxDenoiserProvider(SherpaOnnxDenoiserConfig(model=model))
-        except ImportError:
-            logger.warning("sherpa-onnx not available (DENOISE=0 to skip)")
-            return None
-
-    # "rnnoise" or "1" when default is rnnoise-flavored
-    if mode in ("rnnoise", "1"):
-        try:
-            from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
-
-            logger.info("Denoiser enabled (RNNoise)")
-            return RNNoiseDenoiserProvider(sample_rate=sample_rate)
-        except ImportError:
-            logger.warning("RNNoise not available (DENOISE=0 to skip)")
-            return None
-
-    # Explicit "sherpa" even if default wasn't sherpa
     if mode == "sherpa":
         model = os.environ.get("DENOISE_MODEL", "gtcrn_simple.onnx")
         try:
@@ -124,7 +101,17 @@ def build_denoiser(sample_rate: int = 16000, *, default: str = "0") -> object | 
             logger.info("Denoiser enabled (sherpa-onnx GTCRN, model=%s)", model)
             return SherpaOnnxDenoiserProvider(SherpaOnnxDenoiserConfig(model=model))
         except ImportError:
-            logger.warning("sherpa-onnx not available (DENOISE=0 to skip)")
+            logger.warning("sherpa-onnx not installed — denoiser disabled")
+            return None
+
+    if mode == "rnnoise":
+        try:
+            from roomkit.voice.pipeline.denoiser.rnnoise import RNNoiseDenoiserProvider
+
+            logger.info("Denoiser enabled (RNNoise)")
+            return RNNoiseDenoiserProvider(sample_rate=sample_rate)
+        except ImportError:
+            logger.warning("RNNoise not installed — denoiser disabled")
             return None
 
     logger.warning("Unknown DENOISE mode %r — disabling", mode)
