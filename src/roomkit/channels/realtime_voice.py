@@ -1254,16 +1254,22 @@ class RealtimeVoiceChannel(Channel):
         if resamplers:
             resamplers[1].reset()
 
-        # Only reset AEC on actual barge-in (user speaks while AI audio
-        # is playing).  Normal turn-taking should not reset the filter.
+        # Keep AEC active but do NOT reset the adaptive filter on barge-in.
+        # Resetting clears the converged echo model, forcing the filter to
+        # re-learn from scratch.  During convergence (~200-500 ms), echo
+        # passes through uncancelled and triggers the provider's server-side
+        # VAD again — creating an infinite echo→interrupt→reset loop.
+        # WebRTC AEC3 handles echo path changes internally; the bypass flag
+        # (set_active) is sufficient for activation control.
         with self._state_lock:
             is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
         if is_barge_in:
-            self._reset_aec()
-            # Re-activate immediately so the fresh filter is ready.
-            # Speaker is silent after interrupt so the clean filter
-            # passes audio through without artifacts.
-            self._set_aec_active(True)
+            logger.debug(
+                "Barge-in detected for session %s (forwarded %d chunks) — "
+                "keeping AEC filter intact",
+                session.id,
+                self._audio_forward_count.get(session.id, 0),
+            )
 
         self._transport.interrupt(session)
 
@@ -1454,6 +1460,19 @@ class RealtimeVoiceChannel(Channel):
                     result_str = hook_val if isinstance(hook_val, str) else json.dumps(hook_val)
                 elif handler_result is not None:
                     result_str = handler_result
+                elif hook_result.hook_errors:
+                    # Hook(s) raised exceptions — propagate the error so the
+                    # AI model knows the tool call failed instead of assuming
+                    # success and hallucinating a result.
+                    errors = "; ".join(
+                        f"{e['hook']}: {e['error']}" for e in hook_result.hook_errors
+                    )
+                    result_str = json.dumps(
+                        {
+                            "error": f"Tool call failed: {errors}. "
+                            "Take a fresh screenshot and retry.",
+                        }
+                    )
                 else:
                     result_str = json.dumps({"status": "ok"})
 

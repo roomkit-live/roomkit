@@ -195,16 +195,21 @@ class WebRTCAECProvider(AECProvider):
         when TTS playback starts, and ``False`` when it ends.
         """
         with self._lock:
+            was_bypass = self._bypass
             self._bypass = not active
-        if active:
-            logger.debug("AEC activated")
-        else:
-            logger.debug("AEC bypassed")
+        if was_bypass != (not active):
+            logger.info(
+                "AEC %s (processed=%d refs_fed=%d)",
+                "activated" if active else "bypassed",
+                self._process_count,
+                self._ref_fed_count,
+            )
 
     def feed_reference(self, frame: AudioFrame) -> None:
         """Feed a reference (playback / TTS) frame for echo modelling."""
         pcm = frame.data
         fb = self._frame_bytes
+        fed_this_call = 0
 
         with self._lock:
             self._ref_buf.extend(pcm)
@@ -216,6 +221,15 @@ class WebRTCAECProvider(AECProvider):
                 del self._ref_buf[:fb]
                 ap.process_reverse_stream(chunk)
                 self._ref_fed_count += 1
+                fed_this_call += 1
+
+        if fed_this_call > 0 and (self._ref_fed_count <= 3 or self._ref_fed_count % 100 == 0):
+            logger.info(
+                "AEC reference: %d chunks fed (total=%d), bypass=%s",
+                fed_this_call,
+                self._ref_fed_count,
+                self._bypass,
+            )
 
     def reset(self) -> None:
         """Reset internal state including the adaptive filter.
@@ -267,11 +281,12 @@ class WebRTCAECProvider(AECProvider):
         else:
             attenuation_db = 0.0
 
-        logger.debug(
-            "[WebRTC AEC stats] processed=%d refs_fed=%d | "
+        logger.info(
+            "AEC stats: processed=%d refs_fed=%d bypass=%s | "
             "in_rms=%d out_rms=%d attenuation=%.1fdB",
             self._process_count,
             self._ref_fed_count,
+            self._bypass,
             in_rms,
             out_rms,
             attenuation_db,

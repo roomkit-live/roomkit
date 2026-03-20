@@ -762,9 +762,12 @@ class LocalAudioBackend(VoiceBackend):
         """
         sd = self._sd
         output_blocksize = int(self._output_sample_rate * self._block_duration_ms / 1000)
+        has_aec = self._aec is not None or (
+            self._pipeline_config is not None and self._pipeline_config.aec is not None
+        )
         if sys.platform == "darwin":
             out_latency: str = "high"
-        elif self._aec is not None:
+        elif has_aec:
             out_latency = "low"
         else:
             out_latency = "high"
@@ -781,9 +784,10 @@ class LocalAudioBackend(VoiceBackend):
         out.start()
         self._rt_output_stream = out
         logger.info(
-            "Realtime speaker stream: rate=%dHz blocksize=%d device=%s",
+            "Realtime speaker stream: rate=%dHz blocksize=%d latency=%s device=%s",
             self._output_sample_rate,
             output_blocksize,
+            out_latency,
             self._output_device or "default",
         )
 
@@ -814,10 +818,11 @@ class LocalAudioBackend(VoiceBackend):
             outdata[written:] = b"\x00" * (bytes_needed - written)
 
         # AEC: feed the output frame as reference — but only when audio
-        # was actually written.  Feeding silence confuses AEC3's nonlinear
-        # suppressor: it stays in "echo active" mode and suppresses the
-        # user's voice even when nothing is playing.
-        if self._aec is not None and written > 0:
+        # was actually written AND mic is not muted.  Feeding silence
+        # confuses AEC3's nonlinear suppressor.  Feeding reference while
+        # mic is muted desyncs AEC3's delay estimation (reference runs
+        # ahead of capture, destroying the adaptive filter).
+        if self._aec is not None and written > 0 and not self._muted_sessions:
             self._aec_feed_played(bytearray(bytes(outdata)))
 
         # Notify listeners about played audio
@@ -865,11 +870,38 @@ class LocalAudioBackend(VoiceBackend):
         The pipeline runs synchronously in the PortAudio mic callback.
         Audio goes through AEC → AGC → denoiser stages; the processed
         result is what gets forwarded to the realtime provider.
+
+        When the pipeline has AEC configured and no transport-level AEC
+        is set (``self._aec is None``), automatically wires the speaker
+        callback to feed AEC reference via ``pipeline.feed_aec_reference``.
+        This keeps AEC declared in one place (the pipeline config).
         """
         from roomkit.voice.pipeline.engine import AudioPipeline
 
         self._pipeline = AudioPipeline(config)
         self._pipeline_lock = threading.Lock()
+
+        # Auto-wire speaker → pipeline AEC reference when AEC is only
+        # in the pipeline (not duplicated at the transport level).
+        if config.aec is not None and self._aec is None:
+            self._pipeline.enable_playback_aec_feed()
+
+            def _feed_pipeline_aec_ref(
+                session: VoiceSession,
+                frame: AudioFrame,
+            ) -> None:
+                # Skip reference while mic is muted — feeding reference
+                # without corresponding capture desyncs AEC3's internal
+                # delay estimation and destroys the adaptive filter.
+                if session.id in self._muted_sessions:
+                    return
+                self._pipeline.feed_aec_reference(frame)
+
+            self.on_audio_played(_feed_pipeline_aec_ref)
+            logger.info(
+                "Pipeline AEC reference wired via speaker callback "
+                "(time-aligned, no transport-level AEC)",
+            )
 
     def _process_pipeline_inline(self, session: VoiceSession, frame: AudioFrame) -> AudioFrame:
         """Run a frame through the pipeline and return the processed result.
