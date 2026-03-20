@@ -106,6 +106,7 @@ class Supervisor(Orchestration):
         """Create and inject per-worker delegation tools."""
         from roomkit.orchestration.handoff import _room_id_var
 
+        any_new = False
         for worker in self._workers:
             tool_name = f"delegate_to_{worker.channel_id}"
 
@@ -113,6 +114,7 @@ class Supervisor(Orchestration):
             if any(t.name == tool_name for t in self._supervisor._injected_tools):
                 continue
 
+            any_new = True
             desc = getattr(worker, "description", None) or f"Worker agent {worker.channel_id}"
             tool = AITool(
                 name=tool_name,
@@ -130,6 +132,10 @@ class Supervisor(Orchestration):
             )
             self._supervisor._injected_tools.append(tool)
 
+        # Only wrap the tool handler once — guard against double install
+        if not any_new:
+            return
+
         # Wrap the tool handler to intercept delegation calls
         original = self._supervisor.tool_handler
         tool_to_worker = {f"delegate_to_{w.channel_id}": w.channel_id for w in self._workers}
@@ -146,11 +152,13 @@ class Supervisor(Orchestration):
                         task_desc,
                         notify=self._supervisor.channel_id,
                     )
-                    return json.dumps({
-                        "status": "delegated",
-                        "task_id": delegated.id,
-                        "worker": worker_id,
-                    })
+                    return json.dumps(
+                        {
+                            "status": "delegated",
+                            "task_id": delegated.id,
+                            "worker": worker_id,
+                        }
+                    )
                 except Exception as exc:
                     logger.exception("Delegation to %s failed", worker_id)
                     return json.dumps({"error": str(exc)})

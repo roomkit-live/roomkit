@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core.hooks import HookRegistration
-from roomkit.models.enums import HookExecution, HookTrigger
+from roomkit.models.enums import ChannelCategory, HookExecution, HookTrigger
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.handoff import (
     HandoffHandler,
@@ -181,6 +181,7 @@ class Loop(Orchestration):
         """Inject the approve_output tool into the reviewer."""
         from roomkit.orchestration.handoff import _room_id_var
 
+        # Guard against double injection (shared Agent instances across rooms)
         if any(t.name == "approve_output" for t in self._reviewer._injected_tools):
             return
 
@@ -222,8 +223,6 @@ class Loop(Orchestration):
 
         async def loop_cycle_hook(event: RoomEvent, context: RoomContext) -> None:
             # Only act on intelligence-sourced events in this room
-            from roomkit.models.enums import ChannelCategory
-
             source_binding = context.get_binding(event.source.channel_id)
             if source_binding is None or source_binding.category != ChannelCategory.INTELLIGENCE:
                 return
