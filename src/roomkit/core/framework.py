@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from roomkit.orchestration.base import Orchestration
     from roomkit.telemetry.base import TelemetryProvider
     from roomkit.telemetry.config import TelemetryConfig
     from roomkit.voice.backends.base import VoiceBackend
@@ -132,6 +133,7 @@ class RoomKit(
         status_bus: StatusBus | None = None,
         telemetry: TelemetryConfig | TelemetryProvider | None = None,
         inbound_rate_limit: RateLimit | None = None,
+        orchestration: Orchestration | None = None,
     ) -> None:
         """Initialise the RoomKit orchestrator.
 
@@ -171,6 +173,8 @@ class RoomKit(
                 messages before any processing. Messages exceeding the limit
                 are dropped with ``reason="rate_limited"``. Keyed per
                 ``channel_id``.
+            orchestration: Default orchestration strategy applied to rooms
+                created via ``create_room()`` unless overridden per-room.
         """
         from roomkit.telemetry.base import TelemetryProvider as _TelemetryProviderCls
         from roomkit.telemetry.config import TelemetryConfig as _TelemetryConfigCls
@@ -242,6 +246,8 @@ class RoomKit(
             if telemetry.metadata and hasattr(self._telemetry, "_metadata"):
                 self._telemetry._metadata = telemetry.metadata
         self._store._telemetry = self._telemetry  # type: ignore[attr-defined]
+        # Default orchestration strategy
+        self._default_orchestration = orchestration
         # Room-level media recording
         from roomkit.recorder._room_recorder_manager import RoomRecorderManager
 

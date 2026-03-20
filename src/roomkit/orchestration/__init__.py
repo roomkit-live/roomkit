@@ -1,10 +1,11 @@
 """Multi-agent conversation orchestration for RoomKit.
 
 Provides ConversationState, ConversationRouter, HandoffHandler,
-ConversationPipeline, and supporting models for multi-agent routing,
-handoff, and pipeline workflows.
+ConversationPipeline, orchestration strategies, and supporting models
+for multi-agent routing, handoff, and pipeline workflows.
 """
 
+from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.handoff import (
     HANDOFF_TOOL,
     HandoffHandler,
@@ -30,8 +31,21 @@ from roomkit.orchestration.state import (
     set_conversation_state,
 )
 from roomkit.orchestration.status_bus import StatusLevel
+from roomkit.orchestration.strategies import (
+    Loop,
+    Pipeline,
+    Supervisor,
+    Swarm,
+)
 
 __all__ = [
+    # ABC
+    "Orchestration",
+    # Strategies
+    "Loop",
+    "Pipeline",
+    "Supervisor",
+    "Swarm",
     # State
     "ConversationPhase",
     "ConversationState",

@@ -24,11 +24,14 @@ from roomkit.models.room import Room
 
 if TYPE_CHECKING:
     from roomkit.core.locks import RoomLockManager
+    from roomkit.orchestration.base import Orchestration
     from roomkit.recorder._room_recorder_manager import RoomRecorderManager
     from roomkit.recorder.base import RoomRecorderBinding
     from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.framework")
+
+_ORCHESTRATION_UNSET: Any = object()
 
 
 class RoomLifecycleMixin(HelpersMixin):
@@ -37,12 +40,14 @@ class RoomLifecycleMixin(HelpersMixin):
     _store: ConversationStore
     _lock_manager: RoomLockManager
     _room_recorder_mgr: RoomRecorderManager
+    _default_orchestration: Orchestration | None
 
     async def create_room(
         self,
         room_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         recorders: list[RoomRecorderBinding] | None = None,
+        orchestration: Orchestration | None | Any = _ORCHESTRATION_UNSET,
     ) -> Room:
         """Create a new room.
 
@@ -51,6 +56,8 @@ class RoomLifecycleMixin(HelpersMixin):
             metadata: Optional room metadata dict.
             recorders: Optional list of :class:`RoomRecorderBinding` for
                 room-level media recording.
+            orchestration: Orchestration strategy for this room. Overrides
+                the kit-level default. Pass ``None`` to explicitly disable.
         """
         room = Room(
             id=room_id or uuid4().hex,
@@ -60,6 +67,21 @@ class RoomLifecycleMixin(HelpersMixin):
         # Start room-level media recorders
         if recorders:
             self._room_recorder_mgr.register(room.id, recorders)
+
+        # Apply orchestration strategy
+        orch = (
+            orchestration
+            if orchestration is not _ORCHESTRATION_UNSET
+            else self._default_orchestration
+        )
+        if orch is not None:
+            for agent in orch.agents():
+                if agent.channel_id not in self._channels:
+                    self.register_channel(agent)  # type: ignore[attr-defined]
+            for agent in orch.agents():
+                await self.attach_channel(room.id, agent.channel_id)  # type: ignore[attr-defined]
+            await orch.install(self, room.id)  # type: ignore[arg-type]
+
         await self._fire_lifecycle_hook(
             room.id,
             HookTrigger.ON_ROOM_CREATED,

@@ -62,6 +62,13 @@ from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.tool_call import ToolCallCallback, ToolCallEvent
+from roomkit.orchestration import (
+    Loop,
+    Orchestration,
+    Pipeline,
+    Supervisor,
+    Swarm,
+)
 from roomkit.tools.base import Tool
 
 # AI documentation helpers (lazy import to avoid file I/O at import time)
@@ -132,6 +139,12 @@ __all__ = [
     "HookExecution",
     "HookTrigger",
     "RoomStatus",
+    # Orchestration strategies
+    "Loop",
+    "Orchestration",
+    "Pipeline",
+    "Supervisor",
+    "Swarm",
     # Models (core)
     "ChannelBinding",
     "ChannelCapabilities",
