@@ -445,9 +445,7 @@ class RealtimeAVBridge:
         )
         resampled = resample_pcm(audio, self._provider_rate, codec_rate)
 
-        loop = asyncio.get_running_loop()
-        if loop.is_running():
-            loop.create_task(self._backend.send_audio(state.backend_session, resampled))
+        self._safe_create_task(self._backend.send_audio(state.backend_session, resampled))
 
         # Feed audio to avatar for lip-sync (if configured)
         if self._avatar is not None and self._avatar.is_started:
