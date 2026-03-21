@@ -338,6 +338,23 @@ ai = AIChannel(
 
 `RetrievalMemory` searches all sources concurrently, deduplicates results, and prepends relevant knowledge as a context message. When `ingest()` is called (automatic on every inbound event), it also indexes content in all sources.
 
+#### Built-in: PostgreSQL Full-Text Search
+
+For production use without a vector database, use `PostgresKnowledgeSource`:
+
+```python
+from roomkit.knowledge.postgres import PostgresKnowledgeSource
+
+source = PostgresKnowledgeSource(dsn="postgresql://localhost/mydb")
+await source.init()
+
+# Or share the pool with PostgresStore:
+source = PostgresKnowledgeSource(pool=store._pool, source_name="faq")
+await source.init()
+```
+
+Uses PostgreSQL `tsvector` with `ts_rank_cd` for relevance scoring. Auto-creates schema, supports room-scoped queries, and upserts on conflict.
+
 ### Response Scoring
 
 Score AI responses automatically using the `ScoringHook`:
