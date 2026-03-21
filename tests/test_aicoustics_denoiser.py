@@ -234,9 +234,7 @@ class TestConfig:
         # Trigger lazy init.
         provider.process(_frame(_FRAME_SIZE))
 
-        aic.Model.download.assert_called_once_with(
-            "quail-2.0-l-16khz", "/tmp/custom"
-        )
+        aic.Model.download.assert_called_once_with("quail-2.0-l-16khz", "/tmp/custom")
         aic.ProcessorConfig.optimal.assert_called_once_with(
             "/tmp/models/quail",
             num_channels=1,
@@ -249,9 +247,7 @@ class TestConfig:
         )
         # Enhancement level set via context.
         context = aic.Processor.return_value.context.return_value
-        context.set_parameter.assert_called_once_with(
-            "enhancement_level", 0.6
-        )
+        context.set_parameter.assert_called_once_with("enhancement_level", 0.6)
 
 
 # ---------------------------------------------------------------------------

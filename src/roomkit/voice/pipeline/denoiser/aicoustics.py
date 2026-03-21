@@ -75,9 +75,7 @@ class AICousticsDenoiserConfig:
     _resolved_license_key: str = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self._resolved_license_key = self.license_key or os.environ.get(
-            "AIC_SDK_LICENSE", ""
-        )
+        self._resolved_license_key = self.license_key or os.environ.get("AIC_SDK_LICENSE", "")
 
 
 class AICousticsDenoiserProvider(DenoiserProvider):
@@ -120,18 +118,14 @@ class AICousticsDenoiserProvider(DenoiserProvider):
 
         # Download model to local cache (sync, idempotent).
         model_path = aic.Model.download(cfg.model, cfg.model_dir)
-        logger.debug(
-            "AICoustics: downloaded model=%s to %s", cfg.model, model_path
-        )
+        logger.debug("AICoustics: downloaded model=%s to %s", cfg.model, model_path)
 
         # Create processor with optimal config.
         processor_config = aic.ProcessorConfig.optimal(
             model_path,
             num_channels=cfg.num_channels,
         )
-        self._processor = aic.Processor(
-            model_path, cfg._resolved_license_key, processor_config
-        )
+        self._processor = aic.Processor(model_path, cfg._resolved_license_key, processor_config)
         self._frame_size = processor_config.num_frames
 
         # Set enhancement level.
@@ -188,9 +182,7 @@ class AICousticsDenoiserProvider(DenoiserProvider):
                 float_samples = _pcm_s16le_to_float32(chunk)
 
                 # Quail expects shape (channels, frames).
-                samples_2d = float_samples.reshape(
-                    self._config.num_channels, self._frame_size
-                )
+                samples_2d = float_samples.reshape(self._config.num_channels, self._frame_size)
                 result = self._processor.process(samples_2d)
 
                 # Result is (channels, frames) — flatten back.

@@ -60,9 +60,7 @@ async def main() -> None:
     # Workers — run tasks in isolated child rooms (not attached to user room)
     researcher = Agent(
         "agent-researcher",
-        provider=MockAIProvider(
-            responses=["Research complete: found 3 key findings."]
-        ),
+        provider=MockAIProvider(responses=["Research complete: found 3 key findings."]),
         role="Researcher",
         description="Researches topics and provides detailed analysis",
         system_prompt="You research topics thoroughly.",
@@ -70,9 +68,7 @@ async def main() -> None:
     )
     coder = Agent(
         "agent-coder",
-        provider=MockAIProvider(
-            responses=["Implementation complete: added the feature."]
-        ),
+        provider=MockAIProvider(responses=["Implementation complete: added the feature."]),
         role="Software engineer",
         description="Writes and reviews code",
         system_prompt="You write clean, tested code.",

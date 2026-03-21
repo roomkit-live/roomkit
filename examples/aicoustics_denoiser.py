@@ -45,15 +45,19 @@ def rms(samples: tuple[int, ...]) -> float:
 def main() -> None:
     parser = argparse.ArgumentParser(description="ai|coustics Quail denoiser demo")
     parser.add_argument(
-        "--model", default="quail-vf-2.0-l-16khz",
+        "--model",
+        default="quail-vf-2.0-l-16khz",
         help="Quail model identifier (default: quail-vf-2.0-l-16khz)",
     )
     parser.add_argument(
-        "--level", type=float, default=0.8,
+        "--level",
+        type=float,
+        default=0.8,
         help="Enhancement level 0.0-1.0 (default: 0.8)",
     )
     parser.add_argument(
-        "--model-dir", default="./models",
+        "--model-dir",
+        default="./models",
         help="Directory for cached models (default: ./models)",
     )
     args = parser.parse_args()
