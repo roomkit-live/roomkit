@@ -171,56 +171,34 @@ class GradiumTTSProvider(TTSProvider):
             duration_seconds=duration,
         )
 
+    async def _yield_stream(self, stream: Any) -> AsyncIterator[AudioChunk]:
+        """Yield AudioChunks from a Gradium TTS stream."""
+        sample_rate = stream.sample_rate or self._get_sample_rate()
+        audio_format = self._get_audio_format()
+        async for chunk in stream.iter_bytes():
+            if chunk:
+                yield AudioChunk(
+                    data=chunk, sample_rate=sample_rate, format=audio_format, is_final=False
+                )
+        yield AudioChunk(data=b"", sample_rate=sample_rate, format=audio_format, is_final=True)
+
     async def synthesize_stream(
         self, text: str, *, voice: str | None = None
     ) -> AsyncIterator[AudioChunk]:
         """Stream audio chunks as they're generated."""
         client = self._get_client()
         stream = await client.tts_stream(self._build_setup(voice), text)
-        sample_rate = stream.sample_rate or self._get_sample_rate()
-
-        async for chunk in stream.iter_bytes():
-            if chunk:
-                yield AudioChunk(
-                    data=chunk,
-                    sample_rate=sample_rate,
-                    format=self._get_audio_format(),
-                    is_final=False,
-                )
-
-        yield AudioChunk(
-            data=b"",
-            sample_rate=sample_rate,
-            format=self._get_audio_format(),
-            is_final=True,
-        )
+        async for chunk in self._yield_stream(stream):
+            yield chunk
 
     async def synthesize_stream_input(
         self, text_stream: AsyncIterator[str], *, voice: str | None = None
     ) -> AsyncIterator[AudioChunk]:
-        """Stream audio from streaming text input.
-
-        The Gradium SDK accepts an AsyncGenerator[str] for text input directly.
-        """
+        """Stream audio from streaming text input."""
         client = self._get_client()
         stream = await client.tts_stream(self._build_setup(voice), text_stream)
-        sample_rate = stream.sample_rate or self._get_sample_rate()
-
-        async for chunk in stream.iter_bytes():
-            if chunk:
-                yield AudioChunk(
-                    data=chunk,
-                    sample_rate=sample_rate,
-                    format=self._get_audio_format(),
-                    is_final=False,
-                )
-
-        yield AudioChunk(
-            data=b"",
-            sample_rate=sample_rate,
-            format=self._get_audio_format(),
-            is_final=True,
-        )
+        async for chunk in self._yield_stream(stream):
+            yield chunk
 
     async def list_voices(self) -> list[GradiumVoice]:
         """List available voices from Gradium."""

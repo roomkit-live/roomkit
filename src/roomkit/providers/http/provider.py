@@ -68,15 +68,14 @@ class WebhookHTTPProvider(HTTPProvider):
                 unit="ms",
                 attributes={"provider": "WebhookHTTPProvider"},
             )
-        except self._httpx.TimeoutException:
-            return ProviderResult(success=False, error="timeout")
-        except self._httpx.HTTPStatusError as exc:
-            return ProviderResult(
-                success=False,
-                error=f"http_{exc.response.status_code}",
-            )
-        except self._httpx.HTTPError as exc:
-            return ProviderResult(success=False, error=str(exc))
+        except (
+            self._httpx.TimeoutException,
+            self._httpx.HTTPStatusError,
+            self._httpx.HTTPError,
+        ) as exc:
+            from roomkit.providers.http_errors import handle_http_error
+
+            return handle_http_error(exc, self._httpx)
 
         return self._parse_response(data)
 

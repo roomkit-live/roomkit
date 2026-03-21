@@ -11,7 +11,6 @@ from roomkit.models.delivery import InboundMessage, ProviderResult
 from roomkit.models.event import RoomEvent
 from roomkit.providers.sms.base import SMSProvider
 from roomkit.providers.sms.meta import (
-    build_inbound_content,
     extract_media_urls,
     extract_text_body,
 )
@@ -178,35 +177,17 @@ def parse_twilio_webhook(
     payload: dict[str, Any],
     channel_id: str,
 ) -> InboundMessage:
-    """Convert a Twilio webhook POST body into an InboundMessage.
+    """Convert a Twilio SMS webhook POST body into an InboundMessage.
 
     Note: Twilio sends webhooks as form-encoded data. Convert to dict first:
         payload = dict(await request.form())
     """
-    body = payload.get("Body", "")
+    from roomkit.providers.twilio.webhook import parse_twilio_payload
 
-    media: list[dict[str, str | None]] = []
-    num_media = min(int(payload.get("NumMedia", "0")), 20)
-    for i in range(num_media):
-        url = payload.get(f"MediaUrl{i}")
-        if url:
-            media.append(
-                {
-                    "url": url,
-                    "mime_type": payload.get(f"MediaContentType{i}"),
-                }
-            )
-
-    return InboundMessage(
-        channel_id=channel_id,
-        sender_id=payload.get("From", ""),
-        content=build_inbound_content(body, media),
-        external_id=payload.get("MessageSid"),
-        idempotency_key=payload.get("MessageSid"),
-        metadata={
-            "to": payload.get("To", ""),
-            "account_sid": payload.get("AccountSid", ""),
-            "num_media": payload.get("NumMedia", "0"),
+    return parse_twilio_payload(
+        payload,
+        channel_id,
+        extra_metadata={
             "from_city": payload.get("FromCity"),
             "from_state": payload.get("FromState"),
             "from_country": payload.get("FromCountry"),
