@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -26,28 +27,9 @@ logger = logging.getLogger(__name__)
 
 _MAX_SEGMENT_LENGTH = 1000
 
+
 # ---------------------------------------------------------------------------
-# MMS Aggregation — automatic handling of VoiceMeUp's split MMS webhooks
-# ---------------------------------------------------------------------------
-#
-# VoiceMeUp sends MMS as two separate webhooks:
-#   1. First: text message + .mms.html metadata wrapper (not real media)
-#   2. Second: actual media attachment (no text)
-#
-# This module automatically buffers the first webhook and merges it with
-# the second to produce a single InboundMessage with both text and media.
-#
-# Usage:
-#     message = parse_voicemeup_webhook(payload, channel_id="sms")
-#     if message:
-#         await kit.process_inbound(message)
-#     # If None, webhook was buffered (waiting for second part)
-#
-# Configure timeout callback (optional):
-#     configure_voicemeup_mms(
-#         timeout_seconds=5.0,
-#         on_timeout=my_handler,  # Called with text-only message if image never arrives
-#     )
+# MMS Aggregation helpers (stateless — state lives on the provider instance)
 # ---------------------------------------------------------------------------
 
 
@@ -59,35 +41,6 @@ class _PendingMMS:
     text: str
     timestamp: float
     channel_id: str
-
-
-# Module-level state for MMS aggregation
-_mms_buffer: dict[str, _PendingMMS] = {}
-_mms_timeout_seconds: float = 5.0
-_mms_on_timeout: Callable[[InboundMessage], Awaitable[None] | None] | None = None
-
-
-def configure_voicemeup_mms(
-    *,
-    timeout_seconds: float = 5.0,
-    on_timeout: Callable[[InboundMessage], Awaitable[None] | None] | None = None,
-) -> None:
-    """Configure VoiceMeUp MMS aggregation behavior.
-
-    Args:
-        timeout_seconds: How long to wait for the second MMS part (default: 5.0)
-        on_timeout: Callback invoked with text-only message if image never arrives.
-                    If not set, orphaned text messages are logged and discarded.
-
-    Example:
-        async def handle_orphaned_mms(message: InboundMessage) -> None:
-            await kit.process_inbound(message)
-
-        configure_voicemeup_mms(timeout_seconds=5.0, on_timeout=handle_orphaned_mms)
-    """
-    global _mms_timeout_seconds, _mms_on_timeout
-    _mms_timeout_seconds = timeout_seconds
-    _mms_on_timeout = on_timeout
 
 
 def _is_mms_metadata_wrapper(url: str | None, mime_type: str | None) -> bool:
@@ -106,37 +59,6 @@ def _make_correlation_key(payload: dict[str, Any]) -> str:
         f"{payload.get('destination_number', '')}:"
         f"{payload.get('datetime_transmission', '')}"
     )
-
-
-async def _handle_mms_timeout(key: str) -> None:
-    """Emit buffered message as text-only if timeout expires."""
-    await asyncio.sleep(_mms_timeout_seconds)
-
-    if key not in _mms_buffer:
-        return  # Already merged, nothing to do
-
-    pending = _mms_buffer.pop(key)
-
-    # Create text-only message (no media since .mms.html is useless)
-    payload_copy = dict(pending.payload)
-    payload_copy.pop("attachment", None)
-    payload_copy.pop("attachment_url", None)
-    payload_copy.pop("attachment_mime_type", None)
-    payload_copy.pop("attachment_type", None)
-
-    message = _build_inbound_message(payload_copy, pending.channel_id)
-
-    if _mms_on_timeout:
-        logger.debug("VoiceMeUp MMS timeout: invoking on_timeout callback for %s", key)
-        result = _mms_on_timeout(message)
-        if asyncio.iscoroutine(result):
-            await result
-    else:
-        logger.warning(
-            "VoiceMeUp MMS timeout: discarding orphaned text message from %s "
-            "(configure on_timeout to handle this)",
-            pending.payload.get("source_number"),
-        )
 
 
 def _build_inbound_message(payload: dict[str, Any], channel_id: str) -> InboundMessage:
@@ -168,78 +90,9 @@ def _build_inbound_message(payload: dict[str, Any], channel_id: str) -> InboundM
     )
 
 
-def parse_voicemeup_webhook(
-    payload: dict[str, Any],
-    channel_id: str,
-) -> InboundMessage | None:
-    """Parse a VoiceMeUp webhook and return an InboundMessage.
-
-    Automatically handles MMS aggregation: VoiceMeUp sends MMS as two separate
-    webhooks (text + metadata first, image second). This function buffers the
-    first part and merges it with the second.
-
-    Args:
-        payload: The webhook POST body from VoiceMeUp
-        channel_id: The channel ID to associate with this message
-
-    Returns:
-        InboundMessage if ready to process (SMS or merged MMS)
-        None if buffered (waiting for second MMS part)
-
-    Example:
-        @app.post("/webhooks/sms/voicemeup")
-        async def webhook(payload: dict):
-            message = parse_voicemeup_webhook(payload, channel_id="sms")
-            if message:
-                await kit.process_inbound(message)
-            return {"ok": True}
-    """
-    attachment_url = payload.get("attachment") or payload.get("attachment_url")
-    attachment_mime = payload.get("attachment_mime_type") or payload.get("attachment_type")
-
-    # Check if this is a metadata wrapper (first part of split MMS)
-    if _is_mms_metadata_wrapper(attachment_url, attachment_mime):
-        key = _make_correlation_key(payload)
-        text = payload.get("message", "")
-
-        _mms_buffer[key] = _PendingMMS(
-            payload=payload,
-            text=text,
-            timestamp=time.time(),
-            channel_id=channel_id,
-        )
-
-        # Schedule timeout (only if event loop is running)
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(_handle_mms_timeout(key))
-        except RuntimeError:
-            # No event loop running — timeout won't fire, but in real usage
-            # (FastAPI/Starlette) there always will be one
-            pass
-
-        logger.debug("VoiceMeUp MMS: buffered first part for %s", key)
-        return None
-
-    # Check if we have a buffered first part to merge with
-    key = _make_correlation_key(payload)
-    if key in _mms_buffer:
-        pending = _mms_buffer.pop(key)
-
-        # Build merged payload: text from first, media from second
-        merged_payload = dict(payload)
-        merged_payload["message"] = pending.text
-
-        # Combine sms_hash for traceability
-        first_hash = pending.payload.get("sms_hash", "")
-        second_hash = payload.get("sms_hash", "")
-        merged_payload["sms_hash"] = f"{first_hash}+{second_hash}"
-
-        logger.debug("VoiceMeUp MMS: merged text + media for %s", key)
-        return _build_inbound_message(merged_payload, channel_id)
-
-    # Regular SMS or standalone MMS — return directly
-    return _build_inbound_message(payload, channel_id)
+def _strip_plus(number: str) -> str:
+    """Strip leading '+' from an E.164 phone number."""
+    return number.lstrip("+")
 
 
 # ---------------------------------------------------------------------------
@@ -247,13 +100,12 @@ def parse_voicemeup_webhook(
 # ---------------------------------------------------------------------------
 
 
-def _strip_plus(number: str) -> str:
-    """Strip leading '+' from an E.164 phone number."""
-    return number.lstrip("+")
-
-
 class VoiceMeUpSMSProvider(SMSProvider):
-    """SMS provider using the VoiceMeUp REST API."""
+    """SMS provider using the VoiceMeUp REST API.
+
+    MMS aggregation state is per-instance, supporting multi-tenant
+    deployments where each tenant has its own provider.
+    """
 
     def __init__(self, config: VoiceMeUpConfig) -> None:
         try:
@@ -266,7 +118,7 @@ class VoiceMeUpSMSProvider(SMSProvider):
         self._config = config
         self._httpx = _httpx
         self._client: httpx.AsyncClient = _httpx.AsyncClient(timeout=config.timeout)
-        # Per-instance MMS aggregation state (avoids module-level shared globals)
+        # Per-instance MMS aggregation state
         self._mms_buffer: dict[str, _PendingMMS] = {}
         self._mms_timeout_seconds: float = 5.0
         self._mms_on_timeout: Callable[[InboundMessage], Awaitable[None] | None] | None = None
@@ -274,6 +126,93 @@ class VoiceMeUpSMSProvider(SMSProvider):
     @property
     def from_number(self) -> str:
         return self._config.from_number
+
+    def configure_mms(
+        self,
+        *,
+        timeout_seconds: float = 5.0,
+        on_timeout: Callable[[InboundMessage], Awaitable[None] | None] | None = None,
+    ) -> None:
+        """Configure MMS aggregation for this provider instance.
+
+        Args:
+            timeout_seconds: How long to wait for the second MMS part.
+            on_timeout: Callback invoked with text-only message if image
+                never arrives. If not set, orphaned messages are logged.
+        """
+        self._mms_timeout_seconds = timeout_seconds
+        self._mms_on_timeout = on_timeout
+
+    def parse_webhook(
+        self,
+        payload: dict[str, Any],
+        channel_id: str,
+    ) -> InboundMessage | None:
+        """Parse a VoiceMeUp webhook using this instance's MMS buffer.
+
+        Handles split MMS aggregation: buffers the first part (text +
+        metadata wrapper) and merges it with the second (actual media).
+
+        Returns:
+            InboundMessage if ready to process, None if buffered.
+        """
+        attachment_url = payload.get("attachment") or payload.get("attachment_url")
+        attachment_mime = payload.get("attachment_mime_type") or payload.get("attachment_type")
+
+        # First part of split MMS — buffer it
+        if _is_mms_metadata_wrapper(attachment_url, attachment_mime):
+            key = _make_correlation_key(payload)
+            self._mms_buffer[key] = _PendingMMS(
+                payload=payload,
+                text=payload.get("message", ""),
+                timestamp=time.time(),
+                channel_id=channel_id,
+            )
+            with contextlib.suppress(RuntimeError):
+                asyncio.get_running_loop().create_task(self._handle_mms_timeout(key))
+            logger.debug("VoiceMeUp MMS: buffered first part for %s", key)
+            return None
+
+        # Second part — merge with buffered first part
+        key = _make_correlation_key(payload)
+        if key in self._mms_buffer:
+            pending = self._mms_buffer.pop(key)
+            merged_payload = dict(payload)
+            merged_payload["message"] = pending.text
+            first_hash = pending.payload.get("sms_hash", "")
+            second_hash = payload.get("sms_hash", "")
+            merged_payload["sms_hash"] = f"{first_hash}+{second_hash}"
+            logger.debug("VoiceMeUp MMS: merged text + media for %s", key)
+            return _build_inbound_message(merged_payload, channel_id)
+
+        # Regular SMS or standalone MMS
+        return _build_inbound_message(payload, channel_id)
+
+    async def _handle_mms_timeout(self, key: str) -> None:
+        """Emit buffered message as text-only if timeout expires."""
+        await asyncio.sleep(self._mms_timeout_seconds)
+
+        if key not in self._mms_buffer:
+            return
+
+        pending = self._mms_buffer.pop(key)
+        payload_copy = dict(pending.payload)
+        for k in ("attachment", "attachment_url", "attachment_mime_type", "attachment_type"):
+            payload_copy.pop(k, None)
+
+        message = _build_inbound_message(payload_copy, pending.channel_id)
+
+        if self._mms_on_timeout:
+            logger.debug("VoiceMeUp MMS timeout: invoking callback for %s", key)
+            result = self._mms_on_timeout(message)
+            if asyncio.iscoroutine(result):
+                await result
+        else:
+            logger.warning(
+                "VoiceMeUp MMS timeout: discarding orphaned text from %s "
+                "(set on_timeout via configure_mms to handle this)",
+                pending.payload.get("source_number"),
+            )
 
     async def send(self, event: RoomEvent, to: str, from_: str | None = None) -> ProviderResult:
         body = extract_text_body(event.content)
@@ -285,13 +224,11 @@ class VoiceMeUpSMSProvider(SMSProvider):
         from_number = _strip_plus(from_ or self._config.from_number)
         to_number = _strip_plus(to)
 
-        # MMS: VoiceMeUp supports one attachment per message
         if media_urls:
             return await self._send_message(
                 body or "", to_number, from_number, attachment=media_urls[0]
             )
 
-        # SMS: split long messages into segments
         segments = self._split_message(body)
         last_result: ProviderResult | None = None
 
@@ -300,7 +237,8 @@ class VoiceMeUpSMSProvider(SMSProvider):
             if not last_result.success:
                 return last_result
 
-        assert last_result is not None
+        if last_result is None:
+            raise RuntimeError("No segments to send")
         return last_result
 
     async def _send_message(
@@ -382,71 +320,11 @@ class VoiceMeUpSMSProvider(SMSProvider):
         import textwrap
 
         return textwrap.wrap(
-            text, width=_MAX_SEGMENT_LENGTH, break_long_words=True, break_on_hyphens=False
+            text,
+            width=_MAX_SEGMENT_LENGTH,
+            break_long_words=True,
+            break_on_hyphens=False,
         )
 
     async def close(self) -> None:
         await self._client.aclose()
-
-    def configure_mms(
-        self,
-        *,
-        timeout_seconds: float = 5.0,
-        on_timeout: Callable[[InboundMessage], Awaitable[None] | None] | None = None,
-    ) -> None:
-        """Configure MMS aggregation behavior for this provider instance."""
-        self._mms_timeout_seconds = timeout_seconds
-        self._mms_on_timeout = on_timeout
-
-    def parse_mms_webhook(
-        self,
-        payload: dict[str, Any],
-        channel_id: str,
-    ) -> InboundMessage | None:
-        """Parse a VoiceMeUp webhook using per-instance MMS state."""
-        attachment_url = payload.get("attachment") or payload.get("attachment_url")
-        attachment_mime = payload.get("attachment_mime_type") or payload.get("attachment_type")
-
-        if _is_mms_metadata_wrapper(attachment_url, attachment_mime):
-            key = _make_correlation_key(payload)
-            text = payload.get("message", "")
-            self._mms_buffer[key] = _PendingMMS(
-                payload=payload,
-                text=text,
-                timestamp=time.time(),
-                channel_id=channel_id,
-            )
-
-            async def _timeout() -> None:
-                await asyncio.sleep(self._mms_timeout_seconds)
-                if key not in self._mms_buffer:
-                    return
-                pending = self._mms_buffer.pop(key)
-                payload_copy = dict(pending.payload)
-                keys = ("attachment", "attachment_url", "attachment_mime_type", "attachment_type")
-                for k in keys:
-                    payload_copy.pop(k, None)
-                message = _build_inbound_message(payload_copy, pending.channel_id)
-                if self._mms_on_timeout:
-                    result = self._mms_on_timeout(message)
-                    if asyncio.iscoroutine(result):
-                        await result
-
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(_timeout())
-            except RuntimeError:
-                pass
-            return None
-
-        key = _make_correlation_key(payload)
-        if key in self._mms_buffer:
-            pending = self._mms_buffer.pop(key)
-            merged_payload = dict(payload)
-            merged_payload["message"] = pending.text
-            first_hash = pending.payload.get("sms_hash", "")
-            second_hash = payload.get("sms_hash", "")
-            merged_payload["sms_hash"] = f"{first_hash}+{second_hash}"
-            return _build_inbound_message(merged_payload, channel_id)
-
-        return _build_inbound_message(payload, channel_id)
