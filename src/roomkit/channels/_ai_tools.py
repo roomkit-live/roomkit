@@ -49,7 +49,8 @@ class AIToolsMixin:
         parent_span_id: str | None = None,
     ) -> list[_ContentPart]:
         """Execute tool calls concurrently and return result parts."""
-        assert self._tool_handler is not None
+        if self._tool_handler is None:
+            raise RuntimeError("_execute_tools_parallel called without a tool handler")
         handler = self._tool_handler
 
         async def _run_one(tc: Any) -> AIToolResultPart:

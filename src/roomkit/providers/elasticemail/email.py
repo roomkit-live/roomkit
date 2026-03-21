@@ -41,6 +41,9 @@ class ElasticEmailProvider(EmailProvider):
         if not body_text and not body_html:
             return ProviderResult(success=False, error="empty_message")
 
+        # NOTE: Elastic Email v2 API requires the key as a form parameter.
+        # This means the key may appear in proxy/application access logs.
+        # Consider using the v4 API with Authorization headers for production.
         data: dict[str, Any] = {
             "apikey": self._config.api_key.get_secret_value(),
             "from": from_ or self._config.from_email,

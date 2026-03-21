@@ -191,7 +191,8 @@ class VoiceSTTMixin:
 
         async def consume(state: _STTStreamState) -> None:
             try:
-                assert self._stt is not None
+                if self._stt is None:
+                    raise RuntimeError("STT provider not configured")
                 async for result in self._stt.transcribe_stream(audio_gen()):
                     if state.cancelled:
                         return
@@ -422,7 +423,8 @@ class VoiceSTTMixin:
                         yield chunk
 
                 try:
-                    assert self._stt is not None
+                    if self._stt is None:
+                        raise RuntimeError("STT provider not configured")
                     barge_in_fired = False
                     backoff = 0.1
 
@@ -903,7 +905,8 @@ class VoiceSTTMixin:
         audio_data = bytes(buf)
         buf.clear()
 
-        assert self._stt is not None  # Guaranteed by __init__ validation
+        if self._stt is None:
+            raise RuntimeError("STT provider not configured")
         from roomkit.voice.audio_frame import AudioFrame
 
         audio_frame = AudioFrame(

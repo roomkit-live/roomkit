@@ -249,5 +249,20 @@ class AIProvider(ABC):
             metadata=response.metadata,
         )
 
+    def _record_ttfb(self, t0: float) -> None:
+        """Record time-to-first-byte metric via telemetry (if propagated)."""
+        import time
+
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        ttfb_ms = (time.monotonic() - t0) * 1000
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        telemetry.record_metric(
+            "roomkit.llm.ttfb_ms",
+            ttfb_ms,
+            unit="ms",
+            attributes={"provider": self.name, "model": self.model_name},
+        )
+
     async def close(self) -> None:  # noqa: B027
         """Release resources. Override in subclasses that hold connections."""

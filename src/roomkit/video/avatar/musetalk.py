@@ -133,6 +133,8 @@ class MuseTalkAvatarProvider(AvatarProvider):
         # older MuseTalk checkpoints saved in legacy format.
         import torch
 
+        # Temporarily allow weights_only=False for legacy MuseTalk checkpoints.
+        # Scoped: restored immediately after loading to avoid process-wide side effects.
         _original_load = torch.load
         torch.load = lambda *a, **kw: _original_load(
             *a,
@@ -148,6 +150,8 @@ class MuseTalkAvatarProvider(AvatarProvider):
                 "Clone it: git clone https://github.com/TMElyralab/MuseTalk.git "
                 "and install: pip install -r requirements.txt"
             ) from exc
+        finally:
+            torch.load = _original_load
 
         self._started = True
         logger.info(

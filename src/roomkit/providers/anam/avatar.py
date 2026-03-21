@@ -236,7 +236,7 @@ class AnamAvatarProvider(AvatarProvider):
     def _schedule_async(coro: Any) -> None:
         """Schedule an async coroutine from sync context."""
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             if loop.is_running():
                 loop.create_task(coro)
         except RuntimeError:

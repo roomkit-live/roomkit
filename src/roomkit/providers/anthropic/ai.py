@@ -257,22 +257,6 @@ class AnthropicAIProvider(AIProvider):
                 status_code=None,
             ) from exc
 
-    def _record_ttfb(self, t0: float) -> None:
-        """Record time-to-first-byte metric."""
-        ttfb_ms = (time.monotonic() - t0) * 1000
-        from roomkit.telemetry.noop import NoopTelemetryProvider
-
-        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
-        telemetry.record_metric(
-            "roomkit.llm.ttfb_ms",
-            ttfb_ms,
-            unit="ms",
-            attributes={
-                "provider": "anthropic",
-                "model": self._config.model,
-            },
-        )
-
     async def generate(self, context: AIContext) -> AIResponse:
         """Generate by consuming the structured stream."""
         thinking_parts: list[str] = []

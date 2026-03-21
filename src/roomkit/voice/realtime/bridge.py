@@ -371,7 +371,7 @@ class RealtimeAVBridge:
         # Use the provider's public send_audio method.
         # Store rate for the provider's internal send_user_audio call.
         state.provider_session.metadata["_input_rate"] = sample_rate
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         if loop.is_running():
             loop.create_task(self._provider.send_audio(state.provider_session, raw))
 
@@ -435,7 +435,7 @@ class RealtimeAVBridge:
         )
         resampled = resample_pcm(audio, self._provider_rate, codec_rate)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         if loop.is_running():
             loop.create_task(self._backend.send_audio(state.backend_session, resampled))
 

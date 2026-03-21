@@ -169,19 +169,6 @@ class GeminiAIProvider(AIProvider):
             status_code=status_code,
         )
 
-    def _record_ttfb(self, t0: float) -> None:
-        """Record time-to-first-byte metric."""
-        ttfb_ms = (time.monotonic() - t0) * 1000
-        from roomkit.telemetry.noop import NoopTelemetryProvider
-
-        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
-        telemetry.record_metric(
-            "roomkit.llm.ttfb_ms",
-            ttfb_ms,
-            unit="ms",
-            attributes={"provider": "gemini", "model": self._config.model},
-        )
-
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """Yield structured events from the Gemini streaming API."""
         gen_config = self._build_gen_config(context)
@@ -222,9 +209,11 @@ class GeminiAIProvider(AIProvider):
                     elif hasattr(part, "function_call") and part.function_call:
                         fc = part.function_call
                         fc_name: str = fc.name or ""
+                        from uuid import uuid4
+
                         tool_calls.append(
                             StreamToolCall(
-                                id=fc_name,
+                                id=f"call_{uuid4().hex[:12]}",
                                 name=fc_name,
                                 arguments=dict(fc.args) if fc.args else {},
                             )

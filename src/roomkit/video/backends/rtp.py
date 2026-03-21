@@ -254,7 +254,7 @@ class RTPVideoBackend(RTPVoiceBackend, VideoBackend):  # type: ignore[misc]
         data = [frame.data]
         is_key = frame.keyframe
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             if loop.is_running():
                 loop.call_soon_threadsafe(video_rtp.send_frame, data, ts, is_key)
                 return

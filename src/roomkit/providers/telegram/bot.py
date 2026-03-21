@@ -11,7 +11,6 @@ from roomkit.models.event import (
     LocationContent,
     MediaContent,
     RoomEvent,
-    TextContent,
     VideoContent,
 )
 from roomkit.providers.telegram.base import TelegramProvider
@@ -188,12 +187,9 @@ class TelegramBotProvider(TelegramProvider):
 
     @staticmethod
     def _extract_text(event: RoomEvent) -> str:
-        content = event.content
-        if isinstance(content, TextContent):
-            return content.body
-        if hasattr(content, "body"):
-            return str(content.body)
-        return ""
+        from roomkit.providers.utils import extract_event_text
+
+        return extract_event_text(event)
 
     async def close(self) -> None:
         await self._client.aclose()

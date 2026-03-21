@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.base import AudioChunk
+from roomkit.voice.tts.audio_utils import wrap_wav as _wrap_wav
 from roomkit.voice.tts.base import TTSProvider
 
 if TYPE_CHECKING:
@@ -53,32 +54,6 @@ def _float32_to_pcm_s16le(samples: list[float]) -> bytes:
     clamped = [max(-1.0, min(1.0, s)) for s in samples]
     int_samples = [int(s * 32767) for s in clamped]
     return struct.pack(f"<{len(int_samples)}h", *int_samples)
-
-
-def _wrap_wav(pcm_data: bytes, sample_rate: int, num_channels: int = 1) -> bytes:
-    """Wrap raw PCM S16LE data in a minimal WAV header."""
-    bits_per_sample = 16
-    byte_rate = sample_rate * num_channels * bits_per_sample // 8
-    block_align = num_channels * bits_per_sample // 8
-    data_size = len(pcm_data)
-    # RIFF header
-    header = struct.pack(
-        "<4sI4s4sIHHIIHH4sI",
-        b"RIFF",
-        36 + data_size,  # file size - 8
-        b"WAVE",
-        b"fmt ",
-        16,  # fmt chunk size
-        1,  # PCM format
-        num_channels,
-        sample_rate,
-        byte_rate,
-        block_align,
-        bits_per_sample,
-        b"data",
-        data_size,
-    )
-    return header + pcm_data
 
 
 _PARAGRAPH_RE = re.compile(r"\n\n+")

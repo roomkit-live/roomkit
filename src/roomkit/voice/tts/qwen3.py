@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-import struct
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.base import AudioChunk
+from roomkit.voice.tts.audio_utils import wrap_wav as _wrap_wav
 from roomkit.voice.tts.base import TTSProvider
 
 if TYPE_CHECKING:
@@ -72,31 +72,6 @@ def _numpy_to_pcm_s16le(samples: Any) -> bytes:
     arr = np.clip(samples, -1.0, 1.0)
     int_samples = (arr * 32767).astype(np.int16)
     return bytes(int_samples.tobytes())
-
-
-def _wrap_wav(pcm_data: bytes, sample_rate: int, num_channels: int = 1) -> bytes:
-    """Wrap raw PCM S16LE data in a minimal WAV header."""
-    bits_per_sample = 16
-    byte_rate = sample_rate * num_channels * bits_per_sample // 8
-    block_align = num_channels * bits_per_sample // 8
-    data_size = len(pcm_data)
-    header = struct.pack(
-        "<4sI4s4sIHHIIHH4sI",
-        b"RIFF",
-        36 + data_size,
-        b"WAVE",
-        b"fmt ",
-        16,
-        1,  # PCM format
-        num_channels,
-        sample_rate,
-        byte_rate,
-        block_align,
-        bits_per_sample,
-        b"data",
-        data_size,
-    )
-    return header + pcm_data
 
 
 class Qwen3TTSProvider(TTSProvider):

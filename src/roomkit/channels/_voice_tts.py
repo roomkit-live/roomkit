@@ -429,8 +429,10 @@ class VoiceTTSMixin:
 
         from .voice import TTSPlaybackState
 
-        assert self._tts is not None  # caller must guard  # noqa: S101
-        assert self._backend is not None  # noqa: S101
+        if self._tts is None:
+            raise RuntimeError("TTS provider not configured")
+        if self._backend is None:
+            raise RuntimeError("Voice backend not configured")
 
         tts_name = self._tts.name  # capture before async yields (may become None)
 

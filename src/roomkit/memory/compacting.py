@@ -104,7 +104,7 @@ class CompactingMemory(MemoryProvider):
 
     async def _get_or_create_summary(self, room_id: str, events: list[RoomEvent]) -> str:
         # Check cache
-        now = asyncio.get_event_loop().time()
+        now = asyncio.get_running_loop().time()
         if room_id in self._summary_cache:
             cached_ts, cached_summary = self._summary_cache[room_id]
             if now - cached_ts < self._cache_ttl:

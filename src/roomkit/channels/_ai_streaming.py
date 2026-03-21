@@ -100,7 +100,7 @@ class AIStreamingMixin:
                 return
             room_id = context.room.room.id if context.room else None
             deadline = (
-                asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
+                asyncio.get_running_loop().time() + self._tool_loop_timeout_seconds
                 if self._tool_loop_timeout_seconds
                 else None
             )
@@ -223,7 +223,7 @@ class AIStreamingMixin:
                     )
                     return
 
-                if deadline and asyncio.get_event_loop().time() >= deadline:
+                if deadline and asyncio.get_running_loop().time() >= deadline:
                     logger.warning(
                         "Streaming tool loop timeout after %d rounds (%.0fs)",
                         _round_idx,

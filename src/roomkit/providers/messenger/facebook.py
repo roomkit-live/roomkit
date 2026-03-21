@@ -7,7 +7,7 @@ import hmac
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.delivery import ProviderResult
-from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.event import RoomEvent
 from roomkit.providers.messenger.base import MessengerProvider
 from roomkit.providers.messenger.config import MessengerConfig
 
@@ -139,12 +139,9 @@ class FacebookMessengerProvider(MessengerProvider):
 
     @staticmethod
     def _extract_text(event: RoomEvent) -> str:
-        content = event.content
-        if isinstance(content, TextContent):
-            return content.body
-        if hasattr(content, "body"):
-            return str(content.body)
-        return ""
+        from roomkit.providers.utils import extract_event_text
+
+        return extract_event_text(event)
 
     async def close(self) -> None:
         await self._client.aclose()

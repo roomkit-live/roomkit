@@ -170,7 +170,7 @@ class AIGenerationMixin:
             telemetry = self._telemetry_provider
             room_id = context.room.room.id if context.room else None
             deadline = (
-                asyncio.get_event_loop().time() + self._tool_loop_timeout_seconds
+                asyncio.get_running_loop().time() + self._tool_loop_timeout_seconds
                 if self._tool_loop_timeout_seconds
                 else None
             )
@@ -191,7 +191,7 @@ class AIGenerationMixin:
                     logger.info("Tool loop cancelled before round %d", round_idx)
                     break
 
-                if deadline and asyncio.get_event_loop().time() >= deadline:
+                if deadline and asyncio.get_running_loop().time() >= deadline:
                     logger.warning(
                         "Tool loop timeout after %d rounds (%.0fs)",
                         round_idx,

@@ -482,19 +482,6 @@ class OpenAIAIProvider(AIProvider):
             if isinstance(event, StreamTextDelta):
                 yield event.text
 
-    def _record_ttfb(self, t0: float) -> None:
-        """Record time-to-first-byte metric."""
-        ttfb_ms = (time.monotonic() - t0) * 1000
-        from roomkit.telemetry.noop import NoopTelemetryProvider
-
-        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
-        telemetry.record_metric(
-            "roomkit.llm.ttfb_ms",
-            ttfb_ms,
-            unit="ms",
-            attributes={"provider": self._provider_name, "model": self._config.model},
-        )
-
     async def close(self) -> None:
         """Close the underlying HTTP client."""
         await self._client.close()
