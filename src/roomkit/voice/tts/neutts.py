@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.base import AudioChunk
+from roomkit.voice.tts.audio_utils import numpy_to_pcm_s16le as _numpy_to_pcm_s16le
 from roomkit.voice.tts.audio_utils import wrap_wav as _wrap_wav
 from roomkit.voice.tts.base import TTSProvider
 
@@ -54,15 +55,6 @@ class NeuTTSConfig:
     device: str = "cpu"
     voices: dict[str, NeuTTSVoiceConfig] = field(default_factory=dict)
     streaming_pre_buffer: int = 2
-
-
-def _numpy_to_pcm_s16le(samples: Any) -> bytes:
-    """Convert a numpy float32 array in [-1, 1] to PCM signed 16-bit LE bytes."""
-    import numpy as np
-
-    arr = np.clip(samples, -1.0, 1.0)
-    int_samples = (arr * 32767).astype(np.int16)
-    return bytes(int_samples.tobytes())
 
 
 class NeuTTSProvider(TTSProvider):

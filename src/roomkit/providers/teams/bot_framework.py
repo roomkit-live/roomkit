@@ -13,6 +13,7 @@ from roomkit.providers.teams.conversation_store import (
     ConversationReferenceStore,
     InMemoryConversationReferenceStore,
 )
+from roomkit.providers.utils import extract_event_text as _extract_event_text
 
 if TYPE_CHECKING:
     from botbuilder.core import BotFrameworkAdapter
@@ -354,9 +355,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
 
     @staticmethod
     def _extract_text(event: RoomEvent) -> str:
-        from roomkit.providers.utils import extract_event_text
-
-        return extract_event_text(event)
+        return _extract_event_text(event)
 
     async def close(self) -> None:
         self._adapter = None

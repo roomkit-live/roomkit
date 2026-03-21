@@ -15,6 +15,7 @@ from roomkit.models.event import (
 )
 from roomkit.providers.telegram.base import TelegramProvider
 from roomkit.providers.telegram.config import TelegramConfig
+from roomkit.providers.utils import extract_event_text as _extract_event_text
 
 if TYPE_CHECKING:
     import httpx
@@ -187,9 +188,7 @@ class TelegramBotProvider(TelegramProvider):
 
     @staticmethod
     def _extract_text(event: RoomEvent) -> str:
-        from roomkit.providers.utils import extract_event_text
-
-        return extract_event_text(event)
+        return _extract_event_text(event)
 
     async def close(self) -> None:
         await self._client.aclose()

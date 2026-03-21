@@ -10,6 +10,7 @@ from roomkit.models.delivery import ProviderResult
 from roomkit.models.event import RoomEvent
 from roomkit.providers.messenger.base import MessengerProvider
 from roomkit.providers.messenger.config import MessengerConfig
+from roomkit.providers.utils import extract_event_text as _extract_event_text
 
 if TYPE_CHECKING:
     import httpx
@@ -139,9 +140,7 @@ class FacebookMessengerProvider(MessengerProvider):
 
     @staticmethod
     def _extract_text(event: RoomEvent) -> str:
-        from roomkit.providers.utils import extract_event_text
-
-        return extract_event_text(event)
+        return _extract_event_text(event)
 
     async def close(self) -> None:
         await self._client.aclose()

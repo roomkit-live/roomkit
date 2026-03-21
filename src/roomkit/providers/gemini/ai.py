@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator
 from typing import Any, cast
+from uuid import uuid4
 
 from roomkit.providers.ai.base import (
     AIContext,
@@ -209,8 +210,6 @@ class GeminiAIProvider(AIProvider):
                     elif hasattr(part, "function_call") and part.function_call:
                         fc = part.function_call
                         fc_name: str = fc.name or ""
-                        from uuid import uuid4
-
                         tool_calls.append(
                             StreamToolCall(
                                 id=f"call_{uuid4().hex[:12]}",

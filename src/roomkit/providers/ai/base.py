@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time as _time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any, Literal
@@ -251,11 +252,9 @@ class AIProvider(ABC):
 
     def _record_ttfb(self, t0: float) -> None:
         """Record time-to-first-byte metric via telemetry (if propagated)."""
-        import time
+        from roomkit.telemetry.noop import NoopTelemetryProvider  # avoid circular import
 
-        from roomkit.telemetry.noop import NoopTelemetryProvider
-
-        ttfb_ms = (time.monotonic() - t0) * 1000
+        ttfb_ms = (_time.monotonic() - t0) * 1000
         telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
         telemetry.record_metric(
             "roomkit.llm.ttfb_ms",

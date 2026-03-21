@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.base import AudioChunk
+from roomkit.voice.tts.audio_utils import numpy_to_pcm_s16le as _numpy_to_pcm_s16le
 from roomkit.voice.tts.audio_utils import wrap_wav as _wrap_wav
 from roomkit.voice.tts.base import TTSProvider
 
@@ -63,15 +64,6 @@ class Qwen3TTSConfig:
     top_k: int = 20
     temperature: float = 0.6
     repetition_penalty: float = 1.05
-
-
-def _numpy_to_pcm_s16le(samples: Any) -> bytes:
-    """Convert a numpy float32 array in [-1, 1] to PCM signed 16-bit LE bytes."""
-    import numpy as np
-
-    arr = np.clip(samples, -1.0, 1.0)
-    int_samples = (arr * 32767).astype(np.int16)
-    return bytes(int_samples.tobytes())
 
 
 class Qwen3TTSProvider(TTSProvider):
