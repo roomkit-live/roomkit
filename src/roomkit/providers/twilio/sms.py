@@ -92,29 +92,14 @@ class TwilioSMSProvider(SMSProvider):
                 unit="ms",
                 attributes={"provider": "TwilioSMSProvider"},
             )
-        except self._httpx.TimeoutException:
-            return ProviderResult(success=False, error="timeout")
-        except self._httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            if status == 401:
-                return ProviderResult(success=False, error="auth_error")
-            if status == 429:
-                return ProviderResult(success=False, error="rate_limit")
-            if status == 400:
-                # Try to extract Twilio error code
-                try:
-                    error_data = exc.response.json()
-                    error_code = error_data.get("code", "invalid_request")
-                    return ProviderResult(
-                        success=False,
-                        error=f"twilio_{error_code}",
-                        metadata={"message": error_data.get("message", "")},
-                    )
-                except Exception:
-                    return ProviderResult(success=False, error="invalid_request")
-            return ProviderResult(success=False, error=f"http_{status}")
-        except self._httpx.HTTPError as exc:
-            return ProviderResult(success=False, error=str(exc))
+        except (
+            self._httpx.TimeoutException,
+            self._httpx.HTTPStatusError,
+            self._httpx.HTTPError,
+        ) as exc:
+            from roomkit.providers.http_errors import handle_http_error, parse_twilio_error
+
+            return handle_http_error(exc, self._httpx, parse_400=parse_twilio_error)
 
         return ProviderResult(
             success=True,

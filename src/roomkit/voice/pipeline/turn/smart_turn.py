@@ -82,6 +82,9 @@ class SmartTurnConfig:
         fallback_on_no_audio: When ``True`` (default), return ``is_complete=True``
             if no audio is available (e.g. continuous STT mode).  When ``False``,
             return ``is_complete=False``.
+        max_consecutive_failures: After this many consecutive inference errors, switch
+            from fail-open (``is_complete=True``) to fail-closed (``is_complete=False``)
+            to avoid endlessly cutting off the user.  Resets on any successful inference.
     """
 
     model_path: str
@@ -89,6 +92,7 @@ class SmartTurnConfig:
     num_threads: int = 1
     provider: str = "cpu"
     fallback_on_no_audio: bool = True
+    max_consecutive_failures: int = 3
 
 
 class SmartTurnDetector(TurnDetector):
@@ -125,6 +129,7 @@ class SmartTurnDetector(TurnDetector):
         self._config = config
         self._session = None  # lazy-init ONNX InferenceSession
         self._feature_extractor: Any = None  # lazy-init WhisperFeatureExtractor
+        self._consecutive_failures = 0
 
     @property
     def name(self) -> str:
@@ -243,6 +248,7 @@ class SmartTurnDetector(TurnDetector):
             prob = 1.0 / (1.0 + np.exp(-logit))
             is_complete = prob >= self._config.threshold
 
+            self._consecutive_failures = 0
             return TurnDecision(
                 is_complete=is_complete,
                 confidence=float(prob) if is_complete else float(1.0 - prob),
@@ -250,6 +256,19 @@ class SmartTurnDetector(TurnDetector):
             )
 
         except Exception:
+            self._consecutive_failures += 1
+            max_fail = self._config.max_consecutive_failures
+            if self._consecutive_failures >= max_fail:
+                logger.exception(
+                    "SmartTurnDetector: %d consecutive failures — failing closed",
+                    self._consecutive_failures,
+                )
+                return TurnDecision(
+                    is_complete=False,
+                    confidence=0.0,
+                    reason=f"inference error — fail-closed after "
+                    f"{self._consecutive_failures} failures",
+                )
             logger.exception("SmartTurnDetector inference error — failing open")
             return TurnDecision(
                 is_complete=True,
@@ -261,3 +280,4 @@ class SmartTurnDetector(TurnDetector):
         """Release the ONNX session."""
         self._session = None
         self._feature_extractor = None
+        self._consecutive_failures = 0

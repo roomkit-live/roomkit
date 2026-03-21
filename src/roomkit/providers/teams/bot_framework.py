@@ -39,7 +39,6 @@ class BotFrameworkTeamsProvider(TeamsProvider):
             ) from exc
 
         self._config = config
-        self._conversation_store = conversation_store or InMemoryConversationReferenceStore()
 
         if config.uses_certificate_auth:
             from botframework.connector.auth import CertificateAppCredentials
@@ -69,16 +68,23 @@ class BotFrameworkTeamsProvider(TeamsProvider):
                 settings_kwargs["channel_auth_tenant"] = config.tenant_id
             settings = BotFrameworkAdapterSettings(**settings_kwargs)
 
-        self._adapter: BotFrameworkAdapter = BotFrameworkAdapter(settings)
+        self._adapter: BotFrameworkAdapter | None = BotFrameworkAdapter(settings)
+        self._conversation_store: ConversationReferenceStore | None = (
+            conversation_store or InMemoryConversationReferenceStore()
+        )
 
     @property
     def adapter(self) -> BotFrameworkAdapter:
         """The underlying Bot Framework adapter."""
+        if self._adapter is None:
+            raise RuntimeError("BotFrameworkTeamsProvider has been closed")
         return self._adapter
 
     @property
     def conversation_store(self) -> ConversationReferenceStore:
         """The conversation reference store."""
+        if self._conversation_store is None:
+            raise RuntimeError("BotFrameworkTeamsProvider has been closed")
         return self._conversation_store
 
     async def send(self, event: RoomEvent, to: str) -> ProviderResult:
@@ -86,7 +92,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
         if not text:
             return ProviderResult(success=False, error="empty_message")
 
-        ref = await self._conversation_store.get(to)
+        ref = await self.conversation_store.get(to)
         if ref is None:
             return ProviderResult(
                 success=False,
@@ -113,7 +119,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
                     message_id = response.id
 
             t0 = time.monotonic()
-            await self._adapter.continue_conversation(
+            await self.adapter.continue_conversation(
                 conv_ref,
                 _send_callback,
                 self._config.app_id,
@@ -143,7 +149,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
         ref = TurnContext.get_conversation_reference(activity)
         conv_id = activity_dict.get("conversation", {}).get("id", "")
         if conv_id:
-            await self._conversation_store.save(conv_id, ref.serialize())
+            await self.conversation_store.save(conv_id, ref.serialize())
 
     async def create_personal_conversation(
         self,
@@ -191,7 +197,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
             bot=ChannelAccount(id=self._config.app_id),
         )
 
-        response = await self._adapter.create_conversation(
+        response = await self.adapter.create_conversation(
             ConversationReference(service_url=service_url),
             params,
         )
@@ -209,7 +215,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
             conversation=ConversationAccount(id=conv_id, is_group=False),
             bot=ChannelAccount(id=self._config.app_id),
         )
-        await self._conversation_store.save(conv_id, ref.serialize())
+        await self.conversation_store.save(conv_id, ref.serialize())
 
         return str(conv_id)
 
@@ -259,7 +265,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
             activity=Activity(type="message", text=""),
         )
 
-        response = await self._adapter.create_conversation(
+        response = await self.adapter.create_conversation(
             ConversationReference(service_url=service_url),
             params,
         )
@@ -277,7 +283,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
             conversation={"id": conv_id, "isGroup": True},
             bot=ChannelAccount(id=self._config.app_id),
         )
-        await self._conversation_store.save(conv_id, ref.serialize())
+        await self.conversation_store.save(conv_id, ref.serialize())
 
         return str(conv_id)
 
@@ -359,4 +365,4 @@ class BotFrameworkTeamsProvider(TeamsProvider):
 
     async def close(self) -> None:
         self._adapter = None
-        self._conversation_store = None  # type: ignore[assignment]
+        self._conversation_store = None

@@ -121,28 +121,19 @@ class TwilioRCSProvider(RCSProvider):
                 unit="ms",
                 attributes={"provider": "TwilioRCSProvider"},
             )
-        except self._httpx.TimeoutException:
-            return RCSDeliveryResult(success=False, error="timeout")
-        except self._httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            if status == 401:
-                return RCSDeliveryResult(success=False, error="auth_error")
-            if status == 429:
-                return RCSDeliveryResult(success=False, error="rate_limit")
-            if status == 400:
-                try:
-                    error_data = exc.response.json()
-                    error_code = error_data.get("code", "invalid_request")
-                    return RCSDeliveryResult(
-                        success=False,
-                        error=f"twilio_{error_code}",
-                        metadata={"message": error_data.get("message", "")},
-                    )
-                except Exception:
-                    return RCSDeliveryResult(success=False, error="invalid_request")
-            return RCSDeliveryResult(success=False, error=f"http_{status}")
-        except self._httpx.HTTPError as exc:
-            return RCSDeliveryResult(success=False, error=str(exc))
+        except (
+            self._httpx.TimeoutException,
+            self._httpx.HTTPStatusError,
+            self._httpx.HTTPError,
+        ) as exc:
+            from roomkit.providers.http_errors import handle_http_error, parse_twilio_error
+
+            return handle_http_error(  # type: ignore[return-value]
+                exc,
+                self._httpx,
+                parse_400=parse_twilio_error,
+                result_cls=RCSDeliveryResult,
+            )
 
         # Twilio returns the channel used in the response
         # For now, we assume RCS unless we detect fallback from status callback

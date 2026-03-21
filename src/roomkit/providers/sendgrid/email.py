@@ -85,23 +85,15 @@ class SendGridProvider(EmailProvider):
                 attributes={"provider": "SendGridProvider"},
             )
 
-            if resp.status_code == 429:
-                return ProviderResult(success=False, error="rate_limited")
             resp.raise_for_status()
-        except self._httpx.TimeoutException:
-            return ProviderResult(success=False, error="timeout")
-        except self._httpx.HTTPStatusError as exc:
-            error_msg = f"http_{exc.response.status_code}"
-            try:
-                body = exc.response.json()
-                errors = body.get("errors", [])
-                if errors:
-                    error_msg = errors[0].get("message", error_msg)
-            except Exception:  # nosec B110 — best-effort error body parsing
-                pass
-            return ProviderResult(success=False, error=error_msg)
-        except self._httpx.HTTPError as exc:
-            return ProviderResult(success=False, error=str(exc))
+        except (
+            self._httpx.TimeoutException,
+            self._httpx.HTTPStatusError,
+            self._httpx.HTTPError,
+        ) as exc:
+            from roomkit.providers.http_errors import handle_http_error, parse_sendgrid_error
+
+            return handle_http_error(exc, self._httpx, parse_400=parse_sendgrid_error)
 
         message_id = resp.headers.get("X-Message-Id")
         return ProviderResult(success=True, provider_message_id=message_id)

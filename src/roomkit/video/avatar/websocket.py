@@ -301,8 +301,11 @@ class WebSocketAvatarProvider(AvatarProvider):
     async def stop(self) -> None:
         self._close_ws()
         if self._http is not None:
+            import httpx as _httpx
+
             with contextlib.suppress(Exception):
-                self._http.post(f"{self._base_url}/stop")
+                async with _httpx.AsyncClient(timeout=self._timeout) as client:
+                    await client.post(f"{self._base_url}/stop")
             self._http.close()
             self._http = None
         self._started = False

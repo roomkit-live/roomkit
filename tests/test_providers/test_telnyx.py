@@ -164,7 +164,7 @@ class TestTelnyxSMSProvider:
     @pytest.mark.asyncio
     async def test_send_sms_invalid_number(self) -> None:
         transport = _MockTransport(
-            {"errors": [{"detail": "Invalid phone number"}]},
+            {"errors": [{"code": "40003", "detail": "Invalid phone number"}]},
             status_code=400,
         )
         cfg = _config()
@@ -175,7 +175,8 @@ class TestTelnyxSMSProvider:
         result = await provider.send(event, to="invalid")
 
         assert result.success is False
-        assert result.error == "invalid_request"
+        assert result.error == "telnyx_40003"
+        assert result.metadata.get("message") == "Invalid phone number"
 
     @pytest.mark.asyncio
     async def test_send_sms_timeout(self) -> None:

@@ -185,7 +185,7 @@ class TestSendGridProvider:
         result = await provider.send(event, to="user@example.com")
 
         assert result.success is False
-        assert result.error == "rate_limited"
+        assert result.error == "rate_limit"
 
     @pytest.mark.asyncio
     async def test_send_timeout(self) -> None:
@@ -209,4 +209,4 @@ class TestSendGridProvider:
         result = await provider.send(event, to="user@example.com")
 
         assert result.success is False
-        assert result.error == "Service unavailable"
+        assert result.error == "http_503"
