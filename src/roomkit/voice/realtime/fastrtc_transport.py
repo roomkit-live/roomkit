@@ -342,7 +342,13 @@ class FastRTCRealtimeTransport(VoiceBackend):
             try:
                 result = self._connected_callback(webrtc_id)
                 if hasattr(result, "__await__"):
-                    asyncio.ensure_future(result)
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(result)
+                    except RuntimeError:
+                        # Called from a non-async thread (WebRTC) — schedule safely
+                        loop = asyncio.get_event_loop_policy().get_event_loop()
+                        loop.call_soon_threadsafe(loop.create_task, result)
             except Exception:
                 logger.exception("Error in connected callback for webrtc_id=%s", webrtc_id)
 
@@ -353,7 +359,13 @@ class FastRTCRealtimeTransport(VoiceBackend):
         if session:
             self._session_handlers.pop(session.id, None)
             self._sessions.pop(session.id, None)
-            asyncio.ensure_future(self._fire_disconnect_callbacks(session))
+            coro = self._fire_disconnect_callbacks(session)
+            try:
+                asyncio.get_running_loop().create_task(coro)
+            except RuntimeError:
+                # Called from a non-async thread (WebRTC disconnect)
+                loop = asyncio.get_event_loop_policy().get_event_loop()
+                loop.call_soon_threadsafe(loop.create_task, coro)
 
     def _get_session(self, webrtc_id: str | None) -> VoiceSession | None:
         """Get the session bound to a WebRTC connection."""

@@ -166,7 +166,8 @@ class VoiceOpsMixin(HelpersMixin):
                 metadata=metadata,
             )
 
-        assert session is not None  # noqa: S101
+        if session is None:
+            raise RuntimeError("Voice session was not created by the backend")
 
         channel.bind_session(session, room_id, binding, backend=backend)
         self._wire_audio_recording(room_id, channel_id, session, channel)  # type: ignore[attr-defined]

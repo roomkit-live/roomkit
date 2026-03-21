@@ -155,7 +155,7 @@ def _build_inbound_message(payload: dict[str, Any], channel_id: str) -> InboundM
 
     return InboundMessage(
         channel_id=channel_id,
-        sender_id=payload["source_number"],
+        sender_id=payload.get("source_number", ""),
         content=build_inbound_content(body, media),
         external_id=payload.get("sms_hash"),
         idempotency_key=payload.get("sms_hash"),

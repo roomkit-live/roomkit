@@ -401,7 +401,7 @@ class RealtimeAVBridge:
             state.frame_count,
             state.audio_out_count,
         )
-        asyncio.create_task(self._provider.disconnect(state.provider_session))
+        self._safe_create_task(self._provider.disconnect(state.provider_session))
 
         if self._on_call_ended is not None:
             result = self._on_call_ended(
@@ -410,7 +410,17 @@ class RealtimeAVBridge:
                 state.audio_out_count,
             )
             if hasattr(result, "__await__"):
-                asyncio.create_task(result)
+                self._safe_create_task(result)
+
+    @staticmethod
+    def _safe_create_task(coro: Any) -> None:
+        """Create an asyncio task, safely handling calls from non-async threads."""
+        try:
+            asyncio.get_running_loop().create_task(coro)
+        except RuntimeError:
+            # Called from a sync callback thread (e.g. SIP/WebRTC disconnect)
+            loop = asyncio.get_event_loop_policy().get_event_loop()
+            loop.call_soon_threadsafe(loop.create_task, coro)
 
     # -- Provider → Backend (AI audio/video out) -------------------------------
 

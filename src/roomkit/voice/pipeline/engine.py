@@ -734,6 +734,7 @@ class AudioPipeline:
         self._segment_frame_counts.pop(session.id, None)
         self._frame_count.pop(session.id, None)
         self._bytes_processed.pop(session.id, None)
+        self._outbound_locks.pop(session.id, None)
 
         # Close debug taps
         dt = self._debug_tap_sessions.pop(session.id, None)
