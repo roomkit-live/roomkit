@@ -197,7 +197,7 @@ await kit.remove_room_hook("vip-room", "vip_filter")
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `AFTER_AI_RESPONSE` | ASYNC | `(AIResponseEvent, ctx) -> None` | AI generation completed. Carries response content, usage, latency, tool call count. |
+| `ON_AI_RESPONSE` | ASYNC | `(AIResponseEvent, ctx) -> None` | AI generation completed. Carries response content, usage, latency, tool call count. |
 
 ### Planning
 

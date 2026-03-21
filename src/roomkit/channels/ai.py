@@ -7,11 +7,13 @@ import contextvars
 import json
 import logging
 import time
-from collections import OrderedDict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._dangling_recovery import patch_dangling_tool_calls
+from roomkit.channels._task_planner import TaskPlanner
+from roomkit.channels._tool_eviction import ToolEviction
 from roomkit.channels.base import Channel
 from roomkit.memory.base import MemoryProvider
 from roomkit.memory.sliding_window import SlidingWindowMemory
@@ -150,10 +152,8 @@ class AIChannel(Channel):
         self._script_executor = script_executor
         self._memory = memory or SlidingWindowMemory(max_events=max_context_events)
         self._tool_policy = tool_policy
-        self._evict_threshold_tokens = evict_threshold_tokens
-        self._evicted_results: OrderedDict[str, str] = OrderedDict()
-        self._enable_planning = enable_planning
-        self._current_plan: list[dict[str, Any]] | None = None
+        self._eviction = ToolEviction(threshold_tokens=evict_threshold_tokens)
+        self._planner = TaskPlanner() if enable_planning else None
 
         # Extract Tool objects: split into AITool definitions + composed handler
         from roomkit.tools.compose import extract_tools
@@ -738,7 +738,7 @@ class AIChannel(Channel):
                     usage_attrs[Attr.LLM_OUTPUT_TOKENS] = _total_output_tokens
                 telemetry.end_span(span_id, attributes=usage_attrs)
 
-            # Fire AFTER_AI_RESPONSE hook with accumulated streaming data
+            # Fire ON_AI_RESPONSE hook with accumulated streaming data
             if self._after_response_hook and not _span_errored:
                 try:
                     from roomkit.models.tool_call import AIResponseEvent
@@ -746,7 +746,7 @@ class AIChannel(Channel):
                     await self._after_response_hook(
                         AIResponseEvent(
                             channel_id=self.channel_id,
-                            room_id=room_id or "",
+                            room_id=room_id,
                             response_content="".join(_accumulated_text),
                             usage={
                                 "input_tokens": _total_input_tokens,
@@ -845,7 +845,7 @@ class AIChannel(Channel):
             metadata={"ai_usage": response.usage},
         )
 
-        # Fire AFTER_AI_RESPONSE hook for evaluation/scoring (best-effort)
+        # Fire ON_AI_RESPONSE hook for evaluation/scoring (best-effort)
         if self._after_response_hook:
             try:
                 from roomkit.models.tool_call import AIResponseEvent
@@ -1112,8 +1112,6 @@ class AIChannel(Channel):
 
     # -- Retry / fallback / context management --------------------------------
 
-    _MAX_EVICTED_RESULTS = 50  # FIFO cap on stored evicted results
-
     async def _generate_with_retry(self, context: AIContext) -> AIResponse:
         """Call provider.generate() with retry and optional fallback."""
         policy = self._retry_policy or RetryPolicy(max_retries=0)
@@ -1265,39 +1263,8 @@ class AIChannel(Channel):
         return "\n".join(parts)
 
     def _maybe_truncate_result(self, result: str, tool_call_id: str = "") -> str:
-        """Truncate oversized tool results; evict large ones for re-reading.
-
-        Results exceeding ``evict_threshold_tokens`` are stored in
-        ``_evicted_results`` and replaced with a head/tail preview plus
-        an instruction to use ``_read_tool_result`` for pagination.
-        """
-        estimated = len(result) // 4 + 1
-        if estimated <= self._evict_threshold_tokens:
-            return result
-
-        # Store full result for later retrieval
-        result_id = f"evicted_{tool_call_id}" if tool_call_id else f"evicted_{id(result)}"
-        self._evicted_results[result_id] = result
-        # FIFO eviction
-        while len(self._evicted_results) > self._MAX_EVICTED_RESULTS:
-            self._evicted_results.popitem(last=False)
-
-        # Build head/tail preview
-        lines = result.splitlines()
-        head_n, tail_n = 5, 5
-        if len(lines) <= head_n + tail_n:
-            preview = result[:8000]
-        else:
-            head = "\n".join(lines[:head_n])
-            tail = "\n".join(lines[-tail_n:])
-            omitted = len(lines) - head_n - tail_n
-            preview = f"{head}\n\n[... {omitted} lines omitted ...]\n\n{tail}"
-
-        return (
-            f"Result too large ({estimated} tokens). Full output saved as "
-            f"'{result_id}'. Use _read_tool_result to read it with pagination.\n\n"
-            f"Preview:\n{preview}"
-        )
+        """Delegate to ToolEviction for large result handling."""
+        return self._eviction.maybe_evict(result, tool_call_id)
 
     # -- Role-based tool policy -------------------------------------------------
 
@@ -1370,90 +1337,6 @@ class AIChannel(Channel):
             result.append(tool)
         return result
 
-    # -- Dangling tool call recovery --------------------------------------------
-
-    @staticmethod
-    def _patch_dangling_tool_calls(messages: list[AIMessage]) -> list[AIMessage]:
-        """Inject synthetic cancellation results for orphaned tool calls.
-
-        When a user barge-in interrupts a tool loop, assistant messages with
-        ``AIToolCallPart`` entries may exist without matching
-        ``AIToolResultPart`` entries.  Provider APIs reject such orphans.
-        This method scans the message list and patches any gaps with a
-        cancellation notice so the next generation succeeds.
-        """
-        # Collect all tool_call_ids that already have a result
-        seen_results: set[str] = set()
-        for msg in messages:
-            if not isinstance(msg.content, list):
-                continue
-            for part in msg.content:
-                if isinstance(part, AIToolResultPart):
-                    seen_results.add(part.tool_call_id)
-
-        # Fast path: scan for any dangling calls at all
-        has_dangling = False
-        for msg in messages:
-            if msg.role != "assistant" or not isinstance(msg.content, list):
-                continue
-            for part in msg.content:
-                if isinstance(part, AIToolCallPart) and part.id not in seen_results:
-                    has_dangling = True
-                    break
-            if has_dangling:
-                break
-        if not has_dangling:
-            return messages
-
-        # Build patched list.  When an assistant message has dangling calls
-        # and a tool-result message follows immediately, merge the synthetic
-        # cancellation results into that existing message to keep provider-
-        # expected contiguous result blocks intact.
-        patched: list[AIMessage] = []
-        pending_cancellations: list[AIToolResultPart] = []
-        for msg in messages:
-            # If we have pending cancellations and the next message is a tool
-            # result, merge them into a single tool message.
-            if pending_cancellations and msg.role == "tool" and isinstance(msg.content, list):
-                merged_content = list(pending_cancellations) + list(msg.content)
-                patched.append(AIMessage(role="tool", content=merged_content))
-                pending_cancellations = []
-                continue
-
-            # Flush any pending cancellations as a standalone message before
-            # a non-tool message.
-            if pending_cancellations:
-                patched.append(AIMessage(role="tool", content=pending_cancellations))
-                pending_cancellations = []
-
-            patched.append(msg)
-
-            if msg.role != "assistant" or not isinstance(msg.content, list):
-                continue
-            dangling = [
-                p
-                for p in msg.content
-                if isinstance(p, AIToolCallPart) and p.id not in seen_results
-            ]
-            if dangling:
-                pending_cancellations = [
-                    AIToolResultPart(
-                        tool_call_id=tc.id,
-                        name=tc.name,
-                        result=(
-                            "Tool call was cancelled \u2014 a new message "
-                            "arrived before it could complete."
-                        ),
-                    )
-                    for tc in dangling
-                ]
-
-        # Flush any remaining cancellations at the end
-        if pending_cancellations:
-            patched.append(AIMessage(role="tool", content=pending_cancellations))
-
-        return patched
-
     # -- Context building -------------------------------------------------------
 
     async def _build_context(
@@ -1498,77 +1381,15 @@ class AIChannel(Channel):
             system_prompt = (system_prompt or "") + skill_block
 
         # Inject eviction re-read tool when large results have been stored
-        if self._evicted_results:
-            tools.append(
-                AITool(
-                    name="_read_tool_result",
-                    description=(
-                        "Read a previously evicted large tool result. "
-                        "Supports line-based pagination via offset and limit."
-                    ),
-                    parameters={
-                        "type": "object",
-                        "properties": {
-                            "result_id": {
-                                "type": "string",
-                                "description": "The evicted result ID shown in the preview.",
-                            },
-                            "offset": {
-                                "type": "integer",
-                                "default": 0,
-                                "description": "Line number to start reading from.",
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "default": 200,
-                                "description": "Maximum number of lines to return.",
-                            },
-                        },
-                        "required": ["result_id"],
-                    },
-                )
-            )
+        if self._eviction.has_evicted:
+            tools.append(ToolEviction.tool_definition())
 
-        # Inject planning tool when enabled
-        if self._enable_planning:
-            tools.append(
-                AITool(
-                    name="_plan_tasks",
-                    description=(
-                        "Create or update a structured task plan. Use this to "
-                        "break down complex work into steps and track progress."
-                    ),
-                    parameters={
-                        "type": "object",
-                        "properties": {
-                            "tasks": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "title": {"type": "string"},
-                                        "status": {
-                                            "type": "string",
-                                            "enum": [
-                                                "pending",
-                                                "in_progress",
-                                                "completed",
-                                                "blocked",
-                                            ],
-                                        },
-                                    },
-                                    "required": ["title", "status"],
-                                },
-                            },
-                        },
-                        "required": ["tasks"],
-                    },
-                )
-            )
-            # Inject current plan state into system prompt
-            if self._current_plan:
-                system_prompt = (system_prompt or "") + self._format_plan_prompt(
-                    self._current_plan
+        # Inject planning tool and plan context when enabled
+        if self._planner is not None:
+            tools.append(TaskPlanner.tool_definition())
+            if self._planner.current_plan:
+                system_prompt = (system_prompt or "") + TaskPlanner.format_plan_prompt(
+                    self._planner.current_plan
                 )
 
         # Store unfiltered tool list for re-application after skill activation
@@ -1599,7 +1420,7 @@ class AIChannel(Channel):
                 messages.append(AIMessage(role=role, content=content))
 
         # Patch orphaned tool calls from interrupted tool loops (barge-in)
-        messages = self._patch_dangling_tool_calls(messages)
+        messages = patch_dangling_tool_calls(messages)
 
         # Add current event
         content = self._extract_content(event)
@@ -1787,22 +1608,29 @@ class AIChannel(Channel):
             )
         return tools
 
+    # Dispatch table for channel-managed and skill tools.
+    # Sync handlers are wrapped to match the async signature.
+    @property
+    def _channel_tool_dispatch(self) -> dict[str, Any]:
+        dispatch: dict[str, Any] = {
+            "_read_tool_result": self._handle_read_tool_result,
+            "_plan_tasks": self._handle_plan_tasks,
+        }
+        if self._skills:
+            dispatch[_TOOL_ACTIVATE_SKILL] = self._handle_activate_skill
+            dispatch[_TOOL_READ_REFERENCE] = self._handle_read_reference
+            dispatch[_TOOL_RUN_SCRIPT] = self._handle_run_script
+        return dispatch
+
     async def _channel_tool_handler(self, name: str, arguments: dict[str, Any]) -> str:
         """Unified tool dispatcher: channel-managed → skill → user tools."""
-        # Channel-managed tools (eviction, planning)
-        if name == "_read_tool_result":
-            return self._handle_read_tool_result(arguments)
-        if name == "_plan_tasks":
-            return await self._handle_plan_tasks(arguments)
-        # Skill tools
-        if self._skills and name in {_TOOL_ACTIVATE_SKILL, _TOOL_READ_REFERENCE, _TOOL_RUN_SCRIPT}:
-            if name == _TOOL_ACTIVATE_SKILL:
-                return await self._handle_activate_skill(arguments)
-            if name == _TOOL_READ_REFERENCE:
-                return await self._handle_read_reference(arguments)
-            if name == _TOOL_RUN_SCRIPT:
-                return await self._handle_run_script(arguments)
-        # User/orchestration tools
+        handler = self._channel_tool_dispatch.get(name)
+        if handler is not None:
+            result = handler(arguments)
+            # Support both sync and async handlers
+            if asyncio.iscoroutine(result):
+                return await result
+            return result
         if self._user_tool_handler:
             return await self._user_tool_handler(name, arguments)
         return json.dumps({"error": f"Unknown tool: {name}"})
@@ -1877,78 +1705,19 @@ class AIChannel(Channel):
             logger.exception("Script execution failed: %s/%s", skill_name, script_name)
             return json.dumps({"error": f"Script execution failed: {exc}"})
 
-    # -- Large output eviction --------------------------------------------------
+    # -- Extracted tool handlers (delegate to focused modules) -----------------
 
     def _handle_read_tool_result(self, arguments: dict[str, Any]) -> str:
-        """Paginate a previously evicted large tool result."""
-        result_id = arguments.get("result_id", "")
-        offset = arguments.get("offset", 0)
-        limit = arguments.get("limit", 200)
-
-        full_result = self._evicted_results.get(result_id)
-        if full_result is None:
-            available = list(self._evicted_results.keys())
-            return json.dumps({"error": f"Result '{result_id}' not found", "available": available})
-
-        lines = full_result.splitlines()
-        total_lines = len(lines)
-        page = lines[offset : offset + limit]
-        has_more = (offset + limit) < total_lines
-        return json.dumps(
-            {
-                "content": "\n".join(page),
-                "offset": offset,
-                "lines_returned": len(page),
-                "total_lines": total_lines,
-                "has_more": has_more,
-            }
-        )
-
-    # -- Planning tools ---------------------------------------------------------
+        """Delegate to ToolEviction."""
+        return self._eviction.handle_read(arguments)
 
     async def _handle_plan_tasks(self, arguments: dict[str, Any]) -> str:
-        """Store a task plan and publish an ephemeral update event."""
-        if not self._enable_planning:
-            return json.dumps({"error": "Planning is not enabled on this channel"})
-
-        tasks = arguments.get("tasks", [])
-        self._current_plan = tasks
-
-        # Publish ephemeral event for real-time UI updates (best-effort)
-        if self._realtime and self._current_room_id:
-            try:
-                await self._realtime.publish_to_room(
-                    self._current_room_id,
-                    EphemeralEvent(
-                        room_id=self._current_room_id,
-                        type=EphemeralEventType.CUSTOM,
-                        user_id=self.channel_id,
-                        channel_id=self.channel_id,
-                        data={"type": "plan_updated", "tasks": tasks},
-                    ),
-                )
-            except Exception:
-                logger.debug("Failed to publish plan ephemeral event", exc_info=True)
-
-        counts = {
-            s: sum(1 for t in tasks if t.get("status") == s)
-            for s in ("pending", "in_progress", "completed", "blocked")
-        }
-        return json.dumps({"status": "ok", "task_count": len(tasks), **counts})
-
-    @staticmethod
-    def _format_plan_prompt(tasks: list[dict[str, Any]]) -> str:
-        """Format the current plan as a system prompt block."""
-        status_icons = {
-            "completed": "[x]",
-            "in_progress": "[-]",
-            "blocked": "[!]",
-            "pending": "[ ]",
-        }
-        lines = ["\n\n## Current Task Plan"]
-        for t in tasks:
-            icon = status_icons.get(t.get("status", "pending"), "[ ]")
-            title = t.get("title", "Untitled")
-            status = t.get("status", "pending")
-            lines.append(f"- {icon} {title} ({status})")
-        return "\n".join(lines)
+        """Delegate to TaskPlanner."""
+        if self._planner is None:
+            return json.dumps({"error": "Planning is not enabled"})
+        return await self._planner.handle_plan_tasks(
+            arguments,
+            realtime=self._realtime,
+            room_id=self._current_room_id,
+            channel_id=self.channel_id,
+        )

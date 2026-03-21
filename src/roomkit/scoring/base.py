@@ -30,7 +30,7 @@ class ConversationScorer(ABC):
 
     Implement this ABC to evaluate AI response quality.  Scorers are
     invoked by :class:`~roomkit.scoring.ScoringHook` after each AI
-    response via the ``AFTER_AI_RESPONSE`` hook.
+    response via the ``ON_AI_RESPONSE`` hook.
 
     Implementations can be:
 

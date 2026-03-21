@@ -7,7 +7,12 @@ from roomkit.memory.mock import MockMemoryProvider
 from roomkit.memory.retrieval import RetrievalMemory
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.memory.summarizing import SummarizingMemory
-from roomkit.memory.token_estimator import estimate_context_tokens, estimate_tokens
+from roomkit.memory.token_estimator import (
+    estimate_context_tokens,
+    estimate_event_tokens,
+    estimate_tokens,
+    extract_event_text,
+)
 
 __all__ = [
     "BudgetAwareMemory",
@@ -19,5 +24,7 @@ __all__ = [
     "SlidingWindowMemory",
     "SummarizingMemory",
     "estimate_context_tokens",
+    "estimate_event_tokens",
     "estimate_tokens",
+    "extract_event_text",
 ]

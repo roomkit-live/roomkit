@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from roomkit.providers.ai.base import (
     AIContext,
@@ -12,6 +13,9 @@ from roomkit.providers.ai.base import (
     AIToolCallPart,
     AIToolResultPart,
 )
+
+if TYPE_CHECKING:
+    from roomkit.models.event import RoomEvent
 
 
 def estimate_tokens(text: str) -> int:
@@ -41,6 +45,20 @@ def estimate_message_tokens(message: AIMessage) -> int:
         elif isinstance(part, AIImagePart):
             total += 1000  # rough estimate for vision tokens
     return total
+
+
+def extract_event_text(event: RoomEvent) -> str:
+    """Extract text body from a RoomEvent, falling back to str() for non-text content."""
+    from roomkit.models.event import TextContent
+
+    if isinstance(event.content, TextContent):
+        return event.content.body
+    return str(event.content)
+
+
+def estimate_event_tokens(event: RoomEvent) -> int:
+    """Estimate tokens for a single RoomEvent."""
+    return estimate_tokens(extract_event_text(event))
 
 
 def estimate_context_tokens(context: AIContext) -> int:

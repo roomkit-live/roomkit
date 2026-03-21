@@ -15,7 +15,11 @@ import hashlib
 import logging
 
 from roomkit.memory.base import MemoryProvider, MemoryResult
-from roomkit.memory.token_estimator import estimate_message_tokens, estimate_tokens
+from roomkit.memory.token_estimator import (
+    estimate_event_tokens,
+    estimate_message_tokens,
+    extract_event_text,
+)
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent, TextContent
@@ -148,7 +152,7 @@ class SummarizingMemory(MemoryProvider):
         budget: int,
     ) -> MemoryResult:
         """Summarize older events, keeping recent ones at full fidelity."""
-        event_costs = [self._estimate_event_tokens(e) for e in events]
+        event_costs = [estimate_event_tokens(e) for e in events]
 
         # Find cutoff: accumulate recent events until budget is reached,
         # ensuring at least min_events are kept.
@@ -213,7 +217,7 @@ class SummarizingMemory(MemoryProvider):
         event_texts: list[str] = []
         for e in events:
             role = "assistant" if e.source and e.source.channel_type == ChannelType.AI else "user"
-            text = e.content.body if isinstance(e.content, TextContent) else str(e.content)
+            text = extract_event_text(e)
             event_texts.append(f"[{role}]: {text[:2000]}")
 
         prompt_parts = [
@@ -257,17 +261,8 @@ class SummarizingMemory(MemoryProvider):
         return None
 
     @staticmethod
-    def _estimate_event_tokens(event: RoomEvent) -> int:
-        text = event.content.body if isinstance(event.content, TextContent) else str(event.content)
-        return estimate_tokens(text)
-
-    @staticmethod
     def _estimate_events_tokens(events: list[RoomEvent]) -> int:
-        total = 0
-        for e in events:
-            text = e.content.body if isinstance(e.content, TextContent) else str(e.content)
-            total += estimate_tokens(text)
-        return total
+        return sum(estimate_event_tokens(e) for e in events)
 
     async def ingest(
         self, room_id: str, event: RoomEvent, *, channel_id: str | None = None

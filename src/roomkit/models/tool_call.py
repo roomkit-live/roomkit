@@ -63,7 +63,7 @@ ToolCallCallback = Callable[[ToolCallEvent], Awaitable[str | None]]
 
 @dataclass(frozen=True)
 class AIResponseEvent:
-    """Emitted through AFTER_AI_RESPONSE hooks after AI generation completes.
+    """Emitted through ON_AI_RESPONSE hooks after AI generation completes.
 
     Provides response content, usage metrics, and timing for evaluation
     and scoring integrations.
@@ -72,11 +72,11 @@ class AIResponseEvent:
     channel_id: str
     """ID of the AI channel that generated the response."""
 
-    room_id: str
-    """Room where the response was generated."""
-
     response_content: str
     """The generated text response."""
+
+    room_id: str | None = None
+    """Room where the response was generated."""
 
     tool_calls_count: int = 0
     """Number of tool calls executed during generation."""

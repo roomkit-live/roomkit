@@ -223,9 +223,10 @@ async def main() -> None:
             print(f"\nAI: {event.content.body[:200]}")
 
     print("\n--- Eviction Stats ---")
-    print(f"  Evicted results: {len(ai._evicted_results)}")
-    for rid in ai._evicted_results:
-        lines = ai._evicted_results[rid].count("\n") + 1
+    evicted = ai._eviction._store
+    print(f"  Evicted results: {len(evicted)}")
+    for rid in evicted:
+        lines = evicted[rid].count("\n") + 1
         print(f"  {rid}: {lines} lines stored")
 
     print("\n--- Plan Updates Received ---")

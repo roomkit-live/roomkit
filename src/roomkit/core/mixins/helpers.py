@@ -392,7 +392,7 @@ class HelpersMixin:
     def _build_after_response_hook(self, channel_id: str) -> Any:
         """Build an AfterResponseCallback closure for an AIChannel.
 
-        The returned callback runs AFTER_AI_RESPONSE async hooks against
+        The returned callback runs ON_AI_RESPONSE async hooks against
         the framework's hook engine and emits an ``ai_response`` framework
         event.  Observational only — does not block the response path.
         """
@@ -411,7 +411,7 @@ class HelpersMixin:
 
             await kit_ref._hook_engine.run_async_hooks(
                 event.room_id,
-                HookTrigger.AFTER_AI_RESPONSE,
+                HookTrigger.ON_AI_RESPONSE,
                 event,
                 context,
                 skip_event_filter=True,
@@ -487,7 +487,7 @@ class HelpersMixin:
         rating = max(0.0, min(1.0, rating))
 
         obs = Observation(
-            id=f"feedback_{room_id}_{dimension}_{id(rating):x}",
+            id=uuid4().hex,
             room_id=room_id,
             channel_id=channel_id or "",
             content=f"[{dimension}] {rating:.2f}: {comment}"
