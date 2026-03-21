@@ -10,6 +10,7 @@ from roomkit.models.channel import RetryPolicy
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
+    AIProvider,
     AIResponse,
     AITextPart,
     ProviderError,
@@ -23,8 +24,8 @@ class AIResilienceMixin:
     """Retry logic, streaming retry, context overflow detection, and compaction."""
 
     _retry_policy: RetryPolicy | None
-    _provider: object
-    _fallback_provider: object
+    _provider: AIProvider
+    _fallback_provider: AIProvider | None
 
     async def _generate_with_retry(self, context: AIContext) -> AIResponse:
         """Call provider.generate() with retry and optional fallback."""
@@ -34,7 +35,7 @@ class AIResilienceMixin:
         provider = self._provider
         for attempt in range(policy.max_retries + 1):
             try:
-                return await provider.generate(context)  # type: ignore[union-attr]
+                return await provider.generate(context)
             except ProviderError as exc:
                 last_error = exc
                 if not exc.retryable:
@@ -62,7 +63,7 @@ class AIResilienceMixin:
                 policy.max_retries + 1,
             )
             try:
-                return await self._fallback_provider.generate(context)  # type: ignore[union-attr]
+                return await self._fallback_provider.generate(context)
             except ProviderError as fallback_exc:
                 logger.error("Fallback provider also failed: %s", fallback_exc)
                 raise last_error from fallback_exc
@@ -78,7 +79,7 @@ class AIResilienceMixin:
 
         for attempt in range(policy.max_retries + 1):
             try:
-                async for event in self._provider.generate_structured_stream(context):  # type: ignore[union-attr]
+                async for event in self._provider.generate_structured_stream(context):
                     yield event
                 return  # Stream completed successfully
             except ProviderError as exc:
@@ -103,7 +104,7 @@ class AIResilienceMixin:
         # Fallback
         if self._fallback_provider and last_error:
             logger.warning("Trying fallback provider for stream.")
-            async for event in self._fallback_provider.generate_structured_stream(context):  # type: ignore[union-attr]
+            async for event in self._fallback_provider.generate_structured_stream(context):
                 yield event
             return
 
@@ -178,4 +179,4 @@ class AIResilienceMixin:
 
     def _maybe_truncate_result(self, result: str, tool_call_id: str = "") -> str:
         """Delegate to ToolEviction for large result handling."""
-        return self._eviction.maybe_evict(result, tool_call_id)  # type: ignore[attr-defined]
+        return str(self._eviction.maybe_evict(result, tool_call_id))  # type: ignore[attr-defined]

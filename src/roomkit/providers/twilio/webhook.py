@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from roomkit.models.delivery import InboundMessage
-from roomkit.providers.sms.utils import build_inbound_content
+from roomkit.providers.sms.meta import build_inbound_content
 
 
 def parse_twilio_payload(

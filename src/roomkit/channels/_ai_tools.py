@@ -229,10 +229,10 @@ class AIToolsMixin:
             result = handler(arguments)
             # Support both sync and async handlers
             if asyncio.iscoroutine(result):
-                return await result
-            return result
+                return str(await result)
+            return str(result)
         if self._user_tool_handler:
-            return await self._user_tool_handler(name, arguments)
+            return str(await self._user_tool_handler(name, arguments))
         return json.dumps({"error": f"Unknown tool: {name}"})
 
     async def _handle_activate_skill(self, arguments: dict[str, Any]) -> str:

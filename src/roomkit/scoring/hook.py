@@ -25,7 +25,7 @@ from roomkit.models.tool_call import AIResponseEvent
 from roomkit.scoring.base import ConversationScorer, Score
 
 if TYPE_CHECKING:
-    from roomkit.core.roomkit import RoomKit
+    from roomkit.core.roomkit import RoomKit  # type: ignore[import-untyped]
     from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.scoring")
@@ -161,7 +161,7 @@ class ScoringHook:
             return ""
         for e in reversed(context.recent_events):
             if hasattr(e.content, "body") and e.source.channel_id != event.channel_id:
-                return e.content.body
+                return str(e.content.body)
         return ""
 
     async def close(self) -> None:

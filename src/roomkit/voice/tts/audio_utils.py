@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import struct
+from typing import Any
 
 
 def wrap_wav(pcm_data: bytes, sample_rate: int, num_channels: int = 1) -> bytes:
@@ -30,7 +31,7 @@ def wrap_wav(pcm_data: bytes, sample_rate: int, num_channels: int = 1) -> bytes:
     return header + pcm_data
 
 
-def numpy_to_pcm_s16le(samples: object) -> bytes:
+def numpy_to_pcm_s16le(samples: Any) -> bytes:
     """Convert a numpy float32 array in [-1, 1] to PCM signed 16-bit LE bytes."""
     import numpy as np  # optional dependency
 

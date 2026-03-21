@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from roomkit.providers.ai.base import AITool
 from roomkit.tools.policy import ToolPolicy
@@ -18,6 +18,7 @@ class AIToolPolicyMixin:
 
     _tool_policy: ToolPolicy | None
     _skills: SkillRegistry | None
+    _get_loop_ctx: Any  # provided by AISteeringMixin
 
     def _resolve_participant_role(self, event: RoomEvent, context: RoomContext) -> str | None:
         """Look up the participant role for the event source."""

@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
     from roomkit.providers.ai.base import AIProvider
+    from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
 
 logger = logging.getLogger("roomkit.channels.ai")
@@ -39,14 +40,13 @@ class AIContextMixin:
     _max_tokens: int
     _thinking_budget: int | None
     _skills: SkillRegistry | None
-    _script_executor: object
+    _script_executor: ScriptExecutor | None
     _memory: MemoryProvider
     _eviction: ToolEviction
     _planner: TaskPlanner | None
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
     channel_id: str
-    extra_tools: list[AITool]
 
     async def _build_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -82,7 +82,7 @@ class AIContextMixin:
         ]
 
         # Inject extra tools (user-provided + orchestration handoff, etc.)
-        tools.extend(self.extra_tools)
+        tools.extend(self.extra_tools)  # type: ignore[attr-defined]
 
         # Inject skill tools and prompt (infra tools added here, gated tools later)
         if self._skills and self._skills.skill_count > 0:

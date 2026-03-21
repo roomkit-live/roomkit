@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from roomkit.providers.ai.base import AIMessage, AIToolCallPart, AIToolResultPart
 
 
@@ -54,7 +56,7 @@ _CANCEL_MSG = "Tool call was cancelled \u2014 a new message arrived before it co
 def _build_patched_list(messages: list[AIMessage], seen: set[str]) -> list[AIMessage]:
     """Build a new message list with synthetic cancellation results."""
     patched: list[AIMessage] = []
-    pending: list[AIToolResultPart] = []
+    pending: list[Any] = []
 
     for msg in messages:
         # Merge pending cancellations into a following tool message
