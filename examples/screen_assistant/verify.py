@@ -159,13 +159,6 @@ def assess_action_result(
                 "verdict": f"Element {element_id} click did not produce a visible change.",
                 "suggestion": "Run observe again to get fresh element IDs, then retry.",
             }
-        if "link" in desc_lower or "result" in desc_lower:
-            if "search results" in desc_lower or "google" in desc_lower:
-                return {
-                    "status": "UNCERTAIN",
-                    "verdict": "Still on search results page — the click may not have navigated.",
-                    "suggestion": "The click may have missed. Try observe + click_result again.",
-                }
         return {"status": "OK", "verdict": f"Element {element_id} clicked.", "suggestion": ""}
 
     if tool_name == "click_element":
@@ -176,13 +169,6 @@ def assess_action_result(
                 "verdict": f"Element '{element}' was not found on screen.",
                 "suggestion": "Try describing the element differently, or use describe_screen to see what's visible.",
             }
-        if "link" in element or "result" in element:
-            if "search results" in desc_lower or "google" in desc_lower:
-                return {
-                    "status": "UNCERTAIN",
-                    "verdict": "Still on search results page — the link click may not have navigated.",
-                    "suggestion": "The click may have missed. Try clicking again or use describe_screen to check the URL.",
-                }
 
     if tool_name == "type_text":
         text = str(args.get("text", "")).lower()
