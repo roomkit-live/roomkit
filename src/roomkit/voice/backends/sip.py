@@ -1045,6 +1045,11 @@ class SIPVoiceBackend(VoiceBackend):
             st.session for st in self._session_states.values() if st.session.room_id == room_id
         ]
 
+    def get_codec_rate(self, session_id: str) -> int:
+        """Return the negotiated codec sample rate for a session (8000 or 16000)."""
+        state = self._session_states.get(session_id)
+        return state.codec_rate if state is not None else 8000
+
     async def close(self) -> None:
         """Disconnect all sessions, stop UAS and transport."""
         if self._stats_task is not None:

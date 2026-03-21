@@ -340,9 +340,11 @@ class ConversationPipeline:
         default_agent_id = default_stage.agent_id if default_stage else agents[0].channel_id
         if default_agent_id in agent_configs:
             initial = agent_configs[default_agent_id]
-            rtv._system_prompt = initial["system_prompt"]
-            rtv._voice = initial["voice"]
-            rtv._tools = initial["tools"]
+            rtv.configure(
+                system_prompt=initial["system_prompt"],
+                voice=initial["voice"],
+                tools=initial["tools"],
+            )
 
         # Per-agent greeting builder (identity + language aware)
         default_greet = (

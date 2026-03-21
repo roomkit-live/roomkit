@@ -338,6 +338,25 @@ class RealtimeVoiceChannel(Channel):
             "voice": self._voice,
         }
 
+    def configure(
+        self,
+        *,
+        system_prompt: str | None = None,
+        voice: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """Update channel defaults for future sessions.
+
+        Active sessions are not affected — use ``reconfigure_session``
+        for those.
+        """
+        if system_prompt is not None:
+            self._system_prompt = system_prompt
+        if voice is not None:
+            self._voice = voice
+        if tools is not None:
+            self._tools = tools
+
     # -- Public helpers --
 
     async def inject_text(
