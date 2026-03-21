@@ -437,25 +437,49 @@ async def main() -> None:
             result_data = await omniview.parse()
             elements = result_data.get("elements", [])
             logger.info("observe: OmniView returned %d elements", len(elements))
-            filtered = []
+            img_h = result_data.get("height", 2160)
+
+            # Build element list with cleaned content
+            all_els = []
             for el in elements:
                 content = omniview.clean_ocr(str(el.get("content", "")))
                 if len(content) < 3:
                     continue
-                filtered.append(
+                center = el.get("center", [0, 0])
+                all_els.append(
                     {
                         "id": el.get("id"),
                         "type": el.get("element_type"),
-                        "text": content[:60],
-                        "center": el.get("center"),
+                        "text": content[:80],
+                        "center": center,
+                        "interactable": el.get("interactable", False),
                     }
                 )
+
+            # Prioritize: text elements and interactable icons in the
+            # main content area (middle 60% of screen) come first.
+            # This ensures search results, links, and buttons are shown
+            # before toolbar icons at the top/bottom edges.
+            top_band = img_h * 0.15
+            bottom_band = img_h * 0.85
+
+            def _priority(e: dict) -> tuple:
+                cy = e["center"][1]
+                in_content = top_band < cy < bottom_band
+                is_text = e["type"] == "text"
+                # Sort: content-area text first, then content-area icons,
+                # then edge text, then edge icons
+                return (not in_content, not is_text, cy)
+
+            all_els.sort(key=_priority)
+
             result = json.dumps(
                 {
                     "status": "ok",
-                    "elements": filtered[:25],
-                    "total": len(elements),
-                    "note": "Use click_result(element_id=N) to click an element.",
+                    "elements": all_els[:40],
+                    "total": len(all_els),
+                    "note": "Use click_result(element_id=N) to click an element. "
+                    "Elements are sorted by relevance — content area first.",
                 }
             )
 
