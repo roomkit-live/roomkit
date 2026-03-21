@@ -59,3 +59,46 @@ class ToolCallEvent:
 # Callback type injected into AIChannel by the framework.
 # Returns str to override the result, None to keep the original.
 ToolCallCallback = Callable[[ToolCallEvent], Awaitable[str | None]]
+
+
+@dataclass(frozen=True)
+class AIResponseEvent:
+    """Emitted through AFTER_AI_RESPONSE hooks after AI generation completes.
+
+    Provides response content, usage metrics, and timing for evaluation
+    and scoring integrations.
+    """
+
+    channel_id: str
+    """ID of the AI channel that generated the response."""
+
+    room_id: str
+    """Room where the response was generated."""
+
+    response_content: str
+    """The generated text response."""
+
+    tool_calls_count: int = 0
+    """Number of tool calls executed during generation."""
+
+    usage: dict[str, Any] = field(default_factory=dict)
+    """Token usage from the provider (input_tokens, output_tokens)."""
+
+    thinking: str = ""
+    """Extended thinking/reasoning text (if supported by provider)."""
+
+    round_count: int = 0
+    """Number of tool execution rounds."""
+
+    latency_ms: int = 0
+    """Total generation time in milliseconds."""
+
+    streaming: bool = False
+    """Whether the response was streamed."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the response was generated."""
+
+
+# Callback type for AI response observation (fire-and-forget).
+AfterResponseCallback = Callable[["AIResponseEvent"], Awaitable[None]]

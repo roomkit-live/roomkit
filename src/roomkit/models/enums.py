@@ -214,6 +214,8 @@ class HookTrigger(StrEnum):
     BEFORE_BRIDGE_AUDIO = "before_bridge_audio"
     # AI Thinking/Reasoning
     ON_AI_THINKING = "on_ai_thinking"
+    # AI response observability
+    AFTER_AI_RESPONSE = "after_ai_response"
     # Protocol observability
     ON_PROTOCOL_TRACE = "on_protocol_trace"
     # Orchestration (multi-agent)

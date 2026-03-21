@@ -389,6 +389,47 @@ class HelpersMixin:
 
         return _callback
 
+    def _build_after_response_hook(self, channel_id: str) -> Any:
+        """Build an AfterResponseCallback closure for an AIChannel.
+
+        The returned callback runs AFTER_AI_RESPONSE async hooks against
+        the framework's hook engine and emits an ``ai_response`` framework
+        event.  Observational only — does not block the response path.
+        """
+        from roomkit.models.enums import HookTrigger
+        from roomkit.models.tool_call import AIResponseEvent
+
+        kit_ref = self
+
+        async def _callback(event: AIResponseEvent) -> None:
+            if not event.room_id:
+                return
+            try:
+                context = await kit_ref._build_context(event.room_id)
+            except Exception:
+                return
+
+            await kit_ref._hook_engine.run_async_hooks(
+                event.room_id,
+                HookTrigger.AFTER_AI_RESPONSE,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+
+            await kit_ref._emit_framework_event(
+                "ai_response",
+                room_id=event.room_id,
+                channel_id=channel_id,
+                data={
+                    "tool_calls_count": event.tool_calls_count,
+                    "latency_ms": event.latency_ms,
+                    "streaming": event.streaming,
+                },
+            )
+
+        return _callback
+
     async def _emit_framework_event(
         self,
         event_type: str,

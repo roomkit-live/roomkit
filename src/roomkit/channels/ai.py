@@ -203,6 +203,8 @@ class AIChannel(Channel):
         self._realtime: RealtimeBackend | None = None
         # Unified tool call hook callback (injected by framework on register_channel)
         self._tool_call_hook: ToolCallCallback | None = None
+        # AI response hook callback (injected by framework on register_channel)
+        self._after_response_hook: Any = None
         # Current room ID (set per on_event invocation for tool hook context)
         self._current_room_id: str | None = None
 
@@ -413,6 +415,15 @@ class AIChannel(Channel):
         # Track current room for tool call hooks
         self._current_room_id = context.room.id if context.room else None
 
+        # Ingest event into memory provider (enables stateful providers
+        # like vector stores to index content as it arrives).
+        _ingest_room_id = context.room.id if context.room else event.room_id
+        if _ingest_room_id:
+            try:
+                await self._memory.ingest(_ingest_room_id, event, channel_id=self.channel_id)
+            except Exception:
+                logger.warning("Memory ingestion failed", exc_info=True)
+
         # Resolve participant role for role-based tool policy.
         # Set on a per-invocation _ToolLoopContext visible via contextvar so that
         # _build_context and the tool loop methods can read it.
@@ -491,6 +502,8 @@ class AIChannel(Channel):
         _total_input_tokens = 0
         _total_output_tokens = 0
         _span_errored = False
+        _t0_stream = time.monotonic()
+        _accumulated_text: list[str] = []
         try:
             # Apply pre-queued directives (e.g. cancel enqueued before loop started)
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
@@ -556,6 +569,7 @@ class AIChannel(Channel):
                                 _round_idx,
                             )
                         text_parts.append(event.text)
+                        _accumulated_text.append(event.text)
 
                         # --- Dedup: skip text that repeats previous rounds ---
                         if _dedup_active:
@@ -723,6 +737,28 @@ class AIChannel(Channel):
                     usage_attrs[Attr.LLM_INPUT_TOKENS] = _total_input_tokens
                     usage_attrs[Attr.LLM_OUTPUT_TOKENS] = _total_output_tokens
                 telemetry.end_span(span_id, attributes=usage_attrs)
+
+            # Fire AFTER_AI_RESPONSE hook with accumulated streaming data
+            if self._after_response_hook and not _span_errored:
+                try:
+                    from roomkit.models.tool_call import AIResponseEvent
+
+                    await self._after_response_hook(
+                        AIResponseEvent(
+                            channel_id=self.channel_id,
+                            room_id=room_id or "",
+                            response_content="".join(_accumulated_text),
+                            usage={
+                                "input_tokens": _total_input_tokens,
+                                "output_tokens": _total_output_tokens,
+                            },
+                            latency_ms=int((time.monotonic() - _t0_stream) * 1000),
+                            streaming=True,
+                        )
+                    )
+                except Exception:
+                    logger.debug("After-response hook failed (streaming)", exc_info=True)
+
             self._active_loops.pop(loop_ctx.loop_id, None)
             _current_loop_ctx.set(None)
 
@@ -739,6 +775,7 @@ class AIChannel(Channel):
 
         ai_context = await self._build_context(event, binding, context)
         telemetry = self._telemetry_provider
+        _t0 = time.monotonic()
         span_id = telemetry.start_span(
             SpanKind.LLM_GENERATE,
             "llm.generate",
@@ -807,6 +844,25 @@ class AIChannel(Channel):
             chain_depth=event.chain_depth + 1,
             metadata={"ai_usage": response.usage},
         )
+
+        # Fire AFTER_AI_RESPONSE hook for evaluation/scoring (best-effort)
+        if self._after_response_hook:
+            try:
+                from roomkit.models.tool_call import AIResponseEvent
+
+                await self._after_response_hook(
+                    AIResponseEvent(
+                        channel_id=self.channel_id,
+                        room_id=event.room_id,
+                        response_content=response.content or "",
+                        tool_calls_count=(len(response.tool_calls) if response.tool_calls else 0),
+                        usage=response.usage or {},
+                        thinking=response.thinking or "",
+                        latency_ms=int((time.monotonic() - _t0) * 1000),
+                    )
+                )
+            except Exception:
+                logger.debug("After-response hook failed", exc_info=True)
 
         return ChannelOutput(
             responded=True,

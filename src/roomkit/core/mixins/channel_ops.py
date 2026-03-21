@@ -56,6 +56,7 @@ class ChannelOpsMixin(HelpersMixin):
         if isinstance(channel, AIChannel):
             channel._realtime = self._realtime
             channel._tool_call_hook = self._build_tool_call_hook(channel.channel_id)
+            channel._after_response_hook = self._build_after_response_hook(channel.channel_id)
 
         # Propagate telemetry to channel's sub-providers (AI, STT, TTS, etc.)
         if hasattr(channel, "_propagate_telemetry"):
