@@ -225,6 +225,92 @@ await kit.process_inbound(
 # AI sees the image and responds with analysis
 ```
 
+## Agentic Features
+
+### Dangling Tool Call Recovery
+
+When a user sends a new message while the AI is mid-tool-execution (barge-in), tool calls can be left without matching results. AIChannel automatically detects these orphaned calls and injects synthetic cancellation results before the next AI turn, preventing provider API rejections.
+
+This is fully automatic — no configuration needed.
+
+### Large Output Eviction
+
+When tool results are very large (database queries, file dumps, API responses), they consume significant context budget. AIChannel can evict large results to a side buffer and replace them with a preview:
+
+```python
+ai = AIChannel(
+    "ai-agent",
+    provider=provider,
+    system_prompt="You are a data analyst.",
+    evict_threshold_tokens=5000,  # default: 5000 tokens
+    tools=[QueryDatabase()],
+)
+```
+
+When a tool result exceeds the threshold:
+1. The full result is stored in a FIFO-bounded buffer (max 50 entries)
+2. A head/tail preview (first 5 + last 5 lines) replaces the result in context
+3. A `_read_tool_result` tool is auto-injected so the agent can paginate through the full output
+
+### Planning Tools
+
+Enable structured task planning so agents can break down complex work and track progress:
+
+```python
+ai = AIChannel(
+    "ai-agent",
+    provider=provider,
+    system_prompt="You are a research assistant.",
+    enable_planning=True,
+)
+```
+
+When enabled, the AI gets a `_plan_tasks` tool that accepts a list of tasks with `title` and `status` (`pending`, `in_progress`, `completed`, `blocked`). The current plan is:
+- Injected into the system prompt on each turn (so the AI sees its progress)
+- Published as an ephemeral `CUSTOM` event with `data.type = "plan_updated"` for real-time UI rendering
+
+Subscribe to plan updates for UI:
+
+```python
+await kit.subscribe_room("room-1", my_callback)
+
+# Callback receives ephemeral event with:
+# type: "custom", data: {"type": "plan_updated", "tasks": [...]}
+```
+
+Hook into plan updates:
+
+```python
+kit.hook(
+    HookTrigger.ON_PLAN_UPDATED,
+    execution=HookExecution.ASYNC,
+    fn=lambda event, ctx: save_plan_to_db(event),
+)
+```
+
+### SummarizingMemory
+
+For long conversations, use `SummarizingMemory` to proactively manage context budget with two tiers:
+
+```python
+from roomkit.memory import SummarizingMemory, SlidingWindowMemory
+
+ai = AIChannel(
+    "ai-agent",
+    provider=main_provider,
+    memory=SummarizingMemory(
+        inner=SlidingWindowMemory(max_events=100),
+        provider=summary_provider,       # lightweight model (e.g. Haiku)
+        max_context_tokens=128_000,
+        tier1_ratio=0.50,                # truncate old events at 50%
+        tier2_ratio=0.85,                # LLM summarization at 85%
+    ),
+)
+```
+
+- **Tier 1** (~50% capacity): Truncates large text bodies in older events to 2000 chars. No LLM call — cheap and fast.
+- **Tier 2** (~85% capacity): Calls the summary provider to summarize older events into a concise paragraph. Keeps recent events at full fidelity. Supports chained summaries (prior summary is incorporated into the new one).
+
 ## Tool Call Events
 
 AIChannel automatically broadcasts ephemeral `TOOL_CALL_START` and `TOOL_CALL_END` events when executing tools. Subscribe to these for UI indicators:

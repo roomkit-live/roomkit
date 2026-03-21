@@ -193,6 +193,12 @@ await kit.remove_room_hook("vip-room", "vip_filter")
 |---------|-----------|-----------|-------------|
 | `ON_REALTIME_TEXT_INJECTED` | ASYNC | `(event, ctx) -> None` | Text was injected into realtime session |
 
+### Planning
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_PLAN_UPDATED` | ASYNC | `(event, ctx) -> None` | AI updated its task plan via `_plan_tasks` tool (requires `enable_planning=True`) |
+
 ### Observability
 
 | Trigger | Execution | Signature | Description |
