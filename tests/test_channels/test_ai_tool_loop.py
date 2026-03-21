@@ -301,35 +301,32 @@ class TestParallelToolExecution:
 
 class TestToolResultTruncation:
     def test_small_result_unchanged(self) -> None:
-        """Results under the limit are not truncated."""
+        """Results under the eviction threshold are not modified."""
         provider = MockAIProvider()
-        ch = AIChannel("ai1", provider=provider)
+        ch = AIChannel("ai1", provider=provider, evict_threshold_tokens=5000)
         result = "short result"
         assert ch._maybe_truncate_result(result) == result
 
-    def test_large_result_truncated(self) -> None:
-        """Results over the limit are truncated with start/end preserved."""
+    def test_large_result_evicted(self) -> None:
+        """Results over the threshold are evicted with a preview."""
         provider = MockAIProvider()
-        ch = AIChannel("ai1", provider=provider)
-        max_chars = ch._MAX_TOOL_RESULT_TOKENS * 4
-        half = max_chars // 2
-        # Create a result that's well over the limit
-        large = "x" * (max_chars + 40_000)
-        truncated = ch._maybe_truncate_result(large)
+        ch = AIChannel("ai1", provider=provider, evict_threshold_tokens=100)
+        # ~250 tokens, well over 100 threshold
+        large = "\n".join(f"line {i}" for i in range(200))
+        evicted = ch._maybe_truncate_result(large, "tc1")
 
-        assert len(truncated) < len(large)
-        assert "[... truncated" in truncated
-        # First half preserved
-        assert truncated[:half] == large[:half]
-        # Last half preserved
-        assert truncated.endswith(large[-half:])
+        assert len(evicted) < len(large)
+        assert "evicted_tc1" in evicted
+        assert "Preview:" in evicted
+        # Full result stored for re-reading
+        assert ch._eviction._store.get("evicted_tc1") == large
 
     def test_result_at_exact_limit_unchanged(self) -> None:
-        """Result exactly at the token limit is not truncated."""
+        """Result at the token threshold is not evicted."""
         provider = MockAIProvider()
-        ch = AIChannel("ai1", provider=provider)
-        # estimate_tokens = len // 4 + 1, so for 30_000 tokens: (30_000-1)*4 = 119_996 chars
-        chars = (ch._MAX_TOOL_RESULT_TOKENS - 1) * 4
+        ch = AIChannel("ai1", provider=provider, evict_threshold_tokens=5000)
+        # estimate_tokens = len // 4 + 1, so for 5000 tokens: (5000-1)*4 = 19_996 chars
+        chars = (5000 - 1) * 4
         result = "x" * chars
         assert ch._maybe_truncate_result(result) == result
 

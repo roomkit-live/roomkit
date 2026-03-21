@@ -146,8 +146,8 @@ class TestHookTrigger:
         assert HookTrigger.ON_DELIVERY_STATUS == "on_delivery_status"
 
     def test_count(self) -> None:
-        # 54 hook triggers
-        assert len(HookTrigger) == 54
+        # 54 base + 3 agentic (ON_PLAN_UPDATED, ON_AI_RESPONSE, ON_FEEDBACK)
+        assert len(HookTrigger) == 57
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):
