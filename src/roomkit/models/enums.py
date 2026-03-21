@@ -239,6 +239,8 @@ class HookTrigger(StrEnum):
     ON_SCREEN_SHARE_STOPPED = "on_screen_share_stopped"
     # Planning (agentic task tracking)
     ON_PLAN_UPDATED = "on_plan_updated"
+    # Feedback (user quality ratings)
+    ON_FEEDBACK = "on_feedback"
 
 
 @unique

@@ -455,3 +455,74 @@ class HelpersMixin:
                         "Framework event handler failed",
                         extra={"event_type": fw_event.type, "room_id": fw_event.room_id},
                     )
+
+    async def submit_feedback(
+        self,
+        room_id: str,
+        rating: float,
+        *,
+        event_id: str | None = None,
+        channel_id: str | None = None,
+        comment: str = "",
+        dimension: str = "overall",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Submit user feedback for a conversation or specific response.
+
+        Stores feedback as an :class:`~roomkit.models.task.Observation`
+        in the conversation store and fires the ``ON_FEEDBACK`` hook.
+
+        Args:
+            room_id: Room the feedback applies to.
+            rating: Quality rating between 0.0 and 1.0.
+            event_id: Optional specific event being rated.
+            channel_id: Optional channel being rated.
+            comment: Optional free-text comment.
+            dimension: What is being rated (default "overall").
+            metadata: Arbitrary metadata to attach.
+        """
+        from roomkit.models.enums import HookTrigger
+        from roomkit.models.task import Observation
+
+        rating = max(0.0, min(1.0, rating))
+
+        obs = Observation(
+            id=f"feedback_{room_id}_{dimension}_{id(rating):x}",
+            room_id=room_id,
+            channel_id=channel_id or "",
+            content=f"[{dimension}] {rating:.2f}: {comment}"
+            if comment
+            else f"[{dimension}] {rating:.2f}",
+            category=f"feedback:{dimension}",
+            confidence=rating,
+            metadata={
+                "type": "feedback",
+                "dimension": dimension,
+                "rating": rating,
+                "comment": comment,
+                "event_id": event_id,
+                **(metadata or {}),
+            },
+        )
+        await self._store.add_observation(obs)
+
+        # Fire ON_FEEDBACK hook
+        try:
+            context = await self._build_context(room_id)
+        except Exception:
+            return
+        await self._hook_engine.run_async_hooks(
+            room_id,
+            HookTrigger.ON_FEEDBACK,
+            obs,
+            context,
+            skip_event_filter=True,
+        )
+
+        await self._emit_framework_event(
+            "feedback",
+            room_id=room_id,
+            channel_id=channel_id,
+            event_id=event_id,
+            data={"dimension": dimension, "rating": rating},
+        )

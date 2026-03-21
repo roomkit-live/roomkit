@@ -311,6 +311,60 @@ ai = AIChannel(
 - **Tier 1** (~50% capacity): Truncates large text bodies in older events to 2000 chars. No LLM call — cheap and fast.
 - **Tier 2** (~85% capacity): Calls the summary provider to summarize older events into a concise paragraph. Keeps recent events at full fidelity. Supports chained summaries (prior summary is incorporated into the new one).
 
+### Knowledge Retrieval (RAG)
+
+Enrich AI context with external knowledge sources using `RetrievalMemory`:
+
+```python
+from roomkit.knowledge import KnowledgeSource, KnowledgeResult
+from roomkit.memory import RetrievalMemory, SlidingWindowMemory
+
+# Implement your own knowledge source (vector store, search engine, etc.)
+class FAQSource(KnowledgeSource):
+    async def search(self, query, *, room_id=None, limit=5):
+        results = await my_vector_db.search(query, top_k=limit)
+        return [KnowledgeResult(content=r.text, score=r.score, source="faq") for r in results]
+
+ai = AIChannel(
+    "ai-agent",
+    provider=provider,
+    memory=RetrievalMemory(
+        sources=[FAQSource()],
+        inner=SlidingWindowMemory(max_events=50),
+        max_results=5,
+    ),
+)
+```
+
+`RetrievalMemory` searches all sources concurrently, deduplicates results, and prepends relevant knowledge as a context message. When `ingest()` is called (automatic on every inbound event), it also indexes content in all sources.
+
+### Response Scoring
+
+Score AI responses automatically using the `ScoringHook`:
+
+```python
+from roomkit.scoring import ScoringHook, ConversationScorer, Score
+
+class QualityScorer(ConversationScorer):
+    async def score(self, *, response_content, query, room_id, channel_id, **kwargs):
+        # Your scoring logic (LLM-as-judge, rules, heuristics)
+        return [Score(value=0.9, dimension="relevance", reason="On topic")]
+
+hook = ScoringHook(scorers=[QualityScorer()])
+hook.attach(kit)
+
+# Scores are stored as Observations and accessible via hook.recent_scores
+```
+
+### User Feedback
+
+Collect user quality ratings:
+
+```python
+await kit.submit_feedback("room-1", rating=0.9, comment="Very helpful", dimension="helpfulness")
+# Stored as Observation in ConversationStore, fires ON_FEEDBACK hook
+```
+
 ## Tool Call Events
 
 AIChannel automatically broadcasts ephemeral `TOOL_CALL_START` and `TOOL_CALL_END` events when executing tools. Subscribe to these for UI indicators:

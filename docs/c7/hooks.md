@@ -193,11 +193,23 @@ await kit.remove_room_hook("vip-room", "vip_filter")
 |---------|-----------|-----------|-------------|
 | `ON_REALTIME_TEXT_INJECTED` | ASYNC | `(event, ctx) -> None` | Text was injected into realtime session |
 
+### AI Response
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `AFTER_AI_RESPONSE` | ASYNC | `(AIResponseEvent, ctx) -> None` | AI generation completed. Carries response content, usage, latency, tool call count. |
+
 ### Planning
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
 | `ON_PLAN_UPDATED` | ASYNC | `(event, ctx) -> None` | AI updated its task plan via `_plan_tasks` tool (requires `enable_planning=True`) |
+
+### Feedback
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_FEEDBACK` | ASYNC | `(Observation, ctx) -> None` | User submitted quality feedback via `kit.submit_feedback()` |
 
 ### Observability
 
