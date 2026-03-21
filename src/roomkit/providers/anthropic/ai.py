@@ -48,6 +48,7 @@ class AnthropicAIProvider(AIProvider):
         self._api_status_error = _anthropic.APIStatusError
         self._client = _anthropic.AsyncAnthropic(
             api_key=config.api_key.get_secret_value(),
+            timeout=config.timeout,
         )
 
     @property

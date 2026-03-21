@@ -230,12 +230,13 @@ class PostgresStore(ConversationStore):
         return bool(tag == "DELETE 1")
 
     async def list_rooms(self, offset: int = 0, limit: int = 50) -> list[Room]:
-        async with self._acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT data FROM rooms ORDER BY created_at LIMIT $1 OFFSET $2",
-                limit,
-                offset,
-            )
+        with self._query_span("list_rooms", "rooms"):
+            async with self._acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT data FROM rooms ORDER BY created_at LIMIT $1 OFFSET $2",
+                    limit,
+                    offset,
+                )
         return [Room.model_validate_json(r["data"]) for r in rows]
 
     async def find_rooms(
@@ -409,13 +410,18 @@ class PostgresStore(ConversationStore):
 
         where = " AND ".join(conditions)
 
+        # Order column is always an internal literal — whitelist for defense-in-depth
+        order_cols = {
+            "before": "(data->>'index')::int DESC",
+            "after": "(data->>'index')::int",
+            "default": "created_at",
+        }
         if before_index is not None:
-            # Fetch the last N events before cursor: order DESC, take limit, reverse
-            order_col = "(data->>'index')::int DESC"
+            order_col = order_cols["before"]
         elif after_index is not None:
-            order_col = "(data->>'index')::int"
+            order_col = order_cols["after"]
         else:
-            order_col = "created_at"
+            order_col = order_cols["default"]
 
         query = f"SELECT data FROM events WHERE {where} ORDER BY {order_col}"  # nosec B608
 
@@ -490,51 +496,56 @@ class PostgresStore(ConversationStore):
     # ── Binding operations ───────────────────────────────────────
 
     async def add_binding(self, binding: ChannelBinding) -> ChannelBinding:
-        async with self._acquire() as conn:
-            await conn.execute(
-                "INSERT INTO bindings (channel_id, room_id, channel_type, participant_id, data) "
-                "VALUES ($1, $2, $3, $4, $5) "
-                "ON CONFLICT (room_id, channel_id) DO UPDATE SET data = $5, "
-                "channel_type = $3, participant_id = $4",
-                binding.channel_id,
-                binding.room_id,
-                binding.channel_type.value,
-                binding.participant_id,
-                _dump(binding),
-            )
+        with self._query_span("add_binding", "bindings"):
+            async with self._acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO bindings (channel_id, room_id, channel_type,"
+                    " participant_id, data) "
+                    "VALUES ($1, $2, $3, $4, $5) "
+                    "ON CONFLICT (room_id, channel_id) DO UPDATE SET data = $5, "
+                    "channel_type = $3, participant_id = $4",
+                    binding.channel_id,
+                    binding.room_id,
+                    binding.channel_type.value,
+                    binding.participant_id,
+                    _dump(binding),
+                )
         return binding
 
     async def get_binding(self, room_id: str, channel_id: str) -> ChannelBinding | None:
-        async with self._acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT data FROM bindings WHERE room_id = $1 AND channel_id = $2",
-                room_id,
-                channel_id,
-            )
+        with self._query_span("get_binding", "bindings"):
+            async with self._acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT data FROM bindings WHERE room_id = $1 AND channel_id = $2",
+                    room_id,
+                    channel_id,
+                )
         if row is None:
             return None
         return ChannelBinding.model_validate_json(row["data"])
 
     async def update_binding(self, binding: ChannelBinding) -> ChannelBinding:
-        async with self._acquire() as conn:
-            await conn.execute(
-                "UPDATE bindings SET channel_type = $3, participant_id = $4, data = $5 "
-                "WHERE room_id = $1 AND channel_id = $2",
-                binding.room_id,
-                binding.channel_id,
-                binding.channel_type.value,
-                binding.participant_id,
-                _dump(binding),
-            )
+        with self._query_span("update_binding", "bindings"):
+            async with self._acquire() as conn:
+                await conn.execute(
+                    "UPDATE bindings SET channel_type = $3, participant_id = $4, data = $5 "
+                    "WHERE room_id = $1 AND channel_id = $2",
+                    binding.room_id,
+                    binding.channel_id,
+                    binding.channel_type.value,
+                    binding.participant_id,
+                    _dump(binding),
+                )
         return binding
 
     async def remove_binding(self, room_id: str, channel_id: str) -> bool:
-        async with self._acquire() as conn:
-            tag = await conn.execute(
-                "DELETE FROM bindings WHERE room_id = $1 AND channel_id = $2",
-                room_id,
-                channel_id,
-            )
+        with self._query_span("remove_binding", "bindings"):
+            async with self._acquire() as conn:
+                tag = await conn.execute(
+                    "DELETE FROM bindings WHERE room_id = $1 AND channel_id = $2",
+                    room_id,
+                    channel_id,
+                )
         return bool(tag == "DELETE 1")
 
     async def list_bindings(self, room_id: str) -> list[ChannelBinding]:
@@ -549,43 +560,47 @@ class PostgresStore(ConversationStore):
     # ── Participant operations ───────────────────────────────────
 
     async def add_participant(self, participant: Participant) -> Participant:
-        async with self._acquire() as conn:
-            await conn.execute(
-                "INSERT INTO participants (id, room_id, data) VALUES ($1, $2, $3) "
-                "ON CONFLICT (room_id, id) DO UPDATE SET data = $3",
-                participant.id,
-                participant.room_id,
-                _dump(participant),
-            )
+        with self._query_span("add_participant", "participants"):
+            async with self._acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO participants (id, room_id, data) VALUES ($1, $2, $3) "
+                    "ON CONFLICT (room_id, id) DO UPDATE SET data = $3",
+                    participant.id,
+                    participant.room_id,
+                    _dump(participant),
+                )
         return participant
 
     async def get_participant(self, room_id: str, participant_id: str) -> Participant | None:
-        async with self._acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT data FROM participants WHERE room_id = $1 AND id = $2",
-                room_id,
-                participant_id,
-            )
+        with self._query_span("get_participant", "participants"):
+            async with self._acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT data FROM participants WHERE room_id = $1 AND id = $2",
+                    room_id,
+                    participant_id,
+                )
         if row is None:
             return None
         return Participant.model_validate_json(row["data"])
 
     async def update_participant(self, participant: Participant) -> Participant:
-        async with self._acquire() as conn:
-            await conn.execute(
-                "UPDATE participants SET data = $3 WHERE room_id = $1 AND id = $2",
-                participant.room_id,
-                participant.id,
-                _dump(participant),
-            )
+        with self._query_span("update_participant", "participants"):
+            async with self._acquire() as conn:
+                await conn.execute(
+                    "UPDATE participants SET data = $3 WHERE room_id = $1 AND id = $2",
+                    participant.room_id,
+                    participant.id,
+                    _dump(participant),
+                )
         return participant
 
     async def list_participants(self, room_id: str) -> list[Participant]:
-        async with self._acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT data FROM participants WHERE room_id = $1",
-                room_id,
-            )
+        with self._query_span("list_participants", "participants"):
+            async with self._acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT data FROM participants WHERE room_id = $1",
+                    room_id,
+                )
         return [Participant.model_validate_json(r["data"]) for r in rows]
 
     # ── Read tracking ────────────────────────────────────────────

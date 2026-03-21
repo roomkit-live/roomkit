@@ -12,3 +12,5 @@ class AnthropicConfig(BaseModel):
     model: str = "claude-sonnet-4-20250514"
     max_tokens: int = 1024
     temperature: float = 0.7
+    timeout: float = 60.0
+    """Request timeout in seconds (default 60s)."""
