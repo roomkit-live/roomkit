@@ -9,7 +9,8 @@ responses using an AI provider.  Behaviour is composed from focused mixins:
 - :class:`~._ai_resilience.AIResilienceMixin` — retry / fallback / compaction
 - :class:`~._ai_context.AIContextMixin` — AI context building
 - :class:`~._ai_tools.AIToolsMixin` — tool execution & dispatch
-- :class:`~._ai_generation.AIGenerationMixin` — streaming & non-streaming generation
+- :class:`~._ai_generation.AIGenerationMixin` — non-streaming generation
+- :class:`~._ai_streaming.AIStreamingMixin` — streaming generation
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from roomkit.channels._ai_generation import AIGenerationMixin
 from roomkit.channels._ai_policy import AIToolPolicyMixin
 from roomkit.channels._ai_resilience import AIResilienceMixin
 from roomkit.channels._ai_steering import AISteeringMixin
+from roomkit.channels._ai_streaming import AIStreamingMixin
 from roomkit.channels._ai_tools import AIToolsMixin
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tool_eviction import ToolEviction
@@ -106,6 +108,7 @@ _current_loop_ctx: contextvars.ContextVar[_ToolLoopContext | None] = contextvars
 
 
 class AIChannel(
+    AIStreamingMixin,
     AIGenerationMixin,
     AIToolsMixin,
     AIContextMixin,
