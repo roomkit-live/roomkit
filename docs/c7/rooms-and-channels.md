@@ -159,40 +159,141 @@ await kit.attach_channel(
 
 ## Content Types
 
-Events carry typed content. The event router transcodes content to match each channel's capabilities:
+Events carry typed content. RoomKit supports 11 content types, all discriminated unions on the `type` field:
+
+| Type | `type` Literal | Key Fields | Use Case |
+|------|---------------|-----------|----------|
+| `TextContent` | `"text"` | `body`, `language` | Plain text messages |
+| `RichContent` | `"rich"` | `body`, `format` (html/markdown), `plain_text`, `buttons`, `cards`, `quick_replies` | Formatted messages with UI elements |
+| `MediaContent` | `"media"` | `url`, `mime_type`, `filename`, `size_bytes`, `caption` | Images, documents, files |
+| `AudioContent` | `"audio"` | `url`, `mime_type`, `duration_seconds`, `transcript` | Voice messages |
+| `VideoContent` | `"video"` | `url`, `mime_type`, `duration_seconds`, `thumbnail_url` | Video messages |
+| `LocationContent` | `"location"` | `latitude`, `longitude`, `label`, `address` | Geographic coordinates |
+| `CompositeContent` | `"composite"` | `parts` (list of EventContent, max depth 5) | Multi-part messages |
+| `TemplateContent` | `"template"` | `template_id`, `language`, `parameters`, `body` | WhatsApp Business / RCS templates |
+| `SystemContent` | `"system"` | `body`, `code`, `data` (dict) | System-generated events |
+| `EditContent` | `"edit"` | `target_event_id`, `new_content`, `edit_source` | Message edits |
+| `DeleteContent` | `"delete"` | `target_event_id`, `delete_type`, `reason` | Message deletion |
 
 ```python
 from roomkit.models.event import (
-    TextContent,
-    RichContent,
-    MediaContent,
-    AudioContent,
-    VideoContent,
-    LocationContent,
-    CompositeContent,
-    TemplateContent,
-    SystemContent,
-    EditContent,
-    DeleteContent,
+    TextContent, RichContent, MediaContent, AudioContent, VideoContent,
+    LocationContent, CompositeContent, TemplateContent, SystemContent,
+    EditContent, DeleteContent,
 )
 
 # Plain text
 TextContent(body="Hello!")
 
-# Rich content with buttons
-RichContent(
-    body="Choose an option:",
-    buttons=[{"text": "Option A", "payload": "a"}],
-)
+# Rich content with buttons and Markdown
+RichContent(body="Choose:", format="markdown", plain_text="Choose:", buttons=[{"text": "A", "payload": "a"}])
 
-# Media attachment
-MediaContent(url="https://example.com/image.png", mime_type="image/png")
+# Media, Audio, Location, Template
+MediaContent(url="https://example.com/image.png", mime_type="image/png", caption="Photo")
+AudioContent(url="https://example.com/voice.ogg", mime_type="audio/ogg", transcript="Hello there")
+LocationContent(latitude=40.7128, longitude=-74.0060, label="NYC Office")
+TemplateContent(template_id="order_confirm", language="en", parameters={"1": "ORD-123"})
 
-# Multi-part message
+# Multi-part (max depth 5)
 CompositeContent(parts=[
     TextContent(body="Here's the photo:"),
     MediaContent(url="https://example.com/photo.jpg", mime_type="image/jpeg"),
 ])
+
+# Edit and Delete
+EditContent(target_event_id="evt-abc", new_content=TextContent(body="Corrected text"))
+DeleteContent(target_event_id="evt-abc", delete_type="sender", reason="User retracted")
+```
+
+## Content Transcoding
+
+When broadcasting events, the EventRouter automatically **transcodes** content to match each target channel's capabilities. A channel that only supports TEXT will receive a text fallback of a RichContent message.
+
+### How Transcoding Works
+
+1. Event broadcast starts → EventRouter iterates over all target channel bindings
+2. For each target, call `ContentTranscoder.transcode(content, source_binding, target_binding)`
+3. Transcoder checks `target_binding.capabilities.media_types` to decide if content passes through or needs conversion
+4. If transcode returns `None` → delivery is skipped for that channel
+
+### Channel Capabilities
+
+Each channel binding declares what content types it supports via `ChannelCapabilities`:
+
+```python
+from roomkit.models.channel import ChannelCapabilities
+from roomkit.models.enums import ChannelMediaType
+
+# SMS channel: text only, 160 char limit
+sms_caps = ChannelCapabilities(
+    media_types=[ChannelMediaType.TEXT],
+    max_length=160,
+)
+
+# WebSocket channel: rich content, media, audio, video
+ws_caps = ChannelCapabilities(
+    media_types=[
+        ChannelMediaType.TEXT, ChannelMediaType.RICH, ChannelMediaType.MEDIA,
+        ChannelMediaType.AUDIO, ChannelMediaType.VIDEO, ChannelMediaType.LOCATION,
+    ],
+    supports_edit=True,
+    supports_delete=True,
+)
+```
+
+`ChannelMediaType` enum: `TEXT`, `RICH`, `MEDIA`, `AUDIO`, `VIDEO`, `LOCATION`, `TEMPLATE`.
+
+### Default Fallback Chain
+
+| Content Type | If Target Supports It | Fallback |
+|-------------|----------------------|----------|
+| `TextContent` | Always passes through | — |
+| `RichContent` | RICH in media_types → pass | `TextContent(plain_text or body)` |
+| `MediaContent` | MEDIA in media_types → pass | `TextContent("[Media: {caption}]")` |
+| `AudioContent` | AUDIO in media_types → pass | `TextContent(transcript)` or `"[Voice message: {url}]"` |
+| `VideoContent` | VIDEO in media_types → pass | `TextContent("[Video: {url}]")` |
+| `LocationContent` | LOCATION in media_types → pass | `TextContent("[Location: {label} ({lat}, {lon})]")` |
+| `CompositeContent` | Recursive transcode of all parts | If all parts become text → flatten to single TextContent |
+| `TemplateContent` | TEMPLATE in media_types → pass | `TextContent(body or "[Template: {id}]")` |
+| `EditContent` | `supports_edit` → pass | Transcode `new_content` + prefix "Correction:" |
+| `DeleteContent` | `supports_delete` → pass | `TextContent("[Message deleted]")` |
+
+### Custom Content Transcoder
+
+Implement the `ContentTranscoder` ABC to customize how content is adapted:
+
+```python
+from roomkit.core.router import ContentTranscoder
+from roomkit.models.channel import ChannelBinding
+from roomkit.models.event import EventContent, TextContent, MediaContent
+from roomkit.models.enums import ChannelMediaType
+
+class MyTranscoder(ContentTranscoder):
+    async def transcode(
+        self,
+        content: EventContent,
+        source_binding: ChannelBinding,
+        target_binding: ChannelBinding,
+    ) -> EventContent | None:
+        target_types = target_binding.capabilities.media_types
+
+        # Custom: convert images to descriptive text for voice channels
+        if isinstance(content, MediaContent) and content.mime_type.startswith("image/"):
+            if ChannelMediaType.MEDIA not in target_types:
+                caption = content.caption or "an image"
+                return TextContent(body=f"[Image received: {caption}]")
+
+        # Custom: truncate long text for SMS
+        if isinstance(content, TextContent):
+            max_len = target_binding.capabilities.max_length
+            if max_len and len(content.body) > max_len:
+                return TextContent(body=content.body[: max_len - 3] + "...")
+
+        return content
+
+# Override the default transcoder on the RoomKit instance
+kit = RoomKit()
+kit._transcoder = MyTranscoder()
 ```
 
 ## Detaching Channels

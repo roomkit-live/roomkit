@@ -47,7 +47,72 @@ Channels have two categories:
 - **TRANSPORT** — Push messages to users (SMS, Email, WebSocket, Voice). Default category.
 - **INTELLIGENCE** — Generate responses (AI, agents). Receives broadcasts, responds through the inbound pipeline.
 
-When an AI channel receives a broadcast, it generates a response that re-enters the inbound pipeline. Chain depth tracking (default max=5) prevents infinite AI-to-AI loops.
+## Channel-to-AI Message Flow (Reentry Loop)
+
+When you send a message from a transport channel, it flows to the AI and back automatically:
+
+```
+1. Transport channel (SMS/WS/Voice) → kit.process_inbound(InboundMessage)
+2. Inbound pipeline: route → parse → identity → hooks → store
+3. EventRouter.broadcast() → delivers event to ALL attached channels
+   ├── Transport channels: note delivery (no response)
+   └── AI channel: calls LLM provider → generates response
+       └── Returns ChannelOutput(response_events=[RoomEvent])
+4. REENTRY LOOP: AI response re-enters as new inbound event
+   ├── BEFORE_BROADCAST hooks run again (ConversationRouter stamps routing)
+   ├── Event stored in timeline
+   ├── Broadcast to all channels again
+   │   ├── Transport channels: DELIVER the AI response to users
+   │   └── Other AI channels: see the response (may generate follow-up)
+   └── If follow-up AI responses exist → loop again (chain depth checked)
+5. Chain depth limit (default max=5) → stops AI-to-AI infinite loops
+6. AFTER_BROADCAST hooks fire (async side effects)
+```
+
+**Key insight**: The "pipeline" is a reentry loop — not a linear chain. AI responses go back through the same BEFORE_BROADCAST hooks, content transcoding, and broadcast cycle as user messages.
+
+### Minimal Channel→AI Example
+
+```python
+from roomkit import RoomKit, WebSocketChannel, ChannelCategory, InboundMessage, TextContent
+from roomkit.channels.ai import AIChannel
+from roomkit.providers.anthropic.ai import AnthropicAIProvider
+from roomkit.providers.anthropic.config import AnthropicConfig
+
+kit = RoomKit()
+
+# Transport channel (user-facing)
+ws = WebSocketChannel("ws-user")
+ws.register_connection("conn-1", on_recv)
+kit.register_channel(ws)
+
+# Intelligence channel (AI)
+ai = AIChannel("ai", provider=AnthropicAIProvider(AnthropicConfig(
+    api_key="sk-ant-...", model="claude-sonnet-4-20250514",
+)))
+kit.register_channel(ai)
+
+# Room wires them together
+await kit.create_room(room_id="chat")
+await kit.attach_channel("chat", "ws-user")  # TRANSPORT (default)
+await kit.attach_channel("chat", "ai", category=ChannelCategory.INTELLIGENCE)
+
+# User sends message → AI responds → response delivered to WebSocket
+await kit.process_inbound(
+    InboundMessage(channel_id="ws-user", sender_id="user", content=TextContent(body="Hi!"))
+)
+```
+
+### Pipeline vs Pipeline
+
+RoomKit uses "Pipeline" in two contexts:
+
+| Term | What It Is | Where |
+|------|-----------|-------|
+| **Inbound processing pipeline** | The 11-step message processing flow (route → parse → identity → hooks → store → broadcast) | `core/mixins/inbound_locked.py` |
+| **Pipeline orchestration strategy** | A linear agent chain (triage → handler → resolver) for multi-agent handoffs | `from roomkit import Pipeline` |
+
+The inbound pipeline processes every message. The Pipeline strategy controls which agent handles each turn.
 
 ## Pluggable Components
 

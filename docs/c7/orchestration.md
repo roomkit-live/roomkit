@@ -114,44 +114,218 @@ The handoff:
 
 ## Conversation State
 
+`ConversationState` tracks conversation progress within a room. It's stored in `Room.metadata["_conversation_state"]` and persists across all message turns. Orchestration strategies create and update it automatically, but you can also read and modify it directly.
+
+### ConversationState Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `phase` | `str` | `"intake"` | Current conversation phase. Can be any string. |
+| `active_agent_id` | `str \| None` | `None` | Channel ID of the currently active agent. |
+| `previous_agent_id` | `str \| None` | `None` | Agent before the last transition. |
+| `handoff_count` | `int` | `0` | Total number of agent handoffs. |
+| `phase_started_at` | `datetime` | now | When the current phase started. |
+| `phase_history` | `list[PhaseTransition]` | `[]` | Immutable audit trail of all transitions. |
+| `context` | `dict[str, Any]` | `{}` | **Arbitrary user data** — store custom key-value pairs across turns. |
+
+Built-in phases: `ConversationPhase.INTAKE`, `QUALIFICATION`, `HANDLING`, `ESCALATION`, `RESOLUTION`, `FOLLOWUP`.
+
+### Reading State
+
 ```python
 from roomkit.orchestration.state import get_conversation_state
 
 room = await kit.get_room("support")
 state = get_conversation_state(room)
 
-print(state.phase)            # Current phase (e.g., "handling")
-print(state.active_agent_id)  # Which agent is active
-print(state.handoff_count)    # Number of handoffs so far
+print(state.phase)            # "handling"
+print(state.active_agent_id)  # "billing-agent"
+print(state.handoff_count)    # 2
+print(state.context)          # {"customer_tier": "premium", "issue_type": "refund"}
 
-# Phase transition history
+# Audit trail
 for t in state.phase_history:
-    print(f"{t.from_phase} -> {t.to_phase} ({t.reason})")
+    print(f"{t.from_phase} -> {t.to_phase} by {t.from_agent} -> {t.to_agent} ({t.reason})")
+```
+
+### Persisting Custom Data Across Turns
+
+Use `state.context` to store arbitrary data that survives across conversation turns:
+
+```python
+from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+
+room = await kit.get_room("support")
+state = get_conversation_state(room)
+
+# Store custom data in context (immutable update)
+updated_state = state.model_copy(update={
+    "context": {
+        **state.context,
+        "customer_tier": "premium",
+        "issue_type": "refund",
+        "attempts": state.context.get("attempts", 0) + 1,
+    }
+})
+
+# Persist back to room
+updated_room = set_conversation_state(room, updated_state)
+await kit.store.update_room(updated_room)
+```
+
+### Retrieving Custom Data on Later Turns
+
+```python
+room = await kit.get_room("support")
+state = get_conversation_state(room)
+tier = state.context.get("customer_tier", "standard")
+attempts = state.context.get("attempts", 0)
+```
+
+### Programmatic Phase Transitions
+
+Use `state.transition()` to change phase and record an audit entry:
+
+```python
+from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+
+room = await kit.get_room("support")
+state = get_conversation_state(room)
+
+new_state = state.transition(
+    to_phase="escalation",
+    to_agent="supervisor-agent",
+    reason="Customer requested manager",
+    metadata={"escalation_priority": "high"},
+)
+
+updated_room = set_conversation_state(room, new_state)
+await kit.store.update_room(updated_room)
+```
+
+### Using State in Hooks
+
+```python
+from roomkit import HookTrigger, HookResult, RoomEvent, RoomContext, TextContent
+from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+
+@kit.hook(HookTrigger.BEFORE_BROADCAST)
+async def track_sentiment(event: RoomEvent, ctx: RoomContext) -> HookResult:
+    if not isinstance(event.content, TextContent):
+        return HookResult.allow()
+    state = get_conversation_state(ctx.room)
+    updated_state = state.model_copy(update={
+        "context": {
+            **state.context,
+            "message_count": state.context.get("message_count", 0) + 1,
+        }
+    })
+    updated_room = set_conversation_state(ctx.room, updated_state)
+    await kit.store.update_room(updated_room)
+    return HookResult.allow()
 ```
 
 ## Conversation Router (Advanced)
 
-For custom routing logic beyond strategies:
+`ConversationRouter` dynamically routes incoming messages to different agents based on conversation state, message content, origin channel, or custom logic.
+
+### RoutingConditions Reference
+
+All conditions are ANDed — every non-None field must match:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `phases` | `set[str] \| None` | Match when `state.phase` is in this set |
+| `channel_types` | `set[ChannelType] \| None` | Match when sender's channel type is in this set |
+| `intents` | `set[str] \| None` | Match when `event.metadata["intent"]` is in this set |
+| `source_channel_ids` | `set[str] \| None` | Match when sender's channel ID is in this set |
+| `custom` | `Callable \| None` | Custom `(event, context, state) -> bool` for arbitrary logic |
+
+### Routing by Phase
 
 ```python
 from roomkit.orchestration.router import ConversationRouter, RoutingRule, RoutingConditions
 
 router = ConversationRouter(
     rules=[
-        RoutingRule(
-            agent_id="billing-agent",
-            conditions=RoutingConditions(phases=["billing"]),
-            priority=0,
-        ),
-        RoutingRule(
-            agent_id="shipping-agent",
-            conditions=RoutingConditions(phases=["shipping"]),
-            priority=0,
-        ),
+        RoutingRule(agent_id="billing-agent", conditions=RoutingConditions(phases={"billing"})),
+        RoutingRule(agent_id="shipping-agent", conditions=RoutingConditions(phases={"shipping"})),
     ],
     default_agent_id="triage-agent",
 )
 ```
+
+### Routing by Channel Type (Origin)
+
+```python
+from roomkit.models.enums import ChannelType
+
+router = ConversationRouter(
+    rules=[
+        RoutingRule(agent_id="voice-specialist", conditions=RoutingConditions(channel_types={ChannelType.VOICE})),
+        RoutingRule(agent_id="sms-agent", conditions=RoutingConditions(channel_types={ChannelType.SMS, ChannelType.WHATSAPP})),
+    ],
+    default_agent_id="general-agent",
+)
+```
+
+### Routing by Intent (Content-Based)
+
+Set `event.metadata["intent"]` via a classification hook, then route by intent:
+
+```python
+@kit.hook(HookTrigger.BEFORE_BROADCAST, priority=-200)  # Run before router
+async def classify_intent(event: RoomEvent, ctx: RoomContext) -> HookResult:
+    if isinstance(event.content, TextContent):
+        body = event.content.body.lower()
+        intent = "billing" if "invoice" in body or "charge" in body else "general"
+        modified = event.model_copy(update={"metadata": {**(event.metadata or {}), "intent": intent}})
+        return HookResult.modify(modified)
+    return HookResult.allow()
+
+router = ConversationRouter(
+    rules=[RoutingRule(agent_id="billing-agent", conditions=RoutingConditions(intents={"billing"}))],
+    default_agent_id="general-agent",
+)
+```
+
+### Routing with Custom Logic
+
+```python
+def is_high_value_customer(event, ctx, state):
+    return state.context.get("customer_tier") == "premium"
+
+def contains_urgency(event, ctx, state):
+    if isinstance(event.content, TextContent):
+        return any(w in event.content.body.lower() for w in ["urgent", "emergency", "asap"])
+    return False
+
+router = ConversationRouter(
+    rules=[
+        RoutingRule(agent_id="senior-agent", conditions=RoutingConditions(custom=is_high_value_customer), priority=-1),
+        RoutingRule(agent_id="escalation-agent", conditions=RoutingConditions(custom=contains_urgency), priority=0),
+    ],
+    default_agent_id="general-agent",
+    supervisor_id="supervisor-agent",
+)
+```
+
+### Installing the Router
+
+```python
+# Option 1: Manual hook
+kit.hook(HookTrigger.BEFORE_BROADCAST, execution=HookExecution.SYNC, priority=-100)(router.as_hook())
+
+# Option 2: install() — also sets up handoff tools
+handler = router.install(kit, agents=[billing_agent, shipping_agent, triage_agent])
+```
+
+### Routing Selection Priority
+
+1. **Agent affinity** — if `state.active_agent_id` is set and attached, stick with it
+2. **Rules** — evaluate in ascending `priority` order; first match wins
+3. **Fallback** — return `default_agent_id`
+4. **Loop prevention** — events FROM intelligence channels are never routed
 
 ## Conversation Pipeline (Advanced)
 
