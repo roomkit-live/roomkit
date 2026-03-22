@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import platform
+import sys
 
 
 def os_info() -> dict[str, str]:
@@ -25,6 +26,33 @@ def os_info() -> dict[str, str]:
         "open_app_desc": 'open an app by name (e.g. "google-chrome", "firefox")',
         "open_app_note": "use the executable name as it appears in the system",
     }
+
+
+def require_env(*names: str) -> dict[str, str]:
+    """Require one or more environment variables, exit with a message if any are missing.
+
+    Returns a dict mapping each variable name to its value.
+
+    Usage::
+
+        env = require_env("ANTHROPIC_API_KEY")
+        config = AnthropicConfig(api_key=env["ANTHROPIC_API_KEY"])
+
+        # Multiple keys at once:
+        env = require_env("OPENAI_API_KEY", "DEEPGRAM_API_KEY")
+    """
+    values: dict[str, str] = {}
+    missing: list[str] = []
+    for name in names:
+        val = os.environ.get(name, "")
+        if val:
+            values[name] = val
+        else:
+            missing.append(name)
+    if missing:
+        print(f"Error: set {', '.join(missing)}")
+        sys.exit(1)
+    return values
 
 
 def auto_select_provider(env_var: str, label: str) -> str:

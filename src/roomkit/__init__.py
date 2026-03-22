@@ -16,6 +16,7 @@ from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.av import AudioVideoChannel
 from roomkit.channels.base import Channel
+from roomkit.channels.cli import CLIChannel
 from roomkit.channels.realtime_av import RealtimeAudioVideoChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel, get_current_voice_session
 from roomkit.channels.realtime_voice import ToolHandler as ToolHandler
@@ -122,6 +123,7 @@ __all__ = [
     "AIChannel",
     "AudioVideoChannel",
     "Channel",
+    "CLIChannel",
     "EmailChannel",
     "HTTPChannel",
     "MessengerChannel",

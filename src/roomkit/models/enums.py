@@ -25,6 +25,7 @@ class ChannelType(StrEnum):
     WEBHOOK = "webhook"
     VIDEO = "video"
     AUDIO_VIDEO = "audio_video"
+    CLI = "cli"
     SYSTEM = "system"
 
 

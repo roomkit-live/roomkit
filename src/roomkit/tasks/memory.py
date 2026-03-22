@@ -80,28 +80,31 @@ class InMemoryTaskRunner(TaskRunner):
     ) -> None:
         start = time.monotonic()
         task.status = TaskStatus.IN_PROGRESS
-
-        # Update child room status
-        room = await kit.get_room(task.child_room_id)
-        if room is None:
-            logger.warning(
-                "Task %s: child room %s not found, skipping status update",
-                task.id,
-                task.child_room_id,
-            )
-            return
-        await kit.store.update_room(
-            room.model_copy(
-                update={
-                    "metadata": {**room.metadata, "task_status": TaskStatus.IN_PROGRESS},
-                }
-            )
-        )
-
         agent_response: str | None = None
         error: str | None = None
+
         try:
-            agent_response = await self._run_agent(kit, task)
+            # Update child room status
+            room = await kit.get_room(task.child_room_id)
+            if room is None:
+                logger.warning(
+                    "Task %s: child room %s not found",
+                    task.id,
+                    task.child_room_id,
+                )
+                error = f"Child room {task.child_room_id} not found"
+            else:
+                await kit.store.update_room(
+                    room.model_copy(
+                        update={
+                            "metadata": {
+                                **room.metadata,
+                                "task_status": TaskStatus.IN_PROGRESS,
+                            },
+                        }
+                    )
+                )
+                agent_response = await self._run_agent(kit, task)
         except Exception as exc:
             logger.exception("Task %s failed: %s", task.id, exc)
             error = str(exc)
@@ -122,19 +125,22 @@ class InMemoryTaskRunner(TaskRunner):
         )
 
         # Update child room metadata
-        room = await kit.get_room(task.child_room_id)
-        if room is not None:
-            await kit.store.update_room(
-                room.model_copy(
-                    update={
-                        "metadata": {
-                            **room.metadata,
-                            "task_status": status,
-                            "task_result": agent_response,
-                        },
-                    }
+        try:
+            room = await kit.get_room(task.child_room_id)
+            if room is not None:
+                await kit.store.update_room(
+                    room.model_copy(
+                        update={
+                            "metadata": {
+                                **room.metadata,
+                                "task_status": status,
+                                "task_result": agent_response,
+                            },
+                        }
+                    )
                 )
-            )
+        except Exception:
+            logger.exception("Task %s: failed to update child room metadata", task.id)
 
         # Run on_complete BEFORE setting result so hooks fire before waiters unblock
         if on_complete:
@@ -143,6 +149,7 @@ class InMemoryTaskRunner(TaskRunner):
             except Exception:
                 logger.exception("on_complete callback failed for task %s", task.id)
 
+        # ALWAYS set result — callers of wait() depend on this
         task._set_result(result)
 
         self._tasks.pop(task.id, None)
@@ -153,7 +160,6 @@ class InMemoryTaskRunner(TaskRunner):
         child_room_id = task.child_room_id
         room = await kit.get_room(child_room_id)
         bindings = await kit.store.list_bindings(child_room_id)
-        context = RoomContext(room=room, bindings=bindings)
 
         # Create the task event
         task_event = RoomEvent(
@@ -166,6 +172,11 @@ class InMemoryTaskRunner(TaskRunner):
             content=TextContent(body=task.task),
         )
         task_event = await kit.store.add_event_auto_index(child_room_id, task_event)
+
+        # Build context AFTER storing the task event so the agent's memory
+        # provider can see it in recent_events (fixes empty-messages error).
+        recent = await kit.store.list_events(child_room_id, offset=0, limit=50)
+        context = RoomContext(room=room, bindings=bindings, recent_events=recent)
 
         # Broadcast to the child room — the agent picks it up
         router = kit._get_router()

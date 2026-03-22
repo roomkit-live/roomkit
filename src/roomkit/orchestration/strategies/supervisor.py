@@ -52,6 +52,9 @@ class Supervisor(Orchestration):
         self,
         supervisor: Agent,
         workers: list[Agent],
+        *,
+        wait_for_result: bool = False,
+        result_timeout: float = 120.0,
     ) -> None:
         """Initialise the supervisor strategy.
 
@@ -59,9 +62,18 @@ class Supervisor(Orchestration):
             supervisor: The agent that handles user interaction and
                 delegates tasks.
             workers: Agents that run delegated tasks in child rooms.
+            wait_for_result: If ``True``, delegation tool calls block
+                until the worker completes and return the worker's
+                output directly.  If ``False`` (default), the tool
+                returns immediately and the result is injected into
+                the supervisor's system prompt later.
+            result_timeout: Maximum seconds to wait for a worker result
+                when *wait_for_result* is ``True`` (default 120s).
         """
         self._supervisor = supervisor
         self._workers = list(workers)
+        self._wait_for_result = wait_for_result
+        self._result_timeout = result_timeout
 
     def agents(self) -> list[Agent]:
         """Return only the supervisor — workers are not attached to the room."""
@@ -140,12 +152,25 @@ class Supervisor(Orchestration):
         original = self._supervisor.tool_handler
         tool_to_worker = {f"delegate_to_{w.channel_id}": w.channel_id for w in self._workers}
 
+        wait = self._wait_for_result
+
         async def delegation_handler(name: str, arguments: dict[str, Any]) -> str:
             worker_id = tool_to_worker.get(name)
             if worker_id is not None:
                 rid = _room_id_var.get() or room_id
                 task_desc = arguments.get("task", "")
                 try:
+                    if wait:
+                        # Run worker inline to avoid async scheduling issues
+                        # when called from inside a streaming tool loop.
+                        output = await _run_worker_inline(kit, rid, worker_id, task_desc)
+                        return json.dumps(
+                            {
+                                "status": "completed",
+                                "worker": worker_id,
+                                "result": output or "",
+                            }
+                        )
                     delegated = await kit.delegate(
                         rid,
                         worker_id,
@@ -167,3 +192,127 @@ class Supervisor(Orchestration):
             return json.dumps({"error": f"Unknown tool: {name}"})
 
         self._supervisor.tool_handler = delegation_handler
+
+
+async def _run_worker_inline(
+    kit: RoomKit,
+    parent_room_id: str,
+    worker_id: str,
+    task_desc: str,
+) -> str | None:
+    """Run a worker agent inline and return its text output.
+
+    Creates a temporary child room, sends the task as a message,
+    and collects the worker's response — all synchronously within
+    the caller's coroutine (no background task).
+    """
+    import time
+    from uuid import uuid4
+
+    from roomkit.models.channel import ChannelBinding
+    from roomkit.models.context import RoomContext
+    from roomkit.models.enums import (
+        ChannelCategory,
+        ChannelType,
+        EventStatus,
+        EventType,
+        TaskStatus,
+    )
+    from roomkit.models.event import EventSource, RoomEvent, TextContent
+
+    task_id = f"task-{uuid4().hex[:12]}"
+    child_room_id = f"{parent_room_id}::inline-{uuid4().hex[:12]}"
+    start = time.monotonic()
+
+    # Fire ON_TASK_DELEGATED hook
+    delegated_event = RoomEvent(
+        room_id=parent_room_id,
+        source=EventSource(channel_id=worker_id, channel_type=ChannelType.AI),
+        content=TextContent(body=f"[Task delegated to {worker_id}] {task_desc}"),
+        type=EventType.TASK_DELEGATED,
+        status=EventStatus.DELIVERED,
+        visibility="internal",
+        metadata={"task_id": task_id, "child_room_id": child_room_id, "agent_id": worker_id},
+    )
+    parent_context = await kit._build_context(parent_room_id)
+    await kit._hook_engine.run_async_hooks(
+        parent_room_id, HookTrigger.ON_TASK_DELEGATED, delegated_event, parent_context
+    )
+
+    await kit.create_room(
+        room_id=child_room_id,
+        metadata={"parent_room_id": parent_room_id, "task_agent_id": worker_id},
+        orchestration=None,  # no orchestration — worker runs standalone
+    )
+    await kit.attach_channel(child_room_id, worker_id, category=ChannelCategory.INTELLIGENCE)
+
+    # Store the task as a message
+    task_event = RoomEvent(
+        room_id=child_room_id,
+        type=EventType.MESSAGE,
+        source=EventSource(channel_id="system", channel_type=ChannelType.SYSTEM),
+        content=TextContent(body=task_desc),
+    )
+    task_event = await kit.store.add_event_auto_index(child_room_id, task_event)
+
+    # Build context with the task event visible
+    room = await kit.get_room(child_room_id)
+    bindings = await kit.store.list_bindings(child_room_id)
+    recent = await kit.store.list_events(child_room_id, offset=0, limit=50)
+    context = RoomContext(room=room, bindings=bindings, recent_events=recent)
+
+    # Broadcast — the worker picks up the task
+    router = kit._get_router()
+    source_binding = ChannelBinding(
+        channel_id="system",
+        room_id=child_room_id,
+        channel_type=ChannelType.SYSTEM,
+    )
+    result = await router.broadcast(task_event, source_binding, context)
+
+    # Collect response: check synchronous output first, then streaming
+    agent_output: str | None = None
+    for output in result.outputs.values():
+        if output.responded and output.response_events:
+            for resp in output.response_events:
+                if isinstance(resp.content, TextContent) and resp.content.body:
+                    agent_output = resp.content.body
+                    break
+
+    if agent_output is None:
+        for sr in result.streaming_responses:
+            parts: list[str] = []
+            async for delta in sr.stream:
+                parts.append(delta)
+            text = "".join(parts)
+            if text:
+                agent_output = text
+                break
+
+    # Fire ON_TASK_COMPLETED hook
+    elapsed = (time.monotonic() - start) * 1000
+    status = TaskStatus.COMPLETED if agent_output else TaskStatus.FAILED
+    completed_event = RoomEvent(
+        room_id=parent_room_id,
+        source=EventSource(channel_id=worker_id, channel_type=ChannelType.AI),
+        content=TextContent(body=agent_output or ""),
+        type=EventType.TASK_COMPLETED,
+        status=EventStatus.DELIVERED,
+        visibility="internal",
+        metadata={
+            "task_id": task_id,
+            "child_room_id": child_room_id,
+            "agent_id": worker_id,
+            "task_status": status,
+            "duration_ms": elapsed,
+        },
+    )
+    try:
+        parent_context = await kit._build_context(parent_room_id)
+        await kit._hook_engine.run_async_hooks(
+            parent_room_id, HookTrigger.ON_TASK_COMPLETED, completed_event, parent_context
+        )
+    except Exception:
+        logger.exception("Failed to fire ON_TASK_COMPLETED for %s", task_id)
+
+    return agent_output

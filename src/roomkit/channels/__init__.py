@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from roomkit.channels.cli import CLIChannel as CLIChannel
 from roomkit.channels.transport import TransportChannel
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import ChannelMediaType, ChannelType
