@@ -255,8 +255,8 @@ class TestStrategyHooks:
 
 
 class TestStrategyDedup:
-    async def test_same_task_returns_cached_result(self) -> None:
-        """Calling delegate_workers twice with the same task dedupes."""
+    async def test_second_call_in_same_turn_returns_cached(self) -> None:
+        """Calling delegate_workers twice within the dedup window returns cached."""
         kit, supervisor = await _setup("parallel", [_agent("w1", "r1")])
 
         call_count = 0
@@ -274,37 +274,11 @@ class TestStrategyDedup:
         _room_id_var.set("room")
 
         r1 = await supervisor.tool_handler("delegate_workers", {"task": "test"})
-        r2 = await supervisor.tool_handler("delegate_workers", {"task": "test"})
+        # Second call — even with different task, blocked within dedup window
+        r2 = await supervisor.tool_handler("delegate_workers", {"task": "different task"})
 
-        # Same task — second call returns cached
         assert r1 == r2
         assert call_count == 1
-        await kit.close()
-
-    async def test_different_task_runs_fresh(self) -> None:
-        """Calling delegate_workers with a different task runs workers again."""
-        kit, supervisor = await _setup("parallel", [_agent("w1", "r1")])
-
-        call_count = 0
-        original_delegate = kit.delegate
-
-        async def counting_delegate(*args, **kwargs):  # type: ignore[no-untyped-def]
-            nonlocal call_count
-            call_count += 1
-            return await original_delegate(*args, **kwargs)
-
-        kit.delegate = counting_delegate  # type: ignore[assignment]
-
-        from roomkit.orchestration.handoff import _room_id_var
-
-        _room_id_var.set("room")
-
-        r1 = await supervisor.tool_handler("delegate_workers", {"task": "analyze anthropic"})
-        r2 = await supervisor.tool_handler("delegate_workers", {"task": "analyze openai"})
-
-        # Different tasks — both run fresh
-        assert r1 != r2 or call_count == 2  # results may match (mock), but both ran
-        assert call_count == 2
         await kit.close()
 
 

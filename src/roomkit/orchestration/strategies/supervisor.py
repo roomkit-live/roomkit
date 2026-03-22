@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
@@ -154,20 +155,21 @@ class Supervisor(Orchestration):
         if any(t.name == tool_name for t in self._supervisor._injected_tools):
             return
 
-        worker_names = ", ".join(w.channel_id for w in self._workers)
-        mode = self._strategy
+        worker_roles = ", ".join(getattr(w, "role", None) or w.channel_id for w in self._workers)
         tool = AITool(
             name=tool_name,
             description=(
-                f"Delegate a task to workers ({worker_names}). "
-                f"Workers run {mode}. Call this tool with the task description."
+                f"Delegate a task to ALL workers ({worker_roles}) at once. "
+                f"Call this tool exactly ONCE with the topic. "
+                f"All workers run automatically in {self._strategy} mode. "
+                f"Do NOT split into separate calls per worker."
             ),
             parameters={
                 "type": "object",
                 "properties": {
                     "task": {
                         "type": "string",
-                        "description": "Description of the task to delegate",
+                        "description": "The topic or task — sent to all workers as-is",
                     },
                 },
                 "required": ["task"],
@@ -180,12 +182,17 @@ class Supervisor(Orchestration):
         workers = self._workers
         # Lock prevents concurrent duplicate calls when asyncio.gather
         # runs multiple tool calls from the same AI response in parallel.
-        # Cache is keyed by task description so different tasks run fresh
-        # but the same task (retried by the AI in the same turn) is deduped.
+        # After first success, block all calls for DEDUP_WINDOW seconds
+        # to prevent the AI from splitting one request into per-worker calls.
+        # The window auto-expires so the next user message runs fresh.
         _lock = asyncio.Lock()
-        _cache: dict[str, str] = {}
+        _last_result: str | None = None
+        _last_time: float = 0.0
+        dedup_window = 30.0  # seconds — covers any tool loop iteration
 
         async def strategy_handler(name: str, arguments: dict[str, Any]) -> str:
+            nonlocal _last_result, _last_time
+
             if name != tool_name:
                 if original:
                     return await original(name, arguments)
@@ -195,16 +202,17 @@ class Supervisor(Orchestration):
             task_desc = arguments.get("task", "")
 
             async with _lock:
-                # Return cached result if same task already ran in this turn
-                if task_desc in _cache:
-                    return _cache[task_desc]
+                # Return cached result if still within the dedup window
+                if _last_result is not None and (time.monotonic() - _last_time) < dedup_window:
+                    return _last_result
 
                 try:
                     if strategy == WorkerStrategy.SEQUENTIAL:
                         result = await _run_sequential(kit, rid, workers, task_desc)
                     else:
                         result = await _run_parallel(kit, rid, workers, task_desc)
-                    _cache[task_desc] = result
+                    _last_result = result
+                    _last_time = time.monotonic()
                     return result
                 except Exception as exc:
                     logger.exception("Strategy delegation failed")
