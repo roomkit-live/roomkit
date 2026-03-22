@@ -88,8 +88,10 @@ class Supervisor(Orchestration):
         *,
         strategy: WorkerStrategy | str | None = None,
         auto_delegate: bool = False,
+        async_delivery: bool = False,
         refine_task: bool = True,
         refine_instruction: str | None = None,
+        delegation_message: str | None = "I'm dispatching my team to work on this.",
         wait_for_result: bool = True,
     ) -> None:
         """Initialise the supervisor strategy.
@@ -109,19 +111,27 @@ class Supervisor(Orchestration):
                   them.
 
             auto_delegate: If ``True``, the framework triggers workers
-                automatically on every user message — no tool needed.
-                If ``False`` (default), the supervisor decides when to
-                delegate via tool calls. Requires *strategy* to be set.
+                automatically — no tool needed. For sync channels (CLI),
+                blocks until results are ready. For async channels
+                (voice), runs in background. Requires *strategy*.
 
-            refine_task: When *auto_delegate* is ``True``, controls
-                whether the supervisor reformulates the user's message
-                before sending it to workers (two-pass, default ``True``)
-                or workers get the raw user message (one-pass).
+            async_delivery: If ``True``, workers run in the background
+                and results are delivered via ``kit.deliver()`` when
+                ready. The conversation continues uninterrupted. For
+                voice channels, hooks into ``ON_TRANSCRIPTION`` with
+                intent detection. If ``False`` (default), blocks until
+                results are ready (sync mode).
 
-            refine_instruction: Custom instruction injected into the
-                supervisor's prompt during pass 1 (task formulation).
-                Overrides the default. Only used when *refine_task*
-                is ``True``.
+            refine_task: Controls whether the framework extracts a clean
+                topic from the user's message before sending to workers.
+
+            refine_instruction: Custom instruction for topic extraction.
+                Overrides the default.
+
+            delegation_message: Message injected into the conversation
+                when workers are dispatched (async mode only). Set to
+                ``None`` to disable. Default: "I'm dispatching my team
+                to work on this."
 
             wait_for_result: When *strategy* is ``None``, controls
                 whether delegation runs inline (``True``, default) or
@@ -132,8 +142,10 @@ class Supervisor(Orchestration):
         self._workers = list(workers)
         self._strategy = WorkerStrategy(strategy) if strategy else None
         self._auto_delegate = auto_delegate
+        self._async_delivery = async_delivery
         self._refine_task = refine_task
         self._refine_instruction = refine_instruction
+        self._delegation_message = delegation_message
         self._wait_for_result = wait_for_result
 
         if auto_delegate and self._strategy is None:
@@ -141,26 +153,33 @@ class Supervisor(Orchestration):
             raise ValueError(msg)
 
     def agents(self) -> list[Agent]:
-        """Return only the supervisor — workers are not attached to the room."""
+        """Return agents to attach to the room.
+
+        In async_delivery mode, the supervisor is NOT attached — the
+        conversation channel (e.g. RealtimeVoiceChannel) handles user
+        interaction independently.
+        """
+        if self._async_delivery:
+            return []
         return [self._supervisor]
 
     async def install(self, kit: RoomKit, room_id: str) -> None:
         """Wire supervisor routing and delegation tools."""
-        router = ConversationRouter(
-            default_agent_id=self._supervisor.channel_id,
-        )
-
-        # Install router as room-scoped BEFORE_BROADCAST hook
-        kit.hook_engine.add_room_hook(
-            room_id,
-            HookRegistration(
-                trigger=HookTrigger.BEFORE_BROADCAST,
-                execution=HookExecution.SYNC,
-                fn=router.as_hook(),
-                priority=-100,
-                name=f"supervisor_router_{room_id}",
-            ),
-        )
+        # Router only needed when supervisor agent is in the room
+        if not self._async_delivery:
+            router = ConversationRouter(
+                default_agent_id=self._supervisor.channel_id,
+            )
+            kit.hook_engine.add_room_hook(
+                room_id,
+                HookRegistration(
+                    trigger=HookTrigger.BEFORE_BROADCAST,
+                    execution=HookExecution.SYNC,
+                    fn=router.as_hook(),
+                    priority=-100,
+                    name=f"supervisor_router_{room_id}",
+                ),
+            )
 
         # Register workers on the kit (not attached to room)
         for worker in self._workers:
@@ -187,7 +206,14 @@ class Supervisor(Orchestration):
     # -- Auto-delegate (framework-driven, no tools) ---------------------------
 
     def _install_auto_delegate(self, kit: RoomKit, room_id: str) -> None:
-        """Wrap supervisor's on_event for framework-driven delegation."""
+        """Install framework-driven delegation (sync or async)."""
+        if self._async_delivery:
+            self._install_async_auto_delegate(kit, room_id)
+        else:
+            self._install_sync_auto_delegate(kit, room_id)
+
+    def _install_sync_auto_delegate(self, kit: RoomKit, room_id: str) -> None:
+        """Wrap supervisor's on_event — blocks until workers complete."""
         supervisor = self._supervisor
         strategy = self._strategy
         workers = self._workers
@@ -200,7 +226,6 @@ class Supervisor(Orchestration):
             binding: ChannelBinding,
             context: RoomContext,
         ) -> ChannelOutput:
-            # Only intercept user messages (not self-loop, not AI sources)
             if event.source.channel_id == supervisor.channel_id:
                 return ChannelOutput.empty()
             if event.source.channel_type == _ChannelType.AI:
@@ -209,7 +234,6 @@ class Supervisor(Orchestration):
             rid = context.room.id if context.room else room_id
 
             if refine:
-                # Two-pass: supervisor formulates the task, then presents results
                 return await _two_pass_delegate(
                     kit,
                     rid,
@@ -222,7 +246,6 @@ class Supervisor(Orchestration):
                     workers,
                     instruction=refine_instruction,
                 )
-            # One-pass: workers get raw message, supervisor presents results
             return await _one_pass_delegate(
                 kit,
                 rid,
@@ -236,6 +259,103 @@ class Supervisor(Orchestration):
             )
 
         supervisor.on_event = auto_delegate_on_event  # type: ignore[assignment]
+
+    def _install_async_auto_delegate(self, kit: RoomKit, room_id: str) -> None:
+        """Inject delegate_workers tool into RealtimeVoiceChannel.
+
+        The tool handler runs workers in the background and returns
+        immediately. Results are delivered via kit.deliver().
+        """
+        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+        strategy = self._strategy
+        workers = self._workers
+
+        # Find the RealtimeVoiceChannel in registered channels
+        voice_channel: RealtimeVoiceChannel | None = None
+        for ch in kit.channels.values():
+            if isinstance(ch, RealtimeVoiceChannel):
+                voice_channel = ch
+                break
+
+        if voice_channel is None:
+            logger.warning("async_delivery=True but no RealtimeVoiceChannel found")
+            return
+
+        # Build tool definition
+        worker_roles = ", ".join(getattr(w, "role", None) or w.channel_id for w in workers)
+        tool_def = {
+            "name": "delegate_workers",
+            "description": (
+                f"Delegate analysis to specialist workers ({worker_roles}). "
+                f"Call when the user requests analysis, research, or investigation. "
+                f"Workers run in {strategy} mode. Pass the topic."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": "The topic to analyze",
+                    },
+                },
+                "required": ["task"],
+            },
+        }
+
+        # Add tool to voice channel
+        if voice_channel._tools is None:
+            voice_channel._tools = []
+        voice_channel._tools.append(tool_def)
+
+        # Wrap tool handler for async delegation
+        original_handler = voice_channel.tool_handler
+        _running = False
+
+        async def async_tool_handler(name: str, arguments: dict[str, Any]) -> str:
+            nonlocal _running
+
+            if name != "delegate_workers":
+                if original_handler:
+                    return await original_handler(name, arguments)
+                return json.dumps({"error": f"Unknown tool: {name}"})
+
+            if _running:
+                return json.dumps(
+                    {
+                        "status": "already_running",
+                        "message": "Workers are already running.",
+                    }
+                )
+
+            task_desc = arguments.get("task", "")
+            _running = True
+
+            # Launch workers in background — tool returns immediately
+            asyncio.create_task(
+                _async_run_and_deliver(
+                    kit=kit,
+                    room_id=room_id,
+                    strategy=strategy,
+                    workers=workers,
+                    task_desc=task_desc,
+                    on_done=lambda: _clear(),
+                )
+            )
+
+            return json.dumps(
+                {
+                    "status": "dispatched",
+                    "workers": worker_roles,
+                    "message": "Workers are running. Results will be delivered when ready.",
+                }
+            )
+
+        def _clear() -> None:
+            nonlocal _running
+            _running = False
+
+        voice_channel.tool_handler = async_tool_handler
 
     # -- Strategy-based tool (sequential / parallel) --------------------------
 
@@ -422,6 +542,41 @@ class Supervisor(Orchestration):
 
 # ---------------------------------------------------------------------------
 # Auto-delegate execution helpers
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Async tool handler helper
+# ---------------------------------------------------------------------------
+
+
+async def _async_run_and_deliver(
+    *,
+    kit: RoomKit,
+    room_id: str,
+    strategy: WorkerStrategy | None,
+    workers: list[Agent],
+    task_desc: str,
+    on_done: Any,
+) -> None:
+    """Background: run workers → deliver results via kit.deliver()."""
+    try:
+        worker_results = await _run_workers(kit, room_id, strategy, workers, task_desc)
+        results_text = _format_worker_results(worker_results)
+        logger.info("[async_delegate] Workers completed, delivering results")
+
+        await kit.deliver(
+            room_id,
+            f"Analysis results are ready. Here's what the analysts found:\n\n{results_text}",
+        )
+    except Exception:
+        logger.exception("[async_delegate] Pipeline failed")
+    finally:
+        on_done()
+
+
+# ---------------------------------------------------------------------------
+# Sync auto-delegate helpers
 # ---------------------------------------------------------------------------
 
 

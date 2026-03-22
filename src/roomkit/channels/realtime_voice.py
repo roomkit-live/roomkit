@@ -220,8 +220,10 @@ class RealtimeVoiceChannel(Channel):
         # Cached event loop for cross-thread scheduling (e.g. PortAudio callback)
         self._event_loop: asyncio.AbstractEventLoop | None = None
 
-        # Idle tracking: set when provider finishes a response, cleared on start
+        # Idle tracking: set when BOTH provider is done AND user is not speaking
         self._idle_events: dict[str, asyncio.Event] = {}
+        self._user_speaking: dict[str, bool] = {}
+        self._provider_idle: dict[str, bool] = {}
 
         # Track fire-and-forget tasks for clean shutdown
         self._scheduled_tasks: set[asyncio.Task[Any]] = set()
@@ -278,10 +280,21 @@ class RealtimeVoiceChannel(Channel):
                 await asyncio.wait_for(event.wait(), timeout=timeout)
 
     async def _set_idle(self, session: VoiceSession) -> None:
-        """Mark a session as idle (called after response end + audio drain)."""
-        idle = self._idle_events.get(session.id)
-        if idle is not None:
+        """Mark provider as idle (called after response end + audio drain)."""
+        self._provider_idle[session.id] = True
+        self._update_idle_event(session.id)
+
+    def _update_idle_event(self, session_id: str) -> None:
+        """Update the idle event based on combined provider + user state."""
+        idle = self._idle_events.get(session_id)
+        if idle is None:
+            return
+        provider_done = self._provider_idle.get(session_id, True)
+        user_silent = not self._user_speaking.get(session_id, False)
+        if provider_done and user_silent:
             idle.set()
+        else:
+            idle.clear()
 
     @property
     def tool_handler(self) -> ToolHandler | None:
@@ -458,10 +471,12 @@ class RealtimeVoiceChannel(Channel):
         )
         self._session_spans[session.id] = session_span_id
 
-        # Initialize idle event (starts as idle — no response in progress)
+        # Initialize idle tracking (starts idle — no response, no speech)
         idle = asyncio.Event()
         idle.set()
         self._idle_events[session.id] = idle
+        self._user_speaking[session.id] = False
+        self._provider_idle[session.id] = True
 
         # Per-room config overrides from metadata
         system_prompt = meta.get("system_prompt", self._system_prompt)
@@ -634,6 +649,8 @@ class RealtimeVoiceChannel(Channel):
             idle = self._idle_events.pop(session.id, None)
             if idle is not None:
                 idle.set()  # unblock any waiters
+            self._user_speaking.pop(session.id, None)
+            self._provider_idle.pop(session.id, None)
             turn_span_id = self._turn_spans.pop(session.id, None)
             session_span_id = self._session_spans.pop(session.id, None)
             resamplers = self._session_resamplers.pop(session.id, None)
@@ -1292,6 +1309,8 @@ class RealtimeVoiceChannel(Channel):
         stale, resets the outbound resampler to discard its buffered frame,
         and signals the transport to interrupt outbound audio.
         """
+        self._user_speaking[session.id] = True
+        self._update_idle_event(session.id)
         # Bump generation — pending tasks with the old generation will skip
         with self._state_lock:
             self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
@@ -1332,6 +1351,8 @@ class RealtimeVoiceChannel(Channel):
 
     def _on_provider_speech_end(self, session: VoiceSession) -> Any:
         """Handle speech end from provider's server-side VAD."""
+        self._user_speaking[session.id] = False
+        self._update_idle_event(session.id)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -1587,10 +1608,8 @@ class RealtimeVoiceChannel(Channel):
 
     def _on_provider_response_start(self, session: VoiceSession) -> Any:
         """Handle AI response start — activate AEC, publish typing indicator."""
-        # Mark session as not idle
-        idle = self._idle_events.get(session.id)
-        if idle is not None:
-            idle.clear()
+        self._provider_idle[session.id] = False
+        self._update_idle_event(session.id)
         self._set_aec_active(True)
         try:
             loop = asyncio.get_running_loop()
