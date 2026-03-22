@@ -180,31 +180,31 @@ class Supervisor(Orchestration):
         workers = self._workers
         # Lock prevents concurrent duplicate calls when asyncio.gather
         # runs multiple tool calls from the same AI response in parallel.
+        # Cache is keyed by task description so different tasks run fresh
+        # but the same task (retried by the AI in the same turn) is deduped.
         _lock = asyncio.Lock()
-        _cached: str | None = None
+        _cache: dict[str, str] = {}
 
         async def strategy_handler(name: str, arguments: dict[str, Any]) -> str:
-            nonlocal _cached
-
             if name != tool_name:
                 if original:
                     return await original(name, arguments)
                 return json.dumps({"error": f"Unknown tool: {name}"})
 
-            async with _lock:
-                # Return cached result if already ran in this turn
-                if _cached is not None:
-                    return _cached
+            rid = _room_id_var.get() or room_id
+            task_desc = arguments.get("task", "")
 
-                rid = _room_id_var.get() or room_id
-                task_desc = arguments.get("task", "")
+            async with _lock:
+                # Return cached result if same task already ran in this turn
+                if task_desc in _cache:
+                    return _cache[task_desc]
 
                 try:
                     if strategy == WorkerStrategy.SEQUENTIAL:
                         result = await _run_sequential(kit, rid, workers, task_desc)
                     else:
                         result = await _run_parallel(kit, rid, workers, task_desc)
-                    _cached = result
+                    _cache[task_desc] = result
                     return result
                 except Exception as exc:
                     logger.exception("Strategy delegation failed")
