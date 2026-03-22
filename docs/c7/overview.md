@@ -1,5 +1,7 @@
 # Overview
 
+> Version: 0.6.13 | Minimum recommended: 0.6.0 | Python 3.12+
+
 RoomKit is a pure async Python library for building multi-channel conversation systems. It provides a **room-based abstraction** where conversations happen in rooms, participants communicate through channels, and hooks let you intercept and modify the flow.
 
 ## Key Concepts
