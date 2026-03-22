@@ -351,7 +351,73 @@ Channels have two categories:
 - **TRANSPORT** — Push messages to users (SMS, Email, WebSocket, Voice). Default category.
 - **INTELLIGENCE** — Generate responses (AI, agents). Receives broadcasts, responds through the inbound pipeline.
 
-When an AI channel receives a broadcast, it generates a response that re-enters the inbound pipeline. Chain depth tracking (default max=5) prevents infinite AI-to-AI loops.
+## Channel-to-AI Message Flow (Reentry Loop)
+
+When you send a message from a transport channel, it flows to the AI and back automatically. Here's the complete flow:
+
+```
+1. Transport channel (SMS/WS/Voice) → kit.process_inbound(InboundMessage)
+2. Inbound pipeline: route → parse → identity → hooks → store
+3. EventRouter.broadcast() → delivers event to ALL attached channels
+   ├── Transport channels: note delivery (no response)
+   └── AI channel: calls LLM provider → generates response
+       └── Returns ChannelOutput(response_events=[RoomEvent])
+4. REENTRY LOOP: AI response re-enters as new inbound event
+   ├── BEFORE_BROADCAST hooks run again (ConversationRouter stamps routing)
+   ├── Event stored in timeline
+   ├── Broadcast to all channels again
+   │   ├── Transport channels: DELIVER the AI response to users
+   │   └── Other AI channels: see the response (may generate follow-up)
+   └── If follow-up AI responses exist → loop again (chain depth checked)
+5. Chain depth limit (default max=5) → stops AI-to-AI infinite loops
+6. AFTER_BROADCAST hooks fire (async side effects)
+```
+
+**Key insight**: The "pipeline" is a reentry loop — not a linear chain. AI responses go back through the same BEFORE_BROADCAST hooks, content transcoding, and broadcast cycle as user messages.
+
+### Connecting Channel to AI — Minimal Example
+
+```python
+from roomkit import RoomKit, WebSocketChannel, ChannelCategory, InboundMessage, TextContent
+from roomkit.channels.ai import AIChannel
+from roomkit.providers.anthropic.ai import AnthropicAIProvider
+from roomkit.providers.anthropic.config import AnthropicConfig
+
+kit = RoomKit()
+
+# Transport channel (user-facing)
+ws = WebSocketChannel("ws-user")
+ws.register_connection("conn-1", on_recv)
+kit.register_channel(ws)
+
+# Intelligence channel (AI)
+ai = AIChannel("ai", provider=AnthropicAIProvider(AnthropicConfig(
+    api_key="sk-ant-...", model="claude-sonnet-4-20250514",
+)))
+kit.register_channel(ai)
+
+# Room wires them together
+await kit.create_room(room_id="chat")
+await kit.attach_channel("chat", "ws-user")  # TRANSPORT (default)
+await kit.attach_channel("chat", "ai", category=ChannelCategory.INTELLIGENCE)
+
+# User sends message → AI responds → response delivered to WebSocket
+await kit.process_inbound(
+    InboundMessage(channel_id="ws-user", sender_id="user", content=TextContent(body="Hi!"))
+)
+# on_recv callback fires with the AI's response
+```
+
+### Pipeline vs Pipeline
+
+RoomKit uses "Pipeline" in two contexts — don't confuse them:
+
+| Term | What It Is | Where |
+|------|-----------|-------|
+| **Inbound processing pipeline** | The 11-step message processing flow (route → parse → identity → hooks → store → broadcast) | `core/mixins/inbound_locked.py` |
+| **Pipeline orchestration strategy** | A linear agent chain (triage → handler → resolver) for multi-agent handoffs | `from roomkit import Pipeline` |
+
+The inbound pipeline processes every message. The Pipeline strategy controls which agent handles each turn.
 
 ## Pluggable Components
 
@@ -577,7 +643,21 @@ await kit.attach_channel(
 
 ## Content Types
 
-Events carry typed content. The event router transcodes content to match each channel's capabilities:
+Events carry typed content. RoomKit supports 11 content types, all discriminated unions on the `type` field:
+
+| Type | `type` Literal | Key Fields | Use Case |
+|------|---------------|-----------|----------|
+| `TextContent` | `"text"` | `body`, `language` | Plain text messages |
+| `RichContent` | `"rich"` | `body`, `format` (html/markdown), `plain_text`, `buttons`, `cards`, `quick_replies` | Formatted messages with UI elements |
+| `MediaContent` | `"media"` | `url`, `mime_type`, `filename`, `size_bytes`, `caption` | Images, documents, files |
+| `AudioContent` | `"audio"` | `url`, `mime_type`, `duration_seconds`, `transcript` | Voice messages |
+| `VideoContent` | `"video"` | `url`, `mime_type`, `duration_seconds`, `thumbnail_url` | Video messages |
+| `LocationContent` | `"location"` | `latitude`, `longitude`, `label`, `address` | Geographic coordinates |
+| `CompositeContent` | `"composite"` | `parts` (list of EventContent, max depth 5) | Multi-part messages |
+| `TemplateContent` | `"template"` | `template_id`, `language`, `parameters`, `body` | WhatsApp Business / RCS templates |
+| `SystemContent` | `"system"` | `body`, `code`, `data` (dict) | System-generated events |
+| `EditContent` | `"edit"` | `target_event_id`, `new_content`, `edit_source` | Message edits |
+| `DeleteContent` | `"delete"` | `target_event_id`, `delete_type`, `reason` | Message deletion |
 
 ```python
 from roomkit.models.event import (
@@ -597,20 +677,153 @@ from roomkit.models.event import (
 # Plain text
 TextContent(body="Hello!")
 
-# Rich content with buttons
+# Rich content with buttons and Markdown
 RichContent(
     body="Choose an option:",
-    buttons=[{"text": "Option A", "payload": "a"}],
+    format="markdown",
+    plain_text="Choose an option:",
+    buttons=[{"text": "Option A", "payload": "a"}, {"text": "Option B", "payload": "b"}],
 )
 
 # Media attachment
-MediaContent(url="https://example.com/image.png", mime_type="image/png")
+MediaContent(url="https://example.com/image.png", mime_type="image/png", caption="Product photo")
 
-# Multi-part message
+# Audio with transcript
+AudioContent(url="https://example.com/voice.ogg", mime_type="audio/ogg", transcript="Hello there")
+
+# Location
+LocationContent(latitude=40.7128, longitude=-74.0060, label="NYC Office", address="New York, NY")
+
+# Template (WhatsApp Business)
+TemplateContent(template_id="order_confirmation", language="en", parameters={"1": "ORD-123"})
+
+# Multi-part message (max depth 5)
 CompositeContent(parts=[
     TextContent(body="Here's the photo:"),
     MediaContent(url="https://example.com/photo.jpg", mime_type="image/jpeg"),
 ])
+
+# Edit a previous message
+EditContent(target_event_id="evt-abc", new_content=TextContent(body="Corrected text"))
+
+# Delete a message
+DeleteContent(target_event_id="evt-abc", delete_type="sender", reason="User retracted")
+```
+
+## Content Transcoding
+
+When broadcasting events, the EventRouter automatically **transcodes** content to match each target channel's capabilities. A channel that only supports TEXT will receive a text fallback of a RichContent message.
+
+### How Transcoding Works
+
+1. Event broadcast starts → EventRouter iterates over all target channel bindings
+2. For each target, call `ContentTranscoder.transcode(content, source_binding, target_binding)`
+3. Transcoder checks `target_binding.capabilities.media_types` to decide if content passes through or needs conversion
+4. If transcode returns `None` → delivery is skipped for that channel (content cannot be represented)
+
+### Channel Capabilities
+
+Each channel binding declares what content types it supports via `ChannelCapabilities`:
+
+```python
+from roomkit.models.channel import ChannelCapabilities
+from roomkit.models.enums import ChannelMediaType
+
+# SMS channel: text only, 160 char limit
+sms_caps = ChannelCapabilities(
+    media_types=[ChannelMediaType.TEXT],
+    max_length=160,
+)
+
+# WebSocket channel: rich content, media, audio, video
+ws_caps = ChannelCapabilities(
+    media_types=[
+        ChannelMediaType.TEXT,
+        ChannelMediaType.RICH,
+        ChannelMediaType.MEDIA,
+        ChannelMediaType.AUDIO,
+        ChannelMediaType.VIDEO,
+        ChannelMediaType.LOCATION,
+    ],
+    supports_edit=True,
+    supports_delete=True,
+    supports_reactions=True,
+    supports_typing=True,
+)
+```
+
+`ChannelMediaType` enum values: `TEXT`, `RICH`, `MEDIA`, `AUDIO`, `VIDEO`, `LOCATION`, `TEMPLATE`.
+
+### Default Fallback Chain
+
+The `DefaultContentTranscoder` applies these fallback rules:
+
+| Content Type | If Target Supports It | Fallback |
+|-------------|----------------------|----------|
+| `TextContent` | Always passes through | — |
+| `RichContent` | RICH in media_types → pass | `TextContent(plain_text or body)` |
+| `MediaContent` | MEDIA in media_types → pass | `TextContent("[Media: {caption}]")` |
+| `AudioContent` | AUDIO in media_types → pass | `TextContent(transcript)` or `"[Voice message: {url}]"` |
+| `VideoContent` | VIDEO in media_types → pass | `TextContent("[Video: {url}]")` |
+| `LocationContent` | LOCATION in media_types → pass | `TextContent("[Location: {label} ({lat}, {lon})]")` |
+| `CompositeContent` | Recursive transcode of all parts | If all parts become text → flatten to single TextContent |
+| `TemplateContent` | TEMPLATE in media_types → pass | `TextContent(body or "[Template: {id}]")` |
+| `EditContent` | `supports_edit` → pass | Transcode `new_content` + prefix "Correction:" |
+| `DeleteContent` | `supports_delete` → pass | `TextContent("[Message deleted]")` |
+
+### Custom Content Transcoder
+
+Implement the `ContentTranscoder` ABC to customize how content is adapted:
+
+```python
+from roomkit.core.router import ContentTranscoder
+from roomkit.models.channel import ChannelBinding
+from roomkit.models.event import EventContent, TextContent, MediaContent
+from roomkit.models.enums import ChannelMediaType
+
+class MyTranscoder(ContentTranscoder):
+    async def transcode(
+        self,
+        content: EventContent,
+        source_binding: ChannelBinding,
+        target_binding: ChannelBinding,
+    ) -> EventContent | None:
+        target_types = target_binding.capabilities.media_types
+
+        # Custom: convert images to descriptive text for voice channels
+        if isinstance(content, MediaContent) and content.mime_type.startswith("image/"):
+            if ChannelMediaType.MEDIA not in target_types:
+                caption = content.caption or "an image"
+                return TextContent(body=f"[Image received: {caption}]")
+
+        # Custom: truncate long text for SMS
+        if isinstance(content, TextContent):
+            max_len = target_binding.capabilities.max_length
+            if max_len and len(content.body) > max_len:
+                return TextContent(body=content.body[: max_len - 3] + "...")
+
+        # Fall through to default behavior for other types
+        return content
+
+# Override the default transcoder on the RoomKit instance
+kit = RoomKit()
+kit._transcoder = MyTranscoder()
+```
+
+### Multichannel Transcoding Example
+
+A single event gets adapted differently for each channel:
+
+```python
+# User sends a rich message with an image from WebSocket
+content = CompositeContent(parts=[
+    RichContent(body="**Check this out!**", format="markdown", plain_text="Check this out!"),
+    MediaContent(url="https://example.com/photo.jpg", mime_type="image/jpeg", caption="Sunset"),
+])
+
+# WebSocket channel: receives CompositeContent as-is (supports RICH + MEDIA)
+# SMS channel: receives TextContent("Check this out!\n[Media: Sunset]")
+# Voice channel (TTS): receives TextContent("Check this out!\n[Media: Sunset]")
 ```
 
 ## Detaching Channels
@@ -1894,24 +2107,165 @@ The handoff:
 
 ## Conversation State
 
+`ConversationState` tracks conversation progress within a room. It's stored in `Room.metadata["_conversation_state"]` and persists across all message turns. Orchestration strategies create and update it automatically, but you can also read and modify it directly.
+
+### ConversationState Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `phase` | `str` | `"intake"` | Current conversation phase. Can be any string — not restricted to built-in phases. |
+| `active_agent_id` | `str \| None` | `None` | Channel ID of the currently active agent. |
+| `previous_agent_id` | `str \| None` | `None` | Agent that was active before the last transition. |
+| `handoff_count` | `int` | `0` | Total number of agent handoffs. |
+| `phase_started_at` | `datetime` | now | Timestamp when the current phase started. |
+| `phase_history` | `list[PhaseTransition]` | `[]` | Immutable audit trail of all transitions. |
+| `context` | `dict[str, Any]` | `{}` | **Arbitrary user data** — store any custom key-value pairs across turns. |
+
+Built-in phase constants (use any string — these are convenience defaults):
+`ConversationPhase.INTAKE`, `QUALIFICATION`, `HANDLING`, `ESCALATION`, `RESOLUTION`, `FOLLOWUP`.
+
+### Reading State
+
 ```python
 from roomkit.orchestration.state import get_conversation_state
 
 room = await kit.get_room("support")
 state = get_conversation_state(room)
 
-print(state.phase)            # Current phase (e.g., "handling")
-print(state.active_agent_id)  # Which agent is active
-print(state.handoff_count)    # Number of handoffs so far
+print(state.phase)            # "handling"
+print(state.active_agent_id)  # "billing-agent"
+print(state.handoff_count)    # 2
+print(state.context)          # {"customer_tier": "premium", "issue_type": "refund"}
 
-# Phase transition history
+# Phase transition history (audit trail)
 for t in state.phase_history:
-    print(f"{t.from_phase} -> {t.to_phase} ({t.reason})")
+    print(f"{t.from_phase} -> {t.to_phase} by {t.from_agent} -> {t.to_agent} ({t.reason})")
 ```
+
+### Persisting Custom Data Across Turns
+
+Use `state.context` to store arbitrary data that survives across conversation turns. Update state via `set_conversation_state()` + `store.update_room()`:
+
+```python
+from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+
+# Read current state
+room = await kit.get_room("support")
+state = get_conversation_state(room)
+
+# Store custom data in context (immutable update pattern)
+updated_state = state.model_copy(update={
+    "context": {
+        **state.context,
+        "customer_tier": "premium",
+        "issue_type": "refund",
+        "attempts": state.context.get("attempts", 0) + 1,
+    }
+})
+
+# Persist back to room
+updated_room = set_conversation_state(room, updated_state)
+await kit.store.update_room(updated_room)
+```
+
+### Retrieving Custom Data on Later Turns
+
+```python
+# In a hook or handler on a subsequent turn:
+room = await kit.get_room("support")
+state = get_conversation_state(room)
+
+tier = state.context.get("customer_tier", "standard")
+attempts = state.context.get("attempts", 0)
+```
+
+### Programmatic Phase Transitions
+
+Use `state.transition()` to change phase and record an audit entry. It returns a new immutable state:
+
+```python
+from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+
+room = await kit.get_room("support")
+state = get_conversation_state(room)
+
+# Transition to a new phase with reason and agent
+new_state = state.transition(
+    to_phase="escalation",
+    to_agent="supervisor-agent",
+    reason="Customer requested manager",
+    metadata={"escalation_priority": "high"},
+)
+# new_state.phase == "escalation"
+# new_state.active_agent_id == "supervisor-agent"
+# new_state.previous_agent_id == <old agent>
+# new_state.handoff_count incremented if agent changed
+
+# Persist
+updated_room = set_conversation_state(room, new_state)
+await kit.store.update_room(updated_room)
+```
+
+### Using State in Hooks
+
+A common pattern — persist data via a BEFORE_BROADCAST hook:
+
+```python
+from roomkit import HookTrigger, HookResult, RoomEvent, RoomContext, TextContent
+from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+
+@kit.hook(HookTrigger.BEFORE_BROADCAST)
+async def track_sentiment(event: RoomEvent, ctx: RoomContext) -> HookResult:
+    if not isinstance(event.content, TextContent):
+        return HookResult.allow()
+
+    state = get_conversation_state(ctx.room)
+
+    # Update context with per-turn data
+    updated_state = state.model_copy(update={
+        "context": {
+            **state.context,
+            "last_message_length": len(event.content.body),
+            "message_count": state.context.get("message_count", 0) + 1,
+        }
+    })
+    updated_room = set_conversation_state(ctx.room, updated_state)
+    await kit.store.update_room(updated_room)
+
+    return HookResult.allow()
+```
+
+### PhaseTransition Audit Record
+
+Each transition creates an immutable `PhaseTransition`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `from_phase` | `str` | Previous phase |
+| `to_phase` | `str` | New phase |
+| `from_agent` | `str \| None` | Previous agent channel ID |
+| `to_agent` | `str \| None` | New agent channel ID |
+| `reason` | `str` | Why the transition occurred |
+| `timestamp` | `datetime` | When the transition occurred |
+| `metadata` | `dict[str, Any]` | Arbitrary metadata for this transition |
 
 ## Conversation Router (Advanced)
 
-For custom routing logic beyond strategies:
+`ConversationRouter` dynamically routes incoming messages to different agents based on conversation state, message content, origin channel, or custom logic. It works as a BEFORE_BROADCAST hook that stamps routing metadata on events.
+
+### RoutingConditions Reference
+
+All conditions are ANDed — every non-None field must match for the rule to fire:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `phases` | `set[str] \| None` | Match when `state.phase` is in this set |
+| `channel_types` | `set[ChannelType] \| None` | Match when sender's channel type is in this set |
+| `intents` | `set[str] \| None` | Match when `event.metadata["intent"]` is in this set |
+| `source_channel_ids` | `set[str] \| None` | Match when sender's channel ID is in this set |
+| `custom` | `Callable \| None` | Custom function `(event, context, state) -> bool` for arbitrary logic |
+
+### Routing by Phase
 
 ```python
 from roomkit.orchestration.router import ConversationRouter, RoutingRule, RoutingConditions
@@ -1920,18 +2274,136 @@ router = ConversationRouter(
     rules=[
         RoutingRule(
             agent_id="billing-agent",
-            conditions=RoutingConditions(phases=["billing"]),
+            conditions=RoutingConditions(phases={"billing"}),
             priority=0,
         ),
         RoutingRule(
             agent_id="shipping-agent",
-            conditions=RoutingConditions(phases=["shipping"]),
+            conditions=RoutingConditions(phases={"shipping"}),
             priority=0,
         ),
     ],
     default_agent_id="triage-agent",
 )
 ```
+
+### Routing by Channel Type (Origin)
+
+Route messages to different agents based on where they came from:
+
+```python
+from roomkit.models.enums import ChannelType
+
+router = ConversationRouter(
+    rules=[
+        RoutingRule(
+            agent_id="voice-specialist",
+            conditions=RoutingConditions(channel_types={ChannelType.VOICE}),
+        ),
+        RoutingRule(
+            agent_id="sms-agent",
+            conditions=RoutingConditions(channel_types={ChannelType.SMS, ChannelType.WHATSAPP}),
+        ),
+    ],
+    default_agent_id="general-agent",
+)
+```
+
+### Routing by Intent (Content-Based)
+
+Set `event.metadata["intent"]` via a classification hook, then route by intent:
+
+```python
+@kit.hook(HookTrigger.BEFORE_BROADCAST, priority=-200)  # Run before router
+async def classify_intent(event: RoomEvent, ctx: RoomContext) -> HookResult:
+    if isinstance(event.content, TextContent):
+        body = event.content.body.lower()
+        intent = "billing" if "invoice" in body or "charge" in body else "general"
+        modified = event.model_copy(update={"metadata": {**(event.metadata or {}), "intent": intent}})
+        return HookResult.modify(modified)
+    return HookResult.allow()
+
+router = ConversationRouter(
+    rules=[
+        RoutingRule(
+            agent_id="billing-agent",
+            conditions=RoutingConditions(intents={"billing"}),
+        ),
+    ],
+    default_agent_id="general-agent",
+)
+```
+
+### Routing with Custom Logic
+
+Use a custom callable for complex routing decisions, including content-based or state-based logic:
+
+```python
+def is_high_value_customer(event: RoomEvent, ctx: RoomContext, state: ConversationState) -> bool:
+    return state.context.get("customer_tier") == "premium"
+
+def contains_urgency(event: RoomEvent, ctx: RoomContext, state: ConversationState) -> bool:
+    if isinstance(event.content, TextContent):
+        return any(word in event.content.body.lower() for word in ["urgent", "emergency", "asap"])
+    return False
+
+router = ConversationRouter(
+    rules=[
+        # Premium customers with urgent messages -> senior agent
+        RoutingRule(
+            agent_id="senior-agent",
+            conditions=RoutingConditions(custom=is_high_value_customer),
+            priority=-1,  # Check first
+        ),
+        # Any urgent message -> escalation agent
+        RoutingRule(
+            agent_id="escalation-agent",
+            conditions=RoutingConditions(custom=contains_urgency),
+            priority=0,
+        ),
+    ],
+    default_agent_id="general-agent",
+    supervisor_id="supervisor-agent",  # Always observes all conversations
+)
+```
+
+### Combined Conditions
+
+Combine multiple conditions (all are ANDed):
+
+```python
+# Only route SMS messages during billing phase to the billing specialist
+RoutingRule(
+    agent_id="sms-billing-agent",
+    conditions=RoutingConditions(
+        phases={"billing"},
+        channel_types={ChannelType.SMS},
+    ),
+    priority=0,
+)
+```
+
+### Installing the Router
+
+```python
+# Option 1: Manual hook installation
+kit.hook(
+    HookTrigger.BEFORE_BROADCAST,
+    execution=HookExecution.SYNC,
+    priority=-100,
+)(router.as_hook())
+
+# Option 2: Use install() which also sets up handoff tools
+handler = router.install(kit, agents=[billing_agent, shipping_agent, triage_agent])
+```
+
+### Routing Selection Priority
+
+The router evaluates in this order:
+1. **Agent affinity** — if `state.active_agent_id` is set and the agent is still attached, stick with it
+2. **Rules** — evaluate `RoutingRule` list in ascending `priority` order; first match wins
+3. **Fallback** — return `default_agent_id`
+4. **Loop prevention** — events FROM intelligence channels are never routed (returns `None`)
 
 ## Conversation Pipeline (Advanced)
 

@@ -31,13 +31,20 @@ with distributed implementations (Redis, PostgreSQL, etc.) for production deploy
 - [Voice Channel](docs/api/providers-voice.md): VoiceBackend ABC, STTProvider, TTSProvider, DeepgramSTTProvider, ElevenLabsTTSProvider, FastRTCVoiceBackend - real-time voice with barge-in support
 - [Realtime Voice](docs/api/providers-realtime-voice.md): RealtimeVoiceChannel, RealtimeVoiceProvider ABC, GeminiLiveProvider, OpenAIRealtimeProvider, WebSocketRealtimeTransport, FastRTCRealtimeTransport (WebRTC passthrough) - speech-to-speech AI with tool calling, text injection, auto-reconnect
 
+## Key Concepts (in llms-full.txt)
+
+- **Channel-to-AI Message Flow**: How messages flow from transport channels through the inbound pipeline to AI and back via the reentry loop, with chain depth tracking
+- **Content Transcoding**: ChannelCapabilities, DefaultContentTranscoder fallback chain (Rich→Text, Media→Text, etc.), custom ContentTranscoder implementation
+- **ConversationState**: Persistent state across conversation turns — phase, active_agent_id, handoff_count, context dict for custom data, transition() for phase changes, PhaseTransition audit trail
+- **Dynamic Routing**: ConversationRouter with RoutingConditions (phases, channel_types, intents, source_channel_ids, custom callable), routing by content/origin/state
+
 ## Models
 
 - [Room & Timers](docs/api/room.md): Room model with status lifecycle (ACTIVE, PAUSED, CLOSED, ARCHIVED) and timer configuration
-- [Events & Content](docs/api/events.md): RoomEvent, TextContent, MediaContent, RichContent, CompositeContent, TemplateContent, LocationContent
+- [Events & Content](docs/api/events.md): RoomEvent, 11 content types — TextContent, RichContent, MediaContent, AudioContent, VideoContent, LocationContent, CompositeContent, TemplateContent, SystemContent, EditContent, DeleteContent
 - [Identity](docs/api/identity.md): Identity, IdentityResult, IdentityHookResult, Participant - identification pipeline
 - [Delivery](docs/api/delivery.md): InboundMessage, InboundResult, DeliveryResult, ProviderResult
-- [Channel Models](docs/api/channel-models.md): ChannelBinding, ChannelCapabilities, ChannelOutput, RateLimit, RetryPolicy
+- [Channel Models](docs/api/channel-models.md): ChannelBinding, ChannelCapabilities (media_types, max_length, supports_edit/delete/reactions), ChannelOutput, RateLimit, RetryPolicy
 - [Hook Models](docs/api/hook-models.md): HookResult, InjectedEvent, Task, Observation
 
 ## Providers
