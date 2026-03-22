@@ -274,13 +274,11 @@ class Supervisor(Orchestration):
         strategy = self._strategy
         workers = self._workers
         _lock = asyncio.Lock()
-        _last_result: str | None = None
-        _last_time: float = 0.0
+        # Per-room dedup: prevents duplicate calls within the same turn
+        _dedup_cache: dict[str, tuple[str, float]] = {}  # room_id → (result, timestamp)
         dedup_window = 30.0
 
         async def strategy_handler(name: str, arguments: dict[str, Any]) -> str:
-            nonlocal _last_result, _last_time
-
             if name != tool_name:
                 if original:
                     return await original(name, arguments)
@@ -290,16 +288,16 @@ class Supervisor(Orchestration):
             task_desc = arguments.get("task", "")
 
             async with _lock:
-                if _last_result is not None and (time.monotonic() - _last_time) < dedup_window:
-                    return _last_result
+                cached = _dedup_cache.get(rid)
+                if cached is not None and (time.monotonic() - cached[1]) < dedup_window:
+                    return cached[0]
 
                 try:
                     if strategy == WorkerStrategy.SEQUENTIAL:
                         result = await _run_sequential(kit, rid, workers, task_desc)
                     else:
                         result = await _run_parallel(kit, rid, workers, task_desc)
-                    _last_result = result
-                    _last_time = time.monotonic()
+                    _dedup_cache[rid] = (result, time.monotonic())
                     return result
                 except Exception as exc:
                     logger.exception("Strategy delegation failed")
@@ -476,7 +474,7 @@ async def _two_pass_delegate(
     results_event = RoomEvent(
         room_id=event.room_id,
         type=event.type,
-        source=EventSource(channel_id="system", channel_type="system"),
+        source=EventSource(channel_id="system", channel_type=_ChannelType.SYSTEM),
         content=TextContent(body=f"Here are the results from your workers:\n\n{results_text}"),
     )
 
@@ -519,7 +517,7 @@ async def _one_pass_delegate(
     results_event = RoomEvent(
         room_id=event.room_id,
         type=event.type,
-        source=EventSource(channel_id="system", channel_type="system"),
+        source=EventSource(channel_id="system", channel_type=_ChannelType.SYSTEM),
         content=TextContent(
             body=(
                 f"The user asked: {user_message}\n\n"

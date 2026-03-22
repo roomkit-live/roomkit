@@ -18,12 +18,15 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.models.event import TextContent
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -156,20 +159,29 @@ class Queued(DeliveryStrategy):
         self.playback_timeout = playback_timeout
         self.separator = separator
         self._queue: list[str] = []
+        self._lock = asyncio.Lock()
         self._delivering = False
 
     async def deliver(self, ctx: DeliveryContext) -> None:
-        self._queue.append(ctx.content)
+        async with self._lock:
+            self._queue.append(ctx.content)
 
-        # If already delivering, the current delivery will pick up queued items
-        if self._delivering:
-            return
+            # If already delivering, the current delivery will pick up queued items
+            if self._delivering:
+                return
 
-        self._delivering = True
+            self._delivering = True
+
         try:
             channel_id = await ctx.resolve_channel_id()
             if channel_id is None:
-                logger.warning("Queued: no transport channel in room %s", ctx.room_id)
+                logger.warning(
+                    "Queued: no transport channel in room %s, %d items dropped",
+                    ctx.room_id,
+                    len(self._queue),
+                )
+                async with self._lock:
+                    self._queue.clear()
                 return
 
             channel = ctx.kit.get_channel(channel_id)
@@ -179,8 +191,9 @@ class Queued(DeliveryStrategy):
                 )
 
             # Drain queue — collect everything accumulated while waiting
-            batched = self.separator.join(self._queue)
-            self._queue.clear()
+            async with self._lock:
+                batched = self.separator.join(self._queue)
+                self._queue.clear()
 
             batched_ctx = DeliveryContext(
                 kit=ctx.kit,
@@ -191,7 +204,8 @@ class Queued(DeliveryStrategy):
             )
             await _deliver_to_channel(batched_ctx, channel_id)
         finally:
-            self._delivering = False
+            async with self._lock:
+                self._delivering = False
 
 
 # ---------------------------------------------------------------------------
@@ -234,9 +248,6 @@ async def _deliver_to_channel(ctx: DeliveryContext, channel_id: str) -> None:
         return
 
     # All other channels: synthetic inbound message
-    from roomkit.models.delivery import InboundMessage
-    from roomkit.models.event import TextContent
-
     logger.debug("Delivering to %s in room %s", channel_id, ctx.room_id)
     await ctx.kit.process_inbound(
         InboundMessage(
@@ -251,9 +262,6 @@ async def _deliver_to_channel(ctx: DeliveryContext, channel_id: str) -> None:
 
 async def _deliver_to_realtime_voice(channel: Any, ctx: DeliveryContext) -> None:
     """Deliver to a RealtimeVoiceChannel via inject_text."""
-    from roomkit.channels.realtime_voice import RealtimeVoiceChannel
-
-    assert isinstance(channel, RealtimeVoiceChannel)
     sessions = channel.get_room_sessions(ctx.room_id)
     if not sessions:
         logger.warning("RealtimeVoice: no active sessions in room %s", ctx.room_id)
@@ -271,12 +279,11 @@ async def _wait_for_voice_idle(
     buffer: float,
 ) -> None:
     """Wait for voice channel to finish playback + buffer."""
-    import asyncio
+    from roomkit.channels.voice import VoiceChannel as _VoiceChannel
 
-    from roomkit.channels.voice import VoiceChannel
-
-    if isinstance(channel, VoiceChannel):
-        logger.debug("Waiting for playback idle in room %s", room_id)
-        await channel.wait_playback_done(room_id, timeout=timeout)
-        if buffer > 0:
-            await asyncio.sleep(buffer)
+    if not isinstance(channel, _VoiceChannel):
+        return
+    logger.debug("Waiting for playback idle in room %s", room_id)
+    await channel.wait_playback_done(room_id, timeout=timeout)
+    if buffer > 0:
+        await asyncio.sleep(buffer)

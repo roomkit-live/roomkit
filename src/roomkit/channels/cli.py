@@ -21,6 +21,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import sys
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING
@@ -159,13 +160,11 @@ class CLIChannel(Channel):
         if welcome:
             print(welcome)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         prompt = self._colorize(self._user_color, self._prompt)
 
         # Use a daemon thread so Ctrl+C doesn't hang waiting for
         # the blocked input() call during asyncio shutdown.
-        import concurrent.futures
-
         executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="cli-input",

@@ -345,9 +345,10 @@ class DelegationMixin(HelpersMixin):
             metadata=context or {},
         )
 
-        # Fire completion hooks + callbacks
+        # Fire completion hooks + callbacks (skip proactive delivery for inline —
+        # the caller handles presenting results directly)
         notify_channel = notify or handle.agent_id
-        await self._on_delegation_complete(result, notify_channel)
+        await self._on_delegation_complete(result, notify_channel, deliver=False)
         if on_complete:
             try:
                 await on_complete(result)
@@ -395,6 +396,8 @@ class DelegationMixin(HelpersMixin):
         self,
         result: DelegatedTaskResult,
         notify_channel_id: str,
+        *,
+        deliver: bool = True,
     ) -> None:
         """Handle delegation completion: inject result + fire hook + deliver."""
         # Inject result into the notified agent's system prompt
@@ -450,7 +453,9 @@ class DelegationMixin(HelpersMixin):
                 "Failed to fire ON_TASK_COMPLETED hook for task %s", result.task_id
             )
 
-        # Deliver result via kit.deliver() (uses framework default strategy)
+        # Deliver result via kit.deliver() (background path only)
+        if not deliver:
+            return
         content = result.output or result.error
         if content:
             try:
