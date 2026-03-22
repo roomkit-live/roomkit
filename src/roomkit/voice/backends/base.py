@@ -219,6 +219,11 @@ class VoiceBackend(ABC):
     # Raw audio delivery (pipeline integration)
     # -------------------------------------------------------------------------
 
+    @property
+    def audio_received_callback(self) -> AudioReceivedCallback | None:
+        """Return the currently registered audio-received callback, if any."""
+        return getattr(self, "_audio_received_callback", None)
+
     def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         """Register a callback for raw inbound audio frames.
 

@@ -73,7 +73,7 @@ class SIPRealtimeTransport(VoiceBackend):
         self._disconnect_callbacks: list[TransportDisconnectCallback] = []
 
         # Wire into the SIP backend's audio and disconnect callbacks
-        self._prev_audio_callback = backend._audio_received_callback
+        self._prev_audio_callback = backend.audio_received_callback
         backend.on_audio_received(self._on_sip_audio)
         backend.on_client_disconnected(self._on_sip_disconnect)
 

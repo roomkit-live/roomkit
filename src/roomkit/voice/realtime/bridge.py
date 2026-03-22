@@ -31,6 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from roomkit.voice.backends.base import VoiceBackend
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import RealtimeAudioVideoProvider, RealtimeVoiceProvider
 
@@ -39,7 +40,6 @@ if TYPE_CHECKING:
     from roomkit.video.pipeline.config import VideoPipelineConfig
     from roomkit.video.pipeline.encoder.base import VideoEncoderProvider
     from roomkit.video.video_frame import VideoFrame
-    from roomkit.voice.backends.base import VoiceBackend
 
 logger = logging.getLogger("roomkit.voice.realtime.bridge")
 
@@ -429,9 +429,11 @@ class RealtimeAVBridge:
         if state is None or state.closed:
             return
         # Check if backend session is still alive (SIP may have cleaned up
-        # its internal state before firing the disconnect callback)
-        backend_states = getattr(self._backend, "_session_states", None)
-        if backend_states is not None and state.backend_session.id not in backend_states:
+        # its internal state before firing the disconnect callback).
+        # Only applies to backends that override get_session() with real
+        # session tracking (base returns None for all IDs).
+        backend_tracks = type(self._backend).get_session is not VoiceBackend.get_session
+        if backend_tracks and self._backend.get_session(state.backend_session.id) is None:
             state.closed = True
             logger.info("Backend session gone, stopping bridge: %s", session.id[:8])
             self._safe_create_task(self._provider.disconnect(state.provider_session))
