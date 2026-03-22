@@ -281,3 +281,141 @@ class TestStrategyDedup:
         # Only one actual delegation happened
         assert call_count == 1
         await kit.close()
+
+
+# -- Error handling -----------------------------------------------------------
+
+
+class TestSequentialWorkerFailure:
+    async def test_sequential_continues_on_empty_output(self) -> None:
+        """If a worker returns empty, the chain continues with empty input."""
+        kit, supervisor = await _setup(
+            "sequential",
+            # First worker returns empty string — second still runs
+            [_agent("step1", ""), _agent("step2", "Step 2 done.")],
+        )
+
+        from roomkit.orchestration.handoff import _room_id_var
+
+        _room_id_var.set("room")
+        result = json.loads(await supervisor.tool_handler("delegate_workers", {"task": "Go"}))
+
+        assert result["status"] == "completed"
+        assert len(result["results"]) == 2
+        # Second worker still ran
+        assert result["results"][1]["worker"] == "step2"
+        await kit.close()
+
+    async def test_sequential_propagates_error_in_result(self) -> None:
+        """If delegation raises, the strategy handler returns an error JSON."""
+        kit, supervisor = await _setup("sequential", [_agent("w1", "ok")])
+
+        # Make delegate raise
+        async def failing_delegate(*args, **kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("boom")
+
+        kit.delegate = failing_delegate  # type: ignore[assignment]
+
+        from roomkit.orchestration.handoff import _room_id_var
+
+        _room_id_var.set("room")
+        result = json.loads(await supervisor.tool_handler("delegate_workers", {"task": "fail"}))
+
+        assert "error" in result
+        assert "boom" in result["error"]
+        await kit.close()
+
+
+class TestParallelWorkerFailure:
+    async def test_parallel_propagates_error(self) -> None:
+        """If delegation raises during parallel, error is returned."""
+        kit, supervisor = await _setup("parallel", [_agent("w1", "ok")])
+
+        async def failing_delegate(*args, **kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("parallel boom")
+
+        kit.delegate = failing_delegate  # type: ignore[assignment]
+
+        from roomkit.orchestration.handoff import _room_id_var
+
+        _room_id_var.set("room")
+        result = json.loads(await supervisor.tool_handler("delegate_workers", {"task": "fail"}))
+
+        assert "error" in result
+        assert "parallel boom" in result["error"]
+        await kit.close()
+
+
+# -- Background dedup (pending set) ------------------------------------------
+
+
+class TestBackgroundDedup:
+    async def test_pending_guard_blocks_re_delegation(self) -> None:
+        """In manual mode with wait_for_result=False, re-calling the same
+        worker returns 'already_running' instead of delegating again."""
+        supervisor = _agent("boss", "ok")
+        worker = _agent("w1", "result")
+
+        kit = RoomKit(
+            orchestration=Supervisor(
+                supervisor=supervisor,
+                workers=[worker],
+                wait_for_result=False,
+            ),
+        )
+        ws = WebSocketChannel("ws")
+        ws.register_connection("u", lambda _c, _e: None)
+        kit.register_channel(ws)
+        await kit.create_room(room_id="room")
+        await kit.attach_channel("room", "ws")
+
+        from roomkit.orchestration.handoff import _room_id_var
+
+        _room_id_var.set("room")
+
+        # First call — delegates
+        r1 = json.loads(await supervisor.tool_handler("delegate_to_w1", {"task": "first"}))
+        assert r1["status"] == "delegated"
+
+        # Second call — blocked by pending guard
+        r2 = json.loads(await supervisor.tool_handler("delegate_to_w1", {"task": "second"}))
+        assert r2["status"] == "already_running"
+
+        await kit.close()
+
+    async def test_pending_clears_after_completion(self) -> None:
+        """After a background task completes, the worker can be delegated again."""
+        supervisor = _agent("boss", "ok")
+        worker = _agent("w1", "result")
+
+        kit = RoomKit(
+            orchestration=Supervisor(
+                supervisor=supervisor,
+                workers=[worker],
+                wait_for_result=False,
+            ),
+        )
+        ws = WebSocketChannel("ws")
+        ws.register_connection("u", lambda _c, _e: None)
+        kit.register_channel(ws)
+        await kit.create_room(room_id="room")
+        await kit.attach_channel("room", "ws")
+
+        from roomkit.orchestration.handoff import _room_id_var
+
+        _room_id_var.set("room")
+
+        # First delegation
+        r1 = json.loads(await supervisor.tool_handler("delegate_to_w1", {"task": "first"}))
+        assert r1["status"] == "delegated"
+
+        # Wait for background task to complete
+        import asyncio
+
+        await asyncio.sleep(0.1)
+
+        # Now should be able to delegate again
+        r2 = json.loads(await supervisor.tool_handler("delegate_to_w1", {"task": "second"}))
+        assert r2["status"] == "delegated"
+
+        await kit.close()
