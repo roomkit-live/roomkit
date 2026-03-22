@@ -143,7 +143,7 @@ class VoiceMeUpSMSProvider(SMSProvider):
         self._mms_timeout_seconds = timeout_seconds
         self._mms_on_timeout = on_timeout
 
-    def parse_webhook(
+    def parse_inbound(
         self,
         payload: dict[str, Any],
         channel_id: str,

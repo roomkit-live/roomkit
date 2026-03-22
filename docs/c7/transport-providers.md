@@ -67,7 +67,7 @@ Each SMS provider has a webhook parser:
 from roomkit.providers.twilio.sms import parse_twilio_webhook
 from roomkit.providers.telnyx.sms import parse_telnyx_webhook
 from roomkit.providers.sinch.sms import parse_sinch_webhook
-from roomkit.providers.voicemeup.sms import parse_voicemeup_webhook
+from roomkit.providers.voicemeup.sms import VoiceMeUpSMSProvider  # use provider.parse_inbound()
 
 # Or use the universal webhook parser
 message = await kit.process_webhook(meta=request_data, channel_id="sms-twilio")

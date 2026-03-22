@@ -10,7 +10,7 @@ import asyncio
 
 from roomkit import InboundMessage, RoomKit, SMSChannel, WebSocketChannel
 from roomkit.providers.voicemeup import VoiceMeUpConfig
-from roomkit.providers.voicemeup.sms import VoiceMeUpSMSProvider, parse_voicemeup_webhook
+from roomkit.providers.voicemeup.sms import VoiceMeUpSMSProvider
 
 
 async def main() -> None:
@@ -47,7 +47,7 @@ async def main() -> None:
         "datetime_transmission": "2026-01-27T14:30:00Z",
     }
 
-    inbound: InboundMessage = parse_voicemeup_webhook(raw_webhook, channel_id="sms-main")
+    inbound: InboundMessage = provider.parse_inbound(raw_webhook, channel_id="sms-main")  # type: ignore[assignment]
     print(f"\nParsed inbound message from {inbound.sender_id}:")
     print(f"  Body: {inbound.content.body}")  # type: ignore[union-attr]
     print(f"  External ID: {inbound.external_id}")

@@ -10,13 +10,7 @@ import pytest
 
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import MediaContent, TextContent
-from roomkit.providers.voicemeup import (
-    VoiceMeUpConfig,
-    VoiceMeUpSMSProvider,
-    configure_voicemeup_mms,
-    parse_voicemeup_webhook,
-)
-from roomkit.providers.voicemeup.sms import _mms_buffer
+from roomkit.providers.voicemeup import VoiceMeUpConfig, VoiceMeUpSMSProvider
 from tests.conftest import make_event, make_media_event
 
 
@@ -75,6 +69,15 @@ class _MockTransport(httpx.AsyncBaseTransport):
 class _TimeoutTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("timed out")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_provider() -> VoiceMeUpSMSProvider:
+    return VoiceMeUpSMSProvider(_config())
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +227,9 @@ class TestVoiceMeUpSMSProvider:
         assert "message=" not in body_str  # No message param when no caption
 
 
-class TestParseWebhook:
-    def test_parse_webhook_inbound(self) -> None:
+class TestParseInbound:
+    def test_parse_inbound_sms(self) -> None:
+        provider = _make_provider()
         payload = {
             "message": "Hello from user",
             "source_number": "+15145551111",
@@ -234,7 +238,7 @@ class TestParseWebhook:
             "sms_hash": "hash-abc",
             "datetime_transmission": "2026-01-27T10:30:00Z",
         }
-        msg = parse_voicemeup_webhook(payload, channel_id="sms-main")
+        msg = provider.parse_inbound(payload, channel_id="sms-main")
 
         assert msg is not None
         assert msg.channel_id == "sms-main"
@@ -247,8 +251,9 @@ class TestParseWebhook:
         assert msg.metadata["direction"] == "inbound"
         assert msg.metadata["has_attachment"] is False
 
-    def test_parse_webhook_with_attachment(self) -> None:
+    def test_parse_inbound_with_attachment(self) -> None:
         """Real VoiceMeUp MMS payload format."""
+        provider = _make_provider()
         payload = {
             "sms_log_id": "5236238",
             "sms_hash": "ce650cb8-1c2d-a751-d397-31b901ec4efd",
@@ -267,7 +272,7 @@ class TestParseWebhook:
             "transmission_status": "completed",
             "datetime_transmission": "2026-01-28 10:29:02",
         }
-        msg = parse_voicemeup_webhook(payload, channel_id="sms-main")
+        msg = provider.parse_inbound(payload, channel_id="sms-main")
 
         assert msg is not None
         assert isinstance(msg.content, MediaContent)
@@ -276,7 +281,8 @@ class TestParseWebhook:
         assert msg.content.caption is None  # Empty message
         assert msg.metadata["has_attachment"] is True
 
-    def test_parse_webhook_with_attachment_and_caption(self) -> None:
+    def test_parse_inbound_with_attachment_and_caption(self) -> None:
+        provider = _make_provider()
         payload = {
             "message": "Look at this",
             "source_number": "+15145551111",
@@ -286,7 +292,7 @@ class TestParseWebhook:
             "attachment": "https://cdn.voicemeup.com/img.jpg",
             "attachment_mime_type": "image/jpeg",
         }
-        msg = parse_voicemeup_webhook(payload, channel_id="sms-main")
+        msg = provider.parse_inbound(payload, channel_id="sms-main")
 
         assert msg is not None
         assert isinstance(msg.content, MediaContent)
@@ -294,8 +300,9 @@ class TestParseWebhook:
         assert msg.content.caption == "Look at this"
         assert msg.metadata["has_attachment"] is True
 
-    def test_parse_webhook_legacy_attachment_url_field(self) -> None:
+    def test_parse_inbound_legacy_attachment_url_field(self) -> None:
         """Backwards compatibility with attachment_url field name."""
+        provider = _make_provider()
         payload = {
             "message": "",
             "source_number": "+15145551111",
@@ -304,7 +311,7 @@ class TestParseWebhook:
             "attachment_url": "https://cdn.voicemeup.com/img.jpg",
             "attachment_type": "image/jpeg",
         }
-        msg = parse_voicemeup_webhook(payload, channel_id="sms-main")
+        msg = provider.parse_inbound(payload, channel_id="sms-main")
 
         assert msg is not None
         assert isinstance(msg.content, MediaContent)
@@ -314,11 +321,6 @@ class TestParseWebhook:
 
 class TestMMSAggregation:
     """Tests for automatic MMS webhook aggregation."""
-
-    @pytest.fixture(autouse=True)
-    def clear_buffer(self) -> None:
-        """Clear MMS buffer before each test."""
-        _mms_buffer.clear()
 
     def _make_mms_html_payload(
         self,
@@ -380,8 +382,9 @@ class TestMMSAggregation:
 
     def test_regular_sms_passes_through(self) -> None:
         """Regular SMS (no attachment) should return immediately."""
+        provider = _make_provider()
         payload = self._make_sms_payload("Hello world")
-        result = parse_voicemeup_webhook(payload, channel_id="sms")
+        result = provider.parse_inbound(payload, channel_id="sms")
 
         assert result is not None
         assert isinstance(result.content, TextContent)
@@ -389,36 +392,39 @@ class TestMMSAggregation:
 
     def test_mms_html_buffers(self) -> None:
         """First MMS webhook (.mms.html) should buffer and return None."""
+        provider = _make_provider()
         payload = self._make_mms_html_payload(text="Check this image")
-        result = parse_voicemeup_webhook(payload, channel_id="sms")
+        result = provider.parse_inbound(payload, channel_id="sms")
 
         assert result is None
-        assert len(_mms_buffer) == 1
+        assert len(provider._mms_buffer) == 1
 
     def test_mms_merge_text_and_image(self) -> None:
         """Second MMS webhook should merge with buffered text."""
+        provider = _make_provider()
         # First webhook: text + .mms.html
         html_payload = self._make_mms_html_payload(text="Look at this photo!")
-        result1 = parse_voicemeup_webhook(html_payload, channel_id="sms")
+        result1 = provider.parse_inbound(html_payload, channel_id="sms")
         assert result1 is None
 
         # Second webhook: image (same source/dest/timestamp)
         image_payload = self._make_mms_image_payload()
-        result2 = parse_voicemeup_webhook(image_payload, channel_id="sms")
+        result2 = provider.parse_inbound(image_payload, channel_id="sms")
 
         assert result2 is not None
         assert isinstance(result2.content, MediaContent)
         assert result2.content.url == "https://clients.voicemeup.com/file/249fad7f.mms.jpg"
         assert result2.content.caption == "Look at this photo!"
-        assert len(_mms_buffer) == 0  # Cleared after merge
+        assert len(provider._mms_buffer) == 0  # Cleared after merge
 
     def test_mms_merge_combines_sms_hash(self) -> None:
         """Merged MMS should combine both sms_hash values."""
+        provider = _make_provider()
         html_payload = self._make_mms_html_payload()
-        parse_voicemeup_webhook(html_payload, channel_id="sms")
+        provider.parse_inbound(html_payload, channel_id="sms")
 
         image_payload = self._make_mms_image_payload()
-        result = parse_voicemeup_webhook(image_payload, channel_id="sms")
+        result = provider.parse_inbound(image_payload, channel_id="sms")
 
         assert result is not None
         # Combined hash for traceability
@@ -427,31 +433,33 @@ class TestMMSAggregation:
 
     def test_mms_different_sender_no_merge(self) -> None:
         """MMS from different sender should not merge."""
+        provider = _make_provider()
         # First webhook from sender A
         html_payload = self._make_mms_html_payload(source="14181111111")
-        parse_voicemeup_webhook(html_payload, channel_id="sms")
+        provider.parse_inbound(html_payload, channel_id="sms")
 
         # Second webhook from sender B (different source)
         image_payload = self._make_mms_image_payload(source="14182222222")
-        result = parse_voicemeup_webhook(image_payload, channel_id="sms")
+        result = provider.parse_inbound(image_payload, channel_id="sms")
 
         # Should NOT merge — image becomes standalone MMS
         assert result is not None
         assert isinstance(result.content, MediaContent)
         assert result.content.caption is None  # No text merged
-        assert len(_mms_buffer) == 1  # First still pending
+        assert len(provider._mms_buffer) == 1  # First still pending
 
     def test_mms_different_timestamp_no_merge(self) -> None:
         """MMS with different timestamp should not merge."""
+        provider = _make_provider()
         html_payload = self._make_mms_html_payload(timestamp="2026-01-28 13:00:14")
-        parse_voicemeup_webhook(html_payload, channel_id="sms")
+        provider.parse_inbound(html_payload, channel_id="sms")
 
         image_payload = self._make_mms_image_payload(timestamp="2026-01-28 13:05:00")
-        result = parse_voicemeup_webhook(image_payload, channel_id="sms")
+        result = provider.parse_inbound(image_payload, channel_id="sms")
 
         assert result is not None
         assert result.content.caption is None  # No merge
-        assert len(_mms_buffer) == 1
+        assert len(provider._mms_buffer) == 1
 
     @pytest.mark.asyncio
     async def test_timeout_emits_text_only(self) -> None:
@@ -461,10 +469,11 @@ class TestMMSAggregation:
         async def on_timeout(msg: InboundMessage) -> None:
             received.append(msg)
 
-        configure_voicemeup_mms(timeout_seconds=0.1, on_timeout=on_timeout)
+        provider = _make_provider()
+        provider.configure_mms(timeout_seconds=0.1, on_timeout=on_timeout)
 
         html_payload = self._make_mms_html_payload(text="Where is my image?")
-        result = parse_voicemeup_webhook(html_payload, channel_id="sms")
+        result = provider.parse_inbound(html_payload, channel_id="sms")
         assert result is None
 
         # Wait for timeout
@@ -473,15 +482,13 @@ class TestMMSAggregation:
         assert len(received) == 1
         assert isinstance(received[0].content, TextContent)
         assert received[0].content.body == "Where is my image?"
-        assert len(_mms_buffer) == 0
-
-        # Reset config
-        configure_voicemeup_mms(timeout_seconds=5.0, on_timeout=None)
+        assert len(provider._mms_buffer) == 0
 
     def test_standalone_mms_image_passes_through(self) -> None:
         """MMS image without prior .mms.html should pass through."""
+        provider = _make_provider()
         payload = self._make_mms_image_payload()
-        result = parse_voicemeup_webhook(payload, channel_id="sms")
+        result = provider.parse_inbound(payload, channel_id="sms")
 
         assert result is not None
         assert isinstance(result.content, MediaContent)
