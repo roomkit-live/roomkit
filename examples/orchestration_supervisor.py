@@ -1,11 +1,12 @@
-"""Supervisor orchestration strategy example.
+"""Supervisor orchestration — manual delegation mode.
 
-Demonstrates a supervisor agent that delegates tasks to worker agents
-running in child rooms. The supervisor handles all user interaction,
-while workers execute tasks in the background and report results.
+Demonstrates the default Supervisor mode (no ``strategy``) where
+per-worker ``delegate_to_<id>`` tools are injected and the AI
+decides when to call them.
 
-Uses the ``Supervisor`` orchestration strategy which automatically
-injects ``delegate_to_<worker>`` tools and manages child rooms.
+Compare with:
+- ``orchestration_content_workflow.py`` — ``strategy="sequential"``
+- ``orchestration_parallel_tasks.py`` — ``strategy="parallel"``
 
 Run with:
     uv run python examples/orchestration_supervisor.py
@@ -17,7 +18,6 @@ import asyncio
 import json
 import logging
 
-# Suppress chain-depth warnings from AI-to-AI reentry (expected in multi-agent setups)
 logging.getLogger("roomkit").setLevel(logging.ERROR)
 
 from roomkit import Agent, InboundMessage, RoomKit, Supervisor, TextContent, WebSocketChannel
@@ -31,7 +31,7 @@ from roomkit.providers.ai.mock import MockAIProvider
 
 
 def find_reply(events: list[RoomEvent], agent_id: str, start: int = 0) -> RoomEvent | None:
-    """Find the first event from a specific agent after `start` index."""
+    """Find the first event from a specific agent after ``start`` index."""
     for event in events[start:]:
         if event.source.channel_id == agent_id:
             return event
@@ -42,7 +42,7 @@ def find_reply(events: list[RoomEvent], agent_id: str, start: int = 0) -> RoomEv
 
 
 async def main() -> None:
-    # Supervisor — handles all user interaction
+    # Supervisor — talks to the user
     manager = Agent(
         "agent-manager",
         provider=MockAIProvider(
@@ -52,17 +52,15 @@ async def main() -> None:
             ]
         ),
         role="Project manager",
-        description="Coordinates work by delegating to specialist workers",
-        system_prompt="You manage tasks by delegating to workers.",
+        system_prompt="You coordinate work across your team.",
         memory=SlidingWindowMemory(max_events=50),
     )
 
-    # Workers — run tasks in isolated child rooms (not attached to user room)
+    # Workers — run in isolated child rooms
     researcher = Agent(
         "agent-researcher",
         provider=MockAIProvider(responses=["Research complete: found 3 key findings."]),
         role="Researcher",
-        description="Researches topics and provides detailed analysis",
         system_prompt="You research topics thoroughly.",
         memory=SlidingWindowMemory(max_events=50),
     )
@@ -70,13 +68,11 @@ async def main() -> None:
         "agent-coder",
         provider=MockAIProvider(responses=["Implementation complete: added the feature."]),
         role="Software engineer",
-        description="Writes and reviews code",
         system_prompt="You write clean, tested code.",
         memory=SlidingWindowMemory(max_events=50),
     )
 
-    # Supervisor strategy: manager talks to user, delegates to workers.
-    # Workers are registered on the kit but NOT attached to the user's room.
+    # No strategy — per-worker tools are injected, AI decides when to call them.
     kit = RoomKit(
         orchestration=Supervisor(
             supervisor=manager,
@@ -94,7 +90,6 @@ async def main() -> None:
     ws.register_connection("user", on_receive)
     kit.register_channel(ws)
 
-    # Create room — only the supervisor is attached, workers stay external
     await kit.create_room(room_id="project-room")
     await kit.attach_channel("project-room", "ws-user")
 
@@ -113,16 +108,17 @@ async def main() -> None:
     reply = find_reply(inbox, "agent-manager", mark)
     print(f"  Manager: {reply.content.body}")  # type: ignore[union-attr]
 
-    # 2. Manager delegates to researcher
+    # 2. Manager delegates to researcher (inline by default)
     print("\n=== Manager delegates to researcher ===")
     _room_id_var.set("project-room")
     result = await manager.tool_handler(
         "delegate_to_agent-researcher",
         {"task": "Research the latest trends in AI for 2025."},
     )
-
     parsed = json.loads(result)
-    print(f"  Delegation result: {parsed}")
+    print(f"  Status: {parsed['status']}")
+    print(f"  Worker: {parsed['worker']}")
+    print(f"  Result: {parsed['result'][:80]}...")
 
     # 3. Show that workers are NOT in the main room
     print("\n=== Room bindings ===")
@@ -130,11 +126,10 @@ async def main() -> None:
     print(f"  Channels in room: {[b.channel_id for b in bindings]}")
     print("  (Workers run in child rooms, not the main room)")
 
-    # 4. Show delegation tool availability
-    print("\n=== Supervisor's delegation tools ===")
+    # 4. Show injected per-worker tools
+    print("\n=== Supervisor's tools ===")
     for tool in manager._injected_tools:
-        print(f"  Tool: {tool.name}")
-        print(f"    Description: {tool.description[:60]}...")
+        print(f"  {tool.name}")
 
     # 5. Show conversation state
     print("\n=== Conversation State ===")
@@ -143,9 +138,7 @@ async def main() -> None:
     print(f"  Phase: {state.phase}")
     print(f"  Active agent: {state.active_agent_id}")
 
-    # Cleanup
     await kit.close()
-
     print("\nDone!")
 
 
