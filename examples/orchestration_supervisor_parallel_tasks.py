@@ -85,7 +85,7 @@ async def main() -> None:
             supervisor=supervisor,
             workers=[technical, business],
             strategy="parallel",
-            auto_delegate=True,
+            auto_delegate=False,
         ),
     )
 
