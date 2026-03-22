@@ -1,13 +1,14 @@
 """Voice parallel analysis workflow with Grok Realtime.
 
-Same orchestration as ``orchestration_supervisor_parallel_tasks.py`` but
-using local microphone/speakers with xAI Grok Realtime instead of CLI.
+Same orchestration pattern as the CLI parallel example but using local
+microphone/speakers with xAI Grok Realtime for voice.
 
-The supervisor speaks to the user via Grok speech-to-speech. Workers
-(technical + business analysts) run as text agents with Anthropic Haiku
-in child rooms. Results are presented via voice.
+The supervisor speaks via Grok speech-to-speech. Workers (technical +
+business analysts) run as text agents with Anthropic Haiku in child
+rooms. When the user asks for analysis, a hook triggers delegation
+and injects results back into the voice session.
 
-    Human (voice) → Supervisor (Grok) → [Technical | Business] → Supervisor → Human (voice)
+    Human (voice) → Grok → [Technical | Business] → Grok → Human (voice)
 
 Requirements:
     pip install roomkit[local-audio] websockets aec-audio-processing
@@ -27,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 
 from shared.env import require_env
@@ -37,7 +39,7 @@ from roomkit import (
     HookTrigger,
     RealtimeVoiceChannel,
     RoomKit,
-    Supervisor,
+    WaitForIdle,
 )
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.context import RoomContext
@@ -77,26 +79,17 @@ async def main() -> None:
         pipeline=pipeline,
     )
 
-    # --- Grok Realtime provider (speech-to-speech for supervisor) -------------
+    # --- Grok Realtime provider (speech-to-speech) ---------------------------
 
     xai_config = XAIRealtimeConfig(
         api_key=env["XAI_API_KEY"],
-        model=env.get("XAI_MODEL", "grok-2-audio"),
-        voice="eve",
+        model=os.environ.get("XAI_MODEL", "grok-2-audio"),
+        voice=os.environ.get("XAI_VOICE", "eve"),
     )
     xai_provider = XAIRealtimeProvider(xai_config)
 
-    # --- Agents --------------------------------------------------------------
+    # --- Workers (text agents, run in child rooms) ---------------------------
 
-    # Supervisor — config-only agent (no AI provider, Grok handles speech)
-    supervisor = Agent(
-        "agent-supervisor",
-        role="Project supervisor",
-        system_prompt="You coordinate analysis. Present a combined summary to the user.",
-        voice="eve",
-    )
-
-    # Workers — text agents with Anthropic Haiku (run in child rooms)
     haiku_config = AnthropicConfig(
         api_key=env["ANTHROPIC_API_KEY"],
         model="claude-haiku-4-5-20251001",
@@ -126,47 +119,135 @@ async def main() -> None:
         memory=SlidingWindowMemory(max_events=50),
     )
 
-    # --- Supervisor setup ----------------------------------------------------
+    # --- Kit setup (no Supervisor orchestration — hook-based) ----------------
 
-    kit = RoomKit(
-        orchestration=Supervisor(
-            supervisor=supervisor,
-            workers=[technical, business],
-            strategy="parallel",
-            auto_delegate=True,
-        ),
-    )
+    kit = RoomKit(delivery_strategy=WaitForIdle(buffer=15.0))
 
-    # --- Voice channel -------------------------------------------------------
+    # Register workers on the kit (not attached to room)
+    kit.register_channel(technical)
+    kit.register_channel(business)
 
+    # Voice channel
     voice = RealtimeVoiceChannel(
         "voice",
         provider=xai_provider,
         transport=transport,
-        system_prompt=supervisor._system_prompt or "",
+        system_prompt=(
+            "You are a project supervisor. When the user asks for analysis, "
+            "tell them you're dispatching your analysts and the results will "
+            "be ready shortly. You can continue chatting while they work."
+        ),
         voice=xai_config.voice,
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
     )
     kit.register_channel(voice)
 
+    # --- Parallel delegation via hooks ---------------------------------------
+    #
+    # When Grok transcribes the user's speech, we check if it's an analysis
+    # request and trigger parallel delegation. Results are injected back
+    # into the voice session via kit.deliver().
+
+    analysis_keywords = {"analyze", "analyse", "analysis", "research", "investigate"}
+
+    @kit.hook(HookTrigger.ON_TRANSCRIPTION, execution=HookExecution.ASYNC)
+    async def log_transcription(event: RoomEvent, ctx: RoomContext) -> None:
+        """Log all transcriptions so the conversation is visible."""
+        text = getattr(event, "text", "")
+        role = getattr(event, "role", "?")
+        if text.strip():
+            label = "You" if role == "user" else "Grok"
+            print(f"\n\033[{'33' if role == 'user' else '36'}m{label}:\033[0m {text}")
+
+    async def _extract_topic(text: str) -> str:
+        """Use Haiku to extract the topic from conversational speech."""
+        from roomkit.providers.ai.base import AIContext, AIMessage
+        from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+        provider = AnthropicAIProvider(haiku_config)
+        try:
+            response = await provider.generate(
+                AIContext(
+                    system_prompt=(
+                        "Extract the core topic from the user's request. "
+                        "Output only the topic name, nothing else."
+                    ),
+                    messages=[AIMessage(role="user", content=text)],
+                )
+            )
+            return response.content.strip()
+        finally:
+            await provider.close()
+
+    @kit.hook(HookTrigger.ON_TRANSCRIPTION, execution=HookExecution.ASYNC)
+    async def on_transcription(event: RoomEvent, ctx: RoomContext) -> None:
+        # ON_TRANSCRIPTION receives RealtimeTranscriptionEvent, not RoomEvent
+        text = getattr(event, "text", "").lower()
+        role = getattr(event, "role", "user")
+        if role != "user" or not any(kw in text for kw in analysis_keywords):
+            return
+
+        session = getattr(event, "session", None)
+        room_id = session.room_id if session else "voice-room"
+        logger.info("[hook] Analysis request detected: %s", text[:80])
+
+        # Extract clean topic from conversational speech
+        topic = await _extract_topic(text)
+        logger.info("[hook] Extracted topic: %s", topic)
+
+        # Run both workers in parallel with the clean topic
+        async def delegate_one(agent: Agent) -> dict[str, str]:
+            delegated = await kit.delegate(
+                room_id,
+                agent.channel_id,
+                topic,
+                wait=True,
+            )
+            output = ""
+            if delegated.result:
+                output = delegated.result.output or delegated.result.error or ""
+            return {"worker": agent.channel_id, "output": output}
+
+        results = await asyncio.gather(
+            delegate_one(technical),
+            delegate_one(business),
+        )
+
+        # Log worker outputs
+        for r in results:
+            worker = r["worker"].removeprefix("agent-")
+            preview = r["output"][:120] + "..." if len(r["output"]) > 120 else r["output"]
+            logger.info("[result] %s: %s", worker, preview)
+
+        # Format and deliver results back to the voice session
+        parts = []
+        for r in results:
+            worker = r["worker"].removeprefix("agent-")
+            parts.append(f"{worker}: {r['output']}")
+
+        combined = "\n\n".join(parts)
+        logger.info("[hook] Both analysts completed, delivering results")
+
+        await kit.deliver(
+            room_id,
+            f"Analysis results are ready. Here's what the analysts found:\n\n{combined}",
+            channel_id="voice",
+        )
+
     # --- Observability hooks -------------------------------------------------
 
     @kit.hook(HookTrigger.ON_TASK_DELEGATED, execution=HookExecution.ASYNC)
     async def on_delegated(event: RoomEvent, ctx: RoomContext) -> None:
-        m = event.metadata
-        agent = m.get("agent_id", "?")
-        task_id = m.get("task_id", "?")
-        task_input = m.get("task_input", "")
-        preview = task_input[:80] + "..." if len(task_input) > 80 else task_input
-        logger.info("[delegated] %s (task %s) input: %s", agent, task_id, preview)
+        agent = event.metadata.get("agent_id", "?")
+        task_id = event.metadata.get("task_id", "?")
+        logger.info("[delegated] %s (task %s)", agent, task_id)
 
     @kit.hook(HookTrigger.ON_TASK_COMPLETED, execution=HookExecution.ASYNC)
     async def on_completed(event: RoomEvent, ctx: RoomContext) -> None:
-        m = event.metadata
-        agent = m.get("agent_id", "?")
-        status = m.get("task_status", "?")
-        duration = m.get("duration_ms", 0)
+        agent = event.metadata.get("agent_id", "?")
+        status = event.metadata.get("task_status", "?")
+        duration = event.metadata.get("duration_ms", 0)
         logger.info("[completed] %s (%s, %.0fms)", agent, status, duration)
 
     # --- Room + session ------------------------------------------------------

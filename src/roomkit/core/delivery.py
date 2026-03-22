@@ -133,7 +133,13 @@ class WaitForIdle(DeliveryStrategy):
 
         channel = ctx.kit.get_channel(channel_id)
         if channel is not None and channel.channel_type in _VOICE_TYPES:
-            await _wait_for_voice_idle(channel, ctx.room_id, self.playback_timeout, self.buffer)
+            # VoiceChannel: wait for playback + buffer
+            # RealtimeVoiceChannel: no playback tracking, apply buffer as delay
+            waited = await _wait_for_voice_idle(
+                channel, ctx.room_id, self.playback_timeout, self.buffer
+            )
+            if not waited and self.buffer > 0:
+                await asyncio.sleep(self.buffer)
 
         await _deliver_to_channel(ctx, channel_id)
 
@@ -277,13 +283,18 @@ async def _wait_for_voice_idle(
     room_id: str,
     timeout: float,
     buffer: float,
-) -> None:
-    """Wait for voice channel to finish playback + buffer."""
+) -> bool:
+    """Wait for voice channel to finish playback + buffer.
+
+    Returns True if the channel was a VoiceChannel and we waited,
+    False if the channel type has no playback tracking (e.g. RealtimeVoice).
+    """
     from roomkit.channels.voice import VoiceChannel as _VoiceChannel
 
     if not isinstance(channel, _VoiceChannel):
-        return
+        return False
     logger.debug("Waiting for playback idle in room %s", room_id)
     await channel.wait_playback_done(room_id, timeout=timeout)
     if buffer > 0:
         await asyncio.sleep(buffer)
+    return True
