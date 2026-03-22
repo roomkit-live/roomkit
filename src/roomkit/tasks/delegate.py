@@ -18,8 +18,8 @@ from roomkit.tasks.cache import CompletedTaskCache
 if TYPE_CHECKING:
     from roomkit.channels.ai import AIChannel
     from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+    from roomkit.core.delivery import DeliveryStrategy
     from roomkit.core.framework import RoomKit
-    from roomkit.tasks.delivery import BackgroundTaskDeliveryStrategy
 
 logger = logging.getLogger("roomkit.tasks")
 
@@ -132,14 +132,16 @@ class DelegateHandler:
         *,
         notify: str | None = None,
         default_share_channels: list[str] | None = None,
-        delivery_strategy: BackgroundTaskDeliveryStrategy | None = None,
+        delivery_strategy: DeliveryStrategy | None = None,
         cache: CompletedTaskCache | None = None,
         serialize_per_room: bool = False,
     ) -> None:
         self._kit = kit
         self._notify = notify
         self._default_share_channels = default_share_channels or []
-        self._delivery_strategy = delivery_strategy
+        # Set the delivery strategy on the framework if provided
+        if delivery_strategy is not None:
+            kit._delivery_strategy = delivery_strategy  # type: ignore[attr-defined]
         self._cache = cache
         self._serialize_per_room = serialize_per_room
         self._room_locks: dict[str, asyncio.Lock] = {}
@@ -211,7 +213,6 @@ class DelegateHandler:
             context=context,
             share_channels=share_channels,
             notify=self._notify or calling_agent_id,
-            delivery_strategy=self._delivery_strategy,
         )
 
         result = {
