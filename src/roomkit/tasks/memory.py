@@ -8,10 +8,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
-from roomkit.models.channel import ChannelBinding
-from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelType, EventType, TaskStatus
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.enums import TaskStatus
 from roomkit.tasks.base import OnCompleteCallback, TaskRunner
 from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
 
@@ -104,7 +101,10 @@ class InMemoryTaskRunner(TaskRunner):
                         }
                     )
                 )
-                agent_response = await self._run_agent(kit, task)
+                # Lazy import to avoid circular dependency
+                from roomkit.core.mixins.delegation import run_agent_in_child_room
+
+                agent_response = await run_agent_in_child_room(kit, task.child_room_id, task.task)
         except Exception as exc:
             logger.exception("Task %s failed: %s", task.id, exc)
             error = str(exc)
@@ -154,69 +154,3 @@ class InMemoryTaskRunner(TaskRunner):
 
         self._tasks.pop(task.id, None)
         self._handles.pop(task.id, None)
-
-    async def _run_agent(self, kit: RoomKit, task: DelegatedTask) -> str | None:
-        """Create a task event in the child room and collect the agent response."""
-        child_room_id = task.child_room_id
-        room = await kit.get_room(child_room_id)
-        bindings = await kit.store.list_bindings(child_room_id)
-
-        # Create the task event
-        task_event = RoomEvent(
-            room_id=child_room_id,
-            type=EventType.MESSAGE,
-            source=EventSource(
-                channel_id="system",
-                channel_type=ChannelType.SYSTEM,
-            ),
-            content=TextContent(body=task.task),
-        )
-        task_event = await kit.store.add_event_auto_index(child_room_id, task_event)
-
-        # Build context AFTER storing the task event so the agent's memory
-        # provider can see it in recent_events (fixes empty-messages error).
-        recent = await kit.store.list_events(child_room_id, offset=0, limit=50)
-        context = RoomContext(room=room, bindings=bindings, recent_events=recent)
-
-        # Broadcast to the child room — the agent picks it up
-        router = kit._get_router()
-        source_binding = ChannelBinding(
-            channel_id="system",
-            room_id=child_room_id,
-            channel_type=ChannelType.SYSTEM,
-        )
-        result = await router.broadcast(task_event, source_binding, context)
-
-        # Collect the agent's response — check synchronous response_events
-        # first, then fall back to consuming streaming responses (providers
-        # like Gemini return a lazy stream that must be drained).
-        agent_response: str | None = None
-        for _channel_id, output in result.outputs.items():
-            if output.responded and output.response_events:
-                for resp_event in output.response_events:
-                    if isinstance(resp_event.content, TextContent):
-                        agent_response = resp_event.content.body
-                        await kit.store.add_event_auto_index(child_room_id, resp_event)
-
-        if agent_response is None and result.streaming_responses:
-            for sr in result.streaming_responses:
-                parts: list[str] = []
-                async for delta in sr.stream:
-                    parts.append(delta)
-                text = "".join(parts)
-                if text:
-                    agent_response = text
-                    resp_event = RoomEvent(
-                        room_id=child_room_id,
-                        type=EventType.MESSAGE,
-                        source=EventSource(
-                            channel_id=sr.source_channel_id,
-                            channel_type=sr.source_channel_type,
-                        ),
-                        content=TextContent(body=text),
-                        chain_depth=task_event.chain_depth + 1,
-                    )
-                    await kit.store.add_event_auto_index(child_room_id, resp_event)
-                    break  # use the first non-empty streaming response
-
-        return agent_response

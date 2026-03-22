@@ -6,8 +6,10 @@ Workers are registered on the kit but NOT attached to the parent room.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core.hooks import HookRegistration
@@ -27,6 +29,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.orchestration.strategies.supervisor")
 
 
+class WorkerStrategy(StrEnum):
+    """How workers are executed when delegated to."""
+
+    SEQUENTIAL = "sequential"
+    PARALLEL = "parallel"
+
+
 class Supervisor(Orchestration):
     """Supervisor orchestration strategy.
 
@@ -34,18 +43,27 @@ class Supervisor(Orchestration):
     on the kit (so ``delegate()`` can find them) but are NOT attached
     to the parent room — they run in child rooms.
 
-    The supervisor receives ``delegate_to_<worker>`` tools that wrap
-    ``kit.delegate()``.
+    Examples::
 
-    Example::
-
-        kit = RoomKit(
-            orchestration=Supervisor(
-                supervisor=manager,
-                workers=[researcher, coder],
-            ),
+        # Sequential: researcher → writer (chained)
+        Supervisor(
+            supervisor=coordinator,
+            workers=[researcher, writer],
+            strategy="sequential",
         )
-        room = await kit.create_room()
+
+        # Parallel: technical + business (fan-out)
+        Supervisor(
+            supervisor=coordinator,
+            workers=[technical, business],
+            strategy="parallel",
+        )
+
+        # Manual: AI decides via per-worker tools (default)
+        Supervisor(
+            supervisor=coordinator,
+            workers=[researcher, writer],
+        )
     """
 
     def __init__(
@@ -53,8 +71,8 @@ class Supervisor(Orchestration):
         supervisor: Agent,
         workers: list[Agent],
         *,
-        wait_for_result: bool = False,
-        result_timeout: float = 120.0,
+        strategy: WorkerStrategy | str | None = None,
+        wait_for_result: bool = True,
     ) -> None:
         """Initialise the supervisor strategy.
 
@@ -62,18 +80,26 @@ class Supervisor(Orchestration):
             supervisor: The agent that handles user interaction and
                 delegates tasks.
             workers: Agents that run delegated tasks in child rooms.
-            wait_for_result: If ``True``, delegation tool calls block
-                until the worker completes and return the worker's
-                output directly.  If ``False`` (default), the tool
-                returns immediately and the result is injected into
-                the supervisor's system prompt later.
-            result_timeout: Maximum seconds to wait for a worker result
-                when *wait_for_result* is ``True`` (default 120s).
+            strategy: Deterministic execution pattern for workers.
+
+                - ``"sequential"``: workers run in order, each receiving
+                  the previous worker's output. One ``delegate_workers``
+                  tool is injected.
+                - ``"parallel"``: all workers run concurrently on the
+                  same task. One ``delegate_workers`` tool is injected.
+                - ``None`` (default): per-worker ``delegate_to_<id>``
+                  tools are injected and the AI decides when to call
+                  them.
+
+            wait_for_result: When *strategy* is ``None``, controls
+                whether delegation runs inline (``True``, default) or
+                in the background (``False``).  Ignored when *strategy*
+                is set (always inline).
         """
         self._supervisor = supervisor
         self._workers = list(workers)
+        self._strategy = WorkerStrategy(strategy) if strategy else None
         self._wait_for_result = wait_for_result
-        self._result_timeout = result_timeout
 
     def agents(self) -> list[Agent]:
         """Return only the supervisor — workers are not attached to the room."""
@@ -102,8 +128,11 @@ class Supervisor(Orchestration):
             if worker.channel_id not in kit.channels:
                 kit.register_channel(worker)
 
-        # Inject delegation tools into supervisor
-        self._inject_delegation_tools(kit, room_id)
+        # Inject tools based on strategy
+        if self._strategy is not None:
+            self._inject_strategy_tool(kit, room_id)
+        else:
+            self._inject_per_worker_tools(kit, room_id)
 
         # Set initial conversation state
         room = await kit.get_room(room_id)
@@ -114,15 +143,85 @@ class Supervisor(Orchestration):
         room = set_conversation_state(room, initial_state)
         await kit.store.update_room(room)
 
-    def _inject_delegation_tools(self, kit: RoomKit, room_id: str) -> None:
-        """Create and inject per-worker delegation tools."""
+    # -- Strategy-based tool (sequential / parallel) --------------------------
+
+    def _inject_strategy_tool(self, kit: RoomKit, room_id: str) -> None:
+        """Inject a single ``delegate_workers`` tool for deterministic execution."""
+        from roomkit.orchestration.handoff import _room_id_var
+
+        tool_name = "delegate_workers"
+
+        if any(t.name == tool_name for t in self._supervisor._injected_tools):
+            return
+
+        worker_names = ", ".join(w.channel_id for w in self._workers)
+        mode = self._strategy
+        tool = AITool(
+            name=tool_name,
+            description=(
+                f"Delegate a task to workers ({worker_names}). "
+                f"Workers run {mode}. Call this tool with the task description."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": "Description of the task to delegate",
+                    },
+                },
+                "required": ["task"],
+            },
+        )
+        self._supervisor._injected_tools.append(tool)
+
+        original = self._supervisor.tool_handler
+        strategy = self._strategy
+        workers = self._workers
+        # Lock prevents concurrent duplicate calls when asyncio.gather
+        # runs multiple tool calls from the same AI response in parallel.
+        _lock = asyncio.Lock()
+        _cached: str | None = None
+
+        async def strategy_handler(name: str, arguments: dict[str, Any]) -> str:
+            nonlocal _cached
+
+            if name != tool_name:
+                if original:
+                    return await original(name, arguments)
+                return json.dumps({"error": f"Unknown tool: {name}"})
+
+            async with _lock:
+                # Return cached result if already ran in this turn
+                if _cached is not None:
+                    return _cached
+
+                rid = _room_id_var.get() or room_id
+                task_desc = arguments.get("task", "")
+
+                try:
+                    if strategy == WorkerStrategy.SEQUENTIAL:
+                        result = await _run_sequential(kit, rid, workers, task_desc)
+                    else:
+                        result = await _run_parallel(kit, rid, workers, task_desc)
+                    _cached = result
+                    return result
+                except Exception as exc:
+                    logger.exception("Strategy delegation failed")
+                    return json.dumps({"error": str(exc)})
+
+        self._supervisor.tool_handler = strategy_handler
+
+    # -- Per-worker tools (manual mode) ---------------------------------------
+
+    def _inject_per_worker_tools(self, kit: RoomKit, room_id: str) -> None:
+        """Inject per-worker ``delegate_to_<id>`` tools (AI decides)."""
         from roomkit.orchestration.handoff import _room_id_var
 
         any_new = False
         for worker in self._workers:
             tool_name = f"delegate_to_{worker.channel_id}"
 
-            # Skip if already injected
             if any(t.name == tool_name for t in self._supervisor._injected_tools):
                 continue
 
@@ -144,15 +243,13 @@ class Supervisor(Orchestration):
             )
             self._supervisor._injected_tools.append(tool)
 
-        # Only wrap the tool handler once — guard against double install
         if not any_new:
             return
 
-        # Wrap the tool handler to intercept delegation calls
         original = self._supervisor.tool_handler
         tool_to_worker = {f"delegate_to_{w.channel_id}": w.channel_id for w in self._workers}
-
         wait = self._wait_for_result
+        pending: set[str] = set()
 
         async def delegation_handler(name: str, arguments: dict[str, Any]) -> str:
             worker_id = tool_to_worker.get(name)
@@ -161,27 +258,63 @@ class Supervisor(Orchestration):
                 task_desc = arguments.get("task", "")
                 try:
                     if wait:
-                        # Run worker inline to avoid async scheduling issues
-                        # when called from inside a streaming tool loop.
-                        output = await _run_worker_inline(kit, rid, worker_id, task_desc)
+                        delegated = await kit.delegate(
+                            rid,
+                            worker_id,
+                            task_desc,
+                            wait=True,
+                            notify=self._supervisor.channel_id,
+                        )
+                        result = delegated.result
                         return json.dumps(
                             {
-                                "status": "completed",
+                                "status": result.status if result else "failed",
                                 "worker": worker_id,
-                                "result": output or "",
+                                "result": (result.output or result.error or "") if result else "",
                             }
                         )
+
+                    if worker_id in pending:
+                        return json.dumps(
+                            {
+                                "status": "already_running",
+                                "worker": worker_id,
+                                "message": (
+                                    f"{worker_id} is already working on this. "
+                                    "Do NOT call this tool again. "
+                                    "Tell the user to ask again shortly."
+                                ),
+                            }
+                        )
+
                     delegated = await kit.delegate(
                         rid,
                         worker_id,
                         task_desc,
                         notify=self._supervisor.channel_id,
                     )
+                    pending.add(worker_id)
+
+                    original_set = delegated._set_result
+
+                    def _patched_set(r: Any, *, _wid: str = worker_id) -> None:
+                        pending.discard(_wid)
+                        original_set(r)
+
+                    delegated._set_result = _patched_set  # type: ignore[assignment]
+
                     return json.dumps(
                         {
                             "status": "delegated",
                             "task_id": delegated.id,
                             "worker": worker_id,
+                            "message": (
+                                f"Task dispatched to {worker_id}. "
+                                "It is running in the background. "
+                                "Do NOT call this tool again. "
+                                "Tell the user to ask again shortly "
+                                "for results."
+                            ),
                         }
                     )
                 except Exception as exc:
@@ -194,125 +327,57 @@ class Supervisor(Orchestration):
         self._supervisor.tool_handler = delegation_handler
 
 
-async def _run_worker_inline(
+# ---------------------------------------------------------------------------
+# Strategy execution helpers
+# ---------------------------------------------------------------------------
+
+
+async def _run_sequential(
     kit: RoomKit,
-    parent_room_id: str,
-    worker_id: str,
+    room_id: str,
+    workers: list[Agent],
     task_desc: str,
-) -> str | None:
-    """Run a worker agent inline and return its text output.
+) -> str:
+    """Run workers in order, each receiving the previous output."""
+    current_input = task_desc
+    results: list[dict[str, str]] = []
 
-    Creates a temporary child room, sends the task as a message,
-    and collects the worker's response — all synchronously within
-    the caller's coroutine (no background task).
-    """
-    import time
-    from uuid import uuid4
-
-    from roomkit.models.channel import ChannelBinding
-    from roomkit.models.context import RoomContext
-    from roomkit.models.enums import (
-        ChannelCategory,
-        ChannelType,
-        EventStatus,
-        EventType,
-        TaskStatus,
-    )
-    from roomkit.models.event import EventSource, RoomEvent, TextContent
-
-    task_id = f"task-{uuid4().hex[:12]}"
-    child_room_id = f"{parent_room_id}::inline-{uuid4().hex[:12]}"
-    start = time.monotonic()
-
-    # Fire ON_TASK_DELEGATED hook
-    delegated_event = RoomEvent(
-        room_id=parent_room_id,
-        source=EventSource(channel_id=worker_id, channel_type=ChannelType.AI),
-        content=TextContent(body=f"[Task delegated to {worker_id}] {task_desc}"),
-        type=EventType.TASK_DELEGATED,
-        status=EventStatus.DELIVERED,
-        visibility="internal",
-        metadata={"task_id": task_id, "child_room_id": child_room_id, "agent_id": worker_id},
-    )
-    parent_context = await kit._build_context(parent_room_id)
-    await kit._hook_engine.run_async_hooks(
-        parent_room_id, HookTrigger.ON_TASK_DELEGATED, delegated_event, parent_context
-    )
-
-    await kit.create_room(
-        room_id=child_room_id,
-        metadata={"parent_room_id": parent_room_id, "task_agent_id": worker_id},
-        orchestration=None,  # no orchestration — worker runs standalone
-    )
-    await kit.attach_channel(child_room_id, worker_id, category=ChannelCategory.INTELLIGENCE)
-
-    # Store the task as a message
-    task_event = RoomEvent(
-        room_id=child_room_id,
-        type=EventType.MESSAGE,
-        source=EventSource(channel_id="system", channel_type=ChannelType.SYSTEM),
-        content=TextContent(body=task_desc),
-    )
-    task_event = await kit.store.add_event_auto_index(child_room_id, task_event)
-
-    # Build context with the task event visible
-    room = await kit.get_room(child_room_id)
-    bindings = await kit.store.list_bindings(child_room_id)
-    recent = await kit.store.list_events(child_room_id, offset=0, limit=50)
-    context = RoomContext(room=room, bindings=bindings, recent_events=recent)
-
-    # Broadcast — the worker picks up the task
-    router = kit._get_router()
-    source_binding = ChannelBinding(
-        channel_id="system",
-        room_id=child_room_id,
-        channel_type=ChannelType.SYSTEM,
-    )
-    result = await router.broadcast(task_event, source_binding, context)
-
-    # Collect response: check synchronous output first, then streaming
-    agent_output: str | None = None
-    for output in result.outputs.values():
-        if output.responded and output.response_events:
-            for resp in output.response_events:
-                if isinstance(resp.content, TextContent) and resp.content.body:
-                    agent_output = resp.content.body
-                    break
-
-    if agent_output is None:
-        for sr in result.streaming_responses:
-            parts: list[str] = []
-            async for delta in sr.stream:
-                parts.append(delta)
-            text = "".join(parts)
-            if text:
-                agent_output = text
-                break
-
-    # Fire ON_TASK_COMPLETED hook
-    elapsed = (time.monotonic() - start) * 1000
-    status = TaskStatus.COMPLETED if agent_output else TaskStatus.FAILED
-    completed_event = RoomEvent(
-        room_id=parent_room_id,
-        source=EventSource(channel_id=worker_id, channel_type=ChannelType.AI),
-        content=TextContent(body=agent_output or ""),
-        type=EventType.TASK_COMPLETED,
-        status=EventStatus.DELIVERED,
-        visibility="internal",
-        metadata={
-            "task_id": task_id,
-            "child_room_id": child_room_id,
-            "agent_id": worker_id,
-            "task_status": status,
-            "duration_ms": elapsed,
-        },
-    )
-    try:
-        parent_context = await kit._build_context(parent_room_id)
-        await kit._hook_engine.run_async_hooks(
-            parent_room_id, HookTrigger.ON_TASK_COMPLETED, completed_event, parent_context
+    for worker in workers:
+        delegated = await kit.delegate(
+            room_id,
+            worker.channel_id,
+            current_input,
+            wait=True,
         )
-    except Exception:
-        logger.exception("Failed to fire ON_TASK_COMPLETED for %s", task_id)
+        output = ""
+        if delegated.result:
+            output = delegated.result.output or delegated.result.error or ""
+        results.append({"worker": worker.channel_id, "output": output})
+        # Next worker receives this worker's output
+        current_input = output
 
-    return agent_output
+    return json.dumps({"status": "completed", "results": results})
+
+
+async def _run_parallel(
+    kit: RoomKit,
+    room_id: str,
+    workers: list[Agent],
+    task_desc: str,
+) -> str:
+    """Run all workers concurrently on the same task."""
+
+    async def _delegate_one(worker: Agent) -> dict[str, str]:
+        delegated = await kit.delegate(
+            room_id,
+            worker.channel_id,
+            task_desc,
+            wait=True,
+        )
+        output = ""
+        if delegated.result:
+            output = delegated.result.output or delegated.result.error or ""
+        return {"worker": worker.channel_id, "output": output}
+
+    results = await asyncio.gather(*[_delegate_one(w) for w in workers])
+    return json.dumps({"status": "completed", "results": list(results)})

@@ -122,7 +122,7 @@ class TestSupervisorHandlerIdempotency:
         kit2 = _make_mock_kit(Room(id="r2"))
         kit2.delegate = AsyncMock(return_value=mock_task)
 
-        s = Supervisor(supervisor=boss, workers=[w1])
+        s = Supervisor(supervisor=boss, workers=[w1], wait_for_result=False)
         await s.install(kit1, "r1")
         await s.install(kit2, "r2")
 

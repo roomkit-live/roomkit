@@ -1,15 +1,15 @@
-"""Sequential content creation workflow.
+"""Parallel analysis workflow.
 
-Demonstrates ``strategy="sequential"`` — the framework chains workers
-in order: researcher → writer. The coordinator talks to the user and
+Demonstrates ``strategy="parallel"`` — the framework runs all workers
+concurrently on the same task. The supervisor talks to the user and
 delegates work; the framework controls the execution flow.
 
-    Human → Coordinator → [Researcher → Writer] → Coordinator → Human
+    Human → Supervisor → [Technical | Business] → Supervisor → Human
 
 Requires ``ANTHROPIC_API_KEY`` environment variable.
 
 Run with:
-    ANTHROPIC_API_KEY=sk-... uv run python examples/orchestration_content_workflow.py
+    ANTHROPIC_API_KEY=sk-... uv run python examples/orchestration_parallel_tasks.py
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ from roomkit.models.event import RoomEvent
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 
-# Show task runner errors — important for debugging delegation
 logging.basicConfig(format="%(levelname)s %(name)s: %(message)s")
 logging.getLogger("roomkit").setLevel(logging.WARNING)
 logging.getLogger("roomkit.tasks").setLevel(logging.DEBUG)
@@ -42,48 +41,52 @@ async def main() -> None:
 
     # --- Three agents --------------------------------------------------------
 
-    coordinator = Agent(
-        "agent-coordinator",
+    supervisor = Agent(
+        "agent-supervisor",
         provider=AnthropicAIProvider(haiku_config),
-        role="Project coordinator",
-        system_prompt="You coordinate content creation. Present the final article to the user.",
+        role="Project supervisor",
+        system_prompt="You coordinate analysis. Present a combined summary to the user.",
         memory=SlidingWindowMemory(max_events=50),
     )
 
-    researcher = Agent(
-        "agent-researcher",
+    technical = Agent(
+        "agent-technical",
         provider=AnthropicAIProvider(haiku_config),
-        role="Research analyst",
+        role="Technical analyst",
         system_prompt=(
-            "You are a research analyst. Research the given topic and "
-            "provide 4-5 key findings. Be concise and factual."
+            "You are a technical analyst. Analyze the given topic: "
+            "architecture, implementation, scalability, trade-offs. "
+            "Be concise (3-4 points)."
         ),
         memory=SlidingWindowMemory(max_events=50),
     )
 
-    writer = Agent(
-        "agent-writer",
+    business = Agent(
+        "agent-business",
         provider=AnthropicAIProvider(haiku_config),
-        role="Content writer",
+        role="Business analyst",
         system_prompt=(
-            "You are a content writer. Write a clear, engaging article "
-            "based on the research provided. Use markdown headings. "
-            "Keep it under 500 words."
+            "You are a business analyst. Analyze the given topic: "
+            "market impact, competitive positioning, revenue, strategy. "
+            "Be concise (3-4 points)."
         ),
         memory=SlidingWindowMemory(max_events=50),
     )
 
     # --- Supervisor setup ----------------------------------------------------
+    #
+    # strategy="parallel" injects a single delegate_workers tool.
+    # The framework runs both analysts concurrently via asyncio.gather.
 
     kit = RoomKit(
         orchestration=Supervisor(
-            supervisor=coordinator,
-            workers=[researcher, writer],
-            strategy="sequential",
+            supervisor=supervisor,
+            workers=[technical, business],
+            strategy="parallel",
         ),
     )
 
-    # --- State change hook — prints when agents are delegated to -------------
+    # --- State hooks ---------------------------------------------------------
 
     @kit.hook(HookTrigger.ON_TASK_DELEGATED, execution=HookExecution.ASYNC)
     async def on_delegated(event: RoomEvent, ctx: RoomContext) -> None:
@@ -101,15 +104,16 @@ async def main() -> None:
     cli = CLIChannel("cli")
     kit.register_channel(cli)
 
-    await kit.create_room(room_id="content-room")
-    await kit.attach_channel("content-room", "cli")
+    await kit.create_room(room_id="analysis-room")
+    await kit.attach_channel("analysis-room", "cli")
 
     await cli.run(
         kit,
-        room_id="content-room",
+        room_id="analysis-room",
         welcome=(
-            "=== Content Creation Workflow ===\n"
-            "Ask the coordinator to write an article. Type 'quit' to exit.\n"
+            "=== Parallel Analysis Workflow ===\n"
+            "Ask the supervisor to analyze a topic. Both analysts run in parallel.\n"
+            "Type 'quit' to exit.\n"
         ),
     )
 

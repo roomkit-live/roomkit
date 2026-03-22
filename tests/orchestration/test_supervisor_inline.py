@@ -238,7 +238,7 @@ class TestWaitForResultMultipleWorkers:
 
 
 class TestWaitForResultFalse:
-    """Default behavior (wait_for_result=False) still uses kit.delegate."""
+    """Explicit wait_for_result=False still uses kit.delegate."""
 
     async def test_async_delegation_returns_task_id(self) -> None:
         supervisor = Agent(
@@ -257,7 +257,7 @@ class TestWaitForResultFalse:
             orchestration=Supervisor(
                 supervisor=supervisor,
                 workers=[worker],
-                # wait_for_result defaults to False
+                wait_for_result=False,
             ),
         )
 

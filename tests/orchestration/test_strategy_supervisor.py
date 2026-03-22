@@ -125,7 +125,7 @@ class TestSupervisorInstall:
         mock_task.id = "task-123"
         kit.delegate = AsyncMock(return_value=mock_task)
 
-        s = Supervisor(supervisor=boss, workers=[w1])
+        s = Supervisor(supervisor=boss, workers=[w1], wait_for_result=False)
         await s.install(kit, "r1")
 
         # Call the delegation tool handler

@@ -1,17 +1,22 @@
-"""DelegationMixin — background task delegation."""
+"""DelegationMixin — task delegation to child rooms."""
 
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core.exceptions import ChannelNotRegisteredError
 from roomkit.core.mixins.helpers import HelpersMixin
+from roomkit.models.channel import ChannelBinding
+from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
+    ChannelCategory,
     ChannelType,
     EventStatus,
     EventType,
     HookTrigger,
+    TaskStatus,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.tasks.delivery import BackgroundTaskDeliveryStrategy, TaskDeliveryContext
@@ -19,6 +24,7 @@ from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
+    from roomkit.core.framework import RoomKit
     from roomkit.store.base import ConversationStore
     from roomkit.tasks.base import TaskRunner
 
@@ -26,8 +32,89 @@ if TYPE_CHECKING:
 _tasks_logger = logging.getLogger("roomkit.tasks")
 
 
+# ---------------------------------------------------------------------------
+# Shared agent execution — single code path for both sync and background
+# ---------------------------------------------------------------------------
+
+
+async def run_agent_in_child_room(
+    kit: RoomKit,
+    child_room_id: str,
+    task_desc: str,
+) -> str | None:
+    """Send a task to a child room and collect the agent's text response.
+
+    This is the **single code path** for executing a delegated agent,
+    used by both ``delegate(wait=True)`` (inline) and the background
+    task runner.
+
+    1. Stores *task_desc* as a system message in the child room.
+    2. Broadcasts the event — the attached agent picks it up.
+    3. Collects the response (sync or streaming) and returns it.
+    """
+    room = await kit.get_room(child_room_id)
+    bindings = await kit.store.list_bindings(child_room_id)
+
+    # Store the task as a message
+    task_event = RoomEvent(
+        room_id=child_room_id,
+        type=EventType.MESSAGE,
+        source=EventSource(channel_id="system", channel_type=ChannelType.SYSTEM),
+        content=TextContent(body=task_desc),
+    )
+    task_event = await kit.store.add_event_auto_index(child_room_id, task_event)
+
+    # Build context AFTER storing so the agent's memory provider
+    # can see the task event in recent_events.
+    recent = await kit.store.list_events(child_room_id, offset=0, limit=50)
+    context = RoomContext(room=room, bindings=bindings, recent_events=recent)
+
+    # Broadcast — the agent picks up the task
+    router = kit._get_router()
+    source_binding = ChannelBinding(
+        channel_id="system",
+        room_id=child_room_id,
+        channel_type=ChannelType.SYSTEM,
+    )
+    result = await router.broadcast(task_event, source_binding, context)
+
+    # Collect response: synchronous output first, then streaming
+    for output in result.outputs.values():
+        if output.responded and output.response_events:
+            for resp in output.response_events:
+                if isinstance(resp.content, TextContent) and resp.content.body:
+                    await kit.store.add_event_auto_index(child_room_id, resp)
+                    return resp.content.body
+
+    for sr in result.streaming_responses:
+        parts: list[str] = []
+        async for delta in sr.stream:
+            parts.append(delta)
+        text = "".join(parts)
+        if text:
+            resp_event = RoomEvent(
+                room_id=child_room_id,
+                type=EventType.MESSAGE,
+                source=EventSource(
+                    channel_id=sr.source_channel_id,
+                    channel_type=sr.source_channel_type,
+                ),
+                content=TextContent(body=text),
+                chain_depth=task_event.chain_depth + 1,
+            )
+            await kit.store.add_event_auto_index(child_room_id, resp_event)
+            return text
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# DelegationMixin
+# ---------------------------------------------------------------------------
+
+
 class DelegationMixin(HelpersMixin):
-    """Background task delegation to child rooms."""
+    """Task delegation to child rooms — sync and background."""
 
     _store: ConversationStore
     _channels: dict[str, Channel]
@@ -42,21 +129,26 @@ class DelegationMixin(HelpersMixin):
         agent_id: str,
         task: str,
         *,
+        wait: bool = False,
         context: dict[str, Any] | None = None,
         share_channels: list[str] | None = None,
         notify: str | None = None,
         on_complete: Any | None = None,
         delivery_strategy: BackgroundTaskDeliveryStrategy | None = _DELIVERY_UNSET,
     ) -> DelegatedTask:
-        """Delegate a task to a background agent in a child room.
+        """Delegate a task to an agent in a child room.
 
         Creates a child room linked to *room_id*, attaches the agent and
-        any shared channels, then submits the task for background execution.
+        any shared channels, then either runs the agent inline or submits
+        the task for background execution.
 
         Args:
             room_id: Parent room ID.
             agent_id: Channel ID of the agent to run the task.
             task: Description of what the agent should do.
+            wait: If ``True``, run the agent inline and return a
+                pre-completed :class:`DelegatedTask`.  If ``False``
+                (default), submit as a background task.
             context: Optional context dict passed to the agent.
             share_channels: Channel IDs from the parent to share.
             notify: Channel ID to update when the task completes
@@ -68,8 +160,9 @@ class DelegationMixin(HelpersMixin):
                 used.
 
         Returns:
-            A :class:`DelegatedTask` handle. Call ``.wait()`` to block
-            for the result, or let it run fire-and-forget.
+            A :class:`DelegatedTask` handle. When *wait* is ``True``,
+            the result is already set.  When ``False``, call ``.wait()``
+            to block for the result, or let it run fire-and-forget.
 
         Raises:
             RoomNotFoundError: If the parent room doesn't exist.
@@ -84,7 +177,8 @@ class DelegationMixin(HelpersMixin):
 
         child_room_id = f"{room_id}::task-{uuid4().hex[:12]}"
 
-        # Create child room
+        # Create child room — no orchestration so the parent's strategy
+        # doesn't leak (e.g. Supervisor attaching itself to the child).
         await self.create_room(  # type: ignore[attr-defined]
             room_id=child_room_id,
             metadata={
@@ -94,11 +188,10 @@ class DelegationMixin(HelpersMixin):
                 "task_context": context or {},
                 "task_status": "pending",
             },
+            orchestration=None,
         )
 
         # Attach agent as intelligence
-        from roomkit.models.enums import ChannelCategory
-
         await self.attach_channel(  # type: ignore[attr-defined]
             child_room_id,
             agent_id,
@@ -147,8 +240,71 @@ class DelegationMixin(HelpersMixin):
             room_id, HookTrigger.ON_TASK_DELEGATED, hook_event, room_context
         )
 
-        # Build completion callback
-        notify_channel = notify or agent_id
+        if wait:
+            return await self._run_inline(handle, context, notify, on_complete)
+
+        return await self._run_background(handle, context, notify, on_complete, delivery_strategy)
+
+    async def _run_inline(
+        self,
+        handle: DelegatedTask,
+        context: dict[str, Any] | None,
+        notify: str | None,
+        on_complete: Any | None,
+    ) -> DelegatedTask:
+        """Run the agent inline and return a pre-completed task."""
+        start = time.monotonic()
+        handle.status = TaskStatus.IN_PROGRESS
+        agent_response: str | None = None
+        error: str | None = None
+
+        try:
+            agent_response = await run_agent_in_child_room(
+                self,  # type: ignore[arg-type]
+                handle.child_room_id,
+                handle.task,
+            )
+        except Exception as exc:
+            _tasks_logger.exception("Inline task %s failed: %s", handle.id, exc)
+            error = str(exc)
+
+        elapsed = (time.monotonic() - start) * 1000
+        status = TaskStatus.COMPLETED if agent_response else TaskStatus.FAILED
+
+        result = DelegatedTaskResult(
+            task_id=handle.id,
+            child_room_id=handle.child_room_id,
+            parent_room_id=handle.parent_room_id,
+            agent_id=handle.agent_id,
+            status=status,
+            output=agent_response,
+            error=error,
+            duration_ms=elapsed,
+            metadata=context or {},
+        )
+
+        # Fire completion hooks + callbacks
+        notify_channel = notify or handle.agent_id
+        await self._on_delegation_complete(result, notify_channel)
+        if on_complete:
+            try:
+                await on_complete(result)
+            except Exception:
+                _tasks_logger.exception("on_complete failed for task %s", handle.id)
+
+        handle._set_result(result)
+        return handle
+
+    async def _run_background(
+        self,
+        handle: DelegatedTask,
+        context: dict[str, Any] | None,
+        notify: str | None,
+        on_complete: Any | None,
+        delivery_strategy: BackgroundTaskDeliveryStrategy | None,
+    ) -> DelegatedTask:
+        """Submit the task to the background task runner."""
+        notify_channel = notify or handle.agent_id
         # Resolve delivery strategy: per-task override > framework-level
         effective_strategy: BackgroundTaskDeliveryStrategy | None
         if delivery_strategy is not self._DELIVERY_UNSET:
@@ -156,14 +312,17 @@ class DelegationMixin(HelpersMixin):
         else:
             effective_strategy = self._delivery_strategy
 
-        async def _on_complete(result: DelegatedTaskResult) -> None:
+        async def _on_bg_complete(result: DelegatedTaskResult) -> None:
             await self._on_delegation_complete(result, notify_channel, strategy=effective_strategy)
             if on_complete:
                 await on_complete(result)
 
-        # Submit to task runner
-        await self._task_runner.submit(self, handle, context=context, on_complete=_on_complete)  # type: ignore[arg-type]
-
+        await self._task_runner.submit(
+            self,
+            handle,
+            context=context,
+            on_complete=_on_bg_complete,  # type: ignore[arg-type]
+        )
         return handle
 
     async def _on_delegation_complete(
