@@ -34,9 +34,7 @@ async def handle_unknown(event, ctx):
     ))
 
     # Option 2: Challenge the sender to identify
-    return IdentityHookResult.challenge(inject=InboundMessage(
-        channel_id=event.source.channel_id,
-        sender_id="system",
+    return IdentityHookResult.challenge(inject=InjectedEvent(
         content=TextContent(body="Please provide your account number."),
     ))
 
@@ -55,8 +53,8 @@ from roomkit.models.identity import IdentityResult, Identity
 from roomkit.models.enums import IdentificationStatus
 
 class DatabaseIdentityResolver(IdentityResolver):
-    async def resolve(self, sender_id: str, channel_type: str) -> IdentityResult:
-        user = await db.find_by_phone(sender_id)
+    async def resolve(self, message: InboundMessage, context: RoomContext) -> IdentityResult:
+        user = await db.find_by_phone(message.sender_id)
         if user:
             return IdentityResult(
                 status=IdentificationStatus.IDENTIFIED,

@@ -54,7 +54,7 @@ from roomkit.providers.voicemeup.config import VoiceMeUpConfig
 
 sms = SMSChannel("sms-vmu", provider=VoiceMeUpSMSProvider(VoiceMeUpConfig(
     username="...",
-    password="...",
+    auth_token="...",
     from_number="+15551234567",
 )))
 ```
@@ -82,7 +82,7 @@ from roomkit.providers.twilio.rcs import TwilioRCSProvider, TwilioRCSConfig
 rcs = RCSChannel("rcs-main", provider=TwilioRCSProvider(TwilioRCSConfig(
     account_sid="AC...",
     auth_token="...",
-    from_number="+15551234567",
+    messaging_service_sid="MG...",  # Required for RCS (must be RCS-enabled)
 )))
 ```
 
@@ -155,7 +155,7 @@ messenger = MessengerChannel("messenger", provider=FacebookMessengerProvider(Mes
 )))
 ```
 
-Webhook parser: `parse_messenger_webhook(request_data)`.
+Webhook parser: `parse_messenger_webhook(request_data, channel_id="messenger")` — returns `list[InboundMessage]`.
 
 ## Telegram
 
@@ -169,7 +169,7 @@ telegram = TelegramChannel("telegram", provider=TelegramBotProvider(TelegramConf
 )))
 ```
 
-Webhook parser: `parse_telegram_webhook(request_data)`.
+Webhook parser: `parse_telegram_webhook(request_data, channel_id="telegram")` — returns `list[InboundMessage]`.
 
 ## Microsoft Teams
 

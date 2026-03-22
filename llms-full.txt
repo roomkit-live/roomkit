@@ -428,7 +428,7 @@ Every core component follows the ABC + default pattern:
 | `ConversationStore` | `store/base.py` | `InMemoryStore` | Room, event, participant persistence |
 | `RoomLockManager` | `core/locks.py` | `InMemoryLockManager` | Per-room atomic processing |
 | `RealtimeBackend` | `realtime/base.py` | `InMemoryRealtime` | Ephemeral events (typing, presence) |
-| `IdentityResolver` | `identity/base.py` | `MockIdentityResolver` | Sender -> participant mapping |
+| `IdentityResolver` | `identity/base.py` | `None` (disabled) | Sender -> participant mapping |
 | `InboundRoomRouter` | `core/inbound_router.py` | `DefaultInboundRoomRouter` | Route messages to rooms |
 
 Replace any component at construction:
@@ -471,7 +471,7 @@ The voice subsystem has three layers:
 3. **VoiceChannel** — Wires backend -> pipeline -> STT/TTS, handles interruption and turn detection.
 
 ```
-Inbound:   Backend -> [Resampler] -> [Recorder] -> [AEC] -> [AGC] -> [Denoiser] -> VAD -> [Diarization]
+Inbound:   Backend -> [Resampler] -> [Recorder] -> [AEC] -> [AGC] -> [Denoiser] -> VAD -> [Diarization] + [DTMF]
 Outbound:  TTS -> [PostProcessors] -> [Recorder] -> AEC.feed_reference -> [Resampler] -> Backend
 ```
 
@@ -504,7 +504,7 @@ room = await kit.create_room(
 ## Room Lifecycle
 
 ```python
-from roomkit import RoomKit, RoomTimers
+from roomkit import RoomKit
 
 kit = RoomKit()
 
@@ -762,7 +762,7 @@ The `DefaultContentTranscoder` applies these fallback rules:
 |-------------|----------------------|----------|
 | `TextContent` | Always passes through | — |
 | `RichContent` | RICH in media_types → pass | `TextContent(plain_text or body)` |
-| `MediaContent` | MEDIA in media_types → pass | `TextContent("[Media: {caption}]")` |
+| `MediaContent` | MEDIA in media_types → pass | `TextContent("[Media: {caption or filename or url}]")` |
 | `AudioContent` | AUDIO in media_types → pass | `TextContent(transcript)` or `"[Voice message: {url}]"` |
 | `VideoContent` | VIDEO in media_types → pass | `TextContent("[Video: {url}]")` |
 | `LocationContent` | LOCATION in media_types → pass | `TextContent("[Location: {label} ({lat}, {lon})]")` |
@@ -1052,7 +1052,7 @@ await kit.remove_room_hook("vip-room", "vip_filter")
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_OBSERVATION` | ASYNC | `(event, ctx) -> None` | AI extracted an observation from conversation |
+| `ON_FEEDBACK` | ASYNC | `(Observation, ctx) -> None` | User submitted quality feedback via `kit.submit_feedback()` |
 
 ## Framework Events
 
@@ -1180,15 +1180,21 @@ ai = AIChannel(
 
 ### Tool Handler
 
-Register a handler to execute tool calls:
+Register a handler to execute tool calls via the constructor:
 
 ```python
-@ai.tool_handler
 async def handle_tools(name: str, arguments: dict) -> str:
     if name == "get_weather":
         city = arguments["city"]
         return f'{{"temperature": 22, "condition": "sunny", "city": "{city}"}}'
     return '{"error": "Unknown tool"}'
+
+ai = AIChannel(
+    "ai-assistant",
+    provider=provider,
+    tools=[...],
+    tool_handler=handle_tools,
+)
 ```
 
 ### Tool Protocol (Tool ABC)
@@ -1274,8 +1280,7 @@ ai = AIChannel(
         model="claude-sonnet-4-20250514",
     )),
     system_prompt="Think step by step.",
-    thinking=True,
-    thinking_budget=4096,
+    thinking_budget=4096,  # Setting a budget enables thinking mode
 )
 ```
 
@@ -2061,7 +2066,7 @@ Producer/reviewer cycle. The reviewer has an `approve_output` tool to break the 
 from roomkit import Loop
 
 kit = RoomKit(orchestration=Loop(
-    producer=writer_agent,
+    agent=writer_agent,
     reviewer=editor_agent,
     max_iterations=3,
 ))
@@ -2429,7 +2434,7 @@ Agents can publish status updates for UI display:
 async def on_status(update):
     print(f"Agent {update.agent_id}: {update.message} ({update.level})")
 
-kit.status_bus.subscribe(on_status)
+await kit.status_bus.subscribe(on_status)
 ```
 
 ## Delegation
@@ -2517,7 +2522,7 @@ from roomkit.providers.voicemeup.config import VoiceMeUpConfig
 
 sms = SMSChannel("sms-vmu", provider=VoiceMeUpSMSProvider(VoiceMeUpConfig(
     username="...",
-    password="...",
+    auth_token="...",
     from_number="+15551234567",
 )))
 ```
@@ -2545,7 +2550,7 @@ from roomkit.providers.twilio.rcs import TwilioRCSProvider, TwilioRCSConfig
 rcs = RCSChannel("rcs-main", provider=TwilioRCSProvider(TwilioRCSConfig(
     account_sid="AC...",
     auth_token="...",
-    from_number="+15551234567",
+    messaging_service_sid="MG...",  # Required for RCS (must be RCS-enabled)
 )))
 ```
 
@@ -2618,7 +2623,7 @@ messenger = MessengerChannel("messenger", provider=FacebookMessengerProvider(Mes
 )))
 ```
 
-Webhook parser: `parse_messenger_webhook(request_data)`.
+Webhook parser: `parse_messenger_webhook(request_data, channel_id="messenger")` — returns `list[InboundMessage]`.
 
 ## Telegram
 
@@ -2632,7 +2637,7 @@ telegram = TelegramChannel("telegram", provider=TelegramBotProvider(TelegramConf
 )))
 ```
 
-Webhook parser: `parse_telegram_webhook(request_data)`.
+Webhook parser: `parse_telegram_webhook(request_data, channel_id="telegram")` — returns `list[InboundMessage]`.
 
 ## Microsoft Teams
 
@@ -2751,9 +2756,7 @@ async def handle_unknown(event, ctx):
     ))
 
     # Option 2: Challenge the sender to identify
-    return IdentityHookResult.challenge(inject=InboundMessage(
-        channel_id=event.source.channel_id,
-        sender_id="system",
+    return IdentityHookResult.challenge(inject=InjectedEvent(
         content=TextContent(body="Please provide your account number."),
     ))
 
@@ -2772,8 +2775,8 @@ from roomkit.models.identity import IdentityResult, Identity
 from roomkit.models.enums import IdentificationStatus
 
 class DatabaseIdentityResolver(IdentityResolver):
-    async def resolve(self, sender_id: str, channel_type: str) -> IdentityResult:
-        user = await db.find_by_phone(sender_id)
+    async def resolve(self, message: InboundMessage, context: RoomContext) -> IdentityResult:
+        user = await db.find_by_phone(message.sender_id)
         if user:
             return IdentityResult(
                 status=IdentificationStatus.IDENTIFIED,
@@ -2886,7 +2889,8 @@ RoomKit provides built-in resilience patterns for production deployments: rate l
 Apply rate limits per channel binding:
 
 ```python
-from roomkit import RoomKit, RateLimit
+from roomkit import RoomKit
+from roomkit.models.channel import RateLimit
 
 kit = RoomKit()
 
@@ -2898,7 +2902,8 @@ await kit.attach_channel("room-1", "sms-out",
 Framework-level inbound rate limiting:
 
 ```python
-from roomkit import RoomKit, RateLimit
+from roomkit import RoomKit
+from roomkit.models.channel import RateLimit
 
 kit = RoomKit(inbound_rate_limit=RateLimit(max_per_second=10.0))
 ```
@@ -2927,7 +2932,7 @@ States: CLOSED (normal) -> OPEN (failing, fast-reject) -> HALF_OPEN (testing rec
 Retry failed operations with exponential backoff:
 
 ```python
-from roomkit import RetryPolicy
+from roomkit.models.channel import RetryPolicy
 from roomkit.core.retry import retry_with_backoff
 
 policy = RetryPolicy(
@@ -2962,7 +2967,7 @@ When an AI response triggers another AI response, chain depth increments. Proces
 Auto-transition rooms based on inactivity:
 
 ```python
-from roomkit import RoomKit, RoomTimers
+from roomkit import RoomKit
 
 kit = RoomKit()
 
@@ -2999,7 +3004,8 @@ await kit.process_delivery_status(status)
 ## Production Setup Example
 
 ```python
-from roomkit import RoomKit, RateLimit, RetryPolicy
+from roomkit import RoomKit
+from roomkit.models.channel import RateLimit, RetryPolicy
 from roomkit.store.postgres import PostgresStore
 
 kit = RoomKit(
@@ -3050,7 +3056,7 @@ from roomkit import RoomKit
 from roomkit.store.postgres import PostgresStore
 
 store = PostgresStore("postgresql://user:pass@localhost/roomkit")
-await store.initialize()  # Creates tables if they don't exist
+await store.init()  # Creates tables if they don't exist
 
 kit = RoomKit(store=store)
 ```
@@ -3058,12 +3064,8 @@ kit = RoomKit(store=store)
 ### Connection Pooling
 
 ```python
-store = PostgresStore(
-    "postgresql://user:pass@localhost/roomkit",
-    min_pool_size=5,
-    max_pool_size=20,
-)
-await store.initialize()
+store = PostgresStore("postgresql://user:pass@localhost/roomkit")
+await store.init(min_size=5, max_size=20)  # Pool sizing via init()
 ```
 
 ### Schema
@@ -3116,7 +3118,7 @@ from roomkit.store.postgres import PostgresStore
 
 async def main() -> None:
     store = PostgresStore(os.environ["DATABASE_URL"])
-    await store.initialize()
+    await store.init()
 
     kit = RoomKit(store=store)
 
@@ -3415,7 +3417,7 @@ modified = event.model_copy(update={"content": TextContent(body="new")})
 ```
 ---
 
-RoomKit exports **71 symbols** from `roomkit`. Providers and voice types import from subpackages.
+RoomKit exports **73 symbols** from `roomkit`. Providers and voice types import from subpackages.
 
 ## Top-Level Imports (`from roomkit import ...`)
 
@@ -3433,6 +3435,7 @@ RoomKit exports **71 symbols** from `roomkit`. Providers and voice types import 
 | `AIChannel` | Intelligence layer for AI responses |
 | `AudioVideoChannel` | Combined audio + video channel |
 | `Channel` | Base class for all channels |
+| `CLIChannel` | CLI/terminal interactive channel |
 | `EmailChannel` | Email transport channel factory |
 | `HTTPChannel` | HTTP webhook transport channel factory |
 | `MessengerChannel` | Facebook Messenger transport channel factory |
@@ -3538,6 +3541,9 @@ kit = RoomKit(
     max_chain_depth=5,                     # AI-to-AI loop prevention
     identity_timeout=10.0,                 # Identity resolution timeout (seconds)
     process_timeout=30.0,                  # Inbound processing timeout (seconds)
+    stt=None,                              # STTProvider for transcription
+    tts=None,                              # TTSProvider for synthesis
+    voice=None,                            # VoiceBackend for audio transport
     task_runner=None,                      # Background task runner
     delivery_strategy=None,                # Delivery strategy
     status_bus=None,                       # Status bus for orchestration

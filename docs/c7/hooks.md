@@ -211,12 +211,6 @@ await kit.remove_room_hook("vip-room", "vip_filter")
 |---------|-----------|-----------|-------------|
 | `ON_FEEDBACK` | ASYNC | `(Observation, ctx) -> None` | User submitted quality feedback via `kit.submit_feedback()` |
 
-### Observability
-
-| Trigger | Execution | Signature | Description |
-|---------|-----------|-----------|-------------|
-| `ON_OBSERVATION` | ASYNC | `(event, ctx) -> None` | AI extracted an observation from conversation |
-
 ## Framework Events
 
 Framework events are lightweight lifecycle notifications (not message events):

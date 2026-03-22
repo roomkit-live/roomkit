@@ -74,8 +74,7 @@ When you send a message from a transport channel, it flows to the AI and back au
 ### Minimal Channel→AI Example
 
 ```python
-from roomkit import RoomKit, WebSocketChannel, ChannelCategory, InboundMessage, TextContent
-from roomkit.channels.ai import AIChannel
+from roomkit import RoomKit, AIChannel, WebSocketChannel, ChannelCategory, InboundMessage, TextContent
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 
@@ -123,7 +122,7 @@ Every core component follows the ABC + default pattern:
 | `ConversationStore` | `store/base.py` | `InMemoryStore` | Room, event, participant persistence |
 | `RoomLockManager` | `core/locks.py` | `InMemoryLockManager` | Per-room atomic processing |
 | `RealtimeBackend` | `realtime/base.py` | `InMemoryRealtime` | Ephemeral events (typing, presence) |
-| `IdentityResolver` | `identity/base.py` | `MockIdentityResolver` | Sender -> participant mapping |
+| `IdentityResolver` | `identity/base.py` | `None` (disabled) | Sender -> participant mapping |
 | `InboundRoomRouter` | `core/inbound_router.py` | `DefaultInboundRoomRouter` | Route messages to rooms |
 
 Replace any component at construction:
@@ -166,7 +165,7 @@ The voice subsystem has three layers:
 3. **VoiceChannel** — Wires backend -> pipeline -> STT/TTS, handles interruption and turn detection.
 
 ```
-Inbound:   Backend -> [Resampler] -> [Recorder] -> [AEC] -> [AGC] -> [Denoiser] -> VAD -> [Diarization]
+Inbound:   Backend -> [Resampler] -> [Recorder] -> [AEC] -> [AGC] -> [Denoiser] -> VAD -> [Diarization] + [DTMF]
 Outbound:  TTS -> [PostProcessors] -> [Recorder] -> AEC.feed_reference -> [Resampler] -> Backend
 ```
 

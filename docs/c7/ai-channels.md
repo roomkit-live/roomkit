@@ -109,15 +109,21 @@ ai = AIChannel(
 
 ### Tool Handler
 
-Register a handler to execute tool calls:
+Register a handler to execute tool calls via the constructor:
 
 ```python
-@ai.tool_handler
 async def handle_tools(name: str, arguments: dict) -> str:
     if name == "get_weather":
         city = arguments["city"]
         return f'{{"temperature": 22, "condition": "sunny", "city": "{city}"}}'
     return '{"error": "Unknown tool"}'
+
+ai = AIChannel(
+    "ai-assistant",
+    provider=provider,
+    tools=[...],
+    tool_handler=handle_tools,
+)
 ```
 
 ### Tool Protocol (Tool ABC)
@@ -203,8 +209,7 @@ ai = AIChannel(
         model="claude-sonnet-4-20250514",
     )),
     system_prompt="Think step by step.",
-    thinking=True,
-    thinking_budget=4096,
+    thinking_budget=4096,  # Setting a budget enables thinking mode
 )
 ```
 

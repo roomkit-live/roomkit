@@ -68,7 +68,7 @@ Producer/reviewer cycle. The reviewer has an `approve_output` tool to break the 
 from roomkit import Loop
 
 kit = RoomKit(orchestration=Loop(
-    producer=writer_agent,
+    agent=writer_agent,
     reviewer=editor_agent,
     max_iterations=3,
 ))
@@ -351,7 +351,7 @@ Agents can publish status updates for UI display:
 async def on_status(update):
     print(f"Agent {update.agent_id}: {update.message} ({update.level})")
 
-kit.status_bus.subscribe(on_status)
+await kit.status_bus.subscribe(on_status)
 ```
 
 ## Delegation

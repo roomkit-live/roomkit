@@ -20,11 +20,11 @@ room = await kit.create_room(
 ## Room Lifecycle
 
 ```python
-from roomkit import RoomKit, RoomTimers
+from roomkit import RoomKit
 
 kit = RoomKit()
 
-# Create room with auto-pause and auto-close timers
+# Create room
 room = await kit.create_room(room_id="session-1")
 
 # Update metadata
@@ -249,7 +249,7 @@ ws_caps = ChannelCapabilities(
 |-------------|----------------------|----------|
 | `TextContent` | Always passes through | — |
 | `RichContent` | RICH in media_types → pass | `TextContent(plain_text or body)` |
-| `MediaContent` | MEDIA in media_types → pass | `TextContent("[Media: {caption}]")` |
+| `MediaContent` | MEDIA in media_types → pass | `TextContent("[Media: {caption or filename or url}]")` |
 | `AudioContent` | AUDIO in media_types → pass | `TextContent(transcript)` or `"[Voice message: {url}]"` |
 | `VideoContent` | VIDEO in media_types → pass | `TextContent("[Video: {url}]")` |
 | `LocationContent` | LOCATION in media_types → pass | `TextContent("[Location: {label} ({lat}, {lon})]")` |

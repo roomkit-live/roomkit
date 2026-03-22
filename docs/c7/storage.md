@@ -21,7 +21,7 @@ from roomkit import RoomKit
 from roomkit.store.postgres import PostgresStore
 
 store = PostgresStore("postgresql://user:pass@localhost/roomkit")
-await store.initialize()  # Creates tables if they don't exist
+await store.init()  # Creates connection pool and tables
 
 kit = RoomKit(store=store)
 ```
@@ -29,12 +29,8 @@ kit = RoomKit(store=store)
 ### Connection Pooling
 
 ```python
-store = PostgresStore(
-    "postgresql://user:pass@localhost/roomkit",
-    min_pool_size=5,
-    max_pool_size=20,
-)
-await store.initialize()
+store = PostgresStore("postgresql://user:pass@localhost/roomkit")
+await store.init(min_size=5, max_size=20)  # Pool sizing via init()
 ```
 
 ### Schema
