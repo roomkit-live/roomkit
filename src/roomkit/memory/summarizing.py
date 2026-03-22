@@ -64,7 +64,7 @@ class SummarizingMemory(MemoryProvider):
         truncate_chars: int = 2000,
         summary_max_tokens: int = 1000,
         min_events: int = 5,
-        summary_cache_ttl_seconds: float = 300.0,
+        summary_cache_ttl_seconds: float = 1800.0,
     ) -> None:
         self._inner = inner
         self._provider = provider

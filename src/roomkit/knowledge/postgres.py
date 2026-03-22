@@ -1,7 +1,9 @@
-"""PostgreSQL full-text search knowledge source.
+"""PostgreSQL full-text keyword search knowledge source.
 
-Uses ``tsvector`` for relevance-ranked retrieval with no external
-dependencies beyond ``asyncpg`` (already required by ``PostgresStore``).
+Uses ``tsvector`` (keyword matching) for relevance-ranked retrieval
+with no external dependencies beyond ``asyncpg``.  This is **not**
+semantic vector search (pgvector) — it performs PostgreSQL full-text
+search via ``plainto_tsquery`` and ``ts_rank_cd``.
 
 Usage::
 
@@ -62,9 +64,10 @@ _SEARCH_ALL = _SEARCH.format(room_filter="")
 
 
 class PostgresKnowledgeSource(KnowledgeSource):
-    """Full-text search knowledge source backed by PostgreSQL tsvector.
+    """Full-text keyword search via PostgreSQL ``tsvector``.
 
-    Stores documents with automatic tsvector indexing and provides
+    Performs keyword matching (not semantic/vector similarity).  Stores
+    documents with automatic ``tsvector`` indexing and provides
     relevance-ranked retrieval via ``ts_rank_cd``.  Supports room-scoped
     queries and arbitrary metadata.
 

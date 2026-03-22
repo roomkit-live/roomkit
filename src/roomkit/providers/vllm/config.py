@@ -17,8 +17,8 @@ class VLLMConfig(BaseModel):
         api_key: API key (vLLM usually needs no auth).
         max_tokens: Maximum tokens in the response.
         temperature: Sampling temperature.
-        timeout: HTTP request timeout in seconds. Increase for servers that load
-            models on first request (e.g. Ollama cold start).
+        timeout: HTTP request timeout in seconds. Increase for vLLM servers that
+            load models lazily on first request.
     """
 
     model: str
