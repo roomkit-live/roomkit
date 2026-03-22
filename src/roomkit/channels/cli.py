@@ -162,14 +162,27 @@ class CLIChannel(Channel):
         loop = asyncio.get_event_loop()
         prompt = self._colorize(self._user_color, self._prompt)
 
+        # Use a daemon thread so Ctrl+C doesn't hang waiting for
+        # the blocked input() call during asyncio shutdown.
+        import concurrent.futures
+
+        executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="cli-input",
+        )
+        # Mark the thread as daemon so it dies with the process
+        executor._thread_name_prefix = "cli-input"  # type: ignore[attr-defined]
+
         while True:
             try:
                 line = await loop.run_in_executor(
-                    None,
+                    executor,
                     lambda p=prompt: input(p),  # type: ignore[misc]
                 )
             except (EOFError, KeyboardInterrupt):
                 print()
+                break
+            except asyncio.CancelledError:
                 break
 
             stripped = line.strip()
@@ -178,13 +191,18 @@ class CLIChannel(Channel):
             if stripped.lower() in ("quit", "exit", "q"):
                 break
 
-            await kit.process_inbound(
-                InboundMessage(
-                    channel_id=self.channel_id,
-                    sender_id=sender_id,
-                    content=TextContent(body=stripped),
+            try:
+                await kit.process_inbound(
+                    InboundMessage(
+                        channel_id=self.channel_id,
+                        sender_id=sender_id,
+                        content=TextContent(body=stripped),
+                    )
                 )
-            )
+            except asyncio.CancelledError:
+                break
+
+        executor.shutdown(wait=False, cancel_futures=True)
 
     # -- Internal helpers -----------------------------------------------------
 
