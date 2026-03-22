@@ -169,13 +169,23 @@ class TestWaitForResultHooks:
 
         assert len(hook_events) == 2
 
+        # ON_TASK_DELEGATED — enriched metadata
+        delegated_meta = hook_events[0][1]
         assert hook_events[0][0] == "delegated"
-        assert hook_events[0][1]["agent_id"] == "worker"
+        assert delegated_meta["agent_id"] == "worker"
+        assert delegated_meta["parent_room_id"] == "room"
+        assert "child_room_id" in delegated_meta
+        assert "task_id" in delegated_meta
+        assert delegated_meta["task_input"] == "test"
 
+        # ON_TASK_COMPLETED — enriched metadata
+        completed_meta = hook_events[1][1]
         assert hook_events[1][0] == "completed"
-        assert hook_events[1][1]["agent_id"] == "worker"
-        assert hook_events[1][1]["task_status"] == "completed"
-        assert "duration_ms" in hook_events[1][1]
+        assert completed_meta["agent_id"] == "worker"
+        assert completed_meta["parent_room_id"] == "room"
+        assert completed_meta["task_status"] == "completed"
+        assert "duration_ms" in completed_meta
+        assert "child_room_id" in completed_meta
 
         await kit.close()
 

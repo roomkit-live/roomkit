@@ -34,6 +34,8 @@ class SpanKind(StrEnum):
     PIPELINE_SPEECH_SEGMENT = "pipeline.speech_segment"
     STORE_QUERY = "store.query"
     BACKEND_CONNECT = "backend.connect"
+    DELEGATION = "delegation"
+    DELEGATION_WORKER = "delegation.worker"
     CUSTOM = "custom"
 
 
@@ -97,6 +99,14 @@ class Attr:
 
     # Backend
     BACKEND_TYPE = "backend.type"
+
+    # Delegation
+    DELEGATION_TASK_ID = "delegation.task_id"
+    DELEGATION_WORKER_ID = "delegation.worker_id"
+    DELEGATION_CHILD_ROOM_ID = "delegation.child_room_id"
+    DELEGATION_PARENT_ROOM_ID = "delegation.parent_room_id"
+    DELEGATION_STATUS = "delegation.status"
+    DELEGATION_MODE = "delegation.mode"
 
 
 @dataclass

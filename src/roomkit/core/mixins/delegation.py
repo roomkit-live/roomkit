@@ -109,6 +109,40 @@ async def run_agent_in_child_room(
 
 
 # ---------------------------------------------------------------------------
+# Hook metadata builder
+# ---------------------------------------------------------------------------
+
+
+def _delegation_metadata(
+    *,
+    task_id: str,
+    child_room_id: str,
+    parent_room_id: str,
+    agent_id: str,
+    task_input: str | None = None,
+    task_status: TaskStatus | str | None = None,
+    duration_ms: float | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """Build consistent metadata for delegation hooks."""
+    meta: dict[str, Any] = {
+        "task_id": task_id,
+        "child_room_id": child_room_id,
+        "parent_room_id": parent_room_id,
+        "agent_id": agent_id,
+    }
+    if task_input is not None:
+        meta["task_input"] = task_input
+    if task_status is not None:
+        meta["task_status"] = task_status
+    if duration_ms is not None:
+        meta["duration_ms"] = duration_ms
+    if error is not None:
+        meta["error"] = error
+    return meta
+
+
+# ---------------------------------------------------------------------------
 # DelegationMixin
 # ---------------------------------------------------------------------------
 
@@ -170,12 +204,35 @@ class DelegationMixin(HelpersMixin):
         """
         from uuid import uuid4
 
+        from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.context import get_current_span
+        from roomkit.telemetry.noop import NoopTelemetryProvider
+
         # Validate
         await self.get_room(room_id)  # type: ignore[attr-defined]
         if agent_id not in self._channels:
             raise ChannelNotRegisteredError(f"Agent channel '{agent_id}' not registered")
 
         child_room_id = f"{room_id}::task-{uuid4().hex[:12]}"
+        task_id = f"task-{uuid4().hex[:12]}"
+
+        # Start telemetry span
+        telemetry = getattr(self, "_telemetry", None) or NoopTelemetryProvider()
+        mode = "inline" if wait else "background"
+        span_id = telemetry.start_span(
+            SpanKind.DELEGATION,
+            f"delegation.{mode}",
+            parent_id=get_current_span(),
+            room_id=room_id,
+            channel_id=agent_id,
+            attributes={
+                Attr.DELEGATION_TASK_ID: task_id,
+                Attr.DELEGATION_WORKER_ID: agent_id,
+                Attr.DELEGATION_CHILD_ROOM_ID: child_room_id,
+                Attr.DELEGATION_PARENT_ROOM_ID: room_id,
+                Attr.DELEGATION_MODE: mode,
+            },
+        )
 
         # Create child room — no orchestration so the parent's strategy
         # doesn't leak (e.g. Supervisor attaching itself to the child).
@@ -211,7 +268,7 @@ class DelegationMixin(HelpersMixin):
 
         # Create task handle
         handle = DelegatedTask(
-            id=f"task-{uuid4().hex[:12]}",
+            id=task_id,
             child_room_id=child_room_id,
             parent_room_id=room_id,
             agent_id=agent_id,
@@ -219,6 +276,13 @@ class DelegationMixin(HelpersMixin):
         )
 
         # Fire ON_TASK_DELEGATED hook
+        hook_meta = _delegation_metadata(
+            task_id=handle.id,
+            child_room_id=child_room_id,
+            parent_room_id=room_id,
+            agent_id=agent_id,
+            task_input=task,
+        )
         hook_event = RoomEvent(
             room_id=room_id,
             source=EventSource(
@@ -229,11 +293,7 @@ class DelegationMixin(HelpersMixin):
             type=EventType.TASK_DELEGATED,
             status=EventStatus.DELIVERED,
             visibility="internal",
-            metadata={
-                "task_id": handle.id,
-                "child_room_id": child_room_id,
-                "agent_id": agent_id,
-            },
+            metadata=hook_meta,
         )
         room_context = await self._build_context(room_id)
         await self._hook_engine.run_async_hooks(
@@ -241,9 +301,22 @@ class DelegationMixin(HelpersMixin):
         )
 
         if wait:
-            return await self._run_inline(handle, context, notify, on_complete)
+            result_handle = await self._run_inline(handle, context, notify, on_complete)
+            telemetry.end_span(
+                span_id,
+                attributes={
+                    Attr.DELEGATION_STATUS: result_handle.status,
+                    Attr.DURATION_MS: result_handle.result.duration_ms
+                    if result_handle.result
+                    else 0,
+                },
+            )
+            return result_handle
 
-        return await self._run_background(handle, context, notify, on_complete, delivery_strategy)
+        # Background — span ends when task completes (via callback)
+        return await self._run_background(
+            handle, context, notify, on_complete, delivery_strategy, span_id, telemetry
+        )
 
     async def _run_inline(
         self,
@@ -302,8 +375,12 @@ class DelegationMixin(HelpersMixin):
         notify: str | None,
         on_complete: Any | None,
         delivery_strategy: BackgroundTaskDeliveryStrategy | None,
+        span_id: str,
+        telemetry: Any,
     ) -> DelegatedTask:
         """Submit the task to the background task runner."""
+        from roomkit.telemetry.base import Attr
+
         notify_channel = notify or handle.agent_id
         # Resolve delivery strategy: per-task override > framework-level
         effective_strategy: BackgroundTaskDeliveryStrategy | None
@@ -313,6 +390,14 @@ class DelegationMixin(HelpersMixin):
             effective_strategy = self._delivery_strategy
 
         async def _on_bg_complete(result: DelegatedTaskResult) -> None:
+            # End telemetry span
+            telemetry.end_span(
+                span_id,
+                attributes={
+                    Attr.DELEGATION_STATUS: result.status,
+                    Attr.DURATION_MS: result.duration_ms,
+                },
+            )
             await self._on_delegation_complete(result, notify_channel, strategy=effective_strategy)
             if on_complete:
                 await on_complete(result)
@@ -374,7 +459,16 @@ class DelegationMixin(HelpersMixin):
             )
             await self._store.update_binding(updated)
 
-        # Fire ON_TASK_COMPLETED hook
+        # Fire ON_TASK_COMPLETED hook with enriched metadata
+        hook_meta = _delegation_metadata(
+            task_id=result.task_id,
+            child_room_id=result.child_room_id,
+            parent_room_id=result.parent_room_id,
+            agent_id=result.agent_id,
+            task_status=result.status,
+            duration_ms=result.duration_ms,
+            error=result.error,
+        )
         hook_event = RoomEvent(
             room_id=result.parent_room_id,
             source=EventSource(
@@ -385,13 +479,7 @@ class DelegationMixin(HelpersMixin):
             type=EventType.TASK_COMPLETED,
             status=EventStatus.DELIVERED,
             visibility="internal",
-            metadata={
-                "task_id": result.task_id,
-                "child_room_id": result.child_room_id,
-                "agent_id": result.agent_id,
-                "task_status": result.status,
-                "duration_ms": result.duration_ms,
-            },
+            metadata=hook_meta,
         )
         try:
             room_context = await self._build_context(result.parent_room_id)
