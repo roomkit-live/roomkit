@@ -220,6 +220,9 @@ class RealtimeVoiceChannel(Channel):
         # Cached event loop for cross-thread scheduling (e.g. PortAudio callback)
         self._event_loop: asyncio.AbstractEventLoop | None = None
 
+        # Idle tracking: set when provider finishes a response, cleared on start
+        self._idle_events: dict[str, asyncio.Event] = {}
+
         # Track fire-and-forget tasks for clean shutdown
         self._scheduled_tasks: set[asyncio.Task[Any]] = set()
 
@@ -262,6 +265,23 @@ class RealtimeVoiceChannel(Channel):
         """Get all active sessions for a room."""
         with self._state_lock:
             return [s for s in self._sessions.values() if self._session_rooms.get(s.id) == room_id]
+
+    async def wait_idle(self, room_id: str, timeout: float = 15.0) -> None:
+        """Wait until all sessions in the room are idle (not speaking).
+
+        An idle session has finished its last response and all audio
+        has been forwarded to the transport.
+        """
+        for session in self.get_room_sessions(room_id):
+            event = self._idle_events.get(session.id)
+            if event is not None and not event.is_set():
+                await asyncio.wait_for(event.wait(), timeout=timeout)
+
+    async def _set_idle(self, session: VoiceSession) -> None:
+        """Mark a session as idle (called after response end + audio drain)."""
+        idle = self._idle_events.get(session.id)
+        if idle is not None:
+            idle.set()
 
     @property
     def tool_handler(self) -> ToolHandler | None:
@@ -438,6 +458,11 @@ class RealtimeVoiceChannel(Channel):
         )
         self._session_spans[session.id] = session_span_id
 
+        # Initialize idle event (starts as idle — no response in progress)
+        idle = asyncio.Event()
+        idle.set()
+        self._idle_events[session.id] = idle
+
         # Per-room config overrides from metadata
         system_prompt = meta.get("system_prompt", self._system_prompt)
         voice = meta.get("voice", self._voice)
@@ -606,6 +631,9 @@ class RealtimeVoiceChannel(Channel):
             self._audio_generation.pop(session.id, None)
             self._session_transport_rates.pop(session.id, None)
             self._audio_forward_count.pop(session.id, None)
+            idle = self._idle_events.pop(session.id, None)
+            if idle is not None:
+                idle.set()  # unblock any waiters
             turn_span_id = self._turn_spans.pop(session.id, None)
             session_span_id = self._session_spans.pop(session.id, None)
             resamplers = self._session_resamplers.pop(session.id, None)
@@ -1559,6 +1587,10 @@ class RealtimeVoiceChannel(Channel):
 
     def _on_provider_response_start(self, session: VoiceSession) -> Any:
         """Handle AI response start — activate AEC, publish typing indicator."""
+        # Mark session as not idle
+        idle = self._idle_events.get(session.id)
+        if idle is not None:
+            idle.clear()
         self._set_aec_active(True)
         try:
             loop = asyncio.get_running_loop()
@@ -1619,6 +1651,12 @@ class RealtimeVoiceChannel(Channel):
             loop,
             self._handle_response_indicator(session, is_speaking=False),
             name=f"rt_response_end:{session.id}",
+        )
+        # Mark idle AFTER all audio tasks + end-of-response signal complete
+        self._track_task(
+            loop,
+            self._set_idle(session),
+            name=f"rt_idle:{session.id}",
         )
 
     async def _signal_end_of_response(self, session: VoiceSession) -> None:

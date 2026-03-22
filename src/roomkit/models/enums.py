@@ -182,6 +182,9 @@ class HookTrigger(StrEnum):
     ON_TASK_CREATED = "on_task_created"
     # Delivery status (outbound message tracking)
     ON_DELIVERY_STATUS = "on_delivery_status"
+    # Proactive delivery lifecycle
+    BEFORE_DELIVER = "before_deliver"
+    AFTER_DELIVER = "after_deliver"
     # Error handling
     ON_ERROR = "on_error"
     # Voice (RFC §18)

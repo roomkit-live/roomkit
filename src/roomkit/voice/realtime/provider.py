@@ -194,6 +194,13 @@ class RealtimeVoiceProvider(ABC):
         """
         raise NotImplementedError(f"{self.name} does not support send_event()")
 
+    def is_responding(self, session_id: str) -> bool:
+        """Check if the provider is actively generating a response.
+
+        Returns ``True`` between ``response.created`` and ``response.done``.
+        """
+        return False
+
     async def close(self) -> None:
         """Release all provider resources."""
 

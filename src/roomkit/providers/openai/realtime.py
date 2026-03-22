@@ -76,6 +76,9 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         # Track active responses per session to avoid inject_text conflicts
         self._responding: set[str] = set()
 
+    def is_responding(self, session_id: str) -> bool:
+        return session_id in self._responding
+
     @property
     def name(self) -> str:
         return "OpenAIRealtimeProvider"
