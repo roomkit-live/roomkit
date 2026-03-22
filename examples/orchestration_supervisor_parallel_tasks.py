@@ -75,31 +75,56 @@ async def main() -> None:
 
     # --- Supervisor setup ----------------------------------------------------
     #
-    # strategy="parallel" injects a single delegate_workers tool.
-    # The framework runs both analysts concurrently via asyncio.gather.
+    # auto_delegate=True: framework triggers workers automatically.
+    # strategy="parallel": both analysts run concurrently.
+    # No tool, no AI choice — fully framework-driven.
 
     kit = RoomKit(
         orchestration=Supervisor(
             supervisor=supervisor,
             workers=[technical, business],
             strategy="parallel",
+            auto_delegate=True,
         ),
     )
 
-    # --- State hooks ---------------------------------------------------------
+    # --- Observability hooks ----------------------------------------------------
+    #
+    # Hooks use enriched metadata: task_id, child_room_id, parent_room_id,
+    # agent_id, task_input, task_status, duration_ms, error.
 
     @kit.hook(HookTrigger.ON_TASK_DELEGATED, execution=HookExecution.ASYNC)
     async def on_delegated(event: RoomEvent, ctx: RoomContext) -> None:
-        agent = event.metadata.get("agent_id", "?")
-        task_id = event.metadata.get("task_id", "?")
-        print(f"\n\033[35m[state] Delegating to {agent} (task {task_id})\033[0m")
+        m = event.metadata
+        agent = m.get("agent_id", "?")
+        task_id = m.get("task_id", "?")
+        child = m.get("child_room_id", "?")
+        task_input = m.get("task_input", "")
+        preview = task_input[:60] + "..." if len(task_input) > 60 else task_input
+        print(
+            f"\n\033[35m[delegated] {agent}\033[0m"
+            f"\n  task:  {task_id}"
+            f"\n  room:  {child}"
+            f"\n  input: {preview}"
+        )
 
     @kit.hook(HookTrigger.ON_TASK_COMPLETED, execution=HookExecution.ASYNC)
     async def on_completed(event: RoomEvent, ctx: RoomContext) -> None:
-        agent = event.metadata.get("agent_id", "?")
-        status = event.metadata.get("task_status", "?")
-        duration = event.metadata.get("duration_ms", 0)
-        print(f"\n\033[35m[state] {agent} completed ({status}, {duration:.0f}ms)\033[0m")
+        m = event.metadata
+        agent = m.get("agent_id", "?")
+        status = m.get("task_status", "?")
+        duration = m.get("duration_ms", 0)
+        error = m.get("error")
+        child = m.get("child_room_id", "?")
+        color = "\033[32m" if status == "completed" else "\033[31m"
+        print(
+            f"\n{color}[completed] {agent}\033[0m"
+            f"\n  status:   {status}"
+            f"\n  duration: {duration:.0f}ms"
+            f"\n  room:     {child}"
+        )
+        if error:
+            print(f"  error:    {error}")
 
     cli = CLIChannel("cli")
     kit.register_channel(cli)

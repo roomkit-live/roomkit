@@ -80,6 +80,7 @@ async def main() -> None:
             supervisor=coordinator,
             workers=[researcher, writer],
             strategy="sequential",
+            auto_delegate=True,
         ),
     )
 

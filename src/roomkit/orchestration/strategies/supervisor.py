@@ -14,7 +14,11 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core.hooks import HookRegistration
+from roomkit.models.channel import ChannelBinding, ChannelOutput
+from roomkit.models.context import RoomContext
+from roomkit.models.enums import ChannelType as _ChannelType
 from roomkit.models.enums import HookExecution, HookTrigger
+from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.router import ConversationRouter
 from roomkit.orchestration.state import (
@@ -46,21 +50,31 @@ class Supervisor(Orchestration):
 
     Examples::
 
-        # Sequential: researcher → writer (chained)
+        # Framework-driven: auto-delegate with task refinement
+        Supervisor(
+            supervisor=coordinator,
+            workers=[researcher, writer],
+            strategy="sequential",
+            auto_delegate=True,
+        )
+
+        # Framework-driven: workers get raw user message
+        Supervisor(
+            supervisor=coordinator,
+            workers=[technical, business],
+            strategy="parallel",
+            auto_delegate=True,
+            refine_task=False,
+        )
+
+        # Tool-based: AI decides when to delegate
         Supervisor(
             supervisor=coordinator,
             workers=[researcher, writer],
             strategy="sequential",
         )
 
-        # Parallel: technical + business (fan-out)
-        Supervisor(
-            supervisor=coordinator,
-            workers=[technical, business],
-            strategy="parallel",
-        )
-
-        # Manual: AI decides via per-worker tools (default)
+        # Manual: per-worker tools, AI decides everything
         Supervisor(
             supervisor=coordinator,
             workers=[researcher, writer],
@@ -73,6 +87,8 @@ class Supervisor(Orchestration):
         workers: list[Agent],
         *,
         strategy: WorkerStrategy | str | None = None,
+        auto_delegate: bool = False,
+        refine_task: bool = True,
         wait_for_result: bool = True,
     ) -> None:
         """Initialise the supervisor strategy.
@@ -84,23 +100,38 @@ class Supervisor(Orchestration):
             strategy: Deterministic execution pattern for workers.
 
                 - ``"sequential"``: workers run in order, each receiving
-                  the previous worker's output. One ``delegate_workers``
-                  tool is injected.
+                  the previous worker's output.
                 - ``"parallel"``: all workers run concurrently on the
-                  same task. One ``delegate_workers`` tool is injected.
+                  same task.
                 - ``None`` (default): per-worker ``delegate_to_<id>``
                   tools are injected and the AI decides when to call
                   them.
 
+            auto_delegate: If ``True``, the framework triggers workers
+                automatically on every user message — no tool needed.
+                If ``False`` (default), the supervisor decides when to
+                delegate via tool calls. Requires *strategy* to be set.
+
+            refine_task: When *auto_delegate* is ``True``, controls
+                whether the supervisor reformulates the user's message
+                before sending it to workers (two-pass, default ``True``)
+                or workers get the raw user message (one-pass).
+
             wait_for_result: When *strategy* is ``None``, controls
                 whether delegation runs inline (``True``, default) or
                 in the background (``False``).  Ignored when *strategy*
-                is set (always inline).
+                is set or *auto_delegate* is ``True``.
         """
         self._supervisor = supervisor
         self._workers = list(workers)
         self._strategy = WorkerStrategy(strategy) if strategy else None
+        self._auto_delegate = auto_delegate
+        self._refine_task = refine_task
         self._wait_for_result = wait_for_result
+
+        if auto_delegate and self._strategy is None:
+            msg = "auto_delegate=True requires strategy to be set"
+            raise ValueError(msg)
 
     def agents(self) -> list[Agent]:
         """Return only the supervisor — workers are not attached to the room."""
@@ -129,8 +160,10 @@ class Supervisor(Orchestration):
             if worker.channel_id not in kit.channels:
                 kit.register_channel(worker)
 
-        # Inject tools based on strategy
-        if self._strategy is not None:
+        # Wire delegation based on mode
+        if self._auto_delegate:
+            self._install_auto_delegate(kit, room_id)
+        elif self._strategy is not None:
             self._inject_strategy_tool(kit, room_id)
         else:
             self._inject_per_worker_tools(kit, room_id)
@@ -143,6 +176,57 @@ class Supervisor(Orchestration):
         )
         room = set_conversation_state(room, initial_state)
         await kit.store.update_room(room)
+
+    # -- Auto-delegate (framework-driven, no tools) ---------------------------
+
+    def _install_auto_delegate(self, kit: RoomKit, room_id: str) -> None:
+        """Wrap supervisor's on_event for framework-driven delegation."""
+        supervisor = self._supervisor
+        strategy = self._strategy
+        workers = self._workers
+        refine = self._refine_task
+        original_on_event = supervisor.on_event
+
+        async def auto_delegate_on_event(
+            event: RoomEvent,
+            binding: ChannelBinding,
+            context: RoomContext,
+        ) -> ChannelOutput:
+            # Only intercept user messages (not self-loop, not AI sources)
+            if event.source.channel_id == supervisor.channel_id:
+                return ChannelOutput.empty()
+            if event.source.channel_type == _ChannelType.AI:
+                return ChannelOutput.empty()
+
+            rid = context.room.id if context.room else room_id
+
+            if refine:
+                # Two-pass: supervisor formulates the task, then presents results
+                return await _two_pass_delegate(
+                    kit,
+                    rid,
+                    supervisor,
+                    original_on_event,
+                    event,
+                    binding,
+                    context,
+                    strategy,
+                    workers,
+                )
+            # One-pass: workers get raw message, supervisor presents results
+            return await _one_pass_delegate(
+                kit,
+                rid,
+                supervisor,
+                original_on_event,
+                event,
+                binding,
+                context,
+                strategy,
+                workers,
+            )
+
+        supervisor.on_event = auto_delegate_on_event  # type: ignore[assignment]
 
     # -- Strategy-based tool (sequential / parallel) --------------------------
 
@@ -180,15 +264,10 @@ class Supervisor(Orchestration):
         original = self._supervisor.tool_handler
         strategy = self._strategy
         workers = self._workers
-        # Lock prevents concurrent duplicate calls when asyncio.gather
-        # runs multiple tool calls from the same AI response in parallel.
-        # After first success, block all calls for DEDUP_WINDOW seconds
-        # to prevent the AI from splitting one request into per-worker calls.
-        # The window auto-expires so the next user message runs fresh.
         _lock = asyncio.Lock()
         _last_result: str | None = None
         _last_time: float = 0.0
-        dedup_window = 30.0  # seconds — covers any tool loop iteration
+        dedup_window = 30.0
 
         async def strategy_handler(name: str, arguments: dict[str, Any]) -> str:
             nonlocal _last_result, _last_time
@@ -202,7 +281,6 @@ class Supervisor(Orchestration):
             task_desc = arguments.get("task", "")
 
             async with _lock:
-                # Return cached result if still within the dedup window
                 if _last_result is not None and (time.monotonic() - _last_time) < dedup_window:
                     return _last_result
 
@@ -336,8 +414,120 @@ class Supervisor(Orchestration):
 
 
 # ---------------------------------------------------------------------------
+# Auto-delegate execution helpers
+# ---------------------------------------------------------------------------
+
+
+async def _two_pass_delegate(
+    kit: RoomKit,
+    room_id: str,
+    supervisor: Agent,
+    original_on_event: Any,
+    event: RoomEvent,
+    binding: ChannelBinding,
+    context: RoomContext,
+    strategy: WorkerStrategy | None,
+    workers: list[Agent],
+) -> ChannelOutput:
+    """Two-pass: supervisor formulates task → workers run → supervisor presents."""
+    # Pass 1: supervisor generates the refined task (not delivered to user)
+    pass1_output = await original_on_event(event, binding, context)
+
+    # Extract text from the response (drains stream if streaming)
+    refined_task = await _extract_output_text(pass1_output)
+    if not refined_task:
+        # Supervisor had nothing to say — return empty
+        return pass1_output
+
+    # Run workers with the refined task
+    worker_results = await _run_workers(kit, room_id, strategy, workers, refined_task)
+
+    # Pass 2: inject worker results and generate final response
+    results_text = _format_worker_results(worker_results)
+    results_event = RoomEvent(
+        room_id=event.room_id,
+        type=event.type,
+        source=EventSource(channel_id="system", channel_type="system"),
+        content=TextContent(body=f"Here are the results from your workers:\n\n{results_text}"),
+    )
+
+    # Ingest the results so the supervisor sees them in context
+    try:
+        await supervisor._memory.ingest(
+            event.room_id, results_event, channel_id=supervisor.channel_id
+        )
+    except Exception:
+        logger.warning("Failed to ingest worker results", exc_info=True)
+
+    return await original_on_event(results_event, binding, context)
+
+
+async def _one_pass_delegate(
+    kit: RoomKit,
+    room_id: str,
+    supervisor: Agent,
+    original_on_event: Any,
+    event: RoomEvent,
+    binding: ChannelBinding,
+    context: RoomContext,
+    strategy: WorkerStrategy | None,
+    workers: list[Agent],
+) -> ChannelOutput:
+    """One-pass: workers run on raw message → supervisor presents."""
+    # Extract user's raw message
+    user_message = ""
+    if isinstance(event.content, TextContent):
+        user_message = event.content.body
+
+    if not user_message:
+        return await original_on_event(event, binding, context)
+
+    # Run workers with the raw user message
+    worker_results = await _run_workers(kit, room_id, strategy, workers, user_message)
+
+    # Inject results into context and let supervisor present
+    results_text = _format_worker_results(worker_results)
+    results_event = RoomEvent(
+        room_id=event.room_id,
+        type=event.type,
+        source=EventSource(channel_id="system", channel_type="system"),
+        content=TextContent(
+            body=(
+                f"The user asked: {user_message}\n\n"
+                f"Here are the results from your workers:\n\n{results_text}"
+            )
+        ),
+    )
+
+    try:
+        await supervisor._memory.ingest(
+            event.room_id, results_event, channel_id=supervisor.channel_id
+        )
+    except Exception:
+        logger.warning("Failed to ingest worker results", exc_info=True)
+
+    return await original_on_event(results_event, binding, context)
+
+
+# ---------------------------------------------------------------------------
 # Strategy execution helpers
 # ---------------------------------------------------------------------------
+
+
+async def _run_workers(
+    kit: RoomKit,
+    room_id: str,
+    strategy: WorkerStrategy | None,
+    workers: list[Agent],
+    task_desc: str,
+) -> list[dict[str, str]]:
+    """Run workers according to strategy and return raw results."""
+    if strategy == WorkerStrategy.SEQUENTIAL:
+        result_json = await _run_sequential(kit, room_id, workers, task_desc)
+    else:
+        result_json = await _run_parallel(kit, room_id, workers, task_desc)
+    parsed = json.loads(result_json)
+    return parsed.get("results", [])
 
 
 async def _run_sequential(
@@ -361,7 +551,6 @@ async def _run_sequential(
         if delegated.result:
             output = delegated.result.output or delegated.result.error or ""
         results.append({"worker": worker.channel_id, "output": output})
-        # Next worker receives this worker's output
         current_input = output
 
     return json.dumps({"status": "completed", "results": results})
@@ -389,3 +578,40 @@ async def _run_parallel(
 
     results = await asyncio.gather(*[_delegate_one(w) for w in workers])
     return json.dumps({"status": "completed", "results": list(results)})
+
+
+# ---------------------------------------------------------------------------
+# Output helpers
+# ---------------------------------------------------------------------------
+
+
+async def _extract_output_text(output: ChannelOutput) -> str:
+    """Extract plain text from a ChannelOutput.
+
+    Handles both synchronous response_events and streaming responses.
+    For streaming, drains the stream to collect the full text.
+    """
+    # Check synchronous response first
+    if output.response_events:
+        for resp in output.response_events:
+            if isinstance(resp.content, TextContent) and resp.content.body:
+                return resp.content.body
+
+    # Drain streaming response if present
+    if output.response_stream is not None:
+        parts: list[str] = []
+        async for chunk in output.response_stream:
+            parts.append(chunk)
+        return "".join(parts)
+
+    return ""
+
+
+def _format_worker_results(results: list[dict[str, str]]) -> str:
+    """Format worker results as readable text for the supervisor."""
+    parts: list[str] = []
+    for r in results:
+        worker = r.get("worker", "unknown")
+        output = r.get("output", "")
+        parts.append(f"--- {worker} ---\n{output}")
+    return "\n\n".join(parts)
