@@ -89,6 +89,7 @@ class Supervisor(Orchestration):
         strategy: WorkerStrategy | str | None = None,
         auto_delegate: bool = False,
         refine_task: bool = True,
+        refine_instruction: str | None = None,
         wait_for_result: bool = True,
     ) -> None:
         """Initialise the supervisor strategy.
@@ -117,6 +118,11 @@ class Supervisor(Orchestration):
                 before sending it to workers (two-pass, default ``True``)
                 or workers get the raw user message (one-pass).
 
+            refine_instruction: Custom instruction injected into the
+                supervisor's prompt during pass 1 (task formulation).
+                Overrides the default. Only used when *refine_task*
+                is ``True``.
+
             wait_for_result: When *strategy* is ``None``, controls
                 whether delegation runs inline (``True``, default) or
                 in the background (``False``).  Ignored when *strategy*
@@ -127,6 +133,7 @@ class Supervisor(Orchestration):
         self._strategy = WorkerStrategy(strategy) if strategy else None
         self._auto_delegate = auto_delegate
         self._refine_task = refine_task
+        self._refine_instruction = refine_instruction
         self._wait_for_result = wait_for_result
 
         if auto_delegate and self._strategy is None:
@@ -185,6 +192,7 @@ class Supervisor(Orchestration):
         strategy = self._strategy
         workers = self._workers
         refine = self._refine_task
+        refine_instruction = self._refine_instruction
         original_on_event = supervisor.on_event
 
         async def auto_delegate_on_event(
@@ -212,6 +220,7 @@ class Supervisor(Orchestration):
                     context,
                     strategy,
                     workers,
+                    instruction=refine_instruction,
                 )
             # One-pass: workers get raw message, supervisor presents results
             return await _one_pass_delegate(
@@ -418,6 +427,13 @@ class Supervisor(Orchestration):
 # ---------------------------------------------------------------------------
 
 
+_PASS1_INSTRUCTION = (
+    "Based on the user's request, formulate a clear and concise task "
+    "description for your specialist workers. Focus on what information "
+    "is needed. Do not answer the question yourself."
+)
+
+
 async def _two_pass_delegate(
     kit: RoomKit,
     room_id: str,
@@ -428,15 +444,24 @@ async def _two_pass_delegate(
     context: RoomContext,
     strategy: WorkerStrategy | None,
     workers: list[Agent],
+    *,
+    instruction: str | None = None,
 ) -> ChannelOutput:
     """Two-pass: supervisor formulates task → workers run → supervisor presents."""
-    # Pass 1: supervisor generates the refined task (not delivered to user)
-    pass1_output = await original_on_event(event, binding, context)
+    # Pass 1: temporarily inject a task-formulation instruction
+    pass1_instruction = instruction or _PASS1_INSTRUCTION
+    original_prompt = supervisor._system_prompt
+    supervisor._system_prompt = (
+        f"{original_prompt}\n\n{pass1_instruction}" if original_prompt else pass1_instruction
+    )
+    try:
+        pass1_output = await original_on_event(event, binding, context)
+        refined_task = await _extract_output_text(pass1_output)
+    finally:
+        # Always restore the original prompt
+        supervisor._system_prompt = original_prompt
 
-    # Extract text from the response (drains stream if streaming)
-    refined_task = await _extract_output_text(pass1_output)
     if not refined_task:
-        # Supervisor had nothing to say — return empty
         return pass1_output
 
     # Run workers with the refined task
