@@ -81,7 +81,7 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
             key = SecretStr(api_key) if isinstance(api_key, str) else api_key
             self._config = XAIRealtimeConfig(
                 api_key=key,
-                model=model or "grok-3-fast",
+                model=model or "grok-2-audio",
                 base_url=base_url or "wss://api.x.ai/v1/realtime",
             )
 
@@ -134,7 +134,7 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
                 "Install with: pip install websockets"
             ) from exc
 
-        url = f"{self._config.base_url}?model={self._config.model}"
+        url = self._config.base_url
         headers = {
             "Authorization": f"Bearer {self._config.api_key.get_secret_value()}",
         }
@@ -182,11 +182,14 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
         if tools:
             session_config["tools"] = [{**t, "type": t.get("type", "function")} for t in tools]
 
-        # Input/output audio format
-        input_format = pc.get("input_audio_format", "pcm16")
-        output_format = pc.get("output_audio_format", "pcm16")
-        session_config["input_audio_format"] = input_format
-        session_config["output_audio_format"] = output_format
+        # Audio format — xAI uses nested structure
+        input_rate = pc.get("input_audio_rate", input_sample_rate)
+        output_rate = pc.get("output_audio_rate", output_sample_rate)
+        audio_type = pc.get("audio_format_type", "audio/pcm")
+        session_config["audio"] = {
+            "input": {"format": {"type": audio_type, "rate": input_rate}},
+            "output": {"format": {"type": audio_type, "rate": output_rate}},
+        }
 
         # Modalities
         session_config["modalities"] = pc.get("modalities", ["text", "audio"])

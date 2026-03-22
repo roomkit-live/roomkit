@@ -12,7 +12,7 @@ Run with:
 
 Environment variables:
     XAI_API_KEY         (required) xAI API key
-    XAI_MODEL           Model name (default: grok-3-fast)
+    XAI_MODEL           Model name (default: grok-2-audio)
     XAI_VOICE           Voice preset: eve | ara | rex | sal | leo (default: eve)
     SYSTEM_PROMPT       Custom system prompt
 
@@ -52,7 +52,7 @@ async def main() -> None:
     # --- xAI Realtime provider (speech-to-speech) ---
     config = XAIRealtimeConfig(
         api_key=api_key,
-        model=os.environ.get("XAI_MODEL", "grok-3-fast"),
+        model=os.environ.get("XAI_MODEL", "grok-2-audio"),
         voice=os.environ.get("XAI_VOICE", "eve"),
     )
     provider = XAIRealtimeProvider(config)

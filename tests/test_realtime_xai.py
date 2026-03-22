@@ -57,7 +57,7 @@ def _inject_ws(provider: XAIRealtimeProvider, session: VoiceSession, ws: AsyncMo
 class TestConfig:
     def test_defaults(self) -> None:
         cfg = XAIRealtimeConfig(api_key=SecretStr("xai-key"))
-        assert cfg.model == "grok-3-fast"
+        assert cfg.model == "grok-2-audio"
         assert cfg.base_url == "wss://api.x.ai/v1/realtime"
         assert cfg.voice == "eve"
         assert cfg.transcription_model == "grok-2-audio"
@@ -178,8 +178,7 @@ class TestConnect:
             await provider.connect(session)
 
         url = mock_ws_connect.call_args[0][0]
-        assert "model=grok-3-fast" in url
-        assert url.startswith("wss://api.x.ai/v1/realtime")
+        assert url == "wss://api.x.ai/v1/realtime"
 
     async def test_connect_with_tools(
         self,

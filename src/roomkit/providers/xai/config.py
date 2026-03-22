@@ -17,7 +17,7 @@ class XAIRealtimeConfig(BaseModel):
     """
 
     api_key: SecretStr
-    model: str = "grok-3-fast"
+    model: str = "grok-2-audio"
     base_url: str = "wss://api.x.ai/v1/realtime"
     voice: str = "eve"
     transcription_model: str = "grok-2-audio"
