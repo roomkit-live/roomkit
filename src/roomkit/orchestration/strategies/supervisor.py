@@ -427,11 +427,12 @@ class Supervisor(Orchestration):
 # ---------------------------------------------------------------------------
 
 
-_PASS1_INSTRUCTION = (
-    "Based on the user's request, formulate a clear and concise task "
-    "description for your specialist workers. Focus on what information "
-    "is needed. Do not answer the question yourself."
-)
+def _build_pass1_instruction(workers: list[Agent]) -> str:
+    """Build the default pass-1 instruction."""
+    return (
+        "Rewrite the user's request as a short, focused research question. "
+        "One or two sentences maximum. Output only the question, nothing else."
+    )
 
 
 async def _two_pass_delegate(
@@ -449,7 +450,7 @@ async def _two_pass_delegate(
 ) -> ChannelOutput:
     """Two-pass: supervisor formulates task → workers run → supervisor presents."""
     # Pass 1: temporarily inject a task-formulation instruction
-    pass1_instruction = instruction or _PASS1_INSTRUCTION
+    pass1_instruction = instruction or _build_pass1_instruction(workers)
     original_prompt = supervisor._system_prompt
     supervisor._system_prompt = (
         f"{original_prompt}\n\n{pass1_instruction}" if original_prompt else pass1_instruction
@@ -460,6 +461,8 @@ async def _two_pass_delegate(
     finally:
         # Always restore the original prompt
         supervisor._system_prompt = original_prompt
+
+    logger.debug("Pass 1 refined task: %s", refined_task[:200] if refined_task else "(empty)")
 
     if not refined_task:
         return pass1_output

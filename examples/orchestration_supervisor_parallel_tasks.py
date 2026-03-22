@@ -56,7 +56,7 @@ async def main() -> None:
         system_prompt=(
             "You are a technical analyst. Analyze the given topic: "
             "architecture, implementation, scalability, trade-offs. "
-            "Be concise (3-4 points)."
+            "Be concise (3-4 points). Need a technical deep dive report."
         ),
         memory=SlidingWindowMemory(max_events=50),
     )
@@ -100,7 +100,7 @@ async def main() -> None:
         task_id = m.get("task_id", "?")
         child = m.get("child_room_id", "?")
         task_input = m.get("task_input", "")
-        preview = task_input[:60] + "..." if len(task_input) > 60 else task_input
+        preview = task_input[:80] + "..." if len(task_input) > 80 else task_input
         print(
             f"\n\033[35m[delegated] {agent}\033[0m"
             f"\n  task:  {task_id}"
@@ -117,11 +117,13 @@ async def main() -> None:
         error = m.get("error")
         child = m.get("child_room_id", "?")
         color = "\033[32m" if status == "completed" else "\033[31m"
+        body = getattr(event.content, "body", "")
+        preview = body[:80] + "..." if len(body) > 80 else body
         print(
             f"\n{color}[completed] {agent}\033[0m"
             f"\n  status:   {status}"
             f"\n  duration: {duration:.0f}ms"
-            f"\n  room:     {child}"
+            f"\n  output:   {preview}"
         )
         if error:
             print(f"  error:    {error}")
