@@ -106,12 +106,12 @@ from roomkit import (
     RoomKit,
     VoiceChannel,
 )
+from roomkit.core.delivery import WaitForIdle
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.context import RoomContext
 from roomkit.orchestration.handoff import (
     DelegateHandler,
     HandoffMemoryProvider,
-    WaitForIdleDelivery,
     build_delegate_tool,
     setup_delegation,
 )
@@ -325,7 +325,7 @@ async def main() -> None:
             ("agent-insurance", "Looks up client insurance policy details"),
         ]
     )
-    delegate_handler = DelegateHandler(kit, delivery_strategy=WaitForIdleDelivery())
+    delegate_handler = DelegateHandler(kit, delivery_strategy=WaitForIdle())
     setup_delegation(advisor, delegate_handler, tool=delegate_tool)
 
     # --- Hooks ---------------------------------------------------------------

@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 from roomkit.channels.base import Channel
 from roomkit.channels.websocket import SendFn, StreamSendFn, WebSocketChannel
+from roomkit.core.delivery import DeliveryStrategy
 from roomkit.core.event_router import EventRouter
 from roomkit.core.exceptions import (
     ChannelNotFoundError,
@@ -38,6 +39,7 @@ from roomkit.core.locks import InMemoryLockManager, RoomLockManager
 from roomkit.core.mixins import (
     ChannelOpsMixin,
     DelegationMixin,
+    DeliverMixin,
     FrameworkEventHandler,
     GreetingMixin,
     HelpersMixin,
@@ -73,7 +75,6 @@ from roomkit.sources.base import SourceProvider
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
 from roomkit.tasks.base import TaskRunner
-from roomkit.tasks.delivery import BackgroundTaskDeliveryStrategy
 
 logger = logging.getLogger("roomkit.framework")
 
@@ -107,6 +108,7 @@ class RoomKit(
     RecordingMixin,
     GreetingMixin,
     DelegationMixin,
+    DeliverMixin,
     RealtimeOpsMixin,
     SourceOpsMixin,
     HooksApiMixin,
@@ -129,7 +131,7 @@ class RoomKit(
         tts: TTSProvider | None = None,
         voice: VoiceBackend | None = None,
         task_runner: TaskRunner | None = None,
-        delivery_strategy: BackgroundTaskDeliveryStrategy | None = None,
+        delivery_strategy: DeliveryStrategy | str | None = None,
         status_bus: StatusBus | None = None,
         telemetry: TelemetryConfig | TelemetryProvider | None = None,
         inbound_rate_limit: RateLimit | None = None,
@@ -214,7 +216,9 @@ class RoomKit(
         from roomkit.tasks.memory import InMemoryTaskRunner
 
         self._task_runner: TaskRunner = task_runner or InMemoryTaskRunner()
-        self._delivery_strategy = delivery_strategy
+        from roomkit.core.delivery import resolve_strategy as _resolve
+
+        self._delivery_strategy = _resolve(delivery_strategy)
         # Status bus for multi-agent coordination
         self._status_bus = status_bus or StatusBus()
 

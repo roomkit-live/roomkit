@@ -24,6 +24,7 @@ from roomkit.channels.transport import TransportChannel
 from roomkit.channels.video import VideoChannel
 from roomkit.channels.voice import VoiceChannel
 from roomkit.channels.websocket import WebSocketChannel
+from roomkit.core.delivery import DeliveryStrategy, Immediate, Queued, WaitForIdle
 from roomkit.core.framework import (
     ChannelNotFoundError,
     ChannelNotRegisteredError,
@@ -118,6 +119,11 @@ __all__ = [
     "SourceNotFoundError",
     "VoiceBackendNotConfiguredError",
     "VoiceNotConfiguredError",
+    # Delivery
+    "DeliveryStrategy",
+    "Immediate",
+    "Queued",
+    "WaitForIdle",
     # Channels
     "Agent",
     "AIChannel",

@@ -74,9 +74,10 @@ from roomkit import (
     RoomKit,
     VideoChannel,
 )
+from roomkit.core.delivery import WaitForIdle
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.hook import HookResult
-from roomkit.orchestration.handoff import DelegateHandler, WaitForIdleDelivery, build_delegate_tool
+from roomkit.orchestration.handoff import DelegateHandler, build_delegate_tool
 from roomkit.orchestration.state import ConversationState, set_conversation_state
 from roomkit.orchestration.status_bus import StatusBus
 from roomkit.orchestration.tool_audit import JSONLToolAuditor, audit_tool_handler
@@ -827,7 +828,7 @@ their browser. Delegate all computer actions to agent-browser.
     await status_bus.subscribe(_on_status)
 
     # --- Delegation + hooks --------------------------------------------------
-    delegate_handler = DelegateHandler(kit, delivery_strategy=WaitForIdleDelivery())
+    delegate_handler = DelegateHandler(kit, delivery_strategy=WaitForIdle())
 
     @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.SYNC, name="tool_router")
     async def handle_voice_tools(event: object, ctx: object) -> HookResult:

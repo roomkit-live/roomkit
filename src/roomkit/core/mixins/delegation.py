@@ -19,7 +19,6 @@ from roomkit.models.enums import (
     TaskStatus,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
-from roomkit.tasks.delivery import BackgroundTaskDeliveryStrategy, TaskDeliveryContext
 from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
 
 if TYPE_CHECKING:
@@ -153,9 +152,6 @@ class DelegationMixin(HelpersMixin):
     _store: ConversationStore
     _channels: dict[str, Channel]
     _task_runner: TaskRunner
-    _delivery_strategy: BackgroundTaskDeliveryStrategy | None
-
-    _DELIVERY_UNSET: Any = object()
 
     async def delegate(
         self,
@@ -168,7 +164,6 @@ class DelegationMixin(HelpersMixin):
         share_channels: list[str] | None = None,
         notify: str | None = None,
         on_complete: Any | None = None,
-        delivery_strategy: BackgroundTaskDeliveryStrategy | None = _DELIVERY_UNSET,
     ) -> DelegatedTask:
         """Delegate a task to an agent in a child room.
 
@@ -188,10 +183,6 @@ class DelegationMixin(HelpersMixin):
             notify: Channel ID to update when the task completes
                 (system prompt injection). Defaults to *agent_id*.
             on_complete: Optional async callback ``(DelegatedTaskResult) -> None``.
-            delivery_strategy: Per-task override for proactive delivery of the
-                result.  ``None`` disables proactive delivery for this task.
-                When not provided (default), the framework-level strategy is
-                used.
 
         Returns:
             A :class:`DelegatedTask` handle. When *wait* is ``True``,
@@ -314,9 +305,7 @@ class DelegationMixin(HelpersMixin):
             return result_handle
 
         # Background — span ends when task completes (via callback)
-        return await self._run_background(
-            handle, context, notify, on_complete, delivery_strategy, span_id, telemetry
-        )
+        return await self._run_background(handle, context, notify, on_complete, span_id, telemetry)
 
     async def _run_inline(
         self,
@@ -374,7 +363,6 @@ class DelegationMixin(HelpersMixin):
         context: dict[str, Any] | None,
         notify: str | None,
         on_complete: Any | None,
-        delivery_strategy: BackgroundTaskDeliveryStrategy | None,
         span_id: str,
         telemetry: Any,
     ) -> DelegatedTask:
@@ -382,15 +370,8 @@ class DelegationMixin(HelpersMixin):
         from roomkit.telemetry.base import Attr
 
         notify_channel = notify or handle.agent_id
-        # Resolve delivery strategy: per-task override > framework-level
-        effective_strategy: BackgroundTaskDeliveryStrategy | None
-        if delivery_strategy is not self._DELIVERY_UNSET:
-            effective_strategy = delivery_strategy
-        else:
-            effective_strategy = self._delivery_strategy
 
         async def _on_bg_complete(result: DelegatedTaskResult) -> None:
-            # End telemetry span
             telemetry.end_span(
                 span_id,
                 attributes={
@@ -398,7 +379,7 @@ class DelegationMixin(HelpersMixin):
                     Attr.DURATION_MS: result.duration_ms,
                 },
             )
-            await self._on_delegation_complete(result, notify_channel, strategy=effective_strategy)
+            await self._on_delegation_complete(result, notify_channel)
             if on_complete:
                 await on_complete(result)
 
@@ -414,28 +395,13 @@ class DelegationMixin(HelpersMixin):
         self,
         result: DelegatedTaskResult,
         notify_channel_id: str,
-        *,
-        strategy: BackgroundTaskDeliveryStrategy | None = None,
     ) -> None:
-        """Handle delegation completion: update notified agent + fire hook."""
-        # Inject result into the notified agent's system prompt.
-        # Cap total prompt size to prevent unbounded growth from many delegations.
+        """Handle delegation completion: inject result + fire hook + deliver."""
+        # Inject result into the notified agent's system prompt
         max_delegation_prompt = 4000
-        from roomkit.tasks.delivery import ContextOnlyDelivery
-
         binding = await self._store.get_binding(result.parent_room_id, notify_channel_id)
         if binding:
             current_prompt = binding.metadata.get("system_prompt", "")
-            # When a proactive delivery strategy will trigger, use a passive
-            # instruction to avoid the AI volunteering the result twice (once
-            # from the system prompt, once from the delivery-triggered turn).
-            proactive = strategy is not None and not isinstance(strategy, ContextOnlyDelivery)
-            instruction = (
-                "This result will be delivered in a follow-up message. "
-                "Do not proactively share it until then."
-                if proactive
-                else "Inform the user naturally about this result."
-            )
             appendix = (
                 "\n\n--- BACKGROUND TASK COMPLETED ---\n"
                 + f"Task ID: {result.task_id}\n"
@@ -443,19 +409,12 @@ class DelegationMixin(HelpersMixin):
                 + f"Status: {result.status}\n"
                 + f"Result:\n{result.output or result.error or 'No output'}\n"
                 + "--- END ---\n"
-                + instruction
             )
             new_prompt = current_prompt + appendix
-            # Sliding window: keep only the tail when prompt exceeds cap
             if len(new_prompt) > max_delegation_prompt:
                 new_prompt = "...\n" + new_prompt[-max_delegation_prompt:]
             updated = binding.model_copy(
-                update={
-                    "metadata": {
-                        **binding.metadata,
-                        "system_prompt": new_prompt,
-                    }
-                }
+                update={"metadata": {**binding.metadata, "system_prompt": new_prompt}}
             )
             await self._store.update_binding(updated)
 
@@ -491,14 +450,18 @@ class DelegationMixin(HelpersMixin):
                 "Failed to fire ON_TASK_COMPLETED hook for task %s", result.task_id
             )
 
-        # Proactive delivery via strategy (if configured)
-        if strategy is not None:
+        # Deliver result via kit.deliver() (uses framework default strategy)
+        content = result.output or result.error
+        if content:
             try:
-                ctx = TaskDeliveryContext(
-                    kit=self,  # type: ignore[arg-type]
-                    result=result,
-                    notify_channel_id=notify_channel_id,
+                prompt = (
+                    f"[Background task from {result.agent_id} completed. "
+                    f"Share the result with the user.]"
                 )
-                await strategy.deliver(ctx)
+                await self.deliver(  # type: ignore[attr-defined]
+                    result.parent_room_id,
+                    prompt,
+                    channel_id=notify_channel_id,
+                )
             except Exception:
-                _tasks_logger.exception("Delivery strategy failed for task %s", result.task_id)
+                _tasks_logger.exception("Delivery failed for task %s", result.task_id)
