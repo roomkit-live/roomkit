@@ -56,7 +56,8 @@ async def main() -> None:
         system_prompt=(
             "You are a technical analyst. Analyze the given topic: "
             "architecture, implementation, scalability, trade-offs. "
-            "Be concise (3-4 points). Need a technical deep dive report."
+            "Need a technical deep dive report. Abuse of technical information. "
+            "Don't return anything about business."
         ),
         memory=SlidingWindowMemory(max_events=50),
     )

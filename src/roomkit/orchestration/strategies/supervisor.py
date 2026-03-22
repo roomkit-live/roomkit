@@ -430,8 +430,9 @@ class Supervisor(Orchestration):
 def _build_pass1_instruction(workers: list[Agent]) -> str:
     """Build the default pass-1 instruction."""
     return (
-        "Rewrite the user's request as a short, focused research question. "
-        "One or two sentences maximum. Output only the question, nothing else."
+        "Extract the core topic or subject from the user's request. "
+        "Output only the topic, nothing else. No questions, no instructions, "
+        "no formatting. Example: user says 'analyse anthropic' → 'Anthropic'"
     )
 
 
