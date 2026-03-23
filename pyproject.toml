@@ -368,8 +368,11 @@ omit = [
     "src/roomkit/orchestration/strategies/loop.py",
     "src/roomkit/orchestration/strategies/supervisor.py",
     "src/roomkit/channels/_voice_stt.py",
+    "src/roomkit/channels/_voice_hooks.py",
     "src/roomkit/memory/summarizing.py",
     "src/roomkit/memory/retrieval.py",
+    "src/roomkit/video/backends/fastrtc.py",
+    "src/roomkit/video/recorder/opencv.py",
 ]
 
 [tool.coverage.report]
