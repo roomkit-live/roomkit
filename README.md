@@ -239,13 +239,7 @@ kit = RoomKit(
 
 All orchestration strategies work seamlessly on live voice calls. The voice/realtime channel is a transport — swapping the active agent doesn't touch the audio session:
 
-```
-SIP Call → VoiceChannel (STT) → transcript → Router → Active Agent
-                                                          │
-                                                     text response
-                                                          │
-                                         VoiceChannel (TTS) ← ─┘
-```
+![Voice orchestration flow](docs/diagrams/voice-orchestration.svg)
 
 For speech-to-speech mode (Gemini Live, OpenAI Realtime), the realtime session is reconfigured on handoff — system prompt, voice, and tools change with ~200-500ms latency while the audio stream stays connected.
 
@@ -373,12 +367,7 @@ video = VideoChannel(
 
 Avatar providers generate lip-synced video from TTS audio — the visual counterpart of text-to-speech:
 
-```
-AI text → TTS → audio ──┬── VoiceBackend (send audio)
-                         └── AvatarProvider (audio → video frames)
-                                  │
-                             VideoBackend (send video)
-```
+![Avatar pipeline](docs/diagrams/avatar-pipeline.svg)
 
 Implementations: MuseTalk (local inference), WebSocket (remote), Anam (cloud).
 
@@ -432,9 +421,7 @@ await kit.attach_channel("room-1", "sms-out",
 
 Rooms transition automatically based on activity timers:
 
-```
-ACTIVE ──(inactive timeout)──► PAUSED ──(closed timeout)──► CLOSED
-```
+![Room lifecycle](docs/diagrams/room-lifecycle.svg)
 
 ### Telemetry
 
