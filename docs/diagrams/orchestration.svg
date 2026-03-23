@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" viewBox="0 0 680 520">
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .th { font-size: 14px; font-weight: 500; fill: #1e1e1e; }
+  .ts { font-size: 12px; fill: #666; }
+  .arr { stroke: #888; stroke-width: 1.5; }
+  .c-purple > rect { fill: #EEEDFE; stroke: #534AB7; } .c-purple > .th { fill: #3C3489; } .c-purple > .ts { fill: #534AB7; }
+  .c-teal > rect { fill: #E1F5EE; stroke: #0F6E56; } .c-teal > .th { fill: #085041; } .c-teal > .ts { fill: #0F6E56; }
+  .c-coral > rect { fill: #FAECE7; stroke: #993C1D; } .c-coral > .th { fill: #712B13; } .c-coral > .ts { fill: #993C1D; }
+  .c-blue > rect { fill: #E6F1FB; stroke: #185FA5; } .c-blue > .th { fill: #0C447C; } .c-blue > .ts { fill: #185FA5; }
+  .c-amber > rect { fill: #FAEEDA; stroke: #854F0B; } .c-amber > .th { fill: #633806; } .c-amber > .ts { fill: #854F0B; }
+  .c-gray > rect { fill: #F1EFE8; stroke: #5F5E5A; } .c-gray > .th { fill: #444441; } .c-gray > .ts { fill: #5F5E5A; }
+  .c-pink > rect { fill: #FBEAF0; stroke: #993556; } .c-pink > .th { fill: #72243E; } .c-pink > .ts { fill: #993556; }
+  .c-green > rect { fill: #EAF3DE; stroke: #3B6D11; } .c-green > .th { fill: #27500A; } .c-green > .ts { fill: #3B6D11; }
+  .box { fill: none; stroke: #B4B2A9; }
+  @media (prefers-color-scheme: dark) {
+    .th { fill: #e5e5e5; } .ts { fill: #a0a0a0; } .arr { stroke: #777; }
+    .c-purple > rect { fill: #3C3489; stroke: #AFA9EC; } .c-purple > .th { fill: #EEEDFE; } .c-purple > .ts { fill: #CECBF6; }
+    .c-teal > rect { fill: #085041; stroke: #5DCAA5; } .c-teal > .th { fill: #E1F5EE; } .c-teal > .ts { fill: #9FE1CB; }
+    .c-coral > rect { fill: #712B13; stroke: #F0997B; } .c-coral > .th { fill: #FAECE7; } .c-coral > .ts { fill: #F5C4B3; }
+    .c-blue > rect { fill: #0C447C; stroke: #85B7EB; } .c-blue > .th { fill: #E6F1FB; } .c-blue > .ts { fill: #B5D4F4; }
+    .c-amber > rect { fill: #633806; stroke: #EF9F27; } .c-amber > .th { fill: #FAEEDA; } .c-amber > .ts { fill: #FAC775; }
+    .c-gray > rect { fill: #444441; stroke: #B4B2A9; } .c-gray > .th { fill: #F1EFE8; } .c-gray > .ts { fill: #D3D1C7; }
+    .c-pink > rect { fill: #72243E; stroke: #ED93B1; } .c-pink > .th { fill: #FBEAF0; } .c-pink > .ts { fill: #F4C0D1; }
+    .c-green > rect { fill: #27500A; stroke: #97C459; } .c-green > .th { fill: #EAF3DE; } .c-green > .ts { fill: #C0DD97; }
+    .box { stroke: #5F5E5A; }
+  }
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<text class="th" x="40" y="30">Pipeline — linear handoff</text>
+<rect class="box" x="40" y="40" width="600" height="70" rx="12" stroke-dasharray="6 3" stroke-width="0.5"/>
+<g class="c-teal"><rect x="60" y="53" width="120" height="44" rx="8" stroke-width="0.5"/><text class="th" x="120" y="75" text-anchor="middle" dominant-baseline="central">Triage</text></g>
+<line x1="180" y1="75" x2="220" y2="75" stroke="#0F6E56" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<g class="c-coral"><rect x="225" y="53" width="120" height="44" rx="8" stroke-width="0.5"/><text class="th" x="285" y="75" text-anchor="middle" dominant-baseline="central">Handler</text></g>
+<line x1="345" y1="75" x2="385" y2="75" stroke="#993C1D" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<g class="c-blue"><rect x="390" y="53" width="120" height="44" rx="8" stroke-width="0.5"/><text class="th" x="450" y="75" text-anchor="middle" dominant-baseline="central">Resolver</text></g>
+<text class="ts" x="545" y="80">forward only</text>
+
+<text class="th" x="40" y="148">Swarm — any-to-any handoff</text>
+<rect class="box" x="40" y="158" width="600" height="70" rx="12" stroke-dasharray="6 3" stroke-width="0.5"/>
+<g class="c-teal"><rect x="100" y="171" width="110" height="44" rx="8" stroke-width="0.5"/><text class="th" x="155" y="193" text-anchor="middle" dominant-baseline="central">Sales</text></g>
+<g class="c-coral"><rect x="285" y="171" width="110" height="44" rx="8" stroke-width="0.5"/><text class="th" x="340" y="193" text-anchor="middle" dominant-baseline="central">Support</text></g>
+<g class="c-blue"><rect x="470" y="171" width="110" height="44" rx="8" stroke-width="0.5"/><text class="th" x="525" y="193" text-anchor="middle" dominant-baseline="central">Billing</text></g>
+<line x1="210" y1="188" x2="283" y2="188" stroke="#0F6E56" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<line x1="285" y1="198" x2="212" y2="198" stroke="#993C1D" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<line x1="395" y1="188" x2="468" y2="188" stroke="#993C1D" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<line x1="470" y1="198" x2="397" y2="198" stroke="#185FA5" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+
+<text class="th" x="40" y="268">Loop — iterative refinement</text>
+<rect class="box" x="40" y="278" width="600" height="95" rx="12" stroke-dasharray="6 3" stroke-width="0.5"/>
+<g class="c-purple"><rect x="60" y="291" width="110" height="44" rx="8" stroke-width="0.5"/><text class="th" x="115" y="313" text-anchor="middle" dominant-baseline="central">Writer</text></g>
+<line x1="170" y1="308" x2="220" y2="308" stroke="#534AB7" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<g class="c-pink"><rect x="225" y="291" width="100" height="44" rx="8" stroke-width="0.5"/><text class="ts" x="275" y="313" text-anchor="middle" dominant-baseline="central">Quality</text></g>
+<g class="c-pink"><rect x="340" y="291" width="100" height="44" rx="8" stroke-width="0.5"/><text class="ts" x="390" y="313" text-anchor="middle" dominant-baseline="central">Accuracy</text></g>
+<g class="c-pink"><rect x="455" y="291" width="100" height="44" rx="8" stroke-width="0.5"/><text class="ts" x="505" y="313" text-anchor="middle" dominant-baseline="central">Style</text></g>
+<path d="M275 335 L275 355 L115 355 L115 335" fill="none" stroke="#993556" stroke-width="0.5" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<text class="ts" x="195" y="365" text-anchor="middle">revise</text>
+
+<text class="th" x="40" y="410">Supervisor — delegation to workers</text>
+<rect class="box" x="40" y="420" width="600" height="85" rx="12" stroke-dasharray="6 3" stroke-width="0.5"/>
+<g class="c-amber"><rect x="220" y="428" width="130" height="44" rx="8" stroke-width="0.5"/><text class="th" x="285" y="450" text-anchor="middle" dominant-baseline="central">Manager</text></g>
+<line x1="245" y1="472" x2="170" y2="483" stroke="#854F0B" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<line x1="325" y1="472" x2="400" y2="483" stroke="#854F0B" stroke-width="0.5" fill="none" marker-end="url(#arrow)"/>
+<g class="c-green"><rect x="80" y="481" width="110" height="18" rx="4" stroke-width="0.5"/><text class="ts" x="135" y="493" text-anchor="middle" dominant-baseline="central">Researcher</text></g>
+<g class="c-green"><rect x="360" y="481" width="110" height="18" rx="4" stroke-width="0.5"/><text class="ts" x="415" y="493" text-anchor="middle" dominant-baseline="central">Coder</text></g>
+<text class="ts" x="540" y="460">child rooms</text>
+</svg>
