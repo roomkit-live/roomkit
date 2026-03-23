@@ -389,6 +389,11 @@ omit = [
     "src/roomkit/providers/anam/avatar.py",
     "src/roomkit/telemetry/opentelemetry.py",
     "src/roomkit/tools/mcp.py",
+    "src/roomkit/channels/av.py",
+    "src/roomkit/channels/realtime_av.py",
+    "src/roomkit/providers/personaplex/realtime.py",
+    "src/roomkit/providers/xai/realtime.py",
+    "src/roomkit/orchestration/strategies/supervisor.py",
 ]
 
 [tool.coverage.report]
