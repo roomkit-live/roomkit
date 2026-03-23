@@ -30,7 +30,59 @@ from roomkit import (
 )
 from roomkit.channels.ai import AIChannel
 from roomkit.memory import SlidingWindowMemory, SummarizingMemory
+from roomkit.memory.base import MemoryResult
+from roomkit.models.context import RoomContext
+from roomkit.models.event import RoomEvent
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
+
+_CYAN = "\033[36m"
+_RESET = "\033[0m"
+
+
+class VerboseSummarizingMemory(SummarizingMemory):
+    """SummarizingMemory that prints context usage and compression events."""
+
+    async def retrieve(
+        self,
+        room_id: str,
+        current_event: RoomEvent,
+        context: RoomContext,
+        *,
+        channel_id: str | None = None,
+    ) -> MemoryResult:
+        # Tokens before compression
+        inner_result = await self._inner.retrieve(
+            room_id, current_event, context, channel_id=channel_id
+        )
+        before_tokens = self._estimate_events_tokens(inner_result.events)
+        budget = self._max_context_tokens
+        pct_before = int(before_tokens / budget * 100) if budget else 0
+
+        # Run normal retrieve (which may apply tier 1/2)
+        result = await super().retrieve(room_id, current_event, context, channel_id=channel_id)
+
+        after_tokens = self._estimate_events_tokens(result.events)
+        pct_after = int(after_tokens / budget * 100) if budget else 0
+
+        tier1_threshold = int(budget * self._tier1_ratio)
+        tier2_threshold = int(budget * self._tier2_ratio)
+
+        if before_tokens > tier2_threshold and after_tokens < before_tokens:
+            print(
+                f"\n{_CYAN}  [memory] tier 2 — summarized: "
+                f"{before_tokens} → {after_tokens} tokens "
+                f"({pct_before}% → {pct_after}% of {budget}){_RESET}\n"
+            )
+        elif before_tokens > tier1_threshold and after_tokens < before_tokens:
+            print(
+                f"\n{_CYAN}  [memory] tier 1 — truncated: "
+                f"{before_tokens} → {after_tokens} tokens "
+                f"({pct_before}% → {pct_after}% of {budget}){_RESET}\n"
+            )
+        else:
+            print(f"\n{_CYAN}  [memory] {after_tokens}/{budget} tokens ({pct_after}%){_RESET}\n")
+
+        return result
 
 
 async def main() -> None:
@@ -45,13 +97,15 @@ async def main() -> None:
         AnthropicConfig(api_key=api_key, model="claude-haiku-4-5-20251001")
     )
 
-    # Low thresholds so tier 1/2 trigger after a few turns
-    memory = SummarizingMemory(
+    # Tight budget so compression is visible after a few exchanges
+    memory = VerboseSummarizingMemory(
         inner=SlidingWindowMemory(max_events=100),
         provider=summary_provider,
-        max_context_tokens=8000,
-        tier1_ratio=0.4,
-        tier2_ratio=0.7,
+        max_context_tokens=4000,
+        tier1_ratio=0.3,
+        tier2_ratio=0.5,
+        summary_max_tokens=100,
+        min_events=2,
     )
 
     kit = RoomKit()
@@ -60,11 +114,8 @@ async def main() -> None:
     ai = AIChannel(
         "ai-assistant",
         provider=main_provider,
-        system_prompt=(
-            "You are a helpful assistant. Give detailed, thorough answers.\n"
-            "If you notice a conversation summary at the start of the history, "
-            "mention it briefly so the user can see memory compression in action."
-        ),
+        system_prompt="You are a helpful assistant. Keep answers to 2-3 sentences max.",
+        max_tokens=150,
         memory=memory,
     )
 
@@ -80,8 +131,9 @@ async def main() -> None:
         room_id="memory-room",
         welcome=(
             "\nMemory demo — SummarizingMemory compresses old messages.\n"
-            "Thresholds are low (8k tokens) so compression triggers after a\n"
-            "few exchanges. The AI will mention when it sees a summary.\n"
+            "Budget is 4k tokens with short responses, so compression\n"
+            "triggers after a few exchanges.\n"
+            "Context usage is shown after each turn.\n"
         ),
     )
 

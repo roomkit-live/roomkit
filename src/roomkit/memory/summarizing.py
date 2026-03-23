@@ -109,9 +109,12 @@ class SummarizingMemory(MemoryProvider):
         # Tier 2: LLM-based summarization
         tier2_threshold = int(self._max_context_tokens * self._tier2_ratio)
         if total_tokens > tier2_threshold and len(events) > self._min_events:
-            return await self._apply_tier2(room_id, events, inner_result.messages, tier2_threshold)
+            result = await self._apply_tier2(
+                room_id, events, inner_result.messages, tier2_threshold
+            )
+            return self._enforce_budget(result)
 
-        return MemoryResult(messages=inner_result.messages, events=events)
+        return self._enforce_budget(MemoryResult(messages=inner_result.messages, events=events))
 
     # -- Tier 1: truncation -----------------------------------------------------
 
@@ -154,6 +157,9 @@ class SummarizingMemory(MemoryProvider):
         """Summarize older events, keeping recent ones at full fidelity."""
         event_costs = [estimate_event_tokens(e) for e in events]
 
+        # Reserve space for the summary message in the kept-events budget
+        event_budget = budget - self._summary_max_tokens
+
         # Find cutoff: accumulate recent events until budget is reached,
         # ensuring at least min_events are kept.
         keep_from = 0
@@ -161,7 +167,7 @@ class SummarizingMemory(MemoryProvider):
         for i in range(len(events) - 1, -1, -1):
             running += event_costs[i]
             kept_count = len(events) - i
-            if running > budget and kept_count >= self._min_events:
+            if running > event_budget and kept_count >= self._min_events:
                 keep_from = i
                 break
 
@@ -249,6 +255,22 @@ class SummarizingMemory(MemoryProvider):
 
         self._summary_cache[cache_key] = (now, summary)
         return summary
+
+    # -- Budget enforcement -----------------------------------------------------
+
+    def _enforce_budget(self, result: MemoryResult) -> MemoryResult:
+        """Drop oldest events until total tokens fits within max_context_tokens."""
+        msg_tokens = sum(estimate_message_tokens(m) for m in result.messages)
+        events = list(result.events)
+
+        total = msg_tokens + self._estimate_events_tokens(events)
+        while total > self._max_context_tokens and len(events) > 1:
+            events.pop(0)
+            total = msg_tokens + self._estimate_events_tokens(events)
+
+        if events is not result.events:
+            return MemoryResult(messages=result.messages, events=events)
+        return result
 
     # -- Helpers ----------------------------------------------------------------
 
