@@ -1,10 +1,10 @@
-"""Interactive loop orchestration with writer and reviewer.
+"""Interactive loop orchestration with multiple reviewers.
 
-Demonstrates ``Loop`` orchestration with real LLM agents and CLI.
-A writer produces content, a reviewer evaluates it, and the cycle
-repeats until the reviewer approves or max iterations are reached.
+Demonstrates ``Loop`` with a writer and 3 parallel reviewers.
+The writer produces content, all reviewers evaluate in parallel,
+and the cycle repeats until all approve or max iterations are reached.
 
-    Human → Writer → Reviewer → Writer → ... → Reviewer (approves) → Human
+    Human → Writer → [Quality | Accuracy | Style] → Writer → ... → Human
 
 Requires ``ANTHROPIC_API_KEY`` environment variable.
 
@@ -40,6 +40,8 @@ async def main() -> None:
         model="claude-haiku-4-5-20251001",
     )
 
+    # --- Producer agent ------------------------------------------------------
+
     writer = Agent(
         "agent-writer",
         provider=AnthropicAIProvider(haiku_config),
@@ -51,44 +53,70 @@ async def main() -> None:
         memory=SlidingWindowMemory(max_events=50),
     )
 
-    reviewer = Agent(
-        "agent-reviewer",
+    # --- Three parallel reviewers --------------------------------------------
+
+    quality = Agent(
+        "agent-quality",
         provider=AnthropicAIProvider(haiku_config),
-        role="Content reviewer",
+        role="Quality reviewer",
         system_prompt=(
-            "You are a strict content reviewer. Review for quality, "
-            "clarity, accuracy, and conciseness. On the first review, "
-            "always request at least one improvement. Only say APPROVED "
-            "after seeing a revision that addresses your feedback."
+            "You review content for overall quality and clarity. "
+            "If the content is clear and well-structured, say APPROVED. "
+            "Otherwise, provide specific feedback."
         ),
         memory=SlidingWindowMemory(max_events=50),
     )
 
+    accuracy = Agent(
+        "agent-accuracy",
+        provider=AnthropicAIProvider(haiku_config),
+        role="Accuracy reviewer",
+        system_prompt=(
+            "You review content for factual accuracy. "
+            "If all facts are correct, say APPROVED. "
+            "Otherwise, point out inaccuracies."
+        ),
+        memory=SlidingWindowMemory(max_events=50),
+    )
+
+    style = Agent(
+        "agent-style",
+        provider=AnthropicAIProvider(haiku_config),
+        role="Style reviewer",
+        system_prompt=(
+            "You review content for writing style and tone. "
+            "If the style is appropriate and consistent, say APPROVED. "
+            "Otherwise, suggest improvements."
+        ),
+        memory=SlidingWindowMemory(max_events=50),
+    )
+
+    # --- Loop with parallel reviewers ----------------------------------------
+
     kit = RoomKit(
         orchestration=Loop(
             agent=writer,
-            reviewers=[reviewer],
+            reviewers=[quality, accuracy, style],
+            strategy="parallel",
             max_iterations=3,
         ),
     )
 
     # --- Observability hooks -------------------------------------------------
 
-    @kit.hook(HookTrigger.ON_PHASE_TRANSITION, execution=HookExecution.ASYNC)
-    async def on_phase(event: RoomEvent, ctx: RoomContext) -> None:
-        m = event.metadata
-        from_phase = m.get("from_phase", "?")
-        to_phase = m.get("to_phase", "?")
-        reason = m.get("reason", "")
-        print(f"\n\033[35m[phase] {from_phase} → {to_phase} ({reason})\033[0m")
+    @kit.hook(HookTrigger.ON_TASK_DELEGATED, execution=HookExecution.ASYNC)
+    async def on_delegated(event: RoomEvent, ctx: RoomContext) -> None:
+        agent = event.metadata.get("agent_id", "?")
+        print(f"\n\033[35m[delegated] {agent}\033[0m")
 
-    @kit.hook(HookTrigger.ON_HANDOFF, execution=HookExecution.ASYNC)
-    async def on_handoff(event: RoomEvent, ctx: RoomContext) -> None:
-        room = await kit.get_room(event.room_id)
-        state = get_conversation_state(room)
-        iteration = state.context.get("_loop_iteration", 0)
-        approved = state.context.get("_loop_approved", False)
-        print(f"\033[35m[loop] iteration={iteration} approved={approved}\033[0m")
+    @kit.hook(HookTrigger.ON_TASK_COMPLETED, execution=HookExecution.ASYNC)
+    async def on_completed(event: RoomEvent, ctx: RoomContext) -> None:
+        agent = event.metadata.get("agent_id", "?")
+        duration = event.metadata.get("duration_ms", 0)
+        body = getattr(event.content, "body", "")
+        approved = "APPROVED" in body.upper() if body else False
+        status = "approved" if approved else "feedback"
+        print(f"\033[{'32' if approved else '33'}m[{status}] {agent} ({duration:.0f}ms)\033[0m")
 
     cli = CLIChannel("cli")
     kit.register_channel(cli)
@@ -100,19 +128,17 @@ async def main() -> None:
         kit,
         room_id="loop-room",
         welcome=(
-            "=== Loop Orchestration ===\n"
-            "Ask the writer to produce content. The reviewer will evaluate it.\n"
+            "=== Multi-Reviewer Loop ===\n"
+            "Ask the writer to produce content. 3 reviewers evaluate in parallel.\n"
             "Type 'quit' to exit.\n"
         ),
     )
 
-    # Show final state
     room = await kit.get_room("loop-room")
     state = get_conversation_state(room)
     print(
         f"\nFinal state: approved={state.context.get('_loop_approved')}, "
-        f"iterations={state.context.get('_loop_iteration')}, "
-        f"handoffs={state.handoff_count}"
+        f"iterations={state.context.get('_loop_iteration')}"
     )
 
     await kit.close()
