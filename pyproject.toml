@@ -158,6 +158,7 @@ filterwarnings = [
     "ignore:connect_voice\\(auto_greet=True\\) is deprecated:DeprecationWarning",
     "ignore:connect_realtime_voice\\(\\) is deprecated:DeprecationWarning",
     "ignore:disconnect_realtime_voice\\(\\) is deprecated:DeprecationWarning",
+    "ignore::ResourceWarning",
 ]
 
 [tool.mypy]
@@ -358,7 +359,10 @@ skips = ["B101"]  # Allow assert in non-test code (used in type narrowing)
 
 [tool.coverage.run]
 source = ["roomkit"]
-omit = []
+omit = [
+    # Requires neonize + specific protobuf version that conflicts with other deps on CI
+    "src/roomkit/sources/neonize.py",
+]
 
 [tool.coverage.report]
 show_missing = true
