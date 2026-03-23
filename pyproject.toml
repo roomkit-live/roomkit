@@ -358,22 +358,7 @@ skips = ["B101"]  # Allow assert in non-test code (used in type narrowing)
 
 [tool.coverage.run]
 source = ["roomkit"]
-omit = [
-    # Integration-heavy: need real DB / WebSocket protocols for meaningful coverage
-    "src/roomkit/store/postgres.py",
-    "src/roomkit/providers/openai/realtime.py",
-    "src/roomkit/providers/gemini/realtime.py",
-    "src/roomkit/voice/realtime/bridge.py",
-    "src/roomkit/voice/realtime/fastrtc_transport.py",
-    "src/roomkit/orchestration/strategies/loop.py",
-    "src/roomkit/orchestration/strategies/supervisor.py",
-    "src/roomkit/channels/_voice_stt.py",
-    "src/roomkit/channels/_voice_hooks.py",
-    "src/roomkit/memory/summarizing.py",
-    "src/roomkit/memory/retrieval.py",
-    "src/roomkit/video/backends/fastrtc.py",
-    "src/roomkit/video/recorder/opencv.py",
-]
+omit = []
 
 [tool.coverage.report]
 show_missing = true
