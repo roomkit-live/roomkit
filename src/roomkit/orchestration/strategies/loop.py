@@ -317,8 +317,8 @@ async def _run_loop(
         ),
         content=TextContent(body=result["output"]),
         metadata={
-            "_loop_approved": result["approved"],
-            "_loop_iteration": result["iteration"],
+            "approved": result["approved"],
+            "iteration": result["iteration"],
         },
     )
     return ChannelOutput(responded=True, response_events=[result_event])
