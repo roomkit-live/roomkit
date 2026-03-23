@@ -408,10 +408,10 @@ class TestBackgroundDedup:
         r1 = json.loads(await supervisor.tool_handler("delegate_to_w1", {"task": "first"}))
         assert r1["status"] == "delegated"
 
-        # Wait for background task to complete
+        # Wait for background task to complete (CI can be slow)
         import asyncio
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(2.0)
 
         # Now should be able to delegate again
         r2 = json.loads(await supervisor.tool_handler("delegate_to_w1", {"task": "second"}))

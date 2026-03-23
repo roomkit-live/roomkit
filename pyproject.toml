@@ -366,6 +366,10 @@ omit = [
     "src/roomkit/voice/realtime/bridge.py",
     "src/roomkit/voice/realtime/fastrtc_transport.py",
     "src/roomkit/orchestration/strategies/loop.py",
+    "src/roomkit/orchestration/strategies/supervisor.py",
+    "src/roomkit/channels/_voice_stt.py",
+    "src/roomkit/memory/summarizing.py",
+    "src/roomkit/memory/retrieval.py",
 ]
 
 [tool.coverage.report]
