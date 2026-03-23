@@ -109,12 +109,7 @@ from roomkit import (
 from roomkit.core.delivery import WaitForIdle
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.context import RoomContext
-from roomkit.orchestration.handoff import (
-    DelegateHandler,
-    HandoffMemoryProvider,
-    build_delegate_tool,
-    setup_delegation,
-)
+from roomkit.orchestration.handoff import HandoffMemoryProvider
 from roomkit.orchestration.pipeline import ConversationPipeline, PipelineStage
 from roomkit.orchestration.state import (
     ConversationState,
@@ -122,6 +117,7 @@ from roomkit.orchestration.state import (
     set_conversation_state,
 )
 from roomkit.providers.gemini import GeminiAIProvider, GeminiConfig
+from roomkit.tasks.delegate import DelegateHandler, build_delegate_tool, setup_delegation
 from roomkit.voice.backends.sip import SIPVoiceBackend
 from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.pipeline.vad.sherpa_onnx import (

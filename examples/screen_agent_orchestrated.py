@@ -77,11 +77,11 @@ from roomkit import (
 from roomkit.core.delivery import WaitForIdle
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.hook import HookResult
-from roomkit.orchestration.handoff import DelegateHandler, build_delegate_tool
 from roomkit.orchestration.state import ConversationState, set_conversation_state
 from roomkit.orchestration.status_bus import StatusBus
 from roomkit.orchestration.tool_audit import JSONLToolAuditor, audit_tool_handler
 from roomkit.recorder.base import MediaRecordingConfig
+from roomkit.tasks.delegate import DelegateHandler, build_delegate_tool
 from roomkit.video.vision.gemini import GeminiVisionConfig, GeminiVisionProvider
 from roomkit.video.vision.screen_input import ScreenInputTools
 from roomkit.video.vision.screen_tool import capture_screen_frame
