@@ -22,21 +22,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shared.env import require_env
+from shared.hooks import log_tool_call
 
 from roomkit import (
     ChannelCategory,
     CLIChannel,
-    HookResult,
     HookTrigger,
     RoomKit,
 )
 from roomkit.channels.ai import AIChannel
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.skills import SkillRegistry
-
-_SKILL_TOOLS = ("activate_skill", "read_skill_reference", "run_skill_script")
-_MAGENTA = "\033[35m"
-_RESET = "\033[0m"
 
 SKILLS_DIR = Path(__file__).parent / "skills"
 
@@ -70,13 +66,10 @@ async def main() -> None:
     kit.register_channel(cli)
     kit.register_channel(ai)
 
-    # Hook to show when the AI uses skill tools
+    # Show skill tool invocations in the terminal
     @kit.hook(HookTrigger.ON_TOOL_CALL)
     async def show_tool_call(event, _ctx):
-        if event.name in _SKILL_TOOLS:
-            args = ", ".join(f"{k}={v!r}" for k, v in event.arguments.items())
-            print(f"\n{_MAGENTA}  [skill] {event.name}({args}){_RESET}\n")
-        return HookResult.allow()
+        return log_tool_call(event, label="skill")
 
     await kit.create_room(room_id="skills-room")
     await kit.attach_channel("skills-room", "cli")
