@@ -219,7 +219,14 @@ class AIGenerationMixin:
                 if response.content:
                     parts.append(AITextPart(text=response.content))
                 for tc in response.tool_calls:
-                    parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
+                    parts.append(
+                        AIToolCallPart(
+                            id=tc.id,
+                            name=tc.name,
+                            arguments=tc.arguments,
+                            metadata=tc.metadata,
+                        )
+                    )
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
                 if room_id:

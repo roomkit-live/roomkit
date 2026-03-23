@@ -250,7 +250,14 @@ class AIStreamingMixin:
                     parts.append(AITextPart(text=accumulated_text))
                     _dedup_prefix = accumulated_text
                 for tc in tool_calls:
-                    parts.append(AIToolCallPart(id=tc.id, name=tc.name, arguments=tc.arguments))
+                    parts.append(
+                        AIToolCallPart(
+                            id=tc.id,
+                            name=tc.name,
+                            arguments=tc.arguments,
+                            metadata=tc.metadata,
+                        )
+                    )
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
                 if room_id:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import time
 from collections.abc import AsyncIterator
 from typing import Any, cast
@@ -75,12 +76,25 @@ class GeminiAIProvider(AIProvider):
                     if isinstance(p, AITextPart):
                         parts.append(self._types.Part.from_text(text=p.text))
                     elif isinstance(p, AIToolCallPart):
-                        parts.append(
-                            self._types.Part.from_function_call(
-                                name=p.name,
-                                args=p.arguments,
+                        sig = p.metadata.get("thought_signature")
+                        if sig:
+                            parts.append(
+                                self._types.Part(
+                                    function_call=self._types.FunctionCall(
+                                        name=p.name,
+                                        args=p.arguments,
+                                    ),
+                                    thought=True,
+                                    thought_signature=base64.b64decode(sig),
+                                )
                             )
-                        )
+                        else:
+                            parts.append(
+                                self._types.Part.from_function_call(
+                                    name=p.name,
+                                    args=p.arguments,
+                                )
+                            )
                 contents.append(self._types.Content(role="model", parts=parts))
             elif isinstance(msg.content, list) and any(
                 isinstance(p, AIToolResultPart) for p in msg.content
@@ -216,11 +230,21 @@ class GeminiAIProvider(AIProvider):
                     elif hasattr(part, "function_call") and part.function_call:
                         fc = part.function_call
                         fc_name: str = fc.name or ""
+                        # thought_signature lives on the Part (bytes), not FunctionCall
+                        tc_meta: dict[str, Any] = {}
+                        raw_sig = getattr(part, "thought_signature", None)
+                        if raw_sig is not None:
+                            tc_meta["thought_signature"] = (
+                                base64.b64encode(raw_sig).decode("ascii")
+                                if isinstance(raw_sig, bytes)
+                                else raw_sig
+                            )
                         tool_calls.append(
                             StreamToolCall(
                                 id=f"call_{uuid4().hex[:12]}",
                                 name=fc_name,
                                 arguments=dict(fc.args) if fc.args else {},
+                                metadata=tc_meta,
                             )
                         )
 
@@ -243,7 +267,12 @@ class GeminiAIProvider(AIProvider):
                 text_parts.append(event.text)
             elif isinstance(event, StreamToolCall):
                 tool_calls.append(
-                    AIToolCall(id=event.id, name=event.name, arguments=event.arguments)
+                    AIToolCall(
+                        id=event.id,
+                        name=event.name,
+                        arguments=event.arguments,
+                        metadata=event.metadata,
+                    )
                 )
             elif isinstance(event, StreamDone):
                 done_event = event

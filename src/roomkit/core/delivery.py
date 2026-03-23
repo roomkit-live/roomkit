@@ -242,6 +242,27 @@ async def _deliver_to_channel(ctx: DeliveryContext, channel_id: str) -> None:
         logger.warning("Channel %s not found, delivery skipped", channel_id)
         return
 
+    # AI channels don't accept inbound — redirect to the room's transport channel
+    if channel.category == ChannelCategory.INTELLIGENCE:
+        transport_id = await ctx.find_transport_channel_id()
+        if transport_id is None:
+            logger.warning(
+                "No transport channel in room %s for AI channel %s delivery",
+                ctx.room_id,
+                channel_id,
+            )
+            return
+        logger.debug(
+            "Redirecting delivery from AI channel %s to transport %s",
+            channel_id,
+            transport_id,
+        )
+        channel_id = transport_id
+        channel = ctx.kit.get_channel(channel_id)
+        if channel is None:
+            logger.warning("Transport channel %s not found, delivery skipped", channel_id)
+            return
+
     # RealtimeVoiceChannel: inject text directly
     if channel.channel_type == ChannelType.REALTIME_VOICE:
         await _deliver_to_realtime_voice(channel, ctx)

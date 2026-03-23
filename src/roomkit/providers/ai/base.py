@@ -44,6 +44,7 @@ class AIToolCall(BaseModel):
     id: str
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AIToolCallPart(BaseModel):
@@ -53,6 +54,7 @@ class AIToolCallPart(BaseModel):
     id: str
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AIToolResultPart(BaseModel):
@@ -169,6 +171,7 @@ class StreamToolCall(BaseModel):
     id: str
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class StreamDone(BaseModel):
