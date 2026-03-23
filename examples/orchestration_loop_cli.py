@@ -109,14 +109,21 @@ async def main() -> None:
         agent = event.metadata.get("agent_id", "?")
         print(f"\n\033[35m[delegated] {agent}\033[0m")
 
+    reviewer_ids = {"agent-quality", "agent-accuracy", "agent-style"}
+
     @kit.hook(HookTrigger.ON_TASK_COMPLETED, execution=HookExecution.ASYNC)
     async def on_completed(event: RoomEvent, ctx: RoomContext) -> None:
         agent = event.metadata.get("agent_id", "?")
         duration = event.metadata.get("duration_ms", 0)
         body = getattr(event.content, "body", "")
-        approved = "APPROVED" in body.upper() if body else False
-        status = "approved" if approved else "feedback"
-        print(f"\033[{'32' if approved else '33'}m[{status}] {agent} ({duration:.0f}ms)\033[0m")
+        if agent in reviewer_ids:
+            approved = "APPROVED" in body.upper() if body else False
+            color = "\033[32m" if approved else "\033[33m"
+            status = "approved" if approved else "feedback"
+            print(f"{color}[{status}] {agent} ({duration:.0f}ms)\033[0m")
+        else:
+            preview = body[:80] + "..." if len(body) > 80 else body
+            print(f"\033[36m[produced] {agent} ({duration:.0f}ms) {preview}\033[0m")
 
     cli = CLIChannel("cli")
     kit.register_channel(cli)
