@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 from roomkit.channels.agent import Agent
 from roomkit.models.channel import ChannelBinding
-from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
     ChannelCategory,
     ChannelDirection,
@@ -181,274 +180,42 @@ class TestSupervisorHandlerIdempotency:
         assert original_called
 
 
-# -- Loop: cycle hook behavioral tests ----------------------------------------
+# -- Loop: framework-driven tests ---------------------------------------------
 
 
-class TestLoopCycleHook:
-    """Tests for the AFTER_BROADCAST hook that drives producer↔reviewer cycling."""
+class TestLoopInstall:
+    """Tests for Loop.install() with framework-driven auto_cycle."""
 
-    async def _setup_loop(
-        self,
-        max_iterations: int = 3,
-    ) -> tuple[Loop, MagicMock, Agent, Agent]:
-        writer = _make_agent("writer", "Writer agent")
-        editor = _make_agent("editor", "Editor agent")
-        bindings = [_ai_binding("writer"), _ai_binding("editor")]
-        room = Room(id="r1")
-        kit = _make_mock_kit(room, bindings)
-
-        loop = Loop(agent=writer, reviewer=editor, max_iterations=max_iterations)
-        await loop.install(kit, "r1")
-
-        return loop, kit, writer, editor
-
-    def _get_cycle_hook(self, kit: MagicMock):
-        """Extract the AFTER_BROADCAST hook function from the mock kit."""
-        for call in kit.hook_engine.add_room_hook.call_args_list:
-            reg = call[0][1]
-            if "loop_cycle" in reg.name:
-                return reg.fn
-        raise AssertionError("Loop cycle hook not found")
-
-    def _make_context(self, bindings: list[ChannelBinding]) -> RoomContext:
-        return RoomContext(room=Room(id="r1"), bindings=bindings)
-
-    async def test_producer_event_transitions_to_reviewer(self):
-        """After producer outputs, state should transition to reviewer."""
-        _, kit, writer, editor = await self._setup_loop()
-        hook = self._get_cycle_hook(kit)
-        bindings = [_ai_binding("writer"), _ai_binding("editor")]
-        context = self._make_context(bindings)
-
-        event = _make_event("r1", "writer")
-        await hook(event, context)
-
-        room = await kit.get_room("r1")
-        state = get_conversation_state(room)
-        assert state.active_agent_id == "editor"
-        assert state.phase == "editor"
-        assert state.context["_loop_iteration"] == 1
-
-    async def test_reviewer_event_transitions_back_to_producer(self):
-        """After reviewer provides feedback, state should go back to producer."""
-        _, kit, writer, editor = await self._setup_loop()
-        hook = self._get_cycle_hook(kit)
-        bindings = [_ai_binding("writer"), _ai_binding("editor")]
-        context = self._make_context(bindings)
-
-        # First: producer → reviewer
-        event = _make_event("r1", "writer")
-        await hook(event, context)
-
-        # Now: reviewer → producer
-        event = _make_event("r1", "editor")
-        await hook(event, context)
-
-        room = await kit.get_room("r1")
-        state = get_conversation_state(room)
-        assert state.active_agent_id == "writer"
-        assert state.phase == "writer"
-
-    async def test_iteration_counter_increments(self):
-        """Each producer→reviewer transition should increment the counter."""
-        _, kit, writer, editor = await self._setup_loop(max_iterations=5)
-        hook = self._get_cycle_hook(kit)
-        bindings = [_ai_binding("writer"), _ai_binding("editor")]
-        context = self._make_context(bindings)
-
-        for i in range(3):
-            # Producer → reviewer
-            await hook(_make_event("r1", "writer"), context)
-            room = await kit.get_room("r1")
-            state = get_conversation_state(room)
-            assert state.context["_loop_iteration"] == i + 1
-
-            # Reviewer → producer (no iteration increment)
-            await hook(_make_event("r1", "editor"), context)
-
-    async def test_max_iterations_stops_loop(self):
-        """Once max_iterations is reached, hook should be a no-op."""
-        _, kit, writer, editor = await self._setup_loop(max_iterations=2)
-        hook = self._get_cycle_hook(kit)
-        bindings = [_ai_binding("writer"), _ai_binding("editor")]
-        context = self._make_context(bindings)
-
-        # Cycle 1: producer → reviewer → producer
-        await hook(_make_event("r1", "writer"), context)
-        await hook(_make_event("r1", "editor"), context)
-
-        # Cycle 2: producer → reviewer → producer
-        await hook(_make_event("r1", "writer"), context)
-        await hook(_make_event("r1", "editor"), context)
-
-        # Cycle 3: producer output — but max reached, should not transition
-        room = await kit.get_room("r1")
-        state_before = get_conversation_state(room)
-        await hook(_make_event("r1", "writer"), context)
-        room = await kit.get_room("r1")
-        state_after = get_conversation_state(room)
-
-        # State should not have changed
-        assert state_after.active_agent_id == state_before.active_agent_id
-        assert state_after.context["_loop_iteration"] == 2
-
-    async def test_approved_stops_loop(self):
-        """After approve_output is called, hook should be a no-op."""
-        _, kit, writer, editor = await self._setup_loop()
-        hook = self._get_cycle_hook(kit)
-        bindings = [_ai_binding("writer"), _ai_binding("editor")]
-        context = self._make_context(bindings)
-
-        # Producer → reviewer
-        await hook(_make_event("r1", "writer"), context)
-
-        # Reviewer calls approve_output
-        await editor.tool_handler("approve_output", {"reason": "LGTM"})
-
-        # Verify approved
-        room = await kit.get_room("r1")
-        state = get_conversation_state(room)
-        assert state.context["_loop_approved"] is True
-
-        # Another event should be a no-op
-        await hook(_make_event("r1", "editor"), context)
-        room = await kit.get_room("r1")
-        state = get_conversation_state(room)
-        # Should still be on editor (approve doesn't transition)
-        assert state.context["_loop_approved"] is True
-
-    async def test_transport_events_ignored(self):
-        """Events from transport channels should not trigger loop cycling."""
-        _, kit, writer, editor = await self._setup_loop()
-        hook = self._get_cycle_hook(kit)
-        bindings = [
-            _ai_binding("writer"),
-            _ai_binding("editor"),
-            _transport_binding("ws"),
-        ]
-        context = self._make_context(bindings)
-
-        # Event from transport channel
-        event = _make_event("r1", "ws", ChannelType.WEBSOCKET)
-        await hook(event, context)
-
-        room = await kit.get_room("r1")
-        state = get_conversation_state(room)
-        # Should still be on initial state
-        assert state.active_agent_id == "writer"
-        assert state.context["_loop_iteration"] == 0
-
-    async def test_unknown_channel_events_ignored(self):
-        """Events from channels not in bindings should be ignored."""
-        _, kit, writer, editor = await self._setup_loop()
-        hook = self._get_cycle_hook(kit)
-        # No binding for "unknown"
-        bindings = [_ai_binding("writer"), _ai_binding("editor")]
-        context = self._make_context(bindings)
-
-        event = _make_event("r1", "unknown")
-        await hook(event, context)
-
-        room = await kit.get_room("r1")
-        state = get_conversation_state(room)
-        assert state.active_agent_id == "writer"
-        assert state.context["_loop_iteration"] == 0
-
-
-class TestLoopHandlerIdempotency:
-    async def test_double_install_does_not_stack_approve_handler(self):
-        """Second install must not wrap the reviewer's tool handler twice."""
+    async def test_agents_returns_only_producer(self):
         writer = _make_agent("writer")
         editor = _make_agent("editor")
-
-        kit1 = _make_mock_kit(Room(id="r1"))
-        kit2 = _make_mock_kit(Room(id="r2"))
-
         loop = Loop(agent=writer, reviewer=editor)
-        await loop.install(kit1, "r1")
-        await loop.install(kit2, "r2")
+        agents = loop.agents()
+        assert len(agents) == 1
+        assert agents[0].channel_id == "writer"
 
-        # Only one approve_output tool
-        approve_count = sum(1 for t in editor._injected_tools if t.name == "approve_output")
-        assert approve_count == 1
-
-        # Handler should still work — call approve on room r1
-        result = await editor.tool_handler("approve_output", {"reason": "good"})
-        parsed = json.loads(result)
-        assert parsed["status"] == "approved"
-
-    async def test_reviewer_non_approve_tool_falls_through(self):
-        """Non-approve tools on reviewer should fall through to original handler."""
+    async def test_initial_state_set(self):
         writer = _make_agent("writer")
         editor = _make_agent("editor")
         kit = _make_mock_kit(Room(id="r1"))
 
-        loop = Loop(agent=writer, reviewer=editor)
-        await loop.install(kit, "r1")
-
-        result = await editor.tool_handler("some_other_tool", {"x": 1})
-        parsed = json.loads(result)
-        assert "error" in parsed
-
-
-# -- Loop: full cycle integration test ----------------------------------------
-
-
-class TestLoopFullCycle:
-    async def test_complete_produce_review_approve_cycle(self):
-        """Test a full cycle: produce → review → produce → review → approve."""
-        writer = _make_agent("writer")
-        editor = _make_agent("editor")
-        bindings = [_ai_binding("writer"), _ai_binding("editor")]
-        room = Room(id="r1")
-        kit = _make_mock_kit(room, bindings)
-
         loop = Loop(agent=writer, reviewer=editor, max_iterations=5)
         await loop.install(kit, "r1")
 
-        # Extract cycle hook
-        cycle_hook = None
-        for call in kit.hook_engine.add_room_hook.call_args_list:
-            reg = call[0][1]
-            if "loop_cycle" in reg.name:
-                cycle_hook = reg.fn
-                break
-        assert cycle_hook is not None
+        room = await kit.get_room("r1")
+        state = get_conversation_state(room)
+        assert state.active_agent_id == "writer"
+        assert state.context["_loop_iteration"] == 0
+        assert state.context["_loop_approved"] is False
+        assert state.context["_loop_max_iterations"] == 5
 
-        context = RoomContext(room=room, bindings=bindings)
+    async def test_reviewer_registered_not_attached(self):
+        writer = _make_agent("writer")
+        editor = _make_agent("editor")
+        kit = _make_mock_kit(Room(id="r1"))
+        kit.channels = {}
 
-        # Iteration 1: producer outputs → transitions to reviewer
-        await cycle_hook(_make_event("r1", "writer"), context)
-        r = await kit.get_room("r1")
-        s = get_conversation_state(r)
-        assert s.active_agent_id == "editor"
-        assert s.context["_loop_iteration"] == 1
+        loop = Loop(agent=writer, reviewer=editor)
+        await loop.install(kit, "r1")
 
-        # Reviewer gives feedback → transitions back to producer
-        await cycle_hook(_make_event("r1", "editor"), context)
-        r = await kit.get_room("r1")
-        s = get_conversation_state(r)
-        assert s.active_agent_id == "writer"
-
-        # Iteration 2: producer outputs again
-        await cycle_hook(_make_event("r1", "writer"), context)
-        r = await kit.get_room("r1")
-        s = get_conversation_state(r)
-        assert s.active_agent_id == "editor"
-        assert s.context["_loop_iteration"] == 2
-
-        # Reviewer approves
-        result = await editor.tool_handler("approve_output", {"reason": "Perfect"})
-        parsed = json.loads(result)
-        assert parsed["status"] == "approved"
-
-        # Verify loop is done
-        r = await kit.get_room("r1")
-        s = get_conversation_state(r)
-        assert s.context["_loop_approved"] is True
-
-        # Further events should be no-ops
-        await cycle_hook(_make_event("r1", "editor"), context)
-        r = await kit.get_room("r1")
-        s2 = get_conversation_state(r)
-        assert s2.context["_loop_iteration"] == s.context["_loop_iteration"]
+        kit.register_channel.assert_called_once_with(editor)
