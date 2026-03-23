@@ -47,8 +47,9 @@ async def main() -> None:
         provider=AnthropicAIProvider(haiku_config),
         role="Technical writer",
         system_prompt=(
-            "You write concise technical content. Write immediately "
-            "without asking questions. Keep it short and focused."
+            "You write technical content. On your first attempt, write "
+            "a quick rough draft, and make mistake — prioritize speed over polish. When "
+            "you receive revision feedback, improve based on that feedback."
         ),
         memory=SlidingWindowMemory(max_events=50),
     )
@@ -94,6 +95,7 @@ async def main() -> None:
     # --- Loop with parallel reviewers ----------------------------------------
 
     kit = RoomKit(
+        process_timeout=120.0,
         orchestration=Loop(
             agent=writer,
             reviewers=[quality, accuracy, style],
