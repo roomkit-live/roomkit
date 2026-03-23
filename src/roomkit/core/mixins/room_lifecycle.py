@@ -14,6 +14,7 @@ from roomkit.core.exceptions import (
 )
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import (
+    ChannelCategory,
     EventType,
     HookTrigger,
     IdentificationStatus,
@@ -79,7 +80,11 @@ class RoomLifecycleMixin(HelpersMixin):
                 if agent.channel_id not in self._channels:
                     self.register_channel(agent)  # type: ignore[attr-defined]
             for agent in orch.agents():
-                await self.attach_channel(room.id, agent.channel_id)  # type: ignore[attr-defined]
+                await self.attach_channel(  # type: ignore[attr-defined]
+                    room.id,
+                    agent.channel_id,
+                    category=ChannelCategory.INTELLIGENCE,
+                )
             await orch.install(self, room.id)  # type: ignore[arg-type]
 
         await self._fire_lifecycle_hook(
