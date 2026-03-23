@@ -18,11 +18,11 @@ class TestGeminiVisionConfig:
     def test_custom(self) -> None:
         config = GeminiVisionConfig(
             api_key="AIza-test",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             max_tokens=500,
         )
         assert config.api_key == "AIza-test"
-        assert config.model == "gemini-2.0-flash"
+        assert config.model == "gemini-2.5-flash"
 
 
 class TestGeminiVisionProvider:
@@ -31,9 +31,9 @@ class TestGeminiVisionProvider:
         assert provider.name == "gemini-vision:gemini-3.1-flash-lite-preview"
 
     def test_custom_model_name(self) -> None:
-        config = GeminiVisionConfig(api_key="test", model="gemini-2.0-flash")
+        config = GeminiVisionConfig(api_key="test", model="gemini-2.5-flash")
         provider = GeminiVisionProvider(config)
-        assert provider.name == "gemini-vision:gemini-2.0-flash"
+        assert provider.name == "gemini-vision:gemini-2.5-flash"
 
     def test_config_constructor(self) -> None:
         config = GeminiVisionConfig(api_key="k", model="custom")

@@ -60,7 +60,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     Requires the ``google-genai`` package.
 
     Example:
-        provider = GeminiLiveProvider(api_key="...", model="gemini-2.0-flash-live")
+        provider = GeminiLiveProvider(api_key="...")
         provider.on_audio(handle_output_audio)
         provider.on_transcription(handle_transcription)
 
