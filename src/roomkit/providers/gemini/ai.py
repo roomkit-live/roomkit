@@ -133,6 +133,12 @@ class GeminiAIProvider(AIProvider):
             max_output_tokens=context.max_tokens,
         )
 
+        # Thinking level for Gemini 3.1 models
+        if self._config.thinking_level:
+            gen_config.thinking_config = self._types.ThinkingConfig(
+                thinking_level=self._config.thinking_level,
+            )
+
         if context.system_prompt:
             gen_config.system_instruction = context.system_prompt
 

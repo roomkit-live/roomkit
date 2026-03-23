@@ -12,3 +12,5 @@ class GeminiConfig(BaseModel):
     model: str = "gemini-3.1-flash-lite-preview"
     max_tokens: int = 1024
     temperature: float = 1.0  # Gemini default
+    thinking_level: str | None = None
+    """Thinking level for Gemini 3.1 models: minimal, low, medium, high."""
