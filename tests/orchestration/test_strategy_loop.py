@@ -47,7 +47,7 @@ class TestLoopAgents:
     def test_agents_returns_only_producer(self):
         writer = _make_agent("writer")
         editor = _make_agent("editor")
-        loop = Loop(agent=writer, reviewer=editor)
+        loop = Loop(agent=writer, reviewers=[editor])
 
         result = loop.agents()
         assert len(result) == 1
@@ -76,7 +76,7 @@ class TestLoopInstall:
         editor = _make_agent("editor")
         kit = _make_mock_kit(Room(id="r1"))
 
-        loop = Loop(agent=writer, reviewer=editor)
+        loop = Loop(agent=writer, reviewers=[editor])
         await loop.install(kit, "r1")
 
         kit.register_channel.assert_called_once_with(editor)
@@ -87,7 +87,7 @@ class TestLoopInstall:
         kit = _make_mock_kit(Room(id="r1"))
         kit.channels = {"editor": editor}
 
-        loop = Loop(agent=writer, reviewer=editor)
+        loop = Loop(agent=writer, reviewers=[editor])
         await loop.install(kit, "r1")
 
         kit.register_channel.assert_not_called()
@@ -98,7 +98,7 @@ class TestLoopInstall:
         kit = _make_mock_kit(Room(id="r1"))
 
         original = writer.on_event
-        loop = Loop(agent=writer, reviewer=editor)
+        loop = Loop(agent=writer, reviewers=[editor])
         await loop.install(kit, "r1")
 
         # on_event should be wrapped
@@ -110,7 +110,7 @@ class TestLoopInstall:
         editor = _make_agent("editor")
         kit = _make_mock_kit(Room(id="r1"))
 
-        loop = Loop(agent=writer, reviewer=editor)
+        loop = Loop(agent=writer, reviewers=[editor])
         await loop.install(kit, "r1")
 
         assert not any(t.name == "handoff_conversation" for t in writer._injected_tools)

@@ -189,7 +189,7 @@ class TestLoopInstall:
     async def test_agents_returns_only_producer(self):
         writer = _make_agent("writer")
         editor = _make_agent("editor")
-        loop = Loop(agent=writer, reviewer=editor)
+        loop = Loop(agent=writer, reviewers=[editor])
         agents = loop.agents()
         assert len(agents) == 1
         assert agents[0].channel_id == "writer"
@@ -199,7 +199,7 @@ class TestLoopInstall:
         editor = _make_agent("editor")
         kit = _make_mock_kit(Room(id="r1"))
 
-        loop = Loop(agent=writer, reviewer=editor, max_iterations=5)
+        loop = Loop(agent=writer, reviewers=[editor], max_iterations=5)
         await loop.install(kit, "r1")
 
         room = await kit.get_room("r1")
@@ -215,7 +215,7 @@ class TestLoopInstall:
         kit = _make_mock_kit(Room(id="r1"))
         kit.channels = {}
 
-        loop = Loop(agent=writer, reviewer=editor)
+        loop = Loop(agent=writer, reviewers=[editor])
         await loop.install(kit, "r1")
 
         kit.register_channel.assert_called_once_with(editor)

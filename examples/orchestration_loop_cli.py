@@ -67,9 +67,8 @@ async def main() -> None:
     kit = RoomKit(
         orchestration=Loop(
             agent=writer,
-            reviewer=reviewer,
+            reviewers=[reviewer],
             max_iterations=3,
-            auto_cycle=True,
         ),
     )
 
