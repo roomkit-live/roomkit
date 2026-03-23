@@ -150,7 +150,7 @@ class GeminiAIProvider(AIProvider):
         # Thinking level for Gemini 3.1 models
         if self._config.thinking_level:
             gen_config.thinking_config = self._types.ThinkingConfig(
-                thinking_level=self._config.thinking_level,
+                thinking_level=self._config.thinking_level,  # type: ignore[arg-type]
             )
 
         if context.system_prompt:

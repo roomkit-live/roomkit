@@ -141,7 +141,7 @@ class DelegateHandler:
         self._default_share_channels = default_share_channels or []
         # Set the delivery strategy on the framework if provided
         if delivery_strategy is not None:
-            kit._delivery_strategy = delivery_strategy  # type: ignore[attr-defined]
+            kit._delivery_strategy = delivery_strategy
         self._cache = cache
         self._serialize_per_room = serialize_per_room
         self._room_locks: dict[str, asyncio.Lock] = {}

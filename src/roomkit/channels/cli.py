@@ -170,7 +170,7 @@ class CLIChannel(Channel):
             thread_name_prefix="cli-input",
         )
         # Mark the thread as daemon so it dies with the process
-        executor._thread_name_prefix = "cli-input"  # type: ignore[attr-defined]
+        executor._thread_name_prefix = "cli-input"
 
         while True:
             try:

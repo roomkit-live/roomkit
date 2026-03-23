@@ -53,7 +53,7 @@ class DeliverMixin(HelpersMixin):
             resolved = Immediate()
 
         ctx = DeliveryContext(
-            kit=self,  # type: ignore[arg-defined]
+            kit=self,  # type: ignore[arg-type]
             room_id=room_id,
             content=content,
             channel_id=channel_id,
@@ -68,7 +68,7 @@ class DeliverMixin(HelpersMixin):
         }
         hook_event = RoomEvent(
             room_id=room_id,
-            source=EventSource(channel_id="system", channel_type="system"),
+            source=EventSource(channel_id="system", channel_type="system"),  # type: ignore[arg-type]
             content=TextContent(body=content),
             type=EventType.MESSAGE,
             status=EventStatus.PENDING,

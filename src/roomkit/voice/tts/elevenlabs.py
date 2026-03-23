@@ -130,7 +130,7 @@ class ElevenLabsTTSProvider(TTSProvider):
         """Build an SDK ``VoiceSettings`` object for API calls."""
         from elevenlabs import VoiceSettings
 
-        return VoiceSettings(**self._build_voice_settings())
+        return VoiceSettings(**self._build_voice_settings())  # type: ignore[arg-type]
 
     async def list_voices(self) -> list[ElevenLabsVoice]:
         """List available voices from ElevenLabs."""
