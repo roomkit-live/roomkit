@@ -296,6 +296,7 @@ class AIChannel(
                 or bool(self._user_tools)
                 or bool(self._injected_tools)
                 or (self._skills is not None and self._skills.skill_count > 0)
+                or self._planner is not None
             )
 
             if self._provider.supports_streaming or self._provider.supports_structured_streaming:

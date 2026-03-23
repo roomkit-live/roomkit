@@ -54,7 +54,7 @@ class ToolEviction:
 
         return (
             f"Result too large ({estimated} tokens). Full output saved as "
-            f"'{result_id}'. Use _read_tool_result to read it with pagination.\n\n"
+            f"'{result_id}'. Use read_stored_result to read it with pagination.\n\n"
             f"Preview:\n{preview}"
         )
 
@@ -85,9 +85,9 @@ class ToolEviction:
 
     @staticmethod
     def tool_definition() -> AITool:
-        """Return the AITool definition for _read_tool_result."""
+        """Return the AITool definition for read_stored_result."""
         return AITool(
-            name="_read_tool_result",
+            name="read_stored_result",
             description=(
                 "Read a previously evicted large tool result. "
                 "Supports line-based pagination via offset and limit."

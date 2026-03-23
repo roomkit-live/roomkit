@@ -42,8 +42,10 @@ async def main() -> None:
         system_prompt=(
             "You are a project planning assistant.\n"
             "When the user asks you to work on something with multiple steps, "
-            "always start by creating a structured task plan. Update the "
-            "plan as you make progress — mark tasks in_progress, then completed."
+            "you MUST call the plan_tasks tool to create a structured plan. "
+            "Do NOT describe the plan in text — always use the tool. "
+            "Update the plan as you make progress by calling plan_tasks again "
+            "with updated statuses (in_progress, completed)."
         ),
         enable_planning=True,
     )
@@ -53,7 +55,7 @@ async def main() -> None:
 
     @kit.hook(HookTrigger.ON_TOOL_CALL)
     async def show_tool_call(event, _ctx):
-        return log_tool_call(event, tool_names=["_plan_tasks"], label="plan")
+        return log_tool_call(event, tool_names=["plan_tasks"], label="plan")
 
     await kit.create_room(room_id="planning-room")
     await kit.attach_channel("planning-room", "cli")

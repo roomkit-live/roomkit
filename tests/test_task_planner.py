@@ -20,7 +20,7 @@ class TestToolDefinition:
 
     def test_tool_name(self) -> None:
         tool = TaskPlanner.tool_definition()
-        assert tool.name == "_plan_tasks"
+        assert tool.name == "plan_tasks"
 
     def test_tool_has_tasks_parameter(self) -> None:
         tool = TaskPlanner.tool_definition()

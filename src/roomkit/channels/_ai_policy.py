@@ -44,8 +44,8 @@ class AIToolPolicyMixin:
             "activate_skill",
             "read_skill_reference",
             "run_skill_script",
-            "_read_tool_result",
-            "_plan_tasks",
+            "read_stored_result",
+            "plan_tasks",
         }
     )
 

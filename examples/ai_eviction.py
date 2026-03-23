@@ -90,7 +90,7 @@ async def main() -> None:
     @kit.hook(HookTrigger.ON_TOOL_CALL)
     async def show_tool_call(event, _ctx):
         return log_tool_call(
-            event, tool_names=["generate_report", "_read_tool_result"], label="tool"
+            event, tool_names=["generate_report", "read_stored_result"], label="tool"
         )
 
     await kit.create_room(room_id="eviction-room")

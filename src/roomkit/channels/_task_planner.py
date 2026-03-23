@@ -22,7 +22,7 @@ _STATUS_ICONS = {
 class TaskPlanner:
     """Manages a structured task plan for an AI agent.
 
-    Provides the ``_plan_tasks`` tool for creating/updating plans,
+    Provides the ``plan_tasks`` tool for creating/updating plans,
     formats the plan into system prompt context, and publishes
     ephemeral events for real-time UI rendering.
     """
@@ -76,9 +76,9 @@ class TaskPlanner:
 
     @staticmethod
     def tool_definition() -> AITool:
-        """Return the AITool definition for _plan_tasks."""
+        """Return the AITool definition for plan_tasks."""
         return AITool(
-            name="_plan_tasks",
+            name="plan_tasks",
             description=(
                 "Create or update a structured task plan. "
                 "Use this to break down complex work into steps and track progress."

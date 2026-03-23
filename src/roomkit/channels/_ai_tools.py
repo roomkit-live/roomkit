@@ -213,8 +213,8 @@ class AIToolsMixin:
         )
 
         dispatch: dict[str, Any] = {
-            "_read_tool_result": self._handle_read_tool_result,
-            "_plan_tasks": self._handle_plan_tasks,
+            "read_stored_result": self._handle_read_tool_result,
+            "plan_tasks": self._handle_plan_tasks,
         }
         if self._skills:
             dispatch[_TOOL_ACTIVATE_SKILL] = self._handle_activate_skill
