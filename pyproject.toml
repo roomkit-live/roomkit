@@ -359,41 +359,13 @@ skips = ["B101"]  # Allow assert in non-test code (used in type narrowing)
 [tool.coverage.run]
 source = ["roomkit"]
 omit = [
+    # Integration-heavy: need real DB / WebSocket protocols for meaningful coverage
     "src/roomkit/store/postgres.py",
-    "src/roomkit/voice/realtime/fastrtc_transport.py",
-    "src/roomkit/voice/realtime/ws_transport.py",
-    "src/roomkit/voice/stt/deepgram.py",
-    "src/roomkit/voice/stt/gradium.py",
-    "src/roomkit/voice/tts/elevenlabs.py",
-    "src/roomkit/voice/tts/gradium.py",
-    "src/roomkit/voice/tts/qwen3.py",
-    "src/roomkit/voice/stt/qwen3.py",
     "src/roomkit/providers/openai/realtime.py",
-    "src/roomkit/providers/anam/realtime.py",
     "src/roomkit/providers/gemini/realtime.py",
-
-    "src/roomkit/voice/backends/rtp.py",
-    "src/roomkit/voice/backends/sip.py",
-    "src/roomkit/voice/backends/webtransport.py",
-    "src/roomkit/voice/pipeline/aec/webrtc.py",
-    "src/roomkit/voice/pipeline/aec/speex.py",
-    "src/roomkit/voice/pipeline/denoiser/aicoustics.py",
-    "src/roomkit/voice/pipeline/denoiser/rnnoise.py",
-    "src/roomkit/voice/pipeline/diarization/sherpa_onnx.py",
-    "src/roomkit/voice/pipeline/turn/smart_turn.py",
     "src/roomkit/voice/realtime/bridge.py",
-    "src/roomkit/video/avatar/websocket.py",
-    "src/roomkit/video/pipeline/filter/watermark.py",
-    "src/roomkit/video/pipeline/transform/effects.py",
-    "src/roomkit/video/vision/screen_input.py",
-    "src/roomkit/providers/anam/avatar.py",
-    "src/roomkit/telemetry/opentelemetry.py",
-    "src/roomkit/tools/mcp.py",
-    "src/roomkit/channels/av.py",
-    "src/roomkit/channels/realtime_av.py",
-    "src/roomkit/providers/personaplex/realtime.py",
-    "src/roomkit/providers/xai/realtime.py",
-    "src/roomkit/orchestration/strategies/supervisor.py",
+    "src/roomkit/voice/realtime/fastrtc_transport.py",
+    "src/roomkit/orchestration/strategies/loop.py",
 ]
 
 [tool.coverage.report]
