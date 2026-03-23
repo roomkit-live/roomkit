@@ -316,6 +316,10 @@ async def _run_loop(
             channel_type=ChannelType.AI,
         ),
         content=TextContent(body=result["output"]),
+        metadata={
+            "_loop_approved": result["approved"],
+            "_loop_iteration": result["iteration"],
+        },
     )
     return ChannelOutput(responded=True, response_events=[result_event])
 
