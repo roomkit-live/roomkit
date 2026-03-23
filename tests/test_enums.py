@@ -29,7 +29,7 @@ class TestChannelType:
 
     def test_count(self) -> None:
         # Includes MMS, RCS, REALTIME_VOICE, REALTIME_AUDIO_VIDEO, WHATSAPP_PERSONAL, etc.
-        assert len(ChannelType) == 19
+        assert len(ChannelType) == 20
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):
@@ -146,8 +146,7 @@ class TestHookTrigger:
         assert HookTrigger.ON_DELIVERY_STATUS == "on_delivery_status"
 
     def test_count(self) -> None:
-        # 54 base + 3 agentic (ON_PLAN_UPDATED, ON_AI_RESPONSE, ON_FEEDBACK)
-        assert len(HookTrigger) == 57
+        assert len(HookTrigger) == 59
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):

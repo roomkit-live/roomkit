@@ -62,12 +62,14 @@ def _make_mock_kit(
     kit = MagicMock()
     kit.get_room = AsyncMock(return_value=room)
     kit.store.list_bindings = AsyncMock(return_value=bindings)
+    kit.store.list_events = AsyncMock(return_value=[])
     kit.store.add_event = AsyncMock()
     kit.store.add_event_auto_index = AsyncMock(side_effect=lambda room_id, event: event)
     kit.store.update_room = AsyncMock()
 
     router = MagicMock()
     result = broadcast_result or _MockBroadcastResult("task done")
+    result.streaming_responses = []
     router.broadcast = AsyncMock(return_value=result)
     kit._get_router = MagicMock(return_value=router)
 
