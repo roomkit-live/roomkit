@@ -127,6 +127,17 @@ async def main() -> None:
             preview = body[:80] + "..." if len(body) > 80 else body
             print(f"\033[36m[produced] {agent} ({duration:.0f}ms) {preview}\033[0m")
 
+    @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC)
+    async def on_loop_result(event: RoomEvent, ctx: RoomContext) -> None:
+        if "approved" not in (event.metadata or {}):
+            return
+        approved = event.metadata["approved"]
+        iteration = event.metadata.get("iteration", "?")
+        if approved:
+            print(f"\n\033[32m[result] Approved after {iteration} iteration(s)\033[0m")
+        else:
+            print(f"\n\033[31m[result] Not approved after {iteration} iteration(s)\033[0m")
+
     cli = CLIChannel("cli")
     kit.register_channel(cli)
 
