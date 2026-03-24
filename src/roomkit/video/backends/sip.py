@@ -126,7 +126,8 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
 
         audio_rtp_port = self._allocate_rtp_port()
         video_rtp_port = self._allocate_rtp_port()
-        local_ip = self._resolve_local_ip(call.source_addr)
+        bind_ip = self._resolve_local_ip(call.source_addr)
+        sdp_ip = self._advertised_ip or bind_ip
 
         # Log what the remote is offering for video
         video_offer = call.sdp_offer.video
@@ -147,15 +148,16 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
             and self._transport is not None
             and self._transport.local_addr[0] in ("0.0.0.0", "")  # nosec B104
         ):
-            self._transport.local_addr = (local_ip, self._transport.local_addr[1])
+            self._transport.local_addr = (sdp_ip, self._transport.local_addr[1])
             self._transport_addr_resolved = True
 
         # Audio negotiation via CallSession
         try:
             call_session = self._rtp_bridge.CallSession(
-                local_ip=local_ip,
+                local_ip=bind_ip,
                 rtp_port=audio_rtp_port,
                 offer=call.sdp_offer,
+                advertised_ip=self._advertised_ip,
                 supported_codecs=self._supported_codecs,
                 dtmf_payload_type=self._dtmf_payload_type,
                 session_name=self._server_name,
@@ -174,9 +176,10 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
         video_call_session = None
         try:
             video_call_session = self._video_bridge.VideoCallSession(
-                local_ip=local_ip,
+                local_ip=bind_ip,
                 rtp_port=video_rtp_port,
                 offer=call.sdp_offer,
+                advertised_ip=self._advertised_ip,
                 supported_video_codecs=self._supported_video_codecs,
                 session_name=self._server_name,
             )
@@ -196,7 +199,7 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
                 "Video negotiated: pt=%d, remote=%s, local=%s:%d",
                 video_call_session.chosen_payload_type,
                 video_call_session.remote_addr,
-                local_ip,
+                sdp_ip,
                 video_rtp_port,
             )
 
@@ -208,7 +211,7 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
             await video_call_session.start()
             logger.info(
                 "Video RTP session started: listening on %s:%d for remote %s",
-                local_ip,
+                sdp_ip,
                 video_rtp_port,
                 video_call_session.remote_addr,
             )

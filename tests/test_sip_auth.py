@@ -210,6 +210,7 @@ def _make_backend(
     b = SIPVoiceBackend.__new__(SIPVoiceBackend)
     b._local_sip_addr = ("0.0.0.0", 5060)
     b._local_rtp_ip = "0.0.0.0"
+    b._advertised_ip = None
     b._rtp_port_start = 10000
     b._rtp_port_end = 20000
     b._supported_codecs = [PT_G722, PT_PCMU, PT_PCMA]

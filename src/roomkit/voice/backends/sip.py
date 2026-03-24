@@ -207,6 +207,10 @@ class SIPVoiceBackend(VoiceBackend):
     Args:
         local_sip_addr: ``(host, port)`` to bind the SIP listener.
         local_rtp_ip: IP address for RTP media binding.
+        advertised_ip: Public IP to advertise in SDP ``c=``/``o=`` lines
+            and SIP Contact/Via headers when behind NAT.  RTP sockets
+            still bind to *local_rtp_ip*.  Default ``None`` (use the
+            resolved local IP for everything).
         rtp_port_start: First RTP port to allocate.
         rtp_port_end: Last RTP port in the allocation range.
         supported_codecs: List of payload type numbers to accept
@@ -229,6 +233,7 @@ class SIPVoiceBackend(VoiceBackend):
         *,
         local_sip_addr: tuple[str, int] = ("0.0.0.0", 5060),  # nosec B104
         local_rtp_ip: str = "0.0.0.0",  # nosec B104
+        advertised_ip: str | None = None,
         rtp_port_start: int = 10000,
         rtp_port_end: int = 20000,
         supported_codecs: list[int] | None = None,
@@ -244,6 +249,7 @@ class SIPVoiceBackend(VoiceBackend):
 
         self._local_sip_addr = local_sip_addr
         self._local_rtp_ip = local_rtp_ip
+        self._advertised_ip = advertised_ip
         self._rtp_port_start = rtp_port_start
         self._rtp_port_end = rtp_port_end
         self._supported_codecs = supported_codecs or [PT_G722, PT_PCMU, PT_PCMA]
@@ -357,7 +363,8 @@ class SIPVoiceBackend(VoiceBackend):
             return
 
         rtp_port = self._allocate_rtp_port()
-        local_ip = self._resolve_local_ip(call.source_addr)
+        bind_ip = self._resolve_local_ip(call.source_addr)
+        sdp_ip = self._advertised_ip or bind_ip
 
         # Resolve transport address once so SIP Contact headers use a
         # routable IP instead of 0.0.0.0.  Without this, the remote
@@ -367,14 +374,15 @@ class SIPVoiceBackend(VoiceBackend):
             and self._transport is not None
             and self._transport.local_addr[0] in ("0.0.0.0", "")  # nosec B104
         ):
-            self._transport.local_addr = (local_ip, self._transport.local_addr[1])
+            self._transport.local_addr = (sdp_ip, self._transport.local_addr[1])
             self._transport_addr_resolved = True
 
         try:
             call_session = self._rtp_bridge.CallSession(
-                local_ip=local_ip,
+                local_ip=bind_ip,
                 rtp_port=rtp_port,
                 offer=call.sdp_offer,
+                advertised_ip=self._advertised_ip,
                 supported_codecs=self._supported_codecs,
                 dtmf_payload_type=self._dtmf_payload_type,
                 session_name=self._server_name,
@@ -780,17 +788,20 @@ class SIPVoiceBackend(VoiceBackend):
         local_ip, local_port = self._transport.local_addr
         if local_ip in ("0.0.0.0", ""):  # nosec B104
             local_ip = self._resolve_local_ip(registrar_addr)
+        signaling_ip = self._advertised_ip or local_ip
 
         from_uri = f"sip:{username}@{domain}"
         request_uri = f"sip:{domain}"
-        contact_uri = f"sip:{username}@{local_ip}:{local_port}"
-        call_id = generate_call_id(local_ip)
+        contact_uri = f"sip:{username}@{signaling_ip}:{local_port}"
+        call_id = generate_call_id(signaling_ip)
         local_tag = generate_tag()
 
         def _build(cseq_num: int, auth_header: tuple[str, str] | None = None) -> Any:
             branch = generate_branch()
             reg = SipRequest(method="REGISTER", uri=request_uri)
-            via = Via(transport="UDP", host=local_ip, port=local_port, params={"branch": branch})
+            via = Via(
+                transport="UDP", host=signaling_ip, port=local_port, params={"branch": branch}
+            )
             reg.headers.append("Via", stringify_via(via))
             reg.headers.set_single("From", f"<{from_uri}>;tag={local_tag}")
             reg.headers.set_single("To", f"<{from_uri}>")
@@ -924,26 +935,28 @@ class SIPVoiceBackend(VoiceBackend):
         codec_name, clock_rate, codec_rate = codec_info
 
         rtp_port = self._allocate_rtp_port()
-        local_ip = self._resolve_local_ip(proxy_addr)
+        bind_ip = self._resolve_local_ip(proxy_addr)
+        sdp_ip = self._advertised_ip or bind_ip
 
         # Fix SIP Contact/Via: if transport is bound to 0.0.0.0,
         # replace with the resolved IP so INVITE uses a routable address.
         # Only set once to avoid races with concurrent dials overwriting
         # each other's resolved IP (shared transport state).
         if not self._transport_addr_resolved and self._transport.local_addr[0] in ("0.0.0.0", ""):  # nosec B104
-            self._transport.local_addr = (local_ip, self._transport.local_addr[1])
+            self._transport.local_addr = (sdp_ip, self._transport.local_addr[1])
             self._transport_addr_resolved = True
 
         # Build SDP offer
         from aiosipua import build_sdp
 
         sdp_offer = build_sdp(
-            local_ip=local_ip,
+            local_ip=bind_ip,
             rtp_port=rtp_port,
             payload_type=codec,
             codec_name=codec_name,
             sample_rate=clock_rate,
             dtmf_payload_type=self._dtmf_payload_type,
+            advertised_ip=self._advertised_ip,
         )
 
         # Send INVITE
@@ -992,9 +1005,10 @@ class SIPVoiceBackend(VoiceBackend):
         # 200 OK received — set up RTP session using answer SDP
         try:
             call_session = self._rtp_bridge.CallSession(
-                local_ip=local_ip,
+                local_ip=bind_ip,
                 rtp_port=rtp_port,
                 offer=out_call.sdp_answer,
+                advertised_ip=self._advertised_ip,
                 supported_codecs=[codec],
                 dtmf_payload_type=self._dtmf_payload_type,
                 session_name=self._server_name,
@@ -1077,7 +1091,7 @@ class SIPVoiceBackend(VoiceBackend):
             session.id,
             to_uri,
             out_call.call_id,
-            local_ip,
+            bind_ip,
             rtp_port,
             call_session.remote_addr[0],
             call_session.remote_addr[1],
