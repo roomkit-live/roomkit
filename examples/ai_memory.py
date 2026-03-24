@@ -101,7 +101,7 @@ async def main() -> None:
     memory = VerboseSummarizingMemory(
         inner=SlidingWindowMemory(max_events=100),
         provider=summary_provider,
-        max_context_tokens=4000,
+        max_context_tokens=1000,
         tier1_ratio=0.3,
         tier2_ratio=0.5,
         summary_max_tokens=100,
@@ -114,8 +114,7 @@ async def main() -> None:
     ai = AIChannel(
         "ai-assistant",
         provider=main_provider,
-        system_prompt="You are a helpful assistant. Keep answers to 2-3 sentences max.",
-        max_tokens=150,
+        system_prompt="You are a helpful assistant.",
         memory=memory,
     )
 
