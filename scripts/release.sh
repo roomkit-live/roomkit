@@ -10,9 +10,9 @@ fi
 
 VERSION="$1"
 
-# --- Validate semver format ---
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "Error: VERSION must be in semver format (e.g. 1.2.3)"
+# --- Validate semver format (with optional pre-release suffix) ---
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-a-zA-Z0-9.]+)?$ ]]; then
+    echo "Error: VERSION must be in semver format (e.g. 1.2.3 or 1.2.3a1)"
     exit 1
 fi
 
@@ -117,8 +117,14 @@ else
         | grep -v "^- Bump version")
 fi
 
+PRERELEASE_FLAG=""
+if [[ "$VERSION" =~ [a-zA-Z] ]]; then
+    PRERELEASE_FLAG="--prerelease"
+fi
+
 gh release create "v${VERSION}" \
     --title "v${VERSION}" \
+    ${PRERELEASE_FLAG} \
     --notes "${NOTES}"
 echo "    GitHub Release created."
 
