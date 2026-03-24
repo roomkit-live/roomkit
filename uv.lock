@@ -5120,6 +5120,10 @@ qwen-asr = [
 qwen-tts = [
     { name = "qwen-tts" },
 ]
+realtime-elevenlabs = [
+    { name = "elevenlabs" },
+    { name = "websockets" },
+]
 realtime-gemini = [
     { name = "google-genai" },
 ]
@@ -5221,6 +5225,7 @@ requires-dist = [
     { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.14" },
     { name = "deepgram-sdk", marker = "extra == 'deepgram'", specifier = ">=6.0.0" },
     { name = "elevenlabs", marker = "extra == 'elevenlabs'", specifier = ">=1.0" },
+    { name = "elevenlabs", marker = "extra == 'realtime-elevenlabs'", specifier = ">=1.0" },
     { name = "fastrtc", marker = "extra == 'fastrtc'", specifier = ">=0.0.18" },
     { name = "google-genai", marker = "extra == 'all'", specifier = ">=1.0.0" },
     { name = "google-genai", marker = "extra == 'dev'", specifier = ">=1.0.0" },
@@ -5298,11 +5303,12 @@ requires-dist = [
     { name = "twilio", marker = "extra == 'twilio'", specifier = ">=9.0" },
     { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.3" },
     { name = "websockets", marker = "extra == 'dev'", specifier = ">=13.0" },
+    { name = "websockets", marker = "extra == 'realtime-elevenlabs'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'realtime-openai'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-gemini", "realtime-openai", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
+provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]
