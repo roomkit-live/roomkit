@@ -294,11 +294,11 @@ wheels = [
 
 [[package]]
 name = "aiosipua"
-version = "0.4.0"
+version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a1/26/6d56b06751c98bf32ad372de0585e8d12e1afd8da4a1bb40f80e9bcbbfe1/aiosipua-0.4.0.tar.gz", hash = "sha256:a4dcd49cf9006e15a1fc559fd1d67e832b3abdee7f22784820b75184077d5f21", size = 77324, upload-time = "2026-03-14T03:18:09.652Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cb/c3/6a6001240e803f5e211348aab86272685ff30fee66c571d600e23c97a680/aiosipua-0.4.1.tar.gz", hash = "sha256:e5cf80548830672d2bc71cfe76b61d00860f45ec352411eac7692a1e48b2e3ea", size = 77944, upload-time = "2026-03-24T18:09:38.763Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/de/7d388fead443b11ec01e2508378831b399e4e2314e5256b2966700846793/aiosipua-0.4.0-py3-none-any.whl", hash = "sha256:fe4c71c149a045798f1bbe6ce13ca3130560c09981e51fa9d56da84d2ee618b3", size = 42431, upload-time = "2026-03-14T03:18:10.467Z" },
+    { url = "https://files.pythonhosted.org/packages/59/7d/87594b0f8095beb1245f5d69fff888b80232f8fa294c4b0dcde5eabcd1ea/aiosipua-0.4.1-py3-none-any.whl", hash = "sha256:ee56cc5f34ced2368e1b134c286d80d7ee2add1661b858eae0cab9b52d3b4cfa", size = 42781, upload-time = "2026-03-24T18:09:37.641Z" },
 ]
 
 [package.optional-dependencies]
@@ -5204,7 +5204,7 @@ requires-dist = [
     { name = "aic-sdk", marker = "extra == 'aicoustics'", specifier = ">=2.1" },
     { name = "aioquic", marker = "extra == 'webtransport'", specifier = ">=1.0" },
     { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.3.1" },
-    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.4.0" },
+    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.4.1" },
     { name = "anam", marker = "extra == 'anam'", specifier = ">=0.1" },
     { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30" },

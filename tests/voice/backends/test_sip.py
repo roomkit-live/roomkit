@@ -155,9 +155,9 @@ def mock_rtp_bridge(mock_call_session: MagicMock) -> MagicMock:
 def backend(mock_aiosipua: MagicMock, mock_rtp_bridge: MagicMock) -> Any:
     """Return a SIPVoiceBackend with mocked aiosipua."""
     with (
-        patch("roomkit.voice.backends.sip._import_aiosipua", return_value=mock_aiosipua),
+        patch("roomkit.voice.backends.sip.import_aiosipua", return_value=mock_aiosipua),
         patch(
-            "roomkit.voice.backends.sip._import_rtp_bridge",
+            "roomkit.voice.backends.sip.import_rtp_bridge",
             return_value=mock_rtp_bridge,
         ),
     ):
@@ -775,7 +775,7 @@ class TestHandleReInvite:
         assert backend._pending_reinvite_calls.get(session_id) is reinvite_call
 
         # Step 3: Simulate dial() completing — create the session state and apply deferral
-        from roomkit.voice.backends.sip import _SIPSessionState
+        from roomkit.voice.backends._sip_types import SIPSessionState as _SIPSessionState
         from roomkit.voice.base import VoiceSession, VoiceSessionState
 
         session = VoiceSession(

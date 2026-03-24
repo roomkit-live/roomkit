@@ -133,9 +133,9 @@ def mock_video_bridge():
 @pytest.fixture
 def backend(mock_aiosipua, mock_rtp_bridge, mock_video_bridge):
     with (
-        patch("roomkit.voice.backends.sip._import_aiosipua", return_value=mock_aiosipua),
+        patch("roomkit.voice.backends.sip.import_aiosipua", return_value=mock_aiosipua),
         patch(
-            "roomkit.voice.backends.sip._import_rtp_bridge",
+            "roomkit.voice.backends.sip.import_rtp_bridge",
             return_value=mock_rtp_bridge,
         ),
         patch(

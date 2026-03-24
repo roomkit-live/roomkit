@@ -10,18 +10,20 @@ from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
+
 # Ensure a fake aiosipua module exists so tests can import SIPVoiceBackend
 if "aiosipua" not in sys.modules:
     _fake_aiosipua = types.ModuleType("aiosipua")
     _fake_aiosipua.build_sdp = lambda **kwargs: None  # type: ignore[attr-defined]
     sys.modules["aiosipua"] = _fake_aiosipua
 
+from roomkit.voice.backends._sip_types import compute_digest as _compute_digest
 from roomkit.voice.backends.sip import (
     PT_G722,
     PT_PCMA,
     PT_PCMU,
     SIPVoiceBackend,
-    _compute_digest,
 )
 
 # ---------------------------------------------------------------------------
@@ -46,10 +48,10 @@ class FakeCaseInsensitiveDict:
 
 
 class FakeSipRequest:
-    """Minimal INVITE request."""
+    """Minimal SIP request."""
 
-    def __init__(self, *, uri: str = "sip:bot@example.com") -> None:
-        self.method = "INVITE"
+    def __init__(self, *, method: str = "INVITE", uri: str = "sip:bot@example.com") -> None:
+        self.method = method
         self.uri = uri
         self.headers = FakeCaseInsensitiveDict()
         self._headers_raw: dict[str, str] = {}
@@ -491,6 +493,317 @@ class TestSipMessageHandler:
 
         assert len(calls) == 1
         assert calls[0][0] is resp
+
+
+# ---------------------------------------------------------------------------
+# Digest computation tests
+# ---------------------------------------------------------------------------
+
+
+class TestNonceEviction:
+    """Test that expired nonces are cleaned up."""
+
+    def test_expired_nonces_evicted_on_challenge(self) -> None:
+        backend = _make_backend(auth_users={"alice": "pass123"})
+        now = time.monotonic()
+        backend._auth_nonces = {
+            "old1": now - 100,
+            "old2": now - 50,
+            "fresh": now + 60,
+        }
+
+        call = FakeIncomingCall()
+        backend._send_auth_challenge(call)
+
+        # old1 and old2 should be evicted, fresh + new nonce remain
+        assert "old1" not in backend._auth_nonces
+        assert "old2" not in backend._auth_nonces
+        assert "fresh" in backend._auth_nonces
+        assert len(backend._auth_nonces) == 2  # fresh + newly generated
+
+
+# ---------------------------------------------------------------------------
+# Outbound registration tests
+# ---------------------------------------------------------------------------
+
+
+def _setup_aiosipua_mocks() -> tuple:
+    """Set up aiosipua module mocks for register() tests."""
+    import aiosipua
+
+    # Save originals
+    originals = {}
+    for name in (
+        "SipRequest",
+        "generate_branch",
+        "generate_call_id",
+        "generate_tag",
+        "parse_auth",
+        "stringify_auth",
+    ):
+        originals[name] = getattr(aiosipua, name, None)
+
+    # Install fakes
+    aiosipua.SipRequest = FakeSipRequest  # type: ignore[attr-defined]
+    aiosipua.generate_branch = lambda: "z9hG4bK-test"  # type: ignore[attr-defined]
+    aiosipua.generate_call_id = lambda ip: "call-id-test"  # type: ignore[attr-defined]
+    aiosipua.generate_tag = lambda: "tag-test"  # type: ignore[attr-defined]
+    aiosipua.stringify_auth = lambda c: "Digest ..."  # type: ignore[attr-defined]
+
+    return originals
+
+
+def _restore_aiosipua_mocks(originals: dict) -> None:
+    """Restore aiosipua module to original state."""
+    import aiosipua
+
+    for name, val in originals.items():
+        if val is not None:
+            setattr(aiosipua, name, val)
+
+
+def _setup_headers_mocks() -> tuple:
+    """Set up aiosipua.headers module mocks."""
+    import types
+
+    headers_mod = types.ModuleType("aiosipua.headers")
+    headers_mod.AuthCredentials = MagicMock  # type: ignore[attr-defined]
+    headers_mod.CSeq = lambda seq, method: f"{seq} {method}"  # type: ignore[attr-defined]
+    headers_mod.Via = lambda **kw: "via"  # type: ignore[attr-defined]
+    headers_mod.stringify_cseq = lambda c: str(c)  # type: ignore[attr-defined]
+    headers_mod.stringify_via = lambda v: str(v)  # type: ignore[attr-defined]
+
+    original = sys.modules.get("aiosipua.headers")
+    sys.modules["aiosipua.headers"] = headers_mod
+    return (original,)
+
+
+def _restore_headers_mocks(original: tuple) -> None:
+    """Restore aiosipua.headers module."""
+    if original[0] is not None:
+        sys.modules["aiosipua.headers"] = original[0]
+    else:
+        sys.modules.pop("aiosipua.headers", None)
+
+
+class TestRegister:
+    """Test outbound SIP REGISTER flow."""
+
+    async def test_register_before_start_raises(self) -> None:
+        backend = _make_backend()
+        backend._transport = None
+
+        with pytest.raises(RuntimeError, match="start.*must be called"):
+            await backend.register(
+                registrar_addr=("10.0.0.1", 5060),
+                username="bot",
+                password="secret",
+            )
+
+    async def test_register_200_ok_no_auth(self) -> None:
+        """Registrar accepts without auth challenge."""
+        backend = _make_backend()
+        originals = _setup_aiosipua_mocks()
+        headers_orig = _setup_headers_mocks()
+
+        try:
+            # Simulate: transport.send triggers immediate 200 OK
+            async def _resolve_200() -> None:
+                await asyncio.sleep(0.01)
+                fut = backend._register_response_future
+                if fut and not fut.done():
+                    backend._register_response_future.set_result(FakeSipResponse(200, "OK"))
+
+            asyncio.get_running_loop().create_task(_resolve_200())
+            await backend.register(
+                registrar_addr=("10.0.0.1", 5060),
+                username="bot",
+                password="secret",
+            )
+
+            assert backend._registered is True
+            assert backend._registration_task is not None
+            backend._registration_task.cancel()
+        finally:
+            _restore_aiosipua_mocks(originals)
+            _restore_headers_mocks(headers_orig)
+
+    async def test_register_401_then_200(self) -> None:
+        """Registrar challenges with 401, retry succeeds."""
+        backend = _make_backend()
+        originals = _setup_aiosipua_mocks()
+        headers_orig = _setup_headers_mocks()
+
+        import aiosipua
+
+        mock_challenge = MagicMock()
+        mock_challenge.params = {"realm": "test.com", "nonce": "server-nonce-123"}
+        aiosipua.parse_auth = lambda s: mock_challenge  # type: ignore[attr-defined]
+        aiosipua.stringify_auth = lambda c: "Digest ..."  # type: ignore[attr-defined]
+
+        try:
+            call_count = 0
+
+            async def _resolve_responses() -> None:
+                nonlocal call_count
+                while call_count < 2:
+                    await asyncio.sleep(0.01)
+                    fut = backend._register_response_future
+                    if fut and not fut.done():
+                        call_count += 1
+                        if call_count == 1:
+                            resp = FakeSipResponse(401, "Unauthorized")
+                            resp._headers["WWW-Authenticate"] = (
+                                'Digest realm="test.com", nonce="server-nonce-123"'
+                            )
+                            fut.set_result(resp)
+                        else:
+                            fut.set_result(FakeSipResponse(200, "OK"))
+
+            asyncio.get_running_loop().create_task(_resolve_responses())
+            await backend.register(
+                registrar_addr=("10.0.0.1", 5060),
+                username="bot",
+                password="secret",
+                domain="test.com",
+            )
+
+            assert backend._registered is True
+            assert call_count == 2
+            backend._registration_task.cancel()
+        finally:
+            _restore_aiosipua_mocks(originals)
+            _restore_headers_mocks(headers_orig)
+
+    async def test_register_rejected_raises(self) -> None:
+        """Non-401/407 response raises RuntimeError."""
+        backend = _make_backend()
+        originals = _setup_aiosipua_mocks()
+        headers_orig = _setup_headers_mocks()
+
+        try:
+
+            async def _resolve_403() -> None:
+                await asyncio.sleep(0.01)
+                fut = backend._register_response_future
+                if fut and not fut.done():
+                    backend._register_response_future.set_result(FakeSipResponse(403, "Forbidden"))
+
+            asyncio.get_running_loop().create_task(_resolve_403())
+            with pytest.raises(RuntimeError, match="REGISTER failed: 403"):
+                await backend.register(
+                    registrar_addr=("10.0.0.1", 5060),
+                    username="bot",
+                    password="secret",
+                )
+
+            assert backend._registered is False
+        finally:
+            _restore_aiosipua_mocks(originals)
+            _restore_headers_mocks(headers_orig)
+
+    async def test_register_auth_failed_raises(self) -> None:
+        """Second REGISTER (with auth) rejected raises RuntimeError."""
+        backend = _make_backend()
+        originals = _setup_aiosipua_mocks()
+        headers_orig = _setup_headers_mocks()
+
+        import aiosipua
+
+        mock_challenge = MagicMock()
+        mock_challenge.params = {"realm": "test.com", "nonce": "nonce1"}
+        aiosipua.parse_auth = lambda s: mock_challenge  # type: ignore[attr-defined]
+        aiosipua.stringify_auth = lambda c: "Digest ..."  # type: ignore[attr-defined]
+
+        try:
+            call_count = 0
+
+            async def _resolve() -> None:
+                nonlocal call_count
+                while call_count < 2:
+                    await asyncio.sleep(0.01)
+                    fut = backend._register_response_future
+                    if fut and not fut.done():
+                        call_count += 1
+                        if call_count == 1:
+                            resp = FakeSipResponse(401, "Unauthorized")
+                            resp._headers["WWW-Authenticate"] = (
+                                'Digest realm="test.com", nonce="nonce1"'
+                            )
+                            fut.set_result(resp)
+                        else:
+                            fut.set_result(FakeSipResponse(403, "Forbidden"))
+
+            asyncio.get_running_loop().create_task(_resolve())
+            with pytest.raises(RuntimeError, match="REGISTER auth failed: 403"):
+                await backend.register(
+                    registrar_addr=("10.0.0.1", 5060),
+                    username="bot",
+                    password="secret",
+                    domain="test.com",
+                )
+        finally:
+            _restore_aiosipua_mocks(originals)
+            _restore_headers_mocks(headers_orig)
+
+    async def test_register_stores_params(self) -> None:
+        """register() stores params for re-registration loop."""
+        backend = _make_backend()
+        originals = _setup_aiosipua_mocks()
+        headers_orig = _setup_headers_mocks()
+
+        try:
+
+            async def _resolve_200() -> None:
+                await asyncio.sleep(0.01)
+                fut = backend._register_response_future
+                if fut and not fut.done():
+                    backend._register_response_future.set_result(FakeSipResponse(200, "OK"))
+
+            asyncio.get_running_loop().create_task(_resolve_200())
+            await backend.register(
+                registrar_addr=("10.0.0.1", 5060),
+                username="bot",
+                password="secret",
+                domain="example.com",
+                expires=600,
+            )
+
+            assert backend._register_params is not None
+            assert backend._register_params["username"] == "bot"
+            assert backend._register_params["domain"] == "example.com"
+            assert backend._register_params["expires"] == 600
+            backend._registration_task.cancel()
+        finally:
+            _restore_aiosipua_mocks(originals)
+            _restore_headers_mocks(headers_orig)
+
+    async def test_register_domain_defaults_to_host(self) -> None:
+        """When domain is not provided, defaults to registrar host."""
+        backend = _make_backend()
+        originals = _setup_aiosipua_mocks()
+        headers_orig = _setup_headers_mocks()
+
+        try:
+
+            async def _resolve_200() -> None:
+                await asyncio.sleep(0.01)
+                fut = backend._register_response_future
+                if fut and not fut.done():
+                    backend._register_response_future.set_result(FakeSipResponse(200, "OK"))
+
+            asyncio.get_running_loop().create_task(_resolve_200())
+            await backend.register(
+                registrar_addr=("10.0.0.1", 5060),
+                username="bot",
+                password="secret",
+            )
+
+            assert backend._register_params["domain"] == "10.0.0.1"
+            backend._registration_task.cancel()
+        finally:
+            _restore_aiosipua_mocks(originals)
+            _restore_headers_mocks(headers_orig)
 
 
 # ---------------------------------------------------------------------------

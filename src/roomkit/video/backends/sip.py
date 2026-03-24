@@ -36,7 +36,8 @@ from roomkit.video.base import (
     VideoSessionState,
 )
 from roomkit.video.video_frame import VideoFrame
-from roomkit.voice.backends.sip import SIPVoiceBackend, _SIPSessionState
+from roomkit.voice.backends._sip_types import SIPSessionState as _SIPSessionState
+from roomkit.voice.backends.sip import SIPVoiceBackend
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 
 logger = logging.getLogger("roomkit.video.sip")

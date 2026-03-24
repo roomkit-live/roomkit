@@ -193,12 +193,20 @@ def backend() -> SIPVoiceBackend:
     b._dtmf_callbacks = []
     b._session_ready_callbacks = []
     b._on_call_callback = None
-    b._on_disconnect_callback = None
+    b._disconnect_callbacks = []
     b._trace_emitter = None
     b._available_ports = set(range(10000, 20000, 2))
     b._allocated_ports: set[int] = set()
     b._stats_task = None
     b._transport_addr_resolved = False
+    b._auth_users = None
+    b._auth_realm = "roomkit"
+    b._auth_nonces = {}
+    b._register_params = None
+    b._register_response_future = None
+    b._registration_task = None
+    b._registered = False
+    b._rtp_inactivity_timeout = 30.0
 
     return b
 

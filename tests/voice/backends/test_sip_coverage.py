@@ -1,4 +1,4 @@
-"""Tests for SIP voice backend — codec constants and _AudioStats coverage."""
+"""Tests for SIP voice backend — codec constants and AudioStats coverage."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import importlib
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+from roomkit.voice.backends._sip_types import CODEC_INFO, PT_G722, PT_PCMA, PT_PCMU, AudioStats
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -41,50 +43,38 @@ def _get_sip_module(aiosipua_mod, rtp_bridge_mod):
 
 class TestCodecConstants:
     def test_payload_type_values(self):
-        aiosipua, rtp_bridge = _make_mock_aiosipua()
-        with patch.dict(sys.modules, {"aiosipua": aiosipua, "aiosipua.rtp_bridge": rtp_bridge}):
-            sip_mod = _get_sip_module(aiosipua, rtp_bridge)
-
-        assert sip_mod.PT_PCMU == 0
-        assert sip_mod.PT_PCMA == 8
-        assert sip_mod.PT_G722 == 9
+        assert PT_PCMU == 0
+        assert PT_PCMA == 8
+        assert PT_G722 == 9
 
     def test_codec_info_entries(self):
-        aiosipua, rtp_bridge = _make_mock_aiosipua()
-        with patch.dict(sys.modules, {"aiosipua": aiosipua, "aiosipua.rtp_bridge": rtp_bridge}):
-            sip_mod = _get_sip_module(aiosipua, rtp_bridge)
+        info = CODEC_INFO
 
-        info = sip_mod._CODEC_INFO
-
-        name, rtp_clock, audio_rate = info[sip_mod.PT_PCMU]
+        name, rtp_clock, audio_rate = info[PT_PCMU]
         assert name == "PCMU"
         assert rtp_clock == 8000
         assert audio_rate == 8000
 
-        name, rtp_clock, audio_rate = info[sip_mod.PT_PCMA]
+        name, rtp_clock, audio_rate = info[PT_PCMA]
         assert name == "PCMA"
         assert rtp_clock == 8000
         assert audio_rate == 8000
 
         # G.722: RTP clock 8000, audio rate 16000 per RFC 3551
-        name, rtp_clock, audio_rate = info[sip_mod.PT_G722]
+        name, rtp_clock, audio_rate = info[PT_G722]
         assert name == "G722"
         assert rtp_clock == 8000
         assert audio_rate == 16000
 
 
 # ---------------------------------------------------------------------------
-# Tests — _AudioStats
+# Tests — AudioStats
 # ---------------------------------------------------------------------------
 
 
 class TestAudioStats:
     def test_initial_values(self):
-        aiosipua, rtp_bridge = _make_mock_aiosipua()
-        with patch.dict(sys.modules, {"aiosipua": aiosipua, "aiosipua.rtp_bridge": rtp_bridge}):
-            sip_mod = _get_sip_module(aiosipua, rtp_bridge)
-
-        stats = sip_mod._AudioStats()
+        stats = AudioStats()
         assert stats.inbound_packets == 0
         assert stats.inbound_bytes == 0
         assert stats.inbound_first_ts == 0.0
@@ -99,11 +89,7 @@ class TestAudioStats:
         assert stats.outbound_calls == 0
 
     def test_counter_mutation(self):
-        aiosipua, rtp_bridge = _make_mock_aiosipua()
-        with patch.dict(sys.modules, {"aiosipua": aiosipua, "aiosipua.rtp_bridge": rtp_bridge}):
-            sip_mod = _get_sip_module(aiosipua, rtp_bridge)
-
-        stats = sip_mod._AudioStats()
+        stats = AudioStats()
         stats.inbound_packets = 42
         stats.outbound_frames = 10
         stats.inbound_max_gap_ms = 15.5

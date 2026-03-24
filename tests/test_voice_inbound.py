@@ -243,7 +243,7 @@ class TestSIPAsyncDecorator:
     """Test _wrap_async helper used by SIP backend callbacks."""
 
     def test_sync_callback_unchanged(self) -> None:
-        from roomkit.voice.backends.sip import _wrap_async
+        from roomkit.voice.backends._sip_types import wrap_async as _wrap_async
 
         calls: list[str] = []
 
@@ -255,7 +255,7 @@ class TestSIPAsyncDecorator:
         assert calls == ["hello"]
 
     async def test_async_callback_wrapped_in_task(self) -> None:
-        from roomkit.voice.backends.sip import _wrap_async
+        from roomkit.voice.backends._sip_types import wrap_async as _wrap_async
 
         calls: list[str] = []
 
@@ -269,7 +269,7 @@ class TestSIPAsyncDecorator:
         assert calls == ["hello"]
 
     def test_decorator_returns_original(self) -> None:
-        from roomkit.voice.backends.sip import _wrap_async
+        from roomkit.voice.backends._sip_types import wrap_async as _wrap_async
 
         async def my_handler(session: Any) -> None:
             pass
