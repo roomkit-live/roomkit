@@ -1,4 +1,4 @@
-tasks/
+/tasks/
 examples/*.jpg
 examples/*.jpeg
 examples/*.png
