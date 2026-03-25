@@ -5,6 +5,46 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0a4] — 2026-03-25
+
+### Added
+
+- **`TwilioWebSocketBackend`** — voice backend for Twilio Media Streams WebSocket audio. Bridges JSON-framed mu-law 8 kHz audio to/from the pipeline's PCM format. Dedicated writer task prevents outbound sends from blocking inbound receives on the same WebSocket.
+- **Stateful soxr stream resampler** for `TwilioWebSocketBackend` inbound audio — high-quality upsampling from 8 kHz to pipeline rate (default 24 kHz) with no inter-frame discontinuities. Falls back to stateful `audioop.ratecv` when soxr is unavailable.
+- **`RecordingChannelMode.ALL`** — new recording channel mode that outputs all three files: `*_inbound.wav`, `*_outbound.wav`, and `*_mixed.wav` in a single recording session.
+- **SIP + ElevenLabs Conversational AI example** — incoming SIP calls routed to an ElevenLabs agent with real-time transcription logging and protocol tracing.
+
+### Fixed
+
+- **WavFileRecorder silence gap insertion** — silence is now only inserted for gaps exceeding 30ms (processing jitter threshold), preventing spurious silence from frame scheduling variance. First frame in each direction no longer gets leading silence from the gap between `start()` and first audio arrival.
+- **TwilioWebSocketBackend disconnect callback** — renamed `on_transport_disconnect` to `on_client_disconnected` to match the `VoiceBackend` ABC. Previously the disconnect callback was silently never registered by `VoiceChannel`.
+- **TwilioWebSocketBackend stale state on reconnect** — write queue, WebSocket reference, and resampler state are now cleared on disconnect, preventing stale filter artifacts and memory leaks when the backend handles sequential calls.
+- Removed dead `_create_resampler()` method from `TwilioWebSocketBackend`.
+- Moved inline `import asyncio` and `import contextlib` to module-level in `TwilioWebSocketBackend`.
+
+## [0.7.0a3] — 2026-03-24
+
+### Added
+
+- **ElevenLabs Conversational AI realtime provider** — `ElevenLabsRealtimeProvider` for speech-to-speech AI via ElevenLabs' server-side STT, LLM, TTS, and turn detection. Uses the official SDK `AsyncConversation` class with async audio I/O. Supports tool calling, custom voices, and system prompt overrides. Install with `pip install roomkit[realtime-elevenlabs]`.
+- **ElevenLabs tool-calling example** — demonstrates AI agent with weather tool via ElevenLabs Conversational AI.
+- **ElevenLabs local voice example** — local microphone + speaker voice agent using `LocalAudioBackend` with ElevenLabs.
+
+### Fixed
+
+- Updated ElevenLabs provider for SDK v2.40 API changes.
+- Suppressed unused `type: ignore` comments in CI for ElevenLabs provider.
+
+## [0.7.0a2] — 2026-03-24
+
+### Changed
+
+- **SIPVoiceBackend refactored into focused modules** — split the 1600-line monolith into `sip.py` (facade + session lifecycle), `sip_audio.py` (RTP + codec + audio pipeline), `sip_calling.py` (outbound dialing + call state machine), `sip_auth.py` (SIP digest authentication), and `_sip_types.py` (shared types). Public API unchanged.
+
+### Fixed
+
+- Include `roomkit.tasks` module in wheel distribution.
+
 ## [0.7.0a1] — 2026-03-24
 
 ### Added
@@ -496,7 +536,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[0.7.0]: https://github.com/roomkit-live/roomkit/compare/v0.6.13...HEAD
+[0.7.0a4]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a3...HEAD
+[0.7.0a3]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a2...v0.7.0a3
+[0.7.0a2]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a1...v0.7.0a2
+[0.7.0a1]: https://github.com/roomkit-live/roomkit/compare/v0.6.13...v0.7.0a1
 [0.6.13]: https://github.com/roomkit-live/roomkit/compare/v0.6.12...v0.6.13
 [0.6.12]: https://github.com/roomkit-live/roomkit/compare/v0.6.11...v0.6.12
 [0.6.11]: https://github.com/roomkit-live/roomkit/compare/v0.6.10...v0.6.11
