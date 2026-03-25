@@ -31,6 +31,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -70,7 +71,7 @@ async def main() -> None:
         block_duration_ms=20,
     )
 
-    # --- Provider config overrides ---
+    # --- Provider config overrides (passed via session metadata) ---
     provider_config: dict[str, str] = {}
     language = os.environ.get("LANGUAGE")
     if language:
@@ -85,7 +86,6 @@ async def main() -> None:
         voice=os.environ.get("ELEVENLABS_VOICE_ID"),
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
-        provider_config=provider_config or None,
     )
     kit.register_channel(channel)
 
@@ -93,11 +93,16 @@ async def main() -> None:
     await kit.create_room(room_id="local-demo")
     await kit.attach_channel("local-demo", "voice")
 
-    # --- Start session ---
+    # --- Start session (provider_config passed via metadata) ---
+    metadata: dict[str, Any] = {}
+    if provider_config:
+        metadata["provider_config"] = provider_config
+
     session = await channel.start_session(
         "local-demo",
         "local-user",
         connection=None,
+        metadata=metadata or None,
     )
 
     logger.info("ElevenLabs Conversational AI session started")
