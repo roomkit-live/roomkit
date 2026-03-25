@@ -169,7 +169,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             client,
             self._config.agent_id,
             requires_auth=self._config.requires_auth,
-            audio_interface=bridge,
+            audio_interface=bridge,  # type: ignore[arg-type]
             config=init_config,
             callback_agent_response=lambda text: self._on_agent_response(session, text),
             callback_agent_response_correction=lambda orig, corrected: (
@@ -185,7 +185,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         self._conversations[session.id] = conversation
 
         # Start the SDK session (runs in background thread)
-        conversation.start_session()
+        conversation.start_session()  # type: ignore[no-untyped-call]
 
         session.state = VoiceSessionState.ACTIVE
         session.provider_session_id = session.id
@@ -208,13 +208,15 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         role: str = "user",
         silent: bool = False,
     ) -> None:
-        # The SDK doesn't expose text injection directly.
-        # Log a warning for now.
-        logger.warning(
-            "inject_text() is not supported by ElevenLabs SDK Conversation; text=%r (session %s)",
-            text[:100],
-            session.id,
-        )
+        conversation = self._conversations.get(session.id)
+        if conversation is None:
+            return
+        if silent:
+            logger.debug("[ElevenLabs →] contextual_update (silent inject)")
+            conversation.send_contextual_update(text)
+        else:
+            logger.debug("[ElevenLabs →] user_message")
+            conversation.send_user_message(text)
 
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
         # Tool results are handled by the SDK's ClientTools mechanism.
