@@ -5122,7 +5122,6 @@ qwen-tts = [
 ]
 realtime-elevenlabs = [
     { name = "elevenlabs" },
-    { name = "websockets" },
 ]
 realtime-gemini = [
     { name = "google-genai" },
@@ -5303,7 +5302,6 @@ requires-dist = [
     { name = "twilio", marker = "extra == 'twilio'", specifier = ">=9.0" },
     { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.3" },
     { name = "websockets", marker = "extra == 'dev'", specifier = ">=13.0" },
-    { name = "websockets", marker = "extra == 'realtime-elevenlabs'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'realtime-openai'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
