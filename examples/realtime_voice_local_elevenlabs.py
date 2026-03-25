@@ -28,18 +28,21 @@ Press Ctrl+C to stop.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
+import sys
+from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from shared import run_until_stopped, setup_logging
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.elevenlabs.config import ElevenLabsRealtimeConfig
 from roomkit.providers.elevenlabs.realtime import ElevenLabsRealtimeProvider
 from roomkit.voice.backends.local import LocalAudioBackend
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-logger = logging.getLogger("realtime_voice_local_elevenlabs")
+logger = setup_logging("realtime_voice_local_elevenlabs")
 
 
 async def main() -> None:
@@ -107,16 +110,10 @@ async def main() -> None:
     logger.info("Speak into your microphone! Press Ctrl+C to stop.\n")
 
     # --- Keep running until Ctrl+C ---
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup() -> None:
+        await channel.end_session(session)
 
-    await stop.wait()
-
-    logger.info("Stopping...")
-    await channel.end_session(session)
-    await kit.close()
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":
