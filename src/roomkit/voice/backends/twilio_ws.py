@@ -25,9 +25,11 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import contextlib
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 try:
@@ -70,9 +72,15 @@ class TwilioWebSocketBackend(VoiceBackend):
         self._transport_disconnect_cb: TransportDisconnectCallback | None = None
         self._websocket: Any | None = None
         self._sessions: dict[str, VoiceSession] = {}
-        # Stateful stream resampler for high-quality inbound audio conversion
-        self._inbound_resampler = self._create_resampler()
-        self._outbound_resampler = self._create_resampler()
+        # Outbound uses audioop (consistent chunk sizes for Twilio protocol).
+        self._outbound_ratecv_state: Any = None
+        # Outbound write queue + dedicated writer task — prevents send_json()
+        # from blocking inbound receive_json() on the same WebSocket.
+        self._write_queue: asyncio.Queue[dict[str, Any] | None] | None = None
+        self._writer_task: asyncio.Task[None] | None = None
+        # Inbound uses soxr stream resampler (high quality, same as Pipecat).
+        # Falls back to stateful audioop.ratecv if soxr unavailable.
+        self._resample_inbound = self._build_inbound_resampler(output_sample_rate)
 
     @property
     def name(self) -> str:
@@ -98,6 +106,18 @@ class TwilioWebSocketBackend(VoiceBackend):
 
     async def disconnect(self, session: VoiceSession) -> None:
         self._sessions.pop(session.id, None)
+        # Stop the writer task
+        if self._write_queue is not None:
+            await self._write_queue.put(None)  # sentinel
+        if self._writer_task is not None:
+            with contextlib.suppress(Exception):
+                await self._writer_task
+            self._writer_task = None
+        # Clear stale state so a reconnect starts clean
+        self._write_queue = None
+        self._websocket = None
+        self._outbound_ratecv_state = None
+        self._resample_inbound = self._build_inbound_resampler(self._output_sample_rate)
         if self._transport_disconnect_cb:
             self._transport_disconnect_cb(session)
 
@@ -118,25 +138,28 @@ class TwilioWebSocketBackend(VoiceBackend):
     async def _send_mulaw_frame(self, session: VoiceSession, pcm_data: bytes) -> None:
         if not self._websocket or not pcm_data:
             return
-        # Resample from pipeline rate to 8 kHz for Twilio
+        # Resample from pipeline rate to 8 kHz for Twilio (stateful)
         if self._output_sample_rate != TWILIO_SAMPLE_RATE:
-            if self._outbound_resampler is not None:
-                pcm_data = self._outbound_resampler.resample(
-                    pcm_data, self._output_sample_rate, TWILIO_SAMPLE_RATE
-                )
-            else:
-                pcm_data, _ = audioop.ratecv(
-                    pcm_data, 2, 1, self._output_sample_rate, TWILIO_SAMPLE_RATE, None
-                )
+            pcm_data, self._outbound_ratecv_state = audioop.ratecv(
+                pcm_data,
+                2,
+                1,
+                self._output_sample_rate,
+                TWILIO_SAMPLE_RATE,
+                self._outbound_ratecv_state,
+            )
         mulaw_data = audioop.lin2ulaw(pcm_data, 2)
         payload = base64.b64encode(mulaw_data).decode("ascii")
-        await self._websocket.send_json(
-            {
-                "event": "media",
-                "conversation_id": session.room_id,
-                "media": {"payload": payload},
-            }
-        )
+        msg = {
+            "event": "media",
+            "conversation_id": session.room_id,
+            "media": {"payload": payload},
+        }
+        # Queue for async writer instead of sending directly
+        if self._write_queue is not None:
+            await self._write_queue.put(msg)
+        else:
+            await self._websocket.send_json(msg)
 
     def on_audio_received(self, callback: AudioReceivedCallback) -> None:
         self._audio_received_cb = callback
@@ -144,7 +167,7 @@ class TwilioWebSocketBackend(VoiceBackend):
     def on_session_ready(self, callback: SessionReadyCallback) -> None:
         self._session_ready_cb = callback
 
-    def on_transport_disconnect(self, callback: TransportDisconnectCallback) -> None:
+    def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
         self._transport_disconnect_cb = callback
 
     def get_session(self, session_id: str) -> VoiceSession | None:
@@ -160,9 +183,26 @@ class TwilioWebSocketBackend(VoiceBackend):
     def bind_websocket(self, websocket: Any) -> None:
         """Bind a WebSocket connection for audio I/O.
 
+        Starts a dedicated writer task so that outbound send_json() calls
+        never block inbound receive_json() on the same WebSocket.
+
         The websocket must support ``await ws.send_json(dict)``.
         """
         self._websocket = websocket
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        self._write_queue = queue
+
+        async def _writer() -> None:
+            try:
+                while True:
+                    msg = await queue.get()
+                    if msg is None:
+                        break
+                    await websocket.send_json(msg)
+            except Exception as e:
+                logger.debug("Writer task ended: %s", e)
+
+        self._writer_task = asyncio.create_task(_writer())
 
     def notify_session_ready(self, session: VoiceSession) -> None:
         """Signal that the session's audio path is live."""
@@ -172,69 +212,52 @@ class TwilioWebSocketBackend(VoiceBackend):
     async def feed_twilio_audio(self, session: VoiceSession, mulaw_payload: str) -> None:
         """Decode a Twilio media payload and feed it into the audio pipeline.
 
-        Decodes mu-law to 8 kHz PCM, then uses a stateful soxr stream
-        resampler to upsample to the pipeline's output rate with high
-        quality and no inter-frame discontinuities.
-
         Args:
             session: The voice session this audio belongs to.
             mulaw_payload: Base64-encoded mu-law audio from a Twilio media frame.
         """
         mulaw_data = base64.b64decode(mulaw_payload)
         pcm_8k = audioop.ulaw2lin(mulaw_data, 2)
-
-        # Resample with stateful stream resampler (maintains context across calls)
-        if self._output_sample_rate != TWILIO_SAMPLE_RATE and self._inbound_resampler is not None:
-            pcm_resampled = self._inbound_resampler.resample(
-                pcm_8k, TWILIO_SAMPLE_RATE, self._output_sample_rate
+        pcm_out = self._resample_inbound(pcm_8k)
+        # Stream resamplers may buffer internally — skip empty output.
+        if pcm_out and self._audio_received_cb:
+            frame = AudioFrame(
+                data=pcm_out,
+                sample_rate=self._output_sample_rate,
+                channels=1,
+                sample_width=2,
             )
-            sample_rate = self._output_sample_rate
-        else:
-            pcm_resampled = pcm_8k
-            sample_rate = TWILIO_SAMPLE_RATE
-
-        frame = AudioFrame(
-            data=pcm_resampled,
-            sample_rate=sample_rate,
-            channels=1,
-            sample_width=2,
-        )
-        if self._audio_received_cb:
             self._audio_received_cb(session, frame)
 
     @staticmethod
-    def _create_resampler() -> Any:
-        """Create a stateful soxr stream resampler if available."""
+    def _build_inbound_resampler(output_rate: int) -> Callable[[bytes], bytes]:
+        """Build a stateful inbound resampler (soxr preferred, audioop fallback)."""
+        if output_rate == TWILIO_SAMPLE_RATE:
+            return lambda data: data
         try:
             import numpy as np
             import soxr
 
-            class _SoxrStreamResampler:
-                """Stateful soxr resampler that maintains context across calls."""
+            stream = soxr.ResampleStream(TWILIO_SAMPLE_RATE, output_rate, 1, dtype=np.int16)
+            logger.info(
+                "Inbound resampler: soxr stream (%d -> %d Hz)", TWILIO_SAMPLE_RATE, output_rate
+            )
 
-                def __init__(self) -> None:
-                    self._resampler: Any = None
-                    self._in_rate: int = 0
-                    self._out_rate: int = 0
+            def _soxr(data: bytes) -> bytes:
+                out = stream.resample_chunk(np.frombuffer(data, dtype=np.int16))
+                return out.tobytes()
 
-                def resample(self, data: bytes, in_rate: int, out_rate: int) -> bytes:
-                    if in_rate == out_rate:
-                        return data
-                    # Recreate resampler if rates changed
-                    if self._in_rate != in_rate or self._out_rate != out_rate:
-                        self._resampler = soxr.ResampleStream(
-                            in_rate,
-                            out_rate,
-                            1,
-                            dtype=np.int16,
-                        )
-                        self._in_rate = in_rate
-                        self._out_rate = out_rate
-                    samples = np.frombuffer(data, dtype=np.int16)
-                    resampled = self._resampler.resample_chunk(samples)
-                    return resampled.tobytes()
-
-            return _SoxrStreamResampler()
+            return _soxr
         except ImportError:
-            logger.warning("soxr/numpy not available — falling back to audioop resampling")
-            return None
+            logger.info(
+                "Inbound resampler: audioop.ratecv (%d -> %d Hz)", TWILIO_SAMPLE_RATE, output_rate
+            )
+            state: list[Any] = [None]
+
+            def _ratecv(data: bytes) -> bytes:
+                result, state[0] = audioop.ratecv(
+                    data, 2, 1, TWILIO_SAMPLE_RATE, output_rate, state[0]
+                )
+                return result
+
+            return _ratecv

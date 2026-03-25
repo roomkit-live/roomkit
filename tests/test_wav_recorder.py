@@ -481,7 +481,7 @@ class TestAllMode:
 
 class TestSilenceInsertion:
     def test_gap_between_taps_inserts_silence(self, tmp_path: Path) -> None:
-        """When there's a time gap between taps, silence should be inserted."""
+        """When there's a significant gap between taps, silence should be inserted."""
         import time
 
         recorder = WavFileRecorder()
@@ -495,7 +495,7 @@ class TestSilenceInsertion:
         tone = _pcm_tone(100, value=1000)
         recorder.tap_inbound(handle, _frame(tone))
 
-        # Wait 200ms — this gap should become silence in the recording
+        # Wait 200ms — well above the 30ms threshold, should become silence
         time.sleep(0.2)
 
         # Second tap: 100 samples of tone
@@ -507,7 +507,6 @@ class TestSilenceInsertion:
             all_data = w.readframes(total_frames)
 
         # Total should be: 100 (tone) + ~3200 (silence at 16kHz * 0.2s) + 100 (tone)
-        # Allow some tolerance for timing
         assert total_frames > 200  # Must be more than just the two tone blocks
         expected_silence_samples = int(16000 * 0.2)
         assert total_frames == pytest.approx(200 + expected_silence_samples, abs=500)
@@ -520,6 +519,27 @@ class TestSilenceInsertion:
         mid_offset = 150 * 2  # sample 150 should be in the silence region
         mid_sample = struct.unpack_from("<h", all_data, mid_offset)[0]
         assert mid_sample == 0
+
+    def test_small_gap_no_silence(self, tmp_path: Path) -> None:
+        """Gaps below the threshold (30ms) should NOT insert silence — they're jitter."""
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path),
+            channels=RecordingChannelMode.MIXED,
+        )
+        handle = recorder.start(_session(), config)
+
+        # Back-to-back taps with no sleep — no gap, no silence
+        tone = _pcm_tone(100, value=1000)
+        recorder.tap_inbound(handle, _frame(tone))
+        recorder.tap_inbound(handle, _frame(tone))
+        result = recorder.stop(handle)
+
+        with wave.open(result.urls[0], "rb") as w:
+            total_frames = w.getnframes()
+
+        # Should be exactly 200 samples (no silence inserted)
+        assert total_frames == 200
 
     def test_no_gap_no_extra_silence(self, tmp_path: Path) -> None:
         """Back-to-back taps should not insert silence."""

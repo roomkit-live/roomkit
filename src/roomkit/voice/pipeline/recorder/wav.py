@@ -67,6 +67,12 @@ class _WavSession:
     _last_inbound_ts: float = 0.0
     _last_outbound_ts: float = 0.0
 
+    # Minimum gap (seconds) before inserting silence. Gaps below this
+    # threshold are processing jitter, not real silence. Audio frames
+    # typically arrive every 20ms, so 30ms accommodates jitter without
+    # swallowing real pauses.
+    SILENCE_GAP_THRESHOLD: float = 0.03  # 30ms
+
     def _init_format(self, frame: AudioFrame) -> None:
         """Capture format from the first frame seen."""
         if self.sample_rate == 0:
@@ -144,11 +150,10 @@ class WavFileRecorder(AudioRecorder):
             path=path,
         )
 
-        now = time.monotonic()
         ws = _WavSession(handle=handle, config=config, output_dir=output_dir)
-        ws._started_at = now
-        ws._last_inbound_ts = now
-        ws._last_outbound_ts = now
+        ws._started_at = time.monotonic()
+        # _last_inbound_ts / _last_outbound_ts stay at 0.0 (sentinel)
+        # so the first frame in each direction skips silence insertion.
         self._sessions[rec_id] = ws
 
         # For SEPARATE mode, we can't open writers yet — we need the
@@ -240,16 +245,20 @@ class WavFileRecorder(AudioRecorder):
 
         ws._init_format(frame)
 
-        # Insert silence to fill the gap since the last inbound tap
+        # Insert silence only for significant gaps (not processing jitter).
+        # First frame (sentinel _last_inbound_ts == 0) skips silence insertion.
         now = time.monotonic()
-        gap = now - ws._last_inbound_ts
-        frame_duration = (
-            len(frame.data) / (ws.sample_rate * ws.sample_width * ws.channels)
-            if ws.sample_rate
-            else 0
-        )
-        silence_duration = gap - frame_duration
-        silence = ws._silence_bytes(silence_duration)
+        silence = b""
+        if ws._last_inbound_ts > 0:
+            gap = now - ws._last_inbound_ts
+            frame_duration = (
+                len(frame.data) / (ws.sample_rate * ws.sample_width * ws.channels)
+                if ws.sample_rate
+                else 0
+            )
+            silence_duration = gap - frame_duration
+            if silence_duration > ws.SILENCE_GAP_THRESHOLD:
+                silence = ws._silence_bytes(silence_duration)
 
         if ws.config.channels == RecordingChannelMode.SEPARATE:
             if ws.inbound_writer is None:
@@ -278,16 +287,20 @@ class WavFileRecorder(AudioRecorder):
 
         ws._init_format(frame)
 
-        # Insert silence to fill the gap since the last outbound tap
+        # Insert silence only for significant gaps (not processing jitter).
+        # First frame (sentinel _last_outbound_ts == 0) skips silence insertion.
         now = time.monotonic()
-        gap = now - ws._last_outbound_ts
-        frame_duration = (
-            len(frame.data) / (ws.sample_rate * ws.sample_width * ws.channels)
-            if ws.sample_rate
-            else 0
-        )
-        silence_duration = gap - frame_duration
-        silence = ws._silence_bytes(silence_duration)
+        silence = b""
+        if ws._last_outbound_ts > 0:
+            gap = now - ws._last_outbound_ts
+            frame_duration = (
+                len(frame.data) / (ws.sample_rate * ws.sample_width * ws.channels)
+                if ws.sample_rate
+                else 0
+            )
+            silence_duration = gap - frame_duration
+            if silence_duration > ws.SILENCE_GAP_THRESHOLD:
+                silence = ws._silence_bytes(silence_duration)
 
         if ws.config.channels == RecordingChannelMode.SEPARATE:
             if ws.outbound_writer is None:

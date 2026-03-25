@@ -61,7 +61,7 @@ async def main() -> None:
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     agent_id = os.environ.get("ELEVENLABS_AGENT_ID")
     if not api_key or not agent_id:
-        print("Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID to run this example.")
+        logger.error("Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID to run this example.")
         return
 
     kit = RoomKit()
