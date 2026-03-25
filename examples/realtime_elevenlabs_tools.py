@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shared import run_until_stopped, setup_logging
+from shared.env import require_env
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.elevenlabs.config import ElevenLabsRealtimeConfig
@@ -49,15 +50,14 @@ async def handle_tool(name: str, arguments: dict) -> str:
 
 
 async def main() -> None:
-    api_key = os.environ.get("ELEVENLABS_API_KEY")
-    agent_id = os.environ.get("ELEVENLABS_AGENT_ID")
-    if not api_key or not agent_id:
-        print("Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID to run this example.")
-        return
+    env = require_env("ELEVENLABS_API_KEY", "ELEVENLABS_AGENT_ID")
 
     kit = RoomKit()
 
-    config = ElevenLabsRealtimeConfig(api_key=api_key, agent_id=agent_id)
+    config = ElevenLabsRealtimeConfig(
+        api_key=env["ELEVENLABS_API_KEY"],
+        agent_id=env["ELEVENLABS_AGENT_ID"],
+    )
     provider = ElevenLabsRealtimeProvider(config)
 
     sample_rate = 16000

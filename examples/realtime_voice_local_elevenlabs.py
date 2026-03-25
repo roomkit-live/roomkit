@@ -36,6 +36,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shared import run_until_stopped, setup_logging
+from shared.env import require_env
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.elevenlabs.config import ElevenLabsRealtimeConfig
@@ -46,20 +47,15 @@ logger = setup_logging("realtime_voice_local_elevenlabs")
 
 
 async def main() -> None:
-    api_key = os.environ.get("ELEVENLABS_API_KEY")
-    agent_id = os.environ.get("ELEVENLABS_AGENT_ID")
-    if not api_key or not agent_id:
-        print("Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID to run this example.")
-        print(
-            "  ELEVENLABS_API_KEY=... ELEVENLABS_AGENT_ID=... "
-            "uv run python examples/realtime_voice_local_elevenlabs.py"
-        )
-        return
+    env = require_env("ELEVENLABS_API_KEY", "ELEVENLABS_AGENT_ID")
 
     kit = RoomKit()
 
     # --- ElevenLabs Conversational AI provider ---
-    config = ElevenLabsRealtimeConfig(api_key=api_key, agent_id=agent_id)
+    config = ElevenLabsRealtimeConfig(
+        api_key=env["ELEVENLABS_API_KEY"],
+        agent_id=env["ELEVENLABS_AGENT_ID"],
+    )
     provider = ElevenLabsRealtimeProvider(config)
 
     # --- Local audio transport (mic/speakers) ---
