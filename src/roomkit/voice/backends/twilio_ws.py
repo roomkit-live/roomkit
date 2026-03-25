@@ -164,19 +164,20 @@ class TwilioWebSocketBackend(VoiceBackend):
     async def feed_twilio_audio(self, session: VoiceSession, mulaw_payload: str) -> None:
         """Decode a Twilio media payload and feed it into the audio pipeline.
 
+        Decodes mu-law to 8 kHz PCM and passes it to the pipeline at the
+        native Twilio rate.  The pipeline's own resampler (Stage 0) handles
+        upsampling to the internal rate — this avoids the quality loss from
+        ``audioop.ratecv`` linear interpolation.
+
         Args:
             session: The voice session this audio belongs to.
             mulaw_payload: Base64-encoded mu-law audio from a Twilio media frame.
         """
         mulaw_data = base64.b64decode(mulaw_payload)
         pcm_8k = audioop.ulaw2lin(mulaw_data, 2)
-        # Resample to the pipeline's sample rate
-        pcm_resampled, _ = audioop.ratecv(
-            pcm_8k, 2, 1, TWILIO_SAMPLE_RATE, self._output_sample_rate, None
-        )
         frame = AudioFrame(
-            data=pcm_resampled,
-            sample_rate=self._output_sample_rate,
+            data=pcm_8k,
+            sample_rate=TWILIO_SAMPLE_RATE,
             channels=1,
             sample_width=2,
         )
