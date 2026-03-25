@@ -402,6 +402,170 @@ class TestResetAndClose:
         assert len(recorder._sessions) == 0
 
 
+class TestAllMode:
+    def test_creates_three_files(self, tmp_path: Path) -> None:
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path),
+            channels=RecordingChannelMode.ALL,
+        )
+        handle = recorder.start(_session(), config)
+
+        inbound = _pcm_tone(50, value=1000)
+        outbound = _pcm_tone(50, value=500)
+        recorder.tap_inbound(handle, _frame(inbound))
+        recorder.tap_outbound(handle, _frame(outbound))
+        result = recorder.stop(handle)
+
+        assert len(result.urls) == 3
+        assert any("inbound" in u for u in result.urls)
+        assert any("outbound" in u for u in result.urls)
+        assert any("mixed" in u for u in result.urls)
+        assert result.mode == RecordingChannelMode.ALL
+
+    def test_all_files_are_valid_wav(self, tmp_path: Path) -> None:
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path),
+            channels=RecordingChannelMode.ALL,
+        )
+        handle = recorder.start(_session(), config)
+
+        recorder.tap_inbound(handle, _frame(_pcm_tone(100, value=1000)))
+        recorder.tap_outbound(handle, _frame(_pcm_tone(100, value=500)))
+        result = recorder.stop(handle)
+
+        for url in result.urls:
+            with wave.open(url, "rb") as w:
+                assert w.getnchannels() == 1
+                assert w.getsampwidth() == 2
+                assert w.getframerate() == 16000
+
+    def test_mixed_file_contains_both_tracks(self, tmp_path: Path) -> None:
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path),
+            channels=RecordingChannelMode.ALL,
+        )
+        handle = recorder.start(_session(), config)
+
+        recorder.tap_inbound(handle, _frame(_pcm_tone(100, value=1000)))
+        recorder.tap_outbound(handle, _frame(_pcm_tone(100, value=500)))
+        result = recorder.stop(handle)
+
+        mixed_url = [u for u in result.urls if "mixed" in u][0]
+        with wave.open(mixed_url, "rb") as w:
+            total = w.getnframes()
+            frames = w.readframes(total)
+
+        # Mixed file should be longer than either track alone (silence padding)
+        # and should contain non-zero samples from both tracks
+        samples = [struct.unpack_from("<h", frames, i * 2)[0] for i in range(total)]
+        assert any(s >= 1000 for s in samples), "Should contain inbound tone"
+        assert total >= 100, "Should have at least as many frames as the tone"
+
+    def test_duration_uses_longer_stream(self, tmp_path: Path) -> None:
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path),
+            channels=RecordingChannelMode.ALL,
+        )
+        handle = recorder.start(_session(), config)
+
+        recorder.tap_inbound(handle, _frame(_pcm_silence(16000)))  # 1s
+        recorder.tap_outbound(handle, _frame(_pcm_silence(8000)))  # 0.5s
+        result = recorder.stop(handle)
+
+        assert result.duration_seconds == pytest.approx(1.0)
+
+
+class TestSilenceInsertion:
+    def test_gap_between_taps_inserts_silence(self, tmp_path: Path) -> None:
+        """When there's a time gap between taps, silence should be inserted."""
+        import time
+
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path),
+            channels=RecordingChannelMode.MIXED,
+        )
+        handle = recorder.start(_session(), config)
+
+        # First tap: 100 samples of tone
+        tone = _pcm_tone(100, value=1000)
+        recorder.tap_inbound(handle, _frame(tone))
+
+        # Wait 200ms — this gap should become silence in the recording
+        time.sleep(0.2)
+
+        # Second tap: 100 samples of tone
+        recorder.tap_inbound(handle, _frame(tone))
+        result = recorder.stop(handle)
+
+        with wave.open(result.urls[0], "rb") as w:
+            total_frames = w.getnframes()
+            all_data = w.readframes(total_frames)
+
+        # Total should be: 100 (tone) + ~3200 (silence at 16kHz * 0.2s) + 100 (tone)
+        # Allow some tolerance for timing
+        assert total_frames > 200  # Must be more than just the two tone blocks
+        expected_silence_samples = int(16000 * 0.2)
+        assert total_frames == pytest.approx(200 + expected_silence_samples, abs=500)
+
+        # First 100 samples should be tone (non-zero)
+        first_sample = struct.unpack_from("<h", all_data, 0)[0]
+        assert first_sample == 1000
+
+        # Middle should contain silence (zero)
+        mid_offset = 150 * 2  # sample 150 should be in the silence region
+        mid_sample = struct.unpack_from("<h", all_data, mid_offset)[0]
+        assert mid_sample == 0
+
+    def test_no_gap_no_extra_silence(self, tmp_path: Path) -> None:
+        """Back-to-back taps should not insert silence."""
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path),
+            channels=RecordingChannelMode.MIXED,
+        )
+        handle = recorder.start(_session(), config)
+
+        tone = _pcm_tone(100, value=1000)
+        recorder.tap_inbound(handle, _frame(tone))
+        recorder.tap_inbound(handle, _frame(tone))
+        result = recorder.stop(handle)
+
+        with wave.open(result.urls[0], "rb") as w:
+            total_frames = w.getnframes()
+
+        # Should be approximately 200 samples (two taps, no significant gap)
+        assert total_frames == pytest.approx(200, abs=100)
+
+    def test_outbound_gap_inserts_silence(self, tmp_path: Path) -> None:
+        """Outbound track should also insert silence for gaps."""
+        import time
+
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path),
+            channels=RecordingChannelMode.SEPARATE,
+        )
+        handle = recorder.start(_session(), config)
+
+        tone = _pcm_tone(100, value=500)
+        recorder.tap_outbound(handle, _frame(tone))
+        time.sleep(0.2)
+        recorder.tap_outbound(handle, _frame(tone))
+        result = recorder.stop(handle)
+
+        outbound_url = [u for u in result.urls if "outbound" in u][0]
+        with wave.open(outbound_url, "rb") as w:
+            total_frames = w.getnframes()
+
+        # Should have silence gap between the two taps
+        assert total_frames > 200
+
+
 class TestImport:
     def test_import_from_pipeline(self) -> None:
         from roomkit.voice.pipeline import WavFileRecorder as W

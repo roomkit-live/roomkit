@@ -6,6 +6,7 @@ import logging
 import re
 import struct
 import tempfile
+import time
 import uuid
 import wave
 from dataclasses import dataclass, field
@@ -53,7 +54,7 @@ class _WavSession:
     inbound_writer: wave.Wave_write | None = None
     outbound_writer: wave.Wave_write | None = None
 
-    # MIXED/STEREO mode: byte buffers
+    # MIXED/STEREO/ALL mode: byte buffers
     inbound_buf: bytearray = field(default_factory=bytearray)
     outbound_buf: bytearray = field(default_factory=bytearray)
 
@@ -61,12 +62,24 @@ class _WavSession:
     inbound_frames: int = 0
     outbound_frames: int = 0
 
+    # Timestamp tracking for silence insertion (monotonic seconds)
+    _started_at: float = 0.0
+    _last_inbound_ts: float = 0.0
+    _last_outbound_ts: float = 0.0
+
     def _init_format(self, frame: AudioFrame) -> None:
         """Capture format from the first frame seen."""
         if self.sample_rate == 0:
             self.sample_rate = frame.sample_rate
             self.channels = frame.channels
             self.sample_width = frame.sample_width
+
+    def _silence_bytes(self, duration_secs: float) -> bytes:
+        """Generate silence (zero bytes) for the given duration."""
+        if self.sample_rate == 0 or duration_secs <= 0:
+            return b""
+        num_samples = int(duration_secs * self.sample_rate)
+        return b"\x00" * (num_samples * self.sample_width * self.channels)
 
 
 class WavFileRecorder(AudioRecorder):
@@ -131,7 +144,11 @@ class WavFileRecorder(AudioRecorder):
             path=path,
         )
 
+        now = time.monotonic()
         ws = _WavSession(handle=handle, config=config, output_dir=output_dir)
+        ws._started_at = now
+        ws._last_inbound_ts = now
+        ws._last_outbound_ts = now
         self._sessions[rec_id] = ws
 
         # For SEPARATE mode, we can't open writers yet — we need the
@@ -223,14 +240,33 @@ class WavFileRecorder(AudioRecorder):
 
         ws._init_format(frame)
 
+        # Insert silence to fill the gap since the last inbound tap
+        now = time.monotonic()
+        gap = now - ws._last_inbound_ts
+        frame_duration = (
+            len(frame.data) / (ws.sample_rate * ws.sample_width * ws.channels)
+            if ws.sample_rate
+            else 0
+        )
+        silence_duration = gap - frame_duration
+        silence = ws._silence_bytes(silence_duration)
+
         if ws.config.channels == RecordingChannelMode.SEPARATE:
             if ws.inbound_writer is None:
                 ws.inbound_writer = self._open_writer(Path(f"{ws.handle.path}_inbound.wav"), ws)
+            if silence:
+                ws.inbound_writer.writeframes(silence)
+                ws.inbound_frames += len(silence) // (ws.sample_width * ws.channels)
             ws.inbound_writer.writeframes(frame.data)
             ws.inbound_frames += len(frame.data) // (ws.sample_width * ws.channels)
         else:
+            if silence:
+                ws.inbound_buf.extend(silence)
+                ws.inbound_frames += len(silence) // (ws.sample_width * ws.channels)
             ws.inbound_buf.extend(frame.data)
             ws.inbound_frames += len(frame.data) // (ws.sample_width * ws.channels)
+
+        ws._last_inbound_ts = now
 
     def tap_outbound(self, handle: RecordingHandle, frame: AudioFrame) -> None:
         ws = self._sessions.get(handle.id)
@@ -242,14 +278,33 @@ class WavFileRecorder(AudioRecorder):
 
         ws._init_format(frame)
 
+        # Insert silence to fill the gap since the last outbound tap
+        now = time.monotonic()
+        gap = now - ws._last_outbound_ts
+        frame_duration = (
+            len(frame.data) / (ws.sample_rate * ws.sample_width * ws.channels)
+            if ws.sample_rate
+            else 0
+        )
+        silence_duration = gap - frame_duration
+        silence = ws._silence_bytes(silence_duration)
+
         if ws.config.channels == RecordingChannelMode.SEPARATE:
             if ws.outbound_writer is None:
                 ws.outbound_writer = self._open_writer(Path(f"{ws.handle.path}_outbound.wav"), ws)
+            if silence:
+                ws.outbound_writer.writeframes(silence)
+                ws.outbound_frames += len(silence) // (ws.sample_width * ws.channels)
             ws.outbound_writer.writeframes(frame.data)
             ws.outbound_frames += len(frame.data) // (ws.sample_width * ws.channels)
         else:
+            if silence:
+                ws.outbound_buf.extend(silence)
+                ws.outbound_frames += len(silence) // (ws.sample_width * ws.channels)
             ws.outbound_buf.extend(frame.data)
             ws.outbound_frames += len(frame.data) // (ws.sample_width * ws.channels)
+
+        ws._last_outbound_ts = now
 
     def reset(self) -> None:
         # Stop all active sessions
