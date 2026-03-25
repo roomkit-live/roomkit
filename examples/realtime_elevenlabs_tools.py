@@ -23,20 +23,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from shared import run_until_stopped, setup_logging
+import signal
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.elevenlabs.config import ElevenLabsRealtimeConfig
 from roomkit.providers.elevenlabs.realtime import ElevenLabsRealtimeProvider
 from roomkit.voice.backends.local import LocalAudioBackend
 
-logger = setup_logging("realtime_elevenlabs_tools")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+logger = logging.getLogger("realtime_elevenlabs_tools")
 
 
 async def handle_tool(name: str, arguments: dict) -> str:
@@ -87,10 +84,17 @@ async def main() -> None:
     logger.info("ElevenLabs session started with tool calling")
     logger.info("Ask about the weather to trigger the tool! Press Ctrl+C to stop.\n")
 
-    async def cleanup() -> None:
-        await channel.end_session(session)
+    # --- Keep running until Ctrl+C ---
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop.set)
 
-    await run_until_stopped(kit, cleanup=cleanup)
+    await stop.wait()
+
+    logger.info("Stopping...")
+    await channel.end_session(session)
+    await kit.close()
 
 
 if __name__ == "__main__":
