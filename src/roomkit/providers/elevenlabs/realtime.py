@@ -34,20 +34,6 @@ from roomkit.voice.realtime.provider import (
 
 logger = logging.getLogger("roomkit.providers.elevenlabs.realtime")
 
-# All client event types we want to receive from the server.
-_CLIENT_EVENTS = [
-    "audio",
-    "agent_response",
-    "agent_response_correction",
-    "user_transcript",
-    "tentative_user_transcript",
-    "interruption",
-    "ping",
-    "client_tool_call",
-    "vad_score",
-    "conversation_initiation_metadata",
-]
-
 
 class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
     """Realtime voice provider using ElevenLabs Conversational AI.
@@ -347,16 +333,11 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         if voice:
             tts_override["voice_id"] = voice
 
-        conversation_override: dict[str, Any] = {
-            "client_events": _CLIENT_EVENTS,
-        }
-
         config_override: dict[str, Any] = {}
         if agent_override:
             config_override["agent"] = agent_override
         if tts_override:
             config_override["tts"] = tts_override
-        config_override["conversation"] = conversation_override
 
         extra_body: dict[str, Any] = {}
         if temperature is not None:
@@ -392,16 +373,22 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
                     logger.exception("Error handling ElevenLabs event for session %s", session.id)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
+            # Extract WebSocket close code/reason when available
+            close_code = getattr(exc, "code", None)
+            close_reason = getattr(exc, "reason", None) or str(exc)
             if session.state == VoiceSessionState.ACTIVE:
                 logger.warning(
-                    "ElevenLabs WebSocket closed unexpectedly for session %s", session.id
+                    "ElevenLabs WebSocket closed unexpectedly for session %s (code=%s, reason=%s)",
+                    session.id,
+                    close_code,
+                    close_reason,
                 )
                 session.state = VoiceSessionState.ENDED
                 await self._fire_error_callbacks(
                     session,
-                    "connection_closed",
-                    f"WebSocket closed unexpectedly for session {session.id}",
+                    str(close_code or "connection_closed"),
+                    close_reason,
                 )
             else:
                 logger.debug("ElevenLabs WebSocket closed for session %s", session.id)
