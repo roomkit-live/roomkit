@@ -202,18 +202,14 @@ class TestAsyncBridgeAudioInterface:
         assert start_cb.await_count == 1
         assert session.id in provider._responding
 
-    async def test_interrupt_fires_speech_start(
+    async def test_interrupt_clears_responding(
         self, provider: ElevenLabsRealtimeProvider, session: VoiceSession
     ) -> None:
         bridge = _AsyncBridgeAudioInterface(provider, session)
         provider._responding.add(session.id)
 
-        speech_cb = AsyncMock()
-        provider.on_speech_start(speech_cb)
-
         await bridge.interrupt()
 
-        speech_cb.assert_awaited_once_with(session)
         assert session.id not in provider._responding
 
 
@@ -254,7 +250,12 @@ class TestSDKCallbackHandlers:
         tx_cb = AsyncMock()
         provider.on_transcription(tx_cb)
 
+        end_cb = AsyncMock()
+        provider.on_speech_end(end_cb)
+
         cb = provider._make_user_transcript_cb(session)
         await cb("Hello world")
 
         tx_cb.assert_awaited_once_with(session, "Hello world", "user", True)
+        # User transcript arrival also fires speech_end
+        end_cb.assert_awaited_once_with(session)

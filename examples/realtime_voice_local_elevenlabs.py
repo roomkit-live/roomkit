@@ -20,7 +20,7 @@ Environment variables:
     ELEVENLABS_AGENT_ID     (required) Agent ID from the dashboard
     ELEVENLABS_VOICE_ID     Override the agent's default voice
     SYSTEM_PROMPT           Override the agent's default system prompt
-    LANGUAGE                Language code (default: en)
+    ELEVENLABS_LANGUAGE     Language code (e.g. en, fr, ja)
 
 Press Ctrl+C to stop.
 """
@@ -72,8 +72,9 @@ async def main() -> None:
     )
 
     # --- Provider config overrides (passed via session metadata) ---
+    # Note: use ELEVENLABS_LANGUAGE, not LANGUAGE (which is a system locale var)
     provider_config: dict[str, str] = {}
-    language = os.environ.get("LANGUAGE")
+    language = os.environ.get("ELEVENLABS_LANGUAGE")
     if language:
         provider_config["language"] = language
 

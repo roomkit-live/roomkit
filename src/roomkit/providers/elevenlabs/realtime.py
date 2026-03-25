@@ -11,6 +11,8 @@ Requires the ``elevenlabs`` package (v2.40+)::
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from typing import Any
 
@@ -145,8 +147,9 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         # Create async bridge AudioInterface
         bridge = _AsyncBridgeAudioInterface(self, session)
 
-        # Create SDK client and AsyncConversation
-        client = ElevenLabs(api_key=self._config.api_key)
+        # Create SDK client (pass base_url for regional endpoints)
+        base_url = self._config.base_url.replace("wss://", "https://").replace("ws://", "http://")
+        client = ElevenLabs(api_key=self._config.api_key, base_url=base_url)
 
         conversation = AsyncConversation(
             client,
@@ -164,7 +167,12 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         self._conversations[session.id] = conversation
 
         # Start the SDK session (creates async task internally)
-        await conversation.start_session()  # type: ignore[no-untyped-call]
+        try:
+            await conversation.start_session()  # type: ignore[no-untyped-call]
+        except Exception:
+            self._sessions.pop(session.id, None)
+            self._conversations.pop(session.id, None)
+            raise
 
         session.state = VoiceSessionState.ACTIVE
         session.provider_session_id = session.id
@@ -175,7 +183,6 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         cb = self._input_callbacks.get(session.id)
         if cb is None:
             return
-        # Call the SDK's async input_callback
         await cb(audio)
 
     async def inject_text(
@@ -215,7 +222,8 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         conversation = self._conversations.pop(session.id, None)
         if conversation is not None:
             await conversation.end_session()
-            await conversation.wait_for_session_end()
+            with contextlib.suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(conversation.wait_for_session_end(), timeout=5.0)
 
         self._sessions.pop(session.id, None)
         self._input_callbacks.pop(session.id, None)
@@ -275,6 +283,8 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
     def _make_user_transcript_cb(self, session: VoiceSession) -> Any:
         async def cb(text: str) -> None:
             await self._fire_transcription_callbacks(session, text, "user", True)
+            # Transcript arrival signals the user finished speaking
+            await self._fire_callbacks(self._speech_end_callbacks, session)
 
         return cb
 
@@ -378,8 +388,5 @@ class _AsyncBridgeAudioInterface:
         await provider._fire_audio_callbacks(session, audio)
 
     async def interrupt(self) -> None:
-        """Called by SDK on interruption — forward to RoomKit callbacks."""
-        session = self._session
-        provider = self._provider
-        provider._responding.discard(session.id)
-        await provider._fire_callbacks(provider._speech_start_callbacks, session)
+        """Called by SDK when user interrupted agent playback."""
+        self._provider._responding.discard(self._session.id)
