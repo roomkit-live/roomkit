@@ -70,6 +70,9 @@ class TwilioWebSocketBackend(VoiceBackend):
         self._transport_disconnect_cb: TransportDisconnectCallback | None = None
         self._websocket: Any | None = None
         self._sessions: dict[str, VoiceSession] = {}
+        # Stateful stream resampler for high-quality inbound audio conversion
+        self._inbound_resampler = self._create_resampler()
+        self._outbound_resampler = self._create_resampler()
 
     @property
     def name(self) -> str:
@@ -117,9 +120,14 @@ class TwilioWebSocketBackend(VoiceBackend):
             return
         # Resample from pipeline rate to 8 kHz for Twilio
         if self._output_sample_rate != TWILIO_SAMPLE_RATE:
-            pcm_data, _ = audioop.ratecv(
-                pcm_data, 2, 1, self._output_sample_rate, TWILIO_SAMPLE_RATE, None
-            )
+            if self._outbound_resampler is not None:
+                pcm_data = self._outbound_resampler.resample(
+                    pcm_data, self._output_sample_rate, TWILIO_SAMPLE_RATE
+                )
+            else:
+                pcm_data, _ = audioop.ratecv(
+                    pcm_data, 2, 1, self._output_sample_rate, TWILIO_SAMPLE_RATE, None
+                )
         mulaw_data = audioop.lin2ulaw(pcm_data, 2)
         payload = base64.b64encode(mulaw_data).decode("ascii")
         await self._websocket.send_json(
@@ -164,10 +172,9 @@ class TwilioWebSocketBackend(VoiceBackend):
     async def feed_twilio_audio(self, session: VoiceSession, mulaw_payload: str) -> None:
         """Decode a Twilio media payload and feed it into the audio pipeline.
 
-        Decodes mu-law to 8 kHz PCM and passes it to the pipeline at the
-        native Twilio rate.  The pipeline's own resampler (Stage 0) handles
-        upsampling to the internal rate — this avoids the quality loss from
-        ``audioop.ratecv`` linear interpolation.
+        Decodes mu-law to 8 kHz PCM, then uses a stateful soxr stream
+        resampler to upsample to the pipeline's output rate with high
+        quality and no inter-frame discontinuities.
 
         Args:
             session: The voice session this audio belongs to.
@@ -175,11 +182,59 @@ class TwilioWebSocketBackend(VoiceBackend):
         """
         mulaw_data = base64.b64decode(mulaw_payload)
         pcm_8k = audioop.ulaw2lin(mulaw_data, 2)
+
+        # Resample with stateful stream resampler (maintains context across calls)
+        if self._output_sample_rate != TWILIO_SAMPLE_RATE and self._inbound_resampler is not None:
+            pcm_resampled = self._inbound_resampler.resample(
+                pcm_8k, TWILIO_SAMPLE_RATE, self._output_sample_rate
+            )
+            sample_rate = self._output_sample_rate
+        else:
+            pcm_resampled = pcm_8k
+            sample_rate = TWILIO_SAMPLE_RATE
+
         frame = AudioFrame(
-            data=pcm_8k,
-            sample_rate=TWILIO_SAMPLE_RATE,
+            data=pcm_resampled,
+            sample_rate=sample_rate,
             channels=1,
             sample_width=2,
         )
         if self._audio_received_cb:
             self._audio_received_cb(session, frame)
+
+    @staticmethod
+    def _create_resampler() -> Any:
+        """Create a stateful soxr stream resampler if available."""
+        try:
+            import numpy as np
+            import soxr
+
+            class _SoxrStreamResampler:
+                """Stateful soxr resampler that maintains context across calls."""
+
+                def __init__(self) -> None:
+                    self._resampler: Any = None
+                    self._in_rate: int = 0
+                    self._out_rate: int = 0
+
+                def resample(self, data: bytes, in_rate: int, out_rate: int) -> bytes:
+                    if in_rate == out_rate:
+                        return data
+                    # Recreate resampler if rates changed
+                    if self._in_rate != in_rate or self._out_rate != out_rate:
+                        self._resampler = soxr.ResampleStream(
+                            in_rate,
+                            out_rate,
+                            1,
+                            dtype=np.int16,
+                        )
+                        self._in_rate = in_rate
+                        self._out_rate = out_rate
+                    samples = np.frombuffer(data, dtype=np.int16)
+                    resampled = self._resampler.resample_chunk(samples)
+                    return resampled.tobytes()
+
+            return _SoxrStreamResampler()
+        except ImportError:
+            logger.warning("soxr/numpy not available — falling back to audioop resampling")
+            return None
