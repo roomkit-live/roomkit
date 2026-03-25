@@ -118,7 +118,7 @@ class WavFileRecorder(AudioRecorder):
             output_dir = fallback_dir
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        if config.channels == RecordingChannelMode.SEPARATE:
+        if config.channels in (RecordingChannelMode.SEPARATE, RecordingChannelMode.ALL):
             path = str(output_dir / base_name)
         else:
             path = str(output_dir / f"{base_name}.wav")
@@ -161,6 +161,21 @@ class WavFileRecorder(AudioRecorder):
                     urls.append(str(p))
                     total_size += p.stat().st_size
 
+        elif ws.config.channels == RecordingChannelMode.ALL:
+            # Write all three: inbound, outbound, and mixed
+            for label, buf in [("inbound", ws.inbound_buf), ("outbound", ws.outbound_buf)]:
+                if buf:
+                    p = Path(f"{ws.handle.path}_{label}.wav")
+                    self._write_mono(ws, bytes(buf), p)
+                    urls.append(str(p))
+                    total_size += p.stat().st_size
+
+            mixed_path = Path(f"{ws.handle.path}_mixed.wav")
+            self._write_mixed(ws, mixed_path)
+            if mixed_path.exists():
+                urls.append(str(mixed_path))
+                total_size += mixed_path.stat().st_size
+
         elif ws.config.channels == RecordingChannelMode.MIXED:
             path = Path(ws.handle.path)
             self._write_mixed(ws, path)
@@ -178,7 +193,7 @@ class WavFileRecorder(AudioRecorder):
         duration = 0.0
         # Compute duration from byte lengths
         if ws.sample_rate > 0 and ws.sample_width > 0:
-            if ws.config.channels == RecordingChannelMode.SEPARATE:
+            if ws.config.channels in (RecordingChannelMode.SEPARATE, RecordingChannelMode.ALL):
                 # Duration is the longer of the two streams
                 in_samples = ws.inbound_frames
                 out_samples = ws.outbound_frames
@@ -246,6 +261,17 @@ class WavFileRecorder(AudioRecorder):
         self.reset()
 
     # ---- internal helpers ----
+
+    @staticmethod
+    def _write_mono(ws: _WavSession, data: bytes, path: Path) -> None:
+        """Write raw PCM data to a mono WAV file."""
+        if not data:
+            return
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(ws.channels)
+            w.setsampwidth(ws.sample_width)
+            w.setframerate(ws.sample_rate)
+            w.writeframes(data)
 
     @staticmethod
     def _open_writer(path: Path, ws: _WavSession) -> wave.Wave_write:

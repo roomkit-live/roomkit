@@ -60,6 +60,9 @@ class RecordingChannelMode(StrEnum):
     STEREO = "stereo"
     """Record inbound and outbound as left/right stereo channels."""
 
+    ALL = "all"
+    """Output all three: ``*_inbound.wav``, ``*_outbound.wav``, and ``*_mixed.wav``."""
+
 
 @dataclass
 class RecordingConfig:
