@@ -1,18 +1,16 @@
 """ElevenLabs Conversational AI realtime provider.
 
-Wraps the official ElevenLabs Python SDK ``Conversation`` class, which
-runs in a background thread with its own sync WebSocket.  A custom
-``AudioInterface`` bridges audio between the SDK and RoomKit's async
-callback system.
+Uses the official ElevenLabs Python SDK ``AsyncConversation`` class with
+a custom ``AsyncAudioInterface`` that bridges audio between the SDK and
+RoomKit's callback system.
 
-Requires the ``elevenlabs`` package::
+Requires the ``elevenlabs`` package (v2.40+)::
 
     pip install 'roomkit[realtime-elevenlabs]'
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -36,27 +34,17 @@ logger = logging.getLogger("roomkit.providers.elevenlabs.realtime")
 class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
     """Realtime voice provider using the ElevenLabs Conversational AI SDK.
 
-    ElevenLabs agents are pre-configured on the dashboard with an LLM,
-    voice, and system prompt.  Runtime overrides (system prompt, voice,
-    temperature) are applied via ``conversation_config_override`` at
-    connection time.
-
-    The provider wraps the SDK's synchronous ``Conversation`` class,
-    running it in a background thread.  Audio and events are bridged
-    to RoomKit's async callback system via the event loop.
+    Uses the SDK's ``AsyncConversation`` with a custom ``AsyncAudioInterface``
+    that bridges audio between the SDK and RoomKit's async callback system.
 
     Example::
 
         from roomkit.providers.elevenlabs.config import ElevenLabsRealtimeConfig
         from roomkit.providers.elevenlabs.realtime import ElevenLabsRealtimeProvider
 
-        config = ElevenLabsRealtimeConfig(
-            api_key="xi-...",
-            agent_id="agent_abc123",
-        )
+        config = ElevenLabsRealtimeConfig(api_key="xi-...", agent_id="agent_abc123")
         provider = ElevenLabsRealtimeProvider(config)
         provider.on_audio(handle_audio)
-        provider.on_transcription(handle_transcription)
 
         await provider.connect(session, system_prompt="You are helpful.")
         await provider.send_audio(session, audio_bytes)
@@ -67,9 +55,8 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
 
         # Per-session state
         self._sessions: dict[str, VoiceSession] = {}
-        self._conversations: dict[str, Any] = {}  # SDK Conversation objects
-        self._input_callbacks: dict[str, Any] = {}  # audio input_callback from SDK
-        self._loops: dict[str, asyncio.AbstractEventLoop] = {}
+        self._conversations: dict[str, Any] = {}  # AsyncConversation objects
+        self._input_callbacks: dict[str, Any] = {}  # async audio input callbacks
 
         # Callbacks
         self._audio_callbacks: list[RealtimeAudioCallback] = []
@@ -109,12 +96,12 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         try:
             from elevenlabs import ElevenLabs
             from elevenlabs.conversational_ai.conversation import (
-                Conversation,
+                AsyncConversation,
                 ConversationInitiationData,
             )
         except ImportError as exc:
             raise ImportError(
-                "elevenlabs is required for ElevenLabsRealtimeProvider. "
+                "elevenlabs>=2.40 is required for ElevenLabsRealtimeProvider. "
                 "Install with: pip install 'roomkit[realtime-elevenlabs]'"
             ) from exc
 
@@ -126,8 +113,6 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             )
 
         pc = provider_config or {}
-        loop = asyncio.get_running_loop()
-        self._loops[session.id] = loop
 
         # Build config overrides
         config_override: dict[str, Any] = {}
@@ -151,41 +136,35 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         if temperature is not None:
             extra_body["temperature"] = temperature
 
-        dynamic_variables = pc.get("dynamic_variables")
-
         init_config = ConversationInitiationData(
             extra_body=extra_body or None,
             conversation_config_override=config_override or None,
-            dynamic_variables=dynamic_variables,
+            dynamic_variables=pc.get("dynamic_variables"),
         )
 
-        # Create bridge AudioInterface
-        bridge = _BridgeAudioInterface(self, session, loop)
+        # Create async bridge AudioInterface
+        bridge = _AsyncBridgeAudioInterface(self, session)
 
-        # Create SDK client and Conversation
+        # Create SDK client and AsyncConversation
         client = ElevenLabs(api_key=self._config.api_key)
 
-        conversation = Conversation(
+        conversation = AsyncConversation(
             client,
             self._config.agent_id,
             requires_auth=self._config.requires_auth,
             audio_interface=bridge,  # type: ignore[arg-type]
             config=init_config,
-            callback_agent_response=lambda text: self._on_agent_response(session, text),
-            callback_agent_response_correction=lambda orig, corrected: (
-                self._on_agent_response_correction(session, orig, corrected)
-            ),
-            callback_user_transcript=lambda text: self._on_user_transcript(session, text),
-            callback_latency_measurement=lambda ms: logger.debug(
-                "ElevenLabs latency: %dms (session %s)", ms, session.id
-            ),
+            callback_agent_response=self._make_agent_response_cb(session),
+            callback_agent_response_correction=self._make_correction_cb(session),
+            callback_user_transcript=self._make_user_transcript_cb(session),
+            callback_latency_measurement=self._make_latency_cb(session),
         )
 
         self._sessions[session.id] = session
         self._conversations[session.id] = conversation
 
-        # Start the SDK session (runs in background thread)
-        conversation.start_session()  # type: ignore[no-untyped-call]
+        # Start the SDK session (creates async task internally)
+        await conversation.start_session()  # type: ignore[no-untyped-call]
 
         session.state = VoiceSessionState.ACTIVE
         session.provider_session_id = session.id
@@ -196,9 +175,8 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         cb = self._input_callbacks.get(session.id)
         if cb is None:
             return
-        # The SDK's input_callback is called from the SDK's thread context,
-        # but it's thread-safe (just sends over the WebSocket).
-        cb(audio)
+        # Call the SDK's async input_callback
+        await cb(audio)
 
     async def inject_text(
         self,
@@ -213,19 +191,20 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             return
         if silent:
             logger.debug("[ElevenLabs →] contextual_update (silent inject)")
-            conversation.send_contextual_update(text)
+            await conversation.send_contextual_update(text)
         else:
             logger.debug("[ElevenLabs →] user_message")
-            conversation.send_user_message(text)
+            await conversation.send_user_message(text)
 
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
-        # Tool results are handled by the SDK's ClientTools mechanism.
-        # The RealtimeVoiceChannel's tool_handler is wired via on_tool_call.
-        logger.debug("[ElevenLabs] submit_tool_result not needed — SDK handles tools internally")
+        # Tool results are handled by the SDK's ClientTools mechanism
+        logger.debug("[ElevenLabs] submit_tool_result — SDK handles tools internally")
 
     async def interrupt(self, session: VoiceSession) -> None:
-        # ElevenLabs handles interruption server-side via VAD.
-        logger.debug("[ElevenLabs] interrupt — server-side VAD handles this")
+        # ElevenLabs handles interruption server-side via VAD
+        conversation = self._conversations.get(session.id)
+        if conversation is not None:
+            await conversation.register_user_activity()
 
     async def send_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
         raise NotImplementedError(
@@ -235,15 +214,11 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
     async def disconnect(self, session: VoiceSession) -> None:
         conversation = self._conversations.pop(session.id, None)
         if conversation is not None:
-            conversation.end_session()
-            # Wait for the SDK thread to finish (with timeout)
-            await asyncio.get_event_loop().run_in_executor(
-                None, lambda: conversation.wait_for_session_end()
-            )
+            await conversation.end_session()
+            await conversation.wait_for_session_end()
 
         self._sessions.pop(session.id, None)
         self._input_callbacks.pop(session.id, None)
-        self._loops.pop(session.id, None)
         self._responding.discard(session.id)
 
         session.state = VoiceSessionState.ENDED
@@ -281,41 +256,33 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
     def on_error(self, callback: RealtimeErrorCallback) -> None:
         self._error_callbacks.append(callback)
 
-    # -- SDK callback handlers (called from SDK thread) --
+    # -- Async callback factories for SDK --
 
-    def _on_agent_response(self, session: VoiceSession, text: str) -> None:
-        """Called by SDK when agent finishes a response."""
-        loop = self._loops.get(session.id)
-        if loop is None:
-            return
-        self._responding.discard(session.id)
-        asyncio.run_coroutine_threadsafe(
-            self._fire_transcription_callbacks(session, text, "assistant", True), loop
-        )
-        asyncio.run_coroutine_threadsafe(
-            self._fire_callbacks(self._response_end_callbacks, session), loop
-        )
+    def _make_agent_response_cb(self, session: VoiceSession) -> Any:
+        async def cb(text: str) -> None:
+            self._responding.discard(session.id)
+            await self._fire_transcription_callbacks(session, text, "assistant", True)
+            await self._fire_callbacks(self._response_end_callbacks, session)
 
-    def _on_agent_response_correction(
-        self, session: VoiceSession, original: str, corrected: str
-    ) -> None:
-        """Called by SDK when agent corrects a previous response."""
-        loop = self._loops.get(session.id)
-        if loop is None:
-            return
-        asyncio.run_coroutine_threadsafe(
-            self._fire_transcription_callbacks(session, corrected, "assistant", True),
-            loop,
-        )
+        return cb
 
-    def _on_user_transcript(self, session: VoiceSession, text: str) -> None:
-        """Called by SDK when user speech is transcribed."""
-        loop = self._loops.get(session.id)
-        if loop is None:
-            return
-        asyncio.run_coroutine_threadsafe(
-            self._fire_transcription_callbacks(session, text, "user", True), loop
-        )
+    def _make_correction_cb(self, session: VoiceSession) -> Any:
+        async def cb(original: str, corrected: str) -> None:
+            await self._fire_transcription_callbacks(session, corrected, "assistant", True)
+
+        return cb
+
+    def _make_user_transcript_cb(self, session: VoiceSession) -> Any:
+        async def cb(text: str) -> None:
+            await self._fire_transcription_callbacks(session, text, "user", True)
+
+        return cb
+
+    def _make_latency_cb(self, session: VoiceSession) -> Any:
+        async def cb(latency: int) -> None:
+            logger.debug("ElevenLabs latency: %dms (session %s)", latency, session.id)
+
+        return cb
 
     # -- Callback helpers --
 
@@ -373,34 +340,32 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
                 logger.exception("Error in error callback for session %s", session.id)
 
 
-class _BridgeAudioInterface:
-    """Bridges the ElevenLabs SDK's sync AudioInterface to RoomKit's async callbacks.
+class _AsyncBridgeAudioInterface:
+    """Bridges the ElevenLabs SDK's AsyncAudioInterface to RoomKit callbacks.
 
-    Called from the SDK's background thread.  Audio output and interruption
-    events are dispatched to the async event loop via ``call_soon_threadsafe``.
+    All methods are async, matching the SDK's ``AsyncAudioInterface`` contract.
+    Runs in the same event loop as the rest of RoomKit — no thread bridging.
     """
 
     def __init__(
         self,
         provider: ElevenLabsRealtimeProvider,
         session: VoiceSession,
-        loop: asyncio.AbstractEventLoop,
     ) -> None:
         self._provider = provider
         self._session = session
-        self._loop = loop
 
-    def start(self, input_callback: Any) -> None:
-        """Store the SDK's audio input callback for send_audio()."""
+    async def start(self, input_callback: Any) -> None:
+        """Store the SDK's async audio input callback for send_audio()."""
         self._provider._input_callbacks[self._session.id] = input_callback
         logger.debug("ElevenLabs audio bridge started (session %s)", self._session.id)
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         """Clean up when SDK conversation ends."""
         self._provider._input_callbacks.pop(self._session.id, None)
         logger.debug("ElevenLabs audio bridge stopped (session %s)", self._session.id)
 
-    def output(self, audio: bytes) -> None:
+    async def output(self, audio: bytes) -> None:
         """Called by SDK with agent audio — forward to RoomKit callbacks."""
         session = self._session
         provider = self._provider
@@ -408,23 +373,13 @@ class _BridgeAudioInterface:
         # Fire response_start on first audio chunk
         if session.id not in provider._responding:
             provider._responding.add(session.id)
-            asyncio.run_coroutine_threadsafe(
-                provider._fire_callbacks(provider._response_start_callbacks, session),
-                self._loop,
-            )
+            await provider._fire_callbacks(provider._response_start_callbacks, session)
 
-        asyncio.run_coroutine_threadsafe(
-            provider._fire_audio_callbacks(session, audio),
-            self._loop,
-        )
+        await provider._fire_audio_callbacks(session, audio)
 
-    def interrupt(self) -> None:
+    async def interrupt(self) -> None:
         """Called by SDK on interruption — forward to RoomKit callbacks."""
         session = self._session
         provider = self._provider
         provider._responding.discard(session.id)
-
-        asyncio.run_coroutine_threadsafe(
-            provider._fire_callbacks(provider._speech_start_callbacks, session),
-            self._loop,
-        )
+        await provider._fire_callbacks(provider._speech_start_callbacks, session)
