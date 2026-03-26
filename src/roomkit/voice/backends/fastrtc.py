@@ -34,7 +34,6 @@ import base64
 import contextlib
 import logging
 import os
-import struct
 import uuid
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
@@ -47,6 +46,7 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.auth import AuthCallback, auth_context
+from roomkit.voice.backends._mulaw import pcm16_to_mulaw as _pcm16_to_mulaw
 from roomkit.voice.backends.base import (
     AudioReceivedCallback,
     SessionReadyCallback,
@@ -69,61 +69,6 @@ logger = logging.getLogger("roomkit.voice.fastrtc")
 # Re-export so existing ``from roomkit.voice.backends.fastrtc import AuthCallback``
 # continues to work.
 __all__ = ["AuthCallback", "auth_context", "FastRTCVoiceBackend", "mount_fastrtc_voice"]
-
-# ---------------------------------------------------------------------------
-# Pure-Python mu-law encoder (replaces audioop.lin2ulaw removed in Python 3.13)
-# ---------------------------------------------------------------------------
-
-# ITU-T G.711 mu-law compression bias and clip level
-_MULAW_BIAS = 0x84
-_MULAW_CLIP = 32635
-
-# Precomputed lookup table: PCM-16 sample (unsigned magnitude) → mu-law byte.
-# Built once at import time for O(1) encoding per sample.
-_MULAW_TABLE: bytes | None = None
-
-
-def _build_mulaw_table() -> bytes:
-    """Build a 16384-entry lookup table mapping 14-bit magnitude to mu-law 7-bit value.
-
-    Returns the lower 7 bits (exponent + mantissa) with bits inverted.
-    The caller must OR in the sign bit (0x80) separately.
-    """
-    table = bytearray(16384)
-    for i in range(16384):
-        sample = min(i, _MULAW_CLIP) + _MULAW_BIAS
-        exponent = 7
-        mask = 0x4000
-        while exponent > 0 and not (sample & mask):
-            exponent -= 1
-            mask >>= 1
-        mantissa = (sample >> (exponent + 3)) & 0x0F
-        table[i] = ~((exponent << 4) | mantissa) & 0x7F
-    return bytes(table)
-
-
-def _pcm16_to_mulaw(pcm_data: bytes) -> bytes:
-    """Convert PCM-16 LE bytes to mu-law bytes (pure Python).
-
-    Each pair of bytes in *pcm_data* is interpreted as a signed 16-bit
-    little-endian sample and encoded to one mu-law byte per the ITU-T
-    G.711 standard.
-    """
-    global _MULAW_TABLE  # noqa: PLW0603
-    if _MULAW_TABLE is None:
-        _MULAW_TABLE = _build_mulaw_table()
-
-    n_samples = len(pcm_data) // 2
-    samples = struct.unpack(f"<{n_samples}h", pcm_data[: n_samples * 2])
-    out = bytearray(n_samples)
-    table = _MULAW_TABLE
-    for i, s in enumerate(samples):
-        sign = 0x80 if s >= 0 else 0x00
-        magnitude = -s if s < 0 else s
-        magnitude = min(magnitude, _MULAW_CLIP)
-        # Shift right once to get a 14-bit index (15-bit magnitude → 14-bit)
-        out[i] = table[magnitude >> 1] | sign
-    return bytes(out)
 
 
 class FastRTCVoiceBackend(VoiceBackend):

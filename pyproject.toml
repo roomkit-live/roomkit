@@ -99,7 +99,6 @@ dev = [
     "ruff>=0.6",
     "bandit>=1.7",
     "pre-commit>=3.8",
-    "audioop-lts>=0.2; python_version >= '3.13'",
     "roomkit[providers]",
     "roomkit[phonenumbers]",
     "roomkit[pynacl]",
@@ -161,7 +160,6 @@ filterwarnings = [
     "ignore:connect_realtime_voice\\(\\) is deprecated:DeprecationWarning",
     "ignore:disconnect_realtime_voice\\(\\) is deprecated:DeprecationWarning",
     "ignore::ResourceWarning",
-    "ignore:'audioop' is deprecated:DeprecationWarning",
 ]
 
 [tool.mypy]
@@ -324,10 +322,6 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["soxr", "soxr.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["audioop_lts", "audioop_lts.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

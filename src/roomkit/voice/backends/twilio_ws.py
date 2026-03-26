@@ -29,15 +29,12 @@ import asyncio
 import base64
 import contextlib
 import logging
+import struct
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
-try:
-    import audioop
-except ImportError:
-    import audioop_lts as audioop  # type: ignore[no-redef]
-
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends._mulaw import mulaw_to_pcm16, pcm16_to_mulaw
 from roomkit.voice.backends.base import (
     AudioReceivedCallback,
     SessionReadyCallback,
@@ -72,15 +69,13 @@ class TwilioWebSocketBackend(VoiceBackend):
         self._transport_disconnect_cb: TransportDisconnectCallback | None = None
         self._websocket: Any | None = None
         self._sessions: dict[str, VoiceSession] = {}
-        # Outbound uses audioop (consistent chunk sizes for Twilio protocol).
-        self._outbound_ratecv_state: Any = None
         # Outbound write queue + dedicated writer task — prevents send_json()
         # from blocking inbound receive_json() on the same WebSocket.
         self._write_queue: asyncio.Queue[dict[str, Any] | None] | None = None
         self._writer_task: asyncio.Task[None] | None = None
-        # Inbound uses soxr stream resampler (high quality, same as Pipecat).
-        # Falls back to stateful audioop.ratecv if soxr unavailable.
-        self._resample_inbound = self._build_inbound_resampler(output_sample_rate)
+        # Inbound/outbound resamplers (soxr preferred, linear fallback).
+        self._resample_inbound = self._build_resampler(TWILIO_SAMPLE_RATE, output_sample_rate)
+        self._resample_outbound = self._build_resampler(output_sample_rate, TWILIO_SAMPLE_RATE)
 
     @property
     def name(self) -> str:
@@ -116,8 +111,12 @@ class TwilioWebSocketBackend(VoiceBackend):
         # Clear stale state so a reconnect starts clean
         self._write_queue = None
         self._websocket = None
-        self._outbound_ratecv_state = None
-        self._resample_inbound = self._build_inbound_resampler(self._output_sample_rate)
+        self._resample_inbound = self._build_resampler(
+            TWILIO_SAMPLE_RATE, self._output_sample_rate
+        )
+        self._resample_outbound = self._build_resampler(
+            self._output_sample_rate, TWILIO_SAMPLE_RATE
+        )
         if self._transport_disconnect_cb:
             self._transport_disconnect_cb(session)
 
@@ -138,17 +137,9 @@ class TwilioWebSocketBackend(VoiceBackend):
     async def _send_mulaw_frame(self, session: VoiceSession, pcm_data: bytes) -> None:
         if not self._websocket or not pcm_data:
             return
-        # Resample from pipeline rate to 8 kHz for Twilio (stateful)
-        if self._output_sample_rate != TWILIO_SAMPLE_RATE:
-            pcm_data, self._outbound_ratecv_state = audioop.ratecv(
-                pcm_data,
-                2,
-                1,
-                self._output_sample_rate,
-                TWILIO_SAMPLE_RATE,
-                self._outbound_ratecv_state,
-            )
-        mulaw_data = audioop.lin2ulaw(pcm_data, 2)
+        # Resample from pipeline rate to 8 kHz for Twilio
+        pcm_data = self._resample_outbound(pcm_data)
+        mulaw_data = pcm16_to_mulaw(pcm_data)
         payload = base64.b64encode(mulaw_data).decode("ascii")
         msg = {
             "event": "media",
@@ -217,7 +208,7 @@ class TwilioWebSocketBackend(VoiceBackend):
             mulaw_payload: Base64-encoded mu-law audio from a Twilio media frame.
         """
         mulaw_data = base64.b64decode(mulaw_payload)
-        pcm_8k = audioop.ulaw2lin(mulaw_data, 2)
+        pcm_8k = mulaw_to_pcm16(mulaw_data)
         pcm_out = self._resample_inbound(pcm_8k)
         # Stream resamplers may buffer internally — skip empty output.
         if pcm_out and self._audio_received_cb:
@@ -230,18 +221,16 @@ class TwilioWebSocketBackend(VoiceBackend):
             self._audio_received_cb(session, frame)
 
     @staticmethod
-    def _build_inbound_resampler(output_rate: int) -> Callable[[bytes], bytes]:
-        """Build a stateful inbound resampler (soxr preferred, audioop fallback)."""
-        if output_rate == TWILIO_SAMPLE_RATE:
+    def _build_resampler(in_rate: int, out_rate: int) -> Callable[[bytes], bytes]:
+        """Build a stateful resampler (soxr preferred, linear fallback)."""
+        if in_rate == out_rate:
             return lambda data: data
         try:
             import numpy as np
             import soxr
 
-            stream = soxr.ResampleStream(TWILIO_SAMPLE_RATE, output_rate, 1, dtype=np.int16)
-            logger.info(
-                "Inbound resampler: soxr stream (%d -> %d Hz)", TWILIO_SAMPLE_RATE, output_rate
-            )
+            stream = soxr.ResampleStream(in_rate, out_rate, 1, dtype=np.int16)
+            logger.info("Resampler: soxr stream (%d -> %d Hz)", in_rate, out_rate)
 
             def _soxr(data: bytes) -> bytes:
                 out = stream.resample_chunk(np.frombuffer(data, dtype=np.int16))
@@ -249,15 +238,23 @@ class TwilioWebSocketBackend(VoiceBackend):
 
             return _soxr
         except ImportError:
-            logger.info(
-                "Inbound resampler: audioop.ratecv (%d -> %d Hz)", TWILIO_SAMPLE_RATE, output_rate
-            )
-            state: list[Any] = [None]
+            logger.info("Resampler: linear (%d -> %d Hz)", in_rate, out_rate)
+            ratio = out_rate / in_rate
 
-            def _ratecv(data: bytes) -> bytes:
-                result, state[0] = audioop.ratecv(
-                    data, 2, 1, TWILIO_SAMPLE_RATE, output_rate, state[0]
-                )
-                return result
+            def _linear(data: bytes) -> bytes:
+                n_in = len(data) // 2
+                if n_in == 0:
+                    return data
+                samples = struct.unpack(f"<{n_in}h", data)
+                n_out = int(n_in * ratio)
+                out = [0] * n_out
+                for i in range(n_out):
+                    src = i / ratio
+                    idx = int(src)
+                    frac = src - idx
+                    s0 = samples[min(idx, n_in - 1)]
+                    s1 = samples[min(idx + 1, n_in - 1)]
+                    out[i] = max(-32768, min(32767, int(s0 + frac * (s1 - s0))))
+                return struct.pack(f"<{n_out}h", *out)
 
-            return _ratecv
+            return _linear

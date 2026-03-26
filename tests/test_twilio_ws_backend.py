@@ -9,26 +9,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-try:
-    import audioop  # noqa: F401
-except ImportError:
-    try:
-        import audioop_lts as audioop  # type: ignore[no-redef] # noqa: F401
-    except ImportError:
-        pytest.skip("audioop not available", allow_module_level=True)
-
-from roomkit.voice.audio_frame import AudioFrame  # noqa: E402
-from roomkit.voice.backends.twilio_ws import (  # noqa: E402
-    TWILIO_SAMPLE_RATE,
-    TwilioWebSocketBackend,
-)
-from roomkit.voice.base import AudioChunk, VoiceSession  # noqa: E402
+from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends._mulaw import pcm16_to_mulaw
+from roomkit.voice.backends.twilio_ws import TWILIO_SAMPLE_RATE, TwilioWebSocketBackend
+from roomkit.voice.base import AudioChunk, VoiceSession
 
 
 def _make_mulaw_payload(num_samples: int = 160) -> str:
     """Create a base64-encoded mu-law payload (8 kHz silence)."""
     pcm = b"\x00\x00" * num_samples
-    mulaw = audioop.lin2ulaw(pcm, 2)
+    mulaw = pcm16_to_mulaw(pcm)
     return base64.b64encode(mulaw).decode("ascii")
 
 
@@ -113,7 +103,7 @@ class TestSessionLifecycle:
 
         assert backend._websocket is None
         assert backend._write_queue is None
-        assert backend._outbound_ratecv_state is None
+        assert backend._websocket is None
 
 
 class TestCallbacks:
@@ -295,15 +285,21 @@ class TestWriterTask:
 
 
 class TestResampler:
-    def test_build_passthrough_at_8khz(self) -> None:
-        resampler = TwilioWebSocketBackend._build_inbound_resampler(TWILIO_SAMPLE_RATE)
+    def test_build_passthrough_at_same_rate(self) -> None:
+        resampler = TwilioWebSocketBackend._build_resampler(8000, 8000)
         data = b"\x01\x02\x03\x04"
         assert resampler(data) is data
 
-    def test_build_audioop_fallback(self) -> None:
-        # This tests the audioop.ratecv path (always available)
-        resampler = TwilioWebSocketBackend._build_inbound_resampler(16000)
+    def test_build_upsample(self) -> None:
+        resampler = TwilioWebSocketBackend._build_resampler(8000, 16000)
         pcm_8k = _make_pcm(160)  # 20ms at 8kHz
         result = resampler(pcm_8k)
         # Upsampled to 16kHz: ~320 samples = 640 bytes
         assert len(result) == pytest.approx(640, abs=20)
+
+    def test_build_downsample(self) -> None:
+        resampler = TwilioWebSocketBackend._build_resampler(16000, 8000)
+        pcm_16k = _make_pcm(320)  # 20ms at 16kHz
+        result = resampler(pcm_16k)
+        # Downsampled to 8kHz: ~160 samples = 320 bytes
+        assert len(result) == pytest.approx(320, abs=20)
