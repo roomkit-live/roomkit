@@ -19,6 +19,7 @@ from shared.env import require_env
 
 from roomkit import HookExecution, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.video import VideoChannel
+from roomkit.providers.ai.base import AIContext, AIMessage
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.video.pipeline.config import VideoPipelineConfig
@@ -48,14 +49,16 @@ async def main() -> None:
     )
 
     async def translate(text: str) -> str:
-        resp = await translator.generate(
-            messages=[],
-            system=(
+        ctx = AIContext(
+            messages=[AIMessage(role="user", content=text)],
+            system_prompt=(
                 "Translate the following French text to English. "
-                "Return ONLY the translation.\n\n" + text
+                "Return ONLY the translation, nothing else."
             ),
+            max_tokens=256,
         )
-        return resp.text.strip() if resp.text else text
+        resp = await translator.generate(ctx)
+        return resp.content.strip() if resp.content else text
 
     # --- Backends --------------------------------------------------------
 
