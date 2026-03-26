@@ -8,7 +8,8 @@ Requires:
     pip install roomkit[local-video,local-audio,deepgram,sherpa-onnx,anthropic]
 
 Run with:
-    DEEPGRAM_API_KEY=... ANTHROPIC_API_KEY=... uv run python examples/video_live_subtitles.py
+    VAD_MODEL=ten-vad.onnx DEEPGRAM_API_KEY=... ANTHROPIC_API_KEY=... \
+        uv run python examples/video_live_subtitles.py
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ logger = setup_logging("subtitles")
 
 
 async def main() -> None:
-    env = require_env("DEEPGRAM_API_KEY", "ANTHROPIC_API_KEY")
+    env = require_env("DEEPGRAM_API_KEY", "ANTHROPIC_API_KEY", "VAD_MODEL")
 
     # --- STT (Deepgram, French) ------------------------------------------
 
@@ -76,7 +77,9 @@ async def main() -> None:
         width=640,
         height=480,
     )
-    vad = get_sherpa_onnx_vad_provider()(get_sherpa_onnx_vad_config()())
+    vad = get_sherpa_onnx_vad_provider()(
+        get_sherpa_onnx_vad_config()(model=env["VAD_MODEL"]),
+    )
 
     # --- Kit + overlays --------------------------------------------------
 
@@ -128,11 +131,10 @@ async def main() -> None:
     # --- Run -------------------------------------------------------------
 
     await kit.create_room(room_id="subtitle-demo")
-    await kit.attach_channel("subtitle-demo", "voice")
     await kit.attach_channel("subtitle-demo", "video")
 
+    # Join voice (creates session + starts mic capture)
     session = await kit.join("subtitle-demo", "voice", participant_id="user")
-    await kit.join("subtitle-demo", "video", participant_id="user")
 
     logger.info("Speak French to see English subtitles. Ctrl+C to stop.")
 
