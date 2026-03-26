@@ -207,6 +207,9 @@ def backend() -> SIPVoiceBackend:
     b._registration_task = None
     b._registered = False
     b._rtp_inactivity_timeout = 30.0
+    b._jitter_capacity = 32
+    b._jitter_prefetch = 0
+    b._skip_audio_gaps = True
 
     return b
 

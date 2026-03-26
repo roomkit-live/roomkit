@@ -88,6 +88,13 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         dtmf_payload_type: RTP payload type for RFC 4733 DTMF events.
         user_agent: Value for the SIP ``User-Agent`` header in responses.
         server_name: SDP session name (``s=`` line) in answers.
+        jitter_capacity: Maximum number of packets the RTP jitter buffer
+            can hold.  Default 32 (~640 ms at 20 ms/packet).
+        jitter_prefetch: Number of packets to accumulate before starting
+            playout.  Default 0 (start immediately, optimised for low
+            latency).
+        skip_audio_gaps: When ``True`` (default), gaps in the RTP stream
+            are skipped rather than filled with silence.
         rtp_inactivity_timeout: Seconds of RTP silence before forcing
             session disconnect (safety net for missed BYE).  Set to 0
             to disable.  Default 30.
@@ -110,6 +117,9 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         dtmf_payload_type: int = 101,
         user_agent: str | None = None,
         server_name: str = "-",
+        jitter_capacity: int = 32,
+        jitter_prefetch: int = 0,
+        skip_audio_gaps: bool = True,
         rtp_inactivity_timeout: float = 30.0,
         auth_users: dict[str, str] | None = None,
         auth_realm: str = "roomkit",
@@ -126,6 +136,9 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._dtmf_payload_type = dtmf_payload_type
         self._user_agent = user_agent
         self._server_name = server_name
+        self._jitter_capacity = jitter_capacity
+        self._jitter_prefetch = jitter_prefetch
+        self._skip_audio_gaps = skip_audio_gaps
         self._rtp_inactivity_timeout = rtp_inactivity_timeout
 
         # Inbound authentication

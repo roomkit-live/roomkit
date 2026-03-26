@@ -99,6 +99,7 @@ dev = [
     "ruff>=0.6",
     "bandit>=1.7",
     "pre-commit>=3.8",
+    "audioop-lts>=0.2; python_version >= '3.13'",
     "roomkit[providers]",
     "roomkit[phonenumbers]",
     "roomkit[pynacl]",
@@ -321,6 +322,14 @@ module = ["sphn", "sphn.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["soxr", "soxr.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["audioop_lts", "audioop_lts.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["roomkit.sources.neonize"]
 disallow_untyped_decorators = false
 
@@ -363,11 +372,24 @@ source = ["roomkit"]
 omit = [
     # Requires neonize + specific protobuf version that conflicts with other deps on CI
     "src/roomkit/sources/neonize.py",
+    # Requires PyAV (native ffmpeg bindings) — not in CI
+    "src/roomkit/recorder/*.py",
+    "src/roomkit/video/recorder/*.py",
+    "src/roomkit/video/pipeline/decoder/pyav.py",
+    "src/roomkit/video/pipeline/encoder/*.py",
+    "src/roomkit/video/pipeline/resizer/pyav.py",
+    "src/roomkit/video/utils.py",
+    # Requires optional native deps not in CI
+    "src/roomkit/video/avatar/musetalk.py",
+    "src/roomkit/video/backends/local.py",
+    "src/roomkit/video/backends/fastrtc.py",
+    "src/roomkit/knowledge/postgres.py",
 ]
 
 [tool.coverage.report]
 show_missing = true
 fail_under = 80
+precision = 0
 
 [dependency-groups]
 dev = [

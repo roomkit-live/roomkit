@@ -35,7 +35,7 @@ from typing import Any
 try:
     import audioop
 except ImportError:
-    import audioop_lts as audioop  # type: ignore[import-untyped]
+    import audioop_lts as audioop  # type: ignore[no-redef]
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.base import (
@@ -245,7 +245,7 @@ class TwilioWebSocketBackend(VoiceBackend):
 
             def _soxr(data: bytes) -> bytes:
                 out = stream.resample_chunk(np.frombuffer(data, dtype=np.int16))
-                return out.tobytes()
+                return bytes(out.tobytes())
 
             return _soxr
         except ImportError:

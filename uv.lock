@@ -5023,6 +5023,7 @@ deepgram = [
 dev = [
     { name = "anthropic" },
     { name = "asyncpg" },
+    { name = "audioop-lts", marker = "python_full_version >= '3.13' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
     { name = "bandit" },
     { name = "botbuilder-core" },
     { name = "google-genai" },
@@ -5215,6 +5216,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'providers'", specifier = ">=0.30" },
     { name = "asyncpg", marker = "extra == 'dev'", specifier = ">=0.29" },
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.29" },
+    { name = "audioop-lts", marker = "python_full_version >= '3.13' and extra == 'dev'", specifier = ">=0.2" },
     { name = "av", marker = "extra == 'anam'", specifier = ">=12.0.0" },
     { name = "av", marker = "extra == 'video'", specifier = ">=12.0.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7" },

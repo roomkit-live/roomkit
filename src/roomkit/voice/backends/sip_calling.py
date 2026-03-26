@@ -35,6 +35,9 @@ class SIPCallingMixin:
     _supported_codecs: list[int]
     _dtmf_payload_type: int
     _server_name: str
+    _jitter_capacity: int
+    _jitter_prefetch: int
+    _skip_audio_gaps: bool
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
@@ -97,9 +100,9 @@ class SIPCallingMixin:
                 supported_codecs=self._supported_codecs,
                 dtmf_payload_type=self._dtmf_payload_type,
                 session_name=self._server_name,
-                jitter_capacity=32,
-                jitter_prefetch=0,
-                skip_audio_gaps=True,
+                jitter_capacity=self._jitter_capacity,
+                jitter_prefetch=self._jitter_prefetch,
+                skip_audio_gaps=self._skip_audio_gaps,
             )
         except Exception:
             logger.exception("SDP negotiation failed for call %s", call.call_id)
@@ -435,9 +438,9 @@ class SIPCallingMixin:
                 supported_codecs=[codec],
                 dtmf_payload_type=self._dtmf_payload_type,
                 session_name=self._server_name,
-                jitter_capacity=32,
-                jitter_prefetch=0,
-                skip_audio_gaps=True,
+                jitter_capacity=self._jitter_capacity,
+                jitter_prefetch=self._jitter_prefetch,
+                skip_audio_gaps=self._skip_audio_gaps,
             )
             await call_session.start()
         except Exception:

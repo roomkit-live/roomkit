@@ -586,6 +586,66 @@ class TestSilenceInsertion:
         assert total_frames > 200
 
 
+class TestSilenceGapEdgeCases:
+    def test_separate_inbound_gap_inserts_silence(self, tmp_path: Path) -> None:
+        """SEPARATE mode inbound track should insert silence for gaps."""
+        import time
+
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path),
+            channels=RecordingChannelMode.SEPARATE,
+        )
+        handle = recorder.start(_session(), config)
+
+        tone = _pcm_tone(100, value=1000)
+        recorder.tap_inbound(handle, _frame(tone))
+        time.sleep(0.2)
+        recorder.tap_inbound(handle, _frame(tone))
+        result = recorder.stop(handle)
+
+        inbound_url = [u for u in result.urls if "inbound" in u][0]
+        with wave.open(inbound_url, "rb") as w:
+            total_frames = w.getnframes()
+
+        # Should have silence gap between the two taps
+        assert total_frames > 200
+
+    def test_non_separate_outbound_gap_inserts_silence(self, tmp_path: Path) -> None:
+        """Non-SEPARATE (MIXED) outbound track should insert silence for gaps."""
+        import time
+
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path),
+            channels=RecordingChannelMode.MIXED,
+        )
+        handle = recorder.start(_session(), config)
+
+        tone = _pcm_tone(100, value=500)
+        recorder.tap_outbound(handle, _frame(tone))
+        time.sleep(0.2)
+        recorder.tap_outbound(handle, _frame(tone))
+        result = recorder.stop(handle)
+
+        with wave.open(result.urls[0], "rb") as w:
+            total_frames = w.getnframes()
+
+        # Outbound-only mixed file should have silence inserted
+        assert total_frames > 200
+
+    def test_path_traversal_falls_back_to_temp(self) -> None:
+        """Storage paths with '..' should fall back to temp directory."""
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage="/tmp/foo/../../../etc",
+            channels=RecordingChannelMode.MIXED,
+        )
+        handle = recorder.start(_session(), config)
+        # The recorder should use a temp dir fallback, not the traversal path
+        assert ".." not in handle.path
+
+
 class TestImport:
     def test_import_from_pipeline(self) -> None:
         from roomkit.voice.pipeline import WavFileRecorder as W
