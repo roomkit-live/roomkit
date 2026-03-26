@@ -5,28 +5,30 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added
-
-- **Configurable jitter buffer for SIPVoiceBackend** — new constructor parameters `jitter_capacity`, `jitter_prefetch`, and `skip_audio_gaps` allow tuning the RTP jitter buffer per deployment. Defaults remain unchanged (capacity 32, prefetch 0, skip gaps enabled).
-
 ## [0.7.0a4] — 2026-03-25
 
 ### Added
 
 - **`TwilioWebSocketBackend`** — voice backend for Twilio Media Streams WebSocket audio. Bridges JSON-framed mu-law 8 kHz audio to/from the pipeline's PCM format. Dedicated writer task prevents outbound sends from blocking inbound receives on the same WebSocket.
-- **Stateful soxr stream resampler** for `TwilioWebSocketBackend` inbound audio — high-quality upsampling from 8 kHz to pipeline rate (default 24 kHz) with no inter-frame discontinuities. Falls back to stateful `audioop.ratecv` when soxr is unavailable.
+- **Stateful soxr stream resampler** for `TwilioWebSocketBackend` inbound/outbound audio — high-quality resampling between 8 kHz (Twilio) and pipeline rate (default 24 kHz) with no inter-frame discontinuities. Falls back to pure-Python linear interpolation when soxr is unavailable.
+- **Pure-Python G.711 mu-law codec** (`_mulaw.py`) — `pcm16_to_mulaw()` and `mulaw_to_pcm16()` with precomputed lookup tables. Replaces the deprecated `audioop` module (removed in Python 3.13). Shared by `TwilioWebSocketBackend` and `FastRTCVoiceBackend`.
 - **`RecordingChannelMode.ALL`** — new recording channel mode that outputs all three files: `*_inbound.wav`, `*_outbound.wav`, and `*_mixed.wav` in a single recording session.
+- **Configurable SIP jitter buffer** — new `SIPVoiceBackend` constructor parameters `jitter_capacity`, `jitter_prefetch`, and `skip_audio_gaps` for tuning the RTP jitter buffer per deployment. Previously hardcoded in `sip_calling.py`.
 - **SIP + ElevenLabs Conversational AI example** — incoming SIP calls routed to an ElevenLabs agent with real-time transcription logging and protocol tracing.
 
 ### Fixed
 
+- **SIP port leak on `call_session.start()` failure** — if RTP session startup fails after accepting an inbound INVITE, the allocated port is now released and BYE is sent to tear down the call. Previously the port leaked and the call was left in a zombie state.
+- **SIP `_handle_bye` close-before-cleanup race** — `call_session.close()` is now awaited before releasing the RTP port. Previously the port could be reallocated while the close was still running as a background task.
+- **SIP inactivity timeout close race** — same fix applied to the RTP inactivity timeout path in `_audio_stats_loop`.
 - **WavFileRecorder silence gap insertion** — silence is now only inserted for gaps exceeding 30ms (processing jitter threshold), preventing spurious silence from frame scheduling variance. First frame in each direction no longer gets leading silence from the gap between `start()` and first audio arrival.
 - **TwilioWebSocketBackend disconnect callback** — renamed `on_transport_disconnect` to `on_client_disconnected` to match the `VoiceBackend` ABC. Previously the disconnect callback was silently never registered by `VoiceChannel`.
 - **TwilioWebSocketBackend stale state on reconnect** — write queue, WebSocket reference, and resampler state are now cleared on disconnect, preventing stale filter artifacts and memory leaks when the backend handles sequential calls.
-- Removed dead `_create_resampler()` method from `TwilioWebSocketBackend`.
-- Moved inline `import asyncio` and `import contextlib` to module-level in `TwilioWebSocketBackend`.
+- **SIP dial test failures** — added missing `_jitter_capacity`, `_jitter_prefetch`, `_skip_audio_gaps` attributes to test fixture (broken since a2 refactor).
+
+### Changed
+
+- **`audioop` dependency removed** — replaced with pure-Python G.711 codec and linear interpolation resampler. No C extensions or `audioop-lts` package needed on Python 3.13+.
 
 ## [0.7.0a3] — 2026-03-24
 
