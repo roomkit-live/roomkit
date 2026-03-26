@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from roomkit.core.delivery import DeliveryContext, DeliveryStrategy, resolve_strategy
+from roomkit.core.delivery import DeliveryContext, DeliveryStrategy, Immediate, resolve_strategy
 from roomkit.core.mixins.helpers import HelpersMixin
+from roomkit.delivery.base import DeliveryItem
+from roomkit.delivery.serialization import serialize_strategy
 from roomkit.models.enums import EventStatus, EventType, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+
+if TYPE_CHECKING:
+    from roomkit.delivery.base import DeliveryBackend
 
 logger = logging.getLogger("roomkit.delivery")
 
@@ -17,6 +22,7 @@ class DeliverMixin(HelpersMixin):
     """Adds ``deliver()`` to RoomKit for proactive content delivery."""
 
     _delivery_strategy: DeliveryStrategy | None
+    _delivery_backend: DeliveryBackend | None
 
     async def deliver(
         self,
@@ -32,8 +38,10 @@ class DeliverMixin(HelpersMixin):
         Sends *content* to the target channel with awareness of channel
         state (voice playing, user speaking, idle).
 
-        Fires ``BEFORE_DELIVER`` before the strategy executes and
-        ``AFTER_DELIVER`` after delivery completes (or fails).
+        When a :class:`~roomkit.delivery.base.DeliveryBackend` is
+        configured, the item is enqueued and the worker executes
+        delivery asynchronously.  Otherwise delivery happens in-process
+        with ``BEFORE_DELIVER`` / ``AFTER_DELIVER`` hooks.
 
         Args:
             room_id: Target room ID.
@@ -48,10 +56,21 @@ class DeliverMixin(HelpersMixin):
         """
         resolved = resolve_strategy(strategy) or self._delivery_strategy
         if resolved is None:
-            from roomkit.core.delivery import Immediate
-
             resolved = Immediate()
 
+        # Backend path: enqueue instead of executing in-process
+        if self._delivery_backend is not None:
+            item = DeliveryItem(
+                room_id=room_id,
+                content=content,
+                channel_id=channel_id,
+                strategy=serialize_strategy(resolved),
+                metadata=metadata or {},
+            )
+            await self._delivery_backend.enqueue(item)
+            return
+
+        # In-process path (no backend configured)
         ctx = DeliveryContext(
             kit=self,  # type: ignore[arg-type]
             room_id=room_id,

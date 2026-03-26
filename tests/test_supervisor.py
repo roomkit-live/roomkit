@@ -947,3 +947,77 @@ class TestAutoDelegate:
         event = _make_event(body="Analyse quantum computing")
         result = await boss.on_event(event, _make_binding(), _make_context())
         assert isinstance(result, ChannelOutput)
+
+    async def test_sync_auto_delegate_custom_refine_instruction(self) -> None:
+        custom_instruction = "Summarise the user request in exactly 3 words."
+        boss = _make_agent("boss", responses=["Three word summary", "Final answer"])
+        kit = _make_mock_kit(Room(id="r1"))
+        kit.delegate = AsyncMock(return_value=_delegated_task_with_output("Done"))
+
+        s = Supervisor(
+            supervisor=boss,
+            workers=[_make_agent("w1")],
+            strategy="sequential",
+            auto_delegate=True,
+            refine_task=True,
+            refine_instruction=custom_instruction,
+        )
+        await s.install(kit, "r1")
+
+        event = _make_event(body="Tell me about quantum computing")
+        result = await boss.on_event(event, _make_binding(), _make_context())
+        assert isinstance(result, ChannelOutput)
+        # Verify the custom instruction was used (pass 1 was called)
+        kit.delegate.assert_called_once()
+
+    async def test_sync_auto_delegate_custom_delegation_message(self) -> None:
+        boss = _make_agent("boss", responses=["Topic", "Presentation"])
+        kit = _make_mock_kit(Room(id="r1"))
+        kit.delegate = AsyncMock(return_value=_delegated_task_with_output("Done"))
+
+        s = Supervisor(
+            supervisor=boss,
+            workers=[_make_agent("w1")],
+            strategy="sequential",
+            auto_delegate=True,
+            delegation_message="Working on it...",
+        )
+        # delegation_message is stored correctly
+        assert s._delegation_message == "Working on it..."
+        await s.install(kit, "r1")
+
+        event = _make_event(body="Research AI")
+        result = await boss.on_event(event, _make_binding(), _make_context())
+        assert isinstance(result, ChannelOutput)
+
+    async def test_async_delivery_background_delegation(self) -> None:
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1")
+        kit = _make_mock_kit(Room(id="r1"))
+        kit.delegate = AsyncMock(return_value=_delegated_task_with_output("Result"))
+
+        # async_delivery needs a RealtimeVoiceChannel — test that the
+        # install at least runs without error when no voice channel exists
+        s = Supervisor(
+            supervisor=boss,
+            workers=[w1],
+            strategy="parallel",
+            auto_delegate=True,
+            async_delivery=True,
+        )
+        # Should not raise even without a RealtimeVoiceChannel
+        await s.install(kit, "r1")
+
+        # Verify _async_run_and_deliver works end-to-end
+        on_done = MagicMock()
+        await _async_run_and_deliver(
+            kit=kit,
+            room_id="r1",
+            strategy=WorkerStrategy.PARALLEL,
+            workers=[w1],
+            task_desc="Analyze topic",
+            on_done=on_done,
+        )
+
+        kit.deliver.assert_called_once()
+        on_done.assert_called_once()

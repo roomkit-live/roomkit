@@ -38,6 +38,12 @@ from roomkit.core.framework import (
     VoiceBackendNotConfiguredError,
     VoiceNotConfiguredError,
 )
+from roomkit.delivery import (
+    DeliveryBackend,
+    DeliveryItem,
+    DeliveryItemStatus,
+    InMemoryDeliveryBackend,
+)
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import (
@@ -120,8 +126,12 @@ __all__ = [
     "VoiceBackendNotConfiguredError",
     "VoiceNotConfiguredError",
     # Delivery
+    "DeliveryBackend",
+    "DeliveryItem",
+    "DeliveryItemStatus",
     "DeliveryStrategy",
     "Immediate",
+    "InMemoryDeliveryBackend",
     "Queued",
     "WaitForIdle",
     # Channels

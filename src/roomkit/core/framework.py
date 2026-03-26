@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from roomkit.delivery.base import DeliveryBackend
     from roomkit.orchestration.base import Orchestration
     from roomkit.telemetry.base import TelemetryProvider
     from roomkit.telemetry.config import TelemetryConfig
@@ -132,6 +133,7 @@ class RoomKit(
         voice: VoiceBackend | None = None,
         task_runner: TaskRunner | None = None,
         delivery_strategy: DeliveryStrategy | str | None = None,
+        delivery_backend: DeliveryBackend | None = None,
         status_bus: StatusBus | None = None,
         telemetry: TelemetryConfig | TelemetryProvider | None = None,
         inbound_rate_limit: RateLimit | None = None,
@@ -165,6 +167,10 @@ class RoomKit(
                 results.  When set, ``strategy.deliver()`` is called after
                 system prompt injection and the ``ON_TASK_COMPLETED`` hook.
                 Can be overridden per-task via ``delegate()``.
+            delivery_backend: Persistent delivery backend.  When set,
+                ``kit.deliver()`` enqueues items instead of executing
+                in-process, and a worker loop dequeues and executes them.
+                Defaults to ``None`` (in-process delivery).
             status_bus: Shared status bus for multi-agent coordination.
                 Defaults to a ``StatusBus`` with ``InMemoryStatusBackend``.
                 Access via ``kit.status_bus``.
@@ -219,6 +225,8 @@ class RoomKit(
         from roomkit.core.delivery import resolve_strategy as _resolve
 
         self._delivery_strategy = _resolve(delivery_strategy)
+        # Persistent delivery backend (optional)
+        self._delivery_backend: DeliveryBackend | None = delivery_backend
         # Status bus for multi-agent coordination
         self._status_bus = status_bus or StatusBus()
 
@@ -295,6 +303,11 @@ class RoomKit(
         return self._task_runner
 
     @property
+    def delivery_backend(self) -> DeliveryBackend | None:
+        """The persistent delivery backend, if configured."""
+        return self._delivery_backend
+
+    @property
     def telemetry(self) -> TelemetryProvider:
         """The telemetry provider for span and metric collection."""
         return self._telemetry
@@ -340,6 +353,9 @@ class RoomKit(
         # Clear stale greeting gates
         for room_id in list(self._greeting_gates):
             self._force_clear_greeting_gate(room_id)
+        # Stop delivery backend worker loop
+        if self._delivery_backend is not None:
+            await self._delivery_backend.close()
         # Cancel in-flight background tasks first
         await self._task_runner.close()
         # Cancel pending trace hook tasks
@@ -365,6 +381,8 @@ class RoomKit(
 
     async def __aenter__(self) -> RoomKit:
         await self._ensure_status_bus_subscribed()
+        if self._delivery_backend is not None:
+            await self._delivery_backend.start(self)
         return self
 
     async def __aexit__(self, *exc: object) -> None:
