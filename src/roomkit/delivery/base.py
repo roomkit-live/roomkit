@@ -7,6 +7,8 @@ workers in multi-process deployments.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
@@ -97,3 +99,15 @@ class DeliveryBackend(ABC):
 
     async def close(self) -> None:  # noqa: B027
         """Called by ``RoomKit.close()``.  Override for graceful shutdown."""
+
+    # -- Shared worker helpers --------------------------------------------
+
+    _worker_task: asyncio.Task[None] | None = None
+
+    async def _cancel_worker_task(self) -> None:
+        """Cancel the background worker task if running."""
+        if self._worker_task is not None:
+            self._worker_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._worker_task
+            self._worker_task = None

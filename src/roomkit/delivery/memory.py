@@ -7,7 +7,6 @@ deployments — items are not persisted and are lost on crash.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from collections import deque
 from typing import TYPE_CHECKING
@@ -112,13 +111,20 @@ class InMemoryDeliveryBackend(DeliveryBackend):
             )
         else:
             item.status = DeliveryItemStatus.PENDING
-            await self._queue.put(item)
-            logger.debug(
-                "Re-enqueued %s (attempt %d/%d)",
-                item_id,
-                item.retry_count,
-                item.max_retries,
-            )
+            try:
+                self._queue.put_nowait(item)
+            except asyncio.QueueFull:
+                item.status = DeliveryItemStatus.DEAD_LETTER
+                item.error = "queue full on retry"
+                self._dead_letter.append(item)
+                logger.warning("Dead-lettered %s — queue full on retry", item_id)
+            else:
+                logger.debug(
+                    "Re-enqueued %s (attempt %d/%d)",
+                    item_id,
+                    item.retry_count,
+                    item.max_retries,
+                )
 
     async def dead_letter(self, item_id: str, error: str) -> None:
         item = self._in_flight.pop(item_id, None)
@@ -138,6 +144,8 @@ class InMemoryDeliveryBackend(DeliveryBackend):
 
     async def start(self, kit: RoomKit) -> None:
         """Start the background worker loop."""
+        if self._worker_task is not None:
+            return
         self._kit = kit
         self._worker_task = asyncio.create_task(
             run_worker_loop(
@@ -153,15 +161,17 @@ class InMemoryDeliveryBackend(DeliveryBackend):
 
     async def close(self) -> None:
         """Stop the worker loop.  In-flight items are re-enqueued."""
-        if self._worker_task is not None:
-            self._worker_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._worker_task
-            self._worker_task = None
+        await self._cancel_worker_task()
         # Re-enqueue any in-flight items so they aren't silently lost
         for item in self._in_flight.values():
             item.status = DeliveryItemStatus.PENDING
             item.worker_id = None
-            self._queue.put_nowait(item)
+            try:
+                self._queue.put_nowait(item)
+            except asyncio.QueueFull:
+                item.status = DeliveryItemStatus.DEAD_LETTER
+                item.error = "queue full at shutdown"
+                self._dead_letter.append(item)
+                logger.warning("Item %s dead-lettered at shutdown — queue full", item.id)
         self._in_flight.clear()
         logger.info("In-memory delivery worker stopped")

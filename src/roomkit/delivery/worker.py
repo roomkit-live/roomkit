@@ -23,7 +23,37 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.delivery.worker")
 
 
-async def _fire_delivery_hooks(
+def build_delivery_hook_event(
+    room_id: str,
+    content: str,
+    *,
+    channel_id: str | None = None,
+    strategy_name: str = "immediate",
+    status: EventStatus = EventStatus.PENDING,
+    extra_meta: dict[str, object] | None = None,
+) -> RoomEvent:
+    """Build a RoomEvent for BEFORE_DELIVER / AFTER_DELIVER hooks.
+
+    Shared by the in-process path (``deliver.py``) and the worker path.
+    """
+    meta: dict[str, object] = {
+        "channel_id": channel_id,
+        "strategy": strategy_name,
+    }
+    if extra_meta:
+        meta.update(extra_meta)
+    return RoomEvent(
+        room_id=room_id,
+        source=EventSource(channel_id="system", channel_type="system"),  # type: ignore[arg-type]
+        content=TextContent(body=content),
+        type=EventType.MESSAGE,
+        status=status,
+        visibility="internal",
+        metadata=meta,
+    )
+
+
+async def fire_delivery_hooks(
     kit: RoomKit,
     item: DeliveryItem,
     trigger: HookTrigger,
@@ -31,27 +61,21 @@ async def _fire_delivery_hooks(
     error: str | None = None,
 ) -> None:
     """Fire BEFORE_DELIVER or AFTER_DELIVER hooks for a delivery item."""
-    meta = {
-        "channel_id": item.channel_id,
-        "strategy": item.strategy.get("type", "immediate"),
-        "delivery_item_id": item.id,
-        **item.metadata,
-    }
+    extra: dict[str, object] = {"delivery_item_id": item.id, **item.metadata}
     if error is not None:
-        meta["error"] = error
+        extra["error"] = error
 
     status = EventStatus.PENDING
     if trigger == HookTrigger.AFTER_DELIVER:
         status = EventStatus.FAILED if error else EventStatus.DELIVERED
 
-    hook_event = RoomEvent(
-        room_id=item.room_id,
-        source=EventSource(channel_id="system", channel_type="system"),  # type: ignore[arg-type]
-        content=TextContent(body=item.content),
-        type=EventType.MESSAGE,
+    hook_event = build_delivery_hook_event(
+        item.room_id,
+        item.content,
+        channel_id=item.channel_id,
+        strategy_name=item.strategy.get("type", "immediate"),
         status=status,
-        visibility="internal",
-        metadata=meta,
+        extra_meta=extra,
     )
 
     try:
@@ -76,7 +100,7 @@ async def execute_delivery(kit: RoomKit, item: DeliveryItem) -> None:
         metadata=item.metadata,
     )
 
-    await _fire_delivery_hooks(kit, item, HookTrigger.BEFORE_DELIVER)
+    await fire_delivery_hooks(kit, item, HookTrigger.BEFORE_DELIVER)
 
     error: str | None = None
     try:
@@ -85,7 +109,7 @@ async def execute_delivery(kit: RoomKit, item: DeliveryItem) -> None:
         error = str(exc)
         raise
     finally:
-        await _fire_delivery_hooks(kit, item, HookTrigger.AFTER_DELIVER, error=error)
+        await fire_delivery_hooks(kit, item, HookTrigger.AFTER_DELIVER, error=error)
 
 
 async def run_worker_loop(

@@ -117,6 +117,9 @@ class TestEndToEnd:
         kit.process_inbound = AsyncMock()
         kit.get_channel = MagicMock(return_value=None)
         kit.store.list_bindings = AsyncMock(return_value=[])
+        kit._build_context = AsyncMock(return_value=MagicMock())
+        kit.hook_engine = MagicMock()
+        kit.hook_engine.run_async_hooks = AsyncMock()
 
         items = await backend.dequeue("w1", timeout=1.0)
         assert len(items) == 1

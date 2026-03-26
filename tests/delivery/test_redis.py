@@ -121,6 +121,18 @@ class TestDequeue:
         assert items[0].id in backend._entry_ids
         assert backend._entry_ids[items[0].id] == "456-0"
 
+    async def test_parses_string_mode_response(self) -> None:
+        """redis-py with decode_responses=True returns strings, not bytes."""
+        backend, client = _make_backend()
+        item = _make_item()
+        entry_data = {"data": item.model_dump_json()}
+        client.xreadgroup = AsyncMock(return_value=[["stream", [("123-0", entry_data)]]])
+
+        items = await backend.dequeue("w1")
+        assert len(items) == 1
+        assert items[0].room_id == "r1"
+        assert backend._entry_ids[items[0].id] == "123-0"
+
 
 class TestAck:
     async def test_calls_xack_and_xdel(self) -> None:
@@ -198,6 +210,21 @@ class TestDeadLetter:
         assert call_args[1]["maxlen"] == 10_000
         assert call_args[1]["approximate"] is True
 
+    async def test_cleans_up_tracking(self) -> None:
+        backend, client = _make_backend()
+        item = _make_item()
+        entry_data = {b"data": item.model_dump_json().encode()}
+        client.xreadgroup = AsyncMock(return_value=[[b"s", [(b"500-0", entry_data)]]])
+
+        items = await backend.dequeue("w1")
+        item_id = items[0].id
+        assert item_id in backend._entry_ids
+        assert item_id in backend._items
+
+        await backend.dead_letter(item_id, "fatal")
+        assert item_id not in backend._entry_ids
+        assert item_id not in backend._items
+
 
 class TestGetQueueDepth:
     async def test_calls_xlen(self) -> None:
@@ -246,6 +273,15 @@ class TestLifecycle:
         await backend.start(kit)  # should not raise
         assert backend._worker_task is not None
         backend._worker_task.cancel()
+
+    async def test_double_start_is_noop(self) -> None:
+        backend, client = _make_backend()
+        kit = MagicMock()
+        await backend.start(kit)
+        first_task = backend._worker_task
+        await backend.start(kit)  # second start
+        assert backend._worker_task is first_task  # same task, not leaked
+        await backend.close()
 
     async def test_close_stops_worker(self) -> None:
         backend, client = _make_backend()

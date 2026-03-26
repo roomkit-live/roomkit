@@ -19,7 +19,6 @@ Usage::
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -31,6 +30,14 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
 
 logger = logging.getLogger("roomkit.delivery.redis")
+
+
+async def _xdel_safe(client: Any, key: str, entry_id: str) -> None:
+    """Delete a stream entry.  Non-fatal — the entry is already acked."""
+    try:
+        await client.xdel(key, entry_id)
+    except Exception:
+        logger.warning("XDEL %s %s failed (non-fatal)", key, entry_id, exc_info=True)
 
 
 class RedisDeliveryBackend(DeliveryBackend):
@@ -66,7 +73,6 @@ class RedisDeliveryBackend(DeliveryBackend):
                 "Install it with: pip install roomkit[redis]"
             ) from exc
 
-        self._aioredis = _aioredis
         if client is not None:
             self._client = client
             self._owns_client = False
@@ -138,7 +144,7 @@ class RedisDeliveryBackend(DeliveryBackend):
         if entry_id is None:
             return
         await self._client.xack(self._pending_key, self._group, entry_id)
-        await self._client.xdel(self._pending_key, entry_id)
+        await _xdel_safe(self._client, self._pending_key, entry_id)
         logger.debug("Acked %s (entry %s)", item_id, entry_id)
 
     async def nack(self, item_id: str, error: str | None = None) -> None:
@@ -153,6 +159,7 @@ class RedisDeliveryBackend(DeliveryBackend):
         if item.retry_count >= item.max_retries:
             # Dead-letter: add to DL stream, ack + delete from pending
             item.status = DeliveryItemStatus.DEAD_LETTER
+            item.error = error or "max retries exceeded"
             await self._client.xadd(
                 self._dl_key,
                 {"data": item.model_dump_json()},
@@ -160,7 +167,7 @@ class RedisDeliveryBackend(DeliveryBackend):
                 approximate=True,
             )
             await self._client.xack(self._pending_key, self._group, entry_id)
-            await self._client.xdel(self._pending_key, entry_id)
+            await _xdel_safe(self._client, self._pending_key, entry_id)
             logger.warning(
                 "Dead-lettered %s after %d retries: %s",
                 item_id,
@@ -172,7 +179,7 @@ class RedisDeliveryBackend(DeliveryBackend):
             item.status = DeliveryItemStatus.PENDING
             await self._client.xadd(self._pending_key, {"data": item.model_dump_json()})
             await self._client.xack(self._pending_key, self._group, entry_id)
-            await self._client.xdel(self._pending_key, entry_id)
+            await _xdel_safe(self._client, self._pending_key, entry_id)
             logger.debug(
                 "Re-enqueued %s (attempt %d/%d)",
                 item_id,
@@ -196,7 +203,7 @@ class RedisDeliveryBackend(DeliveryBackend):
         )
         if entry_id is not None:
             await self._client.xack(self._pending_key, self._group, entry_id)
-            await self._client.xdel(self._pending_key, entry_id)
+            await _xdel_safe(self._client, self._pending_key, entry_id)
 
     async def get_queue_depth(self) -> int:
         result = await self._client.xlen(self._pending_key)
@@ -217,7 +224,11 @@ class RedisDeliveryBackend(DeliveryBackend):
 
     async def start(self, kit: RoomKit) -> None:
         """Create consumer group and start the worker loop."""
+        if self._worker_task is not None:
+            return
         try:
+            # id="0" reads from the beginning — required so items enqueued
+            # before start() are not silently dropped.
             await self._client.xgroup_create(self._pending_key, self._group, id="0", mkstream=True)
             logger.info("Created consumer group %s", self._group)
         except Exception:
@@ -241,12 +252,12 @@ class RedisDeliveryBackend(DeliveryBackend):
         )
 
     async def close(self) -> None:
-        """Stop the worker loop and close the connection if we own it."""
-        if self._worker_task is not None:
-            self._worker_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._worker_task
-            self._worker_task = None
+        """Stop the worker loop and close the connection if we own it.
+
+        In-flight items remain in the Redis PEL (Pending Entries List)
+        and will be reclaimed by another consumer or on restart.
+        """
+        await self._cancel_worker_task()
 
         # Clear in-process tracking (items remain in Redis PEL for recovery)
         self._entry_ids.clear()

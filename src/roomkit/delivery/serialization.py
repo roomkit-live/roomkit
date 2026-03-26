@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from roomkit.core.delivery import (
+    _STRATEGY_MAP,
     DeliveryStrategy,
     Immediate,
     Queued,
@@ -18,12 +19,6 @@ from roomkit.core.delivery import (
 )
 
 logger = logging.getLogger("roomkit.delivery.serialization")
-
-_STRATEGY_MAP: dict[str, type[DeliveryStrategy]] = {
-    "immediate": Immediate,
-    "wait_for_idle": WaitForIdle,
-    "queued": Queued,
-}
 
 
 def serialize_strategy(strategy: DeliveryStrategy | None) -> dict[str, Any]:

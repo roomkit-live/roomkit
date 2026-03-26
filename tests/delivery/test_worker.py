@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from roomkit.delivery.base import DeliveryItem, DeliveryItemStatus
 from roomkit.delivery.memory import InMemoryDeliveryBackend
-from roomkit.delivery.worker import _fire_delivery_hooks, execute_delivery, run_worker_loop
+from roomkit.delivery.worker import execute_delivery, fire_delivery_hooks, run_worker_loop
 from roomkit.models.enums import HookTrigger
 
 
@@ -134,7 +134,7 @@ class TestDeliveryHooks:
         kit = _mock_kit()
         item = DeliveryItem(room_id="r1", content="test", channel_id="ch1")
 
-        await _fire_delivery_hooks(kit, item, HookTrigger.BEFORE_DELIVER)
+        await fire_delivery_hooks(kit, item, HookTrigger.BEFORE_DELIVER)
 
         kit._build_context.assert_called_once_with("r1")
         kit.hook_engine.run_async_hooks.assert_called_once()

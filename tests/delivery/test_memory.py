@@ -132,3 +132,49 @@ class TestLifecycle:
 
         await backend.close()
         assert backend._worker_task is None
+
+    async def test_double_start_is_noop(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        kit = MagicMock()
+        kit.process_inbound = AsyncMock()
+        kit.get_channel = MagicMock(return_value=None)
+        kit.store.list_bindings = AsyncMock(return_value=[])
+
+        backend = InMemoryDeliveryBackend()
+        await backend.start(kit)
+        first_task = backend._worker_task
+        await backend.start(kit)  # second start
+        assert backend._worker_task is first_task  # same task, not leaked
+        await backend.close()
+
+    async def test_close_re_enqueues_in_flight(self) -> None:
+        backend = InMemoryDeliveryBackend()
+        item = DeliveryItem(room_id="r1", content="hello")
+        await backend.enqueue(item)
+
+        dequeued = await backend.dequeue("w1", timeout=1.0)
+        assert len(dequeued) == 1
+        assert dequeued[0].id in backend._in_flight
+        assert await backend.get_queue_depth() == 0
+
+        await backend.close()
+
+        # Item should be back in queue, not lost
+        assert await backend.get_queue_depth() == 1
+        assert len(backend._in_flight) == 0
+
+    async def test_nack_queue_full_dead_letters(self) -> None:
+        backend = InMemoryDeliveryBackend(max_queue_size=1)
+        # Fill the queue
+        await backend.enqueue(DeliveryItem(room_id="r1", content="filler"))
+        # Dequeue and enqueue another to keep queue full
+        item = DeliveryItem(room_id="r1", content="retry-me", max_retries=5)
+        backend._in_flight[item.id] = item
+
+        await backend.nack(item.id, error="transient")
+
+        # Queue was full, so item should be dead-lettered
+        dl = await backend.get_dead_letter_items()
+        assert len(dl) == 1
+        assert dl[0].error == "queue full on retry"

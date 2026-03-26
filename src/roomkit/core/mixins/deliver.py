@@ -9,8 +9,8 @@ from roomkit.core.delivery import DeliveryContext, DeliveryStrategy, Immediate, 
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.delivery.base import DeliveryItem
 from roomkit.delivery.serialization import serialize_strategy
-from roomkit.models.enums import EventStatus, EventType, HookTrigger
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.delivery.worker import build_delivery_hook_event
+from roomkit.models.enums import EventStatus, HookTrigger
 
 if TYPE_CHECKING:
     from roomkit.delivery.base import DeliveryBackend
@@ -79,23 +79,17 @@ class DeliverMixin(HelpersMixin):
             metadata=metadata,
         )
 
-        # Build hook event
-        hook_meta = {
-            "channel_id": channel_id,
-            "strategy": type(resolved).__name__,
-            **(metadata or {}),
-        }
-        hook_event = RoomEvent(
-            room_id=room_id,
-            source=EventSource(channel_id="system", channel_type="system"),  # type: ignore[arg-type]
-            content=TextContent(body=content),
-            type=EventType.MESSAGE,
-            status=EventStatus.PENDING,
-            visibility="internal",
-            metadata=hook_meta,
-        )
+        strategy_name = serialize_strategy(resolved).get("type", "immediate")
+        extra_meta = dict(metadata) if metadata else {}
 
         # BEFORE_DELIVER
+        hook_event = build_delivery_hook_event(
+            room_id,
+            content,
+            channel_id=channel_id,
+            strategy_name=strategy_name,
+            extra_meta=extra_meta,
+        )
         try:
             room_context = await self._build_context(room_id)
             await self._hook_engine.run_async_hooks(
@@ -113,12 +107,14 @@ class DeliverMixin(HelpersMixin):
             logger.exception("Delivery failed in room %s", room_id)
 
         # AFTER_DELIVER
-        after_meta = {**hook_meta, "error": error}
-        after_event = hook_event.model_copy(
-            update={
-                "status": EventStatus.FAILED if error else EventStatus.DELIVERED,
-                "metadata": after_meta,
-            }
+        after_extra = {**extra_meta, "error": error}
+        after_event = build_delivery_hook_event(
+            room_id,
+            content,
+            channel_id=channel_id,
+            strategy_name=strategy_name,
+            status=EventStatus.FAILED if error else EventStatus.DELIVERED,
+            extra_meta=after_extra,
         )
         try:
             room_context = await self._build_context(room_id)
