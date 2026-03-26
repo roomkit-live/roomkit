@@ -63,7 +63,7 @@ CODEC = {"pcmu": PT_PCMU, "pcma": PT_PCMA, "g722": PT_G722}.get(
 AUTH_USER = os.environ.get("SIP_AUTH_USER", "")
 AUTH_PASS = os.environ.get("SIP_AUTH_PASS", "")
 
-GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
+GEMINI_MODEL = "gemini-3.1-flash-live-preview"
 SYSTEM_PROMPT = (
     "You are a friendly phone assistant making an outbound call. "
     "Greet the person who picks up and be concise and helpful. "

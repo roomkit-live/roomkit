@@ -72,7 +72,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self,
         *,
         api_key: str | SecretStr,
-        model: str = "gemini-2.5-flash-native-audio-preview-12-2025",
+        model: str = "gemini-3.1-flash-live-preview",
     ) -> None:
         try:
             from google import genai as _genai

@@ -49,7 +49,7 @@ RTP_IP = "0.0.0.0"  # nosec B104  — auto-detects per call; set your IP for pro
 RTP_PORT_START = 10000
 RTP_PORT_END = 20000
 
-GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
+GEMINI_MODEL = "gemini-3.1-flash-live-preview"
 SYSTEM_PROMPT = (
     "You are a friendly phone assistant. Be concise and helpful. "
     "You have access to a tool that returns the current date and time — "

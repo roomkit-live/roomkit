@@ -40,7 +40,7 @@ kit = RoomKit()
 # --- Gemini Live provider ---
 provider = GeminiLiveProvider(
     api_key=os.environ.get("GOOGLE_API_KEY", ""),
-    model="gemini-2.5-flash-native-audio-preview-12-2025",
+    model="gemini-3.1-flash-live-preview",
 )
 
 # --- FastRTC transport (WebRTC, passthrough mode) ---

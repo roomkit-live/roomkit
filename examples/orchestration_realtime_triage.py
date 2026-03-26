@@ -32,7 +32,7 @@ Usage:
 
 Environment variables:
     GOOGLE_API_KEY      (required) Google API key
-    GEMINI_MODEL        Gemini model (default: gemini-2.5-flash-native-audio-preview-12-2025)
+    GEMINI_MODEL        Gemini model (default: gemini-3.1-flash-live-preview)
     SIP_HOST            Listening address (default: 0.0.0.0)
     SIP_PORT            SIP port (default: 5060)
     RTP_IP              RTP bind address (default: 0.0.0.0)
@@ -83,7 +83,7 @@ RTP_IP = os.environ.get("RTP_IP", "0.0.0.0")  # nosec B104
 RTP_PORT_START = int(os.environ.get("RTP_PORT_START", "10000"))
 RTP_PORT_END = int(os.environ.get("RTP_PORT_END", "20000"))
 
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-native-audio-preview-12-2025")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-live-preview")
 
 VOICE_TRIAGE = os.environ.get("VOICE_TRIAGE", "Zephyr")
 VOICE_ADVISOR = os.environ.get("VOICE_ADVISOR", "Fenrir")

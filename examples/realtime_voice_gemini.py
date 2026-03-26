@@ -36,7 +36,7 @@ async def main() -> None:
     # --- Gemini Live provider ---
     provider = GeminiLiveProvider(
         api_key=api_key,
-        model="gemini-2.5-flash-native-audio-preview-12-2025",
+        model="gemini-3.1-flash-live-preview",
     )
     transport = WebSocketRealtimeTransport()
 
