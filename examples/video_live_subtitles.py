@@ -4,7 +4,7 @@ Captures webcam video and microphone audio.  STT transcribes your
 speech in French, Claude translates it to English, and subtitles
 are rendered on the video frames in real time.
 
-A local OpenCV window shows the webcam feed with overlays.
+Open http://localhost:8089 in a browser to see the live video feed.
 
 Requires:
     pip install roomkit[local-video,local-audio,deepgram,sherpa-onnx,anthropic]
@@ -15,6 +15,9 @@ Run with:
 """
 
 from __future__ import annotations
+
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import numpy as np
 from shared import run_until_stopped, setup_logging
@@ -33,23 +36,59 @@ from roomkit.video.video_frame import VideoFrame
 logger = setup_logging("subtitles")
 
 
-# -- Display filter: shows processed frames in a cv2 window ---------------
+# -- MJPEG HTTP server: view at http://localhost:8089 ----------------------
+
+_latest_jpeg: bytes = b""
+_jpeg_lock = threading.Lock()
 
 
-class SnapshotFilter(VideoFilterProvider):
-    """Save the latest frame as /tmp/subtitle_frame.jpg (headless-safe).
+class MJPEGHandler(BaseHTTPRequestHandler):
+    """Serve latest frame as MJPEG stream."""
 
-    View the file in any image viewer — it updates every frame at 15fps.
-    """
+    def do_GET(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+        self.end_headers()
+        while True:
+            with _jpeg_lock:
+                jpeg = _latest_jpeg
+            if not jpeg:
+                import time
+
+                time.sleep(0.05)
+                continue
+            try:
+                self.wfile.write(b"--frame\r\n")
+                self.wfile.write(b"Content-Type: image/jpeg\r\n\r\n")
+                self.wfile.write(jpeg)
+                self.wfile.write(b"\r\n")
+                self.wfile.flush()
+            except BrokenPipeError:
+                break
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass  # Suppress HTTP access logs
+
+
+def _start_mjpeg_server(port: int = 8089) -> None:
+    server = HTTPServer(("0.0.0.0", port), MJPEGHandler)  # noqa: S104
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logger.info("MJPEG server at http://localhost:%d", port)
+
+
+class MJPEGFilter(VideoFilterProvider):
+    """Encode each frame to JPEG and push to the MJPEG server."""
 
     def __init__(self) -> None:
         self._cv2: object | None = None
 
     @property
     def name(self) -> str:
-        return "snapshot"
+        return "mjpeg"
 
     def filter(self, frame: VideoFrame, context: FilterContext) -> VideoFrame:
+        global _latest_jpeg  # noqa: PLW0603
         if not frame.is_raw or frame.codec != "raw_rgb24":
             return frame
         if self._cv2 is None:
@@ -58,7 +97,9 @@ class SnapshotFilter(VideoFilterProvider):
             self._cv2 = cv2
         arr = np.frombuffer(frame.data, dtype=np.uint8).reshape(frame.height, frame.width, 3)
         bgr = self._cv2.cvtColor(arr, self._cv2.COLOR_RGB2BGR)
-        self._cv2.imwrite("/tmp/subtitle_frame.jpg", bgr)
+        _, buf = self._cv2.imencode(".jpg", bgr, [self._cv2.IMWRITE_JPEG_QUALITY, 80])
+        with _jpeg_lock:
+            _latest_jpeg = buf.tobytes()
         return frame
 
 
@@ -151,8 +192,9 @@ async def main() -> None:
 
     # --- Channels --------------------------------------------------------
 
-    # Overlay filter renders subtitles, then DisplayFilter shows the result
-    filters = [subtitle_mgr.overlay_filter, SnapshotFilter()]
+    _start_mjpeg_server()
+
+    filters = [subtitle_mgr.overlay_filter, MJPEGFilter()]
 
     voice = VoiceChannel(
         "voice",
@@ -179,13 +221,12 @@ async def main() -> None:
     await kit.attach_channel("subtitle-demo", "voice")
     await kit.attach_channel("subtitle-demo", "video")
 
-    # Join voice + video sessions
     session = await kit.join("subtitle-demo", "voice", participant_id="user")
     await kit.join("subtitle-demo", "video", participant_id="user")
 
-    logger.info("Webcam + mic running. Speak French to see English subtitles.")
-    logger.info("Frames saved to /tmp/subtitle_frame.jpg (open in an image viewer).")
-    logger.info("Terminal shows FR (raw) + EN (translated). Ctrl+C to stop.")
+    logger.info("Open http://localhost:8089 in a browser to see the video.")
+    logger.info("Speak French — English subtitles appear on the video.")
+    logger.info("Ctrl+C to stop.")
 
     async def cleanup() -> None:
         await kit.leave(session)
