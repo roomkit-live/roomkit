@@ -161,6 +161,7 @@ filterwarnings = [
     "ignore:connect_realtime_voice\\(\\) is deprecated:DeprecationWarning",
     "ignore:disconnect_realtime_voice\\(\\) is deprecated:DeprecationWarning",
     "ignore::ResourceWarning",
+    "ignore:'audioop' is deprecated:DeprecationWarning",
 ]
 
 [tool.mypy]
