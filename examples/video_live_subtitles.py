@@ -4,6 +4,8 @@ Captures webcam video and microphone audio.  STT transcribes your
 speech in French, Claude translates it to English, and subtitles
 are rendered on the video frames in real time.
 
+A local OpenCV window shows the webcam feed with overlays.
+
 Requires:
     pip install roomkit[local-video,local-audio,deepgram,sherpa-onnx,anthropic]
 
@@ -14,6 +16,8 @@ Run with:
 
 from __future__ import annotations
 
+import cv2
+import numpy as np
 from shared import run_until_stopped, setup_logging
 from shared.env import require_env
 
@@ -23,9 +27,34 @@ from roomkit.providers.ai.base import AIContext, AIMessage
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.video.pipeline.config import VideoPipelineConfig
+from roomkit.video.pipeline.filter.base import FilterContext, VideoFilterProvider
 from roomkit.video.pipeline.overlay import Overlay, OverlayPosition, SubtitleManager
+from roomkit.video.video_frame import VideoFrame
 
 logger = setup_logging("subtitles")
+
+
+# -- Display filter: shows processed frames in a cv2 window ---------------
+
+
+class DisplayFilter(VideoFilterProvider):
+    """Show processed frames (with overlays) in an OpenCV window."""
+
+    @property
+    def name(self) -> str:
+        return "display"
+
+    def filter(self, frame: VideoFrame, context: FilterContext) -> VideoFrame:
+        if not frame.is_raw or frame.codec != "raw_rgb24":
+            return frame
+        arr = np.frombuffer(frame.data, dtype=np.uint8).reshape(frame.height, frame.width, 3)
+        bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+        cv2.imshow("Live Subtitles", bgr)
+        cv2.waitKey(1)
+        return frame
+
+
+# -- Main ------------------------------------------------------------------
 
 
 async def main() -> None:
@@ -112,6 +141,9 @@ async def main() -> None:
 
     # --- Channels --------------------------------------------------------
 
+    # Overlay filter renders subtitles, then DisplayFilter shows the result
+    filters = [subtitle_mgr.overlay_filter, DisplayFilter()]
+
     voice = VoiceChannel(
         "voice",
         stt=stt,
@@ -121,7 +153,7 @@ async def main() -> None:
     video = VideoChannel(
         "video",
         backend=video_backend,
-        pipeline=VideoPipelineConfig(filters=[subtitle_mgr.overlay_filter]),
+        pipeline=VideoPipelineConfig(filters=filters),
     )
 
     kit.register_channel(voice)
@@ -134,16 +166,17 @@ async def main() -> None:
     # --- Run -------------------------------------------------------------
 
     await kit.create_room(room_id="subtitle-demo")
-    await kit.attach_channel("subtitle-demo", "voice")
     await kit.attach_channel("subtitle-demo", "video")
 
-    # Join voice (creates session + starts mic capture)
+    # Join voice + video sessions
     session = await kit.join("subtitle-demo", "voice", participant_id="user")
+    await kit.join("subtitle-demo", "video", participant_id="user")
 
     logger.info("Speak French to see English subtitles. Ctrl+C to stop.")
 
     async def cleanup() -> None:
         await kit.leave(session)
+        cv2.destroyAllWindows()
 
     await run_until_stopped(kit, cleanup=cleanup)
 
