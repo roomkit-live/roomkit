@@ -17,3 +17,12 @@ __all__ = [
     "run_worker_loop",
     "serialize_strategy",
 ]
+
+# RedisDeliveryBackend is available when redis is installed.
+# Import via: from roomkit.delivery import RedisDeliveryBackend
+try:
+    from roomkit.delivery.redis import RedisDeliveryBackend
+
+    __all__ += ["RedisDeliveryBackend"]
+except ImportError:
+    pass

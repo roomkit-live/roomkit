@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 from roomkit.core.delivery import DeliveryContext
 from roomkit.delivery.base import DeliveryItem
 from roomkit.delivery.serialization import deserialize_strategy
+from roomkit.models.enums import EventStatus, EventType, HookTrigger
+from roomkit.models.event import EventSource, RoomEvent, TextContent
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -21,11 +23,49 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.delivery.worker")
 
 
+async def _fire_delivery_hooks(
+    kit: RoomKit,
+    item: DeliveryItem,
+    trigger: HookTrigger,
+    *,
+    error: str | None = None,
+) -> None:
+    """Fire BEFORE_DELIVER or AFTER_DELIVER hooks for a delivery item."""
+    meta = {
+        "channel_id": item.channel_id,
+        "strategy": item.strategy.get("type", "immediate"),
+        "delivery_item_id": item.id,
+        **item.metadata,
+    }
+    if error is not None:
+        meta["error"] = error
+
+    status = EventStatus.PENDING
+    if trigger == HookTrigger.AFTER_DELIVER:
+        status = EventStatus.FAILED if error else EventStatus.DELIVERED
+
+    hook_event = RoomEvent(
+        room_id=item.room_id,
+        source=EventSource(channel_id="system", channel_type="system"),  # type: ignore[arg-type]
+        content=TextContent(body=item.content),
+        type=EventType.MESSAGE,
+        status=status,
+        visibility="internal",
+        metadata=meta,
+    )
+
+    try:
+        room_context = await kit._build_context(item.room_id)  # noqa: SLF001
+        await kit.hook_engine.run_async_hooks(item.room_id, trigger, hook_event, room_context)
+    except Exception:
+        logger.debug("%s hook failed for item %s", trigger.value, item.id, exc_info=True)
+
+
 async def execute_delivery(kit: RoomKit, item: DeliveryItem) -> None:
     """Execute a single delivery item against *kit*.
 
-    Deserializes the strategy from the item, builds a
-    ``DeliveryContext``, and calls ``strategy.deliver(ctx)``.
+    Deserializes the strategy, fires ``BEFORE_DELIVER`` / ``AFTER_DELIVER``
+    hooks, and calls ``strategy.deliver(ctx)``.
     """
     strategy = deserialize_strategy(item.strategy)
     ctx = DeliveryContext(
@@ -35,7 +75,17 @@ async def execute_delivery(kit: RoomKit, item: DeliveryItem) -> None:
         channel_id=item.channel_id,
         metadata=item.metadata,
     )
-    await strategy.deliver(ctx)
+
+    await _fire_delivery_hooks(kit, item, HookTrigger.BEFORE_DELIVER)
+
+    error: str | None = None
+    try:
+        await strategy.deliver(ctx)
+    except Exception as exc:
+        error = str(exc)
+        raise
+    finally:
+        await _fire_delivery_hooks(kit, item, HookTrigger.AFTER_DELIVER, error=error)
 
 
 async def run_worker_loop(
