@@ -72,17 +72,19 @@ async def main() -> None:
         ),
     )
 
+    example_log = logging.getLogger("example")
+
     @kit.hook(HookTrigger.BEFORE_DELIVER, execution=HookExecution.ASYNC)
     async def on_before(event: RoomEvent, ctx: RoomContext) -> None:
-        print(f"\033[33m[before_deliver] {event.content}\033[0m")
+        example_log.info("before_deliver: %s", event.content)
 
     @kit.hook(HookTrigger.AFTER_DELIVER, execution=HookExecution.ASYNC)
     async def on_after(event: RoomEvent, ctx: RoomContext) -> None:
         error = event.metadata.get("error")
         if error:
-            print(f"\033[31m[after_deliver] FAILED: {error}\033[0m")
+            example_log.error("after_deliver FAILED: %s", error)
         else:
-            print("\033[32m[after_deliver] OK\033[0m")
+            example_log.info("after_deliver OK")
 
     cli = CLIChannel("cli")
     kit.register_channel(cli)
@@ -92,7 +94,7 @@ async def main() -> None:
         await kit.attach_channel("demo", "cli")
 
         depth = await backend.get_queue_depth()
-        print(f"Queue depth at start: {depth}")
+        example_log.info("Queue depth at start: %d", depth)
 
         await cli.run(
             kit,
