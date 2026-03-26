@@ -16,7 +16,6 @@ Run with:
 
 from __future__ import annotations
 
-import cv2
 import numpy as np
 from shared import run_until_stopped, setup_logging
 from shared.env import require_env
@@ -37,20 +36,29 @@ logger = setup_logging("subtitles")
 # -- Display filter: shows processed frames in a cv2 window ---------------
 
 
-class DisplayFilter(VideoFilterProvider):
-    """Show processed frames (with overlays) in an OpenCV window."""
+class SnapshotFilter(VideoFilterProvider):
+    """Save the latest frame as /tmp/subtitle_frame.jpg (headless-safe).
+
+    View the file in any image viewer — it updates every frame at 15fps.
+    """
+
+    def __init__(self) -> None:
+        self._cv2: object | None = None
 
     @property
     def name(self) -> str:
-        return "display"
+        return "snapshot"
 
     def filter(self, frame: VideoFrame, context: FilterContext) -> VideoFrame:
         if not frame.is_raw or frame.codec != "raw_rgb24":
             return frame
+        if self._cv2 is None:
+            import cv2
+
+            self._cv2 = cv2
         arr = np.frombuffer(frame.data, dtype=np.uint8).reshape(frame.height, frame.width, 3)
-        bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-        cv2.imshow("Live Subtitles", bgr)
-        cv2.waitKey(1)
+        bgr = self._cv2.cvtColor(arr, self._cv2.COLOR_RGB2BGR)
+        self._cv2.imwrite("/tmp/subtitle_frame.jpg", bgr)
         return frame
 
 
@@ -144,7 +152,7 @@ async def main() -> None:
     # --- Channels --------------------------------------------------------
 
     # Overlay filter renders subtitles, then DisplayFilter shows the result
-    filters = [subtitle_mgr.overlay_filter, DisplayFilter()]
+    filters = [subtitle_mgr.overlay_filter, SnapshotFilter()]
 
     voice = VoiceChannel(
         "voice",
@@ -175,14 +183,12 @@ async def main() -> None:
     session = await kit.join("subtitle-demo", "voice", participant_id="user")
     await kit.join("subtitle-demo", "video", participant_id="user")
 
-    logger.info(
-        "Webcam + mic running. Speak French — English subtitles appear on the video window."
-    )
-    logger.info("Terminal shows FR (raw STT) + EN (translated). Ctrl+C to stop.")
+    logger.info("Webcam + mic running. Speak French to see English subtitles.")
+    logger.info("Frames saved to /tmp/subtitle_frame.jpg (open in an image viewer).")
+    logger.info("Terminal shows FR (raw) + EN (translated). Ctrl+C to stop.")
 
     async def cleanup() -> None:
         await kit.leave(session)
-        cv2.destroyAllWindows()
 
     await run_until_stopped(kit, cleanup=cleanup)
 
