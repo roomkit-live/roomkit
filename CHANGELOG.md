@@ -5,6 +5,12 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Configurable jitter buffer for SIPVoiceBackend** — new constructor parameters `jitter_capacity`, `jitter_prefetch`, and `skip_audio_gaps` allow tuning the RTP jitter buffer per deployment. Defaults remain unchanged (capacity 32, prefetch 0, skip gaps enabled).
+
 ## [0.7.0a4] — 2026-03-25
 
 ### Added
