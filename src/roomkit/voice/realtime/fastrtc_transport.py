@@ -169,9 +169,9 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc,unused-ignor
         if not self.channel:
             return
 
-        from roomkit.voice.backends.fastrtc import _pcm16_to_mulaw
+        from roomkit.voice.backends._mulaw import pcm16_to_mulaw
 
-        mulaw = _pcm16_to_mulaw(audio)
+        mulaw = pcm16_to_mulaw(audio)
         payload = base64.b64encode(mulaw).decode("utf-8")
         self.channel.send(
             json.dumps(
