@@ -292,10 +292,22 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         return callback
 
     def on_call_disconnected(self, callback: CallCallback) -> CallCallback:
-        """Register a callback for remote BYE (call hangup)."""
+        """Register a callback for remote BYE (call hangup).
+
+        In SIP, call disconnect and client disconnect are the same event
+        (a BYE terminates the dialog).  Callbacks registered here and via
+        :meth:`on_client_disconnected` share the same list and are all
+        fired on any disconnect.  Do not register the same function via
+        both methods.
+        """
         self._disconnect_callbacks.append(wrap_async(callback))
         return callback
 
     def on_client_disconnected(self, callback: TransportDisconnectCallback) -> None:
-        """Register callback for client disconnection (base-class API)."""
+        """Register callback for client disconnection (base-class API).
+
+        In SIP, this is equivalent to :meth:`on_call_disconnected` — both
+        register into the same callback list.  Fired on remote BYE or
+        RTP inactivity timeout.
+        """
         self._disconnect_callbacks.append(wrap_async(callback))

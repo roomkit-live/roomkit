@@ -112,7 +112,21 @@ class SIPCallingMixin:
 
         call.ringing()
         call.accept(call_session.sdp_answer)
-        await call_session.start()
+        try:
+            await call_session.start()
+        except Exception:
+            logger.exception(
+                "RTP session start failed for call %s — tearing down",
+                call.call_id,
+            )
+            with contextlib.suppress(Exception):
+                await call_session.close()
+            self._release_rtp_port(rtp_port)
+            # 200 OK already sent; BYE is the correct teardown mechanism
+            if self._uac is not None:
+                with contextlib.suppress(Exception):
+                    self._uac.send_bye(call.dialog, call.source_addr)
+            return
 
         # Store per-session codec info for sample rate awareness
         codec_rate = call_session.codec_sample_rate  # 16000 for G.722, 8000 for G.711
@@ -311,11 +325,21 @@ class SIPCallingMixin:
                 )
             )
 
+        # Close RTP session, release the port, then fire disconnect callbacks.
+        # Wrapped in a task because _handle_bye is called synchronously by UAS.
+        task = asyncio.get_running_loop().create_task(
+            self._finalize_bye(session_id, call_session, session),
+            name=f"sip_bye:{session_id}",
+        )
+        task.add_done_callback(self._log_task_exception)
+
+    async def _finalize_bye(
+        self, session_id: str, call_session: Any, session: VoiceSession | None
+    ) -> None:
+        """Await call_session close, then clean up state and fire callbacks."""
         if call_session is not None:
-            task = asyncio.get_running_loop().create_task(
-                call_session.close(), name=f"sip_close:{session_id}"
-            )
-            task.add_done_callback(self._log_task_exception)
+            with contextlib.suppress(Exception):
+                await call_session.close()
 
         self._cleanup_session(session_id)
 
@@ -427,6 +451,9 @@ class SIPCallingMixin:
             self._uac.remove_call(out_call.call_id)
             raise
 
+        # Map call_id early so re-INVITEs arriving during RTP setup are
+        # routed to _handle_reinvite instead of creating a duplicate session.
+        # Overwritten with the canonical session_id after session creation.
         self._call_to_session[out_call.call_id] = out_call.call_id
 
         try:

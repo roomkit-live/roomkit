@@ -805,3 +805,120 @@ class TestHandleReInvite:
         reinvite_call.accept.assert_called_once_with(mock_call_session.sdp_answer)
         # The pending dict must be cleared
         assert session_id not in backend._pending_reinvite_calls
+
+
+# ---------------------------------------------------------------------------
+# Fix #1: call_session.start() failure in inbound path
+# ---------------------------------------------------------------------------
+
+
+class TestHandleInviteStartFailure:
+    """Verify cleanup when call_session.start() raises after call.accept()."""
+
+    async def test_start_failure_releases_port(
+        self, backend: Any, mock_call_session: MagicMock
+    ) -> None:
+        mock_call_session.start.side_effect = RuntimeError("bind failed")
+        initial_ports = len(backend._available_ports)
+
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+
+        # Port returned to pool, no session created
+        assert len(backend._available_ports) == initial_ports
+        assert len(backend._session_states) == 0
+
+    async def test_start_failure_closes_call_session(
+        self, backend: Any, mock_call_session: MagicMock
+    ) -> None:
+        mock_call_session.start.side_effect = RuntimeError("bind failed")
+
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+
+        mock_call_session.close.assert_awaited_once()
+
+    async def test_start_failure_does_not_fire_callbacks(
+        self, backend: Any, mock_call_session: MagicMock
+    ) -> None:
+        mock_call_session.start.side_effect = RuntimeError("bind failed")
+        calls_received: list[Any] = []
+        backend.on_call(lambda s: calls_received.append(s))
+
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+
+        assert len(calls_received) == 0
+
+    async def test_start_failure_sends_bye(
+        self, backend: Any, mock_call_session: MagicMock
+    ) -> None:
+        mock_call_session.start.side_effect = RuntimeError("bind failed")
+        backend._uac = MagicMock()
+
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+
+        backend._uac.send_bye.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Fix #2: _handle_bye awaits close before cleanup
+# ---------------------------------------------------------------------------
+
+
+class TestHandleByeOrdering:
+    """Verify that call_session.close() completes before port release."""
+
+    async def test_bye_closes_before_cleanup(
+        self, backend: Any, mock_call_session: MagicMock
+    ) -> None:
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+
+        order: list[str] = []
+        original_close = mock_call_session.close
+
+        async def tracked_close() -> None:
+            order.append("close")
+            await original_close()
+
+        mock_call_session.close = tracked_close
+
+        original_cleanup = backend._cleanup_session
+
+        def tracked_cleanup(sid: str) -> None:
+            order.append("cleanup")
+            original_cleanup(sid)
+
+        backend._cleanup_session = tracked_cleanup
+
+        backend._handle_bye(call, MagicMock())
+        await asyncio.sleep(0.05)
+
+        assert order == ["close", "cleanup"]
+
+    async def test_bye_fires_disconnect_after_close(
+        self, backend: Any, mock_call_session: MagicMock
+    ) -> None:
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+
+        order: list[str] = []
+        original_close = mock_call_session.close
+
+        async def tracked_close() -> None:
+            order.append("close")
+            await original_close()
+
+        mock_call_session.close = tracked_close
+
+        def disconnect_cb(session: Any) -> None:
+            order.append("disconnect_cb")
+
+        backend.on_call_disconnected(disconnect_cb)
+
+        backend._handle_bye(call, MagicMock())
+        await asyncio.sleep(0.05)
+
+        assert order == ["close", "disconnect_cb"]

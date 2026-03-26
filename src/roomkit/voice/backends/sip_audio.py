@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -227,10 +228,8 @@ class SIPAudioMixin:
                     call_session = st.call_session
 
                     if call_session is not None:
-                        task = asyncio.get_running_loop().create_task(
-                            call_session.close(), name=f"sip_close:{sid}"
-                        )
-                        task.add_done_callback(self._log_task_exception)
+                        with contextlib.suppress(Exception):
+                            await call_session.close()
 
                     self._cleanup_session(sid)
 
