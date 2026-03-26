@@ -166,6 +166,7 @@ async def main() -> None:
     # --- Run -------------------------------------------------------------
 
     await kit.create_room(room_id="subtitle-demo")
+    await kit.attach_channel("subtitle-demo", "voice")
     await kit.attach_channel("subtitle-demo", "video")
 
     # Join voice + video sessions
