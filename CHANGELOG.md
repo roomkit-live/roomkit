@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`delivery_backend.py` example** — InMemory backend with mock AI (no external deps).
 - **`delivery_redis.py` example** — Redis backend with Anthropic AI.
 
+- **Rich video overlays** — `OverlayFilter` renders dynamic content (text, images, tables) onto live video frames. Plugs into `VideoPipelineConfig.filters` as a `VideoFilterProvider`.
+- **`TextOverlayRenderer`** — OpenCV-based text overlay with multi-line support, cached patch rendering, and 9 named positions + custom x/y. No extra dependencies.
+- **`ImageOverlayRenderer`** — blit PNG/JPEG images onto frames with alpha blending, optional resize, and caching.
+- **`RichOverlayRenderer`** — Pillow-based styled text and table rendering. Requires `pip install roomkit[video-overlay]`.
+- **`SubtitleManager`** — wires `ON_TRANSCRIPTION` hook to an overlay for live subtitles. Optional `translate_fn` for real-time translation (e.g. French speech → English subtitles).
+- **`subtitle_overlay()`** — one-liner factory for live subtitles on video.
+- **`video_live_subtitles.py` example** — demonstrates the full subtitle + overlay system.
+
 ### Changed
 
 - **`orchestration_supervisor_parallel_tasks.py`** — updated to use `auto_delegate=True, refine_task=False` (was `auto_delegate=False`).
