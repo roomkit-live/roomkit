@@ -222,7 +222,10 @@ async def main() -> None:
     await kit.attach_channel("subtitle-demo", "video")
 
     session = await kit.join("subtitle-demo", "voice", participant_id="user")
-    await kit.join("subtitle-demo", "video", participant_id="user")
+    video_session = await kit.join("subtitle-demo", "video", participant_id="user")
+
+    # Start webcam capture (connect() creates the session, start_capture fires the frames)
+    await video_backend.start_capture(video_session)
 
     logger.info("Open http://localhost:8089 in a browser to see the video.")
     logger.info("Speak French — English subtitles appear on the video.")
