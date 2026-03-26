@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from roomkit.video.pipeline.filter.base import FilterContext, VideoFilterProvider
 from roomkit.video.pipeline.overlay.base import Overlay, OverlayRenderer, import_numpy
 from roomkit.video.video_frame import VideoFrame
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger("roomkit.video.pipeline.overlay")
 

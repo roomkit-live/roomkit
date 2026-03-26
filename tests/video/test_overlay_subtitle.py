@@ -129,6 +129,9 @@ class TestSubtitleManager:
         mgr = SubtitleManager(kit, overlay_filter=_mock_filter())
         _, hook_fn = kit._registered_hooks[0]
 
+        # Set initial text, then fire empty event — should remain unchanged
+        mgr.set_text("Previous subtitle")
+
         event = MagicMock()
         event.text = ""
         event.content = None
@@ -136,7 +139,7 @@ class TestSubtitleManager:
 
         ov = mgr.overlay_filter.get_overlay(SUBTITLE_OVERLAY_ID)
         assert ov is not None
-        assert ov.content == ""
+        assert ov.content == "Previous subtitle"
 
     def test_clear(self) -> None:
         kit = _mock_kit()

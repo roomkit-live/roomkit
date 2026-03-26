@@ -3,7 +3,7 @@
 Demonstrates the overlay system: user speaks French, STT transcribes,
 AI translates to English, subtitles rendered on the video frame.
 
-Uses mock providers — no external services required.
+Requires ``pip install roomkit[local-video]`` for OpenCV text rendering.
 
 Run with:
     uv run python examples/video_live_subtitles.py

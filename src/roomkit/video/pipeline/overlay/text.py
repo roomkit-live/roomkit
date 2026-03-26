@@ -119,15 +119,18 @@ class TextOverlayRenderer(OverlayRenderer):
         patch_h = total_h + padding * 2
         patch = np.zeros((patch_h, patch_w, 4), dtype=np.uint8)
 
-        # Background (RGB order in the RGBA patch)
+        # Background fill — RGB order, blitted as-is by blit_rgba()
         bg_color = style.get("bg_color")
         if bg_color is not None:
             r, g, b = bg_color
             patch[:, :] = [r, g, b, 200]
 
-        # Draw text lines (pass RGB directly — no BGR conversion needed
-        # because the patch is RGBA and we blit it as-is via blit_rgba)
+        # OpenCV putText treats channels as BGR regardless of the array's
+        # semantic meaning.  Swap R↔B so the written pixels are RGB in
+        # the patch, matching the background and blit_rgba() expectations.
         color = style["color"]
+        r, g, b = color
+        bgr_color = (b, g, r, 255)
         y_cursor = padding
         for line, (_tw, th, baseline) in zip(lines, line_metrics, strict=True):
             y_cursor += th
@@ -137,7 +140,7 @@ class TextOverlayRenderer(OverlayRenderer):
                 (padding, y_cursor),
                 self._font,
                 font_scale,
-                (*color, 255),
+                bgr_color,
                 thickness,
                 cv2.LINE_AA,
             )

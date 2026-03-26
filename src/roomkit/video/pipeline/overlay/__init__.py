@@ -6,7 +6,11 @@ from roomkit.video.pipeline.overlay.base import Overlay, OverlayPosition, Overla
 from roomkit.video.pipeline.overlay.filter import OverlayFilter
 from roomkit.video.pipeline.overlay.image import ImageOverlayRenderer
 from roomkit.video.pipeline.overlay.mock import MockOverlayRenderer
-from roomkit.video.pipeline.overlay.subtitle import SubtitleManager, subtitle_overlay
+from roomkit.video.pipeline.overlay.subtitle import (
+    SUBTITLE_OVERLAY_ID,
+    SubtitleManager,
+    subtitle_overlay,
+)
 from roomkit.video.pipeline.overlay.text import TextOverlayRenderer
 
 __all__ = [
@@ -16,6 +20,7 @@ __all__ = [
     "OverlayFilter",
     "OverlayPosition",
     "OverlayRenderer",
+    "SUBTITLE_OVERLAY_ID",
     "SubtitleManager",
     "TextOverlayRenderer",
     "subtitle_overlay",
