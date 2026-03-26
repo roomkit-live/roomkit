@@ -7,10 +7,11 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 from roomkit.video.pipeline.filter.base import FilterContext, VideoFilterProvider
-from roomkit.video.pipeline.overlay.base import Overlay, OverlayRenderer
+from roomkit.video.pipeline.overlay.base import Overlay, OverlayRenderer, import_numpy
+from roomkit.video.video_frame import VideoFrame
 
 if TYPE_CHECKING:
-    from roomkit.video.video_frame import VideoFrame
+    pass
 
 logger = logging.getLogger("roomkit.video.pipeline.overlay")
 
@@ -46,7 +47,8 @@ class OverlayFilter(VideoFilterProvider):
 
     def register_renderer(self, renderer: OverlayRenderer) -> None:
         """Register a renderer for an overlay type."""
-        self._renderers[renderer.overlay_type] = renderer
+        with self._lock:
+            self._renderers[renderer.overlay_type] = renderer
 
     def add_overlay(self, overlay: Overlay) -> None:
         """Add an overlay.  Replaces any existing overlay with the same ID."""
@@ -61,7 +63,7 @@ class OverlayFilter(VideoFilterProvider):
                 return
             for key, val in kwargs.items():
                 if hasattr(ov, key) and key != "id":
-                    object.__setattr__(ov, key, val)
+                    setattr(ov, key, val)
             ov.version += 1
             renderer = self._renderers.get(ov.overlay_type)
             if renderer is not None:
@@ -77,7 +79,7 @@ class OverlayFilter(VideoFilterProvider):
                     renderer.invalidate_cache(overlay_id)
 
     def get_overlay(self, overlay_id: str) -> Overlay | None:
-        """Get an overlay by ID (snapshot, not a live reference)."""
+        """Get an overlay by ID (returns the live reference)."""
         with self._lock:
             return self._overlays.get(overlay_id)
 
@@ -91,28 +93,24 @@ class OverlayFilter(VideoFilterProvider):
             if not self._overlays:
                 return frame
             sorted_overlays = sorted(self._overlays.values(), key=lambda o: o.z_order)
+            renderers = dict(self._renderers)
 
         if self._np is None:
-            import numpy
-
-            self._np = numpy
+            self._np = import_numpy()
         np = self._np
 
         w, h = frame.width, frame.height
         arr = np.frombuffer(frame.data, dtype=np.uint8).reshape(h, w, 3).copy()
 
         for overlay in sorted_overlays:
-            renderer = self._renderers.get(overlay.overlay_type)
+            renderer = renderers.get(overlay.overlay_type)
             if renderer is None:
                 continue
             arr = renderer.render(arr, overlay, w, h)
 
-        # Publish active overlay IDs to FilterContext for downstream filters
         context.metadata["overlay_ids"] = [o.id for o in sorted_overlays]
 
-        from roomkit.video.video_frame import VideoFrame as _VideoFrame
-
-        return _VideoFrame(
+        return VideoFrame(
             data=arr.tobytes(),
             codec="raw_rgb24",
             width=w,
@@ -125,8 +123,9 @@ class OverlayFilter(VideoFilterProvider):
     def reset(self) -> None:
         with self._lock:
             self._overlays.clear()
-        for renderer in self._renderers.values():
-            renderer.invalidate_cache("")
+            renderers = list(self._renderers.values())
+        for renderer in renderers:
+            renderer.clear_cache()
 
     def close(self) -> None:
         self.reset()

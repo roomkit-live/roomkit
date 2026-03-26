@@ -141,6 +141,41 @@ class TestOverlayManagement:
         assert renderer.render_count == 1
 
 
+class TestComputePosition:
+    def test_all_nine_positions(self) -> None:
+        from roomkit.video.pipeline.overlay.base import OverlayPosition, compute_position
+
+        expected = {
+            OverlayPosition.TOP_LEFT: (10, 10),
+            OverlayPosition.TOP_CENTER: (270, 10),
+            OverlayPosition.TOP_RIGHT: (530, 10),
+            OverlayPosition.CENTER_LEFT: (10, 225),
+            OverlayPosition.CENTER: (270, 225),
+            OverlayPosition.CENTER_RIGHT: (530, 225),
+            OverlayPosition.BOTTOM_LEFT: (10, 440),
+            OverlayPosition.BOTTOM_CENTER: (270, 440),
+            OverlayPosition.BOTTOM_RIGHT: (530, 440),
+        }
+        for pos, (ex, ey) in expected.items():
+            x, y = compute_position(pos, 640, 480, 100, 30, padding=10)
+            assert (x, y) == (ex, ey), f"{pos}: got ({x},{y}), expected ({ex},{ey})"
+
+    def test_custom_position(self) -> None:
+        from roomkit.video.pipeline.overlay.base import OverlayPosition, compute_position
+
+        x, y = compute_position(
+            OverlayPosition.CUSTOM, 640, 480, 100, 30, custom_x=42, custom_y=99
+        )
+        assert (x, y) == (42, 99)
+
+    def test_clamps_to_zero(self) -> None:
+        from roomkit.video.pipeline.overlay.base import OverlayPosition, compute_position
+
+        x, y = compute_position(OverlayPosition.BOTTOM_RIGHT, 50, 50, 200, 200, padding=10)
+        assert x >= 0
+        assert y >= 0
+
+
 class TestFilterContextMetadata:
     def test_publishes_overlay_ids(self) -> None:
         renderer = MockOverlayRenderer("text")

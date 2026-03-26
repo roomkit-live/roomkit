@@ -7,10 +7,17 @@ Requires ``Pillow>=10.0``::
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from roomkit.video.pipeline.overlay.base import Overlay, OverlayRenderer, compute_position
+from roomkit.video.pipeline.overlay.base import (
+    Overlay,
+    OverlayRenderer,
+    blit_rgba,
+    compute_position,
+    import_numpy,
+)
 
 if TYPE_CHECKING:
     import numpy as np
@@ -57,10 +64,10 @@ class RichOverlayRenderer(OverlayRenderer):
                 "Install with: pip install roomkit[video-overlay]"
             ) from exc
 
-        self._Image = Image
-        self._ImageDraw = ImageDraw
-        self._ImageFont = ImageFont
-        self._np: Any = None
+        self._image_cls = Image
+        self._draw_cls = ImageDraw
+        self._font_cls = ImageFont
+        self._np = import_numpy()
         # Cache: overlay_id → (version, rgba_array, w, h)
         self._cache: dict[str, tuple[int, Any, int, int]] = {}
 
@@ -99,24 +106,16 @@ class RichOverlayRenderer(OverlayRenderer):
             padding=padding,
         )
 
-        return self._blit(canvas, patch, x, y, overlay.opacity)
+        return blit_rgba(canvas, patch, x, y, overlay.opacity, self._np)
 
     def invalidate_cache(self, overlay_id: str) -> None:
-        if overlay_id:
-            self._cache.pop(overlay_id, None)
-        else:
-            self._cache.clear()
+        self._cache.pop(overlay_id, None)
+
+    def clear_cache(self) -> None:
+        self._cache.clear()
 
     def _render_patch(self, content: str, style: dict[str, Any]) -> tuple[Any, int, int]:
         """Render content to an RGBA numpy array."""
-        if self._np is None:
-            import numpy
-
-            self._np = numpy
-
-        import json
-
-        # Try to parse as table
         try:
             data = json.loads(content)
             if isinstance(data, dict) and "headers" in data and "rows" in data:
@@ -128,10 +127,7 @@ class RichOverlayRenderer(OverlayRenderer):
 
     def _render_text(self, text: str, style: dict[str, Any]) -> tuple[Any, int, int]:
         """Render styled multi-line text."""
-        image_cls = self._Image
-        draw_cls = self._ImageDraw
         np = self._np
-
         width = style["width"]
         font = self._get_font(style["font_size"])
         padding = style["padding"]
@@ -141,8 +137,8 @@ class RichOverlayRenderer(OverlayRenderer):
         line_h = style["font_size"] + line_spacing
         height = len(lines) * line_h + padding * 2
 
-        img = image_cls.new("RGBA", (width, height), (*style["bg_color"], 200))
-        draw = draw_cls.Draw(img)
+        img = self._image_cls.new("RGBA", (width, height), (*style["bg_color"], 200))
+        draw = self._draw_cls.Draw(img)
 
         y_cursor = padding
         for line in lines:
@@ -158,10 +154,7 @@ class RichOverlayRenderer(OverlayRenderer):
 
     def _render_table(self, data: dict[str, Any], style: dict[str, Any]) -> tuple[Any, int, int]:
         """Render a simple table with headers and rows."""
-        image_cls = self._Image
-        draw_cls = self._ImageDraw
         np = self._np
-
         headers = data["headers"]
         rows = data["rows"]
         font = self._get_font(style["font_size"])
@@ -171,8 +164,8 @@ class RichOverlayRenderer(OverlayRenderer):
         width = col_w * len(headers)
         height = row_h * (len(rows) + 1) + padding
 
-        img = image_cls.new("RGBA", (width, height), (*style["bg_color"], 200))
-        draw = draw_cls.Draw(img)
+        img = self._image_cls.new("RGBA", (width, height), (*style["bg_color"], 200))
+        draw = self._draw_cls.Draw(img)
 
         # Header row
         header_bg = (*style["table_header_bg"], 220)
@@ -201,36 +194,8 @@ class RichOverlayRenderer(OverlayRenderer):
         return np.array(img, dtype=np.uint8), width, height
 
     def _get_font(self, size: int) -> Any:
-        """Get a Pillow font.  Falls back to default if TrueType unavailable."""
+        """Get a Pillow font.  Falls back to default if unavailable."""
         try:
-            return self._ImageFont.truetype("DejaVuSans.ttf", size)
+            return self._font_cls.truetype("DejaVuSans.ttf", size)
         except (OSError, AttributeError):
-            return self._ImageFont.load_default()
-
-    def _blit(
-        self,
-        canvas: np.ndarray,
-        patch: Any,
-        x: int,
-        y: int,
-        opacity: float,
-    ) -> np.ndarray:
-        """Blit RGBA patch onto RGB canvas."""
-        np = self._np
-        ch, cw = canvas.shape[:2]
-        ph, pw = patch.shape[:2]
-
-        x1, y1 = max(0, x), max(0, y)
-        x2 = min(cw, x + pw)
-        y2 = min(ch, y + ph)
-        if x1 >= x2 or y1 >= y2:
-            return canvas
-
-        px1, py1 = x1 - x, y1 - y
-        region = patch[py1 : py1 + (y2 - y1), px1 : px1 + (x2 - x1)]
-        alpha = region[:, :, 3:4].astype(np.float32) / 255.0 * opacity
-        rgb = region[:, :, :3].astype(np.float32)
-
-        bg = canvas[y1:y2, x1:x2].astype(np.float32)
-        canvas[y1:y2, x1:x2] = ((1.0 - alpha) * bg + alpha * rgb).astype(np.uint8)
-        return canvas
+            return self._font_cls.load_default()

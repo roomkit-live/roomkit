@@ -38,3 +38,6 @@ class MockOverlayRenderer(OverlayRenderer):
 
     def invalidate_cache(self, overlay_id: str) -> None:
         self.invalidated.append(overlay_id)
+
+    def clear_cache(self) -> None:
+        self.invalidated.clear()

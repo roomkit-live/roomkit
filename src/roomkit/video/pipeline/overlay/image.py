@@ -5,35 +5,19 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from roomkit.video.pipeline.overlay.base import Overlay, OverlayRenderer, compute_position
+from roomkit.video.pipeline.overlay.base import (
+    Overlay,
+    OverlayRenderer,
+    blit_rgba,
+    compute_position,
+    import_cv2,
+    import_numpy,
+)
 
 if TYPE_CHECKING:
     import numpy as np
 
 logger = logging.getLogger("roomkit.video.pipeline.overlay.image")
-
-
-def _import_cv2() -> Any:
-    try:
-        import cv2
-
-        return cv2
-    except ImportError as exc:
-        raise ImportError(
-            "opencv is required for ImageOverlayRenderer. "
-            "Install with: pip install roomkit[local-video]"
-        ) from exc
-
-
-def _import_numpy() -> Any:
-    try:
-        import numpy as np_mod
-
-        return np_mod
-    except ImportError as exc:
-        raise ImportError(
-            "numpy is required for ImageOverlayRenderer. Install with: pip install roomkit[video]"
-        ) from exc
 
 
 class ImageOverlayRenderer(OverlayRenderer):
@@ -44,14 +28,17 @@ class ImageOverlayRenderer(OverlayRenderer):
     alpha blending for PNG images with transparency.
 
     Style keys:
-        width (int | None): Target width (aspect-ratio preserved).
-        height (int | None): Target height (aspect-ratio preserved).
+        width (int | None): Target width. If only width is set, height
+            is computed to preserve aspect ratio.
+        height (int | None): Target height. If only height is set, width
+            is computed to preserve aspect ratio. If both are set, the
+            image is stretched to fit.
         padding (int): Padding from edge. Default 10.
     """
 
     def __init__(self) -> None:
-        self._cv2 = _import_cv2()
-        self._np = _import_numpy()
+        self._cv2 = import_cv2()
+        self._np = import_numpy()
         # Cache: overlay_id → (version, decoded_rgba, w, h)
         self._cache: dict[str, tuple[int, Any, int, int]] = {}
 
@@ -91,13 +78,13 @@ class ImageOverlayRenderer(OverlayRenderer):
             padding=padding,
         )
 
-        return self._blit(canvas, img_rgba, x, y, overlay.opacity)
+        return blit_rgba(canvas, img_rgba, x, y, overlay.opacity, self._np)
 
     def invalidate_cache(self, overlay_id: str) -> None:
-        if overlay_id:
-            self._cache.pop(overlay_id, None)
-        else:
-            self._cache.clear()
+        self._cache.pop(overlay_id, None)
+
+    def clear_cache(self) -> None:
+        self._cache.clear()
 
     def _decode(self, data: bytes, style: dict[str, Any]) -> tuple[Any | None, int, int]:
         """Decode image bytes to RGBA numpy array."""
@@ -130,31 +117,3 @@ class ImageOverlayRenderer(OverlayRenderer):
             img = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
 
         return img, img.shape[1], img.shape[0]
-
-    def _blit(
-        self,
-        canvas: np.ndarray,
-        img_rgba: Any,
-        x: int,
-        y: int,
-        opacity: float,
-    ) -> np.ndarray:
-        """Blit RGBA image onto RGB canvas with alpha blending."""
-        np = self._np
-        ch, cw = canvas.shape[:2]
-        ih, iw = img_rgba.shape[:2]
-
-        x1, y1 = max(0, x), max(0, y)
-        x2 = min(cw, x + iw)
-        y2 = min(ch, y + ih)
-        if x1 >= x2 or y1 >= y2:
-            return canvas
-
-        px1, py1 = x1 - x, y1 - y
-        region = img_rgba[py1 : py1 + (y2 - y1), px1 : px1 + (x2 - x1)]
-        alpha = region[:, :, 3:4].astype(np.float32) / 255.0 * opacity
-        rgb = region[:, :, :3].astype(np.float32)
-
-        bg = canvas[y1:y2, x1:x2].astype(np.float32)
-        canvas[y1:y2, x1:x2] = ((1.0 - alpha) * bg + alpha * rgb).astype(np.uint8)
-        return canvas

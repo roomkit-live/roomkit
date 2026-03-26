@@ -108,6 +108,22 @@ class TestSubtitleManager:
         assert ov is not None
         assert ov.content == "Line 2\nLine 3"
 
+    async def test_hook_reads_content_body_fallback(self) -> None:
+        """When event.text is empty, falls back to event.content.body."""
+        kit = _mock_kit()
+        mgr = SubtitleManager(kit, overlay_filter=_mock_filter())
+        _, hook_fn = kit._registered_hooks[0]
+
+        event = MagicMock()
+        event.text = ""
+        event.content = MagicMock()
+        event.content.body = "Fallback text"
+        await hook_fn(event, MagicMock())
+
+        ov = mgr.overlay_filter.get_overlay(SUBTITLE_OVERLAY_ID)
+        assert ov is not None
+        assert ov.content == "Fallback text"
+
     async def test_hook_ignores_empty_text(self) -> None:
         kit = _mock_kit()
         mgr = SubtitleManager(kit, overlay_filter=_mock_filter())

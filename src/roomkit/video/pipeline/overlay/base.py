@@ -1,4 +1,4 @@
-"""Overlay types and renderer ABC for the video pipeline."""
+"""Overlay types, renderer ABC, and shared utilities for the video pipeline."""
 
 from __future__ import annotations
 
@@ -9,6 +9,37 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import numpy as np
+
+
+# -- Shared import helpers ------------------------------------------------
+
+
+def import_cv2() -> Any:
+    """Import OpenCV, raising a helpful error if missing."""
+    try:
+        import cv2
+
+        return cv2
+    except ImportError as exc:
+        raise ImportError(
+            "opencv is required for overlay rendering. "
+            "Install with: pip install roomkit[local-video]"
+        ) from exc
+
+
+def import_numpy() -> Any:
+    """Import numpy, raising a helpful error if missing."""
+    try:
+        import numpy as np_mod
+
+        return np_mod
+    except ImportError as exc:
+        raise ImportError(
+            "numpy is required for overlay rendering. Install with: pip install roomkit[video]"
+        ) from exc
+
+
+# -- Position enum --------------------------------------------------------
 
 
 class OverlayPosition(StrEnum):
@@ -24,6 +55,9 @@ class OverlayPosition(StrEnum):
     BOTTOM_CENTER = "bottom-center"
     BOTTOM_RIGHT = "bottom-right"
     CUSTOM = "custom"
+
+
+# -- Overlay dataclass ----------------------------------------------------
 
 
 @dataclass
@@ -54,6 +88,9 @@ class Overlay:
     version: int = field(default=0, repr=False)
 
 
+# -- Renderer ABC ---------------------------------------------------------
+
+
 class OverlayRenderer(ABC):
     """Renders a specific overlay type onto a numpy array.
 
@@ -81,7 +118,13 @@ class OverlayRenderer(ABC):
         """
 
     def invalidate_cache(self, overlay_id: str) -> None:  # noqa: B027
-        """Called when an overlay's content changes."""
+        """Called when a specific overlay's content changes."""
+
+    def clear_cache(self) -> None:  # noqa: B027
+        """Clear all cached renders (called on filter reset)."""
+
+
+# -- Shared geometry ------------------------------------------------------
 
 
 def compute_position(
@@ -98,14 +141,8 @@ def compute_position(
     if position == OverlayPosition.CUSTOM:
         return custom_x, custom_y
 
-    parts = position.value.rsplit("-", 1) if "-" in position.value else ("center", position.value)
-    h_part, v_part = parts
-
-    if v_part == "left" or h_part == "left":
-        # Parse correctly: "top-left" → v="top", h="left"
-        pass
-
-    # Horizontal
+    # Format: "vertical-horizontal" e.g. "top-left", "bottom-center"
+    # Special case: "center" (no dash) means both axes centered
     h_align = position.value.split("-")[-1] if "-" in position.value else "center"
     v_align = position.value.split("-")[0] if "-" in position.value else "center"
 
@@ -113,14 +150,54 @@ def compute_position(
         x = padding
     elif h_align == "right":
         x = frame_w - content_w - padding
-    else:  # center
+    else:
         x = (frame_w - content_w) // 2
 
     if v_align == "top":
         y = padding
     elif v_align == "bottom":
         y = frame_h - content_h - padding
-    else:  # center
+    else:
         y = (frame_h - content_h) // 2
 
     return max(0, x), max(0, y)
+
+
+# -- Shared blitting ------------------------------------------------------
+
+
+def blit_rgba(
+    canvas: np.ndarray,
+    patch: np.ndarray,
+    x: int,
+    y: int,
+    opacity: float,
+    np_mod: Any,
+) -> np.ndarray:
+    """Blit an RGBA patch onto an RGB canvas with alpha blending.
+
+    Args:
+        canvas: Target RGB array (H, W, 3) uint8.
+        patch: Source RGBA array (H, W, 4) uint8.
+        x: Top-left x on the canvas.
+        y: Top-left y on the canvas.
+        opacity: Global opacity multiplier (0.0–1.0).
+        np_mod: The numpy module reference.
+    """
+    ch, cw = canvas.shape[:2]
+    ph, pw = patch.shape[:2]
+
+    x1, y1 = max(0, x), max(0, y)
+    x2 = min(cw, x + pw)
+    y2 = min(ch, y + ph)
+    if x1 >= x2 or y1 >= y2:
+        return canvas
+
+    px1, py1 = x1 - x, y1 - y
+    region = patch[py1 : py1 + (y2 - y1), px1 : px1 + (x2 - x1)]
+    alpha = region[:, :, 3:4].astype(np_mod.float32) / 255.0 * opacity
+    rgb = region[:, :, :3].astype(np_mod.float32)
+
+    bg = canvas[y1:y2, x1:x2].astype(np_mod.float32)
+    canvas[y1:y2, x1:x2] = ((1.0 - alpha) * bg + alpha * rgb).astype(np_mod.uint8)
+    return canvas

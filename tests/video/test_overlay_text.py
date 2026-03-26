@@ -95,7 +95,7 @@ class TestTextOverlayRenderer:
         renderer, _, _ = _make_renderer()
         renderer._cache["a"] = (0, MagicMock(), 100, 30)
         renderer._cache["b"] = (0, MagicMock(), 100, 30)
-        renderer.invalidate_cache("")
+        renderer.clear_cache()
         assert len(renderer._cache) == 0
 
     def test_custom_style(self) -> None:

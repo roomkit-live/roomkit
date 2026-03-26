@@ -5,12 +5,17 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from roomkit.video.pipeline.overlay.base import Overlay, compute_position
+from roomkit.video.pipeline.overlay.base import (
+    Overlay,
+    OverlayRenderer,
+    blit_rgba,
+    compute_position,
+    import_cv2,
+    import_numpy,
+)
 
 if TYPE_CHECKING:
     import numpy as np
-
-from roomkit.video.pipeline.overlay.base import OverlayRenderer
 
 logger = logging.getLogger("roomkit.video.pipeline.overlay.text")
 
@@ -21,35 +26,7 @@ _DEFAULT_STYLE: dict[str, Any] = {
     "thickness": 1,
     "padding": 8,
     "line_spacing": 4,
-    "max_width": None,
 }
-
-
-def _rgb_to_bgr(color: tuple[int, int, int]) -> tuple[int, int, int]:
-    return (color[2], color[1], color[0])
-
-
-def _import_cv2() -> Any:
-    try:
-        import cv2
-
-        return cv2
-    except ImportError as exc:
-        raise ImportError(
-            "opencv is required for TextOverlayRenderer. "
-            "Install with: pip install roomkit[local-video]"
-        ) from exc
-
-
-def _import_numpy() -> Any:
-    try:
-        import numpy as np_mod
-
-        return np_mod
-    except ImportError as exc:
-        raise ImportError(
-            "numpy is required for TextOverlayRenderer. Install with: pip install roomkit[video]"
-        ) from exc
 
 
 class TextOverlayRenderer(OverlayRenderer):
@@ -68,8 +45,8 @@ class TextOverlayRenderer(OverlayRenderer):
     """
 
     def __init__(self) -> None:
-        self._cv2 = _import_cv2()
-        self._np = _import_numpy()
+        self._cv2 = import_cv2()
+        self._np = import_numpy()
         self._font = self._cv2.FONT_HERSHEY_SIMPLEX
         # Cache: overlay_id → (version, rendered_patch, patch_w, patch_h)
         self._cache: dict[str, tuple[int, Any, int, int]] = {}
@@ -110,13 +87,13 @@ class TextOverlayRenderer(OverlayRenderer):
             padding=padding,
         )
 
-        return self._blit(canvas, patch, x, y, overlay.opacity)
+        return blit_rgba(canvas, patch, x, y, overlay.opacity, self._np)
 
     def invalidate_cache(self, overlay_id: str) -> None:
-        if overlay_id:
-            self._cache.pop(overlay_id, None)
-        else:
-            self._cache.clear()
+        self._cache.pop(overlay_id, None)
+
+    def clear_cache(self) -> None:
+        self._cache.clear()
 
     def _render_patch(self, text: str, style: dict[str, Any]) -> tuple[Any, int, int]:
         """Render text to an RGBA patch image."""
@@ -142,13 +119,14 @@ class TextOverlayRenderer(OverlayRenderer):
         patch_h = total_h + padding * 2
         patch = np.zeros((patch_h, patch_w, 4), dtype=np.uint8)
 
-        # Background
+        # Background (RGB order in the RGBA patch)
         bg_color = style.get("bg_color")
         if bg_color is not None:
             r, g, b = bg_color
             patch[:, :] = [r, g, b, 200]
 
-        # Draw text lines
+        # Draw text lines (pass RGB directly — no BGR conversion needed
+        # because the patch is RGBA and we blit it as-is via blit_rgba)
         color = style["color"]
         y_cursor = padding
         for line, (_tw, th, baseline) in zip(lines, line_metrics, strict=True):
@@ -159,47 +137,10 @@ class TextOverlayRenderer(OverlayRenderer):
                 (padding, y_cursor),
                 self._font,
                 font_scale,
-                (*_rgb_to_bgr(color), 255),
+                (*color, 255),
                 thickness,
                 cv2.LINE_AA,
             )
             y_cursor += baseline + line_spacing
 
         return patch, patch_w, patch_h
-
-    def _blit(
-        self,
-        canvas: np.ndarray,
-        patch: Any,
-        x: int,
-        y: int,
-        opacity: float,
-    ) -> np.ndarray:
-        """Blit an RGBA patch onto the RGB canvas with alpha blending."""
-        np = self._np
-        ch, cw = canvas.shape[:2]
-        ph, pw = patch.shape[:2]
-
-        # Clip to canvas bounds
-        x1, y1 = max(0, x), max(0, y)
-        x2 = min(cw, x + pw)
-        y2 = min(ch, y + ph)
-        if x1 >= x2 or y1 >= y2:
-            return canvas
-
-        px1 = x1 - x
-        py1 = y1 - y
-        px2 = px1 + (x2 - x1)
-        py2 = py1 + (y2 - y1)
-
-        region = patch[py1:py2, px1:px2]
-        alpha = region[:, :, 3:4].astype(np.float32) / 255.0 * opacity
-        rgb = region[:, :, :3].astype(np.float32)
-
-        bg = canvas[y1:y2, x1:x2].astype(np.float32)
-        # Alpha-convert RGB→BGR for the patch since canvas is RGB
-        # but we drew with BGR putText — convert patch back to RGB
-        rgb_corrected = rgb[:, :, ::-1]
-        blended = (1.0 - alpha) * bg + alpha * rgb_corrected
-        canvas[y1:y2, x1:x2] = blended.astype(np.uint8)
-        return canvas

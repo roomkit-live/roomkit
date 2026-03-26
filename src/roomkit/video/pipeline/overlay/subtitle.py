@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.enums import HookExecution, HookTrigger
@@ -60,6 +61,7 @@ class SubtitleManager:
         self._translate_fn = translate_fn
         self._max_lines = max_lines
         self._lines: list[str] = []
+        self._lines_lock = threading.Lock()
 
         merged_style = {**_DEFAULT_SUBTITLE_STYLE, **(style or {})}
         overlay = Overlay(
@@ -89,10 +91,12 @@ class SubtitleManager:
                 return
             if self._translate_fn is not None:
                 text = await self._translate_fn(text)
-            self._lines.append(text)
-            if len(self._lines) > self._max_lines:
-                self._lines = self._lines[-self._max_lines :]
-            self._filter.update_overlay(SUBTITLE_OVERLAY_ID, content="\n".join(self._lines))
+            with self._lines_lock:
+                self._lines.append(text)
+                if len(self._lines) > self._max_lines:
+                    self._lines = self._lines[-self._max_lines :]
+                joined = "\n".join(self._lines)
+            self._filter.update_overlay(SUBTITLE_OVERLAY_ID, content=joined)
 
     @property
     def overlay_filter(self) -> OverlayFilter:
@@ -101,7 +105,8 @@ class SubtitleManager:
 
     def clear(self) -> None:
         """Clear all subtitle text."""
-        self._lines.clear()
+        with self._lines_lock:
+            self._lines.clear()
         self._filter.update_overlay(SUBTITLE_OVERLAY_ID, content="")
 
     def set_text(self, text: str) -> None:
