@@ -5,6 +5,32 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Persistent delivery backend** — `DeliveryBackend` ABC decouples enqueue from execution so delivery requests survive process restarts and can be distributed across workers. `kit.deliver()` transparently enqueues when a backend is configured; a background worker loop dequeues and executes deliveries with retry and dead-letter support.
+- **`InMemoryDeliveryBackend`** — asyncio.Queue-based backend for single-process deployments. Bounded dead-letter queue, backpressure-safe `nack()` and `close()`, re-enqueues in-flight items on shutdown.
+- **`RedisDeliveryBackend`** — Redis Streams backend with consumer groups for multi-worker deployments. At-least-once delivery via PEL, bounded dead-letter stream (`MAXLEN ~`), injected client support for connection pooling. Install with `pip install roomkit[redis]`.
+- **`DeliveryItem`** — Pydantic model for serializable delivery requests with retry tracking, status lifecycle, and strategy serialization.
+- **`RoomKit(delivery_backend=...)`** constructor parameter with `start()`/`close()` lifecycle wired into `__aenter__`/`close()`.
+- **`delivery_backend`** property on `RoomKit` (matches other backend properties).
+- **Worker-side `BEFORE_DELIVER`/`AFTER_DELIVER` hooks** — hooks now fire during worker execution, not just in-process delivery. Shared `build_delivery_hook_event()` ensures consistent metadata across both paths.
+- **`_cancel_worker_task()`** — shared helper on `DeliveryBackend` ABC for clean worker shutdown (DRY across backends).
+- **Double-start guard** on both backends prevents orphaned worker task leaks.
+- **Auto-delegate test coverage** — 3 new tests for `refine_instruction`, `delegation_message`, and `async_delivery` background delegation.
+- **`delivery_backend.py` example** — InMemory backend with mock AI (no external deps).
+- **`delivery_redis.py` example** — Redis backend with Anthropic AI.
+
+### Changed
+
+- **`orchestration_supervisor_parallel_tasks.py`** — updated to use `auto_delegate=True, refine_task=False` (was `auto_delegate=False`).
+- **Strategy metadata format standardized** — both in-process and backend delivery paths now use the serialized type key (`"immediate"`, `"wait_for_idle"`, `"queued"`) instead of class names.
+
+### Removed
+
+- **`tests/tasks/test_delivery.py`** — stale test file referencing deleted `roomkit.tasks.delivery` module.
+
 ## [0.7.0a4] — 2026-03-25
 
 ### Added
