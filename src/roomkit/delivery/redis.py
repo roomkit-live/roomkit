@@ -248,6 +248,10 @@ class RedisDeliveryBackend(DeliveryBackend):
                 await self._worker_task
             self._worker_task = None
 
+        # Clear in-process tracking (items remain in Redis PEL for recovery)
+        self._entry_ids.clear()
+        self._items.clear()
+
         if self._owns_client:
             await self._client.aclose()
 

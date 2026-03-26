@@ -58,7 +58,7 @@ async def _fire_delivery_hooks(
         room_context = await kit._build_context(item.room_id)  # noqa: SLF001
         await kit.hook_engine.run_async_hooks(item.room_id, trigger, hook_event, room_context)
     except Exception:
-        logger.debug("%s hook failed for item %s", trigger.value, item.id, exc_info=True)
+        logger.warning("%s hook failed for item %s", trigger.value, item.id, exc_info=True)
 
 
 async def execute_delivery(kit: RoomKit, item: DeliveryItem) -> None:

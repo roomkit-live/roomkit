@@ -18,8 +18,8 @@ __all__ = [
     "serialize_strategy",
 ]
 
-# RedisDeliveryBackend is available when redis is installed.
-# Import via: from roomkit.delivery import RedisDeliveryBackend
+# RedisDeliveryBackend requires redis>=5.0 (optional dep).
+# Import fails cleanly at construction time if redis is absent.
 try:
     from roomkit.delivery.redis import RedisDeliveryBackend
 
