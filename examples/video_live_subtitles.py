@@ -173,10 +173,11 @@ async def main() -> None:
         translate_fn=translate,
         max_lines=2,
         style={
-            "font_scale": 0.8,
-            "color": (255, 255, 0),
+            "font_scale": 0.45,
+            "color": (255, 255, 255),
             "bg_color": (0, 0, 0),
-            "padding": 10,
+            "padding": 6,
+            "thickness": 1,
         },
     )
 
@@ -186,7 +187,7 @@ async def main() -> None:
             content="FR -> EN Live Subtitles",
             position=OverlayPosition.TOP_LEFT,
             z_order=50,
-            style={"font_scale": 0.5, "color": (180, 180, 180)},
+            style={"font_scale": 0.35, "color": (150, 150, 150)},
         )
     )
 
