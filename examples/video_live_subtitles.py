@@ -87,7 +87,9 @@ async def main() -> None:
             max_tokens=256,
         )
         resp = await translator.generate(ctx)
-        return resp.content.strip() if resp.content else text
+        result = resp.content.strip() if resp.content else text
+        logger.info("EN: %s", result)
+        return result
 
     # --- Backends --------------------------------------------------------
 
@@ -173,7 +175,10 @@ async def main() -> None:
     session = await kit.join("subtitle-demo", "voice", participant_id="user")
     await kit.join("subtitle-demo", "video", participant_id="user")
 
-    logger.info("Speak French to see English subtitles. Ctrl+C to stop.")
+    logger.info(
+        "Webcam + mic running. Speak French — English subtitles appear on the video window."
+    )
+    logger.info("Terminal shows FR (raw STT) + EN (translated). Ctrl+C to stop.")
 
     async def cleanup() -> None:
         await kit.leave(session)
