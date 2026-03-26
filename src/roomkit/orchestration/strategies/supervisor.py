@@ -118,9 +118,10 @@ class Supervisor(Orchestration):
             async_delivery: If ``True``, workers run in the background
                 and results are delivered via ``kit.deliver()`` when
                 ready. The conversation continues uninterrupted. For
-                voice channels, hooks into ``ON_TRANSCRIPTION`` with
-                intent detection. If ``False`` (default), blocks until
-                results are ready (sync mode).
+                voice channels, injects a ``delegate_workers`` tool
+                that the AI calls when delegation is needed.
+                If ``False`` (default), blocks until results are
+                ready (sync mode).
 
             refine_task: Controls whether the framework extracts a clean
                 topic from the user's message before sending to workers.
