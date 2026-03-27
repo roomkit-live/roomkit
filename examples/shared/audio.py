@@ -176,8 +176,11 @@ def build_vad(sample_rate: int = 24000, *, default: str = "energy") -> object | 
             logger.info("VAD enabled (Sherpa-ONNX)")
             return SherpaOnnxVADProvider(SherpaOnnxVADConfig(sample_rate=sample_rate))
         except ImportError:
-            logger.warning("sherpa-onnx not installed — VAD disabled")
-            return None
+            logger.warning("sherpa-onnx not installed — falling back to energy VAD")
+            from roomkit.voice.pipeline.vad.energy import EnergyVADProvider
+
+            logger.info("VAD enabled (Energy-based, fallback)")
+            return EnergyVADProvider()
 
     logger.warning("Unknown VAD mode %r — disabling", mode)
     return None
