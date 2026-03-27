@@ -56,31 +56,38 @@ def _make_handler(tag: str, state: ConsoleState) -> Any:
 
     async def on_speech_start(event: Any, ctx: Any) -> None:
         state.voice_state = "listening"
+        state.partial_text = ""
+        state.partial_assistant_text = ""
 
     async def on_speech_end(event: Any, ctx: Any) -> None:
         state.voice_state = "processing"
 
     async def on_transcription(event: Any, ctx: Any) -> None:
-        # RealtimeTranscriptionEvent has .role and .is_final;
-        # TranscriptionEvent (VoiceChannel) has neither — always user, always final.
+        # RealtimeTranscriptionEvent has .role;
+        # TranscriptionEvent (VoiceChannel) has no .role — always user.
         role = getattr(event, "role", "user")
-        is_final = getattr(event, "is_final", True)
 
         if role == "assistant":
-            if is_final:
-                state.last_tts_text = event.text
-                state.tts_count += 1
-                state.conversation.append(ConversationTurn(role="assistant", text=event.text))
-                state.voice_state = "idle"
+            state.last_tts_text = event.text
+            state.partial_assistant_text = ""
+            state.tts_count += 1
+            state.conversation.append(ConversationTurn(role="assistant", text=event.text))
+            state.voice_state = "idle"
         else:
             state.last_final_text = event.text
             state.partial_text = ""
             state.transcription_count += 1
-            if is_final:
-                state.conversation.append(ConversationTurn(role="user", text=event.text))
+            state.conversation.append(ConversationTurn(role="user", text=event.text))
 
     async def on_partial_transcription(event: Any, ctx: Any) -> None:
-        state.partial_text = event.text
+        # PartialTranscriptionEvent.role defaults to "user".
+        # Both VoiceChannel and RealtimeVoiceChannel fire this hook.
+        role = getattr(event, "role", "user")
+        if role == "assistant":
+            state.partial_assistant_text += event.text
+            state.voice_state = "speaking"
+        else:
+            state.partial_text = event.text
 
     async def on_before_tts(text: Any, ctx: Any) -> None:
         state.voice_state = "speaking"

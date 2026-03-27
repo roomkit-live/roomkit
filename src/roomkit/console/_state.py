@@ -43,8 +43,9 @@ class ConsoleState:
     partial_text: str = ""
     last_final_text: str = ""
 
-    # TTS
+    # TTS / streaming assistant text
     last_tts_text: str = ""
+    partial_assistant_text: str = ""
 
     # Counters
     transcription_count: int = 0

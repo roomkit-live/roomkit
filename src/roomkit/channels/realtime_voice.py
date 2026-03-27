@@ -1267,7 +1267,8 @@ class RealtimeVoiceChannel(Channel):
         if not room_id:
             return
 
-        # Partial transcriptions: send to client UI only, no hooks/telemetry
+        # Partial transcriptions: send to client UI and fire async hooks
+        # (fire-and-forget — partials are informational, not blockable).
         if not is_final:
             try:
                 await self._send_client_message(
@@ -1281,6 +1282,24 @@ class RealtimeVoiceChannel(Channel):
                 )
             except Exception:
                 logger.exception("Error sending partial transcription for session %s", session.id)
+
+            from roomkit.voice.events import PartialTranscriptionEvent
+
+            partial_event = PartialTranscriptionEvent(
+                session=session,
+                text=text,
+                confidence=0.0,
+                is_stable=False,
+                role=role,
+            )
+            context = await self._framework._build_context(room_id)
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_PARTIAL_TRANSCRIPTION,
+                partial_event,
+                context,
+                skip_event_filter=True,
+            )
             return
 
         from roomkit.telemetry.context import reset_span

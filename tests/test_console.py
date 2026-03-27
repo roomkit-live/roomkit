@@ -204,7 +204,7 @@ class TestHookRegistration:
         assert state.conversation[0].role == "user"
 
     async def test_transcription_hooks_realtime(self):
-        """RealtimeTranscriptionEvent — role=user and role=assistant."""
+        """RealtimeTranscriptionEvent — role=user and role=assistant finals."""
         kit = RoomKit()
         state = ConsoleState()
         register_console_hooks(kit.hook_engine, state)
@@ -213,21 +213,44 @@ class TestHookRegistration:
             h for h in kit.hook_engine._global_hooks if h.name == f"{HOOK_PREFIX}transcription"
         )
 
-        # User transcription
-        user_event = MagicMock(text="bonjour", role="user", is_final=True)
+        # User final transcription
+        user_event = MagicMock(text="bonjour", role="user")
         await hook.fn(user_event, None)
         assert state.transcription_count == 1
         assert state.conversation[-1].role == "user"
         assert state.conversation[-1].text == "bonjour"
 
-        # Assistant transcription
-        ai_event = MagicMock(text="salut!", role="assistant", is_final=True)
+        # Assistant final transcription
+        ai_event = MagicMock(text="salut!", role="assistant")
         await hook.fn(ai_event, None)
         assert state.tts_count == 1
         assert state.last_tts_text == "salut!"
         assert state.conversation[-1].role == "assistant"
         assert state.conversation[-1].text == "salut!"
         assert state.voice_state == "idle"
+
+    async def test_partial_transcription_streaming(self):
+        """ON_PARTIAL_TRANSCRIPTION with role — streaming user and assistant text."""
+        kit = RoomKit()
+        state = ConsoleState()
+        register_console_hooks(kit.hook_engine, state)
+
+        partial_hook = next(
+            h
+            for h in kit.hook_engine._global_hooks
+            if h.name == f"{HOOK_PREFIX}partial_transcription"
+        )
+
+        # User partial (VoiceChannel style — no role, defaults to user)
+        await partial_hook.fn(MagicMock(text="hello", spec=["text"]), None)
+        assert state.partial_text == "hello"
+        assert state.partial_assistant_text == ""
+
+        # Assistant partial (RealtimeVoiceChannel — role=assistant)
+        await partial_hook.fn(MagicMock(text="Sal", role="assistant"), None)
+        await partial_hook.fn(MagicMock(text="ut!", role="assistant"), None)
+        assert state.partial_assistant_text == "Sal" + "ut!"
+        assert state.voice_state == "speaking"
 
     async def test_tts_hooks_with_conversation(self):
         kit = RoomKit()

@@ -110,6 +110,9 @@ class PartialTranscriptionEvent:
     is_stable: bool
     """True if this portion is unlikely to change significantly."""
 
+    role: str = "user"
+    """Who spoke: 'user' (input) or 'assistant' (AI output)."""
+
     timestamp: datetime = field(default_factory=_utcnow)
     """When this transcription was received."""
 
