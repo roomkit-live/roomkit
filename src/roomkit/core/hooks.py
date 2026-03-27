@@ -103,6 +103,14 @@ class HookEngine:
         """Register a hook for a specific room."""
         self._room_hooks.setdefault(room_id, []).append(hook)
 
+    def remove_global_hook(self, name: str) -> bool:
+        """Remove a global hook by name."""
+        for i, h in enumerate(self._global_hooks):
+            if h.name == name:
+                self._global_hooks.pop(i)
+                return True
+        return False
+
     def remove_room_hook(self, room_id: str, name: str) -> bool:
         """Remove a room hook by name."""
         hooks = self._room_hooks.get(room_id, [])

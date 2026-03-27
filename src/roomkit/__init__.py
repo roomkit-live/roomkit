@@ -1,5 +1,7 @@
 """RoomKit - Pure async Python library for multi-channel conversations."""
 
+import contextlib
+
 from roomkit._version import __version__
 from roomkit.channels import (
     EmailChannel,
@@ -101,6 +103,10 @@ from roomkit.skills import ScriptExecutor, Skill, SkillMetadata, SkillRegistry
 from roomkit.store import ConversationStore, InMemoryStore
 from roomkit.tools.base import Tool
 from roomkit.tools.policy import RoleOverride, ToolPolicy
+
+# Console (optional — requires `rich`)
+with contextlib.suppress(ImportError):
+    from roomkit.console import RoomKitConsole as RoomKitConsole
 
 # AI documentation helpers (lazy import to avoid file I/O at import time)
 
@@ -247,6 +253,8 @@ __all__ = [
     "ToolCallEvent",
     "ToolHandler",
     "get_current_voice_session",
+    # Console (optional)
+    "RoomKitConsole",
     # AI docs
     "get_agents_md",
     "get_ai_context",

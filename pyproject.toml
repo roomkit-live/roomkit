@@ -71,6 +71,7 @@ whatsapp-personal = ["neonize>=0.3.14"]
 postgres = ["asyncpg>=0.29"]
 redis = ["redis>=5.0"]
 mcp = ["mcp>=1.0"]
+console = ["rich>=13.0"]
 sources = [
     "roomkit[websocket]",
     "roomkit[sse]",
@@ -132,6 +133,7 @@ all = [
     "roomkit[opentelemetry]",
     "roomkit[phonenumbers]",
     "roomkit[smart-turn]",
+    "roomkit[console]",
 ]
 
 [project.urls]
@@ -348,6 +350,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["redis", "redis.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["rich", "rich.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

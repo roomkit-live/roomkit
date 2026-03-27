@@ -42,6 +42,7 @@ from shared import (
     build_denoiser,
     build_pipeline,
     run_until_stopped,
+    setup_console,
     setup_logging,
 )
 
@@ -63,6 +64,9 @@ async def main() -> None:
         return
 
     kit = RoomKit()
+
+    # --- Console dashboard (set CONSOLE=1 to enable) ---
+    console_cleanup = setup_console(kit)
 
     # --- Discover skills from examples/skills/ ---
     registry = SkillRegistry()
@@ -131,6 +135,8 @@ async def main() -> None:
 
     # --- Keep running until Ctrl+C ---
     async def cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
         await channel.end_session(session)
 
     await run_until_stopped(kit, cleanup=cleanup)
