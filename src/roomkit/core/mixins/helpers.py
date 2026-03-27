@@ -360,6 +360,11 @@ class HelpersMixin:
             try:
                 context = await kit_ref._build_context(event.room_id)
             except Exception:
+                logger.warning(
+                    "Failed to build context for ON_TOOL_CALL hook in room %s",
+                    event.room_id,
+                    exc_info=True,
+                )
                 return None
 
             hook_result = await kit_ref._hook_engine.run_sync_hooks(
@@ -407,6 +412,11 @@ class HelpersMixin:
             try:
                 context = await kit_ref._build_context(event.room_id)
             except Exception:
+                logger.warning(
+                    "Failed to build context for ON_AI_RESPONSE hook in room %s",
+                    event.room_id,
+                    exc_info=True,
+                )
                 return
 
             await kit_ref._hook_engine.run_async_hooks(

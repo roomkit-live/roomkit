@@ -44,6 +44,7 @@ from roomkit.delivery import (
     DeliveryItemStatus,
     InMemoryDeliveryBackend,
 )
+from roomkit.memory import MemoryProvider
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import (
@@ -69,15 +70,37 @@ from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
-from roomkit.models.tool_call import ToolCallCallback, ToolCallEvent
+from roomkit.models.tool_call import (
+    AfterResponseCallback,
+    AIResponseEvent,
+    ToolCallCallback,
+    ToolCallEvent,
+)
 from roomkit.orchestration import (
+    HANDOFF_TOOL,
+    ConversationPhase,
+    ConversationPipeline,
+    ConversationRouter,
+    ConversationState,
+    HandoffHandler,
+    HandoffRequest,
+    HandoffResult,
     Loop,
     Orchestration,
     Pipeline,
+    PipelineStage,
+    RoutingConditions,
+    RoutingRule,
     Supervisor,
     Swarm,
+    get_conversation_state,
+    set_conversation_state,
+    setup_handoff,
 )
+from roomkit.skills import ScriptExecutor, Skill, SkillMetadata, SkillRegistry
+from roomkit.store import ConversationStore, InMemoryStore
 from roomkit.tools.base import Tool
+from roomkit.tools.policy import RoleOverride, ToolPolicy
 
 # AI documentation helpers (lazy import to avoid file I/O at import time)
 
@@ -164,13 +187,42 @@ __all__ = [
     "HookExecution",
     "HookTrigger",
     "RoomStatus",
-    # Orchestration strategies
+    # Orchestration
+    "ConversationPhase",
+    "ConversationPipeline",
+    "ConversationRouter",
+    "ConversationState",
+    "get_conversation_state",
+    "set_conversation_state",
+    "HANDOFF_TOOL",
+    "HandoffHandler",
+    "HandoffRequest",
+    "HandoffResult",
+    "setup_handoff",
     "Loop",
     "Orchestration",
     "Pipeline",
+    "PipelineStage",
+    "RoutingConditions",
+    "RoutingRule",
     "Supervisor",
     "Swarm",
+    # Storage
+    "ConversationStore",
+    "InMemoryStore",
+    # Memory
+    "MemoryProvider",
+    # Skills
+    "ScriptExecutor",
+    "Skill",
+    "SkillMetadata",
+    "SkillRegistry",
+    # Tools
+    "RoleOverride",
+    "ToolPolicy",
     # Models (core)
+    "AIResponseEvent",
+    "AfterResponseCallback",
     "ChannelBinding",
     "ChannelCapabilities",
     "ChannelOutput",

@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from roomkit.channels._skill_constants import TOOL_ACTIVATE_SKILL
 from roomkit.channels.base import Channel
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -38,7 +39,10 @@ except ImportError:  # websockets not installed
     _ConnectionClosed = ConnectionError  # type: ignore[assignment,misc]
 
 if TYPE_CHECKING:
+    from roomkit.channels._realtime_skills import RealtimeSkillSupport
     from roomkit.core.framework import RoomKit
+    from roomkit.skills.executor import ScriptExecutor
+    from roomkit.skills.registry import SkillRegistry
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
@@ -112,6 +116,8 @@ class RealtimeVoiceChannel(Channel):
         mute_on_tool_call: bool = False,
         tool_result_max_length: int = 16384,
         recording: Any | None = None,
+        skills: SkillRegistry | None = None,
+        script_executor: ScriptExecutor | None = None,
     ) -> None:
         """Initialize realtime voice channel.
 
@@ -147,6 +153,11 @@ class RealtimeVoiceChannel(Channel):
             recording: Optional ``ChannelRecordingConfig`` to enable
                 room-level audio recording from this channel. Records
                 both input (mic) and output (AI) audio tracks.
+            skills: Optional ``SkillRegistry`` with discovered skills.
+                When provided, skill infrastructure tools are injected
+                and the skills preamble is appended to the system prompt.
+            script_executor: Optional ``ScriptExecutor`` for running
+                skill scripts.  Ignored when *skills* is ``None``.
         """
         super().__init__(channel_id)
         self._provider: RealtimeVoiceProvider = provider
@@ -193,6 +204,15 @@ class RealtimeVoiceChannel(Channel):
         self._tool_result_max_length = tool_result_max_length
         self._framework: RoomKit | None = None
 
+        # Skills support — skill defs are composed into the tool list at
+        # session-start / reconfigure time, NOT stored in self._tools, to
+        # avoid doubling when reconfigure_session updates self._tools.
+        self._skill_support: RealtimeSkillSupport | None = None
+        if skills and skills.skill_count > 0:
+            from roomkit.channels._realtime_skills import RealtimeSkillSupport
+
+            self._skill_support = RealtimeSkillSupport(skills, script_executor)
+
         # Lock for shared state accessed from both asyncio and audio threads
         self._state_lock = threading.Lock()
 
@@ -201,6 +221,10 @@ class RealtimeVoiceChannel(Channel):
         self._session_rooms: dict[str, str] = {}  # session_id -> room_id
         # Cached bindings for audio gating (access/muted enforcement)
         self._session_bindings: dict[str, ChannelBinding] = {}
+
+        # Per-session resolved tool list (channel defaults + metadata overrides),
+        # cached so skill activation can reconfigure without losing tools.
+        self._session_tools: dict[str, list[dict[str, Any]]] = {}
 
         # Per-session recording tracks: session_id -> (audio_track, room_id)
         self._recording_tracks: dict[str, tuple[Any, str]] = {}
@@ -478,12 +502,27 @@ class RealtimeVoiceChannel(Channel):
         self._user_speaking[session.id] = False
         self._provider_idle[session.id] = True
 
+        # Initialize skill activation state for this session
+        if self._skill_support:
+            self._skill_support.init_session(session.id)
+
         # Per-room config overrides from metadata
         system_prompt = meta.get("system_prompt", self._system_prompt)
         voice = meta.get("voice", self._voice)
         tools = meta.get("tools", self._tools)
         temperature = meta.get("temperature", self._temperature)
         provider_config = meta.get("provider_config")
+
+        # Cache the resolved base tool list (channel defaults + metadata
+        # overrides) so skill activation can reconfigure without losing them.
+        self._session_tools[session.id] = list(tools) if tools else []
+
+        # Inject skills: prepend skill tool defs, apply gating, enrich prompt
+        if self._skill_support:
+            system_prompt = self._skill_support.inject_skills_prompt(system_prompt)
+            skill_defs = self._skill_support.skill_tool_dicts()
+            tools = skill_defs + (tools or [])
+            tools = self._skill_support.get_visible_tools(tools, session.id)
 
         # Accept client connection (with telemetry span)
         with telemetry.span(
@@ -639,10 +678,16 @@ class RealtimeVoiceChannel(Channel):
             logger.exception("Error disconnecting transport for session %s", session.id)
 
         session.state = VoiceSessionState.ENDED
+
+        # Clean up skill activation state
+        if self._skill_support:
+            self._skill_support.cleanup_session(session.id)
+
         with self._state_lock:
             self._sessions.pop(session.id, None)
             self._session_rooms.pop(session.id, None)
             self._session_bindings.pop(session.id, None)
+            self._session_tools.pop(session.id, None)
             self._audio_generation.pop(session.id, None)
             self._session_transport_rates.pop(session.id, None)
             self._audio_forward_count.pop(session.id, None)
@@ -709,6 +754,21 @@ class RealtimeVoiceChannel(Channel):
             temperature: New sampling temperature.
             provider_config: Provider-specific configuration overrides.
         """
+        # Save caller values before skills mutation — self._tools and
+        # self._system_prompt must store the *user* values, not the
+        # skill-enriched versions, to avoid doubling on the next session.
+        caller_tools = tools
+        caller_prompt = system_prompt
+
+        # Inject skills into reconfigured prompt/tools
+        if self._skill_support:
+            if system_prompt is not None:
+                system_prompt = self._skill_support.inject_skills_prompt(system_prompt)
+            if tools is not None:
+                skill_defs = self._skill_support.skill_tool_dicts()
+                tools = skill_defs + tools
+                tools = self._skill_support.get_visible_tools(tools, session.id)
+
         await self._provider.reconfigure(
             session,
             system_prompt=system_prompt,
@@ -718,13 +778,14 @@ class RealtimeVoiceChannel(Channel):
             provider_config=provider_config,
         )
 
-        # Update channel defaults so new sessions use the current config
-        if system_prompt is not None:
-            self._system_prompt = system_prompt
+        # Update channel defaults so new sessions use the current config.
+        # Store the original caller values (without skill enrichment).
+        if caller_prompt is not None:
+            self._system_prompt = caller_prompt
         if voice is not None:
             self._voice = voice
-        if tools is not None:
-            self._tools = tools
+        if caller_tools is not None:
+            self._tools = caller_tools
 
         logger.info("Realtime session %s reconfigured", session.id)
 
@@ -1477,6 +1538,25 @@ class RealtimeVoiceChannel(Channel):
 
         try:
             result_str: str
+
+            # Step 0: Skill infrastructure tools — handle internally
+            if self._skill_support and self._skill_support.is_skill_tool(name):
+                result_str = await self._skill_support.handle_tool_call(
+                    name, arguments, session.id
+                )
+                # After activation, push newly-visible tools to the provider
+                if name == TOOL_ACTIVATE_SKILL:
+                    base = self._session_tools.get(session.id, self._tools or [])
+                    all_tools = self._skill_support.skill_tool_dicts() + base
+                    updated = self._skill_support.newly_visible_after_activation(
+                        all_tools, session.id, arguments.get("name", "")
+                    )
+                    if updated is not None:
+                        await self._provider.reconfigure(session, tools=updated)
+                await self._provider.submit_tool_result(session, call_id, result_str)
+                telemetry.end_span(tool_span_id)
+                logger.info("Skill tool %s(%s) handled for session %s", name, call_id, session.id)
+                return
 
             # Step 1: Run tool_handler (if exists)
             handler_result: str | None = None

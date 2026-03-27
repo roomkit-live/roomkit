@@ -7,6 +7,19 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._skill_constants import (
+    ACTIVATE_SKILL_SCHEMA,
+    READ_REFERENCE_SCHEMA,
+    RUN_SCRIPT_SCHEMA,
+    TOOL_ACTIVATE_SKILL,
+    TOOL_READ_REFERENCE,
+    TOOL_RUN_SCRIPT,
+)
+from roomkit.channels._skill_handlers import (
+    handle_activate_skill,
+    handle_read_reference,
+    handle_run_script,
+)
 from roomkit.models.enums import ChannelType
 from roomkit.providers.ai.base import AITool, AIToolResultPart
 from roomkit.telemetry.base import SpanKind
@@ -131,95 +144,31 @@ class AIToolsMixin:
 
     def _skill_tools(self) -> list[AITool]:
         """Build the list of AITool definitions for skill operations."""
-        from roomkit.channels.ai import (
-            _TOOL_ACTIVATE_SKILL,
-            _TOOL_READ_REFERENCE,
-            _TOOL_RUN_SCRIPT,
-        )
 
-        tools = [
-            AITool(
-                name=_TOOL_ACTIVATE_SKILL,
-                description=(
-                    "Activate a skill to get its full instructions, "
-                    "available scripts, and reference files."
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "Name of the skill to activate.",
-                        },
-                    },
-                    "required": ["name"],
-                },
-            ),
-            AITool(
-                name=_TOOL_READ_REFERENCE,
-                description="Read a reference file from a skill.",
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "skill_name": {
-                            "type": "string",
-                            "description": "Name of the skill.",
-                        },
-                        "filename": {
-                            "type": "string",
-                            "description": "Reference filename to read.",
-                        },
-                    },
-                    "required": ["skill_name", "filename"],
-                },
-            ),
-        ]
-        if self._script_executor:
-            tools.append(
-                AITool(
-                    name=_TOOL_RUN_SCRIPT,
-                    description="Run a script from a skill's scripts/ directory.",
-                    parameters={
-                        "type": "object",
-                        "properties": {
-                            "skill_name": {
-                                "type": "string",
-                                "description": "Name of the skill.",
-                            },
-                            "script_name": {
-                                "type": "string",
-                                "description": "Script filename to run.",
-                            },
-                            "arguments": {
-                                "type": "object",
-                                "description": "Optional key-value arguments.",
-                                "additionalProperties": {"type": "string"},
-                            },
-                        },
-                        "required": ["skill_name", "script_name"],
-                    },
-                )
+        def _to_ai_tool(schema: dict[str, Any]) -> AITool:
+            return AITool(
+                name=schema["name"],
+                description=schema["description"],
+                parameters=schema["parameters"],
             )
+
+        tools = [_to_ai_tool(ACTIVATE_SKILL_SCHEMA), _to_ai_tool(READ_REFERENCE_SCHEMA)]
+        if self._script_executor:
+            tools.append(_to_ai_tool(RUN_SCRIPT_SCHEMA))
         return tools
 
     # Dispatch table for channel-managed and skill tools.
     # Sync handlers are wrapped to match the async signature.
     @property
     def _channel_tool_dispatch(self) -> dict[str, Any]:
-        from roomkit.channels.ai import (
-            _TOOL_ACTIVATE_SKILL,
-            _TOOL_READ_REFERENCE,
-            _TOOL_RUN_SCRIPT,
-        )
-
         dispatch: dict[str, Any] = {
             "read_stored_result": self._handle_read_tool_result,
             "plan_tasks": self._handle_plan_tasks,
         }
         if self._skills:
-            dispatch[_TOOL_ACTIVATE_SKILL] = self._handle_activate_skill
-            dispatch[_TOOL_READ_REFERENCE] = self._handle_read_reference
-            dispatch[_TOOL_RUN_SCRIPT] = self._handle_run_script
+            dispatch[TOOL_ACTIVATE_SKILL] = self._handle_activate_skill
+            dispatch[TOOL_READ_REFERENCE] = self._handle_read_reference
+            dispatch[TOOL_RUN_SCRIPT] = self._handle_run_script
         return dispatch
 
     async def _channel_tool_handler(self, name: str, arguments: dict[str, Any]) -> str:
@@ -237,73 +186,24 @@ class AIToolsMixin:
 
     async def _handle_activate_skill(self, arguments: dict[str, Any]) -> str:
         """Load and return full skill instructions, tracking activation for gating."""
-        skill_name = arguments.get("name", "")
         if not self._skills:
             return json.dumps({"error": "No skills registry configured"})
-
-        skill = self._skills.get_skill(skill_name)
-        if skill is None:
-            available = self._skills.skill_names
-            return json.dumps(
-                {
-                    "error": f"Skill {skill_name!r} not found",
-                    "available_skills": available,
-                }
-            )
-
+        result_str, skill_name = await handle_activate_skill(arguments, self._skills)
         # Track activation so gated tools become visible on next round
         self._get_loop_ctx().activated_skills.add(skill_name)  # type: ignore[attr-defined]
-
-        result: dict[str, Any] = {
-            "name": skill.name,
-            "description": skill.description,
-            "instructions": skill.instructions,
-        }
-        scripts = skill.list_scripts()
-        if scripts:
-            result["scripts"] = scripts
-        refs = skill.list_references()
-        if refs:
-            result["references"] = refs
-        return json.dumps(result)
+        return result_str
 
     async def _handle_read_reference(self, arguments: dict[str, Any]) -> str:
         """Read a reference file from a skill."""
-        skill_name = arguments.get("skill_name", "")
-        filename = arguments.get("filename", "")
         if not self._skills:
             return json.dumps({"error": "No skills registry configured"})
-
-        skill = self._skills.get_skill(skill_name)
-        if skill is None:
-            return json.dumps({"error": f"Skill {skill_name!r} not found"})
-
-        try:
-            content = skill.read_reference(filename)
-            return json.dumps({"filename": filename, "content": content})
-        except (ValueError, FileNotFoundError) as exc:
-            return json.dumps({"error": str(exc)})
+        return await handle_read_reference(arguments, self._skills)
 
     async def _handle_run_script(self, arguments: dict[str, Any]) -> str:
         """Execute a script via the configured ScriptExecutor."""
-        skill_name = arguments.get("skill_name", "")
-        script_name = arguments.get("script_name", "")
-        script_args = arguments.get("arguments")
         if not self._skills:
             return json.dumps({"error": "No skills registry configured"})
-        if not self._script_executor:
-            return json.dumps({"error": "Script execution is not available"})
-
-        skill = self._skills.get_skill(skill_name)
-        if skill is None:
-            return json.dumps({"error": f"Skill {skill_name!r} not found"})
-
-        try:
-            result = await self._script_executor.execute(skill, script_name, arguments=script_args)
-            return result.model_dump_json()
-        except Exception as exc:
-            logger.exception("Script execution failed: %s/%s", skill_name, script_name)
-            return json.dumps({"error": f"Script execution failed: {exc}"})
+        return await handle_run_script(arguments, self._skills, self._script_executor)
 
     # -- Extracted tool handlers (delegate to focused modules) -----------------
 

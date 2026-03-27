@@ -110,8 +110,28 @@ dev = [
 ]
 all = [
     "roomkit[providers]",
-
+    "roomkit[sources]",
     "roomkit[whatsapp-personal]",
+    "roomkit[deepgram]",
+    "roomkit[elevenlabs]",
+    "roomkit[sherpa-onnx]",
+    "roomkit[fastrtc]",
+    "roomkit[local-audio]",
+    "roomkit[local-video]",
+    "roomkit[video]",
+    "roomkit[rtp]",
+    "roomkit[sip]",
+    "roomkit[realtime-openai]",
+    "roomkit[realtime-gemini]",
+    "roomkit[realtime-elevenlabs]",
+    "roomkit[websocket]",
+    "roomkit[sse]",
+    "roomkit[postgres]",
+    "roomkit[redis]",
+    "roomkit[mcp]",
+    "roomkit[opentelemetry]",
+    "roomkit[phonenumbers]",
+    "roomkit[smart-turn]",
 ]
 
 [project.urls]

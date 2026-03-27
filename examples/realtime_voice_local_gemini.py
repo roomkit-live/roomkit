@@ -47,9 +47,12 @@ from shared import (
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
+from roomkit.skills import SkillRegistry
 from roomkit.voice.backends.local import LocalAudioBackend
 
 logger = setup_logging("realtime_voice_local_gemini")
+
+SKILLS_DIR = Path(__file__).parent / "skills"
 
 
 async def main() -> None:
@@ -60,6 +63,12 @@ async def main() -> None:
         return
 
     kit = RoomKit()
+
+    # --- Discover skills from examples/skills/ ---
+    registry = SkillRegistry()
+    count = registry.discover(SKILLS_DIR)
+    if count:
+        logger.info("Discovered %d skill(s): %s", count, ", ".join(registry.skill_names))
 
     # --- Gemini Live provider (speech-to-speech) ---
     provider = GeminiLiveProvider(
@@ -102,6 +111,7 @@ async def main() -> None:
         ),
         voice=os.environ.get("GEMINI_VOICE", "Aoede"),
         input_sample_rate=sample_rate,
+        skills=registry,
     )
     kit.register_channel(channel)
 

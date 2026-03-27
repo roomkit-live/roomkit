@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._skill_constants import SKILL_INFRA_TOOL_NAMES
 from roomkit.providers.ai.base import AITool
 from roomkit.tools.policy import ToolPolicy
 
@@ -39,14 +40,8 @@ class AIToolPolicyMixin:
 
     # Infrastructure tool names — never filtered by policy or gating.
     # Includes skill tools and channel-managed tools (eviction, planning).
-    _SKILL_INFRA_TOOLS: frozenset[str] = frozenset(
-        {
-            "activate_skill",
-            "read_skill_reference",
-            "run_skill_script",
-            "read_stored_result",
-            "plan_tasks",
-        }
+    _SKILL_INFRA_TOOLS: frozenset[str] = SKILL_INFRA_TOOL_NAMES | frozenset(
+        {"read_stored_result", "plan_tasks"}
     )
 
     @property

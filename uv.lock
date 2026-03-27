@@ -4823,6 +4823,15 @@ wheels = [
 ]
 
 [[package]]
+name = "redis"
+version = "7.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/7f/3759b1d0d72b7c92f0d70ffd9dc962b7b7b5ee74e135f9d7d8ab06b8a318/redis-7.4.0.tar.gz", hash = "sha256:64a6ea7bf567ad43c964d2c30d82853f8df927c5c9017766c55a1d1ed95d18ad", size = 4943913, upload-time = "2026-03-24T09:14:37.53Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/74/3a/95deec7db1eb53979973ebd156f3369a72732208d1391cd2e5d127062a32/redis-7.4.0-py3-none-any.whl", hash = "sha256:a9c74a5c893a5ef8455a5adb793a31bb70feb821c86eccb62eebef5a19c429ec", size = 409772, upload-time = "2026-03-24T09:14:35.968Z" },
+]
+
+[[package]]
 name = "referencing"
 version = "0.36.2"
 source = { registry = "https://pypi.org/simple" }
@@ -4995,15 +5004,38 @@ aicoustics = [
     { name = "aic-sdk" },
 ]
 all = [
+    { name = "aiortp" },
+    { name = "aiosipua", extra = ["rtp"] },
     { name = "anthropic" },
+    { name = "asyncpg" },
+    { name = "av" },
     { name = "botbuilder-core" },
+    { name = "deepgram-sdk" },
+    { name = "elevenlabs" },
+    { name = "fastrtc" },
     { name = "google-genai" },
     { name = "gradium" },
     { name = "httpx" },
+    { name = "httpx-sse" },
+    { name = "mcp" },
     { name = "mistralai" },
     { name = "neonize" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts' or extra != 'extra-7-roomkit-neutts'" },
+    { name = "onnxruntime" },
     { name = "openai" },
+    { name = "opencv-python-headless" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-sdk" },
+    { name = "phonenumbers" },
+    { name = "redis" },
+    { name = "sherpa-onnx" },
+    { name = "sounddevice" },
+    { name = "transformers", version = "4.56.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "transformers", version = "4.57.3", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra != 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-tts')" },
     { name = "twilio" },
+    { name = "websockets" },
 ]
 anam = [
     { name = "anam" },
@@ -5130,6 +5162,9 @@ realtime-openai = [
     { name = "openai" },
     { name = "websockets" },
 ]
+redis = [
+    { name = "redis" },
+]
 rtp = [
     { name = "aiortp" },
 ]
@@ -5177,6 +5212,9 @@ video = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts' or extra != 'extra-7-roomkit-neutts'" },
 ]
+video-overlay = [
+    { name = "pillow" },
+]
 vllm = [
     { name = "openai" },
 ]
@@ -5206,15 +5244,19 @@ requires-dist = [
     { name = "aec-audio-processing", marker = "extra == 'webrtc-aec'", specifier = ">=0.1" },
     { name = "aic-sdk", marker = "extra == 'aicoustics'", specifier = ">=2.1" },
     { name = "aioquic", marker = "extra == 'webtransport'", specifier = ">=1.0" },
+    { name = "aiortp", marker = "extra == 'all'", specifier = ">=0.3.1" },
     { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.3.1" },
+    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'all'", specifier = ">=0.4.1" },
     { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.4.1" },
     { name = "anam", marker = "extra == 'anam'", specifier = ">=0.1" },
     { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'dev'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'providers'", specifier = ">=0.30" },
+    { name = "asyncpg", marker = "extra == 'all'", specifier = ">=0.29" },
     { name = "asyncpg", marker = "extra == 'dev'", specifier = ">=0.29" },
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.29" },
+    { name = "av", marker = "extra == 'all'", specifier = ">=12.0.0" },
     { name = "av", marker = "extra == 'anam'", specifier = ">=12.0.0" },
     { name = "av", marker = "extra == 'video'", specifier = ">=12.0.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7" },
@@ -5222,9 +5264,13 @@ requires-dist = [
     { name = "botbuilder-core", marker = "extra == 'dev'", specifier = ">=4.14" },
     { name = "botbuilder-core", marker = "extra == 'providers'", specifier = ">=4.14" },
     { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.14" },
+    { name = "deepgram-sdk", marker = "extra == 'all'", specifier = ">=6.0.0" },
     { name = "deepgram-sdk", marker = "extra == 'deepgram'", specifier = ">=6.0.0" },
+    { name = "elevenlabs", marker = "extra == 'all'", specifier = ">=1.0" },
+    { name = "elevenlabs", marker = "extra == 'all'", specifier = ">=2.40" },
     { name = "elevenlabs", marker = "extra == 'elevenlabs'", specifier = ">=1.0" },
     { name = "elevenlabs", marker = "extra == 'realtime-elevenlabs'", specifier = ">=2.40" },
+    { name = "fastrtc", marker = "extra == 'all'", specifier = ">=0.0.18" },
     { name = "fastrtc", marker = "extra == 'fastrtc'", specifier = ">=0.0.18" },
     { name = "google-genai", marker = "extra == 'all'", specifier = ">=1.0.0" },
     { name = "google-genai", marker = "extra == 'dev'", specifier = ">=1.0.0" },
@@ -5242,9 +5288,11 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'sources'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'sse'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'telegram'", specifier = ">=0.27" },
+    { name = "httpx-sse", marker = "extra == 'all'", specifier = ">=0.4" },
     { name = "httpx-sse", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "httpx-sse", marker = "extra == 'sources'", specifier = ">=0.4" },
     { name = "httpx-sse", marker = "extra == 'sse'", specifier = ">=0.4" },
+    { name = "mcp", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
     { name = "mistralai", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "mistralai", marker = "extra == 'dev'", specifier = ">=1.0" },
@@ -5263,11 +5311,13 @@ requires-dist = [
     { name = "neonize", marker = "extra == 'sources'", specifier = ">=0.3.14" },
     { name = "neonize", marker = "extra == 'whatsapp-personal'", specifier = ">=0.3.14" },
     { name = "neutts", marker = "extra == 'neutts'", specifier = ">=0.1" },
+    { name = "numpy", marker = "extra == 'all'", specifier = ">=1.26" },
     { name = "numpy", marker = "extra == 'anam'", specifier = ">=1.26" },
     { name = "numpy", marker = "extra == 'fastrtc'", specifier = ">=1.26" },
     { name = "numpy", marker = "extra == 'local-audio'", specifier = ">=1.26" },
     { name = "numpy", marker = "extra == 'smart-turn'", specifier = ">=1.26" },
     { name = "numpy", marker = "extra == 'video'", specifier = ">=1.26" },
+    { name = "onnxruntime", marker = "extra == 'all'" },
     { name = "onnxruntime", marker = "extra == 'smart-turn'" },
     { name = "openai", marker = "extra == 'all'", specifier = ">=2.28" },
     { name = "openai", marker = "extra == 'azure'", specifier = ">=2.28" },
@@ -5276,11 +5326,16 @@ requires-dist = [
     { name = "openai", marker = "extra == 'providers'", specifier = ">=2.28" },
     { name = "openai", marker = "extra == 'realtime-openai'", specifier = ">=2.28" },
     { name = "openai", marker = "extra == 'vllm'", specifier = ">=2.28" },
+    { name = "opencv-python-headless", marker = "extra == 'all'", specifier = ">=4.8" },
     { name = "opencv-python-headless", marker = "extra == 'local-video'", specifier = ">=4.8" },
+    { name = "opentelemetry-api", marker = "extra == 'all'", specifier = ">=1.20" },
     { name = "opentelemetry-api", marker = "extra == 'opentelemetry'", specifier = ">=1.20" },
+    { name = "opentelemetry-sdk", marker = "extra == 'all'", specifier = ">=1.20" },
     { name = "opentelemetry-sdk", marker = "extra == 'opentelemetry'", specifier = ">=1.20" },
+    { name = "phonenumbers", marker = "extra == 'all'", specifier = ">=8.13" },
     { name = "phonenumbers", marker = "extra == 'dev'", specifier = ">=8.13" },
     { name = "phonenumbers", marker = "extra == 'phonenumbers'", specifier = ">=8.13" },
+    { name = "pillow", marker = "extra == 'video-overlay'", specifier = ">=10.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.8" },
     { name = "pyautogui", marker = "extra == 'screen-input'", specifier = ">=0.9" },
     { name = "pydantic", specifier = ">=2.9" },
@@ -5292,21 +5347,27 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "qwen-asr", marker = "extra == 'qwen-asr'", specifier = ">=0.0.4" },
     { name = "qwen-tts", marker = "extra == 'qwen-tts'", specifier = ">=0.1" },
+    { name = "redis", marker = "extra == 'all'", specifier = ">=5.0" },
+    { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "sherpa-onnx", marker = "extra == 'all'", specifier = ">=1.10" },
     { name = "sherpa-onnx", marker = "extra == 'sherpa-onnx'", specifier = ">=1.10" },
+    { name = "sounddevice", marker = "extra == 'all'", specifier = ">=0.4" },
     { name = "sounddevice", marker = "extra == 'local-audio'", specifier = ">=0.4" },
+    { name = "transformers", marker = "extra == 'all'" },
     { name = "transformers", marker = "extra == 'smart-turn'" },
     { name = "twilio", marker = "extra == 'all'", specifier = ">=9.0" },
     { name = "twilio", marker = "extra == 'dev'", specifier = ">=9.0" },
     { name = "twilio", marker = "extra == 'providers'", specifier = ">=9.0" },
     { name = "twilio", marker = "extra == 'twilio'", specifier = ">=9.0" },
     { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.3" },
+    { name = "websockets", marker = "extra == 'all'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'dev'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'realtime-openai'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
+provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]

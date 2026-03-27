@@ -6,8 +6,15 @@ import logging
 from typing import TYPE_CHECKING
 
 from roomkit.channels._dangling_recovery import patch_dangling_tool_calls
+from roomkit.channels._skill_constants import (
+    SKILLS_NO_SCRIPTS_NOTE as _SKILLS_NO_SCRIPTS_NOTE,
+)
+from roomkit.channels._skill_constants import (
+    SKILLS_PREAMBLE as _SKILLS_PREAMBLE,
+)
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tool_eviction import ToolEviction
+from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import ChannelCategory
 from roomkit.models.event import CompositeContent, MediaContent, TextContent
 from roomkit.providers.ai.base import (
@@ -59,11 +66,6 @@ class AIContextMixin:
         - max_tokens: Override the channel's default max_tokens
         - tools: List of tool definitions for function calling
         """
-        from roomkit.channels.ai import (
-            _SKILLS_NO_SCRIPTS_NOTE,
-            _SKILLS_PREAMBLE,
-        )
-
         # Per-room overrides from binding metadata
         system_prompt = binding.metadata.get("system_prompt", self._system_prompt)
         temperature = binding.metadata.get("temperature", self._temperature)
@@ -188,8 +190,6 @@ class AIContextMixin:
                         merged[field_name] = min(a, b_val)
                     elif b_val is not None:
                         merged[field_name] = b_val
-            from roomkit.models.channel import ChannelCapabilities
-
             target_caps = ChannelCapabilities(**merged)
         else:
             target_media = []

@@ -6,9 +6,13 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+from roomkit.channels._skill_constants import (
+    TOOL_ACTIVATE_SKILL as _TOOL_ACTIVATE_SKILL,
+)
+from roomkit.channels._skill_constants import (
+    TOOL_READ_REFERENCE as _TOOL_READ_REFERENCE,
+)
 from roomkit.channels.ai import (
-    _TOOL_ACTIVATE_SKILL,
-    _TOOL_READ_REFERENCE,
     AIChannel,
     _current_loop_ctx,
     _ToolLoopContext,

@@ -76,19 +76,6 @@ _ContentPart = AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart | AI
 
 logger = logging.getLogger("roomkit.channels.ai")
 
-# Skill tool names
-_TOOL_ACTIVATE_SKILL = "activate_skill"
-_TOOL_READ_REFERENCE = "read_skill_reference"
-_TOOL_RUN_SCRIPT = "run_skill_script"
-
-_SKILLS_PREAMBLE = (
-    "You have access to Agent Skills — specialized knowledge packages. "
-    "Use the activate_skill tool to load a skill's full instructions before "
-    "using it. Available skills are listed below."
-)
-
-_SKILLS_NO_SCRIPTS_NOTE = " Note: Script execution is not available in this environment."
-
 
 @dataclass
 class _ToolLoopContext:
