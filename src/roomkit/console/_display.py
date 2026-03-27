@@ -354,7 +354,7 @@ def _build_dashboard(
     """Build the full-screen dashboard layout."""
     layout = Layout()
 
-    header_h, top_h, stats_h, footer_h = 2, 10, 3, 1
+    header_h, top_h, stats_h, footer_h = 2, 9, 3, 1
 
     layout.split_column(
         Layout(name="header", size=header_h),
