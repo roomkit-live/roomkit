@@ -63,18 +63,18 @@ def test_excess_frames_dropped() -> None:
 
     # Track how many frames reach the pipeline
     process_count = 0
-    original_process_frame = channel._pipeline.process_frame  # type: ignore[union-attr]
+    original_process_inbound = channel._pipeline.process_inbound  # type: ignore[union-attr]
 
-    def counting_process_frame(s: VoiceSession, f: AudioFrame) -> None:
+    def counting_process_inbound(s: VoiceSession, f: AudioFrame) -> None:
         nonlocal process_count
         process_count += 1
-        original_process_frame(s, f)
+        original_process_inbound(s, f)
 
-    channel._pipeline.process_frame = counting_process_frame  # type: ignore[assignment]
+    channel._pipeline.process_inbound = counting_process_inbound  # type: ignore[assignment]
 
     # Send 10 frames rapidly (within same 1-second window)
     for _ in range(10):
-        channel._on_audio_received(session, _make_frame())
+        channel._pipeline_on_audio_received(session, _make_frame())
 
     # Only 5 should have been passed through
     assert process_count == 5
@@ -100,19 +100,19 @@ def test_frame_counter_resets_after_one_second() -> None:
 
     process_count = 0
 
-    def counting_process_frame(s: VoiceSession, f: AudioFrame) -> None:
+    def counting_process_inbound(s: VoiceSession, f: AudioFrame) -> None:
         nonlocal process_count
         process_count += 1
 
-    channel._pipeline.process_frame = counting_process_frame  # type: ignore[assignment]
+    channel._pipeline.process_inbound = counting_process_inbound  # type: ignore[assignment]
 
     # Send 2 frames (fills the limit)
-    channel._on_audio_received(session, _make_frame())
-    channel._on_audio_received(session, _make_frame())
+    channel._pipeline_on_audio_received(session, _make_frame())
+    channel._pipeline_on_audio_received(session, _make_frame())
     assert process_count == 2
 
     # Third frame should be dropped
-    channel._on_audio_received(session, _make_frame())
+    channel._pipeline_on_audio_received(session, _make_frame())
     assert process_count == 2
 
     # Simulate time advancing by 1+ second
@@ -120,7 +120,7 @@ def test_frame_counter_resets_after_one_second() -> None:
     channel._frame_counts[session.id] = (window_start - 1.1, count)
 
     # Now frames should pass again
-    channel._on_audio_received(session, _make_frame())
+    channel._pipeline_on_audio_received(session, _make_frame())
     assert process_count == 3
 
 
@@ -144,15 +144,15 @@ def test_no_limit_allows_all_frames() -> None:
 
     process_count = 0
 
-    def counting_process_frame(s: VoiceSession, f: AudioFrame) -> None:
+    def counting_process_inbound(s: VoiceSession, f: AudioFrame) -> None:
         nonlocal process_count
         process_count += 1
 
-    channel._pipeline.process_frame = counting_process_frame  # type: ignore[assignment]
+    channel._pipeline.process_inbound = counting_process_inbound  # type: ignore[assignment]
 
     # All 100 frames should pass
     for _ in range(100):
-        channel._on_audio_received(session, _make_frame())
+        channel._pipeline_on_audio_received(session, _make_frame())
 
     assert process_count == 100
 
@@ -176,7 +176,7 @@ def test_cleanup_on_unbind() -> None:
     channel._session_bindings[session.id] = ("room-1", binding)
 
     # Send a frame to populate the counter
-    channel._on_audio_received(session, _make_frame())
+    channel._pipeline_on_audio_received(session, _make_frame())
     assert session.id in channel._frame_counts
 
     # Unbind

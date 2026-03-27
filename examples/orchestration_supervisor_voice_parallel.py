@@ -79,7 +79,6 @@ async def main() -> None:
         block_duration_ms=20,
         mute_mic_during_playback=False,
         aec=aec,
-        pipeline=pipeline,
     )
 
     # --- Grok Realtime provider (speech-to-speech) ---------------------------
@@ -162,6 +161,7 @@ async def main() -> None:
         voice=xai_config.voice,
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
+        pipeline=pipeline,
     )
     kit.register_channel(voice)
 

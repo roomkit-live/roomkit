@@ -205,15 +205,6 @@ class VoiceBackend(ABC):
         return VoiceCapability.NONE
 
     @property
-    def has_local_vad(self) -> bool:
-        """Whether this backend has a local audio pipeline with VAD.
-
-        When True, the channel can use local VAD for speech detection
-        instead of relying on the provider's server-side VAD.
-        """
-        return False
-
-    @property
     def feeds_aec_reference(self) -> bool:
         """Whether this backend feeds AEC reference at the transport level.
 

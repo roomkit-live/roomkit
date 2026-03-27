@@ -96,8 +96,6 @@ async def main() -> None:
         output_sample_rate=sample_rate,
         block_duration_ms=block_ms,
         mute_mic_during_playback=mute_mic,
-        aec=aec,
-        pipeline=pipeline,
     )
 
     # --- Realtime voice channel ---
@@ -109,6 +107,7 @@ async def main() -> None:
         voice=voice_prompt,
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
+        pipeline=pipeline,
     )
     kit.register_channel(channel)
 

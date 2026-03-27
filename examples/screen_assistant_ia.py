@@ -641,7 +641,6 @@ async def main() -> None:
         output_sample_rate=sample_rate,
         block_duration_ms=block_ms,
         mute_mic_during_playback=mute_mic,
-        pipeline=pipeline,
     )
 
     voice_name = get_voice_name(voice_choice)
@@ -652,6 +651,7 @@ async def main() -> None:
         system_prompt=system_prompt,
         voice=voice_name,
         input_sample_rate=sample_rate,
+        pipeline=pipeline,
         tools=all_tools,
         mute_on_tool_call=True,
     )

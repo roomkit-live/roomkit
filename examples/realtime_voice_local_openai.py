@@ -88,7 +88,6 @@ async def main() -> None:
         block_duration_ms=block_ms,
         mute_mic_during_playback=mute_mic,
         aec=aec,
-        pipeline=pipeline,
     )
 
     # --- Realtime voice channel ---
@@ -103,6 +102,7 @@ async def main() -> None:
         voice=os.environ.get("OPENAI_VOICE", "alloy"),
         input_sample_rate=24000,
         output_sample_rate=24000,
+        pipeline=pipeline,
     )
     kit.register_channel(channel)
 

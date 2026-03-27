@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._voice_hooks import VoiceHooksMixin
+from roomkit.channels._voice_pipeline import VoicePipelineMixin
 from roomkit.channels._voice_stt import VoiceSTTMixin
 from roomkit.channels._voice_tts import VoiceTTSMixin
 from roomkit.channels._voice_turn import VoiceTurnMixin
@@ -101,7 +102,14 @@ class TTSPlaybackState:
         return int(elapsed.total_seconds() * 1000)
 
 
-class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin, Channel):
+class VoiceChannel(
+    VoiceSTTMixin,
+    VoiceTTSMixin,
+    VoiceHooksMixin,
+    VoiceTurnMixin,
+    VoicePipelineMixin,
+    Channel,
+):
     """Real-time voice communication channel.
 
     Supports three STT modes:
@@ -269,16 +277,8 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
     def _setup_pipeline(self, backend: VoiceBackend, config: AudioPipelineConfig) -> None:
         """Create AudioPipeline and wire backend -> pipeline -> callbacks."""
-        from roomkit.voice.pipeline.engine import AudioPipeline
-
-        self._pipeline = AudioPipeline(
-            config,
-            backend_capabilities=backend.capabilities,
-            backend_feeds_aec_reference=backend.feeds_aec_reference,
-        )
-
-        # Backend delivers raw audio -> pipeline processes it
-        backend.on_audio_received(self._on_audio_received)
+        # Shared infrastructure: pipeline creation, audio reception, AEC reference
+        pipeline = self._create_pipeline(config, backend)
 
         # Continuous STT: no local VAD, stream all audio to STT provider.
         # Batch mode takes priority — audio accumulates for manual flush.
@@ -291,24 +291,24 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
 
         # Pipeline events -> VoiceChannel hooks
         if self._continuous_stt:
-            self._pipeline.on_processed_frame(self._on_processed_frame_for_stt)
+            pipeline.on_processed_frame(self._on_processed_frame_for_stt)
         elif self._batch_mode and self._stt is not None:
-            self._pipeline.on_processed_frame(self._on_processed_frame_for_batch)
+            pipeline.on_processed_frame(self._on_processed_frame_for_batch)
         else:
-            self._pipeline.on_speech_end(self._on_pipeline_speech_end)
-            self._pipeline.on_vad_event(self._on_pipeline_vad_event)
-            self._pipeline.on_speech_frame(self._on_pipeline_speech_frame)
+            pipeline.on_speech_end(self._on_pipeline_speech_end)
+            pipeline.on_vad_event(self._on_pipeline_vad_event)
+            pipeline.on_speech_frame(self._on_pipeline_speech_frame)
         if config.diarization is not None:
-            self._pipeline.on_speaker_change(self._on_pipeline_speaker_change)
+            pipeline.on_speaker_change(self._on_pipeline_speaker_change)
         if config.dtmf is not None:
-            self._pipeline.on_dtmf(self._on_pipeline_dtmf)
+            pipeline.on_dtmf(self._on_pipeline_dtmf)
         if config.recorder is not None:
-            self._pipeline.on_recording_started(self._on_pipeline_recording_started)
-            self._pipeline.on_recording_stopped(self._on_pipeline_recording_stopped)
+            pipeline.on_recording_started(self._on_pipeline_recording_started)
+            pipeline.on_recording_stopped(self._on_pipeline_recording_stopped)
 
         # Audio bridge: forward processed frames to other sessions
         if self._bridge is not None:
-            self._pipeline.on_processed_frame(self._on_processed_frame_for_bridge)
+            pipeline.on_processed_frame(self._on_processed_frame_for_bridge)
             self._bridge.set_frame_processor(self._process_bridge_outbound)
 
         # Audio level hooks:
@@ -316,26 +316,9 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         # - Output: fires from _wrap_outbound() in the TTS mixin (all backends),
         #   AND from on_audio_played at real playback pace (backends that support it).
         #   Both share _last_output_level_at so they naturally deduplicate.
-        self._pipeline.on_processed_frame(self._on_processed_frame_for_level)
+        pipeline.on_processed_frame(self._on_processed_frame_for_level)
         if backend.supports_playback_callback:
             backend.on_audio_played(self._on_audio_played_for_level)
-
-        # Wire speaker output to pipeline AEC for time-aligned reference.
-        # Only when the backend doesn't already feed AEC reference at
-        # the transport level (same AEC instance) — otherwise double-
-        # feeding corrupts the AEC's internal ring buffer.
-        if (
-            config.aec is not None
-            and backend.supports_playback_callback
-            and not backend.feeds_aec_reference
-        ):
-
-            def _on_audio_played(session: VoiceSession, frame: AudioFrame) -> None:
-                if self._pipeline is not None:
-                    self._pipeline.feed_aec_reference(frame)
-
-            backend.on_audio_played(_on_audio_played)
-            self._pipeline.enable_playback_aec_feed()
 
         # Barge-in from backend (transport-level)
         if VoiceCapability.BARGE_IN in backend.capabilities:
@@ -383,11 +366,15 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
     # Pipeline event handlers (wiring layer)
     # -------------------------------------------------------------------------
 
-    def _on_audio_received(self, session: VoiceSession, frame: AudioFrame) -> None:
+    def _pipeline_on_audio_received(
+        self,
+        session: VoiceSession,
+        frame: AudioFrame,
+    ) -> None:
         """Handle raw audio frame from backend — feed into pipeline.
 
-        Enforces ``ChannelBinding.access`` and ``muted`` per RFC §7.5:
-        audio is dropped when the binding is READ_ONLY, NONE, or muted.
+        Extends the mixin's binding gating with VoiceChannel-specific
+        audio frame rate limiting.
         """
         with self._state_lock:
             binding_info = self._session_bindings.get(session.id)
@@ -397,7 +384,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                 return
 
         # Audio frame rate limiting — drop excess frames (thread-safe:
-        # _on_audio_received is called from audio callback threads)
+        # _pipeline_on_audio_received is called from audio callback threads)
         if self._max_fps is not None:
             with self._state_lock:
                 now = time.monotonic()
@@ -410,7 +397,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
                     return
 
         if self._pipeline is not None:
-            self._pipeline.process_frame(session, frame)
+            self._pipeline.process_inbound(session, frame)
 
     def _on_pipeline_speech_end(self, session: VoiceSession, audio: bytes) -> None:
         """Handle speech end from pipeline — fire hooks and transcribe."""
@@ -896,8 +883,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         if self._pipeline is not None:
             self._pipeline.set_parent_span(session.id, span_id)
         # Notify pipeline of session activation
-        if self._pipeline is not None:
-            self._pipeline.on_session_active(session)
+        self._pipeline_session_active(session)
         # Register session with audio bridge
         bridge_backend = backend or self._backend
         if self._bridge is not None and bridge_backend is not None:
@@ -980,8 +966,7 @@ class VoiceChannel(VoiceSTTMixin, VoiceTTSMixin, VoiceHooksMixin, VoiceTurnMixin
         if self._bridge is not None:
             self._bridge.remove_session(session.id)
         # Notify pipeline of session end
-        if self._pipeline is not None:
-            self._pipeline.on_session_ended(session)
+        self._pipeline_session_ended(session)
         # Clear pending turns, audio, and interrupt cooldown
         self._pending_turns.pop(session.id, None)
         self._pending_audio.pop(session.id, None)

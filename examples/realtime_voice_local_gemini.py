@@ -111,7 +111,6 @@ async def main() -> None:
         block_duration_ms=block_ms,
         mute_mic_during_playback=mute_mic,
         aec=aec,
-        pipeline=pipeline,
     )
 
     # --- Realtime voice channel ---
@@ -125,6 +124,7 @@ async def main() -> None:
         ),
         voice=os.environ.get("GEMINI_VOICE", "Aoede"),
         input_sample_rate=sample_rate,
+        pipeline=pipeline,
         skills=registry,
     )
     kit.register_channel(channel)
