@@ -90,10 +90,18 @@ async def main() -> None:
     pipeline = build_pipeline(aec=aec, denoiser=denoiser, debug_taps=debug_taps)
 
     # When AEC is active it removes speaker echo from the mic signal, so we
-    # can keep the mic open during playback.  Without AEC the mic is muted
-    # during playback to prevent feedback loops.
+    # can keep the mic open during playback (barge-in enabled).  Without AEC
+    # the mic is muted during playback to prevent feedback loops.
     mute_env = os.environ.get("MUTE_MIC")
     mute_mic = mute_env != "0" if mute_env is not None else aec is None
+
+    if mute_mic:
+        logger.warning(
+            "Barge-in disabled — mic muted during playback (no AEC). "
+            "Install AEC for barge-in: pip install aec-audio-processing"
+        )
+    else:
+        logger.info("Barge-in enabled (AEC active, mic stays open during playback)")
 
     transport = LocalAudioBackend(
         input_sample_rate=sample_rate,

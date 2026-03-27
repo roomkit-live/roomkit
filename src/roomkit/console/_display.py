@@ -204,34 +204,59 @@ def _build_voice_status_panel(state: ConsoleState) -> Panel:
     table.add_row("Session", Text(_truncate(state.session_id or "-", 20)))
     table.add_row("User", Text(state.participant_id or "-"))
 
-    if state.partial_text:
-        table.add_row("STT", Text(f'"{state.partial_text}..."', style="italic yellow"))
-    elif state.last_final_text:
-        table.add_row("STT", Text(f'"{_truncate(state.last_final_text, 30)}"', style=_ACCENT))
+    # Barge-in status
+    if state.barge_in_enabled is True:
+        table.add_row("Barge-in", Text("ON", style="bold green"))
+    elif state.barge_in_enabled is False:
+        table.add_row("Barge-in", Text("OFF (no AEC)", style="bold red"))
+
+    # Skills
+    if state.skill_names:
+        names = ", ".join(state.skill_names[:3])
+        table.add_row("Skills", Text(f"{len(state.skill_names)}: {names}", style=_PRIMARY_LIGHT))
 
     return Panel(table, title="Voice Status", border_style=_PRIMARY)
 
 
 def _build_audio_panel(state: ConsoleState) -> Panel:
-    """Build the Audio Meters panel (top-right)."""
-    table = Table.grid(padding=(0, 1))
-    table.add_column(justify="right", width=4)
-    table.add_column(width=22)
-    table.add_column(width=10)
-    table.add_column()
+    """Build the Audio Meters + Voice Activity panel (top-right)."""
+    outer = Table.grid(padding=0)
+    outer.add_column()
+
+    # --- Audio meters ---
+    meters = Table.grid(padding=(0, 1))
+    meters.add_column(justify="right", width=4)
+    meters.add_column(width=22)
+    meters.add_column(width=10)
+    meters.add_column()
 
     in_meter = _render_meter(state.input_level_history)
     in_db = Text(f"{state.input_level_db:+6.1f} dB", style=_MUTED)
     speech = Text()
     if state.is_speech:
         speech.append(" ● SPEECH", style="bold green")
-    table.add_row(Text("IN", style="bold green"), in_meter, in_db, speech)
+    meters.add_row(Text("IN", style="bold green"), in_meter, in_db, speech)
 
     out_meter = _render_meter(state.output_level_history)
     out_db = Text(f"{state.output_level_db:+6.1f} dB", style=_MUTED)
-    table.add_row(Text("OUT", style=f"bold {_ACCENT}"), out_meter, out_db)
+    meters.add_row(Text("OUT", style=f"bold {_ACCENT}"), out_meter, out_db)
 
-    return Panel(table, title="Audio Meters", border_style=_PRIMARY)
+    outer.add_row(meters)
+    outer.add_row(Text())  # spacer
+
+    # --- Voice activity timeline ---
+    events = list(state.voice_events)[-5:]
+    for ve in events:
+        line = Text()
+        ts = ve.timestamp.strftime("%H:%M:%S")
+        line.append(f"  {ts} ", style=_MUTED)
+        line.append(f"● {ve.label}", style=ve.style)
+        outer.add_row(line)
+
+    if not events:
+        outer.add_row(Text("  Waiting for events...", style=f"italic {_MUTED}"))
+
+    return Panel(outer, title="Audio & Activity", border_style=_PRIMARY)
 
 
 def _build_conversation_text(state: ConsoleState) -> Text:
@@ -408,7 +433,7 @@ class RoomKitConsole:
         self._console = RichConsole(stderr=True)
         self._original_level: int = logging.WARNING
 
-        self._hook_names = register_console_hooks(kit.hook_engine, self._state)
+        self._hook_names = register_console_hooks(kit.hook_engine, self._state, kit)
         self._setup_logging(log_level)
 
         if self._is_tty:

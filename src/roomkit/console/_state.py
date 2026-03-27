@@ -9,6 +9,15 @@ from datetime import UTC, datetime
 
 
 @dataclass(frozen=True)
+class VoiceEvent:
+    """A timestamped voice pipeline event for the activity timeline."""
+
+    label: str
+    style: str
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass(frozen=True)
 class ConversationTurn:
     """A single turn in the conversation history."""
 
@@ -47,11 +56,19 @@ class ConsoleState:
     last_tts_text: str = ""
     partial_assistant_text: str = ""
 
+    # Feature flags (populated from channel/transport capabilities)
+    barge_in_enabled: bool | None = None
+    skills_count: int = 0
+    skill_names: list[str] = field(default_factory=list)
+
     # Counters
     transcription_count: int = 0
     tts_count: int = 0
     barge_in_count: int = 0
     tool_call_count: int = 0
+
+    # Voice activity timeline (recent events)
+    voice_events: deque[VoiceEvent] = field(default_factory=lambda: deque(maxlen=20))
 
     # History of recent audio levels for waveform display
     input_level_history: deque[float] = field(

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from roomkit.console._state import ConsoleState, ConversationTurn
+from roomkit.console._state import ConsoleState, ConversationTurn, VoiceEvent
 from roomkit.core.hooks import HookRegistration
 from roomkit.models.enums import HookExecution, HookTrigger
 
+_ACCENT = "rgb(6,182,212)"
+
 if TYPE_CHECKING:
+    from roomkit.core.framework import RoomKit
     from roomkit.core.hooks import HookEngine
 
 # All console hook names share this prefix for clean removal.
@@ -31,7 +34,7 @@ _HOOK_DEFS: list[tuple[HookTrigger, str]] = [
 ]
 
 
-def _make_handler(tag: str, state: ConsoleState) -> Any:
+def _make_handler(tag: str, state: ConsoleState, kit: RoomKit | None = None) -> Any:
     """Build a hook handler that updates *state* for the given *tag*."""
 
     async def on_input_level(event: Any, ctx: Any) -> None:
@@ -54,13 +57,30 @@ def _make_handler(tag: str, state: ConsoleState) -> Any:
         state.session_started_at = event.timestamp
         state.voice_state = "idle"
 
+        # Detect barge-in and skills from channel.
+        if kit is not None:
+            channel = kit.channels.get(event.channel_id)
+            if channel is not None:
+                transport = getattr(channel, "_transport", None)
+                if transport is not None:
+                    mute = getattr(transport, "_mute_mic_during_playback", None)
+                    state.barge_in_enabled = not mute if mute is not None else None
+                skills = getattr(channel, "_skills", None)
+                if skills is not None:
+                    state.skill_names = list(getattr(skills, "skill_names", []))
+                    state.skills_count = len(state.skill_names)
+
+        state.voice_events.append(VoiceEvent("SESSION STARTED", f"bold {_ACCENT}"))
+
     async def on_speech_start(event: Any, ctx: Any) -> None:
         state.voice_state = "listening"
         state.partial_text = ""
         state.partial_assistant_text = ""
+        state.voice_events.append(VoiceEvent("SPEECH START", "bold green"))
 
     async def on_speech_end(event: Any, ctx: Any) -> None:
         state.voice_state = "processing"
+        state.voice_events.append(VoiceEvent("SPEECH END", "yellow"))
 
     async def on_transcription(event: Any, ctx: Any) -> None:
         # RealtimeTranscriptionEvent has .role;
@@ -73,11 +93,13 @@ def _make_handler(tag: str, state: ConsoleState) -> Any:
             state.tts_count += 1
             state.conversation.append(ConversationTurn(role="assistant", text=event.text))
             state.voice_state = "idle"
+            state.voice_events.append(VoiceEvent("AI DONE", f"{_ACCENT}"))
         else:
             state.last_final_text = event.text
             state.partial_text = ""
             state.transcription_count += 1
             state.conversation.append(ConversationTurn(role="user", text=event.text))
+            state.voice_events.append(VoiceEvent("STT FINAL", "cyan"))
 
     async def on_partial_transcription(event: Any, ctx: Any) -> None:
         # PartialTranscriptionEvent.role defaults to "user".
@@ -95,16 +117,21 @@ def _make_handler(tag: str, state: ConsoleState) -> Any:
         state.last_tts_text = tts_text
         state.tts_count += 1
         state.conversation.append(ConversationTurn(role="assistant", text=tts_text))
+        state.voice_events.append(VoiceEvent("TTS START", f"bold {_ACCENT}"))
 
     async def on_after_tts(text: Any, ctx: Any) -> None:
         state.voice_state = "idle"
+        state.voice_events.append(VoiceEvent("TTS END", _ACCENT))
 
     async def on_barge_in(event: Any, ctx: Any) -> None:
         state.barge_in_count += 1
         state.voice_state = "listening"
+        state.voice_events.append(VoiceEvent("BARGE-IN", "bold red"))
 
     async def on_tool_call(event: Any, ctx: Any) -> None:
         state.tool_call_count += 1
+        name = getattr(event, "name", "?")
+        state.voice_events.append(VoiceEvent(f"TOOL: {name}", "yellow"))
 
     handlers: dict[str, Any] = {
         "input_level": on_input_level,
@@ -123,7 +150,9 @@ def _make_handler(tag: str, state: ConsoleState) -> Any:
     return handlers[tag]
 
 
-def register_console_hooks(engine: HookEngine, state: ConsoleState) -> list[str]:
+def register_console_hooks(
+    engine: HookEngine, state: ConsoleState, kit: RoomKit | None = None
+) -> list[str]:
     """Register all console observer hooks on *engine*.
 
     Returns the list of hook names for later removal.
@@ -135,7 +164,7 @@ def register_console_hooks(engine: HookEngine, state: ConsoleState) -> list[str]
             HookRegistration(
                 trigger=trigger,
                 execution=HookExecution.ASYNC,
-                fn=_make_handler(tag, state),
+                fn=_make_handler(tag, state, kit),
                 priority=999,
                 name=name,
             )
