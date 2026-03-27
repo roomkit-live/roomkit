@@ -72,8 +72,16 @@ class RealtimeVADMixin:
         (SILENCE, AUDIO_LEVEL) are ignored.
         """
         if vad_event.type == VADEventType.SPEECH_START:
+            with self._state_lock:
+                fwd = self._audio_forward_count.get(session.id, 0)
+            logger.info(
+                "[LocalVAD] SPEECH_START (session %s, audio_forward_count=%d)",
+                session.id,
+                fwd,
+            )
             self._on_local_speech_start(session)
         elif vad_event.type == VADEventType.SPEECH_END:
+            logger.info("[LocalVAD] SPEECH_END (session %s)", session.id)
             self._on_local_speech_end(session)
 
     # ------------------------------------------------------------------
