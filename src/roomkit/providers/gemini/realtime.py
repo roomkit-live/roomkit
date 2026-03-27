@@ -222,16 +222,16 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if prefix_padding_ms is not None:
             vad_kwargs["prefix_padding_ms"] = int(prefix_padding_ms)
 
-        realtime_input_kwargs: dict[str, Any] = {}
-        if vad_kwargs:
-            realtime_input_kwargs["automatic_activity_detection"] = (
-                types.AutomaticActivityDetection(**vad_kwargs)
-            )
+        # Always enable automatic activity detection (server-side VAD) so
+        # voice_activity events are reliably sent, enabling barge-in and
+        # speech start/end hooks.
+        realtime_input_kwargs: dict[str, Any] = {
+            "automatic_activity_detection": types.AutomaticActivityDetection(**vad_kwargs),
+        }
         no_interruption = pc.get("no_interruption")
         if no_interruption:
             realtime_input_kwargs["activity_handling"] = "NO_INTERRUPTION"
-        if realtime_input_kwargs:
-            config["realtime_input_config"] = types.RealtimeInputConfig(**realtime_input_kwargs)
+        config["realtime_input_config"] = types.RealtimeInputConfig(**realtime_input_kwargs)
 
         # --- Tools ---
         if tools:

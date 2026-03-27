@@ -238,6 +238,8 @@ class RealtimeVoiceChannel(Channel):
         # Per-session generation counter: bumped on interrupt so pending
         # send_audio tasks created before the interrupt become stale and skip.
         self._audio_generation: dict[str, int] = {}
+        # Last assistant text per session (for barge-in event context)
+        self._last_assistant_text: dict[str, str] = {}
         # Throttle audio level hooks to ~10/sec per direction
         self._last_input_level_at: float = 0.0
         self._last_output_level_at: float = 0.0
@@ -1350,6 +1352,10 @@ class RealtimeVoiceChannel(Channel):
                 },
             )
 
+            # Track last assistant text for barge-in context
+            if role == "assistant":
+                self._last_assistant_text[session.id] = final_text
+
             # Emit final transcriptions as RoomEvents
             if self._emit_transcription_events and final_text.strip():
                 participant_id = session.participant_id if role == "user" else None
@@ -1423,6 +1429,14 @@ class RealtimeVoiceChannel(Channel):
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
+
+        if is_barge_in:
+            self._track_task(
+                loop,
+                self._fire_barge_in_hook(session),
+                name=f"rt_barge_in:{session.id}",
+            )
+
         self._track_task(
             loop,
             self._handle_speech_event(session, "start"),
@@ -1442,6 +1456,33 @@ class RealtimeVoiceChannel(Channel):
             self._handle_speech_event(session, "end"),
             name=f"rt_speech_end:{session.id}",
         )
+
+    async def _fire_barge_in_hook(self, session: VoiceSession) -> None:
+        """Fire ON_BARGE_IN when user interrupts AI playback."""
+        if not self._framework:
+            return
+        with self._state_lock:
+            room_id = self._session_rooms.get(session.id)
+        if not room_id:
+            return
+        try:
+            from roomkit.voice.events import BargeInEvent
+
+            context = await self._framework._build_context(room_id)
+            event = BargeInEvent(
+                session=session,
+                interrupted_text=self._last_assistant_text.get(session.id, ""),
+                audio_position_ms=0,
+            )
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_BARGE_IN,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+        except Exception:
+            logger.exception("Error firing ON_BARGE_IN hook")
 
     async def _handle_speech_event(self, session: VoiceSession, event_type: str) -> None:
         """Fire speech hooks and publish ephemeral indicator."""
