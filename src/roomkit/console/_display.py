@@ -220,10 +220,11 @@ def _build_voice_status_panel(state: ConsoleState) -> Panel:
 
 def _build_audio_panel(state: ConsoleState) -> Panel:
     """Build the Audio Meters + Voice Activity panel (top-right)."""
-    outer = Table.grid(padding=0)
-    outer.add_column()
+    outer = Table.grid(padding=(0, 2))
+    outer.add_column(ratio=1)  # meters
+    outer.add_column(ratio=1)  # activity
 
-    # --- Audio meters ---
+    # --- Left: Audio meters ---
     meters = Table.grid(padding=(0, 1))
     meters.add_column(justify="right", width=4)
     meters.add_column(width=22)
@@ -241,20 +242,18 @@ def _build_audio_panel(state: ConsoleState) -> Panel:
     out_db = Text(f"{state.output_level_db:+6.1f} dB", style=_MUTED)
     meters.add_row(Text("OUT", style=f"bold {_ACCENT}"), out_meter, out_db)
 
-    outer.add_row(meters)
-    outer.add_row(Text())  # spacer
-
-    # --- Voice activity timeline ---
-    events = list(state.voice_events)[-5:]
+    # --- Right: Voice activity timeline ---
+    activity = Text()
+    events = list(state.voice_events)[-6:]
     for ve in events:
-        line = Text()
         ts = ve.timestamp.strftime("%H:%M:%S")
-        line.append(f"  {ts} ", style=_MUTED)
-        line.append(f"● {ve.label}", style=ve.style)
-        outer.add_row(line)
+        activity.append(f"{ts} ", style=_MUTED)
+        activity.append(f"● {ve.label}\n", style=ve.style)
 
     if not events:
-        outer.add_row(Text("  Waiting for events...", style=f"italic {_MUTED}"))
+        activity.append("Waiting for events...", style=f"italic {_MUTED}")
+
+    outer.add_row(meters, activity)
 
     return Panel(outer, title="Audio & Activity", border_style=_PRIMARY)
 
