@@ -280,6 +280,24 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
             return
         await ws.send(json.dumps(event))
 
+    async def send_activity_start(self, session: VoiceSession) -> None:
+        """No-op — audio flows continuously via input_audio_buffer.append."""
+        logger.debug("[OpenAI] activity_start (no-op, session %s)", session.id)
+
+    async def send_activity_end(self, session: VoiceSession) -> None:
+        """Commit audio buffer and request a response (manual VAD mode)."""
+        ws = self._connections.get(session.id)
+        if ws is None:
+            return
+        logger.debug("[OpenAI →] input_audio_buffer.commit (session %s)", session.id)
+        await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+
+        if session.id in self._responding:
+            logger.debug("[OpenAI] skip response.create — responding (session %s)", session.id)
+            return
+        logger.debug("[OpenAI →] response.create (session %s)", session.id)
+        await ws.send(json.dumps({"type": "response.create"}))
+
     async def disconnect(self, session: VoiceSession) -> None:
         import contextlib
 
