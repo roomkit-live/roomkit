@@ -195,6 +195,46 @@ def build_vad(sample_rate: int = 24000, *, default: str = "energy") -> object | 
     return None
 
 
+def build_turn_detector(*, default: str = "0") -> object | None:
+    """Build a turn detector based on the ``TURN_DETECTOR`` env var.
+
+    Env: ``TURN_DETECTOR=smart-turn|1|0`` (default comes from *default* param).
+    ``TURN_MODEL`` sets the ONNX model path (default ``smart-turn-v3.2-cpu.onnx``).
+    ``TURN_THRESHOLD`` sets the completion probability threshold (default ``0.5``).
+
+    * ``smart-turn`` / ``1`` — pipecat-ai/smart-turn ONNX model
+      (``pip install roomkit[smart-turn]``)
+    * ``0`` — disabled
+
+    Returns the detector instance or ``None``.
+    """
+    mode = os.environ.get("TURN_DETECTOR", default).lower()
+    if mode == "0":
+        return None
+    if mode == "1":
+        mode = "smart-turn"
+
+    if mode == "smart-turn":
+        model = os.environ.get("TURN_MODEL", "smart-turn-v3.2-cpu.onnx")
+        threshold = float(os.environ.get("TURN_THRESHOLD", "0.5"))
+        try:
+            from roomkit.voice.pipeline.turn.smart_turn import SmartTurnConfig, SmartTurnDetector
+
+            logger.info(
+                "Turn detector enabled (smart-turn, model=%s, threshold=%.2f)", model, threshold
+            )
+            return SmartTurnDetector(SmartTurnConfig(model_path=model, threshold=threshold))
+        except ImportError:
+            logger.warning("smart-turn deps not installed — turn detector disabled")
+            return None
+        except Exception:
+            logger.exception("Failed to create SmartTurnDetector — disabled")
+            return None
+
+    logger.warning("Unknown TURN_DETECTOR mode %r — disabling", mode)
+    return None
+
+
 def build_pipeline(
     *,
     aec: object | None = None,
