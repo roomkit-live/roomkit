@@ -99,6 +99,7 @@ def _make_handler(tag: str, state: ConsoleState, kit: RoomKit | None = None) -> 
             state.partial_text = ""
             state.transcription_count += 1
             state.conversation.append(ConversationTurn(role="user", text=event.text))
+            state.voice_state = "processing"
             state.voice_events.append(VoiceEvent("STT FINAL", "cyan"))
 
     async def on_partial_transcription(event: Any, ctx: Any) -> None:
@@ -110,6 +111,7 @@ def _make_handler(tag: str, state: ConsoleState, kit: RoomKit | None = None) -> 
             state.voice_state = "speaking"
         else:
             state.partial_text = event.text
+            state.voice_state = "listening"
 
     async def on_before_tts(text: Any, ctx: Any) -> None:
         state.voice_state = "speaking"
