@@ -35,6 +35,10 @@ class RealtimeTranscriptionEvent:
     is_final: bool
     """True if this is a final transcription (not interim)."""
 
+    was_barge_in: bool = False
+    """True if this transcription resulted from a barge-in (user
+    interrupted the AI while it was speaking)."""
+
     item_id: str | None = None
     """Provider-specific item ID for correlation."""
 

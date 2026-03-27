@@ -94,6 +94,9 @@ class RealtimeVADMixin:
             resamplers = self._session_resamplers.get(session.id)
             is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
 
+        if is_barge_in:
+            self._barge_in_active.add(session.id)
+
         if resamplers:
             resamplers[1].reset()
 

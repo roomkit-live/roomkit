@@ -268,14 +268,15 @@ def _build_conversation_text(state: ConsoleState) -> Text:
             text.append("[AI]   ", style=f"bold {_ACCENT}")
         text.append(f"{turn.text}\n")
 
-    # Streaming partial text (user typing or AI generating).
+    # Streaming partial text (user speaking or AI generating).
+    if state.partial_text:
+        text.append("[User] ", style="bold yellow")
+        text.append(f"{state.partial_text}", style="italic yellow")
+        text.append("▍\n", style="bold yellow")
     if state.partial_assistant_text:
         text.append("[AI]   ", style=f"bold {_ACCENT}")
         text.append(f"{state.partial_assistant_text}", style=f"italic {_ACCENT}")
         text.append("▍\n", style=f"bold {_PRIMARY}")
-    if state.partial_text:
-        text.append("[User] ", style="bold yellow")
-        text.append(f"{state.partial_text}...", style="italic dim")
 
     if not state.conversation and not state.partial_text and not state.partial_assistant_text:
         text.append("Waiting for conversation...", style=f"dim italic {_MUTED}")

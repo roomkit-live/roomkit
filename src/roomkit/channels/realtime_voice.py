@@ -241,6 +241,8 @@ class RealtimeVoiceChannel(RealtimeVADMixin, Channel):
         self._audio_generation: dict[str, int] = {}
         # Last assistant text per session (for barge-in event context)
         self._last_assistant_text: dict[str, str] = {}
+        # Barge-in state: set when user interrupts AI, cleared on next final transcription
+        self._barge_in_active: set[str] = set()
         # Throttle audio level hooks to ~10/sec per direction
         self._last_input_level_at: float = 0.0
         self._last_output_level_at: float = 0.0
@@ -707,6 +709,7 @@ class RealtimeVoiceChannel(RealtimeVADMixin, Channel):
             self._session_transport_rates.pop(session.id, None)
             self._audio_forward_count.pop(session.id, None)
             self._last_assistant_text.pop(session.id, None)
+            self._barge_in_active.discard(session.id)
             idle = self._idle_events.pop(session.id, None)
             if idle is not None:
                 idle.set()  # unblock any waiters
@@ -1327,11 +1330,17 @@ class RealtimeVoiceChannel(RealtimeVADMixin, Channel):
             # Fire ON_TRANSCRIPTION hooks (sync, can modify/block)
             from roomkit.voice.realtime.events import RealtimeTranscriptionEvent
 
+            # Check and clear barge-in state for user transcriptions.
+            was_barge_in = role == "user" and session.id in self._barge_in_active
+            if was_barge_in and is_final:
+                self._barge_in_active.discard(session.id)
+
             transcription_event = RealtimeTranscriptionEvent(
                 session=session,
                 text=text,
                 role=role,  # type: ignore[arg-type]
                 is_final=is_final,
+                was_barge_in=was_barge_in,
             )
 
             hook_result = await self._framework.hook_engine.run_sync_hooks(
@@ -1422,6 +1431,9 @@ class RealtimeVoiceChannel(RealtimeVADMixin, Channel):
             self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
             resamplers = self._session_resamplers.get(session.id)
             is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
+
+        if is_barge_in:
+            self._barge_in_active.add(session.id)
 
         # Discard outbound resampler state so stale audio doesn't leak
         if resamplers:

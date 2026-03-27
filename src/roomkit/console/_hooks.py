@@ -110,7 +110,7 @@ def _make_handler(tag: str, state: ConsoleState, kit: RoomKit | None = None) -> 
             state.partial_assistant_text += event.text
             state.voice_state = "speaking"
         else:
-            state.partial_text = event.text
+            state.partial_text += event.text
             state.voice_state = "listening"
 
     async def on_before_tts(text: Any, ctx: Any) -> None:
