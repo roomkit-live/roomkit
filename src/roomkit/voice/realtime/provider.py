@@ -312,7 +312,7 @@ class RealtimeVoiceProvider(ABC):
 
     # -- Manual VAD activity signals --
 
-    async def send_activity_start(self, session: VoiceSession) -> None:
+    async def send_activity_start(self, session: VoiceSession) -> None:  # noqa: B027
         """Signal that user speech activity has started.
 
         Used in manual VAD mode: local VAD detects speech and the channel
@@ -322,7 +322,7 @@ class RealtimeVoiceProvider(ABC):
         Default: no-op.  Override when the provider supports manual mode.
         """
 
-    async def send_activity_end(self, session: VoiceSession) -> None:
+    async def send_activity_end(self, session: VoiceSession) -> None:  # noqa: B027
         """Signal that user speech activity has ended.
 
         Used in manual VAD mode: local VAD detects silence and the channel

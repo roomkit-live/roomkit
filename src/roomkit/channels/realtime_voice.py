@@ -706,6 +706,7 @@ class RealtimeVoiceChannel(RealtimeVADMixin, Channel):
             self._audio_generation.pop(session.id, None)
             self._session_transport_rates.pop(session.id, None)
             self._audio_forward_count.pop(session.id, None)
+            self._last_assistant_text.pop(session.id, None)
             idle = self._idle_events.pop(session.id, None)
             if idle is not None:
                 idle.set()  # unblock any waiters
@@ -1415,10 +1416,12 @@ class RealtimeVoiceChannel(RealtimeVADMixin, Channel):
             return
         self._user_speaking[session.id] = True
         self._update_idle_event(session.id)
-        # Bump generation — pending tasks with the old generation will skip
+        # Bump generation — pending tasks with the old generation will skip.
+        # Read barge-in state in the same lock acquisition for consistency.
         with self._state_lock:
             self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
             resamplers = self._session_resamplers.get(session.id)
+            is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
 
         # Discard outbound resampler state so stale audio doesn't leak
         if resamplers:
@@ -1429,10 +1432,6 @@ class RealtimeVoiceChannel(RealtimeVADMixin, Channel):
         # re-learn from scratch.  During convergence (~200-500 ms), echo
         # passes through uncancelled and triggers the provider's server-side
         # VAD again — creating an infinite echo→interrupt→reset loop.
-        # WebRTC AEC3 handles echo path changes internally; the bypass flag
-        # (set_active) is sufficient for activation control.
-        with self._state_lock:
-            is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
         if is_barge_in:
             logger.debug(
                 "Barge-in detected for session %s (forwarded %d chunks) — "

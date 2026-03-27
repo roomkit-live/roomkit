@@ -8,9 +8,10 @@ it knows when the user is speaking.
 
 Threading model:
     VAD callbacks fire on the PortAudio audio thread.  Sync operations
-    (interrupt, generation bump, state flags) run directly.  Async
-    operations (hooks, provider activity signals) are scheduled to the
-    event loop via ``call_soon_threadsafe``.
+    (interrupt, generation bump, state flags) run directly under
+    ``_state_lock``.  Async operations (hooks, provider activity
+    signals, idle-event updates) are scheduled to the event loop
+    via ``call_soon_threadsafe``.
 """
 
 from __future__ import annotations
@@ -18,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import TYPE_CHECKING
+
+from roomkit.voice.pipeline.vad.base import VADEventType
 
 if TYPE_CHECKING:
     from roomkit.voice.base import VoiceSession
@@ -33,7 +36,7 @@ class RealtimeVADMixin:
 
         _transport, _provider, _manual_vad, _event_loop,
         _user_speaking, _audio_generation, _audio_forward_count,
-        _session_resamplers, _state_lock, _playing_sessions (via transport)
+        _session_resamplers, _state_lock
     """
 
     _manual_vad: bool
@@ -65,10 +68,9 @@ class RealtimeVADMixin:
     def _on_local_vad_event(self, session: VoiceSession, vad_event: VADEvent) -> None:
         """Handle VAD event from local pipeline (PortAudio thread).
 
-        Dispatches SPEECH_START / SPEECH_END to the appropriate handler.
+        Only SPEECH_START and SPEECH_END are acted on; other events
+        (SILENCE, AUDIO_LEVEL) are ignored.
         """
-        from roomkit.voice.pipeline.vad.base import VADEventType
-
         if vad_event.type == VADEventType.SPEECH_START:
             self._on_local_speech_start(session)
         elif vad_event.type == VADEventType.SPEECH_END:
@@ -81,12 +83,13 @@ class RealtimeVADMixin:
     def _on_local_speech_start(self, session: VoiceSession) -> None:
         """Handle local VAD speech start.
 
-        Sync operations run on the PortAudio thread.  Async operations
-        (hooks, provider signals) are scheduled to the event loop.
+        Sync operations (state flags, generation bump, interrupt) run
+        on the PortAudio thread under ``_state_lock``.  Async operations
+        (hooks, provider signals, idle-event) are scheduled to the
+        event loop via ``call_soon_threadsafe``.
         """
-        self._user_speaking[session.id] = True
-        self._update_idle_event(session.id)
         with self._state_lock:
+            self._user_speaking[session.id] = True
             self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
             resamplers = self._session_resamplers.get(session.id)
             is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
@@ -102,6 +105,8 @@ class RealtimeVADMixin:
 
     def _schedule_local_speech_start(self, session: VoiceSession, is_barge_in: bool) -> None:
         """Schedule speech-start tasks on the event loop thread."""
+        self._update_idle_event(session.id)
+
         loop = asyncio.get_running_loop()
 
         if is_barge_in:
@@ -130,17 +135,20 @@ class RealtimeVADMixin:
     def _on_local_speech_end(self, session: VoiceSession) -> None:
         """Handle local VAD speech end.
 
-        Sync state update on PortAudio thread, async operations
-        scheduled to event loop.
+        Sync state update under ``_state_lock`` on PortAudio thread.
+        Async operations scheduled to event loop.
         """
-        self._user_speaking[session.id] = False
-        self._update_idle_event(session.id)
+        with self._state_lock:
+            self._user_speaking[session.id] = False
+
         loop: asyncio.AbstractEventLoop | None = self._event_loop
         if loop is not None and loop.is_running():
             loop.call_soon_threadsafe(self._schedule_local_speech_end, session)
 
     def _schedule_local_speech_end(self, session: VoiceSession) -> None:
         """Schedule speech-end tasks on the event loop thread."""
+        self._update_idle_event(session.id)
+
         loop = asyncio.get_running_loop()
 
         self._track_task(
