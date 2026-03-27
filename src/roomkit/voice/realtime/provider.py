@@ -310,6 +310,28 @@ class RealtimeVoiceProvider(ABC):
             callback: Called with (session, code, message).
         """
 
+    # -- Manual VAD activity signals --
+
+    async def send_activity_start(self, session: VoiceSession) -> None:
+        """Signal that user speech activity has started.
+
+        Used in manual VAD mode: local VAD detects speech and the channel
+        calls this to inform the provider.  The provider translates this
+        into its protocol's activity signal (e.g. Gemini ``ActivityStart``).
+
+        Default: no-op.  Override when the provider supports manual mode.
+        """
+
+    async def send_activity_end(self, session: VoiceSession) -> None:
+        """Signal that user speech activity has ended.
+
+        Used in manual VAD mode: local VAD detects silence and the channel
+        calls this to inform the provider.  The provider translates this
+        into its protocol's activity signal (e.g. Gemini ``ActivityEnd``).
+
+        Default: no-op.  Override when the provider supports manual mode.
+        """
+
 
 # Video callback: (session, VideoFrame) — used by RealtimeAudioVideoProvider
 RealtimeVideoCallback = Callable[[VoiceSession, "VideoFrame"], Any]

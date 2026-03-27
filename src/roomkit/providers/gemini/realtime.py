@@ -127,6 +127,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         tools: list[dict[str, Any]] | None = None,
         temperature: float | None = None,
         provider_config: dict[str, Any] | None = None,
+        server_vad: bool = True,
     ) -> Any:
         """Build a LiveConnectConfig from parameters.
 
@@ -222,11 +223,18 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if prefix_padding_ms is not None:
             vad_kwargs["prefix_padding_ms"] = int(prefix_padding_ms)
 
-        # Always enable automatic activity detection (server-side VAD) so
-        # voice_activity events are reliably sent, enabling barge-in and
-        # speech start/end hooks.
+        # When server_vad=True (default), enable automatic activity detection
+        # so the provider's server-side VAD handles speech boundaries.
+        # When server_vad=False (manual mode), disable it — the channel sends
+        # activityStart/activityEnd from local VAD instead.
+        if server_vad:
+            aad = types.AutomaticActivityDetection(**vad_kwargs)
+        else:
+            aad = types.AutomaticActivityDetection(disabled=True)
+            logger.info("Server-side VAD disabled — using manual mode (local VAD)")
+
         realtime_input_kwargs: dict[str, Any] = {
-            "automatic_activity_detection": types.AutomaticActivityDetection(**vad_kwargs),
+            "automatic_activity_detection": aad,
         }
         no_interruption = pc.get("no_interruption")
         if no_interruption:
@@ -279,6 +287,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             tools=tools,
             temperature=temperature,
             provider_config=provider_config,
+            server_vad=server_vad,
         )
 
         ctxmgr = self._client.aio.live.connect(
@@ -407,6 +416,30 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if state is None or state.live_session is None:
             return
         logger.debug("Interrupt requested for Gemini session %s (no-op)", session.id)
+
+    async def send_activity_start(self, session: VoiceSession) -> None:
+        """Send ActivityStart to Gemini (manual VAD mode)."""
+        state = self._sessions.get(session.id)
+        if state is None or state.live_session is None:
+            return
+        from google.genai import types
+
+        await state.live_session.send_realtime_input(
+            activity_start=types.ActivityStart(),
+        )
+        logger.debug("Sent ActivityStart for session %s", session.id)
+
+    async def send_activity_end(self, session: VoiceSession) -> None:
+        """Send ActivityEnd to Gemini (manual VAD mode)."""
+        state = self._sessions.get(session.id)
+        if state is None or state.live_session is None:
+            return
+        from google.genai import types
+
+        await state.live_session.send_realtime_input(
+            activity_end=types.ActivityEnd(),
+        )
+        logger.debug("Sent ActivityEnd for session %s", session.id)
 
     async def disconnect(self, session: VoiceSession) -> None:
         import contextlib

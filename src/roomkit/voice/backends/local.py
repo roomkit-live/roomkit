@@ -183,6 +183,7 @@ class LocalAudioBackend(VoiceBackend):
         # --- Audio pipeline (inline processing for realtime path) ---
         self._pipeline_config = pipeline
         self._pipeline: Any = None  # AudioPipeline, created lazily in accept()
+        self._deferred_vad_callbacks: list[Any] = []
 
         # --- AEC (transport-level reference feeding) ---
         self._aec = aec
@@ -231,8 +232,26 @@ class LocalAudioBackend(VoiceBackend):
         return VoiceCapability.INTERRUPTION
 
     @property
+    def has_local_vad(self) -> bool:
+        return self._pipeline_config is not None and self._pipeline_config.vad is not None
+
+    @property
     def feeds_aec_reference(self) -> bool:
         return self._aec is not None
+
+    def on_pipeline_vad_event(self, callback: Any) -> None:
+        """Register a callback for pipeline VAD events.
+
+        The callback fires on the PortAudio thread during inline pipeline
+        processing.  The caller must schedule async work to the event loop.
+
+        If the pipeline is not yet created (before ``accept()``), the
+        callback is deferred and wired when the pipeline is instantiated.
+        """
+        if self._pipeline is not None:
+            self._pipeline.on_vad_event(callback)
+        else:
+            self._deferred_vad_callbacks.append(callback)
 
     # -------------------------------------------------------------------------
     # Session lifecycle
@@ -880,6 +899,11 @@ class LocalAudioBackend(VoiceBackend):
 
         self._pipeline = AudioPipeline(config)
         self._pipeline_lock = threading.Lock()
+
+        # Wire deferred VAD callbacks registered before accept().
+        for cb in self._deferred_vad_callbacks:
+            self._pipeline.on_vad_event(cb)
+        self._deferred_vad_callbacks.clear()
 
         # Auto-wire speaker → pipeline AEC reference when AEC is only
         # in the pipeline (not duplicated at the transport level).

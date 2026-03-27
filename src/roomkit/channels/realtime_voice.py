@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from roomkit.channels._realtime_vad import RealtimeVADMixin
 from roomkit.channels._skill_constants import TOOL_ACTIVATE_SKILL
 from roomkit.channels.base import Channel
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
@@ -67,7 +68,7 @@ def get_current_voice_session() -> VoiceSession | None:
 logger = logging.getLogger("roomkit.channels.realtime_voice")
 
 
-class RealtimeVoiceChannel(Channel):
+class RealtimeVoiceChannel(RealtimeVADMixin, Channel):
     """Real-time voice channel using speech-to-speech AI providers.
 
     Wraps APIs like OpenAI Realtime and Gemini Live as a first-class
@@ -245,6 +246,8 @@ class RealtimeVoiceChannel(Channel):
         self._last_output_level_at: float = 0.0
         # Cached event loop for cross-thread scheduling (e.g. PortAudio callback)
         self._event_loop: asyncio.AbstractEventLoop | None = None
+        # Manual VAD mode: local pipeline VAD drives speech events
+        self._manual_vad: bool = False
 
         # Idle tracking: set when BOTH provider is done AND user is not speaking
         self._idle_events: dict[str, asyncio.Event] = {}
@@ -554,6 +557,15 @@ class RealtimeVoiceChannel(Channel):
                     SincResamplerProvider(),  # outbound: provider → transport
                 )
 
+        # Detect manual VAD mode: if the transport has a local pipeline
+        # with VAD, use it for speech detection instead of server-side VAD.
+        # Cache event loop early for cross-thread VAD callbacks.
+        self._event_loop = asyncio.get_running_loop()
+        if not self._manual_vad:
+            self._manual_vad = self._detect_vad_mode()
+            if self._manual_vad:
+                self._wire_local_vad()
+
         # Connect to provider (with telemetry span).
         # If provider.connect fails, clean up the already-accepted transport
         # session to avoid leaking the connection.
@@ -573,6 +585,7 @@ class RealtimeVoiceChannel(Channel):
                     temperature=temperature,
                     input_sample_rate=self._input_sample_rate,
                     output_sample_rate=self._output_sample_rate,
+                    server_vad=not self._manual_vad,
                     provider_config=provider_config,
                 )
         except Exception:
@@ -1391,10 +1404,15 @@ class RealtimeVoiceChannel(Channel):
     def _on_provider_speech_start(self, session: VoiceSession) -> Any:
         """Handle speech start from provider's server-side VAD.
 
+        In manual VAD mode, local VAD drives speech events — ignore
+        provider callbacks to prevent duplicate events.
+
         Bumps the generation counter so pending send_audio tasks become
         stale, resets the outbound resampler to discard its buffered frame,
         and signals the transport to interrupt outbound audio.
         """
+        if self._manual_vad:
+            return
         self._user_speaking[session.id] = True
         self._update_idle_event(session.id)
         # Bump generation — pending tasks with the old generation will skip
@@ -1445,6 +1463,8 @@ class RealtimeVoiceChannel(Channel):
 
     def _on_provider_speech_end(self, session: VoiceSession) -> Any:
         """Handle speech end from provider's server-side VAD."""
+        if self._manual_vad:
+            return
         self._user_speaking[session.id] = False
         self._update_idle_event(session.id)
         try:
