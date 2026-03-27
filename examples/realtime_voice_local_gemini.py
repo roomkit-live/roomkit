@@ -87,7 +87,7 @@ async def main() -> None:
 
     aec = build_aec(sample_rate, block_ms, default="webrtc")
     denoiser = build_denoiser(sample_rate, default="rnnoise")
-    vad = build_vad(sample_rate, default="sherpa")
+    vad = build_vad(sample_rate, default="ten")
     debug_taps = build_debug_taps()
     pipeline = build_pipeline(aec=aec, denoiser=denoiser, vad=vad, debug_taps=debug_taps)
 

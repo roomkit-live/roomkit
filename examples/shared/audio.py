@@ -146,10 +146,12 @@ def build_debug_taps() -> object | None:
 def build_vad(sample_rate: int = 24000, *, default: str = "energy") -> object | None:
     """Build a VAD provider based on the ``VAD`` env var.
 
-    Env: ``VAD=energy|sherpa|1|0`` (default comes from *default* param).
+    Env: ``VAD=energy|silero|ten|1|0`` (default comes from *default* param).
+    The ``VAD_MODEL`` env var overrides the model type for sherpa-onnx.
 
     * ``energy`` / ``1`` — Energy-based VAD (no dependencies)
-    * ``sherpa`` — Sherpa-ONNX Silero VAD (``pip install sherpa-onnx``)
+    * ``silero`` — Silero VAD via sherpa-onnx (``pip install sherpa-onnx``)
+    * ``ten`` — TEN-VAD via sherpa-onnx (``pip install sherpa-onnx``)
     * ``0`` — disabled
 
     Returns the provider instance or ``None``.
@@ -166,21 +168,28 @@ def build_vad(sample_rate: int = 24000, *, default: str = "energy") -> object | 
         logger.info("VAD enabled (Energy-based)")
         return EnergyVADProvider()
 
-    if mode == "sherpa":
+    if mode in ("silero", "ten"):
         try:
             from roomkit.voice.pipeline.vad.sherpa_onnx import (
                 SherpaOnnxVADConfig,
                 SherpaOnnxVADProvider,
             )
 
-            logger.info("VAD enabled (Sherpa-ONNX)")
-            return SherpaOnnxVADProvider(SherpaOnnxVADConfig(sample_rate=sample_rate))
+            model_type = os.environ.get("VAD_MODEL", mode)
+            logger.info("VAD enabled (sherpa-onnx %s)", model_type)
+            return SherpaOnnxVADProvider(
+                SherpaOnnxVADConfig(model_type=model_type, sample_rate=sample_rate)
+            )
         except ImportError:
             logger.warning("sherpa-onnx not installed — falling back to energy VAD")
             from roomkit.voice.pipeline.vad.energy import EnergyVADProvider
 
             logger.info("VAD enabled (Energy-based, fallback)")
             return EnergyVADProvider()
+
+    # Legacy alias
+    if mode == "sherpa":
+        return build_vad(sample_rate, default="ten")
 
     logger.warning("Unknown VAD mode %r — disabling", mode)
     return None
