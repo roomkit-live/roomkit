@@ -143,6 +143,43 @@ def build_debug_taps() -> object | None:
 # ---------------------------------------------------------------------------
 
 
+def build_vad(sample_rate: int = 24000, *, default: str = "energy") -> object | None:
+    """Build a VAD provider based on the ``VAD`` env var.
+
+    Env: ``VAD=energy|sherpa|1|0`` (default comes from *default* param).
+
+    * ``energy`` / ``1`` — Energy-based VAD (no dependencies)
+    * ``sherpa`` — Sherpa-ONNX Silero VAD (``pip install sherpa-onnx``)
+    * ``0`` — disabled
+
+    Returns the provider instance or ``None``.
+    """
+    mode = os.environ.get("VAD", default).lower()
+    if mode == "0":
+        return None
+    if mode == "1":
+        mode = default
+
+    if mode == "energy":
+        from roomkit.voice.pipeline.vad.energy import EnergyVADProvider
+
+        logger.info("VAD enabled (Energy-based)")
+        return EnergyVADProvider()
+
+    if mode == "sherpa":
+        try:
+            from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADProvider
+
+            logger.info("VAD enabled (Sherpa-ONNX Silero)")
+            return SherpaOnnxVADProvider(sample_rate=sample_rate)
+        except ImportError:
+            logger.warning("sherpa-onnx not installed — VAD disabled")
+            return None
+
+    logger.warning("Unknown VAD mode %r — disabling", mode)
+    return None
+
+
 def build_pipeline(
     *,
     aec: object | None = None,

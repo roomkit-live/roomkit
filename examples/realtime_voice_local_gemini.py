@@ -41,6 +41,7 @@ from shared import (
     build_debug_taps,
     build_denoiser,
     build_pipeline,
+    build_vad,
     run_until_stopped,
     setup_console,
     setup_logging,
@@ -86,8 +87,9 @@ async def main() -> None:
 
     aec = build_aec(sample_rate, block_ms, default="webrtc")
     denoiser = build_denoiser(sample_rate, default="rnnoise")
+    vad = build_vad(sample_rate, default="sherpa")
     debug_taps = build_debug_taps()
-    pipeline = build_pipeline(aec=aec, denoiser=denoiser, debug_taps=debug_taps)
+    pipeline = build_pipeline(aec=aec, denoiser=denoiser, vad=vad, debug_taps=debug_taps)
 
     # When AEC is active it removes speaker echo from the mic signal, so we
     # can keep the mic open during playback (barge-in enabled).  Without AEC

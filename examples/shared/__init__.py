@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .audio import build_aec, build_debug_taps, build_denoiser, build_pipeline
+from .audio import build_aec, build_debug_taps, build_denoiser, build_pipeline, build_vad
 from .console import setup_console
 from .env import auto_select_provider, os_info
 from .hooks import log_tool_call
@@ -15,6 +15,7 @@ __all__ = [
     "build_debug_taps",
     "build_denoiser",
     "build_pipeline",
+    "build_vad",
     "os_info",
     "log_tool_call",
     "run_until_stopped",
