@@ -963,7 +963,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             prompt_tokens = getattr(usage_meta, "prompt_token_count", 0) or 0
             candidates_tokens = getattr(usage_meta, "candidates_token_count", 0) or 0
             total_tokens = getattr(usage_meta, "total_token_count", 0) or 0
-            logger.info(
+            logger.debug(
                 "[Gemini] usage: prompt=%d candidates=%d total=%d (session %s)",
                 prompt_tokens,
                 candidates_tokens,
