@@ -23,6 +23,7 @@ class ConversationTurn:
 
     role: str  # "user" or "assistant"
     text: str
+    was_barge_in: bool = False
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 

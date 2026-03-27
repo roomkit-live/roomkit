@@ -264,6 +264,8 @@ def _build_conversation_text(state: ConsoleState) -> Text:
     for turn in state.conversation:
         if turn.role == "user":
             text.append("[User] ", style="bold yellow")
+            if turn.was_barge_in:
+                text.append("[BARGED] ", style="bold red")
         else:
             text.append("[AI]   ", style=f"bold {_ACCENT}")
         text.append(f"{turn.text}\n")

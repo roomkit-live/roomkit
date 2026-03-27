@@ -1187,7 +1187,13 @@ class RealtimeVoiceChannel(RealtimeVADMixin, Channel):
         """Send audio to transport, skipping if the generation is stale or output is muted."""
         with self._state_lock:
             current_gen = self._audio_generation.get(session.id, 0)
+            user_speaking = self._user_speaking.get(session.id, False)
         if current_gen != gen:
+            return
+        # In manual VAD mode, suppress AI audio while the user is speaking.
+        # The provider may keep sending chunks until it processes our
+        # activityStart signal.
+        if user_speaking:
             return
 
         # Enforce output_muted on the channel binding

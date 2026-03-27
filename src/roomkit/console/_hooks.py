@@ -98,9 +98,13 @@ def _make_handler(tag: str, state: ConsoleState, kit: RoomKit | None = None) -> 
             state.last_final_text = event.text
             state.partial_text = ""
             state.transcription_count += 1
-            state.conversation.append(ConversationTurn(role="user", text=event.text))
+            was_barge = getattr(event, "was_barge_in", False)
+            state.conversation.append(
+                ConversationTurn(role="user", text=event.text, was_barge_in=was_barge)
+            )
             state.voice_state = "processing"
-            state.voice_events.append(VoiceEvent("STT FINAL", "cyan"))
+            label = "STT FINAL (barge-in)" if was_barge else "STT FINAL"
+            state.voice_events.append(VoiceEvent(label, "cyan"))
 
     async def on_partial_transcription(event: Any, ctx: Any) -> None:
         # PartialTranscriptionEvent.role defaults to "user".
