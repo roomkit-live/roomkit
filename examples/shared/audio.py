@@ -168,10 +168,13 @@ def build_vad(sample_rate: int = 24000, *, default: str = "energy") -> object | 
 
     if mode == "sherpa":
         try:
-            from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADProvider
+            from roomkit.voice.pipeline.vad.sherpa_onnx import (
+                SherpaOnnxVADConfig,
+                SherpaOnnxVADProvider,
+            )
 
-            logger.info("VAD enabled (Sherpa-ONNX Silero)")
-            return SherpaOnnxVADProvider(sample_rate=sample_rate)
+            logger.info("VAD enabled (Sherpa-ONNX)")
+            return SherpaOnnxVADProvider(SherpaOnnxVADConfig(sample_rate=sample_rate))
         except ImportError:
             logger.warning("sherpa-onnx not installed — VAD disabled")
             return None
