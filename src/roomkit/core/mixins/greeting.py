@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import (
@@ -17,19 +17,49 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
+    from roomkit.core.event_router import EventRouter
     from roomkit.store.base import ConversationStore
     from roomkit.voice.base import VoiceSession
 
 logger = logging.getLogger("roomkit.framework")
 
 
-class GreetingMixin(HelpersMixin):
-    """Greeting delivery and gate management for the framework."""
+@runtime_checkable
+class GreetingHost(Protocol):
+    """Contract: capabilities a host class must provide for GreetingMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _store: Conversation store for bindings and event persistence.
+        _channels: Channel registry for resolving Agent channels.
+        _greeting_gates: Per-room gates that block inbound processing
+            until greeting delivery completes.
+        _greeting_gate_counts: Reference counts for multi-agent gates.
+
+    Methods provided by the host class (RoomKit):
+        _get_router: Lazily create / return the ``EventRouter`` for broadcast.
+    """
 
     _store: ConversationStore
     _channels: dict[str, Channel]
     _greeting_gates: dict[str, asyncio.Event]
     _greeting_gate_counts: dict[str, int]
+
+    def _get_router(self) -> EventRouter: ...
+
+
+class GreetingMixin(HelpersMixin):
+    """Greeting delivery and gate management for the framework.
+
+    Host contract: :class:`GreetingHost`.
+    """
+
+    _store: ConversationStore
+    _channels: dict[str, Channel]
+    _greeting_gates: dict[str, asyncio.Event]
+    _greeting_gate_counts: dict[str, int]
+
+    # Stub for cross-mixin call — implemented by RoomKit._get_router().
+    def _get_router(self) -> EventRouter: ...  # type: ignore[empty-body]
 
     async def send_greeting(
         self,
@@ -114,7 +144,7 @@ class GreetingMixin(HelpersMixin):
         greeting_event = await self._store_greeting_event(room_id, agent.channel_id, text)
         source_binding = await self._store.get_binding(room_id, agent.channel_id)
         if source_binding is not None:
-            router = self._get_router()  # type: ignore[attr-defined]
+            router = self._get_router()
             context = await self._build_context(room_id)
             await router.broadcast(greeting_event, source_binding, context)
 

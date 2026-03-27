@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import ChannelNotRegisteredError
 from roomkit.core.mixins.helpers import HelpersMixin
@@ -24,8 +24,10 @@ from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
     from roomkit.core.framework import RoomKit
+    from roomkit.core.hooks import HookEngine
     from roomkit.store.base import ConversationStore
     from roomkit.tasks.base import TaskRunner
+    from roomkit.telemetry.base import TelemetryProvider
 
 
 _tasks_logger = logging.getLogger("roomkit.tasks")
@@ -146,12 +148,47 @@ def _delegation_metadata(
 # ---------------------------------------------------------------------------
 
 
-class DelegationMixin(HelpersMixin):
-    """Task delegation to child rooms — sync and background."""
+@runtime_checkable
+class DelegationHost(Protocol):
+    """Contract: capabilities a host class must provide for DelegationMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _store: Conversation persistence backend.
+        _channels: Registry of channel-id to :class:`Channel` instances.
+        _task_runner: Background task execution backend.
+        _hook_engine: Engine for hook execution (via :class:`HelpersMixin`).
+        _telemetry: Telemetry / tracing provider (optional — mixin
+            falls back to ``NoopTelemetryProvider`` when absent).
+
+    Cross-mixin methods (provided by other mixins in the MRO):
+        get_room: From :class:`RoomLifecycleMixin`.
+        create_room: From :class:`RoomLifecycleMixin`.
+        attach_channel: From :class:`ChannelOpsMixin`.
+        deliver: From :class:`DeliverMixin`.
+    """
 
     _store: ConversationStore
     _channels: dict[str, Channel]
     _task_runner: TaskRunner
+    _hook_engine: HookEngine
+    _telemetry: TelemetryProvider | None
+
+
+class DelegationMixin(HelpersMixin):
+    """Task delegation to child rooms — sync and background.
+
+    Host contract: :class:`DelegationHost`.
+    """
+
+    _store: ConversationStore
+    _channels: dict[str, Channel]
+    _task_runner: TaskRunner
+
+    # Cross-mixin methods — attribute annotations avoid MRO shadowing
+    get_room: Any  # see DelegationHost
+    create_room: Any  # see DelegationHost
+    attach_channel: Any  # see DelegationHost
+    deliver: Any  # see DelegationHost
 
     async def delegate(
         self,
@@ -200,7 +237,7 @@ class DelegationMixin(HelpersMixin):
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
         # Validate
-        await self.get_room(room_id)  # type: ignore[attr-defined]
+        await self.get_room(room_id)
         if agent_id not in self._channels:
             raise ChannelNotRegisteredError(f"Agent channel '{agent_id}' not registered")
 
@@ -227,7 +264,7 @@ class DelegationMixin(HelpersMixin):
 
         # Create child room — no orchestration so the parent's strategy
         # doesn't leak (e.g. Supervisor attaching itself to the child).
-        await self.create_room(  # type: ignore[attr-defined]
+        await self.create_room(
             room_id=child_room_id,
             metadata={
                 "parent_room_id": room_id,
@@ -240,7 +277,7 @@ class DelegationMixin(HelpersMixin):
         )
 
         # Attach agent as intelligence
-        await self.attach_channel(  # type: ignore[attr-defined]
+        await self.attach_channel(
             child_room_id,
             agent_id,
             category=ChannelCategory.INTELLIGENCE,
@@ -250,7 +287,7 @@ class DelegationMixin(HelpersMixin):
         for ch_id in share_channels or []:
             parent_binding = await self._store.get_binding(room_id, ch_id)
             if parent_binding:
-                await self.attach_channel(  # type: ignore[attr-defined]
+                await self.attach_channel(
                     child_room_id,
                     ch_id,
                     category=parent_binding.category,
@@ -463,7 +500,7 @@ class DelegationMixin(HelpersMixin):
                     f"[Background task from {result.agent_id} completed. "
                     f"Share the result with the user.]"
                 )
-                await self.deliver(  # type: ignore[attr-defined]
+                await self.deliver(
                     result.parent_room_id,
                     prompt,
                     channel_id=notify_channel_id,

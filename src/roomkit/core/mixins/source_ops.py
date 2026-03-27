@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import SourceAlreadyAttachedError, SourceNotFoundError
 from roomkit.core.mixins.helpers import HelpersMixin
@@ -16,13 +16,36 @@ if TYPE_CHECKING:
     from roomkit.sources.base import SourceHealth, SourceProvider, SourceStatus
 
 
-class SourceOpsMixin(HelpersMixin):
-    """Event-driven source attach / detach / health / list operations."""
+@runtime_checkable
+class SourceOpsHost(Protocol):
+    """Contract: capabilities a host class must provide for SourceOpsMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _sources: Registry of attached source providers, keyed by channel ID.
+        _source_tasks: Background tasks running each source's event loop.
+
+    Methods provided by InboundMixin (or equivalent):
+        process_inbound: Feed an inbound message into the framework pipeline.
+    """
 
     _sources: dict[str, SourceProvider]
     _source_tasks: dict[str, asyncio.Task[None]]
 
-    # -- declared on other mixins / framework, used here via self --
+    async def process_inbound(
+        self, message: InboundMessage, *, room_id: str | None = None
+    ) -> InboundResult: ...
+
+
+class SourceOpsMixin(HelpersMixin):
+    """Event-driven source attach / detach / health / list operations.
+
+    Host contract: :class:`SourceOpsHost`.
+    """
+
+    _sources: dict[str, SourceProvider]
+    _source_tasks: dict[str, asyncio.Task[None]]
+
+    # Stub for cross-mixin call — implemented by InboundMixin in the MRO.
     async def process_inbound(  # type: ignore[empty-body]
         self, message: InboundMessage, *, room_id: str | None = None
     ) -> InboundResult: ...

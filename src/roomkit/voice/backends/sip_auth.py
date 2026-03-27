@@ -5,18 +5,52 @@ from __future__ import annotations
 import asyncio
 import secrets
 import time
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from roomkit.voice.backends._sip_types import NONCE_TTL, compute_digest, logger, resolve_local_ip
 
 __all__ = ["SIPAuthMixin"]
 
 
+@runtime_checkable
+class SIPAuthHost(Protocol):
+    """Contract: capabilities a host class must provide for SIPAuthMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _aiosipua: The aiosipua module (lazy-imported, no type stubs).
+        _transport: The SIP UDP transport.
+        _uas: The SIP User Agent Server.
+        _user_agent: User-Agent header value.
+        _auth_users: Username-to-password map for inbound auth.
+        _auth_realm: Digest authentication realm.
+        _auth_nonces: Active nonce-to-expiry map.
+        _register_params: Outbound registration parameters.
+        _register_response_future: Pending REGISTER response future.
+        _registration_task: Background registration renewal task.
+        _registered: Whether currently registered with registrar.
+        _local_rtp_ip: Local IP for RTP binding.
+        _advertised_ip: IP to advertise in SDP/Contact headers.
+    """
+
+    _aiosipua: Any
+    _transport: Any
+    _uas: Any
+    _user_agent: str | None
+    _auth_users: dict[str, str] | None
+    _auth_realm: str
+    _auth_nonces: dict[str, float]
+    _register_params: dict[str, Any] | None
+    _register_response_future: asyncio.Future[Any] | None
+    _registration_task: asyncio.Task[None] | None
+    _registered: bool
+    _local_rtp_ip: str
+    _advertised_ip: str | None
+
+
 class SIPAuthMixin:
     """Mixin providing inbound digest auth and outbound REGISTER for SIPVoiceBackend.
 
-    Attribute declarations below are for mypy — actual values are set
-    by :class:`SIPVoiceBackend.__init__`.
+    Host contract: :class:`SIPAuthHost`.
     """
 
     _aiosipua: Any

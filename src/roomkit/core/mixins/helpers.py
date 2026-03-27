@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable, Coroutine
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.core.exceptions import RoomNotFoundError
@@ -25,6 +25,7 @@ from roomkit.models.participant import Participant
 from roomkit.models.task import Observation, Task
 
 if TYPE_CHECKING:
+    from roomkit.channels.base import Channel
     from roomkit.core.hooks import HookEngine, IdentityHookRegistration
     from roomkit.store.base import ConversationStore
 
@@ -37,11 +38,44 @@ IdentityHookFn = Callable[
 ]
 
 
-class HelpersMixin:
-    """Internal helpers used by other framework mixins."""
+@runtime_checkable
+class FrameworkHelpers(Protocol):
+    """Contract: capabilities a host class must provide for HelpersMixin.
+
+    Every attribute listed here is initialized by ``RoomKit.__init__``.
+    This Protocol also serves as the base contract for the 12 framework
+    mixins that inherit from HelpersMixin — their own Protocols extend
+    these requirements with mixin-specific attributes and methods.
+
+    Attributes:
+        _store: Persistent storage backend for rooms, events, participants.
+        _channels: Registry of all registered channels, keyed by channel ID.
+        _hook_engine: Engine for sync/async hook pipeline execution.
+        _event_handlers: List of ``(event_type, handler)`` pairs for
+            framework event dispatch.
+        _identity_hooks: Per-trigger identity hook registrations.
+        _pending_traces: Buffered protocol traces for rooms that don't
+            exist yet — flushed when the room is created.
+        _pending_hook_tasks: Fire-and-forget async tasks awaiting cleanup.
+    """
 
     _store: ConversationStore
-    _channels: dict[str, Any]
+    _channels: dict[str, Channel]
+    _hook_engine: HookEngine
+    _event_handlers: list[tuple[str, FrameworkEventHandler]]
+    _identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]]
+    _pending_traces: dict[str, list[object]]
+    _pending_hook_tasks: set[asyncio.Task[Any]]
+
+
+class HelpersMixin:
+    """Internal helpers used by other framework mixins.
+
+    Host contract: :class:`FrameworkHelpers`.
+    """
+
+    _store: ConversationStore
+    _channels: dict[str, Channel]
     _hook_engine: HookEngine
     _event_handlers: list[tuple[str, FrameworkEventHandler]]
     _identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]]

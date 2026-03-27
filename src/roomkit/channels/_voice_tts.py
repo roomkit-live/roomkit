@@ -7,8 +7,8 @@ import logging
 import os
 import time
 from collections import OrderedDict
-from collections.abc import AsyncGenerator, AsyncIterator, Coroutine
-from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncGenerator, AsyncIterator
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.enums import HookTrigger
 from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
@@ -18,6 +18,8 @@ from roomkit.voice.utils import rms_db
 _NOOP = NoopTelemetryProvider()
 
 if TYPE_CHECKING:
+    import threading
+
     from roomkit.core.framework import RoomKit
     from roomkit.models.channel import ChannelBinding, ChannelOutput
     from roomkit.models.context import RoomContext
@@ -39,10 +41,36 @@ logger = logging.getLogger("roomkit.voice")
 _PLAYBACK_DRAIN_S = 2.0
 
 
-class VoiceTTSMixin:
-    """TTS delivery helpers for VoiceChannel."""
+@runtime_checkable
+class TTSHost(Protocol):
+    """Contract: capabilities a host class must provide for VoiceTTSMixin.
 
-    # -- attributes provided by VoiceChannel.__init__ --
+    Every attribute listed here is initialized by ``VoiceChannel.__init__``.
+
+    Attributes:
+        channel_id: Unique identifier for this channel instance.
+        _framework: Reference to the owning RoomKit framework (None before registration).
+        _tts: Text-to-speech provider (None when not configured).
+        _backend: The voice backend transport (None before configuration).
+        _pipeline: The audio processing pipeline (None when no pipeline).
+        _pipeline_config: Audio pipeline configuration (None when no pipeline).
+        _session_bindings: Map of session ID to (room_id, binding) pairs.
+        _playing_sessions: Active TTS playback states per session.
+        _playback_done_events: Signals that send_audio() has returned for a session.
+        _delivered_tts_events: LRU set of event IDs already delivered via TTS.
+        _last_tts_ended_at: Monotonic timestamp of last TTS completion per session.
+        _last_output_level_at: Throttle timestamp for ON_OUTPUT_AUDIO_LEVEL per session.
+        _debug_frame_count: Counter for RMS debug logging.
+        _voice_map: Per-channel TTS voice overrides.
+        _tts_filter: Optional callable to filter/transform TTS text (Callable[[str], str] | None).
+        _state_lock: Threading lock protecting shared mutable state.
+
+    Methods provided by VoiceChannel or sibling mixins:
+        _schedule: Schedule a coroutine as a tracked background task.
+        _fire_audio_level_hook: Fire ON_OUTPUT_AUDIO_LEVEL hook (VoiceHooksMixin).
+        interrupt: Cancel in-progress TTS playback (VoiceChannel).
+    """
+
     channel_id: str
     _framework: RoomKit | None
     _tts: TTSProvider | None
@@ -58,24 +86,45 @@ class VoiceTTSMixin:
     _debug_frame_count: int
     _voice_map: dict[str, str]
     _tts_filter: Any  # Callable[[str], str] | None
+    _state_lock: threading.Lock
+    _schedule: Any  # VoiceChannel._schedule
+    _fire_audio_level_hook: Any  # VoiceHooksMixin._fire_audio_level_hook
+    interrupt: Any  # VoiceChannel.interrupt
 
-    # -- methods provided by other mixins / main class (TYPE_CHECKING only) --
-    if TYPE_CHECKING:
 
-        def _schedule(self, coro: Coroutine[Any, Any, Any], *, name: str) -> None: ...
+class VoiceTTSMixin:
+    """TTS delivery helpers for VoiceChannel.
 
-        async def _fire_audio_level_hook(
-            self,
-            session: VoiceSession,
-            level_db: float,
-            room_id: str,
-            trigger: HookTrigger,
-        ) -> None: ...
+    Host contract: :class:`TTSHost`.
+    """
+
+    # -- attributes provided by VoiceChannel.__init__ (see TTSHost) --
+    channel_id: str
+    _framework: RoomKit | None
+    _tts: TTSProvider | None
+    _backend: VoiceBackend | None
+    _pipeline: AudioPipeline | None
+    _pipeline_config: AudioPipelineConfig | None
+    _session_bindings: dict[str, tuple[str, ChannelBinding]]
+    _playing_sessions: dict[str, TTSPlaybackState]
+    _playback_done_events: dict[str, asyncio.Event]
+    _delivered_tts_events: OrderedDict[str, None]
+    _last_tts_ended_at: dict[str, float]
+    _last_output_level_at: dict[str, float]
+    _debug_frame_count: int
+    _voice_map: dict[str, str]
+    _tts_filter: Any  # Callable[[str], str] | None
+    _state_lock: Any  # threading.Lock — see TTSHost
+
+    # -- cross-mixin methods (annotated as Any to avoid MRO shadowing) --
+    _schedule: Any  # see TTSHost — VoiceChannel._schedule
+    _fire_audio_level_hook: Any  # see TTSHost — VoiceHooksMixin._fire_audio_level_hook
+    interrupt: Any  # see TTSHost — VoiceChannel.interrupt
 
     def _fire_output_level(self, session: VoiceSession, data: bytes) -> None:
         """Fire ON_OUTPUT_AUDIO_LEVEL hook from the outbound pipeline, throttled."""
         now = time.monotonic()
-        with self._state_lock:  # type: ignore[attr-defined]
+        with self._state_lock:
             if now - self._last_output_level_at.get(session.id, 0.0) < 0.1:
                 return
             self._last_output_level_at[session.id] = now
@@ -195,7 +244,7 @@ class VoiceTTSMixin:
             aec.set_active(False)
 
         await asyncio.sleep(_PLAYBACK_DRAIN_S)
-        with self._state_lock:  # type: ignore[attr-defined]
+        with self._state_lock:
             playback = self._playing_sessions.pop(session_id, None)
         if playback:
             self._last_tts_ended_at[session_id] = _time.monotonic()
@@ -210,7 +259,7 @@ class VoiceTTSMixin:
         if not self._backend:
             return []
 
-        with self._state_lock:  # type: ignore[attr-defined]
+        with self._state_lock:
             bindings_snapshot = list(self._session_bindings.items())
         target_sessions: list[VoiceSession] = []
         for session_id, (bound_room_id, bound_binding) in bindings_snapshot:
@@ -276,16 +325,16 @@ class VoiceTTSMixin:
 
         for session in target_sessions:
             # Cancel any existing TTS to prevent overlapping audio
-            with self._state_lock:  # type: ignore[attr-defined]
+            with self._state_lock:
                 existing = self._playing_sessions.get(session.id)
             if existing:
                 logger.info(
                     "Cancelling previous TTS for session %s before starting new one",
                     session.id,
                 )
-                await self.interrupt(session, reason="new_tts")  # type: ignore[attr-defined]
+                await self.interrupt(session, reason="new_tts")
 
-            with self._state_lock:  # type: ignore[attr-defined]
+            with self._state_lock:
                 self._playing_sessions[session.id] = TTSPlaybackState(
                     session_id=session.id, text="(streaming)"
                 )
@@ -389,7 +438,7 @@ class VoiceTTSMixin:
             full_text = self._tts_filter(full_text)
         # Update playback state with actual streamed text (was "(streaming)")
         for session in target_sessions:
-            with self._state_lock:  # type: ignore[attr-defined]
+            with self._state_lock:
                 if session.id in self._playing_sessions:
                     self._playing_sessions[session.id] = TTSPlaybackState(
                         session_id=session.id, text=full_text or "(empty)"
@@ -437,18 +486,18 @@ class VoiceTTSMixin:
         tts_name = self._tts.name  # capture before async yields (may become None)
 
         # Cancel any existing TTS to prevent overlapping audio
-        with self._state_lock:  # type: ignore[attr-defined]
+        with self._state_lock:
             existing = self._playing_sessions.get(session.id)
         if existing:
             logger.info(
                 "Cancelling previous TTS for session %s before starting new one",
                 session.id,
             )
-            await self.interrupt(session, reason="new_tts")  # type: ignore[attr-defined]
+            await self.interrupt(session, reason="new_tts")
 
         await self._backend.send_transcription(session, text, "assistant")
 
-        with self._state_lock:  # type: ignore[attr-defined]
+        with self._state_lock:
             self._playing_sessions[session.id] = TTSPlaybackState(
                 session_id=session.id,
                 text=text,
@@ -469,7 +518,7 @@ class VoiceTTSMixin:
         _t = getattr(self._framework, "_telemetry", None) if self._framework else None
         telemetry: TelemetryProvider | None = _t if isinstance(_t, TelemetryProvider) else None
 
-        with self._state_lock:  # type: ignore[attr-defined]
+        with self._state_lock:
             binding_info = self._session_bindings.get(session.id)
         room_id = binding_info[0] if binding_info else None
 
@@ -644,7 +693,7 @@ class VoiceTTSMixin:
         if not self._backend:
             raise VoiceBackendNotConfiguredError("No voice backend configured")
 
-        with self._state_lock:  # type: ignore[attr-defined]
+        with self._state_lock:
             binding_info = self._session_bindings.get(session.id)
         room_id = binding_info[0] if binding_info else None
 
@@ -757,7 +806,7 @@ class VoiceTTSMixin:
         if text is not None:
             await self._backend.send_transcription(session, text, "assistant")
 
-        with self._state_lock:  # type: ignore[attr-defined]
+        with self._state_lock:
             self._playing_sessions[session.id] = TTSPlaybackState(
                 session_id=session.id,
                 text=text or "(audio)",

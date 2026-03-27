@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import ChannelNotFoundError, ChannelNotRegisteredError
 from roomkit.core.mixins.helpers import HelpersMixin
@@ -25,8 +25,27 @@ if TYPE_CHECKING:
     from roomkit.telemetry.base import TelemetryProvider
 
 
-class ChannelOpsMixin(HelpersMixin):
-    """Channel registration, attachment, and binding operations."""
+@runtime_checkable
+class ChannelOpsHost(Protocol):
+    """Contract: capabilities a host class must provide for ChannelOpsMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _store: Conversation persistence backend.
+        _channels: Registry of channel-id to :class:`Channel` instances.
+        _lock_manager: Per-room lock for serialised mutation.
+        _event_router: Cached event router (or ``None`` to rebuild).
+        _hook_engine: Engine for hook execution.
+        _telemetry: Telemetry / tracing provider.
+        _realtime: Ephemeral event backend (typing, presence).
+
+    Cross-mixin methods (provided by other mixins in the MRO):
+        get_room: From :class:`RoomLifecycleMixin`.
+        join: From :class:`VoiceOpsMixin`.
+        _set_greeting_gate: From :class:`GreetingMixin`.
+        send_greeting: From :class:`GreetingMixin`.
+        _clear_greeting_gate: From :class:`GreetingMixin`.
+        _force_clear_greeting_gate: From :class:`GreetingMixin`.
+    """
 
     _store: ConversationStore
     _channels: dict[str, Channel]
@@ -35,6 +54,29 @@ class ChannelOpsMixin(HelpersMixin):
     _hook_engine: HookEngine
     _telemetry: TelemetryProvider
     _realtime: RealtimeBackend
+
+
+class ChannelOpsMixin(HelpersMixin):
+    """Channel registration, attachment, and binding operations.
+
+    Host contract: :class:`ChannelOpsHost`.
+    """
+
+    _store: ConversationStore
+    _channels: dict[str, Channel]
+    _lock_manager: RoomLockManager
+    _event_router: EventRouter | None
+    _hook_engine: HookEngine
+    _telemetry: TelemetryProvider
+    _realtime: RealtimeBackend
+
+    # Cross-mixin methods — attribute annotations avoid MRO shadowing
+    get_room: Any  # see ChannelOpsHost
+    join: Any  # see ChannelOpsHost
+    _set_greeting_gate: Any  # see ChannelOpsHost
+    send_greeting: Any  # see ChannelOpsHost
+    _clear_greeting_gate: Any  # see ChannelOpsHost
+    _force_clear_greeting_gate: Any  # see ChannelOpsHost
 
     def register_channel(self, channel: Channel) -> None:
         """Register a channel implementation by its ID."""
@@ -85,7 +127,7 @@ class ChannelOpsMixin(HelpersMixin):
     ) -> ChannelBinding:
         """Attach a registered channel to a room."""
         async with self._lock_manager.locked(room_id):
-            await self.get_room(room_id)  # type: ignore[attr-defined]
+            await self.get_room(room_id)
             channel = self._channels.get(channel_id)
             if channel is None:
                 raise ChannelNotRegisteredError(f"Channel {channel_id} not registered")
@@ -154,7 +196,7 @@ class ChannelOpsMixin(HelpersMixin):
         if backend is None or not backend.auto_connect:
             return
 
-        await self.join(room_id, channel_id)  # type: ignore[attr-defined]
+        await self.join(room_id, channel_id)
 
     async def detach_channel(self, room_id: str, channel_id: str) -> bool:
         """Detach a channel from a room."""
@@ -392,17 +434,17 @@ class ChannelOpsMixin(HelpersMixin):
                     greeted_rooms.pop(dedup_key, None)
                     return
 
-            kit_ref._set_greeting_gate(room_id)  # type: ignore[attr-defined]
+            kit_ref._set_greeting_gate(room_id)
             try:
-                await kit_ref.send_greeting(  # type: ignore[attr-defined]
+                await kit_ref.send_greeting(
                     room_id,
                     agent_id=agent_id,
                     session=event.session,
                     channel_type=event.channel_type,
                 )
-                kit_ref._clear_greeting_gate(room_id)  # type: ignore[attr-defined]
+                kit_ref._clear_greeting_gate(room_id)
             except Exception:
-                kit_ref._force_clear_greeting_gate(room_id)  # type: ignore[attr-defined]
+                kit_ref._force_clear_greeting_gate(room_id)
                 raise
 
         self._hook_engine.register(

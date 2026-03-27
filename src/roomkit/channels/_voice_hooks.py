@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.enums import HookTrigger
 from roomkit.telemetry.context import reset_span, set_current_span
@@ -19,10 +19,36 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.voice")
 
 
-class VoiceHooksMixin:
-    """Hook-firing and framework-event helpers for VoiceChannel."""
+@runtime_checkable
+class VoiceHookHost(Protocol):
+    """Contract: capabilities a host class must provide for VoiceHooksMixin.
 
-    # -- attributes provided by VoiceChannel.__init__ --
+    Attributes provided by the host's ``__init__``:
+        channel_id: Unique identifier for this channel instance.
+        _framework: Reference to the RoomKit orchestrator (``None`` until
+            the channel is registered).  The mixin accesses
+            ``_framework._build_context``, ``_framework.hook_engine``,
+            and ``_framework._emit_framework_event``.
+        _session_bindings: Maps session IDs to ``(room_id, ChannelBinding)``
+            tuples for resolving which room a session belongs to.
+
+    Optional attributes accessed via ``getattr`` with fallbacks:
+        _voice_session_spans: Per-session telemetry span IDs
+            (``dict[str, str | None]``).  Accessed with
+            ``getattr(self, "_voice_session_spans", {})``.
+    """
+
+    channel_id: str
+    _framework: RoomKit | None
+    _session_bindings: dict[str, tuple[str, ChannelBinding]]
+
+
+class VoiceHooksMixin:
+    """Hook-firing and framework-event helpers for VoiceChannel.
+
+    Host contract: :class:`VoiceHookHost`.
+    """
+
     channel_id: str
     _framework: RoomKit | None
     _session_bindings: dict[str, tuple[str, ChannelBinding]]

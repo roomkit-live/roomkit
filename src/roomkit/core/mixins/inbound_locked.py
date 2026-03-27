@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections import deque
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.context import RoomContext
@@ -23,19 +23,48 @@ from roomkit.models.identity import Identity, IdentityResult
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
+    from roomkit.core.event_router import EventRouter
     from roomkit.core.hooks import HookEngine
     from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.framework")
 
 
-class InboundLockedMixin(HelpersMixin):
-    """Locked inbound processing, broadcast, and reentry."""
+@runtime_checkable
+class InboundLockHost(Protocol):
+    """Contract: capabilities a host class must provide for InboundLockedMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _store: Conversation store for events, bindings, participants.
+        _channels: Channel registry for injected-event delivery.
+        _hook_engine: Hook engine for BEFORE_BROADCAST / AFTER_BROADCAST.
+        _max_chain_depth: Maximum reentry chain depth (RFC §10).
+
+    Methods provided by the host class (RoomKit):
+        _get_router: Lazily create / return the ``EventRouter`` for broadcast.
+    """
 
     _store: ConversationStore
     _channels: dict[str, Channel]
     _hook_engine: HookEngine
     _max_chain_depth: int
+
+    def _get_router(self) -> EventRouter: ...
+
+
+class InboundLockedMixin(HelpersMixin):
+    """Locked inbound processing, broadcast, and reentry.
+
+    Host contract: :class:`InboundLockHost`.
+    """
+
+    _store: ConversationStore
+    _channels: dict[str, Channel]
+    _hook_engine: HookEngine
+    _max_chain_depth: int
+
+    # Stub for cross-mixin call — implemented by RoomKit._get_router().
+    def _get_router(self) -> EventRouter: ...  # type: ignore[empty-body]
 
     async def _process_locked(
         self,
@@ -204,7 +233,7 @@ class InboundLockedMixin(HelpersMixin):
         )
 
         # Broadcast to other channels
-        router = self._get_router()  # type: ignore[attr-defined]
+        router = self._get_router()
         broadcast_result = await router.broadcast(event, source_binding, context)
 
         # H8: Warn on partial broadcast failure

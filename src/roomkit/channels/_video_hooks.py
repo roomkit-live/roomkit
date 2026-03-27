@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from roomkit.models.enums import ChannelType, HookTrigger
 
@@ -19,13 +19,51 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.video")
 
 
-class VideoHooksMixin:
-    """Hook-firing, framework events, and vision analysis for VideoChannel."""
+@runtime_checkable
+class VideoHookHost(Protocol):
+    """Contract: capabilities a host class must provide for VideoHooksMixin.
+
+    Attributes provided by the host's ``__init__``:
+        channel_id: Unique identifier for this channel instance.
+        _framework: Reference to the RoomKit orchestrator (``None`` until
+            the channel is registered).  The mixin accesses
+            ``_framework._build_context``, ``_framework.hook_engine``,
+            ``_framework._emit_framework_event``, ``_framework._store``,
+            and ``_framework._channels``.
+        _vision: Direct vision provider set on the channel (fallback when
+            no video pipeline config provides one).
+        _last_vision_results: Per-session cache of the most recent
+            :class:`~roomkit.video.vision.base.VisionResult`.
+        _last_vision_ts: Per-session timestamp (monotonic ms) of the last
+            completed vision analysis — used for interval gating.
+        _session_bindings: Maps session IDs to ``(room_id, ChannelBinding)``
+            tuples.
+
+    Optional attributes accessed via ``getattr`` with fallbacks:
+        _video_pipeline_config: Video pipeline config (may have ``.vision``).
+        _pipeline: Audio pipeline config (may have ``.vision``).
+        _video_pipeline: Active video pipeline (``update_filter_context``).
+        channel_type: Channel type enum (defaults to ``ChannelType.VIDEO``).
+    """
 
     channel_id: str
     _framework: RoomKit | None
     _vision: VisionProvider | None
-    _last_vision_results: dict[str, Any]
+    _last_vision_results: dict[str, VisionResult]
+    _last_vision_ts: dict[str, float]
+    _session_bindings: dict[str, tuple[str, ChannelBinding]]
+
+
+class VideoHooksMixin:
+    """Hook-firing, framework events, and vision analysis for VideoChannel.
+
+    Host contract: :class:`VideoHookHost`.
+    """
+
+    channel_id: str
+    _framework: RoomKit | None
+    _vision: VisionProvider | None
+    _last_vision_results: dict[str, VisionResult]
     _last_vision_ts: dict[str, float]
     _session_bindings: dict[str, tuple[str, ChannelBinding]]
 

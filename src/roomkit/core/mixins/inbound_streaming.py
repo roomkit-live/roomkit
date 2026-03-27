@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import (
@@ -34,17 +34,44 @@ class _StreamingResult:
     delivered_to: set[str] = field(default_factory=set)
 
 
-class InboundStreamingMixin(HelpersMixin):
-    """Streaming response handling extracted from the inbound pipeline.
+@runtime_checkable
+class InboundStreamingHost(Protocol):
+    """Contract: capabilities a host class must provide for InboundStreamingMixin.
 
-    These methods run outside the room lock so that streaming delivery
-    (e.g. TTS playback) does not block other ``process_inbound`` calls.
+    Attributes provided by the host's ``__init__``:
+        _store: Conversation store for event persistence.
+        _channels: Channel registry.
+        _hook_engine: Hook engine for AFTER_BROADCAST / ON_ERROR hooks.
+        _max_chain_depth: Maximum chain depth to prevent infinite loops.
+
+    Methods provided by the host class (RoomKit):
+        _get_router: Lazily create / return the ``EventRouter`` for broadcast.
     """
 
     _store: ConversationStore
     _channels: dict[str, Channel]
     _hook_engine: HookEngine
     _max_chain_depth: int
+
+    def _get_router(self) -> EventRouter: ...
+
+
+class InboundStreamingMixin(HelpersMixin):
+    """Streaming response handling extracted from the inbound pipeline.
+
+    These methods run outside the room lock so that streaming delivery
+    (e.g. TTS playback) does not block other ``process_inbound`` calls.
+
+    Host contract: :class:`InboundStreamingHost`.
+    """
+
+    _store: ConversationStore
+    _channels: dict[str, Channel]
+    _hook_engine: HookEngine
+    _max_chain_depth: int
+
+    # Stub for cross-mixin call — implemented by RoomKit._get_router().
+    def _get_router(self) -> EventRouter: ...  # type: ignore[empty-body]
 
     async def _handle_streaming_response(
         self,
@@ -194,7 +221,7 @@ class InboundStreamingMixin(HelpersMixin):
         the lock allows other process_inbound calls to proceed concurrently,
         preventing continuous STT echo from being queued behind the lock.
         """
-        router = self._get_router()  # type: ignore[attr-defined]
+        router = self._get_router()
         context = await self._build_context(room_id)
 
         for sr in pending_streams:

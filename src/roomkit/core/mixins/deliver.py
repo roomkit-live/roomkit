@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.delivery import DeliveryContext, DeliveryStrategy, Immediate, resolve_strategy
 from roomkit.core.mixins.helpers import HelpersMixin
@@ -13,13 +13,39 @@ from roomkit.delivery.worker import build_delivery_hook_event
 from roomkit.models.enums import EventStatus, HookTrigger
 
 if TYPE_CHECKING:
+    from roomkit.core.hooks import HookEngine
     from roomkit.delivery.base import DeliveryBackend
+    from roomkit.models.context import RoomContext
 
 logger = logging.getLogger("roomkit.delivery")
 
 
+@runtime_checkable
+class DeliveryHost(Protocol):
+    """Contract: capabilities a host class must provide for DeliverMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _delivery_strategy: Default delivery strategy (or ``None`` for immediate).
+        _delivery_backend: Async delivery backend for the enqueue path.
+        _hook_engine: Engine for BEFORE_DELIVER / AFTER_DELIVER hook execution.
+
+    Methods provided by HelpersMixin (or equivalent):
+        _build_context: Build a :class:`~roomkit.models.context.RoomContext`
+            for hook invocation.
+    """
+
+    _delivery_strategy: DeliveryStrategy | None
+    _delivery_backend: DeliveryBackend | None
+    _hook_engine: HookEngine
+
+    async def _build_context(self, room_id: str) -> RoomContext: ...
+
+
 class DeliverMixin(HelpersMixin):
-    """Adds ``deliver()`` to RoomKit for proactive content delivery."""
+    """Adds ``deliver()`` to RoomKit for proactive content delivery.
+
+    Host contract: :class:`DeliveryHost`.
+    """
 
     _delivery_strategy: DeliveryStrategy | None
     _delivery_backend: DeliveryBackend | None

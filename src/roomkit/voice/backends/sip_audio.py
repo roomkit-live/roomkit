@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import time
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from roomkit.models.trace import ProtocolTrace
 from roomkit.telemetry.base import Attr, SpanKind
@@ -20,11 +20,24 @@ from roomkit.voice.realtime.pacer import OutboundAudioPacer
 __all__ = ["SIPAudioMixin"]
 
 
-class SIPAudioMixin:
-    """Mixin providing audio I/O, DTMF, diagnostics, and session lifecycle.
+@runtime_checkable
+class SIPAudioHost(Protocol):
+    """Contract: capabilities a host class must provide for SIPAudioMixin.
 
-    Attribute declarations below are for mypy — actual values are set
-    by :class:`SIPVoiceBackend.__init__`.
+    Attributes provided by the host's ``__init__``:
+        _aiosipua: The aiosipua module (lazy-imported, no type stubs).
+        _transport: The SIP UDP transport.
+        _uac: The SIP User Agent Client.
+        _rtp_inactivity_timeout: Seconds before RTP inactivity triggers disconnect.
+        _session_states: Consolidated per-session state.
+        _audio_received_callback: Callback for inbound audio frames.
+        _dtmf_callbacks: Callbacks for DTMF digit events.
+        _disconnect_callbacks: Callbacks for session disconnect.
+        _trace_emitter: Protocol trace emitter callback.
+
+    Cross-mixin methods (implemented elsewhere in the MRO):
+        _cleanup_session: Remove all tracking state for a session (SIPCallingMixin).
+        _log_task_exception: Done callback for fire-and-forget tasks (SIPCallingMixin).
     """
 
     _aiosipua: Any
@@ -36,8 +49,30 @@ class SIPAudioMixin:
     _dtmf_callbacks: list[Any]
     _disconnect_callbacks: list[Any]
     _trace_emitter: Any
-    _cleanup_session: Any  # from SIPCallingMixin
-    _log_task_exception: Any  # from SIPCallingMixin
+
+    def _cleanup_session(self, session_id: str) -> None: ...
+
+    @staticmethod
+    def _log_task_exception(task: Any) -> None: ...
+
+
+class SIPAudioMixin:
+    """Mixin providing audio I/O, DTMF, diagnostics, and session lifecycle.
+
+    Host contract: :class:`SIPAudioHost`.
+    """
+
+    _aiosipua: Any
+    _transport: Any
+    _uac: Any
+    _rtp_inactivity_timeout: float
+    _session_states: dict[str, SIPSessionState]
+    _audio_received_callback: Any
+    _dtmf_callbacks: list[Any]
+    _disconnect_callbacks: list[Any]
+    _trace_emitter: Any
+    _cleanup_session: Any  # see SIPAudioHost — cross-mixin, from SIPCallingMixin
+    _log_task_exception: Any  # see SIPAudioHost — cross-mixin, from SIPCallingMixin
 
     # -------------------------------------------------------------------------
     # Session lifecycle (VoiceBackend interface)

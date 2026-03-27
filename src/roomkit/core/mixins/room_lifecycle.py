@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.core.exceptions import (
@@ -24,6 +24,7 @@ from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 
 if TYPE_CHECKING:
+    from roomkit.channels.base import Channel
     from roomkit.core.locks import RoomLockManager
     from roomkit.orchestration.base import Orchestration
     from roomkit.recorder._room_recorder_manager import RoomRecorderManager
@@ -35,13 +36,44 @@ logger = logging.getLogger("roomkit.framework")
 _ORCHESTRATION_UNSET: Any = object()
 
 
-class RoomLifecycleMixin(HelpersMixin):
-    """Room lifecycle operations: create, close, timers, participants."""
+@runtime_checkable
+class RoomLifecycleHost(Protocol):
+    """Contract: capabilities a host class must provide for RoomLifecycleMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _store: Conversation persistence backend.
+        _lock_manager: Per-room lock for serialised mutation.
+        _room_recorder_mgr: Manager for room-level media recording.
+        _default_orchestration: Kit-level default orchestration strategy.
+        _channels: Registry of channel-id to :class:`Channel` instances.
+
+    Cross-mixin methods (provided by other mixins in the MRO):
+        register_channel: From :class:`ChannelOpsMixin`.
+        attach_channel: From :class:`ChannelOpsMixin`.
+    """
 
     _store: ConversationStore
     _lock_manager: RoomLockManager
     _room_recorder_mgr: RoomRecorderManager
     _default_orchestration: Orchestration | None
+    _channels: dict[str, Channel]
+
+
+class RoomLifecycleMixin(HelpersMixin):
+    """Room lifecycle operations: create, close, timers, participants.
+
+    Host contract: :class:`RoomLifecycleHost`.
+    """
+
+    _store: ConversationStore
+    _lock_manager: RoomLockManager
+    _room_recorder_mgr: RoomRecorderManager
+    _default_orchestration: Orchestration | None
+    _channels: dict[str, Channel]
+
+    # Cross-mixin methods — attribute annotations avoid MRO shadowing
+    register_channel: Any  # see RoomLifecycleHost
+    attach_channel: Any  # see RoomLifecycleHost
 
     async def create_room(
         self,
@@ -78,9 +110,9 @@ class RoomLifecycleMixin(HelpersMixin):
         if orch is not None:
             for agent in orch.agents():
                 if agent.channel_id not in self._channels:
-                    self.register_channel(agent)  # type: ignore[attr-defined]
+                    self.register_channel(agent)
             for agent in orch.agents():
-                await self.attach_channel(  # type: ignore[attr-defined]
+                await self.attach_channel(
                     room.id,
                     agent.channel_id,
                     category=ChannelCategory.INTELLIGENCE,

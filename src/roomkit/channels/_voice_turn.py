@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from roomkit.models.enums import HookTrigger
 
@@ -23,10 +23,38 @@ logger = logging.getLogger("roomkit.voice")
 _MAX_PENDING_AUDIO_BYTES = 1_048_576
 
 
-class VoiceTurnMixin:
-    """Turn detection and text routing for VoiceChannel."""
+@runtime_checkable
+class TurnHost(Protocol):
+    """Contract: capabilities a host class must provide for VoiceTurnMixin.
 
-    # -- attributes provided by VoiceChannel.__init__ --
+    Every attribute listed here is initialized by ``VoiceChannel.__init__``.
+
+    Attributes:
+        channel_id: Unique identifier for this channel instance.
+        _framework: Reference to the owning RoomKit framework (None before registration).
+        _backend: The voice backend transport (None before configuration).
+        _pipeline_config: Audio pipeline configuration (None when no pipeline).
+        _session_bindings: Map of session ID to (room_id, binding) pairs.
+        _pending_turns: Accumulated turn entries per session, awaiting turn completion.
+        _pending_audio: Accumulated raw audio per session for audio-native turn detectors.
+    """
+
+    channel_id: str
+    _framework: RoomKit | None
+    _backend: VoiceBackend | None
+    _pipeline_config: AudioPipelineConfig | None
+    _session_bindings: dict[str, tuple[str, ChannelBinding]]
+    _pending_turns: dict[str, list[TurnEntry]]
+    _pending_audio: dict[str, bytearray]
+
+
+class VoiceTurnMixin:
+    """Turn detection and text routing for VoiceChannel.
+
+    Host contract: :class:`TurnHost`.
+    """
+
+    # -- attributes provided by VoiceChannel.__init__ (see TurnHost) --
     channel_id: str
     _framework: RoomKit | None
     _backend: VoiceBackend | None

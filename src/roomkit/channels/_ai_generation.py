@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.event import EventSource, RoomEvent, TextContent
@@ -26,12 +26,95 @@ if TYPE_CHECKING:
     from roomkit.channels.ai import _ContentPart, _ToolLoopContext
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
+    from roomkit.models.enums import ChannelType
+    from roomkit.providers.ai.base import AIProvider
 
 logger = logging.getLogger("roomkit.channels.ai")
 
 
+@runtime_checkable
+class AIGenerationHost(Protocol):
+    """Contract: capabilities a host class must provide for AIGenerationMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _provider: AI provider for generation.
+        _max_tool_rounds: Maximum tool-loop iterations.
+        _tool_loop_timeout_seconds: Optional wall-clock timeout for the loop.
+        _tool_loop_warn_after: Log a warning after this many rounds.
+        _tool_handler: Tool call handler (or ``None`` if tools disabled).
+        _active_loops: Registry of currently running tool loops.
+        _after_response_hook: Optional callback fired after response generation.
+        channel_id: Unique identifier for this channel.
+        provider_name: Human-readable provider name.
+        channel_type: Channel type enum value.
+
+    Methods provided by other mixins:
+        _build_context: ``AIContextMixin`` — builds AI context from room state.
+        _drain_steering_queue: ``AISteeringMixin`` — drains pending directives.
+        _generate_with_retry: ``AIResilienceMixin`` — generate with retry/fallback.
+        _execute_tools_parallel: ``AIToolsMixin`` — execute tool calls concurrently.
+        _apply_tool_filters: ``AIToolPolicyMixin`` — apply policy + gating filters.
+        _publish_thinking_event: ``AIEventsMixin`` — publish thinking events.
+        _publish_tool_event: ``AIEventsMixin`` — publish tool call events.
+        _is_context_overflow: ``AIResilienceMixin`` static — detect overflow errors.
+        _compact_context: ``AIResilienceMixin`` — emergency context compaction.
+        _extract_accumulated_text: ``AIResilienceMixin`` static — extract text.
+    """
+
+    _provider: AIProvider
+    _max_tool_rounds: int
+    _tool_loop_timeout_seconds: float | None
+    _tool_loop_warn_after: int
+    _tool_handler: Any
+    _active_loops: dict[str, _ToolLoopContext]
+    _after_response_hook: Any
+    channel_id: str
+    provider_name: str
+    channel_type: ChannelType
+
+    async def _build_context(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> AIContext: ...
+    def _drain_steering_queue(
+        self, context: AIContext, loop_ctx: _ToolLoopContext
+    ) -> tuple[AIContext, bool]: ...
+    async def _generate_with_retry(self, context: AIContext) -> AIResponse: ...
+    async def _execute_tools_parallel(
+        self,
+        tool_calls: list[Any],
+        telemetry: Any,
+        *,
+        parent_span_id: str | None = ...,
+    ) -> list[_ContentPart]: ...
+    def _apply_tool_filters(self, tools: list[Any]) -> list[Any]: ...
+    async def _publish_thinking_event(
+        self,
+        event_type: EphemeralEventType,
+        room_id: str,
+        thinking: str,
+        round_idx: int,
+    ) -> None: ...
+    async def _publish_tool_event(
+        self,
+        event_type: EphemeralEventType,
+        room_id: str,
+        tool_calls: list[Any],
+        round_idx: int,
+        *,
+        duration_ms: int | None = ...,
+    ) -> None: ...
+    @staticmethod
+    def _is_context_overflow(exc: ProviderError) -> bool: ...
+    async def _compact_context(self, context: AIContext) -> AIContext: ...
+    @staticmethod
+    def _extract_accumulated_text(messages: list[AIMessage]) -> str: ...
+
+
 class AIGenerationMixin:
-    """Non-streaming AI response generation with tool loop."""
+    """Non-streaming AI response generation with tool loop.
+
+    Host contract: :class:`AIGenerationHost`.
+    """
 
     _provider: Any
     _max_tool_rounds: int
@@ -43,6 +126,20 @@ class AIGenerationMixin:
     channel_id: str
     provider_name: str
     channel_type: Any
+
+    # Cross-mixin methods — Any annotations avoid MRO shadowing.
+    # _build_context is NOT annotated here: it's a real typed method on
+    # AIContextMixin whose return type must be preserved for subclasses
+    # (Agent.super()._build_context()). Call sites use type: ignore instead.
+    _drain_steering_queue: Any  # see AIGenerationHost
+    _generate_with_retry: Any  # see AIGenerationHost
+    _execute_tools_parallel: Any  # see AIGenerationHost
+    _apply_tool_filters: Any  # see AIGenerationHost
+    _publish_thinking_event: Any  # see AIGenerationHost
+    _publish_tool_event: Any  # see AIGenerationHost
+    _is_context_overflow: Any  # see AIGenerationHost
+    _compact_context: Any  # see AIGenerationHost
+    _extract_accumulated_text: Any  # see AIGenerationHost
 
     @property
     def _telemetry_provider(self) -> NoopTelemetryProvider:
@@ -163,10 +260,10 @@ class AIGenerationMixin:
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx
         try:
-            context, should_cancel = self._drain_steering_queue(context, loop_ctx)  # type: ignore[attr-defined]
+            context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
                 return AIResponse(content="", tool_calls=[])
-            response: AIResponse = await self._generate_with_retry(context)  # type: ignore[attr-defined]
+            response: AIResponse = await self._generate_with_retry(context)
             telemetry = self._telemetry_provider
             room_id = context.room.room.id if context.room else None
             deadline = (
@@ -176,10 +273,10 @@ class AIGenerationMixin:
             )
 
             if response.thinking and room_id:
-                await self._publish_thinking_event(  # type: ignore[attr-defined]
+                await self._publish_thinking_event(
                     EphemeralEventType.THINKING_START, room_id, "", 0
                 )
-                await self._publish_thinking_event(  # type: ignore[attr-defined]
+                await self._publish_thinking_event(
                     EphemeralEventType.THINKING_END, room_id, response.thinking, 0
                 )
 
@@ -230,7 +327,7 @@ class AIGenerationMixin:
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
                 if room_id:
-                    await self._publish_tool_event(  # type: ignore[attr-defined]
+                    await self._publish_tool_event(
                         EphemeralEventType.TOOL_CALL_START,
                         room_id,
                         response.tool_calls,
@@ -238,14 +335,14 @@ class AIGenerationMixin:
                     )
 
                 t0 = time.monotonic()
-                result_parts = await self._execute_tools_parallel(  # type: ignore[attr-defined]
+                result_parts = await self._execute_tools_parallel(
                     response.tool_calls, telemetry, parent_span_id=parent_span_id
                 )
                 duration_ms = int((time.monotonic() - t0) * 1000)
                 context.messages.append(AIMessage(role="tool", content=result_parts))
 
                 if room_id:
-                    await self._publish_tool_event(  # type: ignore[attr-defined]
+                    await self._publish_tool_event(
                         EphemeralEventType.TOOL_CALL_END,
                         room_id,
                         result_parts,
@@ -253,25 +350,25 @@ class AIGenerationMixin:
                         duration_ms=duration_ms,
                     )
 
-                context, should_cancel = self._drain_steering_queue(context, loop_ctx)  # type: ignore[attr-defined]
+                context, should_cancel = self._drain_steering_queue(context, loop_ctx)
                 if should_cancel:
                     logger.info("Tool loop cancelled after round %d", round_idx)
                     break
 
                 if loop_ctx.all_context_tools:
                     context = context.model_copy(
-                        update={"tools": self._apply_tool_filters(loop_ctx.all_context_tools)}  # type: ignore[attr-defined]
+                        update={"tools": self._apply_tool_filters(loop_ctx.all_context_tools)}
                     )
 
                 try:
-                    response = await self._generate_with_retry(context)  # type: ignore[attr-defined]
+                    response = await self._generate_with_retry(context)
                 except ProviderError as exc:
-                    if self._is_context_overflow(exc):  # type: ignore[attr-defined]
+                    if self._is_context_overflow(exc):
                         logger.warning("Context overflow at round %d. Compacting.", round_idx)
-                        context = await self._compact_context(context)  # type: ignore[attr-defined]
-                        response = await self._generate_with_retry(context)  # type: ignore[attr-defined]
+                        context = await self._compact_context(context)
+                        response = await self._generate_with_retry(context)
                     else:
-                        accumulated = self._extract_accumulated_text(context.messages)  # type: ignore[attr-defined]
+                        accumulated = self._extract_accumulated_text(context.messages)
                         if accumulated:
                             return AIResponse(
                                 content=accumulated + f"\n\n[Agent interrupted: {exc}]",
@@ -280,10 +377,10 @@ class AIGenerationMixin:
                         raise
 
                 if response.thinking and room_id:
-                    await self._publish_thinking_event(  # type: ignore[attr-defined]
+                    await self._publish_thinking_event(
                         EphemeralEventType.THINKING_START, room_id, "", round_idx + 1
                     )
-                    await self._publish_thinking_event(  # type: ignore[attr-defined]
+                    await self._publish_thinking_event(
                         EphemeralEventType.THINKING_END,
                         room_id,
                         response.thinking,

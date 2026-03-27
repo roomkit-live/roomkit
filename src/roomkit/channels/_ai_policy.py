@@ -2,24 +2,47 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._skill_constants import SKILL_INFRA_TOOL_NAMES
 from roomkit.providers.ai.base import AITool
 from roomkit.tools.policy import ToolPolicy
 
 if TYPE_CHECKING:
+    from roomkit.channels.ai import _ToolLoopContext
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
     from roomkit.skills.registry import SkillRegistry
 
 
-class AIToolPolicyMixin:
-    """Resolves participant roles and enforces tool policy / skill gating."""
+@runtime_checkable
+class ToolPolicyHost(Protocol):
+    """Contract: capabilities a host class must provide for AIToolPolicyMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _tool_policy: Global tool access policy (may contain per-role overrides).
+        _skills: Skill registry for gated tool resolution.
+
+    Methods provided by AISteeringMixin (or equivalent):
+        _get_loop_ctx: Return the current tool-loop context (activated skills,
+            participant role, steering queue).
+    """
 
     _tool_policy: ToolPolicy | None
     _skills: SkillRegistry | None
-    _get_loop_ctx: Any  # provided by AISteeringMixin
+
+    def _get_loop_ctx(self) -> _ToolLoopContext: ...
+
+
+class AIToolPolicyMixin:
+    """Resolves participant roles and enforces tool policy / skill gating.
+
+    Host contract: :class:`ToolPolicyHost`.
+    """
+
+    _tool_policy: ToolPolicy | None
+    _skills: SkillRegistry | None
+    _get_loop_ctx: Any  # provided by AISteeringMixin — see ToolPolicyHost
 
     def _resolve_participant_role(self, event: RoomEvent, context: RoomContext) -> str | None:
         """Look up the participant role for the event source."""

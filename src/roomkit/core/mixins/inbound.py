@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import ChannelNotRegisteredError
 from roomkit.core.mixins.helpers import HelpersMixin
@@ -21,12 +21,36 @@ if TYPE_CHECKING:
     from roomkit.core.locks import RoomLockManager
     from roomkit.identity.base import IdentityResolver
     from roomkit.store.base import ConversationStore
+    from roomkit.telemetry.base import TelemetryProvider
 
 logger = logging.getLogger("roomkit.framework")
 
 
-class InboundMixin(HelpersMixin):
-    """Inbound message processing pipeline — entry point and routing."""
+@runtime_checkable
+class InboundHost(Protocol):
+    """Contract: capabilities a host class must provide for InboundMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _store: Conversation persistence backend.
+        _channels: Registry of channel-id to :class:`Channel` instances.
+        _lock_manager: Per-room lock for serialised mutation.
+        _identity_resolver: Optional identity resolver for RFC 7 pipeline.
+        _identity_channel_types: Channel types eligible for identity resolution.
+        _identity_timeout: Timeout in seconds for identity resolution.
+        _process_timeout: Timeout in seconds for locked inbound processing.
+        _inbound_router: Router that maps inbound messages to room IDs.
+        _max_chain_depth: Maximum AI-to-AI chain depth (RFC 10).
+        _inbound_rate_limiter: Token-bucket rate limiter (or ``None``).
+        _inbound_rate_limit: Rate-limit configuration (or ``None``).
+        _telemetry: Telemetry / tracing provider.
+
+    Cross-mixin methods (provided by other mixins in the MRO):
+        _resolve_identity: From :class:`InboundIdentityMixin`.
+        _process_locked: From :class:`InboundLockedMixin`.
+        _process_streaming_responses: From :class:`InboundStreamingMixin`.
+        create_room: From :class:`RoomLifecycleMixin`.
+        attach_channel: From :class:`ChannelOpsMixin`.
+    """
 
     _store: ConversationStore
     _channels: dict[str, Channel]
@@ -39,6 +63,34 @@ class InboundMixin(HelpersMixin):
     _max_chain_depth: int
     _inbound_rate_limiter: Any  # TokenBucketRateLimiter | None
     _inbound_rate_limit: Any  # RateLimit | None
+    _telemetry: TelemetryProvider
+
+
+class InboundMixin(HelpersMixin):
+    """Inbound message processing pipeline — entry point and routing.
+
+    Host contract: :class:`InboundHost`.
+    """
+
+    _store: ConversationStore
+    _channels: dict[str, Channel]
+    _lock_manager: RoomLockManager
+    _identity_resolver: IdentityResolver | None
+    _identity_channel_types: set[ChannelType] | None
+    _identity_timeout: float
+    _process_timeout: float
+    _inbound_router: InboundRoomRouter
+    _max_chain_depth: int
+    _inbound_rate_limiter: Any  # TokenBucketRateLimiter | None
+    _inbound_rate_limit: Any  # RateLimit | None
+    _telemetry: TelemetryProvider
+
+    # Cross-mixin methods — attribute annotations avoid MRO shadowing
+    _resolve_identity: Any  # see InboundHost
+    _process_locked: Any  # see InboundHost
+    _process_streaming_responses: Any  # see InboundHost
+    create_room: Any  # see InboundHost
+    attach_channel: Any  # see InboundHost
 
     async def process_inbound(
         self, message: InboundMessage, *, room_id: str | None = None
@@ -67,7 +119,7 @@ class InboundMixin(HelpersMixin):
         if channel is None:
             raise ChannelNotRegisteredError(f"Channel {message.channel_id} not registered")
 
-        telemetry = self._telemetry  # type: ignore[attr-defined]
+        telemetry = self._telemetry
         inbound_span_id = telemetry.start_span(
             SpanKind.INBOUND_PIPELINE,
             "framework.inbound",
@@ -131,7 +183,7 @@ class InboundMixin(HelpersMixin):
 
         # Identity resolution pipeline (RFC §7)
         try:
-            event, resolved_identity, pending_id_result = await self._resolve_identity(  # type: ignore[attr-defined]
+            event, resolved_identity, pending_id_result = await self._resolve_identity(
                 event, message, channel, room_id, context, telemetry
             )
         except _IdentityBlockedError as exc:
@@ -142,7 +194,7 @@ class InboundMixin(HelpersMixin):
         async with self._lock_manager.locked(room_id):
             try:
                 result: InboundResult = await asyncio.wait_for(
-                    self._process_locked(  # type: ignore[attr-defined]
+                    self._process_locked(
                         event,
                         room_id,
                         context,
@@ -169,7 +221,7 @@ class InboundMixin(HelpersMixin):
         # Handle streaming responses outside lock (TTS delivery can take seconds;
         # holding the lock would block concurrent process_inbound calls)
         if pending_streams:
-            await self._process_streaming_responses(pending_streams, room_id)  # type: ignore[attr-defined]
+            await self._process_streaming_responses(pending_streams, room_id)
 
         # Bind session for stateful channels (voice, persistent WS, etc.)
         # Runs AFTER hooks passed and the event was stored — a blocked
@@ -214,23 +266,23 @@ class InboundMixin(HelpersMixin):
                 )
             if room_id is None:
                 # Auto-create room and attach channel
-                room = await self.create_room()  # type: ignore[attr-defined]
+                room = await self.create_room()
                 room_id = room.id
-                await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
+                await self.attach_channel(room_id, message.channel_id)
                 room_just_created = True
             else:
                 # Ensure room exists; auto-create if needed (e.g. voice session
                 # with a room_id from SIP headers that hasn't been created yet).
                 room = await self._store.get_room(room_id)
                 if room is None:
-                    room = await self.create_room(room_id=room_id)  # type: ignore[attr-defined]
-                    await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
+                    room = await self.create_room(room_id=room_id)
+                    await self.attach_channel(room_id, message.channel_id)
                     room_just_created = True
                 else:
                     # Room exists — ensure channel is attached
                     binding = await self._store.get_binding(room_id, message.channel_id)
                     if binding is None:
-                        await self.attach_channel(room_id, message.channel_id)  # type: ignore[attr-defined]
+                        await self.attach_channel(room_id, message.channel_id)
             telemetry.end_span(route_span, attributes={"room_id": room_id or ""})
         except Exception as exc:
             telemetry.end_span(route_span, status="error", error_message=str(exc))

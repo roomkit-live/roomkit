@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from roomkit.models.channel import RetryPolicy
 from roomkit.providers.ai.base import (
@@ -17,15 +18,39 @@ from roomkit.providers.ai.base import (
     StreamEvent,
 )
 
+if TYPE_CHECKING:
+    from roomkit.channels._tool_eviction import ToolEviction
+
 logger = logging.getLogger("roomkit.channels.ai")
 
 
-class AIResilienceMixin:
-    """Retry logic, streaming retry, context overflow detection, and compaction."""
+@runtime_checkable
+class ResilienceHost(Protocol):
+    """Contract: capabilities a host class must provide for AIResilienceMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _retry_policy: Retry configuration (max retries, backoff).
+        _provider: Primary AI provider for generation.
+        _fallback_provider: Optional fallback when primary exhausts retries.
+        _eviction: Tool result eviction / truncation strategy.
+    """
 
     _retry_policy: RetryPolicy | None
     _provider: AIProvider
     _fallback_provider: AIProvider | None
+    _eviction: ToolEviction
+
+
+class AIResilienceMixin:
+    """Retry logic, streaming retry, context overflow detection, and compaction.
+
+    Host contract: :class:`ResilienceHost`.
+    """
+
+    _retry_policy: RetryPolicy | None
+    _provider: AIProvider
+    _fallback_provider: AIProvider | None
+    _eviction: ToolEviction
 
     async def _generate_with_retry(self, context: AIContext) -> AIResponse:
         """Call provider.generate() with retry and optional fallback."""
@@ -179,4 +204,4 @@ class AIResilienceMixin:
 
     def _maybe_truncate_result(self, result: str, tool_call_id: str = "") -> str:
         """Delegate to ToolEviction for large result handling."""
-        return str(self._eviction.maybe_evict(result, tool_call_id))  # type: ignore[attr-defined]
+        return str(self._eviction.maybe_evict(result, tool_call_id))

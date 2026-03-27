@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._dangling_recovery import patch_dangling_tool_calls
 from roomkit.channels._skill_constants import (
@@ -26,7 +26,7 @@ from roomkit.providers.ai.base import (
 )
 
 if TYPE_CHECKING:
-    from roomkit.channels.ai import _ContentPart
+    from roomkit.channels.ai import _ContentPart, _ToolLoopContext
     from roomkit.memory.base import MemoryProvider
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
@@ -38,8 +38,31 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.channels.ai")
 
 
-class AIContextMixin:
-    """Builds the AIContext passed to the provider from room state and events."""
+@runtime_checkable
+class AIContextHost(Protocol):
+    """Contract: capabilities a host class must provide for AIContextMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _provider: AI provider for generation and capability queries.
+        _system_prompt: Default system prompt (overridable per room).
+        _temperature: Default temperature (overridable per room).
+        _max_tokens: Default max tokens (overridable per room).
+        _thinking_budget: Optional thinking budget for extended thinking.
+        _skills: Skill registry for tool injection.
+        _script_executor: Script executor for skill scripts.
+        _memory: Memory provider for conversation retrieval.
+        _eviction: Tool result eviction / truncation strategy.
+        _planner: Optional task planner for planning tools.
+        _user_tools: User-provided tool definitions.
+        _injected_tools: Orchestration-injected tool definitions.
+        channel_id: Unique identifier for this channel.
+
+    Properties / methods provided by other mixins:
+        extra_tools: ``AIChannel`` property returning user + injected tools.
+        _skill_tools: ``AIToolsMixin`` — builds skill tool definitions.
+        _apply_tool_filters: ``AIToolPolicyMixin`` — applies policy + gating.
+        _get_loop_ctx: ``AISteeringMixin`` — returns the current tool-loop context.
+    """
 
     _provider: AIProvider
     _system_prompt: str | None
@@ -54,6 +77,39 @@ class AIContextMixin:
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
     channel_id: str
+
+    @property
+    def extra_tools(self) -> list[AITool]: ...
+    def _skill_tools(self) -> list[AITool]: ...
+    def _apply_tool_filters(self, tools: list[AITool]) -> list[AITool]: ...
+    def _get_loop_ctx(self) -> _ToolLoopContext: ...
+
+
+class AIContextMixin:
+    """Builds the AIContext passed to the provider from room state and events.
+
+    Host contract: :class:`AIContextHost`.
+    """
+
+    _provider: AIProvider
+    _system_prompt: str | None
+    _temperature: float
+    _max_tokens: int
+    _thinking_budget: int | None
+    _skills: SkillRegistry | None
+    _script_executor: ScriptExecutor | None
+    _memory: MemoryProvider
+    _eviction: ToolEviction
+    _planner: TaskPlanner | None
+    _user_tools: list[AITool]
+    _injected_tools: list[AITool]
+    channel_id: str
+
+    # Cross-mixin methods — Any annotations avoid MRO shadowing
+    extra_tools: Any  # see AIContextHost
+    _skill_tools: Any  # see AIContextHost
+    _apply_tool_filters: Any  # see AIContextHost
+    _get_loop_ctx: Any  # see AIContextHost
 
     async def _build_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -84,11 +140,11 @@ class AIContextMixin:
         ]
 
         # Inject extra tools (user-provided + orchestration handoff, etc.)
-        tools.extend(self.extra_tools)  # type: ignore[attr-defined]
+        tools.extend(self.extra_tools)
 
         # Inject skill tools and prompt (infra tools added here, gated tools later)
         if self._skills and self._skills.skill_count > 0:
-            tools.extend(self._skill_tools())  # type: ignore[attr-defined]
+            tools.extend(self._skill_tools())
             preamble = _SKILLS_PREAMBLE
             if not self._script_executor:
                 preamble += _SKILLS_NO_SCRIPTS_NOTE
@@ -109,11 +165,11 @@ class AIContextMixin:
                 )
 
         # Store unfiltered tool list for re-application after skill activation
-        loop_ctx = self._get_loop_ctx()  # type: ignore[attr-defined]
+        loop_ctx = self._get_loop_ctx()
         loop_ctx.all_context_tools = list(tools)
 
         # Apply tool policy + skill gating visibility filters
-        tools = self._apply_tool_filters(tools)  # type: ignore[attr-defined]
+        tools = self._apply_tool_filters(tools)
 
         # Retrieve memory
         memory_result = await self._memory.retrieve(

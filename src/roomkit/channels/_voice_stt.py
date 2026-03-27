@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator, Coroutine
-from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.enums import HookTrigger
 from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
@@ -18,9 +18,10 @@ from roomkit.voice.interruption import InterruptionHandler
 _NOOP = NoopTelemetryProvider()
 
 if TYPE_CHECKING:
+    import threading
+
     from roomkit.core.framework import RoomKit
     from roomkit.models.channel import ChannelBinding
-    from roomkit.models.context import RoomContext
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.base import AudioChunk, VoiceSession
@@ -47,10 +48,37 @@ def _extract_transcription_text(hook_event: Any, original: str) -> str:
     return original
 
 
-class VoiceSTTMixin:
-    """STT streaming and speech-processing helpers for VoiceChannel."""
+@runtime_checkable
+class STTHost(Protocol):
+    """Contract: capabilities a host class must provide for VoiceSTTMixin.
 
-    # -- attributes provided by VoiceChannel.__init__ --
+    Every attribute listed here is initialized by ``VoiceChannel.__init__``.
+
+    Attributes:
+        channel_id: Unique identifier for this channel instance.
+        _framework: Reference to the owning RoomKit framework (None before registration).
+        _stt: Speech-to-text provider (None when not configured).
+        _backend: The voice backend transport (None before configuration).
+        _pipeline: The audio processing pipeline (None when no pipeline).
+        _pipeline_config: Audio pipeline configuration (None when no pipeline).
+        _session_bindings: Map of session ID to (room_id, binding) pairs.
+        _playing_sessions: Active TTS playback states per session.
+        _playback_done_events: Signals that send_audio() has returned for a session.
+        _last_tts_ended_at: Monotonic timestamp of last TTS completion per session.
+        _stt_streams: Active STT stream states per session.
+        _continuous_stt: Whether continuous STT mode is enabled.
+        _batch_mode: Whether batch STT mode is enabled.
+        _batch_audio_buffers: Accumulated audio per session for batch transcription.
+        _batch_audio_sample_rate: Sample rate of batch audio per session.
+        _pending_turns: Accumulated turn entries per session, awaiting turn completion.
+        _pending_audio: Accumulated raw audio per session for audio-native turn detectors.
+        _debug_frame_count: Counter for RMS debug logging.
+        _barge_in_energy_count: Consecutive high-energy frame count per session.
+        _scheduled_tasks: Set of background tasks for lifecycle management.
+        _state_lock: Threading lock protecting shared mutable state.
+        _interruption_handler: Strategy for handling barge-in interruptions.
+    """
+
     channel_id: str
     _framework: RoomKit | None
     _stt: STTProvider | None
@@ -71,32 +99,50 @@ class VoiceSTTMixin:
     _debug_frame_count: int
     _barge_in_energy_count: dict[str, int]
     _scheduled_tasks: set[asyncio.Task[Any]]
+    _state_lock: threading.Lock
+    _interruption_handler: Any  # InterruptionHandler
 
-    # -- methods provided by other mixins / main class (TYPE_CHECKING only) --
-    if TYPE_CHECKING:
 
-        def _schedule(self, coro: Coroutine[Any, Any, Any], *, name: str) -> None: ...
-        async def _fire_partial_transcription_hook(
-            self, session: VoiceSession, result: Any, room_id: str
-        ) -> None: ...
-        async def _handle_barge_in(
-            self, session: VoiceSession, playback: TTSPlaybackState, room_id: str
-        ) -> None: ...
-        async def _evaluate_turn(
-            self,
-            session: VoiceSession,
-            text: str,
-            room_id: str,
-            context: RoomContext,
-            *,
-            audio_bytes: bytes | None = None,
-        ) -> None: ...
-        async def _route_text(self, session: VoiceSession, text: str, room_id: str) -> None: ...
-        async def _fire_speech_start_hooks(self, session: VoiceSession, room_id: str) -> None: ...
-        def _resolve_session_backend(self, session: VoiceSession) -> VoiceBackend | None: ...
-        async def _broadcast_bridge_transcription(
-            self, source_session: VoiceSession, text: str, room_id: str
-        ) -> None: ...
+class VoiceSTTMixin:
+    """STT streaming and speech-processing helpers for VoiceChannel.
+
+    Host contract: :class:`STTHost`.
+    """
+
+    # -- attributes provided by VoiceChannel.__init__ (see STTHost) --
+    channel_id: str
+    _framework: RoomKit | None
+    _stt: STTProvider | None
+    _backend: VoiceBackend | None
+    _pipeline: AudioPipeline | None
+    _pipeline_config: AudioPipelineConfig | None
+    _session_bindings: dict[str, tuple[str, ChannelBinding]]
+    _playing_sessions: dict[str, TTSPlaybackState]
+    _playback_done_events: dict[str, asyncio.Event]
+    _last_tts_ended_at: dict[str, float]
+    _stt_streams: dict[str, _STTStreamState]
+    _continuous_stt: bool
+    _batch_mode: bool
+    _batch_audio_buffers: dict[str, bytearray]
+    _batch_audio_sample_rate: dict[str, int]
+    _pending_turns: dict[str, list[TurnEntry]]
+    _pending_audio: dict[str, bytearray]
+    _debug_frame_count: int
+    _barge_in_energy_count: dict[str, int]
+    _scheduled_tasks: set[asyncio.Task[Any]]
+    _state_lock: Any  # threading.Lock — see STTHost
+    _interruption_handler: Any  # InterruptionHandler — see STTHost
+
+    # -- cross-mixin methods (annotated as Any to avoid MRO shadowing) --
+    _schedule: Any  # see STTHost — VoiceChannel._schedule
+    _fire_partial_transcription_hook: Any  # see STTHost — VoiceHooksMixin
+    _handle_barge_in: Any  # see STTHost — VoiceChannel._handle_barge_in
+    _evaluate_turn: Any  # see STTHost — VoiceTurnMixin._evaluate_turn
+    _route_text: Any  # see STTHost — VoiceTurnMixin._route_text
+    _fire_speech_start_hooks: Any  # see STTHost — VoiceHooksMixin
+    _resolve_session_backend: Any  # see STTHost — VoiceChannel._resolve_session_backend
+    _broadcast_bridge_transcription: Any  # see STTHost — VoiceChannel
+    _task_done: Any  # see STTHost — VoiceChannel._task_done
 
     # -----------------------------------------------------------------
     # VAD-driven STT streaming
@@ -215,7 +261,7 @@ class VoiceSTTMixin:
         try:
             loop = asyncio.get_running_loop()
             state.task = loop.create_task(consume(state), name=f"stt_stream:{session.id}")
-            state.task.add_done_callback(self._task_done)  # type: ignore[attr-defined]
+            state.task.add_done_callback(self._task_done)
             self._scheduled_tasks.add(state.task)
         except RuntimeError:
             self._stt_streams.pop(session.id, None)
@@ -268,7 +314,7 @@ class VoiceSTTMixin:
         samples = struct.unpack(f"<{n_samples}h", frame.data)
         rms = (sum(s * s for s in samples) / n_samples) ** 0.5
 
-        with self._state_lock:  # type: ignore[attr-defined]
+        with self._state_lock:
             if rms > self._BARGE_IN_RMS_THRESHOLD:
                 self._barge_in_energy_count[session.id] = (
                     self._barge_in_energy_count.get(session.id, 0) + 1
@@ -289,7 +335,7 @@ class VoiceSTTMixin:
             room_id, _ = binding_info
             # Consult the interruption handler before firing barge-in
             # (respects InterruptionStrategy.DISABLED and other policies).
-            handler: InterruptionHandler = self._interruption_handler  # type: ignore[attr-defined]
+            handler: InterruptionHandler = self._interruption_handler
             decision = handler.evaluate(
                 playback_position_ms=playback.position_ms,
                 speech_duration_ms=0,
@@ -320,7 +366,7 @@ class VoiceSTTMixin:
         from .voice import _STT_STREAM_BUFFER_BYTES
 
         # Energy barge-in on post-denoiser audio during TTS playback
-        with self._state_lock:  # type: ignore[attr-defined]
+        with self._state_lock:
             playback = self._playing_sessions.get(session.id)
         if playback:
             # Skip energy barge-in during drain period (send_audio returned,
@@ -329,7 +375,7 @@ class VoiceSTTMixin:
             if done_ev is None or not done_ev.is_set():
                 self._check_energy_barge_in(session, frame, playback)
         elif self._barge_in_energy_count.get(session.id, 0) > 0:
-            with self._state_lock:  # type: ignore[attr-defined]
+            with self._state_lock:
                 self._barge_in_energy_count[session.id] = 0
 
         stream_state = self._stt_streams.get(session.id)
@@ -355,7 +401,7 @@ class VoiceSTTMixin:
         """
         from .voice import _STTStreamState
 
-        with self._state_lock:  # type: ignore[attr-defined]
+        with self._state_lock:
             binding_info = self._session_bindings.get(session.id)
         if not binding_info or not self._stt:
             return
@@ -446,7 +492,7 @@ class VoiceSTTMixin:
                     async for result in self._stt.transcribe_stream(audio_gen(first_chunk)):
                         if state.cancelled:
                             break
-                        with self._state_lock:  # type: ignore[attr-defined]
+                        with self._state_lock:
                             playing = session.id in self._playing_sessions
 
                         # Provider signals speech detected (server-side VAD)
@@ -469,7 +515,7 @@ class VoiceSTTMixin:
                             # During playback (and no barge-in), this is
                             # almost certainly TTS echo leaking through AEC.
                             # Discard it and reconnect for a fresh stream.
-                            with self._state_lock:  # type: ignore[attr-defined]
+                            with self._state_lock:
                                 playback = self._playing_sessions.get(session.id)
                             if playback and not barge_in_fired:
                                 logger.info(
@@ -500,13 +546,13 @@ class VoiceSTTMixin:
                         elif not result.is_final and result.text:
                             # Barge-in: user speaking during TTS playback
                             if not barge_in_fired:
-                                with self._state_lock:  # type: ignore[attr-defined]
+                                with self._state_lock:
                                     playback = self._playing_sessions.get(session.id)
                                 # Skip barge-in during drain period (send_audio
                                 # returned, waiting for echo decay).
                                 drain_ev = self._playback_done_events.get(session.id)
                                 if playback and not (drain_ev is not None and drain_ev.is_set()):
-                                    handler: InterruptionHandler = self._interruption_handler  # type: ignore[attr-defined]
+                                    handler: InterruptionHandler = self._interruption_handler
                                     decision = handler.evaluate(
                                         playback_position_ms=(playback.position_ms),
                                         speech_duration_ms=0,
@@ -552,7 +598,7 @@ class VoiceSTTMixin:
             state.task = loop.create_task(
                 run_continuous(state), name=f"continuous_stt:{session.id}"
             )
-            state.task.add_done_callback(self._task_done)  # type: ignore[attr-defined]
+            state.task.add_done_callback(self._task_done)
             self._scheduled_tasks.add(state.task)
         except RuntimeError:
             self._stt_streams.pop(session.id, None)
@@ -575,7 +621,7 @@ class VoiceSTTMixin:
             _vs_token = set_current_span(_vs_parent) if _vs_parent else None
             import time as _time
 
-            with self._state_lock:  # type: ignore[attr-defined]
+            with self._state_lock:
                 playback = self._playing_sessions.get(session.id)
             last_tts_end = self._last_tts_ended_at.get(session.id, 0.0)
             since_tts = _time.monotonic() - last_tts_end if last_tts_end else -1.0
@@ -918,7 +964,7 @@ class VoiceSTTMixin:
         result = await self._stt.transcribe(audio_frame)
 
         if route and result.text.strip() and self._framework:
-            with self._state_lock:  # type: ignore[attr-defined]
+            with self._state_lock:
                 binding_info = self._session_bindings.get(session.id)
             if binding_info:
                 room_id, _ = binding_info

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._skill_constants import (
     ACTIVATE_SKILL_SCHEMA,
@@ -29,19 +29,41 @@ if TYPE_CHECKING:
 
     from roomkit.channels._task_planner import TaskPlanner
     from roomkit.channels._tool_eviction import ToolEviction
-    from roomkit.channels.ai import _ContentPart
+    from roomkit.channels.ai import _ContentPart, _ToolLoopContext
     from roomkit.models.tool_call import ToolCallCallback
     from roomkit.realtime.base import RealtimeBackend
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
+    from roomkit.tools.policy import ToolPolicy
 
     ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
 
 logger = logging.getLogger("roomkit.channels.ai")
 
 
-class AIToolsMixin:
-    """Parallel tool execution, skill tool definitions, and dispatch routing."""
+@runtime_checkable
+class AIToolsHost(Protocol):
+    """Contract: capabilities a host class must provide for AIToolsMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _tool_handler: Tool call handler (or ``None`` if tools disabled).
+        _user_tool_handler: User-provided tool handler for fallback dispatch.
+        _skills: Skill registry for gated tool resolution.
+        _script_executor: Script executor for skill scripts.
+        _eviction: Tool result eviction / truncation strategy.
+        _planner: Optional task planner.
+        _realtime: Realtime backend for ephemeral events.
+        _current_room_id: Current room ID for tool-call hook events.
+        _tool_call_hook: Optional unified ON_TOOL_CALL hook callback.
+        channel_id: Unique identifier for this channel.
+
+    Properties / methods provided by other mixins:
+        _effective_tool_policy: ``AIToolPolicyMixin`` property — resolved policy.
+        _SKILL_INFRA_TOOLS: ``AIToolPolicyMixin`` class var — infra tool names.
+        _gated_tool_names: ``AIToolPolicyMixin`` property — gated tool names.
+        _maybe_truncate_result: ``AIResilienceMixin`` — truncate large results.
+        _get_loop_ctx: ``AISteeringMixin`` — returns current tool-loop context.
+    """
 
     _tool_handler: Any
     _user_tool_handler: Any
@@ -53,6 +75,41 @@ class AIToolsMixin:
     _current_room_id: str | None
     _tool_call_hook: ToolCallCallback | None
     channel_id: str
+
+    @property
+    def _effective_tool_policy(self) -> ToolPolicy | None: ...
+    @property
+    def _gated_tool_names(self) -> set[str]: ...
+
+    _SKILL_INFRA_TOOLS: frozenset[str]
+
+    def _maybe_truncate_result(self, result: str, tool_call_id: str = ...) -> str: ...
+    def _get_loop_ctx(self) -> _ToolLoopContext: ...
+
+
+class AIToolsMixin:
+    """Parallel tool execution, skill tool definitions, and dispatch routing.
+
+    Host contract: :class:`AIToolsHost`.
+    """
+
+    _tool_handler: Any
+    _user_tool_handler: Any
+    _skills: SkillRegistry | None
+    _script_executor: ScriptExecutor | None
+    _eviction: ToolEviction
+    _planner: TaskPlanner | None
+    _realtime: RealtimeBackend | None
+    _current_room_id: str | None
+    _tool_call_hook: ToolCallCallback | None
+    channel_id: str
+
+    # Cross-mixin methods — Any annotations avoid MRO shadowing
+    _effective_tool_policy: Any  # see AIToolsHost
+    _SKILL_INFRA_TOOLS: Any  # see AIToolsHost
+    _gated_tool_names: Any  # see AIToolsHost
+    _maybe_truncate_result: Any  # see AIToolsHost
+    _get_loop_ctx: Any  # see AIToolsHost
 
     async def _execute_tools_parallel(
         self,
@@ -70,9 +127,9 @@ class AIToolsMixin:
             logger.info("Executing tool: %s(%s)", tc.name, tc.id)
 
             # Execution guard: policy deny (defense-in-depth, role-aware)
-            effective_policy = self._effective_tool_policy  # type: ignore[attr-defined]
+            effective_policy = self._effective_tool_policy
             if (
-                tc.name not in self._SKILL_INFRA_TOOLS  # type: ignore[attr-defined]
+                tc.name not in self._SKILL_INFRA_TOOLS
                 and effective_policy
                 and not effective_policy.is_allowed(tc.name)
             ):
@@ -86,7 +143,7 @@ class AIToolsMixin:
                 )
 
             # Execution guard: skill gating
-            if tc.name not in self._SKILL_INFRA_TOOLS and tc.name in self._gated_tool_names:  # type: ignore[attr-defined]
+            if tc.name not in self._SKILL_INFRA_TOOLS and tc.name in self._gated_tool_names:
                 logger.warning("Tool %s blocked by skill gating", tc.name)
                 return AIToolResultPart(
                     tool_call_id=tc.id,
@@ -109,7 +166,7 @@ class AIToolsMixin:
             )
             try:
                 result = await handler(tc.name, tc.arguments)
-                result = self._maybe_truncate_result(result, tc.id)  # type: ignore[attr-defined]
+                result = self._maybe_truncate_result(result, tc.id)
 
                 # Fire unified ON_TOOL_CALL hook (if framework injected callback)
                 if self._tool_call_hook is not None:
@@ -190,7 +247,7 @@ class AIToolsMixin:
             return json.dumps({"error": "No skills registry configured"})
         result_str, skill_name = await handle_activate_skill(arguments, self._skills)
         # Track activation so gated tools become visible on next round
-        self._get_loop_ctx().activated_skills.add(skill_name)  # type: ignore[attr-defined]
+        self._get_loop_ctx().activated_skills.add(skill_name)
         return result_str
 
     async def _handle_read_reference(self, arguments: dict[str, Any]) -> str:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import array
 import threading
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from roomkit.channels.voice import VoiceChannel
@@ -13,8 +13,22 @@ if TYPE_CHECKING:
     from roomkit.voice.base import VoiceSession
 
 
+@runtime_checkable
+class RecordingHost(Protocol):
+    """Contract: capabilities a host class must provide for RecordingMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _room_recorder_mgr: Manager that coordinates room-level media recorders.
+    """
+
+    _room_recorder_mgr: RoomRecorderManager
+
+
 class RecordingMixin:
-    """Room-level audio and video recording tap wiring."""
+    """Room-level audio and video recording tap wiring.
+
+    Host contract: :class:`RecordingHost`.
+    """
 
     _room_recorder_mgr: RoomRecorderManager
 

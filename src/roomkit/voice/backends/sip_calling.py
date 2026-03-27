@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from roomkit.models.trace import ProtocolTrace
 from roomkit.voice.backends._sip_types import (
@@ -19,11 +19,40 @@ from roomkit.voice.base import VoiceSession, VoiceSessionState
 __all__ = ["SIPCallingMixin"]
 
 
-class SIPCallingMixin:
-    """Mixin providing inbound INVITE handling and outbound dial() for SIPVoiceBackend.
+@runtime_checkable
+class SIPCallingHost(Protocol):
+    """Contract: capabilities a host class must provide for SIPCallingMixin.
 
-    Attribute declarations below are for mypy — actual values are set
-    by :class:`SIPVoiceBackend.__init__`.
+    Attributes provided by the host's ``__init__``:
+        _aiosipua: The aiosipua module (lazy-imported, no type stubs).
+        _rtp_bridge: RTP bridge module for call sessions.
+        _transport: The SIP UDP transport.
+        _uac: The SIP User Agent Client.
+        _local_rtp_ip: Local IP for RTP binding.
+        _advertised_ip: IP to advertise in SDP/Contact headers.
+        _supported_codecs: List of supported codec payload types.
+        _dtmf_payload_type: RTP payload type for RFC 2833 DTMF.
+        _server_name: SDP session name.
+        _jitter_capacity: Jitter buffer capacity in packets.
+        _jitter_prefetch: Jitter buffer prefetch threshold.
+        _skip_audio_gaps: Whether to skip silence gaps in RTP.
+        _user_agent: User-Agent header value.
+        _auth_users: Username-to-password map for inbound auth.
+        _session_states: Consolidated per-session state.
+        _call_to_session: Maps SIP Call-ID to session ID.
+        _pending_reinvite_calls: Re-INVITEs pending session creation.
+        _available_ports: Pool of available RTP ports.
+        _allocated_ports: Currently allocated RTP ports.
+        _transport_addr_resolved: Whether transport address has been resolved.
+        _trace_emitter: Protocol trace emitter callback.
+        _on_call_callback: Callback for new calls (routing).
+        _session_ready_callbacks: Callbacks when audio path is ready.
+        _disconnect_callbacks: Callbacks for session disconnect.
+
+    Cross-mixin methods (implemented elsewhere in the MRO):
+        _validate_invite_auth: Check digest auth on INVITE (SIPAuthMixin).
+        _make_audio_handler: Create audio callback for session (SIPAudioMixin).
+        _make_dtmf_handler: Create DTMF callback for session (SIPAudioMixin).
     """
 
     _aiosipua: Any
@@ -50,9 +79,47 @@ class SIPCallingMixin:
     _on_call_callback: Any
     _session_ready_callbacks: list[Any]
     _disconnect_callbacks: list[Any]
-    _validate_invite_auth: Any  # from SIPAuthMixin
-    _make_audio_handler: Any  # from SIPAudioMixin
-    _make_dtmf_handler: Any  # from SIPAudioMixin
+
+    def _validate_invite_auth(self, call: Any) -> bool: ...
+
+    def _make_audio_handler(self, session: VoiceSession) -> Any: ...
+
+    def _make_dtmf_handler(self, session: VoiceSession) -> Any: ...
+
+
+class SIPCallingMixin:
+    """Mixin providing inbound INVITE handling and outbound dial() for SIPVoiceBackend.
+
+    Host contract: :class:`SIPCallingHost`.
+    """
+
+    _aiosipua: Any
+    _rtp_bridge: Any
+    _transport: Any
+    _uac: Any
+    _local_rtp_ip: str
+    _advertised_ip: str | None
+    _supported_codecs: list[int]
+    _dtmf_payload_type: int
+    _server_name: str
+    _jitter_capacity: int
+    _jitter_prefetch: int
+    _skip_audio_gaps: bool
+    _user_agent: str | None
+    _auth_users: dict[str, str] | None
+    _session_states: dict[str, SIPSessionState]
+    _call_to_session: dict[str, str]
+    _pending_reinvite_calls: dict[str, Any]
+    _available_ports: set[int]
+    _allocated_ports: set[int]
+    _transport_addr_resolved: bool
+    _trace_emitter: Any
+    _on_call_callback: Any
+    _session_ready_callbacks: list[Any]
+    _disconnect_callbacks: list[Any]
+    _validate_invite_auth: Any  # see SIPCallingHost — cross-mixin, from SIPAuthMixin
+    _make_audio_handler: Any  # see SIPCallingHost — cross-mixin, from SIPAudioMixin
+    _make_dtmf_handler: Any  # see SIPCallingHost — cross-mixin, from SIPAudioMixin
 
     # -------------------------------------------------------------------------
     # Inbound call handling

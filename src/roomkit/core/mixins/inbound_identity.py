@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import HookTrigger, IdentificationStatus
@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from roomkit.identity.base import IdentityResolver
     from roomkit.models.context import RoomContext
     from roomkit.models.delivery import InboundMessage
+    from roomkit.models.enums import ChannelType
+    from roomkit.models.hook import InjectedEvent
 
 logger = logging.getLogger("roomkit.framework")
 
@@ -28,13 +30,47 @@ class _IdentityBlockedError(Exception):
         super().__init__(reason)
 
 
-class InboundIdentityMixin(HelpersMixin):
-    """Identity resolution pipeline for inbound messages (RFC §7)."""
+@runtime_checkable
+class IdentityHost(Protocol):
+    """Contract: capabilities a host class must provide for InboundIdentityMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _identity_resolver: Pluggable identity resolver (or ``None`` to skip).
+        _identity_channel_types: Channel types subject to identity resolution
+            (``None`` means all channel types).
+        _identity_timeout: Maximum seconds for resolver.resolve() before timeout.
+        _hook_engine: Hook engine for identity hooks.
+
+    Methods provided by InboundLockedMixin (or equivalent):
+        _deliver_injected_events: Deliver events injected by identity hooks
+            (e.g., challenge messages).
+    """
 
     _identity_resolver: IdentityResolver | None
-    _identity_channel_types: set[Any] | None
+    _identity_channel_types: set[ChannelType] | None
     _identity_timeout: float
     _hook_engine: HookEngine
+
+    async def _deliver_injected_events(
+        self, injected: list[InjectedEvent], room_id: str, context: RoomContext
+    ) -> None: ...
+
+
+class InboundIdentityMixin(HelpersMixin):
+    """Identity resolution pipeline for inbound messages (RFC §7).
+
+    Host contract: :class:`IdentityHost`.
+    """
+
+    _identity_resolver: IdentityResolver | None
+    _identity_channel_types: set[ChannelType] | None
+    _identity_timeout: float
+    _hook_engine: HookEngine
+
+    # Cross-mixin call — implemented by InboundLockedMixin. Cannot use a
+    # method stub because InboundIdentityMixin precedes InboundLockedMixin
+    # in the MRO, and a stub would shadow the real implementation at runtime.
+    _deliver_injected_events: Any  # see IdentityHost for typed signature
 
     async def _resolve_identity(
         self,
@@ -190,9 +226,7 @@ class InboundIdentityMixin(HelpersMixin):
             return event, hook_result.identity, None
         if hook_result and hook_result.status == IdentificationStatus.CHALLENGE_SENT:
             if hook_result.inject:
-                await self._deliver_injected_events(  # type: ignore[attr-defined]
-                    [hook_result.inject], room_id, context
-                )
+                await self._deliver_injected_events([hook_result.inject], room_id, context)
             raise _IdentityBlockedError("identity_challenge_sent")
         if hook_result and hook_result.status == IdentificationStatus.REJECTED:
             raise _IdentityBlockedError(hook_result.reason or "identity_rejected")

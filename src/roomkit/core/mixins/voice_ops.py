@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.channels.voice import VoiceChannel
@@ -31,8 +31,27 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.framework")
 
 
-class VoiceOpsMixin(HelpersMixin):
-    """Voice and video session connect/disconnect operations."""
+@runtime_checkable
+class VoiceOpsHost(Protocol):
+    """Contract: capabilities a host class must provide for VoiceOpsMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _store: Conversation persistence backend.
+        _channels: Registry of channel-id to :class:`Channel` instances.
+        _voice: Default voice backend (or ``None``).
+        _stt: Default speech-to-text provider (or ``None``).
+        _tts: Default text-to-speech provider (or ``None``).
+        _room_recorder_mgr: Manager for room-level media recording.
+
+    Cross-mixin methods (provided by other mixins in the MRO):
+        get_room: From :class:`RoomLifecycleMixin`.
+        _wire_audio_recording: From :class:`RecordingMixin`.
+        _wire_av_video_recording: From :class:`RecordingMixin`.
+        _wire_backend_video_recording: From :class:`RecordingMixin`.
+        _wire_video_recording: From :class:`RecordingMixin`.
+        _make_audio_track: From :class:`RecordingMixin`.
+        _make_video_track: From :class:`RecordingMixin`.
+    """
 
     _store: ConversationStore
     _channels: dict[str, Channel]
@@ -40,6 +59,29 @@ class VoiceOpsMixin(HelpersMixin):
     _stt: STTProvider | None
     _tts: TTSProvider | None
     _room_recorder_mgr: RoomRecorderManager
+
+
+class VoiceOpsMixin(HelpersMixin):
+    """Voice and video session connect/disconnect operations.
+
+    Host contract: :class:`VoiceOpsHost`.
+    """
+
+    _store: ConversationStore
+    _channels: dict[str, Channel]
+    _voice: VoiceBackend | None
+    _stt: STTProvider | None
+    _tts: TTSProvider | None
+    _room_recorder_mgr: RoomRecorderManager
+
+    # Cross-mixin methods — attribute annotations avoid MRO shadowing
+    get_room: Any  # see VoiceOpsHost
+    _wire_audio_recording: Any  # see VoiceOpsHost
+    _wire_av_video_recording: Any  # see VoiceOpsHost
+    _wire_backend_video_recording: Any  # see VoiceOpsHost
+    _wire_video_recording: Any  # see VoiceOpsHost
+    _make_audio_track: Any  # see VoiceOpsHost
+    _make_video_track: Any  # see VoiceOpsHost
 
     # ------------------------------------------------------------------
     # join / leave — unified session lifecycle
@@ -90,8 +132,7 @@ class VoiceOpsMixin(HelpersMixin):
             ChannelNotRegisteredError: If the channel is not registered.
             ChannelNotFoundError: If the channel is not attached to the room.
         """
-        await self.get_room(room_id)  # type: ignore[attr-defined]
-
+        await self.get_room(room_id)
         channel = self._channels.get(channel_id)
         if channel is None:
             raise ChannelNotRegisteredError(f"Channel {channel_id} not registered")
@@ -170,13 +211,12 @@ class VoiceOpsMixin(HelpersMixin):
             raise RuntimeError("Voice session was not created by the backend")
 
         channel.bind_session(session, room_id, binding, backend=backend)
-        self._wire_audio_recording(room_id, channel_id, session, channel)  # type: ignore[attr-defined]
-
+        self._wire_audio_recording(room_id, channel_id, session, channel)
         # AudioVideoChannel — wire video via channel tap
         from roomkit.channels.av import AudioVideoChannel
 
         if isinstance(channel, AudioVideoChannel):
-            self._wire_av_video_recording(room_id, channel_id, session, channel)  # type: ignore[attr-defined]
+            self._wire_av_video_recording(room_id, channel_id, session, channel)
         else:
             # Legacy fallback: plain VoiceChannel with combined A/V backend
             from roomkit.video.backends.base import VideoBackend
@@ -233,7 +273,7 @@ class VoiceOpsMixin(HelpersMixin):
             )
 
         channel.bind_session(session, room_id, binding)
-        self._wire_video_recording(room_id, channel_id, session, channel)  # type: ignore[attr-defined]
+        self._wire_video_recording(room_id, channel_id, session, channel)
         return session  # type: ignore[no-any-return]
 
     async def leave(self, session: VoiceSession | VideoSession) -> None:
@@ -275,12 +315,12 @@ class VoiceOpsMixin(HelpersMixin):
         """Leave a voice session (internal)."""
         # Remove recording tracks
         if self._room_recorder_mgr.has_recorders(session.room_id):
-            audio_track = self._make_audio_track(  # type: ignore[attr-defined]
+            audio_track = self._make_audio_track(
                 session.id, session.channel_id, session.participant_id
             )
             self._room_recorder_mgr.on_track_removed(session.room_id, audio_track)
 
-            video_track = self._make_video_track(  # type: ignore[attr-defined]
+            video_track = self._make_video_track(
                 session.id, session.channel_id, session.participant_id
             )
             self._room_recorder_mgr.on_track_removed(session.room_id, video_track)
@@ -307,9 +347,7 @@ class VoiceOpsMixin(HelpersMixin):
     async def _leave_video(self, session: Any, channel: Any) -> None:
         """Leave a video session (internal)."""
         if self._room_recorder_mgr.has_recorders(session.room_id):
-            track = self._make_video_track(  # type: ignore[attr-defined]
-                session.id, session.channel_id, session.participant_id
-            )
+            track = self._make_video_track(session.id, session.channel_id, session.participant_id)
             self._room_recorder_mgr.on_track_removed(session.room_id, track)
 
         channel.unbind_session(session)

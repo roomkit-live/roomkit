@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.core.hooks import (
@@ -27,6 +27,7 @@ from roomkit.models.enums import (
 if TYPE_CHECKING:
     from roomkit.core.hooks import HookEngine, IdentityHookRegistration
     from roomkit.core.mixins.helpers import FrameworkEventHandler, IdentityHookFn
+    from roomkit.models.delivery import InboundMessage, InboundResult
     from roomkit.providers.sms.meta import WebhookMeta
     from roomkit.store.base import ConversationStore
 
@@ -34,13 +35,45 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.framework")
 
 
-class HooksApiMixin(HelpersMixin):
-    """Hook decorators, webhook processing, and delivery status."""
+@runtime_checkable
+class HooksApiHost(Protocol):
+    """Contract: capabilities a host class must provide for HooksApiMixin.
+
+    Attributes provided by the host's ``__init__``:
+        _store: Conversation store for room lookups and delivery status.
+        _hook_engine: Hook engine for registration and dispatch.
+        _event_handlers: Framework event handler registry.
+        _identity_hooks: Identity hook registry.
+
+    Methods provided by InboundMixin (or equivalent):
+        process_inbound: Feed an inbound message into the framework pipeline.
+    """
 
     _store: ConversationStore
     _hook_engine: HookEngine
     _event_handlers: list[tuple[str, FrameworkEventHandler]]
     _identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]]
+
+    async def process_inbound(
+        self, message: InboundMessage, *, room_id: str | None = None
+    ) -> InboundResult: ...
+
+
+class HooksApiMixin(HelpersMixin):
+    """Hook decorators, webhook processing, and delivery status.
+
+    Host contract: :class:`HooksApiHost`.
+    """
+
+    _store: ConversationStore
+    _hook_engine: HookEngine
+    _event_handlers: list[tuple[str, FrameworkEventHandler]]
+    _identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]]
+
+    # Stub for cross-mixin call — implemented by InboundMixin.
+    async def process_inbound(  # type: ignore[empty-body]
+        self, message: InboundMessage, *, room_id: str | None = None
+    ) -> InboundResult: ...
 
     def hook(
         self,
@@ -193,7 +226,7 @@ class HooksApiMixin(HelpersMixin):
         """
         if meta.is_inbound:
             inbound = meta.to_inbound(channel_id)
-            await self.process_inbound(inbound)  # type: ignore[attr-defined]
+            await self.process_inbound(inbound)
         elif meta.is_status:
             status = meta.to_status()
             status.channel_id = channel_id
