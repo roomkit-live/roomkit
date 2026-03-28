@@ -47,10 +47,10 @@ echo "    CI is green."
 
 echo "==> Releasing v${VERSION}"
 
-# --- Run mypy ---
-echo "==> Running mypy..."
-uv run mypy src/
-echo "    mypy passed."
+# --- Run type checker ---
+echo "==> Running ty..."
+uv run ty check src/roomkit/
+echo "    ty passed."
 
 # --- Bump version in source ---
 if [[ "$(uname)" == "Darwin" ]]; then
