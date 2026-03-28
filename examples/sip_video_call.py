@@ -30,10 +30,15 @@ Press Ctrl+C to stop.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import asyncio
 import logging
 import os
-import signal
+
+from shared import run_until_stopped, setup_logging
 
 from roomkit import (
     AudioVideoChannel,
@@ -52,11 +57,7 @@ from roomkit.voice.pipeline import AudioPipelineConfig
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("sip_video_call")
+logger = setup_logging("sip_video_call")
 
 if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit").setLevel(logging.DEBUG)
@@ -160,18 +161,10 @@ async def main() -> None:
     logger.info("Press Ctrl+C to stop.\n")
 
     # --- Keep running until Ctrl+C --------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup() -> None:
+        await backend.close()
 
-    await stop.wait()
-
-    # --- Cleanup --------------------------------------------------------------
-    logger.info("\nStopping...")
-    await backend.close()
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

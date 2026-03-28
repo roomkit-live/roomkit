@@ -48,21 +48,21 @@ Press Ctrl+C to stop.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import asyncio
 import json
 import logging
 import os
 import platform
-import signal
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("screen_orchestrated")
+from shared import run_until_stopped, setup_logging
+
+logger = setup_logging("screen_orchestrated")
 logging.getLogger("roomkit.core.event_router").setLevel(logging.ERROR)
 
 from roomkit import (
@@ -1002,16 +1002,10 @@ their browser. Delegate all computer actions to agent-browser.
     print()
 
     # --- Run -----------------------------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup() -> None:
+        await screen_backend.stop_capture(video_session)
 
-    await stop.wait()
-
-    logger.info("Stopping...")
-    await screen_backend.stop_capture(video_session)
-    await kit.close()
+    await run_until_stopped(kit, cleanup=cleanup)
     print(f"\nRecording: {recording_dir}/ ({recorder_label})")
     cost.print_summary()
     await status_bus.print_summary()

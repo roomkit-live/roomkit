@@ -19,7 +19,11 @@ Run with:
 from __future__ import annotations
 
 import asyncio
-import logging
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import setup_logging
 
 from roomkit import ChannelCategory, HookExecution, HookTrigger, RoomKit, TextContent, VoiceChannel
 from roomkit.channels.ai import AIChannel
@@ -44,7 +48,7 @@ from roomkit.voice.pipeline import (
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-logging.basicConfig(level=logging.INFO)
+setup_logging("voice_pipeline")
 
 
 async def main() -> None:

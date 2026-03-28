@@ -141,10 +141,12 @@ Press Ctrl+C to stop.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
@@ -161,11 +163,7 @@ from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADConfig, SherpaOn
 from roomkit.voice.stt.sherpa_onnx import SherpaOnnxSTTConfig, SherpaOnnxSTTProvider
 from roomkit.voice.tts.sherpa_onnx import SherpaOnnxTTSConfig, SherpaOnnxTTSProvider
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("voice_local_onnx_vllm")
+logger = setup_logging("voice_local_onnx_vllm")
 
 CHANNEL_MODES = {
     "mixed": RecordingChannelMode.MIXED,
@@ -174,31 +172,19 @@ CHANNEL_MODES = {
 }
 
 
-def check_env() -> None:
-    """Check required environment variables."""
-    required = {
-        "LLM_MODEL": "Model name (e.g. qwen2.5:7b for Ollama)",
-        "VAD_MODEL": "Path to VAD .onnx model (e.g. ten-vad.onnx)",
-        "STT_ENCODER": "Path to STT encoder .onnx",
-        "STT_DECODER": "Path to STT decoder .onnx",
-        "STT_TOKENS": "Path to STT tokens.txt",
-        "TTS_MODEL": "Path to TTS VITS/Piper .onnx model",
-        "TTS_TOKENS": "Path to TTS tokens.txt",
-    }
-    missing = [
-        f"  {key:20s} — {desc}" for key, desc in required.items() if not os.environ.get(key)
-    ]
-    if missing:
-        print("Missing required environment variables:\n")
-        print("\n".join(missing))
-        print("\nSee docstring at the top of this file for download links and usage.")
-        sys.exit(1)
-
-
 async def main() -> None:
-    check_env()
+    env = require_env(
+        "LLM_MODEL",
+        "VAD_MODEL",
+        "STT_ENCODER",
+        "STT_DECODER",
+        "STT_TOKENS",
+        "TTS_MODEL",
+        "TTS_TOKENS",
+    )
 
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # --- ONNX execution providers ----------------------------------------------
     # CUDA accelerates STT and TTS (batch inference on larger models).
@@ -266,7 +252,7 @@ async def main() -> None:
         logger.info("Denoiser: sherpa-onnx GTCRN (model=%s)", denoise_model)
 
     # --- VAD (sherpa-onnx neural VAD) -----------------------------------------
-    vad_model = os.environ["VAD_MODEL"]
+    vad_model = env["VAD_MODEL"]
     vad_model_type = os.environ.get("VAD_MODEL_TYPE", "ten")
     vad_threshold = float(os.environ.get("VAD_THRESHOLD", "0.35"))
     vad = SherpaOnnxVADProvider(
@@ -344,10 +330,10 @@ async def main() -> None:
     stt = SherpaOnnxSTTProvider(
         SherpaOnnxSTTConfig(
             mode=stt_mode,
-            encoder=os.environ["STT_ENCODER"],
-            decoder=os.environ["STT_DECODER"],
+            encoder=env["STT_ENCODER"],
+            decoder=env["STT_DECODER"],
             joiner=os.environ.get("STT_JOINER", ""),
-            tokens=os.environ["STT_TOKENS"],
+            tokens=env["STT_TOKENS"],
             language=os.environ.get("STT_LANGUAGE", "en"),
             sample_rate=sample_rate,
             provider=onnx_provider,
@@ -356,14 +342,14 @@ async def main() -> None:
     logger.info(
         "STT: sherpa-onnx (mode=%s, encoder=%s)",
         stt_mode,
-        os.environ["STT_ENCODER"],
+        env["STT_ENCODER"],
     )
 
     # --- TTS (sherpa-onnx) ----------------------------------------------------
     tts = SherpaOnnxTTSProvider(
         SherpaOnnxTTSConfig(
-            model=os.environ["TTS_MODEL"],
-            tokens=os.environ["TTS_TOKENS"],
+            model=env["TTS_MODEL"],
+            tokens=env["TTS_TOKENS"],
             data_dir=os.environ.get("TTS_DATA_DIR", ""),
             speaker_id=int(os.environ.get("TTS_SPEAKER_ID", "0")),
             speed=float(os.environ.get("TTS_SPEED", "1.0")),
@@ -373,12 +359,12 @@ async def main() -> None:
     )
     logger.info(
         "TTS: sherpa-onnx (model=%s, rate=%d)",
-        os.environ["TTS_MODEL"],
+        env["TTS_MODEL"],
         tts_sample_rate,
     )
 
     # --- LLM (local via OpenAI-compatible API: Ollama, vLLM, etc.) ------------
-    llm_model = os.environ["LLM_MODEL"]
+    llm_model = env["LLM_MODEL"]
     llm_base_url = os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1")
     ai_provider = create_vllm_provider(
         VLLMConfig(
@@ -475,17 +461,12 @@ async def main() -> None:
     logger.info("")
 
     # --- Keep running until Ctrl+C --------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
+        logger.info("Recordings saved to: %s", recording_dir)
 
-    await stop.wait()
-
-    # --- Cleanup --------------------------------------------------------------
-    logger.info("\nStopping...")
-    await kit.close()
-    logger.info("Done. Recordings saved to: %s", recording_dir)
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

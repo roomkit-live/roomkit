@@ -22,8 +22,14 @@ Environment variables:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import asyncio
 import os
+
+from shared import require_env
 
 from roomkit import (
     ChannelCategory,
@@ -51,16 +57,10 @@ Be concise and direct in your answers.\
 
 
 async def main() -> None:
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    env = require_env("ANTHROPIC_API_KEY", "OPENAI_API_KEY")
+    anthropic_key = env["ANTHROPIC_API_KEY"]
+    openai_key = env["OPENAI_API_KEY"]
     device = int(os.environ.get("WEBCAM_DEVICE", "0"))
-
-    if not anthropic_key:
-        print("Set ANTHROPIC_API_KEY to run this example.")
-        return
-    if not openai_key:
-        print("Set OPENAI_API_KEY for vision analysis.")
-        return
 
     # --- Vision + tools ------------------------------------------------------
     vision = OpenAIVisionProvider(

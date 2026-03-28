@@ -6,8 +6,14 @@ Run with:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import asyncio
-import os
+
+from shared import require_env
 
 from roomkit import RoomKit, WebSocketChannel
 from roomkit.channels import HTTPChannel
@@ -16,12 +22,9 @@ from roomkit.providers.http import HTTPProviderConfig, WebhookHTTPProvider, pars
 
 async def main() -> None:
     # --- Configuration -------------------------------------------------------
-    webhook_url = os.environ.get("WEBHOOK_URL", "")
-    if not webhook_url:
-        print("Set WEBHOOK_URL to run this example.")
-        return
+    env = require_env("WEBHOOK_URL")
 
-    config = HTTPProviderConfig(webhook_url=webhook_url)
+    config = HTTPProviderConfig(webhook_url=env["WEBHOOK_URL"])
     provider = WebhookHTTPProvider(config)
 
     # --- RoomKit setup -------------------------------------------------------

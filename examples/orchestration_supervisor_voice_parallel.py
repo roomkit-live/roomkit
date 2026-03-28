@@ -30,9 +30,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import signal
+import sys
+from pathlib import Path
 
-from shared.env import require_env
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import (
     Agent,
@@ -54,11 +56,7 @@ from roomkit.voice.backends.local import LocalAudioBackend
 from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 from roomkit.voice.pipeline.config import AudioPipelineConfig
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("voice_parallel")
+logger = setup_logging("voice_parallel")
 logging.getLogger("roomkit").setLevel(logging.WARNING)
 logging.getLogger("roomkit.tasks").setLevel(logging.DEBUG)
 logging.getLogger("roomkit.orchestration.strategies.supervisor").setLevel(logging.DEBUG)
@@ -210,19 +208,17 @@ async def main() -> None:
     logger.info("Speak into your microphone! Ask to analyze any topic.")
     logger.info("Press Ctrl+C to stop.\n")
 
-    # --- Keep running until Ctrl+C -------------------------------------------
+    async def _cleanup() -> None:
+        await voice.end_session(session)
 
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    console_cleanup = setup_console(kit)
 
-    await stop.wait()
+    async def _full_cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
+        await _cleanup()
 
-    logger.info("\nStopping...")
-    await voice.end_session(session)
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=_full_cleanup)
 
 
 if __name__ == "__main__":

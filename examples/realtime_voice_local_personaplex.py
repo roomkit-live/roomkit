@@ -31,19 +31,19 @@ Press Ctrl+C to stop.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from shared import build_aec, build_pipeline, run_until_stopped, setup_console, setup_logging
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.personaplex.realtime import PersonaPlexRealtimeProvider
 from roomkit.voice.backends.local import LocalAudioBackend
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("realtime_voice_local_personaplex")
+logger = setup_logging("realtime_voice_local_personaplex")
 
 
 async def main() -> None:
@@ -57,36 +57,19 @@ async def main() -> None:
 
     kit = RoomKit()
 
+    # --- Console dashboard (set CONSOLE=1 to enable) ---
+    console_cleanup = setup_console(kit)
+
     # --- PersonaPlex provider (speech-to-speech) ---
     provider = PersonaPlexRealtimeProvider(server_url=server_url, seed=seed)
 
-    # --- AEC (Acoustic Echo Cancellation) ---
+    # --- Audio pipeline (AEC) ---
     # PersonaPlex uses 24kHz audio natively
     sample_rate = 24000
     block_ms = 20
-    frame_size = sample_rate * block_ms // 1000  # 480 samples
 
-    aec = None
-    aec_mode = os.environ.get("AEC", "webrtc").lower()
-    if aec_mode in ("1", "webrtc"):
-        from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
-
-        aec = WebRTCAECProvider(sample_rate=sample_rate, enable_ns=True)
-        logger.info("AEC enabled (WebRTC AEC3 + noise suppression)")
-    elif aec_mode == "speex":
-        from roomkit.voice.pipeline.aec.speex import SpeexAECProvider
-
-        aec = SpeexAECProvider(
-            frame_size=frame_size,
-            filter_length=frame_size * 25,
-            sample_rate=sample_rate,
-        )
-        logger.info("AEC enabled (Speex)")
-
-    # --- Audio pipeline ---
-    from roomkit.voice.pipeline.config import AudioPipelineConfig
-
-    pipeline = AudioPipelineConfig(aec=aec) if aec else None
+    aec = build_aec(sample_rate, block_ms, default="webrtc")
+    pipeline = build_pipeline(aec=aec)
 
     mute_env = os.environ.get("MUTE_MIC")
     mute_mic = mute_env != "0" if mute_env is not None else aec is None
@@ -126,18 +109,12 @@ async def main() -> None:
     logger.info("Speak into your microphone! Press Ctrl+C to stop.\n")
 
     # --- Keep running until Ctrl+C ---
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
+        await channel.end_session(session)
 
-    await stop.wait()
-
-    # --- Cleanup ---
-    logger.info("\nStopping...")
-    await channel.end_session(session)
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

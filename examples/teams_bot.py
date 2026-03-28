@@ -22,8 +22,13 @@ You can also test locally with the Bot Framework Emulator.
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from aiohttp import web
+from shared import require_env, run_until_stopped
 
 from roomkit import HookExecution, RoomKit
 from roomkit.channels import TeamsChannel
@@ -38,16 +43,13 @@ from roomkit.providers.teams.webhook import (
 
 
 async def main() -> None:
-    app_id = os.environ.get("TEAMS_APP_ID", "")
+    env = require_env("TEAMS_APP_ID")
+    app_id = env["TEAMS_APP_ID"]
     app_password = os.environ.get("TEAMS_APP_PASSWORD", "")
     tenant_id = os.environ.get("TEAMS_TENANT_ID", "common")
     cert_thumbprint = os.environ.get("TEAMS_CERT_THUMBPRINT", "")
     cert_private_key = os.environ.get("TEAMS_CERT_PRIVATE_KEY", "")
     cert_public = os.environ.get("TEAMS_CERT_PUBLIC", "")
-
-    if not app_id:
-        print("Set TEAMS_APP_ID to run this example.")
-        return
 
     if cert_thumbprint and cert_private_key:
         # Certificate-based auth
@@ -191,10 +193,8 @@ async def main() -> None:
     print("Bot listening on http://0.0.0.0:3978/api/messages")
     await site.start()
 
-    # Keep running
-    import asyncio
-
-    await asyncio.Event().wait()
+    # Keep running until SIGINT/SIGTERM
+    await run_until_stopped(kit)
 
 
 if __name__ == "__main__":

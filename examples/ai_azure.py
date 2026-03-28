@@ -17,14 +17,23 @@ Run with:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import asyncio
 import os
+
+from shared import require_env
 
 from roomkit import AIChannel, RoomKit, TextContent, WebSocketChannel
 from roomkit.providers.azure import AzureAIConfig, AzureAIProvider
 
 
 async def main() -> None:
+    env = require_env("AZURE_API_KEY", "AZURE_ENDPOINT")
+
     kit = RoomKit()
 
     ws = WebSocketChannel("ws-user")
@@ -32,8 +41,8 @@ async def main() -> None:
         "ai-assistant",
         provider=AzureAIProvider(
             AzureAIConfig(
-                api_key=os.environ["AZURE_API_KEY"],
-                azure_endpoint=os.environ["AZURE_ENDPOINT"],
+                api_key=env["AZURE_API_KEY"],
+                azure_endpoint=env["AZURE_ENDPOINT"],
                 model=os.environ.get("AZURE_DEPLOYMENT", "DeepSeek-R1"),
             )
         ),

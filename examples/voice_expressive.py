@@ -38,17 +38,20 @@ from __future__ import annotations
 
 import asyncio
 import faulthandler
-import logging
 import os
+import sys
+from pathlib import Path
 
 faulthandler.enable()
-import signal
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import AIChannel, ChannelCategory, HookExecution, HookTrigger, RoomKit, VoiceChannel
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 from roomkit.voice.tts.elevenlabs import ElevenLabsConfig, ElevenLabsTTSProvider
 
-logger = logging.getLogger("roomkit")
+logger = setup_logging("roomkit")
 
 SYSTEM_PROMPT = """\
 You are a warm, expressive conversational assistant. Use the following
@@ -68,16 +71,17 @@ the emotional context — not every sentence needs one.
 
 
 async def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s %(message)s")
+    env = require_env("ANTHROPIC_API_KEY", "DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY")
 
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # --- AI (Claude) ----------------------------------------------------------
     ai = AIChannel(
         "ai",
         provider=AnthropicAIProvider(
             AnthropicConfig(
-                api_key=os.environ["ANTHROPIC_API_KEY"],
+                api_key=env["ANTHROPIC_API_KEY"],
                 model="claude-sonnet-4-20250514",
             )
         ),
@@ -88,7 +92,7 @@ async def main() -> None:
     # --- TTS (ElevenLabs expressive) ------------------------------------------
     tts = ElevenLabsTTSProvider(
         ElevenLabsConfig(
-            api_key=os.environ["ELEVENLABS_API_KEY"],
+            api_key=env["ELEVENLABS_API_KEY"],
             voice_id=os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
             output_format="pcm_24000",
             expressive=True,  # <-- enables v3 Conversational + expressive tags
@@ -98,9 +102,7 @@ async def main() -> None:
     # --- STT (Deepgram) -------------------------------------------------------
     from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 
-    stt = DeepgramSTTProvider(
-        DeepgramConfig(api_key=os.environ["DEEPGRAM_API_KEY"], model="nova-3")
-    )
+    stt = DeepgramSTTProvider(DeepgramConfig(api_key=env["DEEPGRAM_API_KEY"], model="nova-3"))
 
     # --- Voice channel --------------------------------------------------------
     # No local VAD needed — Deepgram handles endpointing natively.
@@ -134,14 +136,7 @@ async def main() -> None:
     logger.info("ElevenLabs model: %s", tts._config.model_id)
 
     # Wait for Ctrl+C
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-    await stop.wait()
-
-    logger.info("Stopping...")
-    await kit.close()
+    await run_until_stopped(kit, cleanup=console_cleanup)
 
 
 if __name__ == "__main__":

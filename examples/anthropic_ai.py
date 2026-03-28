@@ -6,8 +6,14 @@ Run with:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import asyncio
-import os
+
+from shared import require_env
 
 from roomkit import (
     ChannelCategory,
@@ -23,12 +29,9 @@ from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 
 async def main() -> None:
     # --- Configuration -------------------------------------------------------
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        print("Set ANTHROPIC_API_KEY to run this example.")
-        return
+    env = require_env("ANTHROPIC_API_KEY")
 
-    config = AnthropicConfig(api_key=api_key)
+    config = AnthropicConfig(api_key=env["ANTHROPIC_API_KEY"])
     provider = AnthropicAIProvider(config)
 
     # --- RoomKit setup -------------------------------------------------------

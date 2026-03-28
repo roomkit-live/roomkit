@@ -18,12 +18,18 @@ Press Ctrl+C to stop early.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import argparse
 import asyncio
 import contextlib
 import logging
 import os
 import signal
+
+from shared import setup_logging
 
 from roomkit import HookExecution, HookTrigger, RoomKit, VideoChannel
 from roomkit.models.session_event import SessionStartedEvent
@@ -33,7 +39,7 @@ from roomkit.video.pipeline import VideoPipelineConfig
 from roomkit.video.recorder import VideoRecordingConfig
 from roomkit.video.recorder.pyav import PyAVVideoRecorder
 
-logging.basicConfig(level=logging.WARNING)
+setup_logging("pyav_video_recorder", level=logging.WARNING)
 
 
 async def main() -> None:

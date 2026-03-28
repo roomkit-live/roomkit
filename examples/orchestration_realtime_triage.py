@@ -48,12 +48,13 @@ import asyncio
 import logging
 import os
 import sys
+from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("realtime_triage")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from shared import require_env, run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("realtime_triage")
 
 # Suppress chain-depth warnings (expected in multi-agent setups)
 logging.getLogger("roomkit.core.event_router").setLevel(logging.ERROR)
@@ -100,18 +101,13 @@ pipeline = ConversationPipeline(
 )
 
 
-def check_env() -> None:
-    """Check required environment variables."""
-    if not os.environ.get("GOOGLE_API_KEY"):
-        print("Missing GOOGLE_API_KEY environment variable.")
-        print("See docstring at the top of this file for setup instructions.")
-        sys.exit(1)
-
-
 async def main() -> None:
-    check_env()
+    require_env("GOOGLE_API_KEY")
 
     kit = RoomKit()
+
+    # --- Console dashboard (set CONSOLE=1 to enable) ---
+    console_cleanup = setup_console(kit)
 
     # --- SIP backend + realtime transport -----------------------------------
     sip = SIPVoiceBackend(
@@ -265,12 +261,14 @@ async def main() -> None:
     logger.info("Voices: triage=%s, advisor=%s", VOICE_TRIAGE, VOICE_ADVISOR)
     logger.info("Waiting for incoming SIP calls...")
 
-    try:
-        await asyncio.Event().wait()
-    finally:
+    # --- Keep running until Ctrl+C ---
+    async def cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
         await sip.close()
         await provider.close()
-        await kit.close()
+
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

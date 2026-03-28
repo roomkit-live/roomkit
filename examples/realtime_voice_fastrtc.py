@@ -17,14 +17,17 @@ Run with:
 
 from __future__ import annotations
 
-import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from shared import setup_console, setup_logging
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
@@ -33,9 +36,12 @@ from roomkit.voice.realtime.fastrtc_transport import (
     mount_fastrtc_realtime,
 )
 
-logging.basicConfig(level=logging.INFO)
+logger = setup_logging("realtime_voice_fastrtc")
 
 kit = RoomKit()
+
+# --- Console dashboard (set CONSOLE=1 to enable) ---
+_console_cleanup = setup_console(kit)
 
 # --- Gemini Live provider ---
 provider = GeminiLiveProvider(
@@ -66,7 +72,7 @@ async def on_client_connected(webrtc_id: str) -> None:
     room = await kit.create_room()
     await kit.attach_channel(room.id, "realtime-voice")
     session = await channel.start_session(room.id, "user-1", connection=webrtc_id)
-    logging.info(
+    logger.info(
         "Session started: session=%s, room=%s, webrtc_id=%s",
         session.id,
         room.id,
@@ -94,6 +100,8 @@ async def lifespan(app: FastAPI):
     # Mount WebRTC endpoints with auth
     mount_fastrtc_realtime(app, transport, path="/rtc-realtime", auth=authenticate_connection)
     yield
+    if _console_cleanup:
+        await _console_cleanup()
     await kit.close()
 
 

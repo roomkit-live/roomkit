@@ -62,10 +62,12 @@ Press Ctrl+C to stop.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
@@ -76,39 +78,23 @@ from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADConfig, SherpaOn
 from roomkit.voice.stt.sherpa_onnx import SherpaOnnxSTTConfig, SherpaOnnxSTTProvider
 from roomkit.voice.tts.sherpa_onnx import SherpaOnnxTTSConfig, SherpaOnnxTTSProvider
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("voice_parakeet_tdt")
-
-
-def check_env() -> None:
-    """Check required environment variables."""
-    required = {
-        "LLM_MODEL": "Model name (e.g. qwen3:8b for Ollama)",
-        "VAD_MODEL": "Path to VAD .onnx model (e.g. ten-vad.onnx)",
-        "STT_ENCODER": "Path to Parakeet encoder .onnx",
-        "STT_DECODER": "Path to Parakeet decoder .onnx",
-        "STT_JOINER": "Path to Parakeet joiner .onnx",
-        "STT_TOKENS": "Path to Parakeet tokens.txt",
-        "TTS_MODEL": "Path to TTS .onnx model",
-        "TTS_TOKENS": "Path to TTS tokens.txt",
-    }
-    missing = [
-        f"  {key:20s} — {desc}" for key, desc in required.items() if not os.environ.get(key)
-    ]
-    if missing:
-        print("Missing required environment variables:\n")
-        print("\n".join(missing))
-        print("\nSee docstring at the top of this file for download links and usage.")
-        sys.exit(1)
+logger = setup_logging("voice_parakeet_tdt")
 
 
 async def main() -> None:
-    check_env()
+    env = require_env(
+        "LLM_MODEL",
+        "VAD_MODEL",
+        "STT_ENCODER",
+        "STT_DECODER",
+        "STT_JOINER",
+        "STT_TOKENS",
+        "TTS_MODEL",
+        "TTS_TOKENS",
+    )
 
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     onnx_provider = os.environ.get("ONNX_PROVIDER", "cpu")
     sample_rate = 16000
@@ -126,7 +112,7 @@ async def main() -> None:
     # --- VAD (sherpa-onnx neural VAD) -----------------------------------------
     vad = SherpaOnnxVADProvider(
         SherpaOnnxVADConfig(
-            model=os.environ["VAD_MODEL"],
+            model=env["VAD_MODEL"],
             model_type=os.environ.get("VAD_MODEL_TYPE", "ten"),
             threshold=float(os.environ.get("VAD_THRESHOLD", "0.35")),
             silence_threshold_ms=600,
@@ -156,10 +142,10 @@ async def main() -> None:
         SherpaOnnxSTTConfig(
             mode="transducer",
             model_type="nemo_transducer",
-            encoder=os.environ["STT_ENCODER"],
-            decoder=os.environ["STT_DECODER"],
-            joiner=os.environ["STT_JOINER"],
-            tokens=os.environ["STT_TOKENS"],
+            encoder=env["STT_ENCODER"],
+            decoder=env["STT_DECODER"],
+            joiner=env["STT_JOINER"],
+            tokens=env["STT_TOKENS"],
             sample_rate=sample_rate,
             provider=onnx_provider,
         )
@@ -169,8 +155,8 @@ async def main() -> None:
     # --- TTS (sherpa-onnx VITS/Piper) -----------------------------------------
     tts = SherpaOnnxTTSProvider(
         SherpaOnnxTTSConfig(
-            model=os.environ["TTS_MODEL"],
-            tokens=os.environ["TTS_TOKENS"],
+            model=env["TTS_MODEL"],
+            tokens=env["TTS_TOKENS"],
             data_dir=os.environ.get("TTS_DATA_DIR", ""),
             speaker_id=int(os.environ.get("TTS_SPEAKER_ID", "0")),
             sample_rate=tts_sample_rate,
@@ -181,13 +167,13 @@ async def main() -> None:
     # --- LLM (local via OpenAI-compatible API) --------------------------------
     ai_provider = create_vllm_provider(
         VLLMConfig(
-            model=os.environ["LLM_MODEL"],
+            model=env["LLM_MODEL"],
             base_url=os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1"),
             api_key=os.environ.get("LLM_API_KEY", "none"),
             max_tokens=int(os.environ.get("LLM_MAX_TOKENS", "256")),
         )
     )
-    logger.info("LLM: %s", os.environ["LLM_MODEL"])
+    logger.info("LLM: %s", env["LLM_MODEL"])
 
     # --- Channels -------------------------------------------------------------
     voice = VoiceChannel(
@@ -247,17 +233,7 @@ async def main() -> None:
     logger.info("")
 
     # --- Keep running until Ctrl+C --------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-
-    await stop.wait()
-
-    # --- Cleanup --------------------------------------------------------------
-    logger.info("\nStopping...")
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=console_cleanup)
 
 
 if __name__ == "__main__":

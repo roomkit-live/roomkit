@@ -17,8 +17,14 @@ Run with:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import asyncio
-import logging
+
+from shared import setup_console, setup_logging
 
 from roomkit import (
     ChannelCategory,
@@ -46,7 +52,7 @@ from roomkit.voice.pipeline import (
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-logging.basicConfig(level=logging.INFO)
+setup_logging("async_sms_notification")
 
 # Pending SMS messages queued for the AI to mention
 pending_sms: list[dict[str, str]] = []
@@ -54,6 +60,7 @@ pending_sms: list[dict[str, str]] = []
 
 async def main() -> None:
     kit = RoomKit()
+    setup_console(kit)
 
     # -- Providers ---------------------------------------------------------
 

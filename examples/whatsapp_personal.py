@@ -17,9 +17,16 @@ Warning:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import asyncio
 import logging
 import os
+
+from shared import run_until_stopped
 
 # Quiet whatsmeow internal logs (515 reconnect, websocket teardown, app state, etc.)
 logging.getLogger("whatsmeow").setLevel(logging.ERROR)
@@ -124,14 +131,7 @@ async def main() -> None:
     print(f"WhatsApp personal source attached (db={db_path})")
     print("Waiting for messages... Press Ctrl+C to stop.\n")
 
-    try:
-        while True:
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        print("\nShutting down...")
-    finally:
-        await kit.close()
-        print("Done.")
+    await run_until_stopped(kit)
 
 
 if __name__ == "__main__":

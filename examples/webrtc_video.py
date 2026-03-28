@@ -29,12 +29,17 @@ Environment variables:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import logging
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from shared import setup_logging
 
 from roomkit import (
     AIChannel,
@@ -53,8 +58,7 @@ from roomkit.voice.pipeline.vad.energy import EnergyVADProvider
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 from roomkit.voice.tts.elevenlabs import ElevenLabsConfig, ElevenLabsTTSProvider
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("webrtc_video")
+logger = setup_logging("webrtc_video")
 # Suppress noisy transport logs
 logging.getLogger("aioice").setLevel(logging.WARNING)
 logging.getLogger("aiortc").setLevel(logging.WARNING)

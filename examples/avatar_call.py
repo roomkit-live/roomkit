@@ -28,12 +28,16 @@ Press Ctrl+C to stop.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import argparse
 import asyncio
 import logging
 import os
-import signal
-from pathlib import Path
+
+from shared import require_env, run_until_stopped, setup_logging
 
 from roomkit import (
     AudioVideoChannel,
@@ -53,21 +57,10 @@ from roomkit.video.pipeline.filter.watermark import WatermarkFilter
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.pipeline import AudioPipelineConfig
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("avatar_call")
+logger = setup_logging("avatar_call")
 
 if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit").setLevel(logging.DEBUG)
-
-
-def _require_env(key: str) -> str:
-    val = os.environ.get(key, "")
-    if not val:
-        raise SystemExit(f"Missing environment variable: {key}")
-    return val
 
 
 def _build_avatar(args: argparse.Namespace) -> AvatarProvider:
@@ -95,9 +88,10 @@ async def main() -> None:
     avatar_width, avatar_height = (int(x) for x in args.size.split("x"))
 
     # --- API keys ---------------------------------------------------------------
-    deepgram_key = _require_env("DEEPGRAM_API_KEY")
-    elevenlabs_key = _require_env("ELEVENLABS_API_KEY")
-    anthropic_key = _require_env("ANTHROPIC_API_KEY")
+    env = require_env("DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY", "ANTHROPIC_API_KEY")
+    deepgram_key = env["DEEPGRAM_API_KEY"]
+    elevenlabs_key = env["ELEVENLABS_API_KEY"]
+    anthropic_key = env["ANTHROPIC_API_KEY"]
 
     kit = RoomKit()
 
@@ -248,19 +242,11 @@ async def main() -> None:
     print("Press Ctrl+C to stop.\n")
 
     # --- Wait -------------------------------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup() -> None:
+        await avatar.stop()
+        await backend.close()
 
-    await stop.wait()
-
-    # --- Cleanup ----------------------------------------------------------------
-    logger.info("Stopping...")
-    await avatar.stop()
-    await backend.close()
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

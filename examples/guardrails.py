@@ -19,8 +19,11 @@ from __future__ import annotations
 
 import asyncio
 import re
+import sys
+from pathlib import Path
 
-from examples.shared import setup_logging
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import setup_logging
 
 from roomkit import (
     HookExecution,

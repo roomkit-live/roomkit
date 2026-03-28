@@ -106,6 +106,7 @@ from shared import (
     build_denoiser,
     build_pipeline,
     run_until_stopped,
+    setup_console,
     setup_logging,
 )
 
@@ -197,6 +198,9 @@ async def main() -> None:
     # --- RoomKit + telemetry -------------------------------------------------
     cost_telemetry = CostTrackingTelemetry()
     kit = RoomKit(telemetry=cost_telemetry)
+
+    # --- Console dashboard (set CONSOLE=1 to enable) ---
+    console_cleanup = setup_console(kit)
 
     # --- Shared vision provider ----------------------------------------------
     monitor = int(os.environ.get("MONITOR", "1"))
@@ -715,6 +719,8 @@ async def main() -> None:
 
     # --- Keep running until Ctrl+C -------------------------------------------
     async def _cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
         await screen_backend.stop_capture(video_session)
         for ctx in _pw_cleanup:
             try:

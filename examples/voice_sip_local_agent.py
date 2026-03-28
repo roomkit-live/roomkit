@@ -93,15 +93,14 @@ Environment variables:
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import sys
+from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("sip_local_agent")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("sip_local_agent")
 
 from roomkit import ChannelCategory, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
@@ -139,31 +138,19 @@ CHANNEL_MODES = {
 }
 
 
-def check_env() -> None:
-    """Check required environment variables."""
-    required = {
-        "LLM_MODEL": "Model name (e.g. qwen3:8b for Ollama)",
-        "VAD_MODEL": "Path to VAD .onnx model (e.g. ten-vad.onnx)",
-        "STT_ENCODER": "Path to STT encoder .onnx",
-        "STT_DECODER": "Path to STT decoder .onnx",
-        "STT_TOKENS": "Path to STT tokens.txt",
-        "TTS_MODEL": "Path to TTS VITS/Piper .onnx model",
-        "TTS_TOKENS": "Path to TTS tokens.txt",
-    }
-    missing = [
-        f"  {key:20s} — {desc}" for key, desc in required.items() if not os.environ.get(key)
-    ]
-    if missing:
-        print("Missing required environment variables:\n")
-        print("\n".join(missing))
-        print("\nSee docstring at the top of this file for download links and usage.")
-        sys.exit(1)
-
-
 async def main() -> None:
-    check_env()
+    env = require_env(
+        "LLM_MODEL",
+        "VAD_MODEL",
+        "STT_ENCODER",
+        "STT_DECODER",
+        "STT_TOKENS",
+        "TTS_MODEL",
+        "TTS_TOKENS",
+    )
 
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # --- ONNX execution providers ----------------------------------------
     onnx_provider = os.environ.get("ONNX_PROVIDER", "cpu")
@@ -404,11 +391,12 @@ async def main() -> None:
     logger.info("LLM: %s — STT: sherpa-onnx — TTS: sherpa-onnx — no cloud APIs", llm_model)
     logger.info("Waiting for incoming SIP calls...")
 
-    try:
-        await asyncio.Event().wait()
-    finally:
+    async def cleanup():
+        if console_cleanup:
+            await console_cleanup()
         await sip.close()
-        await kit.close()
+
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

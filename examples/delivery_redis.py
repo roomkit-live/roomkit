@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
+from pathlib import Path
 
-from shared.env import require_env
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, setup_logging
 
 from roomkit import (
     Agent,
@@ -32,7 +35,7 @@ from roomkit.models.event import RoomEvent
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 
-logging.basicConfig(format="%(levelname)s %(name)s: %(message)s")
+logger = setup_logging("delivery_redis")
 logging.getLogger("roomkit.delivery").setLevel(logging.DEBUG)
 
 
@@ -72,19 +75,17 @@ async def main() -> None:
         ),
     )
 
-    example_log = logging.getLogger("example")
-
     @kit.hook(HookTrigger.BEFORE_DELIVER, execution=HookExecution.ASYNC)
     async def on_before(event: RoomEvent, ctx: RoomContext) -> None:
-        example_log.info("before_deliver: %s", event.content)
+        logger.info("before_deliver: %s", event.content)
 
     @kit.hook(HookTrigger.AFTER_DELIVER, execution=HookExecution.ASYNC)
     async def on_after(event: RoomEvent, ctx: RoomContext) -> None:
         error = event.metadata.get("error")
         if error:
-            example_log.error("after_deliver FAILED: %s", error)
+            logger.error("after_deliver FAILED: %s", error)
         else:
-            example_log.info("after_deliver OK")
+            logger.info("after_deliver OK")
 
     cli = CLIChannel("cli")
     kit.register_channel(cli)
@@ -94,7 +95,7 @@ async def main() -> None:
         await kit.attach_channel("demo", "cli")
 
         depth = await backend.get_queue_depth()
-        example_log.info("Queue depth at start: %d", depth)
+        logger.info("Queue depth at start: %d", depth)
 
         await cli.run(
             kit,

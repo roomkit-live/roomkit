@@ -30,16 +30,18 @@ Press Ctrl+C to stop.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import asyncio
 import logging
 import os
 import signal
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("sip_anam_avatar")
+from shared import require_env, setup_logging
+
+logger = setup_logging("sip_anam_avatar")
 
 if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit").setLevel(logging.DEBUG)
@@ -54,10 +56,8 @@ from roomkit.voice.realtime.bridge import RealtimeAVBridge
 
 
 async def main() -> None:
-    api_key = os.environ.get("ANAM_API_KEY", "")
-    if not api_key:
-        logger.error("Set ANAM_API_KEY environment variable")
-        return
+    env = require_env("ANAM_API_KEY")
+    api_key = env["ANAM_API_KEY"]
 
     persona_id = os.environ.get("ANAM_PERSONA_ID")
     avatar_id = os.environ.get("ANAM_AVATAR_ID")

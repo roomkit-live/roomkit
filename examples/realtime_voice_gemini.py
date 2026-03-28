@@ -14,7 +14,12 @@ Run with:
 from __future__ import annotations
 
 import asyncio
-import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import (
     RealtimeVoiceChannel,
@@ -24,18 +29,20 @@ from roomkit import (
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
 from roomkit.voice.realtime.ws_transport import WebSocketRealtimeTransport
 
+logger = setup_logging("realtime_voice_gemini")
+
 
 async def main() -> None:
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        print("Set GOOGLE_API_KEY to run this example.")
-        return
+    env = require_env("GOOGLE_API_KEY")
 
     kit = RoomKit()
 
+    # --- Console dashboard (set CONSOLE=1 to enable) ---
+    console_cleanup = setup_console(kit)
+
     # --- Gemini Live provider ---
     provider = GeminiLiveProvider(
-        api_key=api_key,
+        api_key=env["GOOGLE_API_KEY"],
         model="gemini-3.1-flash-live-preview",
     )
     transport = WebSocketRealtimeTransport()
@@ -66,8 +73,12 @@ async def main() -> None:
     print("Transcriptions will appear as RoomEvents in the room.")
     print("Messages sent via ws-supervisor will be injected into the voice AI.")
 
-    # Keep running
-    await asyncio.Event().wait()
+    # --- Keep running until Ctrl+C ---
+    async def cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
+
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

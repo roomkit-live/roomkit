@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
+from pathlib import Path
 
-from shared.env import require_env
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, setup_logging
 
 from roomkit import Agent, CLIChannel, HookExecution, HookTrigger, Pipeline, RoomKit
 from roomkit.memory.sliding_window import SlidingWindowMemory
@@ -27,7 +30,7 @@ from roomkit.orchestration.state import get_conversation_state
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 
-logging.basicConfig(format="%(levelname)s %(name)s: %(message)s")
+setup_logging("pipeline_cli")
 logging.getLogger("roomkit").setLevel(logging.WARNING)
 
 

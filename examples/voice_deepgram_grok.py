@@ -31,10 +31,12 @@ Press Ctrl+C to stop.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
@@ -45,43 +47,11 @@ from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 from roomkit.voice.tts.grok import GrokTTSConfig, GrokTTSProvider
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("voice_deepgram_grok")
-
-
-def check_env() -> dict[str, str]:
-    """Check required environment variables and return them."""
-    keys = {
-        "ANTHROPIC_API_KEY": "Anthropic (Claude)",
-        "DEEPGRAM_API_KEY": "Deepgram (STT)",
-        "XAI_API_KEY": "xAI (Grok TTS)",
-    }
-    values = {}
-    missing = []
-    for key, label in keys.items():
-        val = os.environ.get(key, "")
-        if not val:
-            missing.append(f"  {key:24s} — {label}")
-        values[key] = val
-
-    if missing:
-        print("Missing required environment variables:\n")
-        print("\n".join(missing))
-        print("\nExample:\n")
-        print(
-            "  ANTHROPIC_API_KEY=... DEEPGRAM_API_KEY=... XAI_API_KEY=... \\\n"
-            "    uv run python examples/voice_deepgram_grok.py"
-        )
-        sys.exit(1)
-
-    return values
+logger = setup_logging("voice_deepgram_grok")
 
 
 async def main() -> None:
-    env = check_env()
+    env = require_env("ANTHROPIC_API_KEY", "DEEPGRAM_API_KEY", "XAI_API_KEY")
 
     # --- Audio settings -------------------------------------------------------
     sample_rate = int(os.environ.get("SAMPLE_RATE", "16000"))
@@ -102,6 +72,7 @@ async def main() -> None:
     logger.info("Backend: LocalAudio (%dHz, WebRTC AEC)", sample_rate)
 
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # --- Pipeline config ------------------------------------------------------
     pipeline_config = AudioPipelineConfig(aec=aec)
@@ -234,17 +205,7 @@ async def main() -> None:
     logger.info("")
 
     # --- Keep running until Ctrl+C --------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-
-    await stop.wait()
-
-    # --- Cleanup --------------------------------------------------------------
-    logger.info("\nStopping...")
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=console_cleanup)
 
 
 if __name__ == "__main__":

@@ -39,16 +39,14 @@ Environment variables:
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
 import sys
+from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("voice_sip_bridge_summary")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("voice_sip_bridge_summary")
 
 from roomkit import (
     HookExecution,
@@ -68,8 +66,6 @@ from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 # Configuration
 # ---------------------------------------------------------------------------
 
-DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "multi")
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
 SIP_LISTEN_ADDR = os.environ.get("SIP_LISTEN_ADDR", "0.0.0.0")
@@ -91,22 +87,10 @@ def _caller_name(session) -> str:
 
 
 async def main() -> None:
-    # --- Check required env vars ----------------------------------------------
-    missing = []
-    if not DEEPGRAM_API_KEY:
-        missing.append("DEEPGRAM_API_KEY")
-    if not ANTHROPIC_API_KEY:
-        missing.append("ANTHROPIC_API_KEY")
-    if missing:
-        print(f"Missing required environment variables: {', '.join(missing)}")
-        print("\nExample:")
-        print(
-            "  DEEPGRAM_API_KEY=... ANTHROPIC_API_KEY=... "
-            "uv run python examples/voice_sip_bridge_summary.py"
-        )
-        sys.exit(1)
+    env = require_env("DEEPGRAM_API_KEY", "ANTHROPIC_API_KEY")
 
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # --- Transcript accumulator -----------------------------------------------
     transcript: list[tuple[str, str]] = []
@@ -122,7 +106,7 @@ async def main() -> None:
     # transcribes in whatever language the caller speaks.
     stt = DeepgramSTTProvider(
         config=DeepgramConfig(
-            api_key=DEEPGRAM_API_KEY,
+            api_key=env["DEEPGRAM_API_KEY"],
             model="nova-3",
             language=STT_LANGUAGE,
             punctuate=True,
@@ -192,7 +176,7 @@ async def main() -> None:
             "ai-summarizer",
             provider=AnthropicAIProvider(
                 AnthropicConfig(
-                    api_key=ANTHROPIC_API_KEY,
+                    api_key=env["ANTHROPIC_API_KEY"],
                     model=CLAUDE_MODEL,
                     max_tokens=1024,
                 )
@@ -264,16 +248,12 @@ async def main() -> None:
         "When all hang up, a meeting summary is generated."
     )
 
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup():
+        if console_cleanup:
+            await console_cleanup()
+        await backend.close()
 
-    await stop.wait()
-
-    await backend.close()
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

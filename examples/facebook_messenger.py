@@ -6,8 +6,14 @@ Run with:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import asyncio
-import os
+
+from shared import require_env
 
 from roomkit import RoomKit, WebSocketChannel
 from roomkit.channels import MessengerChannel
@@ -20,12 +26,9 @@ from roomkit.providers.messenger import (
 
 async def main() -> None:
     # --- Configuration -------------------------------------------------------
-    token = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
-    if not token:
-        print("Set FB_PAGE_ACCESS_TOKEN to run this example.")
-        return
+    env = require_env("FB_PAGE_ACCESS_TOKEN")
 
-    config = MessengerConfig(page_access_token=token)
+    config = MessengerConfig(page_access_token=env["FB_PAGE_ACCESS_TOKEN"])
     provider = FacebookMessengerProvider(config)
 
     # --- RoomKit setup -------------------------------------------------------

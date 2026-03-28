@@ -21,9 +21,12 @@ Press Ctrl+C to stop.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import run_until_stopped, setup_console, setup_logging
 
 from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
@@ -39,15 +42,12 @@ from roomkit.voice.pipeline.dtmf import MockDTMFDetector
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("voice_rtp")
+logger = setup_logging("voice_rtp")
 
 
 async def main() -> None:
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # --- Configuration from env vars ------------------------------------------
     local_port = int(os.environ.get("RTP_LOCAL_PORT", "10000"))
@@ -143,18 +143,12 @@ async def main() -> None:
     logger.info("Press Ctrl+C to stop.\n")
 
     # --- Keep running until Ctrl+C --------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup():
+        if console_cleanup:
+            await console_cleanup()
+        await kit.leave(session)
 
-    await stop.wait()
-
-    # --- Cleanup --------------------------------------------------------------
-    logger.info("\nStopping...")
-    await kit.leave(session)
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

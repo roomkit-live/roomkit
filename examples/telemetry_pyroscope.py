@@ -16,7 +16,11 @@ Run with:
 from __future__ import annotations
 
 import asyncio
-import logging
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import setup_logging
 
 from roomkit import HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.telemetry.pyroscope import PyroscopeProfiler
@@ -25,8 +29,7 @@ from roomkit.voice.pipeline.vad.mock import MockVADProvider
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-logging.basicConfig(level=logging.INFO, format="%(name)s %(message)s")
-logger = logging.getLogger(__name__)
+logger = setup_logging("telemetry_pyroscope")
 
 ROOM_ID = "demo-room"
 

@@ -24,17 +24,20 @@ Environment variables:
 
 from __future__ import annotations
 
-import logging
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from shared import setup_logging
 
 from roomkit import RoomKit
 from roomkit.video.backends.websocket import WebSocketVideoBackend, mount_websocket_video
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("websocket_video")
+logger = setup_logging("websocket_video")
 
 kit = RoomKit()
 backend = WebSocketVideoBackend(default_codec="raw_rgb24")

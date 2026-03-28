@@ -83,10 +83,12 @@ Press Ctrl+C to stop.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
@@ -98,39 +100,23 @@ from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADConfig, SherpaOn
 from roomkit.voice.stt.sherpa_onnx import SherpaOnnxSTTConfig, SherpaOnnxSTTProvider
 from roomkit.voice.tts.sherpa_onnx import SherpaOnnxTTSConfig, SherpaOnnxTTSProvider
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("voice_smart_turn")
-
-
-def check_env() -> None:
-    """Check required environment variables."""
-    required = {
-        "SMART_TURN_MODEL": "Path to smart-turn .onnx model",
-        "LLM_MODEL": "Model name (e.g. qwen3:8b for Ollama)",
-        "VAD_MODEL": "Path to VAD .onnx model (e.g. ten-vad.onnx)",
-        "STT_ENCODER": "Path to STT encoder .onnx",
-        "STT_DECODER": "Path to STT decoder .onnx",
-        "STT_TOKENS": "Path to STT tokens.txt",
-        "TTS_MODEL": "Path to TTS VITS/Piper .onnx model",
-        "TTS_TOKENS": "Path to TTS tokens.txt",
-    }
-    missing = [
-        f"  {key:22s} — {desc}" for key, desc in required.items() if not os.environ.get(key)
-    ]
-    if missing:
-        print("Missing required environment variables:\n")
-        print("\n".join(missing))
-        print("\nSee docstring at the top of this file for download links and usage.")
-        sys.exit(1)
+logger = setup_logging("voice_smart_turn")
 
 
 async def main() -> None:
-    check_env()
+    env = require_env(
+        "SMART_TURN_MODEL",
+        "LLM_MODEL",
+        "VAD_MODEL",
+        "STT_ENCODER",
+        "STT_DECODER",
+        "STT_TOKENS",
+        "TTS_MODEL",
+        "TTS_TOKENS",
+    )
 
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
     sample_rate = 16000
     tts_sample_rate = int(os.environ.get("TTS_SAMPLE_RATE", "22050"))
 
@@ -145,7 +131,7 @@ async def main() -> None:
     # --- VAD (sherpa-onnx neural VAD) -----------------------------------------
     vad = SherpaOnnxVADProvider(
         SherpaOnnxVADConfig(
-            model=os.environ["VAD_MODEL"],
+            model=env["VAD_MODEL"],
             threshold=float(os.environ.get("VAD_THRESHOLD", "0.35")),
             silence_threshold_ms=600,
             min_speech_duration_ms=200,
@@ -156,7 +142,7 @@ async def main() -> None:
     )
 
     # --- Smart turn detector --------------------------------------------------
-    smart_turn_model = os.environ["SMART_TURN_MODEL"]
+    smart_turn_model = env["SMART_TURN_MODEL"]
     smart_turn_threshold = float(os.environ.get("SMART_TURN_THRESHOLD", "0.5"))
     turn_detector = SmartTurnDetector(
         SmartTurnConfig(
@@ -180,10 +166,10 @@ async def main() -> None:
     stt = SherpaOnnxSTTProvider(
         SherpaOnnxSTTConfig(
             mode=os.environ.get("STT_MODE", "transducer"),
-            encoder=os.environ["STT_ENCODER"],
-            decoder=os.environ["STT_DECODER"],
+            encoder=env["STT_ENCODER"],
+            decoder=env["STT_DECODER"],
             joiner=os.environ.get("STT_JOINER", ""),
-            tokens=os.environ["STT_TOKENS"],
+            tokens=env["STT_TOKENS"],
             sample_rate=sample_rate,
         )
     )
@@ -191,15 +177,15 @@ async def main() -> None:
     # --- TTS (sherpa-onnx) ----------------------------------------------------
     tts = SherpaOnnxTTSProvider(
         SherpaOnnxTTSConfig(
-            model=os.environ["TTS_MODEL"],
-            tokens=os.environ["TTS_TOKENS"],
+            model=env["TTS_MODEL"],
+            tokens=env["TTS_TOKENS"],
             data_dir=os.environ.get("TTS_DATA_DIR", ""),
             sample_rate=tts_sample_rate,
         )
     )
 
     # --- LLM (local via OpenAI-compatible API) --------------------------------
-    llm_model = os.environ["LLM_MODEL"]
+    llm_model = env["LLM_MODEL"]
     llm_base_url = os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1")
     ai_provider = create_vllm_provider(
         VLLMConfig(
@@ -287,17 +273,7 @@ async def main() -> None:
     logger.info("")
 
     # --- Keep running until Ctrl+C --------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-
-    await stop.wait()
-
-    # --- Cleanup --------------------------------------------------------------
-    logger.info("\nStopping...")
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=console_cleanup)
 
 
 if __name__ == "__main__":

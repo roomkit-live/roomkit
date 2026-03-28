@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from shared.env import require_env
+from shared import require_env
 
 from roomkit import (
     ChannelCategory,

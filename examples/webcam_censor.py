@@ -37,10 +37,14 @@ Press Ctrl+C to stop.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import argparse
 import asyncio
-import logging
-import signal
+
+from shared import run_until_stopped, setup_logging
 
 from roomkit import HookTrigger, RoomKit, VideoChannel
 from roomkit.models.session_event import SessionStartedEvent
@@ -57,7 +61,7 @@ from roomkit.video.vision.base import VisionProvider
 from roomkit.video.vision.gemini import GeminiVisionConfig, GeminiVisionProvider
 from roomkit.video.vision.mock import MockVisionProvider
 
-logging.basicConfig(level=logging.INFO, format="%(name)s  %(message)s")
+setup_logging("webcam_censor")
 
 
 def _build_vision(args: argparse.Namespace) -> VisionProvider:
@@ -204,18 +208,13 @@ async def main() -> None:
 
     await backend.start_capture(session)
 
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig_name in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig_name, stop.set)
+    async def cleanup() -> None:
+        print(f"\nDone. {frame_count} frames, {censored_count} censored.")
+        await backend.stop_capture(session)
+        await kit.disconnect_video(session)
+        await kit.close_room("censor-demo")
 
-    await stop.wait()
-
-    print(f"\nDone. {frame_count} frames, {censored_count} censored.")
-    await backend.stop_capture(session)
-    await kit.disconnect_video(session)
-    await kit.close_room("censor-demo")
-    await kit.close()
+    await run_until_stopped(kit, cleanup=cleanup)
     print("Recording saved to ./recordings/")
 
 

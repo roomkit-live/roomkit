@@ -12,10 +12,16 @@ Run with:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import asyncio
 import json
-import logging
 from typing import Any
+
+from shared import setup_logging
 
 from roomkit import (
     AIChannel,
@@ -30,7 +36,7 @@ from roomkit.providers.ai.base import AITool
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools.compose import compose_tool_handlers
 
-logging.basicConfig(level=logging.INFO, format="%(name)s  %(message)s")
+setup_logging("mcp_tool_provider")
 
 
 # -- Custom local tool handler ------------------------------------------------

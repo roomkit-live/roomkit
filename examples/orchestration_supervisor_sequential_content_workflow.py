@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
+from pathlib import Path
 
-from shared.env import require_env
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, setup_logging
 
 from roomkit import Agent, CLIChannel, HookExecution, HookTrigger, RoomKit, Supervisor
 from roomkit.memory.sliding_window import SlidingWindowMemory
@@ -27,7 +30,7 @@ from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 
 # Show task runner errors — important for debugging delegation
-logging.basicConfig(format="%(levelname)s %(name)s: %(message)s")
+setup_logging("content_workflow")
 logging.getLogger("roomkit").setLevel(logging.WARNING)
 logging.getLogger("roomkit.tasks").setLevel(logging.DEBUG)
 

@@ -20,11 +20,17 @@ Press Ctrl+C to stop early.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import argparse
 import asyncio
 import contextlib
 import logging
 import signal
+
+from shared import setup_logging
 
 from roomkit import RoomKit, VideoChannel, VoiceChannel
 from roomkit.recorder import MockMediaRecorder, RoomRecorderBinding
@@ -34,7 +40,7 @@ from roomkit.video.backends.local import LocalVideoBackend
 from roomkit.voice.backends.local import LocalAudioBackend
 from roomkit.voice.pipeline.config import AudioPipelineConfig
 
-logging.basicConfig(level=logging.WARNING, format="%(name)s  %(message)s")
+setup_logging("room_media_recorder", level=logging.WARNING)
 logging.getLogger("roomkit.recorder").setLevel(logging.INFO)
 
 

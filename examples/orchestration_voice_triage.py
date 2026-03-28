@@ -35,9 +35,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 import time
+from pathlib import Path
 
-from shared.env import require_env
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import (
     Agent,
@@ -70,11 +73,7 @@ from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 from roomkit.voice.tts.elevenlabs import ElevenLabsConfig, ElevenLabsTTSProvider
 from roomkit.voice.tts.filters import StripInternalTags
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("voice_triage")
+logger = setup_logging("voice_triage")
 logging.getLogger("roomkit.core.event_router").setLevel(logging.ERROR)
 
 # ---------------------------------------------------------------------------
@@ -316,13 +315,19 @@ async def main() -> None:
     logger.info("Pipeline: intake (triage) -> handling (advisor)")
     logger.info("Waiting for incoming SIP calls...")
 
-    try:
-        await asyncio.Event().wait()
-    finally:
+    async def _cleanup() -> None:
         await sip.close()
         for ch in [triage, advisor, insurance]:
             await ch.close()
-        await kit.close()
+
+    console_cleanup = setup_console(kit)
+
+    async def _full_cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
+        await _cleanup()
+
+    await run_until_stopped(kit, cleanup=_full_cleanup)
 
 
 if __name__ == "__main__":

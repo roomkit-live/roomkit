@@ -22,47 +22,51 @@ Press Ctrl+C to stop.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from shared import (
+    build_aec,
+    build_pipeline,
+    require_env,
+    run_until_stopped,
+    setup_console,
+    setup_logging,
+)
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.xai.config import XAIRealtimeConfig
 from roomkit.providers.xai.realtime import XAIRealtimeProvider
 from roomkit.voice.backends.local import LocalAudioBackend
-from roomkit.voice.pipeline.aec.webrtc import WebRTCAECProvider
-from roomkit.voice.pipeline.config import AudioPipelineConfig
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("realtime_voice_local_xai")
+logger = setup_logging("realtime_voice_local_xai")
 
 
 async def main() -> None:
-    api_key = os.environ.get("XAI_API_KEY")
-    if not api_key:
-        logger.error("Set XAI_API_KEY to run this example.")
-        logger.error("  XAI_API_KEY=xai-... uv run python examples/realtime_voice_local_xai.py")
-        return
+    env = require_env("XAI_API_KEY")
 
     kit = RoomKit()
 
+    # --- Console dashboard (set CONSOLE=1 to enable) ---
+    console_cleanup = setup_console(kit)
+
     # --- xAI Realtime provider (speech-to-speech) ---
     config = XAIRealtimeConfig(
-        api_key=api_key,
+        api_key=env["XAI_API_KEY"],
         model=os.environ.get("XAI_MODEL", "grok-2-audio"),
         voice=os.environ.get("XAI_VOICE", "eve"),
     )
     provider = XAIRealtimeProvider(config)
 
-    # --- WebRTC AEC (echo cancellation + noise suppression) ---
+    # --- Audio pipeline (AEC + noise suppression) ---
     sample_rate = 24000
     block_ms = 20
 
-    aec = WebRTCAECProvider(sample_rate=sample_rate, enable_ns=True)
-    pipeline = AudioPipelineConfig(aec=aec)
+    aec = build_aec(sample_rate, block_ms, default="webrtc")
+    pipeline = build_pipeline(aec=aec)
 
     transport = LocalAudioBackend(
         input_sample_rate=sample_rate,
@@ -105,18 +109,12 @@ async def main() -> None:
     logger.info("Speak into your microphone! Press Ctrl+C to stop.\n")
 
     # --- Keep running until Ctrl+C ---
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
+        await channel.end_session(session)
 
-    await stop.wait()
-
-    # --- Cleanup ---
-    logger.info("\nStopping...")
-    await channel.end_session(session)
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

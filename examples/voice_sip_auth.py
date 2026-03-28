@@ -36,15 +36,15 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("voice_sip_auth")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("voice_sip_auth")
 
 from roomkit import RoomKit, VoiceChannel
 from roomkit.models.context import RoomContext
@@ -70,6 +70,7 @@ INBOUND_USERS = {"agent": "s3cret", "test": "test123"}
 
 async def main() -> None:
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # -- SIP backend with inbound digest auth --
     backend = SIPVoiceBackend(
@@ -138,11 +139,12 @@ async def main() -> None:
 
     logger.info("SIP agent ready — listening on port %d", LOCAL_PORT)
 
-    try:
-        await asyncio.Event().wait()
-    finally:
+    async def cleanup():
+        if console_cleanup:
+            await console_cleanup()
         await backend.close()
-        await kit.close()
+
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

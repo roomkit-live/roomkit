@@ -16,21 +16,21 @@ Press Ctrl+C to stop.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import asyncio
-import logging
-import signal
 
 import av
 import numpy as np
+from shared import run_until_stopped, setup_logging
 
+from roomkit import RoomKit
 from roomkit.video.backends.sip import SIPVideoBackend
 from roomkit.voice.base import VoiceSession
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("sip_send_video")
+logger = setup_logging("sip_send_video")
 
 
 class SimpleH264Encoder:
@@ -138,6 +138,8 @@ def make_test_frame(
 
 
 async def main() -> None:
+    kit = RoomKit()
+
     backend = SIPVideoBackend(
         local_sip_addr=("0.0.0.0", 5060),  # nosec B104
         local_rtp_ip="0.0.0.0",  # nosec B104
@@ -205,23 +207,18 @@ async def main() -> None:
 
     await backend.start()
 
-    print("SIP Send Video Test")
-    print("=" * 60)
-    print("SIP     : 0.0.0.0:5060")
-    print("Video   : H.264 test pattern (320x240 @ 15fps)")
-    print("Colors cycle: red → green → blue → yellow → cyan → magenta")
-    print("Press Ctrl+C to stop.\n")
+    logger.info("SIP Send Video Test")
+    logger.info("SIP     : 0.0.0.0:5060")
+    logger.info("Video   : H.264 test pattern (320x240 @ 15fps)")
+    logger.info("Colors cycle: red -> green -> blue -> yellow -> cyan -> magenta")
+    logger.info("Press Ctrl+C to stop.")
 
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup() -> None:
+        for task in active_tasks.values():
+            task.cancel()
+        await backend.close()
 
-    await stop.wait()
-
-    for task in active_tasks.values():
-        task.cancel()
-    await backend.close()
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

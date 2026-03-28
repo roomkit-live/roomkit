@@ -15,6 +15,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import setup_logging
 
 from roomkit import (
     Agent,
@@ -30,7 +35,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.mock import MockAIProvider
 
-logging.basicConfig(format="%(levelname)s %(name)s: %(message)s")
+logger = setup_logging("delivery_backend")
 logging.getLogger("roomkit.delivery").setLevel(logging.DEBUG)
 
 
@@ -68,7 +73,7 @@ async def main() -> None:
     async def on_delivered(event: RoomEvent, ctx: RoomContext) -> None:
         error = event.metadata.get("error")
         status = "FAILED" if error else "OK"
-        logging.getLogger("example").info("Delivery %s: %s", status, error or "success")
+        logger.info("Delivery %s: %s", status, error or "success")
 
     cli = CLIChannel("cli")
     kit.register_channel(cli)
@@ -78,7 +83,7 @@ async def main() -> None:
         await kit.attach_channel("demo", "cli")
 
         depth = await backend.get_queue_depth()
-        logging.getLogger("example").info("Queue depth at start: %d", depth)
+        logger.info("Queue depth at start: %d", depth)
 
         await cli.run(
             kit,

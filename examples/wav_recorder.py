@@ -18,10 +18,15 @@ Run with:
 
 from __future__ import annotations
 
-import asyncio
-import logging
-import tempfile
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import asyncio
+import tempfile
+
+from shared import setup_console, setup_logging
 
 from roomkit import ChannelCategory, HookExecution, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
@@ -40,8 +45,7 @@ from roomkit.voice.pipeline import (
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s %(message)s")
-logger = logging.getLogger("wav_recorder")
+logger = setup_logging("wav_recorder")
 
 
 def make_audio_frame(value: int = 100, num_samples: int = 160) -> AudioFrame:
@@ -209,6 +213,7 @@ async def main() -> None:
     logger.info("Output directory: %s\n", output_dir)
 
     kit = RoomKit()
+    setup_console(kit)
 
     # Hook to log recording lifecycle events
     @kit.hook(

@@ -51,18 +51,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import os
-import signal
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("voice_bridge_analyst")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("voice_bridge_analyst")
 
 from roomkit import (
     HookExecution,
@@ -118,6 +116,7 @@ sentiment to "negative" and include an alert describing the issue.
 # ---------------------------------------------------------------------------
 
 kit = RoomKit()
+console_cleanup = setup_console(kit)
 transcript: list[tuple[str, str]] = []
 _analysis_pending = False
 
@@ -374,9 +373,10 @@ async def lifespan(app: Any):
     if not ANTHROPIC_API_KEY:
         logger.warning("ANTHROPIC_API_KEY not set — AI analysis disabled, transcription only")
     yield
+    if console_cleanup:
+        await console_cleanup()
     await sip_backend.close()
     await fastrtc_backend.close()
-    await kit.close()
 
 
 def create_app():
@@ -413,13 +413,7 @@ def create_app():
 
 
 async def main() -> None:
-    if not DEEPGRAM_API_KEY:
-        print("Missing: DEEPGRAM_API_KEY")
-        print(
-            "\nDEEPGRAM_API_KEY=... ANTHROPIC_API_KEY=... "
-            "uv run python examples/voice_bridge_live_analyst.py"
-        )
-        sys.exit(1)
+    require_env("DEEPGRAM_API_KEY")
 
     import uvicorn
 
@@ -430,16 +424,13 @@ async def main() -> None:
         log_level="info",
     )
     server = uvicorn.Server(config)
-
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-
     serve_task = asyncio.create_task(server.serve())
-    await stop.wait()
-    server.should_exit = True
-    await serve_task
+
+    async def cleanup() -> None:
+        server.should_exit = True
+        await serve_task
+
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

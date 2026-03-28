@@ -24,8 +24,12 @@ from __future__ import annotations
 
 import asyncio
 import io
-import logging
+import sys
 import wave
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import setup_console, setup_logging
 
 from roomkit import (
     HookExecution,
@@ -37,8 +41,7 @@ from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("voice_say_play")
+logger = setup_logging("voice_say_play")
 
 
 def _make_wav(*, num_frames: int = 8000, sample_rate: int = 16000) -> bytes:
@@ -59,6 +62,7 @@ async def main() -> None:
     stt = MockSTTProvider()
 
     kit = RoomKit(voice=backend)
+    console_cleanup = setup_console(kit)
 
     # --- Voice channel --------------------------------------------------------
     voice = VoiceChannel("voice", stt=stt, tts=tts, backend=backend)
@@ -120,6 +124,8 @@ async def main() -> None:
     print(f"  Total audio streams sent: {len(backend.sent_audio)}")
     print(f"  Total transcriptions sent: {len(backend.sent_transcriptions)}")
 
+    if console_cleanup:
+        await console_cleanup()
     await kit.close()
     print("\nDone.")
 

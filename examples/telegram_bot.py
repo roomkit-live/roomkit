@@ -27,8 +27,14 @@ Requires:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import asyncio
-import os
+
+from shared import require_env
 
 from roomkit import RoomKit, WebSocketChannel
 from roomkit.channels import TelegramChannel
@@ -37,12 +43,9 @@ from roomkit.providers.telegram import TelegramBotProvider, TelegramConfig, pars
 
 async def main() -> None:
     # --- Configuration -------------------------------------------------------
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    if not token:
-        print("Set TELEGRAM_BOT_TOKEN to run this example.")
-        return
+    env = require_env("TELEGRAM_BOT_TOKEN")
 
-    config = TelegramConfig(bot_token=token)
+    config = TelegramConfig(bot_token=env["TELEGRAM_BOT_TOKEN"])
     provider = TelegramBotProvider(config)
 
     # --- RoomKit setup -------------------------------------------------------

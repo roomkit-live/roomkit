@@ -34,7 +34,11 @@ Run with:
 from __future__ import annotations
 
 import asyncio
-import logging
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import setup_console, setup_logging
 
 from roomkit import (
     Agent,
@@ -52,8 +56,7 @@ from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("voice_greeting")
+logger = setup_logging("voice_greeting")
 
 
 async def pattern_agent_auto_greet() -> None:
@@ -69,6 +72,7 @@ async def pattern_agent_auto_greet() -> None:
     tts = MockTTSProvider()
 
     kit = RoomKit(stt=stt, tts=tts, voice=backend)
+    console_cleanup = setup_console(kit)
 
     voice = VoiceChannel(
         "voice", stt=stt, tts=tts, backend=backend, pipeline=AudioPipelineConfig()
@@ -91,6 +95,8 @@ async def pattern_agent_auto_greet() -> None:
     await asyncio.sleep(0.2)
 
     logger.info("Session %s greeted via Agent auto_greet", session.id)
+    if console_cleanup:
+        await console_cleanup()
     await kit.close()
 
 
@@ -103,6 +109,7 @@ async def pattern_explicit_hook() -> None:
     tts = MockTTSProvider()
 
     kit = RoomKit(stt=stt, tts=tts, voice=backend)
+    console_cleanup = setup_console(kit)
 
     voice = VoiceChannel(
         "voice", stt=stt, tts=tts, backend=backend, pipeline=AudioPipelineConfig()
@@ -135,6 +142,8 @@ async def pattern_explicit_hook() -> None:
     await asyncio.sleep(0.2)
 
     logger.info("Session %s greeted via explicit hook", session.id)
+    if console_cleanup:
+        await console_cleanup()
     await kit.close()
 
 
@@ -147,6 +156,7 @@ async def pattern_manual_say() -> None:
     tts = MockTTSProvider()
 
     kit = RoomKit(stt=stt, tts=tts, voice=backend)
+    console_cleanup = setup_console(kit)
 
     voice = VoiceChannel(
         "voice", stt=stt, tts=tts, backend=backend, pipeline=AudioPipelineConfig()
@@ -166,6 +176,8 @@ async def pattern_manual_say() -> None:
     await asyncio.sleep(0.2)
 
     logger.info("Session %s greeted via manual say()", session.id)
+    if console_cleanup:
+        await console_cleanup()
     await kit.close()
 
 
@@ -182,6 +194,7 @@ async def pattern_llm_greeting() -> None:
     tts = MockTTSProvider()
 
     kit = RoomKit(stt=stt, tts=tts, voice=backend)
+    console_cleanup = setup_console(kit)
 
     voice = VoiceChannel(
         "voice", stt=stt, tts=tts, backend=backend, pipeline=AudioPipelineConfig()
@@ -218,6 +231,8 @@ async def pattern_llm_greeting() -> None:
     await asyncio.sleep(0.2)
 
     logger.info("Session %s greeted via LLM-generated response", session.id)
+    if console_cleanup:
+        await console_cleanup()
     await kit.close()
 
 

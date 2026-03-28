@@ -28,15 +28,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import os
-import signal
+import sys
+from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("voice_sip_dtmf")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("voice_sip_dtmf")
 
 from roomkit import (
     ChannelCategory,
@@ -117,6 +116,7 @@ DTMF_TOOL = {
 
 async def main() -> None:
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
     room_id = "dtmf-demo"
 
     # --- SIP backend ----------------------------------------------------------
@@ -253,16 +253,12 @@ async def main() -> None:
     )
 
     # --- Keep running ---------------------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup():
+        if console_cleanup:
+            await console_cleanup()
+        await backend.close()
 
-    await stop.wait()
-
-    await backend.close()
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

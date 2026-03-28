@@ -25,7 +25,11 @@ Run with:
 from __future__ import annotations
 
 import asyncio
-import logging
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import setup_console, setup_logging
 
 from roomkit import (
     HookExecution,
@@ -45,17 +49,14 @@ from roomkit.voice.pipeline import (
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("voice_bridge_with_ai")
+logger = setup_logging("voice_bridge_with_ai")
 
 ROOM_ID = "conference-room"
 
 
 async def main() -> None:
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # --- Transcript accumulator -----------------------------------------------
     transcript: list[tuple[str, str]] = []
@@ -184,6 +185,8 @@ async def main() -> None:
     print(f"  Alice received {len(alice_received)} audio frames (bridge + TTS)")
     print(f"  Bob received {len(bob_received)} audio frames (bridge + TTS)")
 
+    if console_cleanup:
+        await console_cleanup()
     await kit.close()
     print("\nDone.")
 

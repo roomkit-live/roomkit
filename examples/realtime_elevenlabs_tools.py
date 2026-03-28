@@ -29,7 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from shared import run_until_stopped, setup_logging
+from shared import run_until_stopped, setup_console, setup_logging
 from shared.env import require_env
 
 from roomkit import RealtimeVoiceChannel, RoomKit
@@ -53,6 +53,9 @@ async def main() -> None:
     env = require_env("ELEVENLABS_API_KEY", "ELEVENLABS_AGENT_ID")
 
     kit = RoomKit()
+
+    # --- Console dashboard (set CONSOLE=1 to enable) ---
+    console_cleanup = setup_console(kit)
 
     config = ElevenLabsRealtimeConfig(
         api_key=env["ELEVENLABS_API_KEY"],
@@ -88,6 +91,8 @@ async def main() -> None:
     logger.info("Ask about the weather to trigger the tool! Press Ctrl+C to stop.\n")
 
     async def cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
         await channel.end_session(session)
 
     await run_until_stopped(kit, cleanup=cleanup)

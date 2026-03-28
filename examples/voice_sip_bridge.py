@@ -34,15 +34,14 @@ Environment variables:
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
+import sys
+from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("voice_sip_bridge")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("voice_sip_bridge")
 
 from roomkit import (
     HookExecution,
@@ -61,18 +60,16 @@ from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 SIP_LISTEN_ADDR = os.environ.get("SIP_LISTEN_ADDR", "0.0.0.0")
 SIP_LISTEN_PORT = int(os.environ.get("SIP_LISTEN_PORT", "5060"))
 RTP_IP = os.environ.get("RTP_IP", "0.0.0.0")
-DEEPGRAM_API_KEY = os.environ.get("DEEPGRAM_API_KEY", "")
 STT_LANGUAGE = os.environ.get("STT_LANGUAGE", "en")
 
 ROOM_ID = "bridge-room"
 
 
 async def main() -> None:
-    if not DEEPGRAM_API_KEY:
-        logger.error("DEEPGRAM_API_KEY is required. Set it and re-run.")
-        return
+    env = require_env("DEEPGRAM_API_KEY")
 
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # --- SIP backend ----------------------------------------------------------
     backend = SIPVoiceBackend(
@@ -85,7 +82,7 @@ async def main() -> None:
     # continuous streaming transcription instead of batch (collect-then-send).
     stt = DeepgramSTTProvider(
         config=DeepgramConfig(
-            api_key=DEEPGRAM_API_KEY,
+            api_key=env["DEEPGRAM_API_KEY"],
             model="nova-3",
             language=STT_LANGUAGE,
             punctuate=True,
@@ -147,16 +144,12 @@ async def main() -> None:
         STT_LANGUAGE,
     )
 
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup():
+        if console_cleanup:
+            await console_cleanup()
+        await backend.close()
 
-    await stop.wait()
-
-    await backend.close()
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

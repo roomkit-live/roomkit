@@ -64,8 +64,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import signal
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
@@ -81,12 +84,8 @@ from roomkit.voice.pipeline import (
 from roomkit.voice.stt.gradium import GradiumSTTConfig, GradiumSTTProvider
 from roomkit.voice.tts.gradium import GradiumTTSConfig, GradiumTTSProvider
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
+logger = setup_logging("voice_gradium")
 logging.getLogger("roomkit.voice.stt.gradium").setLevel(logging.DEBUG)
-logger = logging.getLogger("voice_gradium")
 
 # Channel mode mapping
 CHANNEL_MODES = {
@@ -96,37 +95,11 @@ CHANNEL_MODES = {
 }
 
 
-def check_env() -> dict[str, str]:
-    """Check required environment variables and return them."""
-    keys = {
-        "ANTHROPIC_API_KEY": "Anthropic (Claude)",
-        "GRADIUM_API_KEY": "Gradium (STT + TTS)",
-    }
-    values = {}
-    missing = []
-    for key, label in keys.items():
-        val = os.environ.get(key, "")
-        if not val:
-            missing.append(f"  {key:24s} — {label}")
-        values[key] = val
-
-    if missing:
-        print("Missing required environment variables:\n")
-        print("\n".join(missing))
-        print("\nExample:\n")
-        print(
-            "  ANTHROPIC_API_KEY=... GRADIUM_API_KEY=... \\\n"
-            "    uv run python examples/voice_gradium.py"
-        )
-        sys.exit(1)
-
-    return values
-
-
 async def main() -> None:
-    env = check_env()
+    env = require_env("ANTHROPIC_API_KEY", "GRADIUM_API_KEY")
 
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # --- Audio settings -------------------------------------------------------
     sample_rate = 16000
@@ -351,17 +324,12 @@ async def main() -> None:
     logger.info("")
 
     # --- Keep running until Ctrl+C --------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
+        logger.info("Recordings saved to: %s", recording_dir)
 
-    await stop.wait()
-
-    # --- Cleanup --------------------------------------------------------------
-    logger.info("\nStopping...")
-    await kit.close()
-    logger.info("Done. Recordings saved to: %s", recording_dir)
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

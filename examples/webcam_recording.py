@@ -17,11 +17,17 @@ Press Ctrl+C to stop early.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import argparse
 import asyncio
 import contextlib
 import logging
 import signal
+
+from shared import setup_logging
 
 from roomkit import HookExecution, HookTrigger, RoomKit, VideoChannel
 from roomkit.models.session_event import SessionStartedEvent
@@ -30,7 +36,7 @@ from roomkit.video.backends.local import LocalVideoBackend
 from roomkit.video.pipeline import VideoPipelineConfig
 from roomkit.video.recorder import MockVideoRecorder, VideoRecordingConfig
 
-logging.basicConfig(level=logging.WARNING)
+setup_logging("webcam_recording", level=logging.WARNING)
 
 
 async def main() -> None:

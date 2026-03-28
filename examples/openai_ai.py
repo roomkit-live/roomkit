@@ -6,8 +6,14 @@ Run with:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import asyncio
-import os
+
+from shared import require_env
 
 from roomkit import (
     ChannelCategory,
@@ -23,12 +29,9 @@ from roomkit.providers.openai import OpenAIAIProvider, OpenAIConfig
 
 async def main() -> None:
     # --- Configuration -------------------------------------------------------
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    if not api_key:
-        print("Set OPENAI_API_KEY to run this example.")
-        return
+    env = require_env("OPENAI_API_KEY")
 
-    config = OpenAIConfig(api_key=api_key)
+    config = OpenAIConfig(api_key=env["OPENAI_API_KEY"])
     provider = OpenAIAIProvider(config)
 
     # --- RoomKit setup -------------------------------------------------------

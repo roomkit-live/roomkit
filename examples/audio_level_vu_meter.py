@@ -18,9 +18,15 @@ Press Ctrl+C to stop.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import asyncio
 import logging
-import signal
+
+from shared import run_until_stopped, setup_console, setup_logging
 
 from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
@@ -35,7 +41,7 @@ from roomkit.voice.pipeline import (
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-logging.basicConfig(level=logging.WARNING)
+setup_logging("audio_level_vu_meter", level=logging.WARNING)
 
 # Number of parrot turns to simulate before looping stops.
 NUM_TURNS = 50
@@ -156,18 +162,11 @@ async def main() -> None:
     print("The parrot echoes back via TTS (output levels).")
     print(f"Configured for {NUM_TURNS} turns. Press Ctrl+C to stop.\n")
 
+    # --- Console (enable with CONSOLE=1) -------------------------------------
+    console_cleanup = setup_console(kit)
+
     # --- Keep running until Ctrl+C ------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-
-    await stop.wait()
-
-    # --- Cleanup ------------------------------------------------------------
-    print("\nStopping...")
-    await kit.close()
-    print("Done.")
+    await run_until_stopped(kit, cleanup=console_cleanup)
 
 
 if __name__ == "__main__":

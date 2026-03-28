@@ -75,8 +75,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import signal
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import ChannelCategory, HookExecution, HookResult, HookTrigger, RoomKit, VoiceChannel
 from roomkit.channels.ai import AIChannel
@@ -87,40 +90,24 @@ from roomkit.voice.pipeline.vad.sherpa_onnx import SherpaOnnxVADConfig, SherpaOn
 from roomkit.voice.stt.sherpa_onnx import SherpaOnnxSTTConfig, SherpaOnnxSTTProvider
 from roomkit.voice.tts.neutts import NeuTTSConfig, NeuTTSProvider, NeuTTSVoiceConfig
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
+logger = setup_logging("voice_neutts")
 # Suppress espeak-ng language-switch warnings (harmless, fires on mixed-language text)
 logging.getLogger("phonemizer").setLevel(logging.ERROR)
-logger = logging.getLogger("voice_neutts")
-
-
-def check_env() -> None:
-    """Check required environment variables."""
-    required = {
-        "REF_AUDIO": "Path to reference audio for voice cloning (3-15s)",
-        "REF_TEXT": "Transcript of the reference audio",
-        "LLM_MODEL": "Model name (e.g. qwen3:8b for Ollama)",
-        "VAD_MODEL": "Path to VAD .onnx model (e.g. ten-vad.onnx)",
-        "STT_ENCODER": "Path to STT encoder .onnx",
-        "STT_DECODER": "Path to STT decoder .onnx",
-        "STT_TOKENS": "Path to STT tokens.txt",
-    }
-    missing = [
-        f"  {key:20s} — {desc}" for key, desc in required.items() if not os.environ.get(key)
-    ]
-    if missing:
-        print("Missing required environment variables:\n")
-        print("\n".join(missing))
-        print("\nSee docstring at the top of this file for usage.")
-        sys.exit(1)
 
 
 async def main() -> None:
-    check_env()
+    env = require_env(
+        "REF_AUDIO",
+        "REF_TEXT",
+        "LLM_MODEL",
+        "VAD_MODEL",
+        "STT_ENCODER",
+        "STT_DECODER",
+        "STT_TOKENS",
+    )
 
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     sample_rate = 16000
     # NeuTTS outputs at 24kHz natively
@@ -135,7 +122,7 @@ async def main() -> None:
     )
 
     # --- VAD (sherpa-onnx neural VAD) -----------------------------------------
-    vad_model = os.environ["VAD_MODEL"]
+    vad_model = env["VAD_MODEL"]
     vad_threshold = float(os.environ.get("VAD_THRESHOLD", "0.35"))
     vad = SherpaOnnxVADProvider(
         SherpaOnnxVADConfig(
@@ -156,10 +143,10 @@ async def main() -> None:
     stt = SherpaOnnxSTTProvider(
         SherpaOnnxSTTConfig(
             mode="transducer",
-            encoder=os.environ["STT_ENCODER"],
-            decoder=os.environ["STT_DECODER"],
+            encoder=env["STT_ENCODER"],
+            decoder=env["STT_DECODER"],
             joiner=os.environ.get("STT_JOINER", ""),
-            tokens=os.environ["STT_TOKENS"],
+            tokens=env["STT_TOKENS"],
             sample_rate=sample_rate,
             provider="cpu",
         )
@@ -167,8 +154,8 @@ async def main() -> None:
     logger.info("STT: sherpa-onnx (encoder=%s)", os.environ["STT_ENCODER"])
 
     # --- TTS (NeuTTS with voice cloning) --------------------------------------
-    ref_audio = os.environ["REF_AUDIO"]
-    ref_text = os.environ["REF_TEXT"]
+    ref_audio = env["REF_AUDIO"]
+    ref_text = env["REF_TEXT"]
 
     # Auto-detect CUDA if available, override with TTS_DEVICE env var
     tts_device = os.environ.get("TTS_DEVICE")
@@ -194,7 +181,7 @@ async def main() -> None:
     logger.info("TTS: NeuTTS (backbone=%s, ref_audio=%s)", tts_config.backbone_repo, ref_audio)
 
     # --- LLM (local via OpenAI-compatible API) --------------------------------
-    llm_model = os.environ["LLM_MODEL"]
+    llm_model = env["LLM_MODEL"]
     llm_base_url = os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1")
     ai_provider = create_vllm_provider(
         VLLMConfig(
@@ -263,17 +250,7 @@ async def main() -> None:
     logger.info("")
 
     # --- Keep running until Ctrl+C --------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-
-    await stop.wait()
-
-    # --- Cleanup --------------------------------------------------------------
-    logger.info("\nStopping...")
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=console_cleanup)
 
 
 if __name__ == "__main__":

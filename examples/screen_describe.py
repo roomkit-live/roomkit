@@ -36,11 +36,16 @@ Press Ctrl+C to stop.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import argparse
 import asyncio
 import logging
 import os
-import signal
+
+from shared import run_until_stopped, setup_logging
 
 from roomkit import ChannelCategory, HookExecution, HookTrigger, RoomKit, VideoChannel
 from roomkit.channels.ai import AIChannel
@@ -53,7 +58,7 @@ from roomkit.video.vision.gemini import GeminiVisionConfig, GeminiVisionProvider
 from roomkit.video.vision.mock import MockVisionProvider
 from roomkit.video.vision.openai import OpenAIVisionConfig, OpenAIVisionProvider
 
-logging.basicConfig(level=logging.WARNING)
+setup_logging("screen_describe", level=logging.WARNING)
 
 SCREEN_VISION_PROMPT = (
     "Describe what software or application is shown on this screen. "
@@ -226,18 +231,12 @@ async def main() -> None:
     await backend.start_capture(session)
 
     # --- Keep running until Ctrl+C -------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig_name in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig_name, stop.set)
+    async def cleanup() -> None:
+        print("\nStopping...")
+        await backend.stop_capture(session)
+        await kit.disconnect_video(session)
 
-    await stop.wait()
-
-    # --- Cleanup -------------------------------------------------------------
-    print("\nStopping...")
-    await backend.stop_capture(session)
-    await kit.disconnect_video(session)
-    await kit.close()
+    await run_until_stopped(kit, cleanup=cleanup)
     print(f"Done. Analyzed {frame_count} frames.")
 
 

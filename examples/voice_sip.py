@@ -26,14 +26,14 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import logging
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("voice_sip_example")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("voice_sip_example")
 
 from roomkit import RoomKit, VoiceChannel
 from roomkit.models.context import RoomContext
@@ -59,6 +59,7 @@ call_log: list[dict] = []
 
 async def main() -> None:
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # Create the SIP backend
     backend = SIPVoiceBackend(
@@ -180,12 +181,12 @@ async def main() -> None:
         RTP_PORT_END,
     )
 
-    # Run forever
-    try:
-        await asyncio.Event().wait()
-    finally:
+    async def cleanup():
+        if console_cleanup:
+            await console_cleanup()
         await backend.close()
-        await kit.close()
+
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

@@ -40,18 +40,16 @@ Environment variables:
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("voice_multibackend_bridge")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("voice_multibackend_bridge")
 
 from roomkit import (
     HookExecution,
@@ -89,6 +87,7 @@ ROOM_ID = "bridge-room"
 # ---------------------------------------------------------------------------
 
 kit = RoomKit()
+console_cleanup = setup_console(kit)
 transcript: list[tuple[str, str]] = []
 
 
@@ -316,9 +315,10 @@ async def lifespan(app: Any):
     )
     logger.info("Connect from SIP phones and/or browsers. When all leave, a summary is generated.")
     yield
+    if console_cleanup:
+        await console_cleanup()
     await sip_backend.close()
     await fastrtc_backend.close()
-    await kit.close()
 
 
 def create_app():
@@ -357,18 +357,7 @@ def create_app():
 
 
 async def main() -> None:
-    missing = []
-    if not DEEPGRAM_API_KEY:
-        missing.append("DEEPGRAM_API_KEY")
-    if not ANTHROPIC_API_KEY:
-        missing.append("ANTHROPIC_API_KEY")
-    if missing:
-        print(f"Missing: {', '.join(missing)}")
-        print(
-            "\nDEEPGRAM_API_KEY=... ANTHROPIC_API_KEY=... "
-            "uv run python examples/voice_multibackend_bridge.py"
-        )
-        sys.exit(1)
+    require_env("DEEPGRAM_API_KEY", "ANTHROPIC_API_KEY")
 
     import uvicorn
 
@@ -379,16 +368,13 @@ async def main() -> None:
         log_level="info",
     )
     server = uvicorn.Server(config)
-
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-
     serve_task = asyncio.create_task(server.serve())
-    await stop.wait()
-    server.should_exit = True
-    await serve_task
+
+    async def cleanup() -> None:
+        server.should_exit = True
+        await serve_task
+
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

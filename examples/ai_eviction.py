@@ -17,8 +17,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from shared.env import require_env
-from shared.hooks import log_tool_call
+from shared import log_tool_call, require_env
 
 from roomkit import (
     ChannelCategory,

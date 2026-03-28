@@ -15,14 +15,21 @@ Run with:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import asyncio
-import os
+
+from shared import require_env
 
 from roomkit.voice.tts.grok import GrokTTSConfig, GrokTTSProvider
 
 
 async def main() -> None:
-    api_key = os.environ["XAI_API_KEY"]
+    env = require_env("XAI_API_KEY")
+    api_key = env["XAI_API_KEY"]
 
     provider = GrokTTSProvider(
         GrokTTSConfig(

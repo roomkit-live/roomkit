@@ -25,23 +25,23 @@ Configure components at https://lab.anam.ai (avatars, voices, LLMs).
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
+import sys
+from pathlib import Path
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import RealtimeAudioVideoChannel, RoomKit
 from roomkit.providers.anam import AnamConfig, AnamRealtimeProvider
 from roomkit.voice.realtime.mock import MockRealtimeTransport
 
-logger = logging.getLogger(__name__)
+logger = setup_logging("realtime_av_anam")
 
 
 async def main() -> None:
-    api_key = os.environ.get("ANAM_API_KEY", "")
-    if not api_key:
-        logger.error("Set ANAM_API_KEY environment variable")
-        return
+    env = require_env("ANAM_API_KEY")
 
     persona_id = os.environ.get("ANAM_PERSONA_ID")
     avatar_id = os.environ.get("ANAM_AVATAR_ID")
@@ -57,7 +57,7 @@ async def main() -> None:
 
     # Configure Anam provider
     config = AnamConfig(
-        api_key=api_key,
+        api_key=env["ANAM_API_KEY"],
         persona_id=persona_id,
         avatar_id=avatar_id,
         voice_id=voice_id,
@@ -90,6 +90,10 @@ async def main() -> None:
 
     # Set up RoomKit
     kit = RoomKit()
+
+    # --- Console dashboard (set CONSOLE=1 to enable) ---
+    console_cleanup = setup_console(kit)
+
     kit.register_channel(channel)
 
     room = await kit.create_room("avatar-room")
@@ -105,15 +109,14 @@ async def main() -> None:
     )
     logger.info("Session %s active. Avatar is listening.", session.id)
 
-    # Keep running until interrupted
-    try:
-        await asyncio.Event().wait()
-    except asyncio.CancelledError:
-        pass
-    finally:
+    # --- Keep running until Ctrl+C ---
+    async def cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
         await channel.end_session(session)
-        await kit.close()
         logger.info("Done. Received %d video frames.", frame_count)
+
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

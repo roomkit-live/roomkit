@@ -30,15 +30,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import os
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("voice_sip_dial")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("voice_sip_dial")
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.models.context import RoomContext
@@ -98,12 +98,10 @@ async def handle_tool_call(name: str, arguments: dict) -> str:
 
 
 async def main() -> None:
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        print("Set GOOGLE_API_KEY to run this example.")  # noqa: T201
-        return
+    env = require_env("GOOGLE_API_KEY")
 
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # -- SIP backend --
     backend = SIPVoiceBackend(
@@ -114,7 +112,7 @@ async def main() -> None:
     )
 
     # -- Gemini Live provider --
-    gemini = GeminiLiveProvider(api_key=api_key, model=GEMINI_MODEL)
+    gemini = GeminiLiveProvider(api_key=env["GOOGLE_API_KEY"], model=GEMINI_MODEL)
 
     # -- Bridge: SIP audio <-> Gemini audio --
     transport = SIPRealtimeTransport(backend)
@@ -214,11 +212,12 @@ async def main() -> None:
         return
 
     # Keep running until the call ends
-    try:
-        await asyncio.Event().wait()
-    finally:
+    async def cleanup():
+        if console_cleanup:
+            await console_cleanup()
         await backend.close()
-        await kit.close()
+
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

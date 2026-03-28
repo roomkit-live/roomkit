@@ -44,16 +44,18 @@ Press Ctrl+C to stop.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import asyncio
 import logging
 import os
 import signal
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("sip_openai_anam")
+from shared import require_env, setup_logging
+
+logger = setup_logging("sip_openai_anam")
 
 if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit").setLevel(logging.DEBUG)
@@ -71,18 +73,19 @@ from roomkit.voice.realtime.bridge import RealtimeAVBridge
 
 async def main() -> None:
     # --- Validate environment -------------------------------------------------
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
-    anam_key = os.environ.get("ANAM_API_KEY", "")
-    if not openai_key or not anam_key:
-        logger.error("Set OPENAI_API_KEY and ANAM_API_KEY")
-        return
+    env = require_env(
+        "OPENAI_API_KEY",
+        "ANAM_API_KEY",
+        "ANAM_AVATAR_ID",
+        "ANAM_VOICE_ID",
+        "ANAM_LLM_ID",
+    )
+    openai_key = env["OPENAI_API_KEY"]
+    anam_key = env["ANAM_API_KEY"]
 
-    avatar_id = os.environ.get("ANAM_AVATAR_ID")
-    voice_id = os.environ.get("ANAM_VOICE_ID")
-    llm_id = os.environ.get("ANAM_LLM_ID")
-    if not (avatar_id and voice_id and llm_id):
-        logger.error("Set ANAM_AVATAR_ID + ANAM_VOICE_ID + ANAM_LLM_ID")
-        return
+    avatar_id = env["ANAM_AVATAR_ID"]
+    voice_id = env["ANAM_VOICE_ID"]
+    llm_id = env["ANAM_LLM_ID"]
 
     # --- SIP backend ----------------------------------------------------------
     sip = SIPVideoBackend(

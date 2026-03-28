@@ -25,14 +25,15 @@ Environment variables:
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
+import sys
+from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("sip_elevenlabs_example")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from shared import require_env, run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("sip_elevenlabs_example")
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.models.context import RoomContext
@@ -58,13 +59,12 @@ RTP_PORT_END = 20000
 
 
 async def main() -> None:
-    api_key = os.environ.get("ELEVENLABS_API_KEY")
-    agent_id = os.environ.get("ELEVENLABS_AGENT_ID")
-    if not api_key or not agent_id:
-        logger.error("Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID to run this example.")
-        return
+    env = require_env("ELEVENLABS_API_KEY", "ELEVENLABS_AGENT_ID")
 
     kit = RoomKit()
+
+    # --- Console dashboard (set CONSOLE=1 to enable) ---
+    console_cleanup = setup_console(kit)
 
     # -- SIP backend (answers incoming calls) --
     sip = SIPVoiceBackend(
@@ -77,7 +77,9 @@ async def main() -> None:
     )
 
     # -- ElevenLabs Conversational AI provider --
-    config = ElevenLabsRealtimeConfig(api_key=api_key, agent_id=agent_id)
+    config = ElevenLabsRealtimeConfig(
+        api_key=env["ELEVENLABS_API_KEY"], agent_id=env["ELEVENLABS_AGENT_ID"]
+    )
     provider = ElevenLabsRealtimeProvider(config)
 
     # -- Bridge transport: SIP audio ↔ ElevenLabs audio --
@@ -182,11 +184,13 @@ async def main() -> None:
     )
     logger.info("Waiting for incoming SIP calls...")
 
-    try:
-        await asyncio.Event().wait()
-    finally:
+    # --- Keep running until Ctrl+C ---
+    async def cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
         await sip.close()
-        await kit.close()
+
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

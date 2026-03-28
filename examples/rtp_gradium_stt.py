@@ -49,9 +49,12 @@ import asyncio
 import contextlib
 import logging
 import os
-import signal
 import sys
 import wave
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from shared import require_env, run_until_stopped, setup_console, setup_logging
 
 from roomkit import (
     HookExecution,
@@ -72,11 +75,7 @@ from roomkit.voice.pipeline.resampler import SincResamplerProvider
 from roomkit.voice.stt.gradium import GradiumSTTConfig, GradiumSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("rtp_gradium_stt")
+logger = setup_logging("rtp_gradium_stt")
 
 if os.environ.get("DEBUG") == "1":
     logging.getLogger("roomkit.voice").setLevel(logging.DEBUG)
@@ -86,21 +85,10 @@ if os.environ.get("DEBUG") == "1":
         import examples.trace_audio  # noqa: F401
 
 
-def check_env() -> str:
-    """Return the Gradium API key or exit with a helpful message."""
-    api_key = os.environ.get("GRADIUM_API_KEY", "")
-    if not api_key:
-        print("Missing required environment variable:\n")
-        print("  GRADIUM_API_KEY  — Gradium API key for STT\n")
-        print("Example:\n")
-        print("  GRADIUM_API_KEY=... uv run python examples/rtp_gradium_stt.py")
-        sys.exit(1)
-    return api_key
-
-
 async def main() -> None:
-    api_key = check_env()
+    env = require_env("GRADIUM_API_KEY")
     kit = RoomKit()
+    console_cleanup = setup_console(kit)
 
     # --- Configuration --------------------------------------------------------
     local_port = int(os.environ.get("RTP_LOCAL_PORT", "10000"))
@@ -145,7 +133,7 @@ async def main() -> None:
     language = os.environ.get("LANGUAGE", "en")
     stt = GradiumSTTProvider(
         config=GradiumSTTConfig(
-            api_key=api_key,
+            api_key=env["GRADIUM_API_KEY"],
             region=region,
             model_name=os.environ.get("GRADIUM_STT_MODEL", "default"),
             input_format="pcm",
@@ -223,22 +211,16 @@ async def main() -> None:
     logger.info("Press Ctrl+C to stop.\n")
 
     # --- Keep running until Ctrl+C --------------------------------------------
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    async def cleanup():
+        if console_cleanup:
+            await console_cleanup()
+        if transport_wav is not None:
+            transport_wav.close()
+            logger.info("Transport recording saved.")
+        await kit.leave(session)
+        await backend.disconnect(session)
 
-    await stop.wait()
-
-    # --- Cleanup --------------------------------------------------------------
-    logger.info("\nStopping...")
-    if transport_wav is not None:
-        transport_wav.close()
-        logger.info("Transport recording saved.")
-    await kit.leave(session)
-    await backend.disconnect(session)
-    await kit.close()
-    logger.info("Done.")
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

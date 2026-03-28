@@ -16,17 +16,19 @@ Usage:
     GOOGLE_API_KEY=... python examples/realtime_voice_sip_gemini.py
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
-import logging
-import os
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(name)-30s %(levelname)-7s %(message)s",
-)
-logger = logging.getLogger("sip_gemini_example")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from shared import require_env, run_until_stopped, setup_console, setup_logging
+
+logger = setup_logging("sip_gemini_example")
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.models.context import RoomContext
@@ -91,12 +93,12 @@ async def handle_tool_call(name: str, arguments: dict) -> str:
 
 
 async def main() -> None:
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        print("Set GOOGLE_API_KEY to run this example.")
-        return
+    env = require_env("GOOGLE_API_KEY")
 
     kit = RoomKit()
+
+    # --- Console dashboard (set CONSOLE=1 to enable) ---
+    console_cleanup = setup_console(kit)
 
     # -- SIP backend (answers incoming calls) --
     sip = SIPVoiceBackend(
@@ -109,7 +111,7 @@ async def main() -> None:
     )
 
     # -- Gemini Live provider --
-    gemini = GeminiLiveProvider(api_key=api_key, model=GEMINI_MODEL)
+    gemini = GeminiLiveProvider(api_key=env["GOOGLE_API_KEY"], model=GEMINI_MODEL)
 
     # -- Bridge transport: SIP audio ↔ Gemini audio --
     transport = SIPRealtimeTransport(sip)
@@ -224,11 +226,13 @@ async def main() -> None:
     )
     logger.info("Waiting for incoming SIP calls...")
 
-    try:
-        await asyncio.Event().wait()
-    finally:
+    # --- Keep running until Ctrl+C ---
+    async def cleanup() -> None:
+        if console_cleanup:
+            await console_cleanup()
         await sip.close()
-        await kit.close()
+
+    await run_until_stopped(kit, cleanup=cleanup)
 
 
 if __name__ == "__main__":

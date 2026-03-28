@@ -31,12 +31,15 @@ Environment variables:
 
 from __future__ import annotations
 
-import logging
 import os
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from shared import setup_console, setup_logging
 
 from roomkit import (
     AIChannel,
@@ -54,10 +57,10 @@ from roomkit.voice.pipeline.vad.energy import EnergyVADProvider
 from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
 from roomkit.voice.tts.elevenlabs import ElevenLabsConfig, ElevenLabsTTSProvider
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("voice_fastrtc")
+logger = setup_logging("voice_fastrtc")
 
 kit = RoomKit()
+console_cleanup = setup_console(kit)
 
 # --- Audio settings ---
 INPUT_SAMPLE_RATE = 48000  # Browser mic (FastRTC default)
@@ -182,6 +185,8 @@ async def lifespan(app: FastAPI):
     logger.info("FastRTC voice backend ready at /voice")
     logger.info("Open http://localhost:8000 for the browser client")
     yield
+    if console_cleanup:
+        await console_cleanup()
     await kit.close()
 
 
