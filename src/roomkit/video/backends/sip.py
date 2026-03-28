@@ -55,7 +55,7 @@ def _import_video_bridge() -> Any:
         ) from exc
 
 
-class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
+class SIPVideoBackend(SIPVoiceBackend, VideoBackend):
     """SIP backend with audio + video support.
 
     Audio-only calls (no ``m=video`` in INVITE) are handled by the
@@ -187,7 +187,7 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
         except Exception:
             logger.warning("Video negotiation failed, audio-only: call_id=%s", call.call_id)
             self._release_rtp_port(video_rtp_port)
-            video_rtp_port = None  # type: ignore[assignment]
+            video_rtp_port = None
 
         # Build combined SDP answer (mutates audio answer in place,
         # matching negotiate_av_sdp() behavior)
@@ -269,7 +269,7 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
         if video_call_session is not None:
             self._video_call_sessions[session.id] = video_call_session
             self._combined_answers[session.id] = combined
-            self._video_rtp_ports[session.id] = video_rtp_port
+            self._video_rtp_ports[session.id] = video_rtp_port  # ty: ignore[invalid-assignment]
             self._frame_sequences[session.id] = 0
 
             # Determine negotiated video codec name from SDP answer
@@ -405,7 +405,7 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
 
         super()._cleanup_session(session_id)
 
-    async def disconnect(self, session: VoiceSession) -> None:  # type: ignore[override]
+    async def disconnect(self, session: VoiceSession) -> None:
         await super().disconnect(session)
 
     # -------------------------------------------------------------------------
@@ -552,10 +552,10 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):  # type: ignore[misc]
     def add_video_tap(self, callback: VideoReceivedCallback) -> None:
         self._video_taps.append(callback)
 
-    def on_session_ready(self, callback: VideoSessionReadyCallback) -> None:  # type: ignore[override]
+    def on_session_ready(self, callback: VideoSessionReadyCallback) -> None:
         self._video_session_ready_callbacks.append(callback)
 
-    def on_client_disconnected(self, callback: VideoDisconnectCallback) -> None:  # type: ignore[override]
+    def on_client_disconnected(self, callback: VideoDisconnectCallback) -> None:
         self._video_disconnect_callbacks.append(callback)
 
     def get_video_session(self, session_id: str) -> VideoSession | None:

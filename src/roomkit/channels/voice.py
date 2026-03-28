@@ -328,7 +328,7 @@ class VoiceChannel(
         if VoiceCapability.DTMF_SIGNALING in backend.capabilities and hasattr(
             backend, "on_dtmf_received"
         ):
-            backend.on_dtmf_received(self._on_pipeline_dtmf)
+            backend.on_dtmf_received(self._on_pipeline_dtmf)  # ty: ignore[call-non-callable]
 
     # -------------------------------------------------------------------------
     # Session ready / disconnect (backend callbacks)
@@ -800,11 +800,11 @@ class VoiceChannel(
         telemetry = getattr(self, "_telemetry", None)
         if telemetry is not None:
             if self._stt is not None:
-                self._stt._telemetry = telemetry  # type: ignore[attr-defined]
+                self._stt._telemetry = telemetry  # ty: ignore[unresolved-attribute]
             if self._tts is not None:
-                self._tts._telemetry = telemetry  # type: ignore[attr-defined]
+                self._tts._telemetry = telemetry  # ty: ignore[unresolved-attribute]
             if self._backend is not None:
-                self._backend._telemetry = telemetry  # type: ignore[attr-defined]
+                self._backend._telemetry = telemetry  # ty: ignore[unresolved-attribute]
         # Bridge trace emitter to backend when framework wiring enables it
         self._sync_trace_emitter()
 
@@ -1145,7 +1145,7 @@ class VoiceChannel(
                     context = await self._framework._build_context(room_id)
                     event = TTSCancelledEvent(
                         session=session,
-                        reason=reason,  # type: ignore[arg-type]
+                        reason=reason,  # ty: ignore[invalid-argument-type]
                         text=playback.text,
                         audio_position_ms=playback.position_ms,
                     )

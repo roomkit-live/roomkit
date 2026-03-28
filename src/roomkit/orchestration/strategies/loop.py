@@ -166,7 +166,7 @@ class Loop(Orchestration):
                     max_iterations=max_iter,
                 )
 
-            producer.on_event = loop_on_event  # type: ignore[method-assign]
+            producer.on_event = loop_on_event  # ty: ignore[invalid-assignment]
 
         # Set initial state
         room = await kit.get_room(room_id)

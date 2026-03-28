@@ -14,7 +14,7 @@ class AzureAIProvider(OpenAIAIProvider):
     streaming are inherited.
     """
 
-    _config: AzureAIConfig  # type: ignore[assignment]
+    _config: AzureAIConfig
 
     def __init__(self, config: AzureAIConfig) -> None:
         try:

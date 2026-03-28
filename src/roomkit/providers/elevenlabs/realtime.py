@@ -155,7 +155,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             client,
             self._config.agent_id,
             requires_auth=self._config.requires_auth,
-            audio_interface=bridge,  # type: ignore[arg-type,unused-ignore]
+            audio_interface=bridge,
             config=init_config,
             callback_agent_response=self._make_agent_response_cb(session),
             callback_agent_response_correction=self._make_correction_cb(session),
@@ -168,7 +168,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
 
         # Start the SDK session (creates async task internally)
         try:
-            await conversation.start_session()  # type: ignore[no-untyped-call,unused-ignore]
+            await conversation.start_session()
         except Exception:
             self._sessions.pop(session.id, None)
             self._conversations.pop(session.id, None)

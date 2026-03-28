@@ -46,7 +46,7 @@ class SourceOpsMixin(HelpersMixin):
     _source_tasks: dict[str, asyncio.Task[None]]
 
     # Stub for cross-mixin call — implemented by InboundMixin in the MRO.
-    async def process_inbound(  # type: ignore[empty-body]
+    async def process_inbound(
         self, message: InboundMessage, *, room_id: str | None = None
     ) -> InboundResult: ...
 

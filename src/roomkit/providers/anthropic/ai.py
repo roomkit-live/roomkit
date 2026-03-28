@@ -201,19 +201,19 @@ class AnthropicAIProvider(AIProvider):
                     if (
                         hasattr(event, "type")
                         and event.type == "content_block_delta"
-                        and hasattr(event.delta, "type")
+                        and hasattr(event.delta, "type")  # ty: ignore[unresolved-attribute]
                     ):
-                        delta = event.delta
+                        delta = event.delta  # ty: ignore[unresolved-attribute]
                         if delta.type == "thinking_delta":
                             if first_token:
                                 self._record_ttfb(t0)
                                 first_token = False
-                            yield StreamThinkingDelta(thinking=delta.thinking)
+                            yield StreamThinkingDelta(thinking=delta.thinking)  # ty: ignore[unresolved-attribute]
                         elif delta.type == "text_delta":
                             if first_token:
                                 self._record_ttfb(t0)
                                 first_token = False
-                            yield StreamTextDelta(text=delta.text)
+                            yield StreamTextDelta(text=delta.text)  # ty: ignore[unresolved-attribute]
 
                 # Extract final message for tool calls, thinking, and usage
                 final = await stream.get_final_message()
@@ -222,9 +222,9 @@ class AnthropicAIProvider(AIProvider):
             for block in final.content:
                 if block.type == "tool_use":
                     yield StreamToolCall(
-                        id=block.id,
-                        name=block.name,
-                        arguments=block.input,
+                        id=block.id,  # ty: ignore[unresolved-attribute]
+                        name=block.name,  # ty: ignore[unresolved-attribute]
+                        arguments=block.input,  # ty: ignore[unresolved-attribute]
                     )
 
             usage: dict[str, int] = {

@@ -46,7 +46,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
             cert_kwargs: dict[str, Any] = {
                 "app_id": config.app_id,
                 "certificate_thumbprint": config.certificate_thumbprint,
-                "certificate_private_key": config.certificate_private_key.get_secret_value(),  # type: ignore[union-attr]
+                "certificate_private_key": config.certificate_private_key.get_secret_value(),  # ty: ignore[unresolved-attribute]
             }
             if config.tenant_id != "common":
                 cert_kwargs["channel_auth_tenant"] = config.tenant_id
@@ -62,7 +62,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
         else:
             settings_kwargs: dict[str, Any] = {
                 "app_id": config.app_id,
-                "app_password": config.app_password.get_secret_value(),  # type: ignore[union-attr]
+                "app_password": config.app_password.get_secret_value(),  # ty: ignore[unresolved-attribute]
             }
             if config.tenant_id != "common":
                 settings_kwargs["channel_auth_tenant"] = config.tenant_id
@@ -199,7 +199,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
 
         response = await self.adapter.create_conversation(
             ConversationReference(service_url=service_url),
-            params,
+            params,  # ty: ignore[invalid-argument-type]
         )
 
         if not response or not response.id:
@@ -267,7 +267,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
 
         response = await self.adapter.create_conversation(
             ConversationReference(service_url=service_url),
-            params,
+            params,  # ty: ignore[invalid-argument-type]
         )
 
         if not response or not response.id:

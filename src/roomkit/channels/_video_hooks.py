@@ -144,7 +144,7 @@ class VideoHooksMixin:
         if pipeline_cfg is not None:
             vision = getattr(pipeline_cfg, "vision", None)
             if vision is not None:
-                return vision  # type: ignore[no-any-return]
+                return vision
         return self._vision
 
     async def _analyze_frame(self, session: VideoSession, frame: VideoFrame, room_id: str) -> None:

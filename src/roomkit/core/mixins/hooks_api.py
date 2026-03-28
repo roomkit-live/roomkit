@@ -71,7 +71,7 @@ class HooksApiMixin(HelpersMixin):
     _identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]]
 
     # Stub for cross-mixin call — implemented by InboundMixin.
-    async def process_inbound(  # type: ignore[empty-body]
+    async def process_inbound(
         self, message: InboundMessage, *, room_id: str | None = None
     ) -> InboundResult: ...
 
@@ -106,7 +106,7 @@ class HooksApiMixin(HelpersMixin):
                     execution=execution,
                     fn=fn,
                     priority=priority,
-                    name=name or fn.__name__,
+                    name=name or fn.__name__,  # ty: ignore[unresolved-attribute]
                     timeout=timeout,
                     channel_types=channel_types,
                     channel_ids=channel_ids,

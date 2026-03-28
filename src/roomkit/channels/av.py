@@ -460,7 +460,7 @@ class AudioVideoChannel(VideoHooksMixin, VoiceChannel):
     def _send_avatar_frame_sync(self, session: VoiceSession, frame: VideoFrame) -> None:
         """Encode and send a single avatar frame (synchronous, thread-safe)."""
         with self._encoder_lock:
-            nals = self._avatar_encoder.encode(frame)  # type: ignore[union-attr]
+            nals = self._avatar_encoder.encode(frame)  # ty: ignore[unresolved-attribute]
         if not nals:
             return
 

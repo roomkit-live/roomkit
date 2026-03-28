@@ -59,7 +59,7 @@ class GreetingMixin(HelpersMixin):
     _greeting_gate_counts: dict[str, int]
 
     # Stub for cross-mixin call — implemented by RoomKit._get_router().
-    def _get_router(self) -> EventRouter: ...  # type: ignore[empty-body]
+    def _get_router(self) -> EventRouter: ...
 
     async def send_greeting(
         self,

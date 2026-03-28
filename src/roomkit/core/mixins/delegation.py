@@ -359,7 +359,7 @@ class DelegationMixin(HelpersMixin):
 
         try:
             agent_response = await run_agent_in_child_room(
-                self,  # type: ignore[arg-type]
+                self,  # ty: ignore[invalid-argument-type]
                 handle.child_room_id,
                 handle.task,
             )
@@ -422,7 +422,7 @@ class DelegationMixin(HelpersMixin):
                 await on_complete(result)
 
         await self._task_runner.submit(
-            self,  # type: ignore[arg-type]
+            self,  # ty: ignore[invalid-argument-type]
             handle,
             context=context,
             on_complete=_on_bg_complete,

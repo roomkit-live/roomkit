@@ -44,7 +44,7 @@ def build_delivery_hook_event(
         meta.update(extra_meta)
     return RoomEvent(
         room_id=room_id,
-        source=EventSource(channel_id="system", channel_type="system"),  # type: ignore[arg-type]
+        source=EventSource(channel_id="system", channel_type="system"),  # ty: ignore[invalid-argument-type]
         content=TextContent(body=content),
         type=EventType.MESSAGE,
         status=status,

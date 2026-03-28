@@ -128,7 +128,7 @@ class TwilioRCSProvider(RCSProvider):
         ) as exc:
             from roomkit.providers.http_errors import handle_http_error, parse_twilio_error
 
-            return handle_http_error(  # type: ignore[return-value]
+            return handle_http_error(  # ty: ignore[invalid-return-type]
                 exc,
                 self._httpx,
                 parse_400=parse_twilio_error,

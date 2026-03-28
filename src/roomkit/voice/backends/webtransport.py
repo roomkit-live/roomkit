@@ -395,7 +395,7 @@ class WebTransportBackend(VoiceBackend):
 
         backend = self
 
-        class AudioTransportProtocol(QuicConnectionProtocol):  # type: ignore[misc]
+        class AudioTransportProtocol(QuicConnectionProtocol):
             def __init__(self, *a: Any, **kw: Any) -> None:
                 super().__init__(*a, **kw)
                 self._h3 = H3Connection(self._quic, enable_webtransport=True)

@@ -512,7 +512,7 @@ class RealtimeAVBridge:
             return
 
         with state.encode_lock:
-            nals = self._encoder.encode(frame)  # type: ignore[union-attr]
+            nals = self._encoder.encode(frame)  # ty: ignore[unresolved-attribute]
             if not nals:
                 return
 

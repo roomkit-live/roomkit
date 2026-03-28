@@ -43,7 +43,7 @@ from roomkit.voice.base import VoiceSession, VoiceSessionState
 try:
     from websockets.exceptions import ConnectionClosed as _ConnectionClosed
 except ImportError:  # websockets not installed
-    _ConnectionClosed = ConnectionError  # type: ignore[assignment,misc]
+    _ConnectionClosed = ConnectionError  # ty: ignore[invalid-assignment]
 
 if TYPE_CHECKING:
     from roomkit.channels._realtime_skills import RealtimeSkillSupport
@@ -368,7 +368,7 @@ class RealtimeVoiceChannel(
         """Propagate telemetry to realtime provider."""
         telemetry = getattr(self, "_telemetry", None)
         if telemetry is not None:
-            self._provider._telemetry = telemetry  # type: ignore[attr-defined]
+            self._provider._telemetry = telemetry  # ty: ignore[unresolved-attribute]
 
     def set_framework(self, framework: RoomKit) -> None:
         """Set the framework reference for event routing.

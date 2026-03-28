@@ -20,8 +20,8 @@ try:
 
     HAS_SSE = True
 except ImportError:
-    httpx = None  # type: ignore[assignment]
-    aconnect_sse = None  # type: ignore[assignment]
+    httpx = None  # ty: ignore[invalid-assignment]
+    aconnect_sse = None  # ty: ignore[invalid-assignment]
     HAS_SSE = False
 
 logger = logging.getLogger("roomkit.sources.sse")

@@ -686,7 +686,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 state.live_session = None
                 reconnect_count = 0
             except Exception as exc:
-                if session.state == VoiceSessionState.ENDED:  # type: ignore[comparison-overlap]
+                if session.state == VoiceSessionState.ENDED:
                     return  # state may be mutated by close() during await
 
                 uptime = time.monotonic() - state.started_at if state.started_at else 0.0

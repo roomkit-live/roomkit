@@ -136,7 +136,7 @@ class AIStreamingMixin:
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
         """Return a streaming response handle (generator starts on consumption)."""
-        ai_context = await self._build_context(event, binding, context)  # type: ignore[attr-defined]
+        ai_context = await self._build_context(event, binding, context)  # ty: ignore[unresolved-attribute]
         return ChannelOutput(
             responded=True,
             response_stream=self._provider.generate_stream(ai_context),
@@ -146,7 +146,7 @@ class AIStreamingMixin:
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
         """Return a streaming response that handles tool calls between rounds."""
-        ai_context = await self._build_context(event, binding, context)  # type: ignore[attr-defined]
+        ai_context = await self._build_context(event, binding, context)  # ty: ignore[unresolved-attribute]
         return ChannelOutput(
             responded=True,
             response_stream=self._run_streaming_tool_loop(ai_context),

@@ -57,7 +57,7 @@ logger = logging.getLogger("roomkit.voice.realtime.fastrtc_transport")
 EmitType = tuple[int, "np.ndarray[Any, Any]"] | None
 
 
-class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc,unused-ignore]
+class _PassthroughHandler(AsyncStreamHandler):
     """No-VAD passthrough handler for speech-to-speech.
 
     Inherits from FastRTC's AsyncStreamHandler to relay audio bidirectionally
@@ -155,7 +155,7 @@ class _PassthroughHandler(AsyncStreamHandler):  # type: ignore[misc,unused-ignor
             self._transport._unregister_handler(self._webrtc_id)
             logger.info("WebRTC handler shutdown: webrtc_id=%s", self._webrtc_id)
 
-    def send_message(self, message: str) -> None:  # type: ignore[override,unused-ignore]
+    def send_message(self, message: str) -> None:
         """Send a message via the WebRTC DataChannel."""
         if self.channel:
             self.channel.send(message)

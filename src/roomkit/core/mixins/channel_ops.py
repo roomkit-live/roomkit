@@ -90,7 +90,7 @@ class ChannelOpsMixin(HelpersMixin):
         channel._trace_framework_handler = self._on_channel_trace
 
         # Propagate telemetry to all channels
-        channel._telemetry = self._telemetry  # type: ignore[attr-defined]
+        channel._telemetry = self._telemetry  # ty: ignore[unresolved-attribute]
 
         # Propagate realtime backend to AI channels for tool call events
         from roomkit.channels.ai import AIChannel
@@ -102,13 +102,13 @@ class ChannelOpsMixin(HelpersMixin):
 
         # Propagate telemetry to channel's sub-providers (AI, STT, TTS, etc.)
         if hasattr(channel, "_propagate_telemetry"):
-            channel._propagate_telemetry()
+            channel._propagate_telemetry()  # ty: ignore[call-non-callable]
 
         # Set framework reference on session-based channels for inbound routing
         from roomkit.channels.video import VideoChannel
 
         if isinstance(channel, (VoiceChannel, RealtimeVoiceChannel, VideoChannel)):
-            channel.set_framework(self)  # type: ignore[arg-type]
+            channel.set_framework(self)  # ty: ignore[invalid-argument-type]
 
         # Auto-greet: register global ON_SESSION_STARTED hook for agents
         from roomkit.channels.agent import Agent as AgentChannel

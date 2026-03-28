@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.channels.realtime_av")
 
 
-class RealtimeAudioVideoChannel(VideoHooksMixin, RealtimeVoiceChannel):  # type: ignore[misc]
+class RealtimeAudioVideoChannel(VideoHooksMixin, RealtimeVoiceChannel):
     """Realtime audio+video channel for providers that deliver both modalities.
 
     Extends :class:`RealtimeVoiceChannel` with video capabilities from
@@ -120,7 +120,7 @@ class RealtimeAudioVideoChannel(VideoHooksMixin, RealtimeVoiceChannel):  # type:
 
         # Deliver to all video taps (cast session as VideoSession-like)
         for tap in self._video_media_taps:
-            tap(session, frame)  # type: ignore[arg-type]
+            tap(session, frame)  # ty: ignore[invalid-argument-type]
 
         # Vision analysis (throttled)
         vision = self._vision_provider
@@ -139,7 +139,7 @@ class RealtimeAudioVideoChannel(VideoHooksMixin, RealtimeVoiceChannel):  # type:
         if loop is not None and loop.is_running():
             self._track_task(
                 loop,
-                self._analyze_frame(session, frame, room_id),  # type: ignore[arg-type]
+                self._analyze_frame(session, frame, room_id),  # ty: ignore[invalid-argument-type]
                 name=f"vision:{session.id}",
             )
 

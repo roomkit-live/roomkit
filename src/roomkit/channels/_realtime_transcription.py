@@ -153,7 +153,7 @@ class RealtimeTranscriptionMixin:
             transcription_event = RealtimeTranscriptionEvent(
                 session=session,
                 text=text,
-                role=role,  # type: ignore[arg-type]
+                role=role,  # ty: ignore[invalid-argument-type]
                 is_final=is_final,
                 was_barge_in=was_barge_in,
             )

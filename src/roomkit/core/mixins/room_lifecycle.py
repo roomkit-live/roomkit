@@ -117,7 +117,7 @@ class RoomLifecycleMixin(HelpersMixin):
                     agent.channel_id,
                     category=ChannelCategory.INTELLIGENCE,
                 )
-            await orch.install(self, room.id)  # type: ignore[arg-type]
+            await orch.install(self, room.id)  # ty: ignore[invalid-argument-type]
 
         await self._fire_lifecycle_hook(
             room.id,

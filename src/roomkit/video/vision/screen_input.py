@@ -208,7 +208,7 @@ def _get_scale_factor() -> tuple[float, float]:
     if system == "Darwin":
         try:
             import mss
-            import pyautogui  # type: ignore[import-untyped]
+            import pyautogui
 
             with mss.mss() as sct:
                 mon = sct.monitors[1]
@@ -222,7 +222,7 @@ def _get_scale_factor() -> tuple[float, float]:
             try:
                 import ctypes
 
-                ctypes.windll.shcore.SetProcessDpiAwareness(2)  # type: ignore[attr-defined]
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)  # ty: ignore[unresolved-attribute]
             except Exception:  # nosec B110 — best-effort DPI awareness
                 pass
             _dpi_initialized = True

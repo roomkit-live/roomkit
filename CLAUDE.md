@@ -46,7 +46,7 @@ uv run pytest tests/test_X.py -v # Run specific test file
 uv run ruff check src/ tests/    # Lint
 uv run ruff check --fix          # Lint with auto-fix
 uv run ruff format src/ tests/   # Format
-uv run mypy src/roomkit/         # Type check (strict mode)
+uv run ty check src/roomkit/     # Type check (ty)
 uv run bandit -r src/ -c pyproject.toml  # Security scan
 uv run pytest --cov=roomkit --cov-report=term-missing  # Coverage (80% minimum)
 make release VERSION=x.y.z      # Release workflow

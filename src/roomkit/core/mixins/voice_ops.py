@@ -147,7 +147,7 @@ class VoiceOpsMixin(HelpersMixin):
                 channel_id,
                 channel,
                 binding,
-                session=session,  # type: ignore[arg-type]
+                session=session,  # ty: ignore[invalid-argument-type]
                 participant_id=participant_id,
                 metadata=metadata,
                 backend=backend,
@@ -236,7 +236,7 @@ class VoiceOpsMixin(HelpersMixin):
         # Pull model: start listening (push model backends stream already)
         backend_ref = channel._backend
         if created and backend_ref is not None and hasattr(backend_ref, "start_listening"):
-            await backend_ref.start_listening(session)
+            await backend_ref.start_listening(session)  # ty: ignore[call-non-callable]
 
         await self._emit_framework_event(
             "voice_session_started",
@@ -274,7 +274,7 @@ class VoiceOpsMixin(HelpersMixin):
 
         channel.bind_session(session, room_id, binding)
         self._wire_video_recording(room_id, channel_id, session, channel)
-        return session  # type: ignore[no-any-return]
+        return session
 
     async def leave(self, session: VoiceSession | VideoSession) -> None:
         """Remove a participant from a room.
@@ -288,13 +288,13 @@ class VoiceOpsMixin(HelpersMixin):
         channel = self._channels.get(session.channel_id)
 
         if isinstance(channel, VoiceChannel):
-            await self._leave_voice(session, channel)  # type: ignore[arg-type]
+            await self._leave_voice(session, channel)  # ty: ignore[invalid-argument-type]
             return
 
         from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 
         if isinstance(channel, RealtimeVoiceChannel):
-            await channel.end_session(session)  # type: ignore[arg-type]
+            await channel.end_session(session)  # ty: ignore[invalid-argument-type]
             return
 
         from roomkit.channels.video import VideoChannel
@@ -330,7 +330,7 @@ class VoiceOpsMixin(HelpersMixin):
         backend = channel._backend
         if backend:
             if hasattr(backend, "stop_listening"):
-                await backend.stop_listening(session)
+                await backend.stop_listening(session)  # ty: ignore[call-non-callable]
             await backend.disconnect(session)
 
         await self._emit_framework_event(
@@ -386,7 +386,7 @@ class VoiceOpsMixin(HelpersMixin):
                 DeprecationWarning,
                 stacklevel=2,
             )
-        return await self.join(  # type: ignore[return-value]
+        return await self.join(  # ty: ignore[invalid-return-type]
             room_id,
             channel_id,
             participant_id=participant_id,
@@ -426,7 +426,7 @@ class VoiceOpsMixin(HelpersMixin):
             DeprecationWarning,
             stacklevel=2,
         )
-        return await self.join(  # type: ignore[return-value]
+        return await self.join(  # ty: ignore[invalid-return-type]
             room_id,
             channel_id,
             participant_id=participant_id,

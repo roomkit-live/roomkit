@@ -198,7 +198,7 @@ class OutboundAudioPacer:
             # Clear interrupt flag at the start of each new audio burst
             self._interrupt_event.clear()
 
-            audio: bytes = item  # type: ignore[assignment]
+            audio: bytes = item  # ty: ignore[invalid-assignment]
 
             # --- Pre-buffer phase: accumulate ~prebuffer_ms before first send ---
             buf = bytearray(audio)

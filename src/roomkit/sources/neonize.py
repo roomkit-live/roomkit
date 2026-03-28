@@ -27,7 +27,7 @@ try:
 
     HAS_NEONIZE = True
 except ImportError:
-    NewAClient = None
+    NewAClient = None  # ty: ignore[invalid-assignment]
     HAS_NEONIZE = False
 
 logger = logging.getLogger("roomkit.sources.neonize")
@@ -463,7 +463,7 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
                 else:
                     message = result
                 if message is not None:
-                    await emit(message)
+                    await emit(message)  # ty: ignore[invalid-argument-type]
                     self._record_message()
             except Exception:
                 logger.warning("Error processing message", exc_info=True)

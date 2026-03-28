@@ -530,9 +530,9 @@ def mount_fastrtc_voice(
     """
     from fastrtc import AsyncStreamHandler, Stream
 
-    backend._session_factory = session_factory  # type: ignore[attr-defined]
+    backend._session_factory = session_factory  # ty: ignore[unresolved-attribute]
 
-    class AudioPassthroughHandler(AsyncStreamHandler):  # type: ignore[misc,unused-ignore]
+    class AudioPassthroughHandler(AsyncStreamHandler):
         """Passes raw audio frames to the backend's on_audio_received callback.
 
         Each connection gets its own handler instance via ``copy()``.
@@ -610,11 +610,11 @@ def mount_fastrtc_voice(
 
             # Create session if not exists and we have a factory
             session = backend._find_session_by_websocket_id(connection_id)
-            if not session and backend._session_factory:  # type: ignore[attr-defined]
+            if not session and backend._session_factory:  # ty: ignore[unresolved-attribute]
                 try:
                     token = auth_context.set(self._auth_meta)
                     try:
-                        session = await backend._session_factory(connection_id)  # type: ignore[attr-defined]
+                        session = await backend._session_factory(connection_id)  # ty: ignore[unresolved-attribute]
                     finally:
                         auth_context.reset(token)
                     if session:

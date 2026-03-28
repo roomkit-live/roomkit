@@ -163,7 +163,7 @@ class DeepgramSTTProvider(STTProvider):
             import httpx
 
             async with httpx.AsyncClient() as fetch_client:
-                resp = await fetch_client.get(audio.url)
+                resp = await fetch_client.get(audio.url)  # ty: ignore[invalid-argument-type]
                 resp.raise_for_status()
                 audio_data = resp.content
         else:

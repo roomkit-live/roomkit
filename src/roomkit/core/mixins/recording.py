@@ -85,7 +85,7 @@ class RecordingMixin:
         if channel._recording is not None and not channel._recording.audio:
             return
 
-        sample_rate = session.sample_rate if hasattr(session, "sample_rate") else 16000
+        sample_rate: int = session.sample_rate if hasattr(session, "sample_rate") else 16000  # ty: ignore[invalid-assignment]
         mgr = self._room_recorder_mgr
 
         track = self._make_audio_track(

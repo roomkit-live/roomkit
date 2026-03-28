@@ -150,7 +150,7 @@ class GeminiAIProvider(AIProvider):
         # Thinking level for Gemini 3.1 models
         if self._config.thinking_level:
             gen_config.thinking_config = self._types.ThinkingConfig(
-                thinking_level=self._config.thinking_level,  # type: ignore[arg-type]
+                thinking_level=self._config.thinking_level,  # ty: ignore[invalid-argument-type]
             )
 
         if context.system_prompt:
@@ -201,7 +201,7 @@ class GeminiAIProvider(AIProvider):
         usage: dict[str, int] = {}
 
         try:
-            response_stream = await self._client.aio.models.generate_content_stream(
+            response_stream = await self._client.aio.models.generate_content_stream(  # ty: ignore[unresolved-attribute]
                 model=self._config.model,
                 contents=contents,
                 config=gen_config,
@@ -292,4 +292,4 @@ class GeminiAIProvider(AIProvider):
 
     async def close(self) -> None:
         """Release the genai client reference."""
-        self._client = None  # type: ignore[assignment]
+        self._client = None

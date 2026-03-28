@@ -54,7 +54,7 @@ logger = logging.getLogger("roomkit.video.fastrtc")
 __all__ = ["FastRTCVideoBackend", "mount_fastrtc_av"]
 
 
-class FastRTCVideoBackend(FastRTCVoiceBackend, VideoBackend):  # type: ignore[misc]
+class FastRTCVideoBackend(FastRTCVoiceBackend, VideoBackend):
     """FastRTC backend for combined audio + video WebRTC transport.
 
     Extends :class:`FastRTCVoiceBackend` with a parallel video path.
@@ -107,7 +107,7 @@ class FastRTCVideoBackend(FastRTCVoiceBackend, VideoBackend):  # type: ignore[mi
     # Session lifecycle
     # -------------------------------------------------------------------------
 
-    async def connect(  # type: ignore[override]
+    async def connect(
         self,
         room_id: str,
         participant_id: str,
@@ -148,7 +148,7 @@ class FastRTCVideoBackend(FastRTCVoiceBackend, VideoBackend):  # type: ignore[mi
 
         return voice_session
 
-    async def disconnect(self, session: VoiceSession) -> None:  # type: ignore[override]
+    async def disconnect(self, session: VoiceSession) -> None:
         sid = session.id
 
         # Clean up video state
@@ -284,11 +284,11 @@ class FastRTCVideoBackend(FastRTCVoiceBackend, VideoBackend):  # type: ignore[mi
     def add_video_tap(self, callback: VideoReceivedCallback) -> None:
         self._video_taps.append(callback)
 
-    def on_session_ready(self, callback: VideoSessionReadyCallback) -> None:  # type: ignore[override]
+    def on_session_ready(self, callback: VideoSessionReadyCallback) -> None:
         """Register callback for video session ready events."""
         self._video_session_ready_callbacks.append(callback)
 
-    def on_client_disconnected(self, callback: VideoDisconnectCallback) -> None:  # type: ignore[override]
+    def on_client_disconnected(self, callback: VideoDisconnectCallback) -> None:
         self._video_disconnect_callbacks.append(callback)
 
     # -------------------------------------------------------------------------
@@ -335,9 +335,9 @@ def mount_fastrtc_av(
     """
     from fastrtc import AsyncAudioVideoStreamHandler, Stream
 
-    backend._session_factory = session_factory  # type: ignore[attr-defined]
+    backend._session_factory = session_factory  # ty: ignore[unresolved-attribute]
 
-    class AVPassthroughHandler(AsyncAudioVideoStreamHandler):  # type: ignore[misc,unused-ignore]
+    class AVPassthroughHandler(AsyncAudioVideoStreamHandler):
         """Passes raw audio + video frames to the backend's callbacks.
 
         Each connection gets its own handler instance via ``copy()``.
@@ -421,11 +421,11 @@ def mount_fastrtc_av(
 
             # Create session if not exists and we have a factory
             session = backend._find_session_by_websocket_id(connection_id)
-            if not session and backend._session_factory:  # type: ignore[attr-defined]
+            if not session and backend._session_factory:  # ty: ignore[unresolved-attribute]
                 try:
                     token = auth_context.set(self._auth_meta)
                     try:
-                        session = await backend._session_factory(connection_id)  # type: ignore[attr-defined]
+                        session = await backend._session_factory(connection_id)  # ty: ignore[unresolved-attribute]
                     finally:
                         auth_context.reset(token)
                     if session:

@@ -105,7 +105,7 @@ def build_inbound_content(
     if body:
         parts.append(TextContent(body=body))
     parts.extend(media_parts)
-    return CompositeContent(parts=parts)  # type: ignore[arg-type]
+    return CompositeContent(parts=parts)  # ty: ignore[invalid-argument-type]
 
 
 @dataclass

@@ -141,7 +141,7 @@ def make_text_frame(
     """
     from roomkit.video.utils import make_text_frame as _make
 
-    return _make(text, **kwargs)  # type: ignore[arg-type]
+    return _make(text, **kwargs)  # ty: ignore[invalid-argument-type]
 
 
 def get_local_video_backend() -> type:

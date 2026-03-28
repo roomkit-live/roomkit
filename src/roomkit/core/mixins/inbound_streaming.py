@@ -71,7 +71,7 @@ class InboundStreamingMixin(HelpersMixin):
     _max_chain_depth: int
 
     # Stub for cross-mixin call — implemented by RoomKit._get_router().
-    def _get_router(self) -> EventRouter: ...  # type: ignore[empty-body]
+    def _get_router(self) -> EventRouter: ...
 
     async def _handle_streaming_response(
         self,

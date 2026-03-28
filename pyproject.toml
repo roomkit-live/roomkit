@@ -98,8 +98,8 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
-    "mypy>=1.11",
     "ruff>=0.6",
+    "ty>=0.0.26",
     "bandit>=1.7",
     "pre-commit>=3.8",
     "roomkit[providers]",
@@ -186,183 +186,25 @@ filterwarnings = [
     "ignore::ResourceWarning",
 ]
 
-[tool.mypy]
-python_version = "3.12"
-strict = true
-warn_return_any = true
-warn_unused_configs = true
+[tool.ty.environment]
+python-version = "3.12"
 
-[[tool.mypy.overrides]]
-module = ["opentelemetry", "opentelemetry.*"]
-ignore_missing_imports = true
+[tool.ty.rules]
+# Optional dependencies not installed in the dev environment
+"unresolved-import" = "ignore"
+# ABC stubs with `...` body and non-None return type are fine
+"empty-body" = "ignore"
 
-[[tool.mypy.overrides]]
-module = ["google", "google.genai", "google.genai.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["aic_sdk", "aic_sdk.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["sherpa_onnx", "sherpa_onnx.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["qwen_tts", "qwen_tts.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["qwen_asr", "qwen_asr.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["neutts", "neutts.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["perth", "perth.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["torch", "torch.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["aiortp", "aiortp.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["aiosipua", "aiosipua.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["fastrtc", "fastrtc.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["aec_audio_processing", "aec_audio_processing.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["sounddevice", "sounddevice.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["numpy", "numpy.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["onnxruntime", "onnxruntime.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["transformers", "transformers.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["fastapi", "fastapi.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["botbuilder", "botbuilder.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["botframework", "botframework.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["asyncpg", "asyncpg.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["gradium", "gradium.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["neonize", "neonize.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["mistralai", "mistralai.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["pyroscope", "pyroscope.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["mcp", "mcp.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["aioquic", "aioquic.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["starlette", "starlette.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["mss", "mss.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["cv2", "cv2.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["PIL", "PIL.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["anam", "anam.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["av", "av.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["ultralytics", "ultralytics.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["deepgram", "deepgram.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["musetalk", "musetalk.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["elevenlabs", "elevenlabs.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["sphn", "sphn.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["soxr", "soxr.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["redis", "redis.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["rich", "rich.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["roomkit.channels._realtime_vad"]
-disable_error_code = ["attr-defined"]
-
-[[tool.mypy.overrides]]
-module = ["roomkit.sources.neonize"]
-disallow_untyped_decorators = false
+[[tool.ty.overrides]]
+# Realtime provider and video backend implementations intentionally
+# override ABC callback signatures (accept provider-specific arguments).
+include = [
+    "src/roomkit/providers/*/realtime.py",
+    "src/roomkit/providers/*/*/realtime.py",
+    "src/roomkit/video/backends/*.py",
+]
+[tool.ty.overrides.rules]
+"invalid-method-override" = "ignore"
 
 [tool.uv]
 # neutts, qwen-tts and qwen-asr pin incompatible transformers versions

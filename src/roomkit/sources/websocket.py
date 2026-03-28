@@ -21,8 +21,8 @@ try:
 
     HAS_WEBSOCKETS = True
 except ImportError:
-    websockets = None  # type: ignore[assignment]
-    ClientConnection = None  # type: ignore[assignment, misc]
+    websockets = None  # ty: ignore[invalid-assignment]
+    ClientConnection = None  # ty: ignore[invalid-assignment]
     HAS_WEBSOCKETS = False
 
 logger = logging.getLogger("roomkit.sources.websocket")

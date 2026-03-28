@@ -189,7 +189,7 @@ class ConversationPipeline:
                 kit,
                 agents,
                 handler,
-                voice_channel_id,  # type: ignore[arg-type]
+                voice_channel_id,  # ty: ignore[invalid-argument-type]
                 greet_on_handoff=greet_on_handoff,
                 greeting_prompt=greeting_prompt,
             )
@@ -202,7 +202,7 @@ class ConversationPipeline:
             if greet_on_handoff:
                 self._register_greet_hooks(
                     kit,
-                    voice_channel_id=voice_channel_id,  # type: ignore[arg-type]
+                    voice_channel_id=voice_channel_id,  # ty: ignore[invalid-argument-type]
                     greeting_prompt=greeting_prompt,
                     farewell_prompt=farewell_prompt,
                     hook_priority=hook_priority,

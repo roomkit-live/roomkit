@@ -44,7 +44,7 @@ from roomkit.voice.base import VoiceSession
 logger = logging.getLogger("roomkit.video.rtp")
 
 
-class RTPVideoBackend(RTPVoiceBackend, VideoBackend):  # type: ignore[misc]
+class RTPVideoBackend(RTPVoiceBackend, VideoBackend):
     """RTP backend for combined audio + video transport.
 
     Extends :class:`RTPVoiceBackend` with a parallel video RTP path.
@@ -100,7 +100,7 @@ class RTPVideoBackend(RTPVoiceBackend, VideoBackend):  # type: ignore[misc]
     # Session lifecycle
     # -------------------------------------------------------------------------
 
-    async def connect(  # type: ignore[override]
+    async def connect(
         self,
         room_id: str,
         participant_id: str,
@@ -163,7 +163,7 @@ class RTPVideoBackend(RTPVoiceBackend, VideoBackend):  # type: ignore[misc]
 
         return voice_session
 
-    async def disconnect(self, session: VoiceSession) -> None:  # type: ignore[override]
+    async def disconnect(self, session: VoiceSession) -> None:
         sid = session.id
 
         video_rtp = self._video_rtp_sessions.pop(sid, None)
@@ -272,11 +272,11 @@ class RTPVideoBackend(RTPVoiceBackend, VideoBackend):  # type: ignore[misc]
     def add_video_tap(self, callback: VideoReceivedCallback) -> None:
         self._video_taps.append(callback)
 
-    def on_session_ready(self, callback: VideoSessionReadyCallback) -> None:  # type: ignore[override]
+    def on_session_ready(self, callback: VideoSessionReadyCallback) -> None:
         """Register callback for video session ready events."""
         self._video_session_ready_callbacks.append(callback)
 
-    def on_client_disconnected(self, callback: VideoDisconnectCallback) -> None:  # type: ignore[override]
+    def on_client_disconnected(self, callback: VideoDisconnectCallback) -> None:
         self._video_disconnect_callbacks.append(callback)
 
     # -------------------------------------------------------------------------

@@ -259,7 +259,7 @@ class Supervisor(Orchestration):
                 workers,
             )
 
-        supervisor.on_event = auto_delegate_on_event  # type: ignore[method-assign]
+        supervisor.on_event = auto_delegate_on_event  # ty: ignore[invalid-assignment]
 
     def _install_async_auto_delegate(self, kit: RoomKit, room_id: str) -> None:
         """Inject delegate_workers tool into RealtimeVoiceChannel.
@@ -515,7 +515,7 @@ class Supervisor(Orchestration):
                         pending.discard(_wid)
                         original_set(r)
 
-                    delegated._set_result = _patched_set  # type: ignore[assignment]
+                    delegated._set_result = _patched_set  # ty: ignore[invalid-assignment]
 
                     return json.dumps(
                         {
@@ -620,7 +620,7 @@ async def _two_pass_delegate(
     logger.debug("Pass 1 refined task: %s", refined_task[:200] if refined_task else "(empty)")
 
     if not refined_task:
-        return pass1_output  # type: ignore[no-any-return]
+        return pass1_output
 
     # Run workers with the refined task
     worker_results = await _run_workers(kit, room_id, strategy, workers, refined_task)
@@ -642,7 +642,7 @@ async def _two_pass_delegate(
     except Exception:
         logger.warning("Failed to ingest worker results", exc_info=True)
 
-    return await original_on_event(results_event, binding, context)  # type: ignore[no-any-return]
+    return await original_on_event(results_event, binding, context)
 
 
 async def _one_pass_delegate(
@@ -663,7 +663,7 @@ async def _one_pass_delegate(
         user_message = event.content.body
 
     if not user_message:
-        return await original_on_event(event, binding, context)  # type: ignore[no-any-return]
+        return await original_on_event(event, binding, context)
 
     # Run workers with the raw user message
     worker_results = await _run_workers(kit, room_id, strategy, workers, user_message)
@@ -689,7 +689,7 @@ async def _one_pass_delegate(
     except Exception:
         logger.warning("Failed to ingest worker results", exc_info=True)
 
-    return await original_on_event(results_event, binding, context)  # type: ignore[no-any-return]
+    return await original_on_event(results_event, binding, context)
 
 
 # ---------------------------------------------------------------------------
@@ -710,7 +710,7 @@ async def _run_workers(
     else:
         result_json = await _run_parallel(kit, room_id, workers, task_desc)
     parsed = json.loads(result_json)
-    return parsed.get("results", [])  # type: ignore[no-any-return]
+    return parsed.get("results", [])
 
 
 async def _run_sequential(

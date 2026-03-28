@@ -98,7 +98,7 @@ class DeliverMixin(HelpersMixin):
 
         # In-process path (no backend configured)
         ctx = DeliveryContext(
-            kit=self,  # type: ignore[arg-type]
+            kit=self,  # ty: ignore[invalid-argument-type]
             room_id=room_id,
             content=content,
             channel_id=channel_id,

@@ -353,7 +353,7 @@ class WebSocketVideoBackend(VideoBackend):
                 if asyncio.iscoroutine(result):
                     await result
 
-        return session  # type: ignore[no-any-return]
+        return session
 
     async def _on_client_disconnect(self, connection_id: str) -> None:
         """Handle a WebSocket client disconnection."""
@@ -417,7 +417,7 @@ def mount_websocket_video(
 
     from fastapi import WebSocket, WebSocketDisconnect
 
-    @app.websocket(path)  # type: ignore[untyped-decorator,unused-ignore]
+    @app.websocket(path)
     async def video_ws(websocket: WebSocket) -> None:
         await websocket.accept()
         connection_id = uuid4().hex

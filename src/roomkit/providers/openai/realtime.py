@@ -329,8 +329,9 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
     @staticmethod
     def _build_turn_detection(td_type: str | None, pc: dict[str, Any]) -> dict[str, Any] | None:
         """Build the turn_detection dict for the GA session config."""
+        td: dict[str, Any]
         if td_type == "semantic_vad":
-            td: dict[str, Any] = {"type": "semantic_vad"}
+            td = {"type": "semantic_vad"}
             if pc.get("eagerness"):
                 td["eagerness"] = pc["eagerness"]
             if pc.get("interrupt_response") is not None:

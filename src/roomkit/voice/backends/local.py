@@ -849,13 +849,13 @@ class LocalAudioBackend(VoiceBackend):
                     channels=self._channels,
                     sample_width=2,
                 )
-                ref_frame = self._aec_resampler.resample(  # type: ignore[union-attr]
+                ref_frame = self._aec_resampler.resample(  # ty: ignore[unresolved-attribute]
                     out_frame,
                     self._input_sample_rate,
                     self._channels,
                     2,
                 )
-                self._aec.feed_reference(ref_frame)  # type: ignore[union-attr]
+                self._aec.feed_reference(ref_frame)  # ty: ignore[unresolved-attribute]
         else:
             block = self._aec_block_bytes
             while len(self._ref_buffer) >= block:
@@ -867,4 +867,4 @@ class LocalAudioBackend(VoiceBackend):
                     channels=self._channels,
                     sample_width=2,
                 )
-                self._aec.feed_reference(frame)  # type: ignore[union-attr]
+                self._aec.feed_reference(frame)  # ty: ignore[unresolved-attribute]

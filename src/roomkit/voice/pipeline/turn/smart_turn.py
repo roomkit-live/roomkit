@@ -162,9 +162,7 @@ class SmartTurnDetector(TurnDetector):
 
         from transformers import WhisperFeatureExtractor
 
-        self._feature_extractor = WhisperFeatureExtractor(  # type: ignore[no-untyped-call,unused-ignore]
-            chunk_length=_CHUNK_SECONDS
-        )
+        self._feature_extractor = WhisperFeatureExtractor(chunk_length=_CHUNK_SECONDS)
 
     # ------------------------------------------------------------------
     # Audio helpers

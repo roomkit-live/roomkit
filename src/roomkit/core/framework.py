@@ -256,8 +256,8 @@ class RoomKit(
             self._hook_engine._suppressed_triggers = telemetry.suppressed_hook_triggers
             # Propagate global metadata to the provider for searchable tags
             if telemetry.metadata and hasattr(self._telemetry, "_metadata"):
-                self._telemetry._metadata = telemetry.metadata
-        self._store._telemetry = self._telemetry  # type: ignore[attr-defined]
+                self._telemetry._metadata = telemetry.metadata  # ty: ignore[invalid-assignment]
+        self._store._telemetry = self._telemetry  # ty: ignore[invalid-assignment]
         # Default orchestration strategy
         self._default_orchestration = orchestration
         # Room-level media recording

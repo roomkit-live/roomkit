@@ -176,7 +176,7 @@ class CLIChannel(Channel):
             try:
                 line = await loop.run_in_executor(
                     executor,
-                    lambda p=prompt: input(p),  # type: ignore[misc]
+                    lambda p=prompt: input(p),
                 )
             except (EOFError, KeyboardInterrupt):
                 print()

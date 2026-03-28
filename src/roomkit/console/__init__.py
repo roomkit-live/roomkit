@@ -21,7 +21,7 @@ try:
 except ImportError as _exc:
     _import_error: ImportError | None = _exc
 
-    class RoomKitConsole:  # type: ignore[no-redef]
+    class RoomKitConsole:
         """Stub that raises ``ImportError`` when ``rich`` is not installed."""
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:

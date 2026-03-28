@@ -152,7 +152,7 @@ class AIGenerationMixin:
         """Generate an AI response, executing tool calls if needed."""
         from roomkit.telemetry.context import get_current_span
 
-        ai_context = await self._build_context(event, binding, context)  # type: ignore[attr-defined]
+        ai_context = await self._build_context(event, binding, context)  # ty: ignore[unresolved-attribute]
         telemetry = self._telemetry_provider
         _t0 = time.monotonic()
         span_id = telemetry.start_span(

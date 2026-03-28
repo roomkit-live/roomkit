@@ -67,7 +67,7 @@ def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
 def _parse_yaml_or_fallback(fm_text: str) -> dict[str, str]:
     """Try yaml.safe_load, fall back to regex key-value parsing."""
     try:
-        import yaml  # type: ignore[import-untyped]
+        import yaml
 
         result = yaml.safe_load(fm_text)
         if isinstance(result, dict):

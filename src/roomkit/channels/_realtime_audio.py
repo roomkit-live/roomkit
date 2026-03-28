@@ -139,6 +139,7 @@ class RealtimeAudioMixin:
         audio_track = RecordingTrack(
             id=f"audio:{session.id}",
             kind="audio",
+            channel_id=self.channel_id,  # ty: ignore[unresolved-attribute]
             codec="pcm_s16le",
             sample_rate=self._output_sample_rate,
         )
