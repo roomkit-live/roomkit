@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from roomkit.channels._skill_constants import SKILL_INFRA_TOOL_NAMES
 from roomkit.providers.ai.base import AITool
@@ -42,7 +43,7 @@ class AIToolPolicyMixin:
 
     _tool_policy: ToolPolicy | None
     _skills: SkillRegistry | None
-    _get_loop_ctx: Any  # provided by AISteeringMixin — see ToolPolicyHost
+    _get_loop_ctx: Callable[[], _ToolLoopContext]
 
     def _resolve_participant_role(self, event: RoomEvent, context: RoomContext) -> str | None:
         """Look up the participant role for the event source."""

@@ -12,7 +12,6 @@ from roomkit.telemetry.context import reset_span, set_current_span
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
-    from roomkit.models.channel import ChannelBinding
     from roomkit.voice.base import VoiceSession
     from roomkit.voice.pipeline.diarization.base import DiarizationResult
 
@@ -29,8 +28,6 @@ class VoiceHookHost(Protocol):
             the channel is registered).  The mixin accesses
             ``_framework._build_context``, ``_framework.hook_engine``,
             and ``_framework._emit_framework_event``.
-        _session_bindings: Maps session IDs to ``(room_id, ChannelBinding)``
-            tuples for resolving which room a session belongs to.
 
     Optional attributes accessed via ``getattr`` with fallbacks:
         _voice_session_spans: Per-session telemetry span IDs
@@ -40,7 +37,6 @@ class VoiceHookHost(Protocol):
 
     channel_id: str
     _framework: RoomKit | None
-    _session_bindings: dict[str, tuple[str, ChannelBinding]]
 
 
 class VoiceHooksMixin:
@@ -51,7 +47,6 @@ class VoiceHooksMixin:
 
     channel_id: str
     _framework: RoomKit | None
-    _session_bindings: dict[str, tuple[str, ChannelBinding]]
 
     @contextmanager
     def _voice_span_ctx(self, session: VoiceSession) -> Generator[None, None, None]:

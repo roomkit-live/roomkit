@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
     from roomkit.voice.pipeline.config import AudioPipelineConfig
+    from roomkit.voice.pipeline.engine import AudioPipeline
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 # Tool handler: async callable (name, arguments) -> result string
@@ -210,7 +211,7 @@ class RealtimeVoiceChannel(
         self._tool_result_max_length = tool_result_max_length
         self._framework: RoomKit | None = None
         self._pipeline_config = pipeline
-        self._pipeline: Any = None  # AudioPipeline | None
+        self._pipeline: AudioPipeline | None = None
 
         # Skills support — skill defs are composed into the tool list at
         # session-start / reconfigure time, NOT stored in self._tools, to

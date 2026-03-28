@@ -10,7 +10,6 @@ from roomkit.models.enums import ChannelType, HookTrigger
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
-    from roomkit.models.channel import ChannelBinding
     from roomkit.video.base import VideoSession
     from roomkit.video.video_frame import VideoFrame
     from roomkit.video.vision.base import VisionProvider, VisionResult
@@ -36,8 +35,6 @@ class VideoHookHost(Protocol):
             :class:`~roomkit.video.vision.base.VisionResult`.
         _last_vision_ts: Per-session timestamp (monotonic ms) of the last
             completed vision analysis — used for interval gating.
-        _session_bindings: Maps session IDs to ``(room_id, ChannelBinding)``
-            tuples.
 
     Optional attributes accessed via ``getattr`` with fallbacks:
         _video_pipeline_config: Video pipeline config (may have ``.vision``).
@@ -51,7 +48,6 @@ class VideoHookHost(Protocol):
     _vision: VisionProvider | None
     _last_vision_results: dict[str, VisionResult]
     _last_vision_ts: dict[str, float]
-    _session_bindings: dict[str, tuple[str, ChannelBinding]]
 
 
 class VideoHooksMixin:
@@ -65,7 +61,6 @@ class VideoHooksMixin:
     _vision: VisionProvider | None
     _last_vision_results: dict[str, VisionResult]
     _last_vision_ts: dict[str, float]
-    _session_bindings: dict[str, tuple[str, ChannelBinding]]
 
     async def _fire_session_hook(
         self, trigger: HookTrigger, session: VideoSession | VoiceSession, room_id: str
