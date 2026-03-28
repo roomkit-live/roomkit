@@ -8,6 +8,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.models.enums import TaskStatus
 from roomkit.tasks.base import OnCompleteCallback, TaskRunner
 from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
@@ -37,18 +38,9 @@ class InMemoryTaskRunner(TaskRunner):
             self._execute(kit, task, context=context, on_complete=on_complete),
             name=f"delegate:{task.id}",
         )
-        bg.add_done_callback(self._task_done)
+        bg.add_done_callback(log_task_exception)
         self._tasks[task.id] = bg
         self._handles[task.id] = task
-
-    @staticmethod
-    def _task_done(task: asyncio.Task[None]) -> None:
-        """Log exceptions from background delegate tasks."""
-        if task.cancelled():
-            return
-        exc = task.exception()
-        if exc is not None:
-            logger.error("Delegate task %s failed: %s", task.get_name(), exc)
 
     async def cancel(self, task_id: str) -> bool:
         handle = self._handles.get(task_id)

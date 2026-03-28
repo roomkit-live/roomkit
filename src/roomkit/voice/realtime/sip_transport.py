@@ -19,6 +19,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.backends.base import (
     AudioReceivedCallback,
     TransportDisconnectCallback,
@@ -209,7 +210,8 @@ class SIPRealtimeTransport(VoiceBackend):
                     except RuntimeError:
                         pass
                     else:
-                        loop.create_task(result)
+                        task = loop.create_task(result)
+                        task.add_done_callback(log_task_exception)
             except Exception:
                 logger.exception("Error in audio callback for session %s", session.id)
 
@@ -224,6 +226,7 @@ class SIPRealtimeTransport(VoiceBackend):
                     except RuntimeError:
                         pass
                     else:
-                        loop.create_task(result)
+                        task = loop.create_task(result)
+                        task.add_done_callback(log_task_exception)
             except Exception:
                 logger.exception("Error in disconnect callback for session %s", session.id)

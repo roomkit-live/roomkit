@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -36,7 +37,8 @@ def _safe_invoke(cb: TraceCallback, trace: ProtocolTrace) -> None:
         result = cb(trace)
         if inspect.iscoroutine(result):
             with contextlib.suppress(RuntimeError):
-                asyncio.get_running_loop().create_task(result)
+                task = asyncio.get_running_loop().create_task(result)
+                task.add_done_callback(log_task_exception)
     except Exception:
         _trace_logger.exception("Trace callback error")
 

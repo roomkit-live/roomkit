@@ -120,9 +120,12 @@ class VideoBackend(ABC):
         """
         import asyncio
 
+        from roomkit.core.task_utils import log_task_exception
+
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self.send_video(session, frame.data))
+            task = loop.create_task(self.send_video(session, frame.data))
+            task.add_done_callback(log_task_exception)
         except RuntimeError:
             logger.warning(
                 "send_video_sync: no event loop for session %s",

@@ -55,6 +55,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.base import (
     AudioReceivedCallback,
@@ -72,12 +73,6 @@ _HEADER_SIZE = _HEADER_STRUCT.size
 
 # Session factory type: connection_id -> VoiceSession
 SessionFactory = Callable[[str], Any]
-
-
-def _log_task_exception(task: asyncio.Task[Any]) -> None:
-    """Log exceptions from fire-and-forget tasks to avoid 'never retrieved'."""
-    if not task.cancelled() and task.exception():
-        logger.error("WebTransport task failed: %s", task.exception())
 
 
 class WebTransportBackend(VoiceBackend):
@@ -424,7 +419,7 @@ class WebTransportBackend(VoiceBackend):
                     if stream_id in self._wt_sessions:
                         self._wt_sessions.discard(stream_id)
                         task = asyncio.ensure_future(backend._on_client_disconnect(stream_id))
-                        task.add_done_callback(_log_task_exception)
+                        task.add_done_callback(log_task_exception)
 
             def _handle_headers(self, event: Any) -> None:
                 headers = dict(event.headers)

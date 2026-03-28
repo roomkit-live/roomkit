@@ -37,6 +37,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from roomkit.core.task_utils import log_task_exception
+
 logger = logging.getLogger("roomkit.orchestration.status_bus")
 
 
@@ -210,14 +212,7 @@ class StatusBus:
                 persist_path=persist_path,
             )
 
-    @staticmethod
-    def _log_task_exception(task: asyncio.Task[None]) -> None:
-        """Log unhandled exceptions from fire-and-forget publish tasks."""
-        if task.cancelled():
-            return
-        exc = task.exception()
-        if exc is not None:
-            logger.error("StatusBus publish task failed: %s", exc, exc_info=exc)
+    _log_task_exception = staticmethod(log_task_exception)
 
     def post(
         self,

@@ -14,6 +14,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core.hooks import HookRegistration
+from roomkit.core.task_utils import log_task_exception
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType as _ChannelType
@@ -333,7 +334,7 @@ class Supervisor(Orchestration):
             _running = True
 
             # Launch workers in background — tool returns immediately
-            asyncio.create_task(
+            task = asyncio.create_task(
                 _async_run_and_deliver(
                     kit=kit,
                     room_id=room_id,
@@ -343,6 +344,7 @@ class Supervisor(Orchestration):
                     on_done=lambda: _clear(),
                 )
             )
+            task.add_done_callback(log_task_exception)
 
             return json.dumps(
                 {

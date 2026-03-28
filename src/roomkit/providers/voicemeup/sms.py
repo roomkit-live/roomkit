@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.models.delivery import InboundMessage, ProviderResult
 from roomkit.models.event import RoomEvent
 from roomkit.providers.sms.base import SMSProvider
@@ -169,7 +170,8 @@ class VoiceMeUpSMSProvider(SMSProvider):
                 channel_id=channel_id,
             )
             with contextlib.suppress(RuntimeError):
-                asyncio.get_running_loop().create_task(self._handle_mms_timeout(key))
+                task = asyncio.get_running_loop().create_task(self._handle_mms_timeout(key))
+                task.add_done_callback(log_task_exception)
             logger.debug("VoiceMeUp MMS: buffered first part for %s", key)
             return None
 

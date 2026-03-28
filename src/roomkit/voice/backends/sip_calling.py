@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 from typing import Any, Protocol, runtime_checkable
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.models.trace import ProtocolTrace
 from roomkit.voice.backends._sip_types import (
     CODEC_INFO,
@@ -714,11 +715,5 @@ class SIPCallingMixin:
         """Return the local IP to advertise in SDP."""
         return resolve_local_ip(self._local_rtp_ip, remote_addr)
 
-    @staticmethod
-    def _log_task_exception(task: asyncio.Task[Any]) -> None:
-        """Done callback — log exceptions from fire-and-forget tasks."""
-        if task.cancelled():
-            return
-        exc = task.exception()
-        if exc is not None:
-            logger.error("SIP background task %s failed: %s", task.get_name(), exc)
+    # Use shared log_task_exception from roomkit.core.task_utils
+    _log_task_exception = staticmethod(log_task_exception)

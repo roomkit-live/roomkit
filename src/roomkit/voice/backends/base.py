@@ -147,9 +147,12 @@ class VoiceBackend(ABC):
         """
         import asyncio
 
+        from roomkit.core.task_utils import log_task_exception
+
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self.send_audio(session, chunk.data))
+            task = loop.create_task(self.send_audio(session, chunk.data))
+            task.add_done_callback(log_task_exception)
         except RuntimeError:
             logger.warning(
                 "send_audio_sync: no event loop for session %s",

@@ -31,6 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.backends.base import VoiceBackend
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import RealtimeAudioVideoProvider, RealtimeVoiceProvider
@@ -373,7 +374,8 @@ class RealtimeAVBridge:
         state.provider_session.metadata["_input_rate"] = sample_rate
         loop = asyncio.get_running_loop()
         if loop.is_running():
-            loop.create_task(self._provider.send_audio(state.provider_session, raw))
+            task = loop.create_task(self._provider.send_audio(state.provider_session, raw))
+            task.add_done_callback(log_task_exception)
 
     async def _on_backend_call(self, sip_session: VoiceSession) -> None:
         """Handle incoming call from SIP/RTP backend."""
@@ -416,11 +418,17 @@ class RealtimeAVBridge:
     def _safe_create_task(coro: Any) -> None:
         """Create an asyncio task, safely handling calls from non-async threads."""
         try:
-            asyncio.get_running_loop().create_task(coro)
+            task = asyncio.get_running_loop().create_task(coro)
+            task.add_done_callback(log_task_exception)
         except RuntimeError:
             # Called from a sync callback thread (e.g. SIP/WebRTC disconnect)
             loop = asyncio.get_event_loop_policy().get_event_loop()
-            loop.call_soon_threadsafe(loop.create_task, coro)
+
+            def _create_tracked(c: Any) -> None:
+                t = loop.create_task(c)
+                t.add_done_callback(log_task_exception)
+
+            loop.call_soon_threadsafe(_create_tracked, coro)
 
     # -- Provider → Backend (AI audio/video out) -------------------------------
 

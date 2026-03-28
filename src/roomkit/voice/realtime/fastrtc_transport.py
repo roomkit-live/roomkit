@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastrtc import AsyncStreamHandler
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.auth import AuthCallback
 from roomkit.voice.backends.base import (
     AudioReceivedCallback,
@@ -344,11 +345,17 @@ class FastRTCRealtimeTransport(VoiceBackend):
                 if hasattr(result, "__await__"):
                     try:
                         loop = asyncio.get_running_loop()
-                        loop.create_task(result)
+                        task = loop.create_task(result)
+                        task.add_done_callback(log_task_exception)
                     except RuntimeError:
                         # Called from a non-async thread (WebRTC) — schedule safely
                         loop = asyncio.get_event_loop_policy().get_event_loop()
-                        loop.call_soon_threadsafe(loop.create_task, result)
+
+                        def _create(c: Any) -> None:
+                            t = loop.create_task(c)
+                            t.add_done_callback(log_task_exception)
+
+                        loop.call_soon_threadsafe(_create, result)
             except Exception:
                 logger.exception("Error in connected callback for webrtc_id=%s", webrtc_id)
 
@@ -361,11 +368,17 @@ class FastRTCRealtimeTransport(VoiceBackend):
             self._sessions.pop(session.id, None)
             coro = self._fire_disconnect_callbacks(session)
             try:
-                asyncio.get_running_loop().create_task(coro)
+                task = asyncio.get_running_loop().create_task(coro)
+                task.add_done_callback(log_task_exception)
             except RuntimeError:
                 # Called from a non-async thread (WebRTC disconnect)
                 loop = asyncio.get_event_loop_policy().get_event_loop()
-                loop.call_soon_threadsafe(loop.create_task, coro)
+
+                def _create_dc(c: Any) -> None:
+                    t = loop.create_task(c)
+                    t.add_done_callback(log_task_exception)
+
+                loop.call_soon_threadsafe(_create_dc, coro)
 
     def _get_session(self, webrtc_id: str | None) -> VoiceSession | None:
         """Get the session bound to a WebRTC connection."""

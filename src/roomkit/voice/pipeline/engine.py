@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.base import VoiceCapability
 from roomkit.voice.pipeline.vad.base import VADEventType
 
@@ -31,7 +32,8 @@ def _maybe_schedule(result: object) -> None:
     if asyncio.coroutines.iscoroutine(result):
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(result)
+            task = loop.create_task(result)
+            task.add_done_callback(log_task_exception)
         except RuntimeError:
             # No running event loop — log and close the coroutine to avoid warning
             logger.warning("Async callback returned outside event loop; dropping")
