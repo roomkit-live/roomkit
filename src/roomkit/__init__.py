@@ -74,7 +74,9 @@ from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.models.tool_call import (
     AfterResponseCallback,
+    AIGenerationEvent,
     AIResponseEvent,
+    BeforeGenerationCallback,
     ToolCallCallback,
     ToolCallEvent,
 )
@@ -227,8 +229,10 @@ __all__ = [
     "RoleOverride",
     "ToolPolicy",
     # Models (core)
+    "AIGenerationEvent",
     "AIResponseEvent",
     "AfterResponseCallback",
+    "BeforeGenerationCallback",
     "ChannelBinding",
     "ChannelCapabilities",
     "ChannelOutput",

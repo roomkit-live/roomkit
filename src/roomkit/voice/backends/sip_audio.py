@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any, Protocol, runtime_checkable
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.models.trace import ProtocolTrace
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.noop import NoopTelemetryProvider
@@ -359,7 +360,10 @@ class SIPAudioMixin:
 
         pacer = OutboundAudioPacer(send_fn=rtp_send, sample_rate=state.codec_rate)
         state.pacer = pacer
-        asyncio.get_running_loop().create_task(pacer.start(), name=f"sip_pacer_{session.id}")
+        task = asyncio.get_running_loop().create_task(
+            pacer.start(), name=f"sip_pacer_{session.id}"
+        )
+        task.add_done_callback(log_task_exception)
         return pacer
 
     async def send_audio(

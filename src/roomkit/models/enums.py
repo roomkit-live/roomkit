@@ -216,6 +216,8 @@ class HookTrigger(StrEnum):
     ON_REALTIME_TEXT_INJECTED = "on_realtime_text_injected"
     # Audio bridging
     BEFORE_BRIDGE_AUDIO = "before_bridge_audio"
+    # AI generation (pre-flight — can block or modify context)
+    BEFORE_AI_GENERATION = "before_ai_generation"
     # AI Thinking/Reasoning
     ON_AI_THINKING = "on_ai_thinking"
     # AI response observability

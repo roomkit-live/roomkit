@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.tool_call import AIGenerationEvent
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -68,6 +69,7 @@ class AIGenerationHost(Protocol):
     _tool_handler: Any
     _active_loops: dict[str, _ToolLoopContext]
     _after_response_hook: Any
+    _before_generation_hook: Any
     channel_id: str
     provider_name: str
     channel_type: ChannelType
@@ -123,6 +125,7 @@ class AIGenerationMixin:
     _tool_handler: Any
     _active_loops: dict[str, _ToolLoopContext]
     _after_response_hook: Any
+    _before_generation_hook: Any
     channel_id: str
     provider_name: str
     channel_type: Any
@@ -146,6 +149,28 @@ class AIGenerationMixin:
         """Access telemetry provider (set by register_channel)."""
         return getattr(self, "_telemetry", None) or NoopTelemetryProvider()
 
+    async def _fire_before_generation_hook(
+        self, ai_context: AIContext, event: RoomEvent
+    ) -> tuple[AIContext, bool]:
+        """Fire BEFORE_AI_GENERATION hook. Returns ``(context, blocked)``."""
+        if not self._before_generation_hook:
+            return ai_context, False
+        gen_event = AIGenerationEvent(
+            ai_context=ai_context,
+            channel_id=self.channel_id,
+            room_id=event.room_id,
+            provider_name=self.provider_name,
+        )
+        sync_result = await self._before_generation_hook(gen_event)
+        if not sync_result.allowed:
+            logger.info(
+                "AI generation blocked by hook (reason=%s, blocked_by=%s)",
+                sync_result.reason,
+                sync_result.blocked_by,
+            )
+            return ai_context, True
+        return gen_event.ai_context, False
+
     async def _generate_response(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
@@ -153,6 +178,9 @@ class AIGenerationMixin:
         from roomkit.telemetry.context import get_current_span
 
         ai_context = await self._build_context(event, binding, context)  # ty: ignore[unresolved-attribute]
+        ai_context, blocked = await self._fire_before_generation_hook(ai_context, event)
+        if blocked:
+            return ChannelOutput.empty()
         telemetry = self._telemetry_provider
         _t0 = time.monotonic()
         span_id = telemetry.start_span(

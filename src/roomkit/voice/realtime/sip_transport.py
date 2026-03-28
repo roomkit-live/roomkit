@@ -134,7 +134,10 @@ class SIPRealtimeTransport(VoiceBackend):
         """Signal interruption — delegate to backend cancel_audio."""
         voice_session = self._voice_sessions.get(session.id)
         if voice_session is not None:
-            asyncio.get_running_loop().create_task(self._backend.cancel_audio(voice_session))
+            task = asyncio.get_running_loop().create_task(
+                self._backend.cancel_audio(voice_session)
+            )
+            task.add_done_callback(log_task_exception)
 
     async def disconnect(self, session: VoiceSession) -> None:
         """Disconnect a realtime session (does not send SIP BYE)."""

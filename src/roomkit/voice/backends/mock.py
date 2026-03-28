@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends.base import (
     AudioReceivedCallback,
@@ -110,9 +112,8 @@ class MockVoiceBackend(VoiceBackend):
         for cb in self._session_ready_callbacks:
             result = cb(session)
             if hasattr(result, "__await__"):
-                import asyncio
-
-                asyncio.get_running_loop().create_task(result)
+                task = asyncio.get_running_loop().create_task(result)
+                task.add_done_callback(log_task_exception)
         return session
 
     async def disconnect(self, session: VoiceSession) -> None:

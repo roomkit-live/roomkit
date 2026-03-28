@@ -66,6 +66,7 @@ class AIStreamingHost(Protocol):
     _tool_handler: Any
     _active_loops: dict[str, _ToolLoopContext]
     _after_response_hook: Any
+    _before_generation_hook: Any
     channel_id: str
 
     async def _build_context(
@@ -118,6 +119,7 @@ class AIStreamingMixin:
     _tool_handler: Any
     _active_loops: dict[str, Any]
     _after_response_hook: Any
+    _before_generation_hook: Any
     channel_id: str
 
     # Cross-mixin methods — Any annotations avoid MRO shadowing.
@@ -137,6 +139,9 @@ class AIStreamingMixin:
     ) -> ChannelOutput:
         """Return a streaming response handle (generator starts on consumption)."""
         ai_context = await self._build_context(event, binding, context)  # ty: ignore[unresolved-attribute]
+        ai_context, blocked = await self._fire_before_generation_hook(ai_context, event)  # ty: ignore[unresolved-attribute]
+        if blocked:
+            return ChannelOutput.empty()
         return ChannelOutput(
             responded=True,
             response_stream=self._provider.generate_stream(ai_context),
@@ -147,6 +152,9 @@ class AIStreamingMixin:
     ) -> ChannelOutput:
         """Return a streaming response that handles tool calls between rounds."""
         ai_context = await self._build_context(event, binding, context)  # ty: ignore[unresolved-attribute]
+        ai_context, blocked = await self._fire_before_generation_hook(ai_context, event)  # ty: ignore[unresolved-attribute]
+        if blocked:
+            return ChannelOutput.empty()
         return ChannelOutput(
             responded=True,
             response_stream=self._run_streaming_tool_loop(ai_context),

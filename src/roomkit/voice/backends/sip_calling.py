@@ -689,10 +689,11 @@ class SIPCallingMixin:
         if state.pacer is not None:
             state.pacer.interrupt()
             with contextlib.suppress(RuntimeError):
-                asyncio.get_running_loop().create_task(
+                t = asyncio.get_running_loop().create_task(
                     state.pacer.stop(),
                     name=f"pacer_stop:{session_id}",
                 )
+                t.add_done_callback(log_task_exception)
 
         state.session.state = VoiceSessionState.ENDED
 

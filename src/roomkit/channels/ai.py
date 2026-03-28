@@ -203,6 +203,8 @@ class AIChannel(
         self._tool_call_hook: ToolCallCallback | None = None
         # AI response hook callback (injected by framework on register_channel)
         self._after_response_hook: Any = None
+        # BEFORE_AI_GENERATION hook callback (injected by framework on register_channel)
+        self._before_generation_hook: Any = None
         # Current room ID (set per on_event invocation for tool hook context)
         self._current_room_id: str | None = None
 

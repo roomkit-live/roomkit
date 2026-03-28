@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0a6] — 2026-03-27
+
+### Added
+
+- **`BEFORE_AI_GENERATION` hook** — new sync hook that fires after context building but before AI provider invocation. Hooks receive an `AIGenerationEvent` containing the full `AIContext` (messages, system prompt, tools, temperature, metadata) and can mutate it in-place or block generation entirely. Enables budget gating, PII redaction, knowledge injection, dynamic model routing, and compliance audit trails — all without touching provider code.
+- **`AIGenerationEvent`** dataclass — carries `ai_context`, `channel_id`, `room_id`, and `provider_name` for the hook.
+- **`BeforeGenerationCallback`** type alias — callback signature for the hook.
+- **Shared `log_task_exception` callback** (`core/task_utils.py`) — done-callback for `asyncio.create_task()` that logs unhandled exceptions. Replaces 4 duplicate implementations across `webtransport`, `sip_calling`, `status_bus`, and `tasks/memory`.
+- **Scoring module tests** — 31 tests covering `Score`, `MockScorer`, `ScoringHook`, and `QualityTracker` (was 0% coverage).
+- **RoomKit Console** — full-screen terminal dashboard for voice agents with audio meters, transcription, voice activity timeline, barge-in indicators, and streaming text via Rich.
+- **Unified voice pipeline** — extracted `VoicePipelineMixin` shared by `VoiceChannel` and `RealtimeVoiceChannel`. Pipeline creation, backend audio wiring, AEC reference feeding, and session lifecycle are now in one place.
+- **Protocol contracts for all 34 mixins** — explicit host interface declarations via class-level type annotations and companion Protocol classes. Eliminates `# type: ignore[attr-defined]` on cross-mixin dependencies.
+- **VAD model selection** — `VAD` env var selects energy, silero, or ten VAD. Falls back to energy VAD when sherpa-onnx is unavailable.
+- **Manual VAD mode for RealtimeVoiceChannel** — local VAD drives `activityStart`/`activityEnd` signals to Gemini, OpenAI, and xAI realtime providers.
+- **Smart-turn ONNX helper** — `build_turn_detector()` factory for the ONNX turn detection model.
+
+### Fixed
+
+- **Fire-and-forget task exception tracking** — ~20 `asyncio.create_task()` call sites across voice backends, realtime transports, orchestration strategies, and providers now have `add_done_callback(log_task_exception)`. Previously, exceptions in these tasks were silently dropped.
+- **Protocol contract gaps** — type erasure, dead declarations, and weak annotations fixed across mixin boundaries.
+- **Release script uses ty instead of mypy** — `scripts/release.sh` updated after the mypy-to-ty migration.
+
+### Changed
+
+- **mypy replaced with ty** for type checking (`ty check src/roomkit/`). Pre-commit hooks updated.
+- **All examples refactored** to use shared helpers from `examples/shared/` (`setup_logging`, `run_until_stopped`, `require_env`, `build_pipeline`). Console mode added to voice examples.
+- **Deprecated `connect/disconnect_video` migrated** to `join`/`leave` across all examples.
+
+## [0.7.0a5] — 2026-03-26
+
 ### Added
 
 - **Persistent delivery backend** — `DeliveryBackend` ABC decouples enqueue from execution so delivery requests survive process restarts and can be distributed across workers. `kit.deliver()` transparently enqueues when a backend is configured; a background worker loop dequeues and executes deliveries with retry and dead-letter support.

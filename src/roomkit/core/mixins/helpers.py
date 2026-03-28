@@ -474,6 +474,54 @@ class HelpersMixin:
 
         return _callback
 
+    def _build_before_generation_hook(self, channel_id: str) -> Any:
+        """Build a BeforeGenerationCallback closure for an AIChannel.
+
+        The returned callback runs BEFORE_AI_GENERATION sync hooks against
+        the framework's hook engine.  Returns a :class:`SyncPipelineResult`
+        that indicates whether generation should proceed or be blocked.
+        """
+        from roomkit.core.hooks import SyncPipelineResult
+        from roomkit.models.enums import HookTrigger
+        from roomkit.models.tool_call import AIGenerationEvent
+
+        kit_ref = self
+
+        async def _callback(event: AIGenerationEvent) -> SyncPipelineResult:
+            if not event.room_id:
+                return SyncPipelineResult(allowed=True)
+            try:
+                context = await kit_ref._build_context(event.room_id)
+            except Exception:
+                logger.warning(
+                    "Failed to build context for BEFORE_AI_GENERATION hook in room %s",
+                    event.room_id,
+                    exc_info=True,
+                )
+                return SyncPipelineResult(allowed=True)
+
+            sync_result = await kit_ref._hook_engine.run_sync_hooks(
+                event.room_id,
+                HookTrigger.BEFORE_AI_GENERATION,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+
+            await kit_ref._emit_framework_event(
+                "before_ai_generation",
+                room_id=event.room_id,
+                channel_id=channel_id,
+                data={
+                    "allowed": sync_result.allowed,
+                    "blocked_by": sync_result.blocked_by,
+                },
+            )
+
+            return sync_result
+
+        return _callback
+
     async def _emit_framework_event(
         self,
         event_type: str,

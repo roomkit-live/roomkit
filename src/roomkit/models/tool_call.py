@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.models.enums import ChannelType
 
 if TYPE_CHECKING:
+    from roomkit.providers.ai.base import AIContext
     from roomkit.voice.base import VoiceSession
 
 
@@ -102,3 +103,36 @@ class AIResponseEvent:
 
 # Callback type for AI response observation (fire-and-forget).
 AfterResponseCallback = Callable[["AIResponseEvent"], Awaitable[None]]
+
+
+@dataclass
+class AIGenerationEvent:
+    """Emitted through BEFORE_AI_GENERATION hooks before AI provider invocation.
+
+    Provides the full AI context for inspection and modification.
+    Hooks can mutate ``ai_context`` in-place (e.g. append messages,
+    modify system_prompt, adjust tools) and return ``HookResult.allow()``,
+    or return ``HookResult.block(reason)`` to prevent generation.
+    """
+
+    ai_context: AIContext
+    """The full built context that will be sent to the AI provider."""
+
+    channel_id: str
+    """ID of the AI channel about to generate."""
+
+    room_id: str | None = None
+    """Room where generation is happening."""
+
+    provider_name: str | None = None
+    """Name of the AI provider that will be invoked."""
+
+    timestamp: datetime = field(default_factory=_utcnow)
+    """When the generation was initiated."""
+
+
+# Callback type for BEFORE_AI_GENERATION hook (sync, can block/modify).
+# Returns SyncPipelineResult (from roomkit.core.hooks) — typed as Any to
+# avoid circular import from models into core.  Only the framework's
+# _build_before_generation_hook closure creates instances of this type.
+BeforeGenerationCallback = Callable[["AIGenerationEvent"], Awaitable[Any]]
