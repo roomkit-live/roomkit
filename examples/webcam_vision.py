@@ -227,7 +227,7 @@ async def main() -> None:
         print("\n".join(parts))
 
     # --- Connect and start capture -------------------------------------------
-    session = await kit.connect_video("webcam-demo", "local-user", "video-main")
+    session = await kit.join("webcam-demo", "video-main", participant_id="local-user")
 
     if args.gemini:
         mode = f"Gemini ({args.model or 'gemini-3.1-flash-lite-preview'})"
@@ -251,7 +251,7 @@ async def main() -> None:
     async def cleanup() -> None:
         print("\nStopping...")
         await backend.stop_capture(session)
-        await kit.disconnect_video(session)
+        await kit.leave(session)
 
     await run_until_stopped(kit, cleanup=cleanup)
     print(f"Done. Analyzed {frame_count} frames.")

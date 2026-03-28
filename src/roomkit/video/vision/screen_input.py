@@ -386,7 +386,7 @@ def _get_pyautogui() -> Any:
     try:
         import pyautogui
 
-        pyautogui.FAILSAFE = False
+        pyautogui.FAILSAFE = False  # ty: ignore[invalid-assignment]
         return pyautogui
     except ImportError:
         raise ImportError("pyautogui is required — pip install roomkit[screen-input]") from None

@@ -984,7 +984,7 @@ their browser. Delegate all computer actions to agent-browser.
     )
 
     # Start screen capture (after voice so all tracks are registered)
-    video_session = await kit.connect_video("screen-room", "local-user", "screen-rec")
+    video_session = await kit.join("screen-room", "screen-rec", participant_id="local-user")
     await screen_backend.start_capture(video_session)
 
     # --- Banner --------------------------------------------------------------

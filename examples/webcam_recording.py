@@ -100,7 +100,7 @@ async def main() -> None:
     backend.on_video_received(on_frame)
 
     # --- Connect and start ---------------------------------------------------
-    session = await kit.connect_video("recording-demo", "local-user", "video-rec")
+    session = await kit.join("recording-demo", "video-rec", participant_id="local-user")
 
     print("Webcam Recording Demo")
     print("=" * 60)
@@ -130,7 +130,7 @@ async def main() -> None:
     # --- Cleanup -------------------------------------------------------------
     print("\n\n  Stopping...")
     await backend.stop_capture(session)
-    await kit.disconnect_video(session)
+    await kit.leave(session)
     await kit.close()
 
     print(f"  Recorded {frame_count} frames")

@@ -193,7 +193,7 @@ async def main() -> None:
     # Tap on the channel (post-pipeline) to see filtered frames
     video.add_media_tap(on_frame)
 
-    session = await kit.connect_video("censor-demo", "local-user", "video-main")
+    session = await kit.join("censor-demo", "video-main", participant_id="local-user")
 
     print("Webcam Censor + Recording Demo")
     print("=" * 60)
@@ -211,7 +211,7 @@ async def main() -> None:
     async def cleanup() -> None:
         print(f"\nDone. {frame_count} frames, {censored_count} censored.")
         await backend.stop_capture(session)
-        await kit.disconnect_video(session)
+        await kit.leave(session)
         await kit.close_room("censor-demo")
 
     await run_until_stopped(kit, cleanup=cleanup)
