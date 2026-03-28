@@ -173,8 +173,8 @@ class AIResilienceMixin:
                 text = msg.content[:500]
             elif isinstance(msg.content, list):
                 text = " ".join(
-                    p.text[:200] if hasattr(p, "text") else f"[{p.type}]"
-                    for p in msg.content  # ty: ignore[not-subscriptable]
+                    p.text[:200] if hasattr(p, "text") else f"[{p.type}]"  # ty: ignore[not-subscriptable]
+                    for p in msg.content
                 )[:500]
             else:
                 text = str(msg.content)[:500]
