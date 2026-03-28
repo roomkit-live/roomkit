@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0a7] — 2026-03-27
+
+### Added
+
+- **`BEFORE_AI_GENERATION` hook** — new sync hook that fires after context building but before AI provider invocation. Hooks receive an `AIGenerationEvent` containing the full `AIContext` (messages, system prompt, tools, temperature, metadata) and can mutate it in-place or block generation entirely. Fires on all three generation paths (non-streaming, streaming, streaming with tools). Enables budget gating, PII redaction, knowledge injection, dynamic model routing, and compliance audit trails — all without touching provider code.
+- **`AIGenerationEvent`** dataclass and **`BeforeGenerationCallback`** type alias for the new hook.
+- **12 tests** for BEFORE_AI_GENERATION covering block, modify, streaming, priority ordering, and framework integration.
+
+### Fixed
+
+- **3 additional fire-and-forget `create_task` sites** missed in the v0.7.0a6 audit: SIP pacer start (`sip_audio.py`), SIP cancel_audio (`sip_transport.py`), and mock backend session ready callback (`mock.py`).
+- **Inline import violation** in `_ai_generation.py` — moved `AIGenerationEvent` import to top-level per project conventions.
+
 ## [0.7.0a6] — 2026-03-27
 
 ### Added
