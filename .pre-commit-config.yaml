@@ -7,6 +7,14 @@ repos:
         exclude: ^examples/test-click\.py$
       - id: ruff-format
         exclude: ^examples/test-click\.py$
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty
+        entry: uv run ty check src/roomkit/
+        language: system
+        pass_filenames: false
+        types: [python]
   - repo: https://github.com/PyCQA/bandit
     rev: 1.9.3
     hooks:
