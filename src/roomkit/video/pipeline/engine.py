@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from roomkit.video.pipeline.filter.base import FilterContext
+from roomkit.video.pipeline.filter.base import FilterContext, FilterEvent
 
 if TYPE_CHECKING:
     from roomkit.video.pipeline.config import VideoPipelineConfig
@@ -76,6 +76,7 @@ class VideoPipeline:
         # Stage 4: Filters (chained, each can inspect/replace).
         if self._config.filters:
             ctx = self._filter_contexts.setdefault(session_id, FilterContext())
+            ctx.session_id = session_id
             for flt in self._config.filters:
                 try:
                     current = flt.filter(current, ctx)
@@ -112,6 +113,26 @@ class VideoPipeline:
             ctx.labels_detected = set(result.labels)
 
         return result
+
+    def drain_events(self, session_id: str) -> list[FilterEvent]:
+        """Drain and return pending filter events for a session.
+
+        Called by the channel layer after :meth:`process_inbound` to
+        collect events emitted by filters during frame processing.
+        The events list is cleared atomically.
+
+        Args:
+            session_id: Active session identifier.
+
+        Returns:
+            List of filter events (empty if none pending).
+        """
+        ctx = self._filter_contexts.get(session_id)
+        if ctx is None or not ctx.events:
+            return []
+        events = list(ctx.events)
+        ctx.events.clear()
+        return events
 
     def update_filter_context(self, session_id: str, result: VisionResult) -> None:
         """Update the filter context for a session with a new vision result.

@@ -28,7 +28,7 @@ from roomkit.video.bridge import (
     VideoBridge,
     VideoBridgeConfig,
 )
-from roomkit.video.events import BridgeVideoEvent
+from roomkit.video.events import BridgeVideoEvent, VideoDetectionEvent
 from roomkit.video.pipeline import (
     MockVideoDecoderProvider,
     MockVideoResizerProvider,
@@ -95,8 +95,9 @@ __all__ = [
     "VideoRecordingConfig",
     "VideoRecordingHandle",
     "VideoRecordingResult",
-    # Bridge
+    # Bridge / Detection
     "BridgeVideoEvent",
+    "VideoDetectionEvent",
     "BridgeVideoFrameFilter",
     "BridgeVideoFrameProcessor",
     "VideoBridge",

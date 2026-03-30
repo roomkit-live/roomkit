@@ -12,6 +12,23 @@ if TYPE_CHECKING:
 
 
 @dataclass
+class FilterEvent:
+    """An event emitted by a filter during frame processing.
+
+    Filters append events to :attr:`FilterContext.events` when they
+    detect something noteworthy (e.g. face touch, object detection).
+    The pipeline engine exposes :meth:`~VideoPipeline.drain_events`
+    so the channel layer can drain and dispatch them to hooks.
+    """
+
+    kind: str
+    """Detection type identifier (e.g. ``"face_touch"``, ``"object"``)."""
+
+    data: Any = None
+    """Typed event payload (e.g. :class:`~roomkit.video.events.VideoDetectionEvent`)."""
+
+
+@dataclass
 class FilterContext:
     """Shared state passed to the filter on every frame.
 
@@ -19,6 +36,11 @@ class FilterContext:
     The filter uses this to make per-frame decisions without running
     its own detection — vision does the heavy lifting periodically,
     and the filter acts on every frame based on the latest result.
+    """
+
+    session_id: str = ""
+    """Active session identifier.  Set by the pipeline engine before
+    calling filters so that stateful filters can key per-session data.
     """
 
     last_vision_result: VisionResult | None = None
@@ -32,6 +54,14 @@ class FilterContext:
 
     metadata: dict[str, Any] = field(default_factory=dict)
     """Arbitrary state for custom filter implementations."""
+
+    events: list[FilterEvent] = field(default_factory=list)
+    """Events emitted by filters during the current frame processing.
+
+    Drained by the channel layer after each :meth:`process_inbound` call.
+    Filters append :class:`FilterEvent` instances here; the channel
+    dispatches them to the appropriate hook triggers.
+    """
 
 
 class VideoFilterProvider(ABC):

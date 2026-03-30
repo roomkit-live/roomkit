@@ -11,6 +11,7 @@ from roomkit.models.enums import ChannelType, HookTrigger
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.video.base import VideoSession
+    from roomkit.video.events import VideoDetectionEvent
     from roomkit.video.video_frame import VideoFrame
     from roomkit.video.vision.base import VisionProvider, VisionResult
     from roomkit.voice.base import VoiceSession
@@ -222,6 +223,24 @@ class VideoHooksMixin:
 
         await self._inject_vision_event(session, result, room_id, elapsed_ms)
         await self._update_ai_vision_context(result, room_id)
+
+    async def _fire_video_detection_hook(
+        self, session: VideoSession, event: VideoDetectionEvent, room_id: str
+    ) -> None:
+        """Fire ``ON_VIDEO_DETECTION`` async hook for a filter detection event."""
+        if not self._framework:
+            return
+        try:
+            context = await self._framework._build_context(room_id)
+            await self._framework.hook_engine.run_async_hooks(
+                room_id,
+                HookTrigger.ON_VIDEO_DETECTION,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+        except Exception:
+            logger.exception("Error firing ON_VIDEO_DETECTION hook (kind=%s)", event.kind)
 
     async def _update_ai_vision_context(self, result: VisionResult, room_id: str) -> None:
         """Auto-inject vision description into AI channels in the same room."""

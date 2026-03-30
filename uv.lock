@@ -41,6 +41,15 @@ conflicts = [[
 ]]
 
 [[package]]
+name = "absl-py"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/64/c7/8de93764ad66968d19329a7e0c147a2bb3c7054c554d4a119111b8f9440f/absl_py-2.4.0.tar.gz", hash = "sha256:8c6af82722b35cf71e0f4d1d47dcaebfff286e27110a99fc359349b247dfb5d4", size = 116543, upload-time = "2026-01-28T10:17:05.322Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/a6/907a406bb7d359e6a63f99c313846d9eec4f7e6f7437809e03aa00fa3074/absl_py-2.4.0-py3-none-any.whl", hash = "sha256:88476fd881ca8aab94ffa78b7b6c632a782ab3ba1cd19c9bd423abc4fb4cd28d", size = 135750, upload-time = "2026-01-28T10:17:04.19Z" },
+]
+
+[[package]]
 name = "accelerate"
 version = "1.12.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2573,6 +2582,25 @@ wheels = [
 ]
 
 [[package]]
+name = "mediapipe"
+version = "0.10.33"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "absl-py" },
+    { name = "flatbuffers" },
+    { name = "matplotlib" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts' or extra != 'extra-7-roomkit-neutts'" },
+    { name = "opencv-contrib-python" },
+    { name = "sounddevice" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a7/10/593aa6429e6e2dc309b19761804b7992d61a0ef485339435f164b83c2759/mediapipe-0.10.33-py3-none-macosx_11_0_arm64.whl", hash = "sha256:f8dd00affe7d02479cb2e5af8ca5899d2618d6cbc316507a56d41cf62cdbc4d2", size = 29397266, upload-time = "2026-03-18T22:15:58.627Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/bc/0695a2af4e35a8cbeaf0957eb2342acc1541ab363f36e8b51018193e05df/mediapipe-0.10.33-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:410e796215d9eb2cf1fdd6aecbf416abab6e74a5eea5572f4b6da94658c764d9", size = 11377495, upload-time = "2026-03-18T22:16:01.08Z" },
+    { url = "https://files.pythonhosted.org/packages/a3/e9/c11a67dfffc2e2d9f9e68e790fc1f1342962669a0d8546c9a479a18c07a2/mediapipe-0.10.33-py3-none-win_amd64.whl", hash = "sha256:25c336c1697d51dddde99dd4568f2a22a1ac46f3f28f5a5bf583a4edf55a282d", size = 10574424, upload-time = "2026-03-18T22:16:03.087Z" },
+]
+
+[[package]]
 name = "mergedeep"
 version = "1.3.4"
 source = { registry = "https://pypi.org/simple" }
@@ -3455,6 +3483,25 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/56/87/eb0abb4ef88ddb95b3c13149384c4c288f584f3be17d6a4f63f8c3e3c226/openai-2.28.0.tar.gz", hash = "sha256:bb7fdff384d2a787fa82e8822d1dd3c02e8cf901d60f1df523b7da03cbb6d48d", size = 670334, upload-time = "2026-03-13T19:56:27.306Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c0/5a/df122348638885526e53140e9c6b0d844af7312682b3bde9587eebc28b47/openai-2.28.0-py3-none-any.whl", hash = "sha256:79aa5c45dba7fef84085701c235cf13ba88485e1ef4f8dfcedc44fc2a698fc1d", size = 1141218, upload-time = "2026-03-13T19:56:25.46Z" },
+]
+
+[[package]]
+name = "opencv-contrib-python"
+version = "4.13.0.92"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts' or extra != 'extra-7-roomkit-neutts'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7e/4c/a45c96b9fe90b2c48ee604f5176eb7deb46ce7c2e87c8d819d2945dbcab6/opencv_contrib_python-4.13.0.92-cp37-abi3-macosx_13_0_arm64.whl", hash = "sha256:53c8ab81376210dda5836307eb6bda7266f39a3820a9a070c7131510ba815fe1", size = 52041546, upload-time = "2026-02-05T07:01:29.918Z" },
+    { url = "https://files.pythonhosted.org/packages/8b/6c/ba1f3177927deeb3002b62fb8db89daea3b5dc732d61de5bf4c73ed6ebf7/opencv_contrib_python-4.13.0.92-cp37-abi3-macosx_14_0_x86_64.whl", hash = "sha256:1973d0fc773873f9d1b5bf0d1b65895da2f47b06ba033b7d58393f5c28ba0778", size = 38830319, upload-time = "2026-02-05T07:01:47.222Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/7a/fe87eaf109b454af4a2579f46958b3cafb0f804b9c788c108760723a9bb7/opencv_contrib_python-4.13.0.92-cp37-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:5f9cb522dd9e465dfca3536c15288f7936b9827432fb9c885eaf94dc5f88c2a3", size = 53339457, upload-time = "2026-02-05T10:09:02.332Z" },
+    { url = "https://files.pythonhosted.org/packages/b6/27/3665ca4b75ddfd218f9ab139f0463d9571e87aaf59391d3c4f5546c08df7/opencv_contrib_python-4.13.0.92-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:f9ceec5886419860a31b518991a99e978e5a6a78dca1470103ad4ede0155f156", size = 76591184, upload-time = "2026-02-05T10:11:51.298Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/11/10c46e9527c4591d5264117debd8fe0e21bb23dbf378ce760add6b1e85b6/opencv_contrib_python-4.13.0.92-cp37-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:a3c54377c5cf9c45d9b1a207df26dc8fe4f1042d07036cb17d80930c04b25d97", size = 52544155, upload-time = "2026-02-05T10:13:32.068Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/f6/3c645c21358079097201090de7c30d110f5ec3fa01008e3ee81b0a77a354/opencv_contrib_python-4.13.0.92-cp37-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:fc5ee50e2be9d40e913536f7f20cc6f87f25d8e413ebb32a3335ab6edf245d3e", size = 79150872, upload-time = "2026-02-05T10:16:03.465Z" },
+    { url = "https://files.pythonhosted.org/packages/90/d7/bf4622e0ed8a93f5a685c76933e287477cf185a160c66478cf144fece489/opencv_contrib_python-4.13.0.92-cp37-abi3-win32.whl", hash = "sha256:f5d02357f4d5575c300eab3ec1c7ecfed3a9a53e55a76927bab7cfc9e0a67b68", size = 36829959, upload-time = "2026-02-05T07:02:22.25Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/98/a03f69ff6fb86a67d584ecc990d85a95e6930b96e3f39ad1f8e019cb8ada/opencv_contrib_python-4.13.0.92-cp37-abi3-win_amd64.whl", hash = "sha256:cb694dcf76bb2c8d7fa573fc1a99339e8b6640194d7778381e74cc3445369e45", size = 46486178, upload-time = "2026-02-05T07:02:19.551Z" },
 ]
 
 [[package]]
@@ -5021,6 +5068,9 @@ local-video = [
 mcp = [
     { name = "mcp" },
 ]
+mediapipe = [
+    { name = "mediapipe" },
+]
 mistral = [
     { name = "mistralai" },
 ]
@@ -5204,6 +5254,7 @@ requires-dist = [
     { name = "httpx-sse", marker = "extra == 'sse'", specifier = ">=0.4" },
     { name = "mcp", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
+    { name = "mediapipe", marker = "extra == 'mediapipe'", specifier = ">=0.10" },
     { name = "mistralai", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "mistralai", marker = "extra == 'dev'", specifier = ">=1.0" },
     { name = "mistralai", marker = "extra == 'mistral'", specifier = ">=1.0" },
@@ -5279,7 +5330,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "console", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
+provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "console", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]

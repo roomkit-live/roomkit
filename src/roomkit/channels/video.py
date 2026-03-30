@@ -302,6 +302,16 @@ class VideoChannel(VideoHooksMixin, Channel):
                 return  # frame dropped (e.g., decoder needs keyframe)
             frame = processed
 
+            # Drain filter events and fire detection hooks
+            for fe in self._video_pipeline.drain_events(session.id):
+                if fe.data is None:
+                    continue
+                fe.data.session = session
+                self._schedule(
+                    self._fire_video_detection_hook(session, fe.data, binding_info[0]),
+                    name=f"detection:{session.id}",
+                )
+
         # Recorder tap runs on every frame
         rec_handle = self._recording_handles.get(session.id)
         if rec_handle and self._recorder:

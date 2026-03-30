@@ -105,6 +105,7 @@ from roomkit.skills import ScriptExecutor, Skill, SkillMetadata, SkillRegistry
 from roomkit.store import ConversationStore, InMemoryStore
 from roomkit.tools.base import Tool
 from roomkit.tools.policy import RoleOverride, ToolPolicy
+from roomkit.video.events import VideoDetectionEvent
 
 # Console (optional — requires `rich`)
 with contextlib.suppress(ImportError):
@@ -256,6 +257,7 @@ __all__ = [
     "ToolCallCallback",
     "ToolCallEvent",
     "ToolHandler",
+    "VideoDetectionEvent",
     "get_current_voice_session",
     # Console (optional)
     "RoomKitConsole",

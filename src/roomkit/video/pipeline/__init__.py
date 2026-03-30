@@ -6,7 +6,13 @@ from roomkit.video.pipeline.config import VideoPipelineConfig
 from roomkit.video.pipeline.decoder import MockVideoDecoderProvider, VideoDecoderProvider
 from roomkit.video.pipeline.engine import VideoPipeline
 from roomkit.video.pipeline.filter import (
+    FaceTouchConfig,
+    FaceTouchFilter,
+    FaceTouchSensitivity,
+    FaceZone,
     FilterContext,
+    FilterEvent,
+    MockFaceTouchFilter,
     MockVideoFilterProvider,
     VideoFilterProvider,
     WatermarkFilter,
@@ -22,7 +28,13 @@ from roomkit.video.pipeline.transform import (
 
 __all__ = [
     "CensorVideoFilter",
+    "FaceTouchConfig",
+    "FaceTouchFilter",
+    "FaceTouchSensitivity",
+    "FaceZone",
     "FilterContext",
+    "FilterEvent",
+    "MockFaceTouchFilter",
     "MockVideoDecoderProvider",
     "MockVideoFilterProvider",
     "MockVideoResizerProvider",

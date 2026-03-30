@@ -243,6 +243,7 @@ class HookTrigger(StrEnum):
     ON_VISION_RESULT = "on_vision_result"
     ON_SCREEN_SHARE_STARTED = "on_screen_share_started"
     ON_SCREEN_SHARE_STOPPED = "on_screen_share_stopped"
+    ON_VIDEO_DETECTION = "on_video_detection"
     # Planning (agentic task tracking)
     ON_PLAN_UPDATED = "on_plan_updated"
     # Feedback (user quality ratings)
