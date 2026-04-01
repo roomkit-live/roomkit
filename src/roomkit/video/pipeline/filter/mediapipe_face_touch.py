@@ -21,8 +21,6 @@ from enum import StrEnum, unique
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from roomkit.video.events import VideoDetectionEvent
 from roomkit.video.pipeline.filter.base import FilterContext, FilterEvent, VideoFilterProvider
 
@@ -321,6 +319,8 @@ class FaceTouchFilter(VideoFilterProvider):
     def _detect(self, frame: VideoFrame, context: FilterContext) -> None:
         """Run MediaPipe detection and emit events for confirmed touches."""
         self._ensure_models()
+
+        import numpy as np  # lazy: optional dep (mediapipe requires numpy)
 
         img = np.frombuffer(frame.data, dtype=np.uint8).reshape(frame.height, frame.width, 3)
 
