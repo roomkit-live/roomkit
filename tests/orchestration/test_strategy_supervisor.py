@@ -6,6 +6,10 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 from roomkit.channels.agent import Agent
+from roomkit.models.channel import ChannelBinding
+from roomkit.models.context import RoomContext
+from roomkit.models.enums import ChannelType, EventType
+from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
 from roomkit.orchestration.state import get_conversation_state
 from roomkit.orchestration.strategies.supervisor import Supervisor
@@ -165,3 +169,228 @@ class TestSupervisorInstall:
 
         tool_count = sum(1 for t in boss._injected_tools if t.name == "delegate_to_w1")
         assert tool_count == 1
+
+
+class TestSupervisorShareChannels:
+    """Tests for the share_channels parameter."""
+
+    async def test_per_worker_tool_passes_share_channels(self):
+        """Per-worker delegation tools pass share_channels to kit.delegate()."""
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1")
+        kit = _make_mock_kit(Room(id="r1"))
+
+        mock_task = MagicMock()
+        mock_task.id = "task-abc"
+        kit.delegate = AsyncMock(return_value=mock_task)
+
+        s = Supervisor(
+            supervisor=boss,
+            workers=[w1],
+            wait_for_result=False,
+            share_channels=["system", "ws-status"],
+        )
+        await s.install(kit, "r1")
+
+        await boss.tool_handler("delegate_to_w1", {"task": "Do something"})
+
+        _, kwargs = kit.delegate.call_args
+        assert kwargs["share_channels"] == ["system", "ws-status"]
+
+    async def test_per_worker_tool_inline_passes_share_channels(self):
+        """Inline (wait=True) per-worker tools pass share_channels."""
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1")
+        kit = _make_mock_kit(Room(id="r1"))
+
+        mock_task = MagicMock()
+        mock_task.id = "task-abc"
+        mock_task.result = MagicMock(status="completed", output="done", error=None)
+        kit.delegate = AsyncMock(return_value=mock_task)
+
+        s = Supervisor(
+            supervisor=boss,
+            workers=[w1],
+            wait_for_result=True,
+            share_channels=["email-out"],
+        )
+        await s.install(kit, "r1")
+
+        await boss.tool_handler("delegate_to_w1", {"task": "Do something"})
+
+        _, kwargs = kit.delegate.call_args
+        assert kwargs["share_channels"] == ["email-out"]
+
+    async def test_strategy_sequential_passes_share_channels(self):
+        """Strategy-based sequential delegation passes share_channels."""
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1")
+        kit = _make_mock_kit(Room(id="r1"))
+
+        mock_task = MagicMock()
+        mock_task.result = MagicMock(output="result", error=None)
+        kit.delegate = AsyncMock(return_value=mock_task)
+
+        s = Supervisor(
+            supervisor=boss,
+            workers=[w1],
+            strategy="sequential",
+            share_channels=["system"],
+        )
+        await s.install(kit, "r1")
+
+        await boss.tool_handler("delegate_workers", {"task": "Analyze this"})
+
+        _, kwargs = kit.delegate.call_args
+        assert kwargs["share_channels"] == ["system"]
+
+    async def test_strategy_parallel_passes_share_channels(self):
+        """Strategy-based parallel delegation passes share_channels."""
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1")
+        w2 = _make_agent("w2")
+        kit = _make_mock_kit(Room(id="r1"))
+
+        mock_task = MagicMock()
+        mock_task.result = MagicMock(output="result", error=None)
+        kit.delegate = AsyncMock(return_value=mock_task)
+
+        s = Supervisor(
+            supervisor=boss,
+            workers=[w1, w2],
+            strategy="parallel",
+            share_channels=["ws-status"],
+        )
+        await s.install(kit, "r1")
+
+        await boss.tool_handler("delegate_workers", {"task": "Analyze this"})
+
+        assert kit.delegate.call_count == 2
+        for call in kit.delegate.call_args_list:
+            _, kwargs = call
+            assert kwargs["share_channels"] == ["ws-status"]
+
+    async def test_default_share_channels_is_empty(self):
+        """Without share_channels, kit.delegate() receives empty list."""
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1")
+        kit = _make_mock_kit(Room(id="r1"))
+
+        mock_task = MagicMock()
+        mock_task.id = "task-abc"
+        kit.delegate = AsyncMock(return_value=mock_task)
+
+        s = Supervisor(supervisor=boss, workers=[w1], wait_for_result=False)
+        await s.install(kit, "r1")
+
+        await boss.tool_handler("delegate_to_w1", {"task": "Do something"})
+
+        _, kwargs = kit.delegate.call_args
+        assert kwargs["share_channels"] == []
+
+    async def test_auto_delegate_one_pass_passes_share_channels(self):
+        """auto_delegate with refine_task=False passes share_channels."""
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1")
+        room = Room(id="r1")
+        kit = _make_mock_kit(room)
+
+        mock_task = MagicMock()
+        mock_task.result = MagicMock(output="worker result", error=None)
+        kit.delegate = AsyncMock(return_value=mock_task)
+
+        s = Supervisor(
+            supervisor=boss,
+            workers=[w1],
+            strategy="sequential",
+            auto_delegate=True,
+            refine_task=False,
+            share_channels=["system"],
+        )
+        await s.install(kit, "r1")
+
+        # Build a user message event to trigger auto-delegate
+        event = RoomEvent(
+            room_id="r1",
+            type=EventType.MESSAGE,
+            source=EventSource(channel_id="user", channel_type=ChannelType.SMS),
+            content=TextContent(body="Analyze this topic"),
+        )
+        binding = ChannelBinding(
+            channel_id="user",
+            room_id="r1",
+            channel_type=ChannelType.SMS,
+        )
+        context = RoomContext(room=room, bindings=[], recent_events=[])
+
+        # Invoke the wrapped on_event
+        await boss.on_event(event, binding, context)
+
+        _, kwargs = kit.delegate.call_args
+        assert kwargs["share_channels"] == ["system"]
+
+    async def test_auto_delegate_two_pass_passes_share_channels(self):
+        """auto_delegate with refine_task=True passes share_channels."""
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1")
+        room = Room(id="r1")
+        kit = _make_mock_kit(room)
+
+        mock_task = MagicMock()
+        mock_task.result = MagicMock(output="worker result", error=None)
+        kit.delegate = AsyncMock(return_value=mock_task)
+
+        s = Supervisor(
+            supervisor=boss,
+            workers=[w1],
+            strategy="parallel",
+            auto_delegate=True,
+            refine_task=True,
+            share_channels=["ws-status", "email-out"],
+        )
+        await s.install(kit, "r1")
+
+        event = RoomEvent(
+            room_id="r1",
+            type=EventType.MESSAGE,
+            source=EventSource(channel_id="user", channel_type=ChannelType.SMS),
+            content=TextContent(body="Analyze this topic"),
+        )
+        binding = ChannelBinding(
+            channel_id="user",
+            room_id="r1",
+            channel_type=ChannelType.SMS,
+        )
+        context = RoomContext(room=room, bindings=[], recent_events=[])
+
+        await boss.on_event(event, binding, context)
+
+        _, kwargs = kit.delegate.call_args
+        assert kwargs["share_channels"] == ["ws-status", "email-out"]
+
+    async def test_share_channels_defensive_copy(self):
+        """Mutating the original list after construction has no effect."""
+        channels = ["system"]
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1")
+        kit = _make_mock_kit(Room(id="r1"))
+
+        mock_task = MagicMock()
+        mock_task.id = "task-abc"
+        kit.delegate = AsyncMock(return_value=mock_task)
+
+        s = Supervisor(
+            supervisor=boss,
+            workers=[w1],
+            wait_for_result=False,
+            share_channels=channels,
+        )
+
+        # Mutate the original list after construction
+        channels.append("hacked")
+
+        await s.install(kit, "r1")
+        await boss.tool_handler("delegate_to_w1", {"task": "Do something"})
+
+        _, kwargs = kit.delegate.call_args
+        assert kwargs["share_channels"] == ["system"]

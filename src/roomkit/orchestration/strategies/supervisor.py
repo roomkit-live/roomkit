@@ -94,6 +94,7 @@ class Supervisor(Orchestration):
         refine_instruction: str | None = None,
         delegation_message: str | None = "I'm dispatching my team to work on this.",
         wait_for_result: bool = True,
+        share_channels: list[str] | None = None,
     ) -> None:
         """Initialise the supervisor strategy.
 
@@ -139,6 +140,12 @@ class Supervisor(Orchestration):
                 whether delegation runs inline (``True``, default) or
                 in the background (``False``).  Ignored when *strategy*
                 is set or *auto_delegate* is ``True``.
+
+            share_channels: Channel IDs from the parent room to share
+                with every child room created during delegation.  For
+                example, passing ``["system", "ws-status"]`` attaches
+                those channels to each worker's child room so the
+                worker can emit events visible on those channels.
         """
         self._supervisor = supervisor
         self._workers = list(workers)
@@ -149,6 +156,7 @@ class Supervisor(Orchestration):
         self._refine_instruction = refine_instruction
         self._delegation_message = delegation_message
         self._wait_for_result = wait_for_result
+        self._share_channels = list(share_channels) if share_channels else []
 
         if auto_delegate and self._strategy is None:
             msg = "auto_delegate=True requires strategy to be set"
@@ -221,6 +229,7 @@ class Supervisor(Orchestration):
         workers = self._workers
         refine = self._refine_task
         refine_instruction = self._refine_instruction
+        share_channels = self._share_channels
         original_on_event = supervisor.on_event
 
         async def auto_delegate_on_event(
@@ -247,6 +256,7 @@ class Supervisor(Orchestration):
                     strategy,
                     workers,
                     instruction=refine_instruction,
+                    share_channels=share_channels,
                 )
             return await _one_pass_delegate(
                 kit,
@@ -258,6 +268,7 @@ class Supervisor(Orchestration):
                 context,
                 strategy,
                 workers,
+                share_channels=share_channels,
             )
 
         supervisor.on_event = auto_delegate_on_event  # ty: ignore[invalid-assignment]
@@ -272,6 +283,7 @@ class Supervisor(Orchestration):
 
         strategy = self._strategy
         workers = self._workers
+        share_channels = self._share_channels
 
         # Find the RealtimeVoiceChannel in registered channels
         voice_channel: RealtimeVoiceChannel | None = None
@@ -341,6 +353,7 @@ class Supervisor(Orchestration):
                     strategy=strategy,
                     workers=workers,
                     task_desc=task_desc,
+                    share_channels=share_channels,
                     on_done=lambda: _clear(),
                 )
             )
@@ -396,6 +409,7 @@ class Supervisor(Orchestration):
         original = self._supervisor.tool_handler
         strategy = self._strategy
         workers = self._workers
+        share_channels = self._share_channels
         _lock = asyncio.Lock()
         # Per-room dedup: prevents duplicate calls within the same turn
         _dedup_cache: dict[str, tuple[str, float]] = {}  # room_id → (result, timestamp)
@@ -417,9 +431,21 @@ class Supervisor(Orchestration):
 
                 try:
                     if strategy == WorkerStrategy.SEQUENTIAL:
-                        result = await _run_sequential(kit, rid, workers, task_desc)
+                        result = await _run_sequential(
+                            kit,
+                            rid,
+                            workers,
+                            task_desc,
+                            share_channels=share_channels,
+                        )
                     else:
-                        result = await _run_parallel(kit, rid, workers, task_desc)
+                        result = await _run_parallel(
+                            kit,
+                            rid,
+                            workers,
+                            task_desc,
+                            share_channels=share_channels,
+                        )
                     _dedup_cache[rid] = (result, time.monotonic())
                     return result
                 except Exception as exc:
@@ -465,6 +491,7 @@ class Supervisor(Orchestration):
         original = self._supervisor.tool_handler
         tool_to_worker = {f"delegate_to_{w.channel_id}": w.channel_id for w in self._workers}
         wait = self._wait_for_result
+        share_channels = self._share_channels
         pending: set[str] = set()
 
         async def delegation_handler(name: str, arguments: dict[str, Any]) -> str:
@@ -480,6 +507,7 @@ class Supervisor(Orchestration):
                             task_desc,
                             wait=True,
                             notify=self._supervisor.channel_id,
+                            share_channels=share_channels,
                         )
                         result = delegated.result
                         return json.dumps(
@@ -508,6 +536,7 @@ class Supervisor(Orchestration):
                         worker_id,
                         task_desc,
                         notify=self._supervisor.channel_id,
+                        share_channels=share_channels,
                     )
                     pending.add(worker_id)
 
@@ -560,11 +589,19 @@ async def _async_run_and_deliver(
     strategy: WorkerStrategy | None,
     workers: list[Agent],
     task_desc: str,
+    share_channels: list[str] | None = None,
     on_done: Any,
 ) -> None:
     """Background: run workers → deliver results via kit.deliver()."""
     try:
-        worker_results = await _run_workers(kit, room_id, strategy, workers, task_desc)
+        worker_results = await _run_workers(
+            kit,
+            room_id,
+            strategy,
+            workers,
+            task_desc,
+            share_channels=share_channels,
+        )
         results_text = _format_worker_results(worker_results)
         logger.info("[async_delegate] Workers completed, delivering results")
 
@@ -604,6 +641,7 @@ async def _two_pass_delegate(
     workers: list[Agent],
     *,
     instruction: str | None = None,
+    share_channels: list[str] | None = None,
 ) -> ChannelOutput:
     """Two-pass: supervisor formulates task → workers run → supervisor presents."""
     # Pass 1: temporarily inject a task-formulation instruction
@@ -625,7 +663,14 @@ async def _two_pass_delegate(
         return pass1_output
 
     # Run workers with the refined task
-    worker_results = await _run_workers(kit, room_id, strategy, workers, refined_task)
+    worker_results = await _run_workers(
+        kit,
+        room_id,
+        strategy,
+        workers,
+        refined_task,
+        share_channels=share_channels,
+    )
 
     # Pass 2: inject worker results and generate final response
     results_text = _format_worker_results(worker_results)
@@ -657,6 +702,8 @@ async def _one_pass_delegate(
     context: RoomContext,
     strategy: WorkerStrategy | None,
     workers: list[Agent],
+    *,
+    share_channels: list[str] | None = None,
 ) -> ChannelOutput:
     """One-pass: workers run on raw message → supervisor presents."""
     # Extract user's raw message
@@ -668,7 +715,14 @@ async def _one_pass_delegate(
         return await original_on_event(event, binding, context)
 
     # Run workers with the raw user message
-    worker_results = await _run_workers(kit, room_id, strategy, workers, user_message)
+    worker_results = await _run_workers(
+        kit,
+        room_id,
+        strategy,
+        workers,
+        user_message,
+        share_channels=share_channels,
+    )
 
     # Inject results into context and let supervisor present
     results_text = _format_worker_results(worker_results)
@@ -705,12 +759,26 @@ async def _run_workers(
     strategy: WorkerStrategy | None,
     workers: list[Agent],
     task_desc: str,
+    *,
+    share_channels: list[str] | None = None,
 ) -> list[dict[str, str]]:
     """Run workers according to strategy and return raw results."""
     if strategy == WorkerStrategy.SEQUENTIAL:
-        result_json = await _run_sequential(kit, room_id, workers, task_desc)
+        result_json = await _run_sequential(
+            kit,
+            room_id,
+            workers,
+            task_desc,
+            share_channels=share_channels,
+        )
     else:
-        result_json = await _run_parallel(kit, room_id, workers, task_desc)
+        result_json = await _run_parallel(
+            kit,
+            room_id,
+            workers,
+            task_desc,
+            share_channels=share_channels,
+        )
     parsed = json.loads(result_json)
     return parsed.get("results", [])
 
@@ -720,6 +788,8 @@ async def _run_sequential(
     room_id: str,
     workers: list[Agent],
     task_desc: str,
+    *,
+    share_channels: list[str] | None = None,
 ) -> str:
     """Run workers in order, each receiving the previous output."""
     current_input = task_desc
@@ -731,6 +801,7 @@ async def _run_sequential(
             worker.channel_id,
             current_input,
             wait=True,
+            share_channels=share_channels,
         )
         output = ""
         if delegated.result:
@@ -746,6 +817,8 @@ async def _run_parallel(
     room_id: str,
     workers: list[Agent],
     task_desc: str,
+    *,
+    share_channels: list[str] | None = None,
 ) -> str:
     """Run all workers concurrently on the same task."""
 
@@ -755,6 +828,7 @@ async def _run_parallel(
             worker.channel_id,
             task_desc,
             wait=True,
+            share_channels=share_channels,
         )
         output = ""
         if delegated.result:
