@@ -474,6 +474,9 @@ class VideoChannel(VideoHooksMixin, Channel):
                 )
             self._recorder.close()
         self._recording_handles.clear()
+        # Close video pipeline
+        if self._video_pipeline is not None:
+            self._video_pipeline.close()
         # Close video bridge
         if self._bridge is not None:
             self._bridge.close()

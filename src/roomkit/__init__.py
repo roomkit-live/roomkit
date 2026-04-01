@@ -106,6 +106,13 @@ from roomkit.store import ConversationStore, InMemoryStore
 from roomkit.tools.base import Tool
 from roomkit.tools.policy import RoleOverride, ToolPolicy
 from roomkit.video.events import VideoDetectionEvent
+from roomkit.video.pipeline.filter import (
+    FaceTouchConfig,
+    FaceTouchFilter,
+    FaceTouchSensitivity,
+    FaceZone,
+    MockFaceTouchFilter,
+)
 
 # Console (optional — requires `rich`)
 with contextlib.suppress(ImportError):
@@ -258,6 +265,12 @@ __all__ = [
     "ToolCallEvent",
     "ToolHandler",
     "VideoDetectionEvent",
+    # Video pipeline filters
+    "FaceTouchConfig",
+    "FaceTouchFilter",
+    "FaceTouchSensitivity",
+    "FaceZone",
+    "MockFaceTouchFilter",
     "get_current_voice_session",
     # Console (optional)
     "RoomKitConsole",

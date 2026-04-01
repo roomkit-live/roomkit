@@ -14,10 +14,14 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
+import urllib.request
 from dataclasses import dataclass, field
 from enum import StrEnum, unique
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import numpy as np
 
 from roomkit.video.events import VideoDetectionEvent
 from roomkit.video.pipeline.filter.base import FilterContext, FilterEvent, VideoFilterProvider
@@ -81,9 +85,11 @@ def _resolve_model(model_path: str, model_type: str) -> str:
         return str(cached)
 
     logger.info("Downloading MediaPipe %s model to %s ...", model_type, cached)
-    import urllib.request
-
-    urllib.request.urlretrieve(url, cached)  # nosec B310 — fixed Google Storage URL
+    try:
+        urllib.request.urlretrieve(url, cached)  # nosec B310 — fixed Google Storage URL
+    except Exception:
+        cached.unlink(missing_ok=True)
+        raise
     logger.info("Download complete: %s", cached)
     return str(cached)
 
@@ -196,7 +202,7 @@ class FaceTouchConfig:
 
     every_n_frames: int = 3
 
-    face_model: str = "face_landmarker_v2_with_blendshapes.task"
+    face_model: str = "face_landmarker.task"
     hand_model: str = "hand_landmarker.task"
 
     # Override individual thresholds (None = use sensitivity preset)
@@ -291,6 +297,7 @@ class FaceTouchFilter(VideoFilterProvider):
         self._face_detector: Any = None
         self._hand_detector: Any = None
         self._mp: Any = None
+        self._init_lock = threading.Lock()
 
         self._frame_count = 0
         self._sessions: dict[str, _SessionState] = {}
@@ -314,8 +321,6 @@ class FaceTouchFilter(VideoFilterProvider):
     def _detect(self, frame: VideoFrame, context: FilterContext) -> None:
         """Run MediaPipe detection and emit events for confirmed touches."""
         self._ensure_models()
-
-        import numpy as np
 
         img = np.frombuffer(frame.data, dtype=np.uint8).reshape(frame.height, frame.width, 3)
 
@@ -460,19 +465,28 @@ class FaceTouchFilter(VideoFilterProvider):
         hand_landmarks: list[Any],
         centroid: tuple[float, float, float],
     ) -> tuple[float, float]:
-        """Return (min_2d_distance, z_diff) from fingertips to zone centroid."""
+        """Return (min_2d_distance, z_diff) from closest 3D fingertip to zone centroid.
+
+        Selects the fingertip with the smallest 3D Euclidean distance to the
+        centroid, then returns (2D distance, z_diff) for that fingertip.  This
+        ensures the z-depth filter is evaluated on the fingertip that is
+        actually closest in 3D, not just the one closest in the image plane.
+        """
         cx, cy, cz = centroid
-        min_dist = float("inf")
+        best_dist_3d = float("inf")
+        best_dist_2d = float("inf")
         best_z_diff = float("inf")
         for idx in FINGERTIP_INDICES:
             if idx < len(hand_landmarks):
                 lm = hand_landmarks[idx]
-                dist = math.sqrt((lm.x - cx) ** 2 + (lm.y - cy) ** 2)
-                if dist < min_dist:
-                    min_dist = dist
-                    # Positive z_diff means hand is in front of face
-                    best_z_diff = abs(lm.z - cz)
-        return min_dist, best_z_diff
+                dist_2d = math.sqrt((lm.x - cx) ** 2 + (lm.y - cy) ** 2)
+                z_diff = abs(lm.z - cz)
+                dist_3d = math.sqrt(dist_2d**2 + z_diff**2)
+                if dist_3d < best_dist_3d:
+                    best_dist_3d = dist_3d
+                    best_dist_2d = dist_2d
+                    best_z_diff = z_diff
+        return best_dist_2d, best_z_diff
 
     def _emit_touch_event(
         self,
@@ -510,27 +524,34 @@ class FaceTouchFilter(VideoFilterProvider):
         """Load MediaPipe models on first use, downloading if needed."""
         if self._face_detector is not None:
             return
-        self._mp = _load_mediapipe()
-        mp = self._mp
+        with self._init_lock:
+            # Double-check after acquiring lock
+            if self._face_detector is not None:
+                return
 
-        face_path = _resolve_model(self._config.face_model, "face_landmarker")
-        hand_path = _resolve_model(self._config.hand_model, "hand_landmarker")
+            self._mp = _load_mediapipe()
+            mp = self._mp
 
-        logger.info("Loading MediaPipe models: face=%s, hand=%s", face_path, hand_path)
+            face_path = _resolve_model(self._config.face_model, "face_landmarker")
+            hand_path = _resolve_model(self._config.hand_model, "hand_landmarker")
 
-        base_options_face = mp.tasks.BaseOptions(model_asset_path=face_path)
-        face_options = mp.tasks.vision.FaceLandmarkerOptions(
-            base_options=base_options_face,
-            num_faces=1,
-        )
-        self._face_detector = mp.tasks.vision.FaceLandmarker.create_from_options(face_options)
+            logger.info("Loading MediaPipe models: face=%s, hand=%s", face_path, hand_path)
 
-        base_options_hand = mp.tasks.BaseOptions(model_asset_path=hand_path)
-        hand_options = mp.tasks.vision.HandLandmarkerOptions(
-            base_options=base_options_hand,
-            num_hands=2,
-        )
-        self._hand_detector = mp.tasks.vision.HandLandmarker.create_from_options(hand_options)
+            base_options_face = mp.tasks.BaseOptions(model_asset_path=face_path)
+            face_options = mp.tasks.vision.FaceLandmarkerOptions(
+                base_options=base_options_face,
+                num_faces=1,
+            )
+            face_detector = mp.tasks.vision.FaceLandmarker.create_from_options(face_options)
+
+            base_options_hand = mp.tasks.BaseOptions(model_asset_path=hand_path)
+            hand_options = mp.tasks.vision.HandLandmarkerOptions(
+                base_options=base_options_hand,
+                num_hands=2,
+            )
+            self._hand_detector = mp.tasks.vision.HandLandmarker.create_from_options(hand_options)
+            # Assign face_detector last — it's the guard variable for the fast path
+            self._face_detector = face_detector
 
     def reset(self) -> None:
         self._frame_count = 0

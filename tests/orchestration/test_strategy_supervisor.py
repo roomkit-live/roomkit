@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -286,7 +287,7 @@ class TestSupervisorShareChannels:
         await boss.tool_handler("delegate_to_w1", {"task": "Do something"})
 
         _, kwargs = kit.delegate.call_args
-        assert kwargs["share_channels"] == []
+        assert not kwargs["share_channels"]
 
     async def test_auto_delegate_one_pass_passes_share_channels(self):
         """auto_delegate with refine_task=False passes share_channels."""
@@ -394,3 +395,43 @@ class TestSupervisorShareChannels:
 
         _, kwargs = kit.delegate.call_args
         assert kwargs["share_channels"] == ["system"]
+
+    async def test_async_delivery_passes_share_channels(self):
+        """async_delivery=True propagates share_channels to background workers."""
+        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1")
+        kit = _make_mock_kit(Room(id="r1"))
+
+        mock_task = MagicMock()
+        mock_task.result = MagicMock(output="result", error=None)
+        kit.delegate = AsyncMock(return_value=mock_task)
+        kit.deliver = AsyncMock()
+
+        # Create a mock that passes isinstance check for RealtimeVoiceChannel
+        mock_voice = MagicMock(spec=RealtimeVoiceChannel)
+        mock_voice._tools = None
+        mock_voice.tool_handler = None
+        kit.channels = {"voice": mock_voice}
+
+        s = Supervisor(
+            supervisor=boss,
+            workers=[w1],
+            strategy="sequential",
+            auto_delegate=True,
+            async_delivery=True,
+            share_channels=["system", "ws-status"],
+        )
+        await s.install(kit, "r1")
+
+        # Call the injected tool handler
+        result = await mock_voice.tool_handler("delegate_workers", {"task": "Analyze"})
+        parsed = json.loads(result)
+        assert parsed["status"] == "dispatched"
+
+        # Let the background task complete
+        await asyncio.sleep(0.05)
+
+        _, kwargs = kit.delegate.call_args
+        assert kwargs["share_channels"] == ["system", "ws-status"]

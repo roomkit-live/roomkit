@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Callable
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
@@ -325,6 +326,7 @@ class Supervisor(Orchestration):
         # Wrap tool handler for async delegation
         original_handler = voice_channel.tool_handler
         _running = False
+        _lock = asyncio.Lock()
 
         async def async_tool_handler(name: str, arguments: dict[str, Any]) -> str:
             nonlocal _running
@@ -334,16 +336,17 @@ class Supervisor(Orchestration):
                     return await original_handler(name, arguments)
                 return json.dumps({"error": f"Unknown tool: {name}"})
 
-            if _running:
-                return json.dumps(
-                    {
-                        "status": "already_running",
-                        "message": "Workers are already running.",
-                    }
-                )
+            async with _lock:
+                if _running:
+                    return json.dumps(
+                        {
+                            "status": "already_running",
+                            "message": "Workers are already running.",
+                        }
+                    )
 
-            task_desc = arguments.get("task", "")
-            _running = True
+                task_desc = arguments.get("task", "")
+                _running = True
 
             # Launch workers in background — tool returns immediately
             task = asyncio.create_task(
@@ -446,7 +449,12 @@ class Supervisor(Orchestration):
                             task_desc,
                             share_channels=share_channels,
                         )
-                    _dedup_cache[rid] = (result, time.monotonic())
+                    now = time.monotonic()
+                    _dedup_cache[rid] = (result, now)
+                    # Evict expired entries to prevent unbounded growth
+                    stale = [k for k, (_, ts) in _dedup_cache.items() if now - ts >= dedup_window]
+                    for k in stale:
+                        del _dedup_cache[k]
                     return result
                 except Exception as exc:
                     logger.exception("Strategy delegation failed")
@@ -590,7 +598,7 @@ async def _async_run_and_deliver(
     workers: list[Agent],
     task_desc: str,
     share_channels: list[str] | None = None,
-    on_done: Any,
+    on_done: Callable[[], None],
 ) -> None:
     """Background: run workers → deliver results via kit.deliver()."""
     try:

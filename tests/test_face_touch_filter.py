@@ -144,6 +144,49 @@ class TestFaceTouchFilterConstruction:
         # With every_n_frames=3, detection runs at frame_count 1, 4, 7
         assert detected_frames == [1, 4, 7]
 
+    def test_every_n_frames_one_runs_every_frame(self) -> None:
+        """With every_n_frames=1, detection runs on every frame."""
+        f = FaceTouchFilter(FaceTouchConfig(every_n_frames=1))
+        ctx = FilterContext()
+
+        detected_frames: list[int] = []
+
+        def spy_detect(frame: VideoFrame, context: FilterContext) -> None:
+            detected_frames.append(f._frame_count)
+
+        f._detect = spy_detect  # type: ignore[assignment]
+
+        for i in range(5):
+            f.filter(_raw_frame(seq=i), ctx)
+
+        assert detected_frames == [1, 2, 3, 4, 5]
+
+    def test_throttle_resets_after_reset(self) -> None:
+        """After reset(), throttle counter restarts from zero."""
+        f = FaceTouchFilter(FaceTouchConfig(every_n_frames=3))
+        ctx = FilterContext()
+
+        detected_frames: list[int] = []
+
+        def spy_detect(frame: VideoFrame, context: FilterContext) -> None:
+            detected_frames.append(f._frame_count)
+
+        f._detect = spy_detect  # type: ignore[assignment]
+
+        # Process 3 frames: should detect at frame_count 1 only
+        for i in range(3):
+            f.filter(_raw_frame(seq=i), ctx)
+        assert detected_frames == [1]
+
+        # Reset and process again — should detect at frame_count 1 again
+        f.reset()
+        f._detect = spy_detect  # type: ignore[assignment]
+        detected_frames.clear()
+
+        for i in range(3):
+            f.filter(_raw_frame(seq=i + 10), ctx)
+        assert detected_frames == [1]
+
 
 # ---------------------------------------------------------------------------
 # MockFaceTouchFilter tests
