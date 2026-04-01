@@ -101,6 +101,7 @@ from roomkit.orchestration import (
     set_conversation_state,
     setup_handoff,
 )
+from roomkit.sandbox import SandboxExecutor, SandboxResult
 from roomkit.skills import ScriptExecutor, Skill, SkillMetadata, SkillRegistry
 from roomkit.store import ConversationStore, InMemoryStore
 from roomkit.tools.base import Tool
@@ -228,6 +229,9 @@ __all__ = [
     "InMemoryStore",
     # Memory
     "MemoryProvider",
+    # Sandbox
+    "SandboxExecutor",
+    "SandboxResult",
     # Skills
     "ScriptExecutor",
     "Skill",

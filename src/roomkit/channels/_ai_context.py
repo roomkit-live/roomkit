@@ -24,6 +24,8 @@ from roomkit.providers.ai.base import (
     AITextPart,
     AITool,
 )
+from roomkit.sandbox.tools import SANDBOX_PREAMBLE as _SANDBOX_PREAMBLE
+from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX as _SANDBOX_TOOL_PREFIX
 
 if TYPE_CHECKING:
     from roomkit.channels.ai import _ContentPart, _ToolLoopContext
@@ -32,6 +34,7 @@ if TYPE_CHECKING:
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
     from roomkit.providers.ai.base import AIProvider
+    from roomkit.sandbox.executor import SandboxExecutor
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
 
@@ -50,6 +53,7 @@ class AIContextHost(Protocol):
         _thinking_budget: Optional thinking budget for extended thinking.
         _skills: Skill registry for tool injection.
         _script_executor: Script executor for skill scripts.
+        _sandbox: Sandbox executor for ad-hoc command execution.
         _memory: Memory provider for conversation retrieval.
         _eviction: Tool result eviction / truncation strategy.
         _planner: Optional task planner for planning tools.
@@ -71,6 +75,7 @@ class AIContextHost(Protocol):
     _thinking_budget: int | None
     _skills: SkillRegistry | None
     _script_executor: ScriptExecutor | None
+    _sandbox: SandboxExecutor | None
     _memory: MemoryProvider
     _eviction: ToolEviction
     _planner: TaskPlanner | None
@@ -98,6 +103,7 @@ class AIContextMixin:
     _thinking_budget: int | None
     _skills: SkillRegistry | None
     _script_executor: ScriptExecutor | None
+    _sandbox: SandboxExecutor | None
     _memory: MemoryProvider
     _eviction: ToolEviction
     _planner: TaskPlanner | None
@@ -151,6 +157,29 @@ class AIContextMixin:
             skills_xml = self._skills.to_prompt_xml()
             skill_block = f"\n\n{preamble}\n\n{skills_xml}"
             system_prompt = (system_prompt or "") + skill_block
+
+        # Inject sandbox tools and preamble
+        if self._sandbox is not None:
+            user_tool_names = {t.name for t in tools}
+            for tdef in self._sandbox.tool_definitions():
+                name = tdef["name"]
+                if not name.startswith(_SANDBOX_TOOL_PREFIX):
+                    logger.warning(
+                        "Sandbox tool %r does not start with %r — skipping",
+                        name,
+                        _SANDBOX_TOOL_PREFIX,
+                    )
+                    continue
+                if name in user_tool_names:
+                    logger.warning("Sandbox tool %r shadows an existing tool", name)
+                tools.append(
+                    AITool(
+                        name=name,
+                        description=tdef.get("description", ""),
+                        parameters=tdef.get("parameters", {}),
+                    )
+                )
+            system_prompt = (system_prompt or "") + f"\n\n{_SANDBOX_PREAMBLE}"
 
         # Inject eviction re-read tool when large results have been stored
         if self._eviction.has_evicted:

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from roomkit.channels._skill_constants import SKILL_INFRA_TOOL_NAMES
 from roomkit.providers.ai.base import AITool
+from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
 from roomkit.tools.policy import ToolPolicy
 
 if TYPE_CHECKING:
@@ -84,8 +85,8 @@ class AIToolPolicyMixin:
     def _apply_tool_filters(self, tools: list[AITool]) -> list[AITool]:
         """Apply tool policy and skill gating to a list of tools.
 
-        Skill infrastructure tools (activate_skill, read_reference, run_script)
-        are *never* filtered — they must always remain visible.
+        Skill infrastructure tools and sandbox tools are *never* filtered
+        — they must always remain visible when configured.
 
         Uses ``_effective_tool_policy`` which incorporates role-based overrides.
         """
@@ -95,6 +96,10 @@ class AIToolPolicyMixin:
         for tool in tools:
             # Skill infra tools always pass
             if tool.name in self._SKILL_INFRA_TOOLS:
+                result.append(tool)
+                continue
+            # Sandbox tools always pass (attached by the channel, not user-managed)
+            if tool.name.startswith(SANDBOX_TOOL_PREFIX):
                 result.append(tool)
                 continue
             # Tool policy filter (role-aware)

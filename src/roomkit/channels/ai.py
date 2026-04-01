@@ -65,6 +65,7 @@ from roomkit.tools.policy import ToolPolicy
 
 if TYPE_CHECKING:
     from roomkit.models.tool_call import ToolCallCallback
+    from roomkit.sandbox.executor import SandboxExecutor
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
     from roomkit.tools.base import Tool
@@ -128,6 +129,7 @@ class AIChannel(
         fallback_provider: AIProvider | None = None,
         skills: SkillRegistry | None = None,
         script_executor: ScriptExecutor | None = None,
+        sandbox: SandboxExecutor | None = None,
         memory: MemoryProvider | None = None,
         tool_policy: ToolPolicy | None = None,
         thinking_budget: int | None = None,
@@ -148,6 +150,7 @@ class AIChannel(
         self._fallback_provider = fallback_provider
         self._skills = skills
         self._script_executor = script_executor
+        self._sandbox = sandbox
         self._memory = memory or SlidingWindowMemory(max_events=max_context_events)
         self._tool_policy = tool_policy
         self._eviction = ToolEviction(threshold_tokens=evict_threshold_tokens)
@@ -183,6 +186,7 @@ class AIChannel(
             or effective_handler
             or (skills and skills.skill_count > 0)
             or enable_planning
+            or sandbox is not None
         )
         self._tool_handler: ToolHandler | None = (
             self._channel_tool_handler if has_any_tools else None
@@ -286,6 +290,7 @@ class AIChannel(
                 or bool(self._injected_tools)
                 or (self._skills is not None and self._skills.skill_count > 0)
                 or self._planner is not None
+                or self._sandbox is not None
             )
 
             if self._provider.supports_streaming or self._provider.supports_structured_streaming:
@@ -304,6 +309,10 @@ class AIChannel(
         return ChannelOutput.empty()
 
     async def close(self) -> None:
-        """Close the channel, its provider, and the memory provider."""
+        """Close the channel, its provider, memory, and executors."""
         await super().close()
         await self._memory.close()
+        if self._script_executor is not None:
+            await self._script_executor.close()
+        if self._sandbox is not None:
+            await self._sandbox.close()

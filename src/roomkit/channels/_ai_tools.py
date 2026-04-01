@@ -7,6 +7,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.channels._sandbox_handlers import handle_sandbox_command
 from roomkit.channels._skill_constants import (
     ACTIVATE_SKILL_SCHEMA,
     READ_REFERENCE_SCHEMA,
@@ -22,6 +23,7 @@ from roomkit.channels._skill_handlers import (
 )
 from roomkit.models.enums import ChannelType
 from roomkit.providers.ai.base import AITool, AIToolResultPart
+from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
 from roomkit.telemetry.base import SpanKind
 
 if TYPE_CHECKING:
@@ -32,6 +34,7 @@ if TYPE_CHECKING:
     from roomkit.channels.ai import _ContentPart, _ToolLoopContext
     from roomkit.models.tool_call import ToolCallCallback
     from roomkit.realtime.base import RealtimeBackend
+    from roomkit.sandbox.executor import SandboxExecutor
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
     from roomkit.tools.policy import ToolPolicy
@@ -50,6 +53,7 @@ class AIToolsHost(Protocol):
         _user_tool_handler: User-provided tool handler for fallback dispatch.
         _skills: Skill registry for gated tool resolution.
         _script_executor: Script executor for skill scripts.
+        _sandbox: Sandbox executor for ad-hoc command execution.
         _eviction: Tool result eviction / truncation strategy.
         _planner: Optional task planner.
         _realtime: Realtime backend for ephemeral events.
@@ -69,6 +73,7 @@ class AIToolsHost(Protocol):
     _user_tool_handler: Any
     _skills: SkillRegistry | None
     _script_executor: ScriptExecutor | None
+    _sandbox: SandboxExecutor | None
     _eviction: ToolEviction
     _planner: TaskPlanner | None
     _realtime: RealtimeBackend | None
@@ -97,6 +102,7 @@ class AIToolsMixin:
     _user_tool_handler: Any
     _skills: SkillRegistry | None
     _script_executor: ScriptExecutor | None
+    _sandbox: SandboxExecutor | None
     _eviction: ToolEviction
     _planner: TaskPlanner | None
     _realtime: RealtimeBackend | None
@@ -127,9 +133,11 @@ class AIToolsMixin:
             logger.info("Executing tool: %s(%s)", tc.name, tc.id)
 
             # Execution guard: policy deny (defense-in-depth, role-aware)
+            # Sandbox tools are exempt — they are channel-managed, not user-managed.
             effective_policy = self._effective_tool_policy
             if (
                 tc.name not in self._SKILL_INFRA_TOOLS
+                and not tc.name.startswith(SANDBOX_TOOL_PREFIX)
                 and effective_policy
                 and not effective_policy.is_allowed(tc.name)
             ):
@@ -229,7 +237,7 @@ class AIToolsMixin:
         return dispatch
 
     async def _channel_tool_handler(self, name: str, arguments: dict[str, Any]) -> str:
-        """Unified tool dispatcher: channel-managed -> skill -> user tools."""
+        """Unified tool dispatcher: channel-managed -> sandbox -> skill -> user tools."""
         handler = self._channel_tool_dispatch.get(name)
         if handler is not None:
             result = handler(arguments)
@@ -237,6 +245,9 @@ class AIToolsMixin:
             if asyncio.iscoroutine(result):
                 return str(await result)
             return str(result)
+        # Sandbox tools — dispatched by prefix before user/MCP tools
+        if self._sandbox is not None and name.startswith(SANDBOX_TOOL_PREFIX):
+            return await handle_sandbox_command(name, arguments or {}, self._sandbox)
         if self._user_tool_handler:
             return str(await self._user_tool_handler(name, arguments))
         return json.dumps({"error": f"Unknown tool: {name}"})
