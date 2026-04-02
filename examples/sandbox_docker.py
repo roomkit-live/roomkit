@@ -40,7 +40,7 @@ async def main() -> None:
 
     # Create a Docker-based sandbox executor
     from roomkit_sandbox import ContainerSandboxExecutor
-    from roomkit_sandbox.backend import DockerSandboxBackend
+    from roomkit_sandbox.docker_backend import DockerSandboxBackend
 
     backend = DockerSandboxBackend(
         image="ghcr.io/roomkit-live/sandbox:latest",
