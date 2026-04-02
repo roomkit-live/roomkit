@@ -1,41 +1,41 @@
-"""vLLM + HuggingFace -- assistant IA local avec sandbox conteneur.
+"""vLLM + HuggingFace — local AI assistant with Docker sandbox.
 
-Sert n'importe quel modele HuggingFace localement avec vLLM et le branche
-dans RoomKit avec un sandbox Docker pour l'execution de commandes.
-Cet exemple utilise Chocolatine-2-4B, un modele francophone.
+Serve any HuggingFace model locally with vLLM and wire it into RoomKit
+with a Docker sandbox for command execution. This example uses
+Chocolatine-2-4B, a French-language model.
 
-Lancer le serveur vLLM d'abord :
+Start the vLLM server first:
 
-    # GPU <= 12 Go (RTX 4070, 3060, etc.) :
+    # GPU <= 12 GB (RTX 4070, 3060, etc.):
     uv run vllm serve jpacifico/Chocolatine-2-4B-Instruct-DPO-v2.1 \
         --port 8000 --enforce-eager --max-model-len 4096
 
-    # GPU >= 24 Go (RTX 4090, A5000, etc.) -- parametres par defaut :
+    # GPU >= 24 GB (RTX 4090, A5000, etc.) — defaults:
     uv run vllm serve jpacifico/Chocolatine-2-4B-Instruct-DPO-v2.1 --port 8000
 
-    # Docker (GPU NVIDIA) :
+    # Docker (NVIDIA GPU):
     docker run --gpus all -p 8000:8000 \
         vllm/vllm-openai:latest \
         --model jpacifico/Chocolatine-2-4B-Instruct-DPO-v2.1 \
         --enforce-eager --max-model-len 4096
 
-Pre-requis sandbox :
-    - Docker en cours d'execution
+Sandbox prerequisites:
+    - Docker running
     - docker pull ghcr.io/roomkit-live/sandbox:latest
     - pip install roomkit-sandbox[docker]
 
-Puis lancer l'exemple :
+Then run:
     uv run python examples/vllm_huggingface.py
 
-Essayez :
+Try:
     - "Liste les fichiers dans /workspace"
     - "Ecris un script Python hello.py et execute-le"
     - "Montre le contenu de /etc/os-release"
     - "Clone https://github.com/rtk-ai/rtk et montre le README"
 
-Variables d'environnement (optionnel) :
-    VLLM_MODEL     Nom du modele (defaut: jpacifico/Chocolatine-2-4B-Instruct-DPO-v2.1)
-    VLLM_BASE_URL  URL du serveur (defaut: http://localhost:8000/v1)
+Environment variables (optional):
+    VLLM_MODEL     Model name (default: jpacifico/Chocolatine-2-4B-Instruct-DPO-v2.1)
+    VLLM_BASE_URL  Server URL (default: http://localhost:8000/v1)
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ async def main() -> None:
     from roomkit_sandbox import ContainerSandboxExecutor
     from roomkit_sandbox.docker_backend import DockerSandboxBackend
 
-    # --- Sandbox conteneur ----------------------------------------------------
+    # --- Container sandbox ----------------------------------------------------
     backend = DockerSandboxBackend(
         image="ghcr.io/roomkit-live/sandbox:latest",
         memory_limit="512m",
@@ -72,7 +72,7 @@ async def main() -> None:
         session_id="vllm-hf-sandbox",
     )
 
-    # --- Provider vLLM --------------------------------------------------------
+    # --- vLLM provider --------------------------------------------------------
     provider = create_vllm_provider(
         VLLMConfig(
             model=MODEL,
@@ -82,7 +82,7 @@ async def main() -> None:
         )
     )
 
-    # --- Configuration RoomKit ------------------------------------------------
+    # --- RoomKit setup --------------------------------------------------------
     kit = RoomKit()
 
     cli = CLIChannel("cli")
@@ -115,13 +115,13 @@ async def main() -> None:
         kit,
         room_id="demo-room",
         welcome=(
-            f"\nAssistant IA local (vLLM + HuggingFace)\n"
-            f"Modele : {MODEL}\n"
-            f"Serveur : {BASE_URL}\n"
-            f"Outils sandbox : {', '.join(tools)}\n\n"
-            "Les commandes s'executent dans un conteneur Docker Alpine.\n"
-            'Essayez : "Liste les fichiers dans /workspace"\n'
-            '     ou : "Ecris un hello.py et execute-le"\n'
+            f"\nLocal AI assistant (vLLM + HuggingFace)\n"
+            f"Model: {MODEL}\n"
+            f"Server: {BASE_URL}\n"
+            f"Sandbox tools: {', '.join(tools)}\n\n"
+            "Commands run inside a Docker Alpine container.\n"
+            'Try: "Liste les fichiers dans /workspace"\n'
+            ' or: "Ecris un hello.py et execute-le"\n'
         ),
     )
 
