@@ -13,6 +13,9 @@ TOOL_SANDBOX_LS = "sandbox_ls"
 TOOL_SANDBOX_GREP = "sandbox_grep"
 TOOL_SANDBOX_FIND = "sandbox_find"
 TOOL_SANDBOX_GIT = "sandbox_git"
+TOOL_SANDBOX_WRITE = "sandbox_write"
+TOOL_SANDBOX_EDIT = "sandbox_edit"
+TOOL_SANDBOX_DELETE = "sandbox_delete"
 TOOL_SANDBOX_DIFF = "sandbox_diff"
 TOOL_SANDBOX_BASH = "sandbox_bash"
 
@@ -143,6 +146,69 @@ SANDBOX_GIT_SCHEMA: dict[str, Any] = {
     },
 }
 
+SANDBOX_WRITE_SCHEMA: dict[str, Any] = {
+    "name": TOOL_SANDBOX_WRITE,
+    "description": (
+        "Write content to a file in the sandbox. Creates the file if it "
+        "doesn't exist, or overwrites it if it does."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file to write.",
+            },
+            "content": {
+                "type": "string",
+                "description": "The full content to write to the file.",
+            },
+        },
+        "required": ["path", "content"],
+    },
+}
+
+SANDBOX_EDIT_SCHEMA: dict[str, Any] = {
+    "name": TOOL_SANDBOX_EDIT,
+    "description": (
+        "Edit a file in the sandbox by replacing an exact string match. "
+        "Use sandbox_read first to see the current content."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file to edit.",
+            },
+            "old_string": {
+                "type": "string",
+                "description": "The exact text to find and replace (must be unique in the file).",
+            },
+            "new_string": {
+                "type": "string",
+                "description": "The replacement text.",
+            },
+        },
+        "required": ["path", "old_string", "new_string"],
+    },
+}
+
+SANDBOX_DELETE_SCHEMA: dict[str, Any] = {
+    "name": TOOL_SANDBOX_DELETE,
+    "description": "Delete a file or empty directory in the sandbox.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file or empty directory to delete.",
+            },
+        },
+        "required": ["path"],
+    },
+}
+
 SANDBOX_DIFF_SCHEMA: dict[str, Any] = {
     "name": TOOL_SANDBOX_DIFF,
     "description": "Compare two files with ultra-condensed diff output.",
@@ -189,10 +255,13 @@ SANDBOX_BASH_SCHEMA: dict[str, Any] = {
 # via ``tool_definitions()`` or pick a subset.
 SANDBOX_TOOL_SCHEMAS: list[dict[str, Any]] = [
     SANDBOX_READ_SCHEMA,
+    SANDBOX_WRITE_SCHEMA,
+    SANDBOX_EDIT_SCHEMA,
     SANDBOX_LS_SCHEMA,
     SANDBOX_GREP_SCHEMA,
     SANDBOX_FIND_SCHEMA,
     SANDBOX_GIT_SCHEMA,
     SANDBOX_DIFF_SCHEMA,
+    SANDBOX_DELETE_SCHEMA,
     SANDBOX_BASH_SCHEMA,
 ]
