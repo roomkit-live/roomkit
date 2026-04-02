@@ -5,9 +5,11 @@ sandboxed command execution inside a NetBSD microVM. Provides true
 VM isolation (~10ms boot) for local AI assistants.
 
 Prerequisites:
-  - SmolBSD installed: https://github.com/NetBSDfr/smolBSD
-  - Incus running (Linux) or OrbStack VM (macOS)
-  - Golden image created: sandbox-setup
+  - SmolBSD cloned: git clone https://github.com/NetBSDfr/smolBSD.git ~/dev/smolBSD
+  - Builder image: cd ~/dev/smolBSD && bmake fetchimg
+  - SSH key in service/sshd/etc/: cp ~/.ssh/id_ed25519.pub service/sshd/etc/
+  - sshd image built: bmake SERVICE=sshd build
+  - QEMU with KVM support
   - pip install roomkit-sandbox
 
 Try asking:
@@ -43,15 +45,21 @@ async def main() -> None:
 
     # Create a SmolBSD-based sandbox executor
     from roomkit_sandbox import ContainerSandboxExecutor
+    from roomkit_sandbox.commands import NativeCommandBuilder
     from roomkit_sandbox.smolbsd_backend import SmolBSDSandboxBackend
 
+    # Point to where smolBSD is cloned
+    smolbsd_dir = str(Path.home() / "dev" / "smolBSD")
+
     backend = SmolBSDSandboxBackend(
-        stack="base",  # Use the base golden image
-        workdir="/workspace",
+        smolbsd_dir=smolbsd_dir,
+        service="sshd",  # Use the sshd image (built with: bmake SERVICE=sshd build)
+        workdir="/home/ssh",
     )
     sandbox = ContainerSandboxExecutor(
         backend=backend,
         session_id="example-smolbsd-sandbox",
+        command_builder=NativeCommandBuilder(),  # No RTK on NetBSD, use native commands
     )
 
     kit = RoomKit()
