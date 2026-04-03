@@ -212,6 +212,7 @@ class HookTrigger(StrEnum):
     ON_RECORDING_STARTED = "on_recording_started"
     ON_RECORDING_STOPPED = "on_recording_stopped"
     # Tool execution (unified across channels)
+    BEFORE_TOOL_USE = "before_tool_use"
     ON_TOOL_CALL = "on_tool_call"
     ON_REALTIME_TEXT_INJECTED = "on_realtime_text_injected"
     # Audio bridging

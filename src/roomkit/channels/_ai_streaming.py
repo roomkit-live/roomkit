@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.channel import ChannelOutput
+from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import (
     AIContext,
@@ -67,6 +68,9 @@ class AIStreamingHost(Protocol):
     _active_loops: dict[str, _ToolLoopContext]
     _after_response_hook: Any
     _before_generation_hook: Any
+    _before_tool_call_hook: Any
+    _tool_call_hook: Any
+    _external_tool_handler: Any
     channel_id: str
 
     async def _build_context(
@@ -120,6 +124,9 @@ class AIStreamingMixin:
     _active_loops: dict[str, Any]
     _after_response_hook: Any
     _before_generation_hook: Any
+    _before_tool_call_hook: Any
+    _tool_call_hook: Any
+    _external_tool_handler: Any
     channel_id: str
 
     # Cross-mixin methods — Any annotations avoid MRO shadowing.
@@ -276,6 +283,29 @@ class AIStreamingMixin:
                         yield event.text
                     elif isinstance(event, StreamToolCall):
                         tool_calls.append(event)
+                        # External tools: fire hooks immediately as they arrive
+                        if self._tool_handler is None and self._external_tool_handler is not None:
+                            handler = self._external_tool_handler
+                            # Extract result from arguments if embedded by proxy
+                            args = dict(event.arguments)
+                            tool_result = args.pop("_result", None)
+                            tool_is_error = args.pop("_is_error", False)
+
+                            await handler.process_tool_call(
+                                event.name,
+                                args,
+                                tool_call_id=event.id,
+                                room_id=room_id,
+                            )
+                            # Fire on_tool_result with actual result
+                            await handler.on_tool_result(
+                                event.name,
+                                args,
+                                tool_result or "",
+                                is_error=bool(tool_is_error),
+                                tool_call_id=event.id,
+                                room_id=room_id,
+                            )
                     elif isinstance(event, StreamDone):
                         if event.usage:
                             _round_usage = event.usage
@@ -309,7 +339,38 @@ class AIStreamingMixin:
                         _round_idx,
                     )
 
-                if not tool_calls or self._tool_handler is None:
+                if not tool_calls:
+                    return
+
+                # External tools: provider executed them internally.
+                # If ExternalToolHandler is set, hooks were already fired
+                # inline during streaming (see StreamToolCall handling above).
+                # Only fire hooks here if no handler was set.
+                if self._tool_handler is None:
+                    if self._external_tool_handler is None:
+                        # No handler — fire hooks directly for observability
+                        for tc in tool_calls:
+                            if self._before_tool_call_hook is not None:
+                                from roomkit.models.tool_call import ToolCallEvent
+
+                                pre_event = ToolCallEvent(
+                                    channel_id=self.channel_id,
+                                    channel_type=ChannelType.AI,
+                                    tool_call_id=tc.id,
+                                    name=tc.name,
+                                    arguments=tc.arguments,
+                                    result=None,
+                                    room_id=room_id,
+                                )
+                                await self._before_tool_call_hook(pre_event)
+
+                    if room_id:
+                        await self._publish_tool_event(
+                            EphemeralEventType.TOOL_CALL_START,
+                            room_id,
+                            tool_calls,
+                            _round_idx,
+                        )
                     return
 
                 if _round_idx >= self._max_tool_rounds:

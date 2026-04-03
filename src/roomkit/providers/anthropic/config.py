@@ -14,3 +14,7 @@ class AnthropicConfig(BaseModel):
     temperature: float = 0.7
     timeout: float = 60.0
     """Request timeout in seconds (default 60s)."""
+    base_url: str | None = None
+    """Override the base URL (e.g., for Claude Code sandbox proxy)."""
+    extra_headers: dict[str, str] | None = None
+    """Extra headers sent with every request (e.g., X-Tenant-ID)."""

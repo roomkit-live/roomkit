@@ -79,6 +79,7 @@ class AIToolsHost(Protocol):
     _realtime: RealtimeBackend | None
     _current_room_id: str | None
     _tool_call_hook: ToolCallCallback | None
+    _before_tool_call_hook: Any
     channel_id: str
 
     @property
@@ -108,6 +109,7 @@ class AIToolsMixin:
     _realtime: RealtimeBackend | None
     _current_room_id: str | None
     _tool_call_hook: ToolCallCallback | None
+    _before_tool_call_hook: Any
     channel_id: str
 
     # Cross-mixin methods — Any annotations avoid MRO shadowing
@@ -165,6 +167,30 @@ class AIToolsMixin:
                         }
                     ),
                 )
+
+            # Pre-execution gate: BEFORE_TOOL_USE hook can deny the tool call
+            if self._before_tool_call_hook is not None:
+                from roomkit.models.tool_call import ToolCallEvent
+
+                pre_event = ToolCallEvent(
+                    channel_id=self.channel_id,
+                    channel_type=ChannelType.AI,
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                    arguments=tc.arguments,
+                    result=None,
+                    room_id=self._current_room_id,
+                )
+                allowed = await self._before_tool_call_hook(pre_event)
+                if not allowed:
+                    logger.info("Tool %s denied by BEFORE_TOOL_USE hook", tc.name)
+                    return AIToolResultPart(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        result=json.dumps(
+                            {"error": f"Tool '{tc.name}' denied by pre-execution hook."}
+                        ),
+                    )
 
             tool_span_id = telemetry.start_span(
                 SpanKind.LLM_TOOL_CALL,

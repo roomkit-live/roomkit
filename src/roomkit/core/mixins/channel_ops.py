@@ -98,10 +98,18 @@ class ChannelOpsMixin(HelpersMixin):
         if isinstance(channel, AIChannel):
             channel._realtime = self._realtime
             channel._tool_call_hook = self._build_tool_call_hook(channel.channel_id)
+            channel._before_tool_call_hook = self._build_before_tool_call_hook(channel.channel_id)
             channel._after_response_hook = self._build_after_response_hook(channel.channel_id)
             channel._before_generation_hook = self._build_before_generation_hook(
                 channel.channel_id
             )
+
+            # Inject hook callbacks into external tool handler if present
+            if channel._external_tool_handler is not None:
+                handler = channel._external_tool_handler
+                handler._channel_id = channel.channel_id
+                handler._before_tool_hook = self._build_before_tool_call_hook(channel.channel_id)
+                handler._on_tool_hook = self._build_tool_call_hook(channel.channel_id)
 
         # Propagate telemetry to channel's sub-providers (AI, STT, TTS, etc.)
         if hasattr(channel, "_propagate_telemetry"):

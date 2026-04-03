@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -46,10 +47,15 @@ class AnthropicAIProvider(AIProvider):
             ) from exc
         self._config = config
         self._api_status_error = _anthropic.APIStatusError
-        self._client = _anthropic.AsyncAnthropic(
-            api_key=config.api_key.get_secret_value(),
-            timeout=config.timeout,
-        )
+        client_kwargs: dict[str, Any] = {
+            "api_key": config.api_key.get_secret_value(),
+            "timeout": config.timeout,
+        }
+        if config.base_url:
+            client_kwargs["base_url"] = config.base_url
+        if config.extra_headers:
+            client_kwargs["default_headers"] = config.extra_headers
+        self._client = _anthropic.AsyncAnthropic(**client_kwargs)
 
     @property
     def model_name(self) -> str:
@@ -195,14 +201,25 @@ class AnthropicAIProvider(AIProvider):
         first_token = True
 
         try:
+            # Track in-progress tool_use blocks for real-time streaming
+            _tool_blocks: dict[int, dict[str, Any]] = {}  # index → {id, name, input_json}
+            _yielded_tool_ids: set[str] = set()
+
             async with self._client.messages.stream(**kwargs) as stream:
-                # Use the raw event stream to capture both thinking and text blocks.
                 async for event in stream:
-                    if (
-                        hasattr(event, "type")
-                        and event.type == "content_block_delta"
-                        and hasattr(event.delta, "type")  # ty: ignore[unresolved-attribute]
-                    ):
+                    if not hasattr(event, "type"):
+                        continue
+
+                    if event.type == "content_block_start":
+                        cb = event.content_block  # ty: ignore[unresolved-attribute]
+                        if hasattr(cb, "type") and cb.type == "tool_use":
+                            _tool_blocks[event.index] = {  # ty: ignore[unresolved-attribute]
+                                "id": cb.id,  # ty: ignore[unresolved-attribute]
+                                "name": cb.name,  # ty: ignore[unresolved-attribute]
+                                "input_json": "",
+                            }
+
+                    elif event.type == "content_block_delta" and hasattr(event.delta, "type"):  # ty: ignore[unresolved-attribute]
                         delta = event.delta  # ty: ignore[unresolved-attribute]
                         if delta.type == "thinking_delta":
                             if first_token:
@@ -214,13 +231,32 @@ class AnthropicAIProvider(AIProvider):
                                 self._record_ttfb(t0)
                                 first_token = False
                             yield StreamTextDelta(text=delta.text)  # ty: ignore[unresolved-attribute]
+                        elif delta.type == "input_json_delta":
+                            idx = event.index  # ty: ignore[unresolved-attribute]
+                            if idx in _tool_blocks:
+                                _tool_blocks[idx]["input_json"] += delta.partial_json  # ty: ignore[unresolved-attribute]
 
-                # Extract final message for tool calls, thinking, and usage
+                    elif event.type == "content_block_stop":
+                        idx = event.index  # ty: ignore[unresolved-attribute]
+                        if idx in _tool_blocks:
+                            tb = _tool_blocks.pop(idx)
+                            if tb["id"] not in _yielded_tool_ids:
+                                _yielded_tool_ids.add(tb["id"])
+                                try:
+                                    args = json.loads(tb["input_json"]) if tb["input_json"] else {}
+                                except json.JSONDecodeError:
+                                    args = {}
+                                yield StreamToolCall(
+                                    id=tb["id"],
+                                    name=tb["name"],
+                                    arguments=args,
+                                )
+
                 final = await stream.get_final_message()
 
-            # Yield tool calls from the final message
+            # Yield any tool calls from final message not already yielded
             for block in final.content:
-                if block.type == "tool_use":
+                if block.type == "tool_use" and block.id not in _yielded_tool_ids:  # ty: ignore[unresolved-attribute]
                     yield StreamToolCall(
                         id=block.id,  # ty: ignore[unresolved-attribute]
                         name=block.name,  # ty: ignore[unresolved-attribute]
@@ -231,7 +267,6 @@ class AnthropicAIProvider(AIProvider):
                 "input_tokens": final.usage.input_tokens,
                 "output_tokens": final.usage.output_tokens,
             }
-            # Include thinking token usage when available (cache_creation/read)
             if hasattr(final.usage, "cache_creation_input_tokens"):
                 usage["cache_creation_input_tokens"] = final.usage.cache_creation_input_tokens or 0
             if hasattr(final.usage, "cache_read_input_tokens"):

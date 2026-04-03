@@ -69,6 +69,7 @@ if TYPE_CHECKING:
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
     from roomkit.tools.base import Tool
+    from roomkit.tools.external import ExternalToolHandler
 
 ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
 
@@ -130,6 +131,7 @@ class AIChannel(
         skills: SkillRegistry | None = None,
         script_executor: ScriptExecutor | None = None,
         sandbox: SandboxExecutor | None = None,
+        external_tool_handler: ExternalToolHandler | None = None,
         memory: MemoryProvider | None = None,
         tool_policy: ToolPolicy | None = None,
         thinking_budget: int | None = None,
@@ -205,12 +207,16 @@ class AIChannel(
         self._realtime: RealtimeBackend | None = None
         # Unified tool call hook callback (injected by framework on register_channel)
         self._tool_call_hook: ToolCallCallback | None = None
+        # Pre-tool-use hook callback (injected by framework on register_channel)
+        self._before_tool_call_hook: Any = None
         # AI response hook callback (injected by framework on register_channel)
         self._after_response_hook: Any = None
         # BEFORE_AI_GENERATION hook callback (injected by framework on register_channel)
         self._before_generation_hook: Any = None
         # Current room ID (set per on_event invocation for tool hook context)
         self._current_room_id: str | None = None
+        # External tool handler for provider-executed tools (e.g. Claude Code)
+        self._external_tool_handler = external_tool_handler
 
     @property
     def tool_handler(self) -> ToolHandler | None:
@@ -291,6 +297,7 @@ class AIChannel(
                 or (self._skills is not None and self._skills.skill_count > 0)
                 or self._planner is not None
                 or self._sandbox is not None
+                or self._external_tool_handler is not None
             )
 
             if self._provider.supports_streaming or self._provider.supports_structured_streaming:

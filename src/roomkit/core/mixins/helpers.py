@@ -428,6 +428,55 @@ class HelpersMixin:
 
         return _callback
 
+    def _build_before_tool_call_hook(self, channel_id: str) -> Any:
+        """Build a BEFORE_TOOL_USE callback closure for an AIChannel.
+
+        The returned callback runs BEFORE_TOOL_USE sync hooks against the
+        framework's hook engine. If any hook blocks, the tool call is denied.
+        Returns True if the tool call is allowed, False if denied.
+        """
+        from roomkit.models.enums import HookTrigger
+        from roomkit.models.tool_call import ToolCallEvent
+
+        kit_ref = self
+
+        async def _callback(event: ToolCallEvent) -> bool:
+            if not event.room_id:
+                return True  # Allow if no room context
+            try:
+                context = await kit_ref._build_context(event.room_id)
+            except Exception:
+                logger.warning(
+                    "Failed to build context for BEFORE_TOOL_USE hook in room %s",
+                    event.room_id,
+                    exc_info=True,
+                )
+                return True  # Allow on error (fail-open)
+
+            hook_result = await kit_ref._hook_engine.run_sync_hooks(
+                event.room_id,
+                HookTrigger.BEFORE_TOOL_USE,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+
+            await kit_ref._emit_framework_event(
+                "before_tool_use",
+                room_id=event.room_id,
+                channel_id=channel_id,
+                data={
+                    "tool_name": event.name,
+                    "tool_call_id": event.tool_call_id,
+                    "allowed": hook_result.allowed,
+                    "reason": hook_result.reason,
+                },
+            )
+
+            return hook_result.allowed
+
+        return _callback
+
     def _build_after_response_hook(self, channel_id: str) -> Any:
         """Build an AfterResponseCallback closure for an AIChannel.
 
