@@ -171,6 +171,7 @@ class RealtimeSpeechMixin:
             return
         with self._state_lock:
             self._user_speaking[session.id] = False
+            self._barge_in_active.discard(session.id)
         self._update_idle_event(session.id)
         try:
             loop = asyncio.get_running_loop()
