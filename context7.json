@@ -26,5 +26,7 @@
     "Test: `uv run pytest`. asyncio_mode=auto, no @pytest.mark.asyncio needed.",
     "Interruption: IMMEDIATE, CONFIRMED, SEMANTIC, DISABLED strategies.",
     "Join voice: `session = await kit.join(room_id, channel_id, participant_id=...)`."
-  ]
+  ],
+  "url": "https://context7.com/roomkit-live/roomkit",
+  "public_key": "pk_Ocxm9jkE60KEjE2xlyDud"
 }
