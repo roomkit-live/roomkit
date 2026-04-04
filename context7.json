@@ -1,32 +1,4 @@
 {
-  "$schema": "https://context7.com/schema/context7.json",
-  "projectTitle": "RoomKit",
-  "description": "Pure async Python library for multi-channel conversations with rooms, hooks, voice pipelines, AI channels, orchestration, and pluggable backends",
-  "folders": ["docs/c7", "examples"],
-  "excludeFolders": ["examples/.claude"],
-  "excludeFiles": ["avatar.png"],
-  "rules": [
-    "RoomKit is async-first. Always use `async def` and `await` for all operations.",
-    "Import: `from roomkit import RoomKit, TextContent, HookTrigger` for core types.",
-    "Channels: `SMSChannel('id', provider=...)`, `EmailChannel('id', provider=...)`.",
-    "AIChannel: `from roomkit.channels.ai import AIChannel`.",
-    "All files start with `from __future__ import annotations`.",
-    "Flow: register_channel -> create_room -> attach_channel -> process_inbound.",
-    "AI channels: `category=ChannelCategory.INTELLIGENCE` when attaching.",
-    "BEFORE_BROADCAST hooks are SYNC (block/modify). AFTER_BROADCAST are ASYNC (fire-and-forget).",
-    "HookResult: `.allow()`, `.block(reason)`, `.modify(event)`.",
-    "Use mock providers for testing: MockAIProvider, MockSTTProvider, MockVoiceBackend.",
-    "Pydantic: use `model_copy(update={...})`, never mutate directly.",
-    "Voice pipeline: Resampler->Recorder->AEC->AGC->Denoiser->VAD->Diarization+DTMF.",
-    "Orchestration: Pipeline, Swarm, Supervisor, Loop strategies.",
-    "Python 3.12+. Use `X | None`, not `Optional[X]`.",
-    "Voice lazy loaders: `from roomkit.voice import get_deepgram_provider`.",
-    "71 top-level exports. Providers import from subpackages.",
-    "Zero deps beyond pydantic>=2.9. Optional extras: roomkit[voice], roomkit[anthropic].",
-    "Test: `uv run pytest`. asyncio_mode=auto, no @pytest.mark.asyncio needed.",
-    "Interruption: IMMEDIATE, CONFIRMED, SEMANTIC, DISABLED strategies.",
-    "Join voice: `session = await kit.join(room_id, channel_id, participant_id=...)`."
-  ],
   "url": "https://context7.com/roomkit-live/roomkit",
   "public_key": "pk_Ocxm9jkE60KEjE2xlyDud"
 }
