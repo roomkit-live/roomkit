@@ -427,6 +427,22 @@ class FastRTCVoiceBackend(VoiceBackend):
         else:
             logger.warning("No websocket for session %s", session.id)
 
+    def interrupt(self, session: VoiceSession) -> None:  # noqa: B027
+        """Flush the outbound emit queue so queued audio doesn't leak after barge-in."""
+        queue = self._get_emit_queue(session)
+        if queue is not None:
+            flushed = 0
+            while not queue.empty():
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    queue.get_nowait()
+                    flushed += 1
+            if flushed:
+                logger.debug(
+                    "Flushed %d frames from emit queue for session %s",
+                    flushed,
+                    session.id,
+                )
+
     def get_session(self, session_id: str) -> VoiceSession | None:
         return self._sessions.get(session_id)
 

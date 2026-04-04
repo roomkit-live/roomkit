@@ -256,9 +256,9 @@ class RealtimeVoiceChannel(
         self._last_output_level_at: float = 0.0
         # Cached event loop for cross-thread scheduling (e.g. PortAudio callback)
         self._event_loop: asyncio.AbstractEventLoop | None = None
-        # True when the channel's pipeline has VAD — local VAD drives speech
-        # events, and provider speech callbacks are ignored.
-        self._has_pipeline_vad: bool = False
+        # Per-session flag: True when session's pipeline has VAD — local VAD
+        # drives speech events, and provider speech callbacks are ignored.
+        self._has_pipeline_vad: dict[str, bool] = {}
 
         # Idle tracking: set when BOTH provider is done AND user is not speaking
         self._idle_events: dict[str, asyncio.Event] = {}
@@ -556,11 +556,14 @@ class RealtimeVoiceChannel(
                     "the provider handles endpointing. Use VAD silence "
                     "timeout to control pause sensitivity instead.",
                 )
+            has_pipeline_vad = self._pipeline_config.vad is not None
+            # Set BEFORE creating pipeline so that provider callbacks
+            # arriving early see the correct flag and don't double-fire.
+            with self._state_lock:
+                self._has_pipeline_vad[session.id] = has_pipeline_vad
             pl = self._create_pipeline(self._pipeline_config, self._transport)
             pl.on_vad_event(self._on_pipeline_vad_event)
             pl.on_processed_frame(self._on_pipeline_processed_frame)
-            has_pipeline_vad = self._pipeline_config.vad is not None
-            self._has_pipeline_vad = has_pipeline_vad
 
         # Accept client connection (with telemetry span)
         with telemetry.span(
@@ -740,6 +743,7 @@ class RealtimeVoiceChannel(
             self._last_assistant_text.pop(session.id, None)
             self._recording_tracks.pop(session.id, None)
             self._barge_in_active.discard(session.id)
+            self._has_pipeline_vad.pop(session.id, None)
             idle = self._idle_events.pop(session.id, None)
             if idle is not None:
                 idle.set()  # unblock any waiters

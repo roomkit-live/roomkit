@@ -39,6 +39,7 @@ class _GeminiSessionState:
     resumption_handle: str | None = None
     audio_chunk_count: int = 0
     response_started: bool = False
+    user_speech_active: bool = False
     audio_buffer: deque[bytes] = field(default_factory=lambda: deque(maxlen=100))
     error_suppressed: bool = False
     started_at: float = 0.0
@@ -859,37 +860,18 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     update.resumable,
                 )
 
-        # Handle audio data
-        if hasattr(response, "data") and response.data:
-            state.audio_chunk_count += 1
-            if state.audio_chunk_count % 50 == 1:
-                logger.debug(
-                    "[Gemini] audio chunk #%d (%d bytes) for session %s",
-                    state.audio_chunk_count,
-                    len(response.data),
-                    session.id,
-                )
-            await self._fire_audio_callbacks(session, response.data)
-
-        # Handle tool calls
-        if hasattr(response, "tool_call") and response.tool_call:
-            for fc in response.tool_call.function_calls:
-                await self._fire_tool_call_callbacks(
-                    session,
-                    fc.id,
-                    fc.name,
-                    dict(fc.args) if fc.args else {},
-                )
-
         # Handle voice activity detection (speech start/end)
+        # Processed BEFORE audio so that interruption state is up-to-date.
         if hasattr(response, "voice_activity") and response.voice_activity:
             va = response.voice_activity
             if hasattr(va, "voice_activity_type") and va.voice_activity_type:
                 if va.voice_activity_type == "ACTIVITY_START":
                     logger.info("[VAD] speech_start (session %s)", session.id)
+                    state.user_speech_active = True
                     await self._fire_callbacks(self._speech_start_callbacks, session)
                 elif va.voice_activity_type == "ACTIVITY_END":
                     logger.info("[VAD] speech_end (session %s)", session.id)
+                    state.user_speech_active = False
                     # Flush user transcription buffer — speech ended
                     await self._flush_transcription_buffer(session, "user")
                     await self._fire_callbacks(self._speech_end_callbacks, session)
@@ -935,9 +917,16 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     session.id,
                 )
                 await self._flush_transcription_buffer(session, "assistant")
-                state.response_started = False
-                await self._fire_callbacks(self._speech_start_callbacks, session)
-                await self._fire_callbacks(self._response_end_callbacks, session)
+                # Fire speech_start ONLY if ACTIVITY_START wasn't already
+                # received — Gemini doesn't always send voice_activity events
+                # before interrupted, so this may be the only trigger for
+                # the channel to call transport.interrupt().
+                if not state.user_speech_active:
+                    state.user_speech_active = True
+                    await self._fire_callbacks(self._speech_start_callbacks, session)
+                if state.response_started:
+                    state.response_started = False
+                    await self._fire_callbacks(self._response_end_callbacks, session)
 
             # Turn complete
             if hasattr(content, "turn_complete") and content.turn_complete:
@@ -955,7 +944,31 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 await self._flush_transcription_buffer(session, "user")
                 await self._flush_transcription_buffer(session, "assistant")
                 state.response_started = False
+                state.user_speech_active = False
                 await self._fire_callbacks(self._response_end_callbacks, session)
+
+        # Handle audio data — AFTER server_content so that response_start
+        # fires before the first audio callback in the same message.
+        if hasattr(response, "data") and response.data:
+            state.audio_chunk_count += 1
+            if state.audio_chunk_count % 50 == 1:
+                logger.debug(
+                    "[Gemini] audio chunk #%d (%d bytes) for session %s",
+                    state.audio_chunk_count,
+                    len(response.data),
+                    session.id,
+                )
+            await self._fire_audio_callbacks(session, response.data)
+
+        # Handle tool calls
+        if hasattr(response, "tool_call") and response.tool_call:
+            for fc in response.tool_call.function_calls:
+                await self._fire_tool_call_callbacks(
+                    session,
+                    fc.id,
+                    fc.name,
+                    dict(fc.args) if fc.args else {},
+                )
 
         # Extract usage_metadata if present (sent on turn_complete responses)
         usage_meta = getattr(response, "usage_metadata", None)

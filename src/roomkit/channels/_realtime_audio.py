@@ -51,6 +51,7 @@ class RealtimeAudioHost(Protocol):
         _update_idle_event: Update the idle signaling event for a session.
         _fire_barge_in_hook: Fire barge-in hook (from RealtimeSpeechMixin).
         _handle_speech_event: Handle speech start/end events (from RealtimeSpeechMixin).
+        _send_client_message: Send a JSON message to the client UI.
     """
 
     _state_lock: threading.Lock
@@ -79,6 +80,8 @@ class RealtimeAudioHost(Protocol):
     async def _fire_barge_in_hook(self, session: Any) -> None: ...
 
     async def _handle_speech_event(self, session: Any, event_type: str) -> None: ...
+
+    async def _send_client_message(self, session: Any, message: dict[str, Any]) -> None: ...
 
 
 class RealtimeAudioMixin:
@@ -112,6 +115,7 @@ class RealtimeAudioMixin:
     _update_idle_event: Any  # see RealtimeAudioHost — cross-mixin
     _fire_barge_in_hook: Any  # see RealtimeAudioHost — cross-mixin
     _handle_speech_event: Any  # see RealtimeAudioHost — cross-mixin
+    _send_client_message: Any  # see RealtimeAudioHost — cross-mixin
 
     # -----------------------------------------------------------------
     # Recording setup
@@ -246,6 +250,12 @@ class RealtimeAudioMixin:
         """
         from roomkit.voice.pipeline.vad.base import VADEventType
 
+        logger.info(
+            "[VAD] %s (session %s, confidence=%.2f)",
+            vad_event.type.name,
+            session.id,
+            getattr(vad_event, "confidence", 0.0),
+        )
         if vad_event.type == VADEventType.SPEECH_START:
             self._on_pipeline_speech_start(session)
         elif vad_event.type == VADEventType.SPEECH_END:
@@ -253,26 +263,40 @@ class RealtimeAudioMixin:
 
     def _on_pipeline_speech_start(self, session: VoiceSession) -> None:
         """Handle speech start from local pipeline VAD."""
-        self._user_speaking[session.id] = True
-        self._update_idle_event(session.id)
-
         with self._state_lock:
+            self._user_speaking[session.id] = True
             self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
             resamplers = self._session_resamplers.get(session.id)
-            is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
+            fwd_count = self._audio_forward_count.get(session.id, 0)
+            is_barge_in = fwd_count > 0
+            if is_barge_in:
+                self._barge_in_active.add(session.id)
+            # Reset outbound resampler inside lock to prevent race with
+            # concurrent _resample_outbound_with calls.
+            if resamplers:
+                resamplers[1].reset()
+        self._update_idle_event(session.id)
 
-        if is_barge_in:
-            self._barge_in_active.add(session.id)
-
-        if resamplers:
-            resamplers[1].reset()
-
+        logger.info(
+            "[BARGE-IN] speech_start → interrupt (session %s, "
+            "is_barge_in=%s, forwarded=%d chunks)",
+            session.id,
+            is_barge_in,
+            fwd_count,
+        )
         self._transport.interrupt(session)
 
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
+
+        # Send clear_audio IMMEDIATELY — before hooks or context building.
+        self._track_task(
+            loop,
+            self._send_client_message(session, {"type": "clear_audio"}),
+            name=f"rt_clear_audio:{session.id}",
+        )
 
         if is_barge_in:
             self._track_task(
@@ -295,7 +319,8 @@ class RealtimeAudioMixin:
 
     def _on_pipeline_speech_end(self, session: VoiceSession) -> None:
         """Handle speech end from local pipeline VAD."""
-        self._user_speaking[session.id] = False
+        with self._state_lock:
+            self._user_speaking[session.id] = False
         self._update_idle_event(session.id)
 
         try:
@@ -399,6 +424,12 @@ class RealtimeAudioMixin:
         created before an interrupt are silently discarded.
         """
         with self._state_lock:
+            # Drop outbound audio while user is speaking — prevents new
+            # provider chunks from refilling the transport buffer after
+            # interrupt() flushed it during barge-in.
+            if self._user_speaking.get(session.id, False):
+                logger.debug("[BARGE-IN] dropping outbound audio (user speaking)")
+                return
             resamplers = self._session_resamplers.get(session.id)
             transport_rate = self._session_transport_rates.get(session.id)
             gen = self._audio_generation.get(session.id, 0)

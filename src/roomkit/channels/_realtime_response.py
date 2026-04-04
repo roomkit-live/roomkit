@@ -31,6 +31,7 @@ class RealtimeResponseHost(Protocol):
         _turn_spans: Active telemetry turn span per session.
         _session_spans: Active telemetry session span per session.
         _provider_idle: Whether the provider is idle per session.
+        _user_speaking: Whether the user is currently speaking per session.
         _provider: The realtime voice provider.
         _transport: The voice backend transport.
         _framework: The RoomKit framework instance (or None).
@@ -52,6 +53,7 @@ class RealtimeResponseHost(Protocol):
     _turn_spans: dict[str, Any]
     _session_spans: dict[str, Any]
     _provider_idle: dict[str, bool]
+    _user_speaking: dict[str, bool]
     _provider: RealtimeVoiceProvider
     _transport: VoiceBackend
     _framework: RoomKit | None
@@ -81,6 +83,7 @@ class RealtimeResponseMixin:
     _turn_spans: dict[str, Any]
     _session_spans: dict[str, Any]
     _provider_idle: dict[str, bool]
+    _user_speaking: dict[str, bool]
     _provider: RealtimeVoiceProvider
     _transport: VoiceBackend
     _framework: RoomKit | None
@@ -94,6 +97,10 @@ class RealtimeResponseMixin:
 
     def _on_provider_response_start(self, session: VoiceSession) -> Any:
         """Handle AI response start — activate AEC, publish typing indicator."""
+        with self._state_lock:
+            # AI is responding → user has stopped speaking.  Clear the flag
+            # so _on_provider_audio stops dropping outbound audio.
+            self._user_speaking[session.id] = False
         self._provider_idle[session.id] = False
         self._update_idle_event(session.id)
         # Activate AEC: echo cancellation is bypassed until playback starts

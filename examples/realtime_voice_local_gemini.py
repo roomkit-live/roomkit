@@ -38,10 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from shared import (
     build_aec,
-    build_debug_taps,
-    build_denoiser,
     build_pipeline,
-    build_vad,
     run_until_stopped,
     setup_console,
     setup_logging,
@@ -85,32 +82,18 @@ async def main() -> None:
     sample_rate = 24000  # Gemini outputs 24 kHz — mic must match for AEC
     block_ms = 20
 
-    aec = build_aec(sample_rate, block_ms, default="webrtc")
-    denoiser = build_denoiser(sample_rate, default="rnnoise")
-    vad = build_vad(sample_rate, default="ten")
-    debug_taps = build_debug_taps()
-    pipeline = build_pipeline(aec=aec, denoiser=denoiser, vad=vad, debug_taps=debug_taps)
-
-    # When AEC is active it removes speaker echo from the mic signal, so we
-    # can keep the mic open during playback (barge-in enabled).  Without AEC
-    # the mic is muted during playback to prevent feedback loops.
-    mute_env = os.environ.get("MUTE_MIC")
-    mute_mic = mute_env != "0" if mute_env is not None else aec is None
-
-    if mute_mic:
-        logger.warning(
-            "Barge-in disabled — mic muted during playback (no AEC). "
-            "Install AEC for barge-in: pip install aec-audio-processing"
-        )
-    else:
-        logger.info("Barge-in enabled (AEC active, mic stays open during playback)")
+    # Pipeline: AEC only — removes speaker echo so Gemini doesn't hear
+    # its own voice.  No local VAD — Gemini's server-side VAD handles
+    # barge-in detection on the cleaned audio (like Chrome's native AEC).
+    aec = build_aec(sample_rate, block_ms, default="webrtc", enable_ns=False)
+    pipeline = build_pipeline(aec=aec) if aec else None
+    mute_mic = aec is None  # mute mic if no AEC (feedback prevention)
 
     transport = LocalAudioBackend(
         input_sample_rate=sample_rate,
         output_sample_rate=sample_rate,
         block_duration_ms=block_ms,
         mute_mic_during_playback=mute_mic,
-        aec=aec,
     )
 
     # --- Realtime voice channel ---

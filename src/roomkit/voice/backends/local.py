@@ -173,6 +173,10 @@ class LocalAudioBackend(VoiceBackend):
         self._rt_buf_offset = 0  # bytes consumed in the front chunk
         self._rt_buf_lock = threading.Lock()
         self._rt_closing = threading.Event()
+        # When True, speaker callback outputs silence and send_audio()
+        # drops incoming audio.  Set by interrupt(), cleared on next
+        # response_start (via send_audio when _playing_sessions is empty).
+        self._rt_interrupted = False
 
         # --- AEC (transport-level reference feeding) ---
         self._aec = aec
@@ -420,7 +424,11 @@ class LocalAudioBackend(VoiceBackend):
             if isinstance(audio, bytes) and audio and not self._rt_closing.is_set():
                 self._playing_sessions.add(session.id)
                 with self._rt_buf_lock:
+                    was_interrupted = self._rt_interrupted
+                    self._rt_interrupted = False
                     self._rt_output_buffer.append(audio)
+                if was_interrupted:
+                    logger.info("[INTERRUPT] cleared — speaker resumed")
             return
 
         # VoiceChannel path
@@ -682,10 +690,19 @@ class LocalAudioBackend(VoiceBackend):
     def interrupt(self, session: VoiceSession) -> None:
         """Flush outbound queue, stop playback (sync)."""
         self._playing_sessions.discard(session.id)
-        # Realtime path: flush the persistent output buffer
+        # Realtime path: flush the persistent output buffer and signal
+        # the speaker callback to output silence.  The flag also prevents
+        # send_audio() from refilling the buffer before the provider stops.
         with self._rt_buf_lock:
+            queued = len(self._rt_output_buffer)
             self._rt_output_buffer.clear()
             self._rt_buf_offset = 0
+            self._rt_interrupted = True
+        logger.info(
+            "[INTERRUPT] flushed %d chunks, speaker muted (session %s)",
+            queued,
+            session.id,
+        )
         # VoiceChannel path: cancel the playback task
         task = self._playback_tasks.pop(session.id, None)
         if task is not None:
@@ -762,6 +779,13 @@ class LocalAudioBackend(VoiceBackend):
         written = 0
 
         with self._rt_buf_lock:
+            # When interrupted, output silence immediately — don't drain
+            # any buffered audio.  This ensures barge-in stops playback
+            # within one PortAudio callback (~20ms).
+            if self._rt_interrupted:
+                outdata[:bytes_needed] = b"\x00" * bytes_needed
+                return
+
             buf = self._rt_output_buffer
             while written < bytes_needed and buf:
                 chunk = buf[0]

@@ -31,7 +31,7 @@ class RealtimeSpeechHost(Protocol):
         _barge_in_active: Session IDs with an active barge-in.
         _last_assistant_text: Last assistant utterance per session.
         _session_resamplers: Per-session (inbound, outbound) resampler pairs.
-        _has_pipeline_vad: Whether local pipeline VAD is active.
+        _has_pipeline_vad: Per-session flag — whether local pipeline VAD is active.
         _last_input_level_at: Timestamp of last input audio level hook.
         _last_output_level_at: Timestamp of last output audio level hook.
         _event_loop: Cached event loop for cross-thread scheduling.
@@ -53,7 +53,7 @@ class RealtimeSpeechHost(Protocol):
     _barge_in_active: set[str]
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
-    _has_pipeline_vad: bool
+    _has_pipeline_vad: dict[str, bool]
     _last_input_level_at: float
     _last_output_level_at: float
     _event_loop: asyncio.AbstractEventLoop | None
@@ -87,7 +87,7 @@ class RealtimeSpeechMixin:
     _barge_in_active: set[str]
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
-    _has_pipeline_vad: bool
+    _has_pipeline_vad: dict[str, bool]
     _last_input_level_at: float
     _last_output_level_at: float
     _event_loop: asyncio.AbstractEventLoop | None
@@ -113,20 +113,20 @@ class RealtimeSpeechMixin:
         stale, resets the outbound resampler to discard its buffered frame,
         and signals the transport to interrupt outbound audio.
         """
-        if self._has_pipeline_vad:
+        if self._has_pipeline_vad.get(session.id, False):
             return
-        self._user_speaking[session.id] = True
-        self._update_idle_event(session.id)
         with self._state_lock:
+            self._user_speaking[session.id] = True
             self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
             resamplers = self._session_resamplers.get(session.id)
             is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
-
-        if is_barge_in:
-            self._barge_in_active.add(session.id)
-
-        if resamplers:
-            resamplers[1].reset()
+            if is_barge_in:
+                self._barge_in_active.add(session.id)
+            # Reset outbound resampler inside lock to prevent race with
+            # concurrent _resample_outbound_with calls.
+            if resamplers:
+                resamplers[1].reset()
+        self._update_idle_event(session.id)
 
         if is_barge_in:
             logger.debug(
@@ -143,6 +143,15 @@ class RealtimeSpeechMixin:
         except RuntimeError:
             return
 
+        # Send clear_audio IMMEDIATELY — before hooks or context building.
+        # This is the primary barge-in UX signal: tells the client to flush
+        # its playback buffer right now, not after hooks run.
+        self._track_task(
+            loop,
+            self._send_client_message(session, {"type": "clear_audio"}),
+            name=f"rt_clear_audio:{session.id}",
+        )
+
         if is_barge_in:
             self._track_task(
                 loop,
@@ -158,9 +167,10 @@ class RealtimeSpeechMixin:
 
     def _on_provider_speech_end(self, session: VoiceSession) -> Any:
         """Handle speech end from provider's server-side VAD."""
-        if self._has_pipeline_vad:
+        if self._has_pipeline_vad.get(session.id, False):
             return
-        self._user_speaking[session.id] = False
+        with self._state_lock:
+            self._user_speaking[session.id] = False
         self._update_idle_event(session.id)
         try:
             loop = asyncio.get_running_loop()
@@ -182,6 +192,7 @@ class RealtimeSpeechMixin:
             return
         with self._state_lock:
             room_id = self._session_rooms.get(session.id)
+            interrupted_text = self._last_assistant_text.get(session.id, "")
         if not room_id:
             return
         try:
@@ -190,7 +201,7 @@ class RealtimeSpeechMixin:
             context = await self._framework._build_context(room_id)
             event = BargeInEvent(
                 session=session,
-                interrupted_text=self._last_assistant_text.get(session.id, ""),
+                interrupted_text=interrupted_text,
                 audio_position_ms=0,
             )
             await self._framework.hook_engine.run_async_hooks(
@@ -238,12 +249,6 @@ class RealtimeSpeechMixin:
                     "who": "user",
                 },
             )
-
-            if event_type == "start":
-                await self._send_client_message(
-                    session,
-                    {"type": "clear_audio"},
-                )
 
         except Exception:
             logger.exception("Error handling speech %s for session %s", event_type, session.id)

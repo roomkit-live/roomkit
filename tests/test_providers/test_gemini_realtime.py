@@ -772,6 +772,7 @@ class TestGeminiLiveProvider:
         await provider._handle_server_response(session, response)
 
         assert starts == [session.id]
+        assert state.user_speech_active is True
 
     async def test_handle_voice_activity_end(self):
         mod = _load_provider()
@@ -784,12 +785,15 @@ class TestGeminiLiveProvider:
         ends = []
         provider.on_speech_end(lambda s: ends.append(s.id))
 
+        state.user_speech_active = True  # Simulate prior ACTIVITY_START
+
         response = SimpleNamespace(
             voice_activity=SimpleNamespace(voice_activity_type="ACTIVITY_END"),
         )
         await provider._handle_server_response(session, response)
 
         assert ends == [session.id]
+        assert state.user_speech_active is False
 
     async def test_handle_model_turn_starts_response(self):
         mod = _load_provider()
@@ -892,8 +896,68 @@ class TestGeminiLiveProvider:
         await provider._handle_server_response(session, response)
 
         assert state.response_started is False
+        # speech_start fires from interrupted when ACTIVITY_START wasn't received
+        # (user_speech_active was False) — this triggers transport.interrupt()
         assert speech_starts == [session.id]
+        assert state.user_speech_active is True
         assert response_ends == [session.id]
+
+    async def test_handle_interrupted_no_double_fire_after_activity_start(self):
+        """speech_start should NOT fire from interrupted if ACTIVITY_START already did."""
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        state = mod._GeminiSessionState(
+            session=session, response_started=True, user_speech_active=True
+        )
+        provider._sessions[session.id] = state
+
+        speech_starts = []
+        response_ends = []
+        provider.on_speech_start(lambda s: speech_starts.append(s.id))
+        provider.on_response_end(lambda s: response_ends.append(s.id))
+
+        response = SimpleNamespace(
+            server_content=SimpleNamespace(
+                model_turn=None,
+                turn_complete=False,
+                interrupted=True,
+                input_transcription=None,
+                output_transcription=None,
+            ),
+        )
+        await provider._handle_server_response(session, response)
+
+        # speech_start should NOT fire — ACTIVITY_START already set user_speech_active
+        assert speech_starts == []
+        assert response_ends == [session.id]
+
+    async def test_handle_interrupted_without_response_started(self):
+        """Interrupted when response_started=False should not fire response_end."""
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        state = mod._GeminiSessionState(session=session, response_started=False)
+        provider._sessions[session.id] = state
+
+        response_ends = []
+        provider.on_response_end(lambda s: response_ends.append(s.id))
+
+        response = SimpleNamespace(
+            server_content=SimpleNamespace(
+                model_turn=None,
+                turn_complete=False,
+                interrupted=True,
+                input_transcription=None,
+                output_transcription=None,
+            ),
+        )
+        await provider._handle_server_response(session, response)
+
+        # response_end should not fire if response_start was never fired
+        assert response_ends == []
 
     async def test_handle_input_transcription(self):
         mod = _load_provider()
