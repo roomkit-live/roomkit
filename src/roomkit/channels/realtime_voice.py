@@ -699,6 +699,9 @@ class RealtimeVoiceChannel(
             except Exception:
                 logger.exception("Error firing ON_SESSION_STARTED hook")
 
+        # Notify the connected client that the session is ready
+        await self._send_client_message(session, {"type": "session_started"})
+
         return session
 
     async def end_session(self, session: VoiceSession) -> None:
@@ -711,6 +714,9 @@ class RealtimeVoiceChannel(
         """
         with self._state_lock:
             room_id = self._session_rooms.get(session.id, session.room_id)
+
+        # Notify client before tearing down the connection
+        await self._send_client_message(session, {"type": "session_ended"})
 
         # Disconnect provider and transport
         try:
