@@ -70,6 +70,7 @@ if TYPE_CHECKING:
     from roomkit.skills.registry import SkillRegistry
     from roomkit.tools.base import Tool
     from roomkit.tools.external import ExternalToolHandler
+    from roomkit.tools.human_input import HumanInputToolHandler
 
 ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
 
@@ -132,6 +133,7 @@ class AIChannel(
         script_executor: ScriptExecutor | None = None,
         sandbox: SandboxExecutor | None = None,
         external_tool_handler: ExternalToolHandler | None = None,
+        human_input_handler: HumanInputToolHandler | None = None,
         memory: MemoryProvider | None = None,
         tool_policy: ToolPolicy | None = None,
         thinking_budget: int | None = None,
@@ -174,6 +176,17 @@ class AIChannel(
             effective_handler = compose_tool_handlers(tool_handler, extracted_handler)
         elif extracted_handler:
             effective_handler = extracted_handler
+
+        # Human-input handler: compose first (highest priority) so it
+        # intercepts matching tools before the user handler chain.
+        self._human_input_handler = human_input_handler
+        if human_input_handler:
+            from roomkit.tools.compose import compose_tool_handlers
+
+            if effective_handler:
+                effective_handler = compose_tool_handlers(human_input_handler, effective_handler)
+            else:
+                effective_handler = human_input_handler
 
         # Store the user/orchestration tool handler separately; all dispatch
         # goes through _channel_tool_handler which routes to channel-managed
@@ -298,6 +311,9 @@ class AIChannel(
                 or self._planner is not None
                 or self._sandbox is not None
                 or self._external_tool_handler is not None
+                or (
+                    self._human_input_handler is not None and bool(self._human_input_handler.tools)
+                )
             )
 
             if self._provider.supports_streaming or self._provider.supports_structured_streaming:

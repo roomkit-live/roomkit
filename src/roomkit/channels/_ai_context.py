@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from roomkit.sandbox.executor import SandboxExecutor
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
+    from roomkit.tools.human_input import HumanInputToolHandler
 
 logger = logging.getLogger("roomkit.channels.ai")
 
@@ -76,6 +77,7 @@ class AIContextHost(Protocol):
     _skills: SkillRegistry | None
     _script_executor: ScriptExecutor | None
     _sandbox: SandboxExecutor | None
+    _human_input_handler: HumanInputToolHandler | None
     _memory: MemoryProvider
     _eviction: ToolEviction
     _planner: TaskPlanner | None
@@ -104,6 +106,7 @@ class AIContextMixin:
     _skills: SkillRegistry | None
     _script_executor: ScriptExecutor | None
     _sandbox: SandboxExecutor | None
+    _human_input_handler: HumanInputToolHandler | None
     _memory: MemoryProvider
     _eviction: ToolEviction
     _planner: TaskPlanner | None
@@ -147,6 +150,13 @@ class AIContextMixin:
 
         # Inject extra tools (user-provided + orchestration handoff, etc.)
         tools.extend(self.extra_tools)
+
+        # Inject human-input tool definitions (e.g. AskUserQuestion)
+        if self._human_input_handler is not None:
+            hi_tools = self._human_input_handler.tools
+            if hi_tools:
+                existing_names = {t.name for t in tools}
+                tools.extend(t for t in hi_tools if t.name not in existing_names)
 
         # Inject skill tools and prompt (infra tools added here, gated tools later)
         if self._skills and self._skills.skill_count > 0:
