@@ -79,6 +79,9 @@ class EventType(StrEnum):
     TASK_DELEGATED = "task_delegated"
     TASK_COMPLETED = "task_completed"
     OBSERVATION = "observation"
+    # Tool call lifecycle
+    TOOL_CALL_START = "tool_call_start"
+    TOOL_CALL_END = "tool_call_end"
     # Voice pipeline events
     DTMF = "dtmf"
     RECORDING_STARTED = "recording_started"
@@ -215,6 +218,8 @@ class HookTrigger(StrEnum):
     BEFORE_TOOL_USE = "before_tool_use"
     ON_TOOL_CALL = "on_tool_call"
     ON_REALTIME_TEXT_INJECTED = "on_realtime_text_injected"
+    # Human-in-the-loop (tool paused, waiting for user input)
+    ON_USER_INPUT_REQUIRED = "on_user_input_required"
     # Audio bridging
     BEFORE_BRIDGE_AUDIO = "before_bridge_audio"
     # AI generation (pre-flight — can block or modify context)

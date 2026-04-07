@@ -6,10 +6,12 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from roomkit.models.channel import ChannelBinding
+from roomkit.models.enums import EventType
 from roomkit.models.event import RoomEvent
 from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
+from roomkit.models.store_filter import EventFilter
 from roomkit.models.task import Observation, Task
 
 
@@ -104,8 +106,9 @@ class ConversationStore(ABC):
         *,
         after_index: int | None = None,
         before_index: int | None = None,
+        event_filter: EventFilter | None = None,
     ) -> list[RoomEvent]:
-        """List events in a room with pagination and optional visibility filter.
+        """List events in a room with pagination and filtering.
 
         Supports two pagination modes:
 
@@ -115,6 +118,9 @@ class ConversationStore(ABC):
           ignored.
 
         ``after_index`` and ``before_index`` are mutually exclusive.
+
+        When *event_filter* is provided, its ``visibility`` field takes
+        precedence over *visibility_filter*.
 
         .. note::
 
@@ -129,9 +135,12 @@ class ConversationStore(ABC):
             offset: Number of events to skip (offset-based mode).
             limit: Maximum number of events to return.
             visibility_filter: Optional visibility value to filter by.
+                Ignored when *event_filter* provides a visibility.
             after_index: Return events with ``index > after_index`` (ascending).
             before_index: Return the last ``limit`` events with
                 ``index < before_index``, in ascending order.
+            event_filter: Rich filter criteria (event types, source, time range,
+                correlation ID). See :class:`EventFilter`.
         """
         ...
 
@@ -155,6 +164,50 @@ class ConversationStore(ABC):
         count = await self.get_event_count(room_id)
         indexed = event.model_copy(update={"index": count})
         return await self.add_event(indexed)
+
+    async def get_conversation(
+        self,
+        room_id: str,
+        *,
+        limit: int = 50,
+        after_index: int | None = None,
+    ) -> list[RoomEvent]:
+        """Return message events only — suitable for AI context rebuilding.
+
+        Filters to ``MESSAGE`` events, excluding tool calls, lifecycle,
+        and system noise. Tool call history is not included because AI
+        providers track their own tool call context internally via the
+        message history passed to each generation call.
+
+        Use :meth:`get_timeline` to retrieve the full activity log
+        including tool calls.
+        """
+        return await self.list_events(
+            room_id,
+            limit=limit,
+            after_index=after_index,
+            event_filter=EventFilter(event_types=[EventType.MESSAGE]),
+        )
+
+    async def get_timeline(
+        self,
+        room_id: str,
+        *,
+        event_filter: EventFilter | None = None,
+        limit: int = 100,
+        after_index: int | None = None,
+    ) -> list[RoomEvent]:
+        """Return the full activity timeline for a room.
+
+        Returns all persisted events in order. Use *event_filter* to narrow
+        results (e.g. only tool calls, only a specific correlation group).
+        """
+        return await self.list_events(
+            room_id,
+            limit=limit,
+            after_index=after_index,
+            event_filter=event_filter,
+        )
 
     # Binding operations
 

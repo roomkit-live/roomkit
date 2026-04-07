@@ -282,10 +282,11 @@ class TestAIChannelStreamingResponse:
         assert output.response_stream is not None
         assert output.response_events == []
 
-        # Consume the stream
+        # Consume the stream (filter to text deltas only)
         tokens = []
         async for delta in output.response_stream:
-            tokens.append(delta)
+            if isinstance(delta, str):
+                tokens.append(delta)
         assert tokens == ["hello ", "world"]
 
     async def test_streams_with_tools_via_streaming_tool_loop(self) -> None:
@@ -315,7 +316,7 @@ class TestAIChannelStreamingResponse:
         # Streaming provider with tools now uses streaming tool loop
         assert output.response_stream is not None
         chunks = [chunk async for chunk in output.response_stream]
-        assert "".join(chunks) == "hello"
+        assert "".join(c for c in chunks if isinstance(c, str)) == "hello"
 
     async def test_falls_back_when_provider_not_streaming(self) -> None:
         """AIChannel uses generate() when provider doesn't support streaming."""

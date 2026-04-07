@@ -164,6 +164,23 @@ class DeleteContent(BaseModel):
     reason: str | None = None
 
 
+class ToolCallContent(BaseModel):
+    """Tool call content — used for both TOOL_CALL_START and TOOL_CALL_END events.
+
+    At start: tool_name + arguments populated, status="pending".
+    At end: result + duration_ms populated, status="completed" or "failed".
+    """
+
+    type: Literal["tool_call"] = "tool_call"
+    tool_name: str
+    tool_id: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    result: Any = None
+    status: Literal["pending", "completed", "failed"] = "pending"
+    duration_ms: int | None = None
+    error: str | None = None
+
+
 EventContent = Annotated[
     TextContent
     | RichContent
@@ -175,7 +192,8 @@ EventContent = Annotated[
     | SystemContent
     | TemplateContent
     | EditContent
-    | DeleteContent,
+    | DeleteContent
+    | ToolCallContent,
     Field(discriminator="type"),
 ]
 

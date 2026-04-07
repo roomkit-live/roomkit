@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.channel import ChannelOutput
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.enums import EventType
+from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.tool_call import AIGenerationEvent
 from roomkit.providers.ai.base import (
     AIContext,
@@ -28,7 +30,26 @@ if TYPE_CHECKING:
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.models.enums import ChannelType
-    from roomkit.providers.ai.base import AIProvider
+    from roomkit.providers.ai.base import AIProvider, AIToolCall, AIToolResultPart
+
+
+@dataclass
+class ToolRound:
+    """Record of one tool execution round in the non-streaming tool loop."""
+
+    text_before: str
+    tool_calls: list[AIToolCall]
+    results: list[AIToolResultPart]
+    duration_ms: int
+
+
+@dataclass
+class ToolLoopResult:
+    """Result of the non-streaming tool loop with full round history."""
+
+    response: AIResponse
+    rounds: list[ToolRound] = field(default_factory=list)
+
 
 logger = logging.getLogger("roomkit.channels.ai")
 
@@ -195,7 +216,7 @@ class AIGenerationMixin:
             },
         )
         try:
-            response = await self._run_tool_loop(ai_context, parent_span_id=span_id)
+            loop_result = await self._run_tool_loop(ai_context, parent_span_id=span_id)
         except ProviderError as exc:
             telemetry.end_span(span_id, status="error", error_message=str(exc))
             if exc.status_code == 404:
@@ -229,6 +250,7 @@ class AIGenerationMixin:
             logger.exception("AI provider failed for channel %s", self.channel_id)
             return ChannelOutput.empty()
 
+        response = loop_result.response
         usage = response.usage or {}
         telemetry.end_span(
             span_id,
@@ -239,16 +261,12 @@ class AIGenerationMixin:
             },
         )
 
-        response_event = RoomEvent(
-            room_id=event.room_id,
-            source=EventSource(
-                channel_id=self.channel_id,
-                channel_type=self.channel_type,
-                provider=self.provider_name,
-            ),
-            content=TextContent(body=response.content),
-            chain_depth=event.chain_depth + 1,
-            metadata={"ai_usage": response.usage},
+        # Build events: interleaved text segments and tool calls
+        response_events = self._build_response_events(
+            loop_result,
+            event.room_id,
+            event.chain_depth + 1,
+            response.usage,
         )
 
         if self._after_response_hook:
@@ -271,12 +289,136 @@ class AIGenerationMixin:
 
         return ChannelOutput(
             responded=True,
-            response_events=[response_event],
+            response_events=response_events,
         )
+
+    def _build_response_events(
+        self,
+        loop_result: ToolLoopResult,
+        room_id: str,
+        chain_depth: int,
+        usage: dict[str, Any] | None,
+    ) -> list[RoomEvent]:
+        """Build interleaved text + tool call events from tool loop result.
+
+        When there are no tool rounds, returns a single MESSAGE event
+        (backward compatible). When rounds exist, returns text segments
+        and tool call events in order, sharing a correlation_id.
+        """
+        from uuid import uuid4
+
+        source = EventSource(
+            channel_id=self.channel_id,
+            channel_type=self.channel_type,
+            provider=self.provider_name,
+        )
+        response = loop_result.response
+
+        if not loop_result.rounds:
+            # No tool calls — single text event (existing behavior)
+            return [
+                RoomEvent(
+                    room_id=room_id,
+                    source=source,
+                    content=TextContent(body=response.content),
+                    chain_depth=chain_depth,
+                    metadata={"ai_usage": usage},
+                )
+            ]
+
+        # Build interleaved segment events
+        correlation_id = uuid4().hex
+        events: list[RoomEvent] = []
+
+        for rnd in loop_result.rounds:
+            # Text segment before this tool round
+            if rnd.text_before:
+                events.append(
+                    RoomEvent(
+                        room_id=room_id,
+                        source=source,
+                        type=EventType.MESSAGE,
+                        content=TextContent(body=rnd.text_before),
+                        chain_depth=chain_depth,
+                        correlation_id=correlation_id,
+                    )
+                )
+
+            # Tool call start + end events
+            for tc, rp in zip(rnd.tool_calls, rnd.results, strict=False):
+                result_val = getattr(rp, "result", None)
+                is_error = isinstance(result_val, str) and result_val.startswith(
+                    "Error executing tool"
+                )
+                events.append(
+                    RoomEvent(
+                        room_id=room_id,
+                        source=source,
+                        type=EventType.TOOL_CALL_START,
+                        content=ToolCallContent(
+                            tool_name=tc.name,
+                            tool_id=tc.id,
+                            arguments=tc.arguments,
+                            status="pending",
+                        ),
+                        chain_depth=chain_depth,
+                        correlation_id=correlation_id,
+                    )
+                )
+                events.append(
+                    RoomEvent(
+                        room_id=room_id,
+                        source=source,
+                        type=EventType.TOOL_CALL_END,
+                        content=ToolCallContent(
+                            tool_name=tc.name,
+                            tool_id=tc.id,
+                            arguments=tc.arguments,
+                            result=result_val,
+                            status="failed" if is_error else "completed",
+                            duration_ms=rnd.duration_ms,
+                            error=result_val if is_error else None,
+                        ),
+                        chain_depth=chain_depth,
+                        correlation_id=correlation_id,
+                    )
+                )
+
+        # Final text segment (the last response after all tool rounds)
+        if response.content:
+            events.append(
+                RoomEvent(
+                    room_id=room_id,
+                    source=source,
+                    type=EventType.MESSAGE,
+                    content=TextContent(body=response.content),
+                    chain_depth=chain_depth,
+                    correlation_id=correlation_id,
+                    metadata={"ai_usage": usage},
+                )
+            )
+
+        # Ensure at least one MESSAGE event exists so the response is not
+        # silently dropped (some models return tool calls with no text).
+        has_message = any(e.type == EventType.MESSAGE for e in events)
+        if not has_message:
+            events.append(
+                RoomEvent(
+                    room_id=room_id,
+                    source=source,
+                    type=EventType.MESSAGE,
+                    content=TextContent(body=""),
+                    chain_depth=chain_depth,
+                    correlation_id=correlation_id,
+                    metadata={"ai_usage": usage},
+                )
+            )
+
+        return events
 
     async def _run_tool_loop(
         self, context: AIContext, *, parent_span_id: str | None = None
-    ) -> AIResponse:
+    ) -> ToolLoopResult:
         """Generate -> execute tools -> re-generate until a text response."""
         from roomkit.channels.ai import _current_loop_ctx, _ToolLoopContext
 
@@ -287,10 +429,11 @@ class AIGenerationMixin:
             loop_ctx.current_participant_role = parent_lctx.current_participant_role
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx
+        rounds: list[ToolRound] = []
         try:
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
-                return AIResponse(content="", tool_calls=[])
+                return ToolLoopResult(response=AIResponse(content="", tool_calls=[]))
             response: AIResponse = await self._generate_with_retry(context)
             telemetry = self._telemetry_provider
             room_id = context.room.room.id if context.room else None
@@ -354,14 +497,6 @@ class AIGenerationMixin:
                     )
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
-                if room_id:
-                    await self._publish_tool_event(
-                        EphemeralEventType.TOOL_CALL_START,
-                        room_id,
-                        response.tool_calls,
-                        round_idx,
-                    )
-
                 t0 = time.monotonic()
                 result_parts = await self._execute_tools_parallel(
                     response.tool_calls, telemetry, parent_span_id=parent_span_id
@@ -369,14 +504,15 @@ class AIGenerationMixin:
                 duration_ms = int((time.monotonic() - t0) * 1000)
                 context.messages.append(AIMessage(role="tool", content=result_parts))
 
-                if room_id:
-                    await self._publish_tool_event(
-                        EphemeralEventType.TOOL_CALL_END,
-                        room_id,
-                        result_parts,
-                        round_idx,
+                # Track the round for persistence
+                rounds.append(
+                    ToolRound(
+                        text_before=response.content or "",
+                        tool_calls=response.tool_calls,
+                        results=result_parts,
                         duration_ms=duration_ms,
                     )
+                )
 
                 context, should_cancel = self._drain_steering_queue(context, loop_ctx)
                 if should_cancel:
@@ -398,9 +534,12 @@ class AIGenerationMixin:
                     else:
                         accumulated = self._extract_accumulated_text(context.messages)
                         if accumulated:
-                            return AIResponse(
-                                content=accumulated + f"\n\n[Agent interrupted: {exc}]",
-                                tool_calls=[],
+                            return ToolLoopResult(
+                                response=AIResponse(
+                                    content=accumulated + f"\n\n[Agent interrupted: {exc}]",
+                                    tool_calls=[],
+                                ),
+                                rounds=rounds,
                             )
                         raise
 
@@ -415,7 +554,7 @@ class AIGenerationMixin:
                         round_idx + 1,
                     )
 
-            return response
+            return ToolLoopResult(response=response, rounds=rounds)
         finally:
             self._active_loops.pop(loop_ctx.loop_id, None)
             _current_loop_ctx.set(None)

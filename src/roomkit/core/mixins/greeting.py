@@ -142,6 +142,8 @@ class GreetingMixin(HelpersMixin):
 
         # Text path: store greeting and broadcast to transport channels
         greeting_event = await self._store_greeting_event(room_id, agent.channel_id, text)
+        if greeting_event is None:
+            return
         source_binding = await self._store.get_binding(room_id, agent.channel_id)
         if source_binding is not None:
             router = self._get_router()
@@ -150,7 +152,7 @@ class GreetingMixin(HelpersMixin):
 
     async def _store_greeting_event(
         self, room_id: str, agent_channel_id: str, text: str
-    ) -> RoomEvent:
+    ) -> RoomEvent | None:
         """Store a greeting as an assistant event in conversation history."""
         event = RoomEvent(
             room_id=room_id,
@@ -164,7 +166,7 @@ class GreetingMixin(HelpersMixin):
             status=EventStatus.DELIVERED,
             metadata={"auto_greeting": True},
         )
-        return await self._store.add_event_auto_index(room_id, event)
+        return await self._persist_event_auto_index(room_id, event)
 
     def _set_greeting_gate(self, room_id: str) -> None:
         """Increment the reference-counted gate for *room_id*.

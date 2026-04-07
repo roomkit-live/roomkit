@@ -12,6 +12,7 @@ from roomkit.models.event import RoomEvent
 from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
+from roomkit.models.store_filter import EventFilter
 from roomkit.models.task import Observation, Task
 from roomkit.store.base import ConversationStore
 
@@ -383,6 +384,7 @@ class PostgresStore(ConversationStore):
         *,
         after_index: int | None = None,
         before_index: int | None = None,
+        event_filter: EventFilter | None = None,
     ) -> list[RoomEvent]:
         if after_index is not None and before_index is not None:
             raise ValueError("after_index and before_index are mutually exclusive")
@@ -394,9 +396,15 @@ class PostgresStore(ConversationStore):
         params: list[object] = [room_id]
         idx = 2
 
-        if visibility_filter is not None:
+        # Visibility: event_filter.visibility takes precedence
+        effective_visibility = (
+            event_filter.visibility
+            if event_filter is not None and event_filter.visibility is not None
+            else visibility_filter
+        )
+        if effective_visibility is not None:
             conditions.append(f"visibility = ${idx}")
-            params.append(visibility_filter)
+            params.append(effective_visibility)
             idx += 1
 
         if after_index is not None:
@@ -407,6 +415,10 @@ class PostgresStore(ConversationStore):
             conditions.append(f"(data->>'index')::int < ${idx}")  # nosec B608
             params.append(before_index)
             idx += 1
+
+        # Apply EventFilter criteria as SQL conditions
+        if event_filter is not None:
+            idx = self._apply_event_filter_sql(event_filter, conditions, params, idx)
 
         where = " AND ".join(conditions)
 
@@ -441,6 +453,48 @@ class PostgresStore(ConversationStore):
         if before_index is not None:
             events.reverse()
         return events
+
+    @staticmethod
+    def _apply_event_filter_sql(
+        ef: EventFilter,
+        conditions: list[str],
+        params: list[object],
+        idx: int,
+    ) -> int:
+        """Append SQL conditions for EventFilter fields. Returns next param index."""
+        if ef.event_types is not None:
+            conditions.append(f"(data->>'type') = ANY(${idx})")  # nosec B608
+            params.append([t.value for t in ef.event_types])
+            idx += 1
+        if ef.exclude_types is not None:
+            conditions.append(f"(data->>'type') != ALL(${idx})")  # nosec B608
+            params.append([t.value for t in ef.exclude_types])
+            idx += 1
+        if ef.source_channel_id is not None:
+            conditions.append(f"(data->'source'->>'channel_id') = ${idx}")  # nosec B608
+            params.append(ef.source_channel_id)
+            idx += 1
+        if ef.source_channel_type is not None:
+            conditions.append(f"(data->'source'->>'channel_type') = ${idx}")  # nosec B608
+            params.append(ef.source_channel_type.value)
+            idx += 1
+        if ef.correlation_id is not None:
+            conditions.append(f"(data->>'correlation_id') = ${idx}")  # nosec B608
+            params.append(ef.correlation_id)
+            idx += 1
+        if ef.participant_id is not None:
+            conditions.append(f"(data->'source'->>'participant_id') = ${idx}")  # nosec B608
+            params.append(ef.participant_id)
+            idx += 1
+        if ef.after_time is not None:
+            conditions.append(f"created_at > ${idx}")
+            params.append(ef.after_time)
+            idx += 1
+        if ef.before_time is not None:
+            conditions.append(f"created_at < ${idx}")
+            params.append(ef.before_time)
+            idx += 1
+        return idx
 
     async def check_idempotency(self, room_id: str, key: str) -> bool:
         async with self._acquire() as conn:

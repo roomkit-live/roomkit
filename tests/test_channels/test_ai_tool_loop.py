@@ -82,7 +82,7 @@ class TestToolLoopTimeout:
         )
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        response = await ch._run_tool_loop(context)
+        response = (await ch._run_tool_loop(context)).response
 
         assert response.content == "Done"
         assert handler.call_count == 2
@@ -114,7 +114,7 @@ class TestToolLoopTimeout:
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
         with patch.object(asyncio.get_event_loop(), "time", already_expired):
-            response = await ch._run_tool_loop(context)
+            response = (await ch._run_tool_loop(context)).response
 
         # At most 1 round completes (the one in-flight when timeout is checked)
         assert handler.call_count <= 1
@@ -142,7 +142,7 @@ class TestToolLoopTimeout:
         )
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        response = await ch._run_tool_loop(context)
+        response = (await ch._run_tool_loop(context)).response
 
         assert call_count == 1
         assert response.content == "Done"
@@ -245,7 +245,7 @@ class TestParallelToolExecution:
         )
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        response = await ch._run_tool_loop(context)
+        response = (await ch._run_tool_loop(context)).response
 
         assert response.content == "Done"
         assert len(execution_order) == 4
@@ -359,7 +359,7 @@ class TestContextOverflowRecovery:
         context = AIContext(
             messages=[AIMessage(role="user", content=f"msg{i}") for i in range(10)]
         )
-        response = await ch._run_tool_loop(context)
+        response = (await ch._run_tool_loop(context)).response
 
         assert response.content == "Recovered"
         assert call_count == 3
@@ -387,7 +387,7 @@ class TestContextOverflowRecovery:
         )
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        response = await ch._run_tool_loop(context)
+        response = (await ch._run_tool_loop(context)).response
 
         assert "Thinking..." in response.content
         assert "[Agent interrupted" in response.content
@@ -498,7 +498,7 @@ class TestToolLoopContextAccumulation:
         )
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        response = await ch._run_tool_loop(context)
+        response = (await ch._run_tool_loop(context)).response
 
         assert response.content == "Done"
         # First call: 1 message (user "go")

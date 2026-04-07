@@ -66,6 +66,7 @@ from roomkit.models.enums import (
     HookTrigger,
 )
 from roomkit.models.event import EventSource, RoomEvent
+from roomkit.models.store_filter import PersistencePolicy
 from roomkit.models.task import Observation, Task
 from roomkit.orchestration.status_bus import StatusBus, StatusEntry
 from roomkit.realtime.base import (
@@ -138,6 +139,7 @@ class RoomKit(
         telemetry: TelemetryConfig | TelemetryProvider | None = None,
         inbound_rate_limit: RateLimit | None = None,
         orchestration: Orchestration | None = None,
+        persistence_policy: PersistencePolicy | None = None,
     ) -> None:
         """Initialise the RoomKit orchestrator.
 
@@ -183,12 +185,18 @@ class RoomKit(
                 ``channel_id``.
             orchestration: Default orchestration strategy applied to rooms
                 created via ``create_room()`` unless overridden per-room.
+            persistence_policy: Controls which event types are persisted.
+                When ``None`` (default), all events are persisted. Use
+                ``PersistencePolicy(exclude_types={...})`` to skip specific
+                types or ``PersistencePolicy(persist_types={...})`` to
+                whitelist.
         """
         from roomkit.telemetry.base import TelemetryProvider as _TelemetryProviderCls
         from roomkit.telemetry.config import TelemetryConfig as _TelemetryConfigCls
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
         self._store = store or InMemoryStore()
+        self._persistence_policy = persistence_policy
         self._identity_resolver = identity_resolver
         self._identity_channel_types = identity_channel_types
         self._max_chain_depth = max_chain_depth
@@ -500,7 +508,7 @@ class RoomKit(
             async with self._lock_manager.locked(room_id):
                 count = await self._store.get_event_count(room_id)
                 event = event.model_copy(update={"index": count})
-                await self._store.add_event(event)
+                await self._persist_event(event)
 
                 context = await self._build_context(room_id)
                 router = self._get_router()

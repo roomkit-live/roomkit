@@ -214,9 +214,9 @@ class InboundLockedMixin(HelpersMixin):
         # Use potentially modified event
         event = sync_result.event or event
 
-        # Store event as DELIVERED
+        # Store event as DELIVERED (respects persistence policy)
         event = event.model_copy(update={"status": EventStatus.DELIVERED})
-        await self._store.add_event(event)
+        await self._persist_event(event)
 
         # Deliver any injected events from allow/modify hooks
         if sync_result.injected_events:
@@ -332,7 +332,18 @@ class InboundLockedMixin(HelpersMixin):
                 break
             reentry_count += 1
             reentry = pending_reentries.popleft()
-            reentry = await self._store.add_event_auto_index(room_id, reentry)
+            stored = await self._persist_event_auto_index(room_id, reentry)
+            if stored is not None:
+                reentry = stored
+
+            # Tool call events are persisted but not broadcast — they would
+            # trigger AI re-responses from intelligence channels.
+            if reentry.type in (EventType.TOOL_CALL_START, EventType.TOOL_CALL_END):
+                await self._hook_engine.run_async_hooks(
+                    room_id, HookTrigger.AFTER_BROADCAST, reentry, context
+                )
+                continue
+
             reentry_binding = await self._store.get_binding(room_id, reentry.source.channel_id)
             if reentry_binding:
                 # Append reentry event to context locally instead of full rebuild

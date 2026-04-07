@@ -81,6 +81,31 @@ class HelpersMixin:
     _identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]]
     _pending_traces: dict[str, list[object]]  # room_id -> [ProtocolTrace, ...]
     _pending_hook_tasks: set[asyncio.Task[Any]]
+    _persistence_policy: Any  # PersistencePolicy | None — set by RoomKit.__init__
+
+    # -- Persistence helpers (policy-aware) --
+
+    async def _persist_event(self, event: RoomEvent) -> RoomEvent | None:
+        """Persist an event if the persistence policy allows it.
+
+        Returns the stored event, or ``None`` if the policy excluded it.
+        """
+        if self._persistence_policy is not None and not self._persistence_policy.should_persist(
+            event.type
+        ):
+            return None
+        return await self._store.add_event(event)
+
+    async def _persist_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent | None:
+        """Atomically index and persist an event if the policy allows it.
+
+        Returns the stored event, or ``None`` if the policy excluded it.
+        """
+        if self._persistence_policy is not None and not self._persistence_policy.should_persist(
+            event.type
+        ):
+            return None
+        return await self._store.add_event_auto_index(room_id, event)
 
     # -- Internal helpers --
 
@@ -288,7 +313,7 @@ class HelpersMixin:
             status=EventStatus.DELIVERED,
             visibility="internal",
         )
-        await self._store.add_event_auto_index(room_id, event)
+        await self._persist_event_auto_index(room_id, event)
 
     async def _build_context(self, room_id: str) -> RoomContext:
         """Build a RoomContext for the given room."""
@@ -467,6 +492,60 @@ class HelpersMixin:
                 channel_id=channel_id,
                 data={
                     "tool_name": event.name,
+                    "tool_call_id": event.tool_call_id,
+                    "allowed": hook_result.allowed,
+                    "reason": hook_result.reason,
+                },
+            )
+
+            return hook_result.allowed
+
+        return _callback
+
+    def _build_on_user_input_required_hook(self, channel_id: str) -> Any:
+        """Build an ON_USER_INPUT_REQUIRED callback closure.
+
+        The returned callback runs ON_USER_INPUT_REQUIRED **sync** hooks
+        against the framework's hook engine and emits a
+        ``user_input_required`` framework event.
+
+        Sync execution ensures the notification (e.g. WebSocket broadcast)
+        completes before :meth:`HumanInputHandler.wait` starts blocking —
+        avoiding a race where the user never sees the question.
+        """
+        from roomkit.models.enums import HookTrigger
+        from roomkit.models.pending_input import PendingInputEvent
+
+        kit_ref = self
+
+        async def _callback(event: PendingInputEvent) -> bool:
+            if not event.room_id:
+                return True  # Allow if no room context
+            try:
+                context = await kit_ref._build_context(event.room_id)
+            except Exception:
+                logger.warning(
+                    "Failed to build context for ON_USER_INPUT_REQUIRED hook in room %s",
+                    event.room_id,
+                    exc_info=True,
+                )
+                return True  # Allow on error (fail-open)
+
+            hook_result = await kit_ref._hook_engine.run_sync_hooks(
+                event.room_id,
+                HookTrigger.ON_USER_INPUT_REQUIRED,
+                event,
+                context,
+                skip_event_filter=True,
+            )
+
+            await kit_ref._emit_framework_event(
+                "user_input_required",
+                room_id=event.room_id,
+                channel_id=channel_id,
+                data={
+                    "pending_id": event.pending_id,
+                    "tool_name": event.tool_name,
                     "tool_call_id": event.tool_call_id,
                     "allowed": hook_result.allowed,
                     "reason": hook_result.reason,

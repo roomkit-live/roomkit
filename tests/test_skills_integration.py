@@ -512,7 +512,7 @@ class TestStreamingGuard:
 
         # Consume the stream to get the text
         chunks = [chunk async for chunk in output.response_stream]
-        assert "".join(chunks) == "ok"
+        assert "".join(c for c in chunks if isinstance(c, str)) == "ok"
 
     async def test_non_streaming_provider_with_skills_uses_generate(self, tmp_path: Path) -> None:
         _make_skill_dir(tmp_path, "no-stream")

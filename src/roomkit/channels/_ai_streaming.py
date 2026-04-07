@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
+from roomkit.models.streaming import StreamDelta, ToolCallEndMarker, ToolCallStartMarker
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -167,7 +168,7 @@ class AIStreamingMixin:
             response_stream=self._run_streaming_tool_loop(ai_context),
         )
 
-    async def _run_streaming_tool_loop(self, context: AIContext) -> AsyncIterator[str]:
+    async def _run_streaming_tool_loop(self, context: AIContext) -> AsyncIterator[StreamDelta]:
         """Stream text deltas, executing tool calls between generation rounds."""
         from roomkit.channels.ai import _current_loop_ctx, _ToolLoopContext
         from roomkit.telemetry.context import get_current_span
@@ -197,11 +198,11 @@ class AIStreamingMixin:
         _span_errored = False
         _t0_stream = time.monotonic()
         _accumulated_text: list[str] = []
+        room_id = context.room.room.id if context.room else None
         try:
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
                 return
-            room_id = context.room.room.id if context.room else None
             deadline = (
                 asyncio.get_running_loop().time() + self._tool_loop_timeout_seconds
                 if self._tool_loop_timeout_seconds
@@ -291,17 +292,24 @@ class AIStreamingMixin:
                             tool_result = args.pop("_result", None)
                             tool_is_error = args.pop("_is_error", False)
 
-                            await handler.process_tool_call(
+                            decision = await handler.process_tool_call(
                                 event.name,
                                 args,
                                 tool_call_id=event.id,
                                 room_id=room_id,
                             )
+                            # Use decision.result if handler provided one
+                            # (e.g. human input answer), otherwise use
+                            # the result embedded by the external provider.
+                            effective_result = tool_result or ""
+                            if decision and decision.result is not None:
+                                effective_result = decision.result
+                                tool_is_error = False
                             # Fire on_tool_result with actual result
                             await handler.on_tool_result(
                                 event.name,
                                 args,
-                                tool_result or "",
+                                effective_result,
                                 is_error=bool(tool_is_error),
                                 tool_call_id=event.id,
                                 room_id=room_id,
@@ -364,13 +372,9 @@ class AIStreamingMixin:
                                 )
                                 await self._before_tool_call_hook(pre_event)
 
-                    if room_id:
-                        await self._publish_tool_event(
-                            EphemeralEventType.TOOL_CALL_START,
-                            room_id,
-                            tool_calls,
-                            _round_idx,
-                        )
+                    # External tools are executed by the provider — we don't
+                    # have their lifecycle (start/end/result). No markers are
+                    # yielded; persistence for external tools is not yet supported.
                     return
 
                 if _round_idx >= self._max_tool_rounds:
@@ -417,12 +421,12 @@ class AIStreamingMixin:
                     )
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
-                if room_id:
-                    await self._publish_tool_event(
-                        EphemeralEventType.TOOL_CALL_START,
-                        room_id,
-                        tool_calls,
-                        _round_idx,
+                # Yield start markers for each tool call (persistence boundary)
+                for tc in tool_calls:
+                    yield ToolCallStartMarker(
+                        tool_name=tc.name,
+                        tool_id=tc.id,
+                        arguments=tc.arguments,
                     )
 
                 t0 = time.monotonic()
@@ -430,13 +434,20 @@ class AIStreamingMixin:
                 duration_ms = int((time.monotonic() - t0) * 1000)
                 context.messages.append(AIMessage(role="tool", content=result_parts))
 
-                if room_id:
-                    await self._publish_tool_event(
-                        EphemeralEventType.TOOL_CALL_END,
-                        room_id,
-                        result_parts,
-                        _round_idx,
+                # Yield end markers with results (persistence boundary)
+                for tc, rp in zip(tool_calls, result_parts, strict=False):
+                    result_val = getattr(rp, "result", None)
+                    is_error = isinstance(result_val, str) and result_val.startswith(
+                        "Error executing tool"
+                    )
+                    yield ToolCallEndMarker(
+                        tool_name=tc.name,
+                        tool_id=tc.id,
+                        arguments=tc.arguments,
+                        result=result_val,
+                        status="failed" if is_error else "completed",
                         duration_ms=duration_ms,
+                        error=result_val if is_error else None,
                     )
 
                 context, should_cancel = self._drain_steering_queue(context, loop_ctx)

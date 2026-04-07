@@ -48,6 +48,7 @@ from roomkit.models.event import (
     SystemContent,
     TemplateContent,
     TextContent,
+    ToolCallContent,
     VideoContent,
 )
 from roomkit.models.framework_event import FrameworkEvent
@@ -56,6 +57,7 @@ from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
+from roomkit.models.store_filter import EventFilter, PersistencePolicy
 from roomkit.models.task import Observation, Task
 from roomkit.models.tool_call import ToolCallCallback, ToolCallEvent
 from roomkit.models.trace import ProtocolTrace
@@ -79,6 +81,7 @@ __all__ = [
     "DeliveryStatus",
     "EditContent",
     "EventContent",
+    "EventFilter",
     "EventSource",
     "EventStatus",
     "EventType",
@@ -98,8 +101,9 @@ __all__ = [
     "Observation",
     "Participant",
     "ParticipantRole",
-    "ProtocolTrace",
     "ParticipantStatus",
+    "PersistencePolicy",
+    "ProtocolTrace",
     "ProviderResult",
     "RateLimit",
     "RetryPolicy",
@@ -116,6 +120,7 @@ __all__ = [
     "TemplateContent",
     "TextContent",
     "ToolCallCallback",
+    "ToolCallContent",
     "ToolCallEvent",
     "VideoContent",
 ]

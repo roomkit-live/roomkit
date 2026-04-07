@@ -66,12 +66,14 @@ from roomkit.models.enums import (
     HookTrigger,
     RoomStatus,
 )
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.participant import Participant
+from roomkit.models.pending_input import PendingInput, PendingInputEvent, PendingInputStatus
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.session_event import SessionStartedEvent
+from roomkit.models.store_filter import EventFilter, PersistencePolicy
 from roomkit.models.tool_call import (
     AfterResponseCallback,
     AIGenerationEvent,
@@ -105,6 +107,7 @@ from roomkit.sandbox import SandboxExecutor, SandboxResult
 from roomkit.skills import ScriptExecutor, Skill, SkillMetadata, SkillRegistry
 from roomkit.store import ConversationStore, InMemoryStore
 from roomkit.tools.base import Tool
+from roomkit.tools.human_input import HumanInputHandler, HumanInputToolHandler
 from roomkit.tools.policy import RoleOverride, ToolPolicy
 from roomkit.video.events import VideoDetectionEvent
 from roomkit.video.pipeline.filter import (
@@ -226,7 +229,9 @@ __all__ = [
     "Swarm",
     # Storage
     "ConversationStore",
+    "EventFilter",
     "InMemoryStore",
+    "PersistencePolicy",
     # Memory
     "MemoryProvider",
     # Sandbox
@@ -238,8 +243,14 @@ __all__ = [
     "SkillMetadata",
     "SkillRegistry",
     # Tools
+    "HumanInputHandler",
+    "HumanInputToolHandler",
     "RoleOverride",
     "ToolPolicy",
+    # Human-in-the-loop models
+    "PendingInput",
+    "PendingInputEvent",
+    "PendingInputStatus",
     # Models (core)
     "AIGenerationEvent",
     "AIResponseEvent",
@@ -266,6 +277,7 @@ __all__ = [
     "TextContent",
     "Tool",
     "ToolCallCallback",
+    "ToolCallContent",
     "ToolCallEvent",
     "ToolHandler",
     "VideoDetectionEvent",

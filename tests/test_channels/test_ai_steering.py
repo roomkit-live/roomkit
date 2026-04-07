@@ -219,7 +219,7 @@ class TestToolLoopCancellation:
         provider.generate = generate_with_cancel  # type: ignore[assignment]
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        response = await ch._run_tool_loop(context)
+        response = (await ch._run_tool_loop(context)).response
 
         # Tool execution should be skipped because cancel was set
         assert handler.call_count == 0
@@ -248,7 +248,7 @@ class TestToolLoopCancellation:
         )
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        response = await ch._run_tool_loop(context)
+        response = (await ch._run_tool_loop(context)).response
 
         # Tool handler runs once, then drain catches the cancel
         assert call_count == 1
@@ -284,7 +284,7 @@ class TestToolLoopCancellation:
         )
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        response = await ch._run_tool_loop(context)
+        response = (await ch._run_tool_loop(context)).response
 
         assert response.content == "saw it"
         # Second generate call should have the injected message

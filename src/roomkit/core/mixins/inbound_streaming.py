@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from uuid import uuid4
 
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
     ChannelDirection,
+    EventType,
     HookTrigger,
 )
-from roomkit.models.event import RoomEvent
+from roomkit.models.event import RoomEvent, ToolCallContent
+from roomkit.models.streaming import ToolCallEndMarker, ToolCallStartMarker
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -30,7 +32,7 @@ logger = logging.getLogger("roomkit.framework")
 class _StreamingResult:
     """Result of handling a streaming response."""
 
-    event: RoomEvent
+    events: list[RoomEvent] = field(default_factory=list)
     delivered_to: set[str] = field(default_factory=set)
 
 
@@ -80,14 +82,162 @@ class InboundStreamingMixin(HelpersMixin):
         room_id: str,
         context: RoomContext,
     ) -> _StreamingResult | None:
-        """Consume a streaming response, pipe to streaming channels, store result."""
+        """Consume a streaming response, pipe to streaming channels, store segments."""
         from roomkit.models.event import EventSource, TextContent
 
-        # Find streaming delivery targets (transport channels that support it).
-        # Apply the same permission checks as _filter_targets() in broadcast():
-        # access, direction, and response_visibility.
         response_vis = sr.trigger_event.response_visibility
-        streaming_targets: list[Any] = []
+        streaming_targets = self._find_streaming_targets(router, sr, context)
+
+        logger.debug(
+            "Streaming targets for room %s: %d found",
+            room_id,
+            len(streaming_targets),
+        )
+
+        # Shared state for the segment persistence logic.
+        accumulated_text: list[str] = []
+        persisted_events: list[RoomEvent] = []
+        correlation_id = uuid4().hex
+        chain_depth = sr.trigger_event.chain_depth + 1
+        visibility = response_vis or "all"
+
+        def _make_source() -> EventSource:
+            return EventSource(
+                channel_id=sr.source_channel_id,
+                channel_type=sr.source_channel_type,
+            )
+
+        async def _persist_text_segment() -> None:
+            """Persist the accumulated text as a MESSAGE event."""
+            if not accumulated_text:
+                return
+            text = "".join(accumulated_text)
+            accumulated_text.clear()
+            event = RoomEvent(
+                room_id=room_id,
+                source=_make_source(),
+                type=EventType.MESSAGE,
+                content=TextContent(body=text),
+                chain_depth=chain_depth,
+                visibility=visibility,
+                correlation_id=correlation_id,
+            )
+            stored = await self._persist_event_auto_index(room_id, event)
+            if stored is not None:
+                persisted_events.append(stored)
+
+        async def _persist_tool_start(marker: ToolCallStartMarker) -> None:
+            event = RoomEvent(
+                room_id=room_id,
+                source=_make_source(),
+                type=EventType.TOOL_CALL_START,
+                content=ToolCallContent(
+                    tool_name=marker.tool_name,
+                    tool_id=marker.tool_id,
+                    arguments=marker.arguments,
+                    status="pending",
+                ),
+                chain_depth=chain_depth,
+                visibility=visibility,
+                correlation_id=correlation_id,
+            )
+            stored = await self._persist_event_auto_index(room_id, event)
+            if stored is not None:
+                persisted_events.append(stored)
+
+        async def _persist_tool_end(marker: ToolCallEndMarker) -> None:
+            event = RoomEvent(
+                room_id=room_id,
+                source=_make_source(),
+                type=EventType.TOOL_CALL_END,
+                content=ToolCallContent(
+                    tool_name=marker.tool_name,
+                    tool_id=marker.tool_id,
+                    arguments=marker.arguments,
+                    result=marker.result,
+                    status=marker.status,
+                    duration_ms=marker.duration_ms,
+                    error=marker.error,
+                ),
+                chain_depth=chain_depth,
+                visibility=visibility,
+                correlation_id=correlation_id,
+            )
+            stored = await self._persist_event_auto_index(room_id, event)
+            if stored is not None:
+                persisted_events.append(stored)
+
+        # Generator that filters markers from the raw stream.
+        # Transport channels only see str deltas; markers trigger persistence.
+        async def text_only_stream() -> Any:
+            """Yield only text deltas; persist segments at marker boundaries."""
+            async for delta in sr.stream:
+                if isinstance(delta, str):
+                    accumulated_text.append(delta)
+                    yield delta
+                elif isinstance(delta, ToolCallStartMarker):
+                    # Text segment boundary — persist text before the tool call
+                    await _persist_text_segment()
+                    await _persist_tool_start(delta)
+                elif isinstance(delta, ToolCallEndMarker):
+                    await _persist_tool_end(delta)
+
+            # Persist any remaining text after the stream ends
+            await _persist_text_segment()
+
+        delivered_to: set[str] = set()
+        if streaming_targets:
+            channel, binding = streaming_targets[0]  # V1: single target
+            placeholder = RoomEvent(
+                room_id=room_id,
+                source=_make_source(),
+                content=TextContent(body=""),
+                chain_depth=chain_depth,
+                visibility=visibility,
+                correlation_id=correlation_id,
+            )
+            try:
+                await channel.deliver_stream(text_only_stream(), placeholder, binding, context)
+                delivered_to.add(binding.channel_id)
+            except Exception as exc:
+                logger.exception("Streaming delivery to %s failed", binding.channel_id)
+                # Persist any text accumulated before the error
+                await _persist_text_segment()
+                error_event = RoomEvent(
+                    room_id=room_id,
+                    source=_make_source(),
+                    content=TextContent(body=str(exc)),
+                    metadata={
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                        "error_category": "streaming",
+                    },
+                    chain_depth=chain_depth,
+                    visibility=visibility,
+                    correlation_id=correlation_id,
+                )
+                await self._hook_engine.run_async_hooks(
+                    room_id, HookTrigger.ON_ERROR, error_event, context
+                )
+        else:
+            # No streaming targets — consume stream (triggers persistence via markers)
+            async for _ in text_only_stream():
+                pass
+
+        if not persisted_events:
+            return None
+
+        return _StreamingResult(events=persisted_events, delivered_to=delivered_to)
+
+    def _find_streaming_targets(
+        self,
+        router: Any,
+        sr: Any,
+        context: RoomContext,
+    ) -> list[Any]:
+        """Find transport channels that support streaming delivery."""
+        response_vis = sr.trigger_event.response_visibility
+        targets: list[Any] = []
         for binding in context.bindings:
             if binding.category != ChannelCategory.TRANSPORT:
                 continue
@@ -97,14 +247,13 @@ class InboundStreamingMixin(HelpersMixin):
                 continue
             if binding.direction == ChannelDirection.OUTBOUND:
                 continue
-            # Apply response_visibility filter (same logic as _check_visibility)
             if response_vis is not None and response_vis != "all":
                 if response_vis == "none":
                     continue
                 if response_vis == "transport":
-                    pass  # already filtered to TRANSPORT above
+                    pass
                 elif response_vis == "intelligence":
-                    continue  # skip all transport targets
+                    continue
                 elif "," in response_vis:
                     allowed = {cid.strip() for cid in response_vis.split(",") if cid.strip()}
                     if binding.channel_id not in allowed:
@@ -114,101 +263,8 @@ class InboundStreamingMixin(HelpersMixin):
             channel = router.get_channel(binding.channel_id)
             supports = getattr(channel, "supports_streaming_delivery", False) if channel else False
             if channel and supports:
-                streaming_targets.append((channel, binding))
-
-        logger.debug(
-            "Streaming targets for room %s: %d found",
-            room_id,
-            len(streaming_targets),
-        )
-
-        accumulated: list[str] = []
-        stream_exhausted = asyncio.Event()
-
-        async def accumulated_stream() -> Any:
-            try:
-                async for delta in sr.stream:
-                    accumulated.append(delta)
-                    yield delta
-            finally:
-                stream_exhausted.set()
-
-        async def _store_when_ready() -> RoomEvent | None:
-            """Store the response as soon as the text stream exhausts.
-
-            This runs concurrently with audio playback so the response
-            is visible in the conversation store before TTS finishes.
-            """
-            await stream_exhausted.wait()
-            full_text = "".join(accumulated)
-            if not full_text:
-                return None
-            event = RoomEvent(
-                room_id=room_id,
-                source=EventSource(
-                    channel_id=sr.source_channel_id,
-                    channel_type=sr.source_channel_type,
-                ),
-                content=TextContent(body=full_text),
-                chain_depth=sr.trigger_event.chain_depth + 1,
-                # visibility mirrors response_visibility so the subsequent
-                # broadcast of this stored event is filtered correctly by
-                # the existing _check_visibility() logic in the router.
-                visibility=response_vis or "all",
-            )
-            return await self._store.add_event_auto_index(room_id, event)
-
-        store_task = asyncio.create_task(_store_when_ready())
-
-        delivered_to: set[str] = set()
-        if streaming_targets:
-            channel, binding = streaming_targets[0]  # V1: single target
-            placeholder = RoomEvent(
-                room_id=room_id,
-                source=EventSource(
-                    channel_id=sr.source_channel_id,
-                    channel_type=sr.source_channel_type,
-                ),
-                content=TextContent(body=""),
-                chain_depth=sr.trigger_event.chain_depth + 1,
-                visibility=response_vis or "all",
-            )
-            try:
-                await channel.deliver_stream(accumulated_stream(), placeholder, binding, context)
-                delivered_to.add(binding.channel_id)
-            except Exception as exc:
-                logger.exception("Streaming delivery to %s failed", binding.channel_id)
-                # Fire ON_ERROR hook so consumers can react
-                error_event = RoomEvent(
-                    room_id=room_id,
-                    source=EventSource(
-                        channel_id=sr.source_channel_id,
-                        channel_type=sr.source_channel_type,
-                    ),
-                    content=TextContent(body="".join(accumulated)),
-                    metadata={
-                        "error": str(exc),
-                        "error_type": type(exc).__name__,
-                        "error_category": "streaming",
-                        "stream_partial_text": "".join(accumulated),
-                    },
-                    chain_depth=sr.trigger_event.chain_depth + 1,
-                    visibility=response_vis or "all",
-                )
-                await self._hook_engine.run_async_hooks(
-                    room_id, HookTrigger.ON_ERROR, error_event, context
-                )
-        else:
-            # No streaming targets — just consume the stream
-            async for delta in sr.stream:
-                accumulated.append(delta)
-            stream_exhausted.set()
-
-        response_event = await store_task
-        if response_event is None:
-            return None
-
-        return _StreamingResult(event=response_event, delivered_to=delivered_to)
+                targets.append((channel, binding))
+        return targets
 
     async def _process_streaming_responses(
         self,
@@ -226,30 +282,40 @@ class InboundStreamingMixin(HelpersMixin):
 
         for sr in pending_streams:
             sr_result = await self._handle_streaming_response(router, sr, room_id, context)
-            if sr_result:
-                # Broadcast complete text to non-streaming channels
-                binding = await self._store.get_binding(room_id, sr_result.event.source.channel_id)
+            if sr_result and sr_result.events:
+                # Broadcast persisted segments to non-streaming channels.
+                # Only MESSAGE events are broadcast — tool call events are
+                # persisted but not broadcast, to avoid triggering AI
+                # re-responses from intelligence channels.
+                first_event = sr_result.events[0]
+                binding = await self._store.get_binding(room_id, first_event.source.channel_id)
                 if binding:
-                    reentry_ctx = context.model_copy(
-                        update={
-                            "recent_events": [
-                                *context.recent_events[-49:],
-                                sr_result.event,
-                            ]
-                        }
-                    )
-                    reentry_result = await router.broadcast(
-                        sr_result.event,
-                        binding,
-                        reentry_ctx,
-                        exclude_delivery=sr_result.delivered_to,
-                    )
-                    for blocked in reentry_result.blocked_events:
-                        await self._store.add_event(blocked)
-                    # Run AFTER_BROADCAST hooks for the AI response
-                    await self._hook_engine.run_async_hooks(
-                        room_id,
-                        HookTrigger.AFTER_BROADCAST,
-                        sr_result.event,
-                        reentry_ctx,
-                    )
+                    for seg_event in sr_result.events:
+                        if seg_event.type != EventType.MESSAGE:
+                            continue
+                        reentry_ctx = context.model_copy(
+                            update={
+                                "recent_events": [
+                                    *context.recent_events[-49:],
+                                    seg_event,
+                                ]
+                            }
+                        )
+                        reentry_result = await router.broadcast(
+                            seg_event,
+                            binding,
+                            reentry_ctx,
+                            exclude_delivery=sr_result.delivered_to,
+                        )
+                        for blocked in reentry_result.blocked_events:
+                            await self._store.add_event(blocked)
+
+                    # Run AFTER_BROADCAST hooks for each segment so hook
+                    # authors see the complete timeline.
+                    for seg_event in sr_result.events:
+                        await self._hook_engine.run_async_hooks(
+                            room_id,
+                            HookTrigger.AFTER_BROADCAST,
+                            seg_event,
+                            context,
+                        )

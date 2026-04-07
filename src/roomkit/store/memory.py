@@ -10,6 +10,7 @@ from roomkit.models.event import RoomEvent
 from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
+from roomkit.models.store_filter import EventFilter
 from roomkit.models.task import Observation, Task
 from roomkit.store.base import ConversationStore
 
@@ -176,6 +177,7 @@ class InMemoryStore(ConversationStore):
         *,
         after_index: int | None = None,
         before_index: int | None = None,
+        event_filter: EventFilter | None = None,
     ) -> list[RoomEvent]:
         if after_index is not None and before_index is not None:
             raise ValueError("after_index and before_index are mutually exclusive")
@@ -188,17 +190,48 @@ class InMemoryStore(ConversationStore):
         elif before_index is not None:
             events = [e for e in events if e.index < before_index]
 
-        if visibility_filter is not None:
-            events = [e for e in events if e.visibility == visibility_filter]
+        # Apply visibility: event_filter.visibility takes precedence
+        effective_visibility = (
+            event_filter.visibility
+            if event_filter is not None and event_filter.visibility is not None
+            else visibility_filter
+        )
+        if effective_visibility is not None:
+            events = [e for e in events if e.visibility == effective_visibility]
+
+        # Apply EventFilter criteria
+        if event_filter is not None:
+            events = self._apply_event_filter(events, event_filter)
 
         if before_index is not None:
-            # Take the *last* `limit` events before the cursor, then return ascending
             tail = events[-limit:] if limit < len(events) else events
             return [e.model_copy() for e in tail]
         if after_index is not None:
-            # Cursor mode: ignore offset
             return [e.model_copy() for e in events[:limit]]
         return [e.model_copy() for e in events[offset : offset + limit]]
+
+    @staticmethod
+    def _apply_event_filter(events: list[RoomEvent], ef: EventFilter) -> list[RoomEvent]:
+        """Apply EventFilter criteria to an in-memory event list."""
+        if ef.event_types is not None:
+            allowed = set(ef.event_types)
+            events = [e for e in events if e.type in allowed]
+        if ef.exclude_types is not None:
+            excluded = set(ef.exclude_types)
+            events = [e for e in events if e.type not in excluded]
+        if ef.source_channel_id is not None:
+            events = [e for e in events if e.source.channel_id == ef.source_channel_id]
+        if ef.source_channel_type is not None:
+            events = [e for e in events if e.source.channel_type == ef.source_channel_type]
+        if ef.correlation_id is not None:
+            events = [e for e in events if e.correlation_id == ef.correlation_id]
+        if ef.participant_id is not None:
+            events = [e for e in events if e.source.participant_id == ef.participant_id]
+        if ef.after_time is not None:
+            events = [e for e in events if e.created_at > ef.after_time]
+        if ef.before_time is not None:
+            events = [e for e in events if e.created_at < ef.before_time]
+        return events
 
     async def check_idempotency(self, room_id: str, key: str) -> bool:
         return key in self._idempotency.get(room_id, set())
