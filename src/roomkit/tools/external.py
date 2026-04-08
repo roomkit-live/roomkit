@@ -40,6 +40,7 @@ from typing import Any
 
 from roomkit.models.enums import ChannelType
 from roomkit.models.tool_call import ToolCallEvent
+from roomkit.tools.policy import ToolPolicy
 
 
 @dataclass
@@ -230,8 +231,6 @@ class PolicyExternalToolHandler(ExternalToolHandler):
     """
 
     def __init__(self, policy: Any = None) -> None:
-        from roomkit.tools.policy import ToolPolicy
-
         self._policy: ToolPolicy | None = policy
 
     async def process_tool_call(
