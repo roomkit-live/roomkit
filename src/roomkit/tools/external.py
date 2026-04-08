@@ -55,6 +55,9 @@ class ToolDecision:
     modified_input: dict[str, Any] | None = None
     """If set, overrides the original tool input."""
 
+    result: str | None = None
+    """If set, overrides the tool result (e.g. human-provided answer)."""
+
     reason: str = ""
     """Human-readable reason for the decision (used in deny messages)."""
 

@@ -310,6 +310,8 @@ class VoiceTTSMixin:
 
         async def tracking_stream() -> AsyncIterator[str]:
             async for delta in text_stream:
+                if not isinstance(delta, str):
+                    continue
                 accumulated.append(delta)
                 yield delta
 

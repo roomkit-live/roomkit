@@ -5,10 +5,13 @@ from __future__ import annotations
 from roomkit.tools.base import Tool
 from roomkit.tools.compose import compose_tool_handlers, extract_tools
 from roomkit.tools.external import ExternalToolHandler, PolicyExternalToolHandler, ToolDecision
+from roomkit.tools.human_input import HumanInputHandler, HumanInputToolHandler
 from roomkit.tools.policy import RoleOverride, ToolPolicy
 
 __all__ = [
     "ExternalToolHandler",
+    "HumanInputHandler",
+    "HumanInputToolHandler",
     "MCPToolProvider",
     "PolicyExternalToolHandler",
     "RoleOverride",

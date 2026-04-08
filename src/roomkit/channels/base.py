@@ -146,7 +146,8 @@ class Channel(ABC):
         """
         chunks: list[str] = []
         async for chunk in text_stream:
-            chunks.append(chunk)
+            if isinstance(chunk, str):
+                chunks.append(chunk)
         updated = event.model_copy(update={"content": TextContent(body="".join(chunks))})
         return await self.deliver(updated, binding, context)
 

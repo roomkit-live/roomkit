@@ -125,8 +125,9 @@ class CLIChannel(Channel):
         sys.stdout.write(f"\n{prefix}")
 
         async for chunk in text_stream:
-            sys.stdout.write(chunk)
-            sys.stdout.flush()
+            if isinstance(chunk, str):
+                sys.stdout.write(chunk)
+                sys.stdout.flush()
 
         sys.stdout.write("\n\n")
         sys.stdout.flush()

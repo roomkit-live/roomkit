@@ -25,6 +25,7 @@ from roomkit.models.enums import ChannelType
 from roomkit.providers.ai.base import AITool, AIToolResultPart
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
 from roomkit.telemetry.base import SpanKind
+from roomkit.tools.human_input import ToolCallContext, _current_tool_call
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -199,7 +200,18 @@ class AIToolsMixin:
                 attributes={"tool.name": tc.name, "tool.id": tc.id},
             )
             try:
-                result = await handler(tc.name, tc.arguments)
+                # Set contextvar so HumanInputToolHandler can read
+                # room_id / tool_call_id / channel_id without protocol changes.
+                _tc_ctx = ToolCallContext(
+                    room_id=self._current_room_id or "",
+                    tool_call_id=tc.id,
+                    channel_id=self.channel_id,
+                )
+                _tc_tok = _current_tool_call.set(_tc_ctx)
+                try:
+                    result = await handler(tc.name, tc.arguments)
+                finally:
+                    _current_tool_call.reset(_tc_tok)
                 result = self._maybe_truncate_result(result, tc.id)
 
                 # Fire unified ON_TOOL_CALL hook (if framework injected callback)

@@ -111,6 +111,12 @@ class ChannelOpsMixin(HelpersMixin):
                 handler._before_tool_hook = self._build_before_tool_call_hook(channel.channel_id)
                 handler._on_tool_hook = self._build_tool_call_hook(channel.channel_id)
 
+            # Inject ON_USER_INPUT_REQUIRED hook into human input handler
+            if channel._human_input_handler is not None:
+                channel._human_input_handler.handler._on_input_required = (
+                    self._build_on_user_input_required_hook(channel.channel_id)
+                )
+
         # Propagate telemetry to channel's sub-providers (AI, STT, TTS, etc.)
         if hasattr(channel, "_propagate_telemetry"):
             channel._propagate_telemetry()  # ty: ignore[call-non-callable]
