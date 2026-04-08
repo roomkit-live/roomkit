@@ -132,7 +132,7 @@ class _StreamingInputTTS(TTSProvider):
         self, text: str, *, voice: str | None = None
     ) -> AsyncIterator[AudioChunk]:
         self.synthesize_stream_calls.append(text)
-        yield AudioChunk(data=b"mock-full-audio", sample_rate=16000, is_final=True)
+        yield AudioChunk(data=b"mock-full-audio\x00", sample_rate=16000, is_final=True)
 
     async def synthesize_stream_input(
         self, text_stream: AsyncIterator[str], *, voice: str | None = None
