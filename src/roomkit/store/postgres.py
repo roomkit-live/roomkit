@@ -435,7 +435,7 @@ class PostgresStore(ConversationStore):
                     room.event_count,
                     room.latest_index,
                     room.metadata,
-                    room.timers.model_dump(),
+                    room.timers.model_dump(mode="json"),
                     room.created_at,
                     room.updated_at,
                     room.closed_at,
@@ -463,7 +463,7 @@ class PostgresStore(ConversationStore):
                     room.event_count,
                     room.latest_index,
                     room.metadata,
-                    room.timers.model_dump(),
+                    room.timers.model_dump(mode="json"),
                     room.updated_at,
                     room.closed_at,
                 )
@@ -598,7 +598,7 @@ class PostgresStore(ConversationStore):
                     event.id,
                     event.room_id,
                     event.type.value,
-                    event.content.model_dump(),
+                    event.content.model_dump(mode="json"),
                     event.source.channel_id,
                     event.source.channel_type.value,
                     event.source.direction.value,
@@ -615,7 +615,7 @@ class PostgresStore(ConversationStore):
                     event.idempotency_key,
                     event.blocked_by,
                     event.metadata,
-                    event.channel_data.model_dump(),
+                    event.channel_data.model_dump(mode="json"),
                     event.created_at,
                 )
         return event
@@ -636,7 +636,7 @@ class PostgresStore(ConversationStore):
                     " metadata=$5, idempotency_key=$6"
                     " WHERE id=$1",
                     event.id,
-                    event.content.model_dump(),
+                    event.content.model_dump(mode="json"),
                     event.status.value,
                     event.visibility,
                     event.metadata,
@@ -810,7 +810,7 @@ class PostgresStore(ConversationStore):
                     indexed.id,
                     indexed.room_id,
                     indexed.type.value,
-                    indexed.content.model_dump(),
+                    indexed.content.model_dump(mode="json"),
                     indexed.source.channel_id,
                     indexed.source.channel_type.value,
                     indexed.source.direction.value,
@@ -827,7 +827,7 @@ class PostgresStore(ConversationStore):
                     indexed.idempotency_key,
                     indexed.blocked_by,
                     indexed.metadata,
-                    indexed.channel_data.model_dump(),
+                    indexed.channel_data.model_dump(mode="json"),
                     indexed.created_at,
                 )
         return indexed
@@ -859,7 +859,7 @@ class PostgresStore(ConversationStore):
                     binding.participant_id,
                     binding.last_read_index,
                     binding.attached_at,
-                    binding.capabilities.model_dump(),
+                    binding.capabilities.model_dump(mode="json"),
                     binding.metadata,
                 )
         return binding
@@ -895,7 +895,7 @@ class PostgresStore(ConversationStore):
                     binding.visibility,
                     binding.participant_id,
                     binding.last_read_index,
-                    binding.capabilities.model_dump(),
+                    binding.capabilities.model_dump(mode="json"),
                     binding.metadata,
                 )
         return binding
