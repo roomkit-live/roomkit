@@ -374,6 +374,31 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             turn_complete=not silent,
         )
 
+    async def inject_image(
+        self,
+        session: VoiceSession,
+        image_data: bytes,
+        mime_type: str = "image/png",
+        *,
+        prompt: str = "",
+        silent: bool = False,
+    ) -> None:
+        from google.genai import types
+
+        state = self._sessions.get(session.id)
+        if state is None or state.live_session is None:
+            return
+
+        parts: list[types.Part] = []
+        if prompt:
+            parts.append(types.Part(text=prompt))
+        parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=image_data)))
+
+        await state.live_session.send_client_content(
+            turns=types.Content(role="user", parts=parts),
+            turn_complete=not silent,
+        )
+
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
         import json
 

@@ -463,6 +463,35 @@ class RealtimeVoiceChannel(
             len(text),
         )
 
+    async def inject_image(
+        self,
+        session: VoiceSession,
+        image_data: bytes,
+        mime_type: str = "image/png",
+        *,
+        prompt: str = "",
+        silent: bool = False,
+    ) -> None:
+        """Inject an image into the provider session for multimodal analysis.
+
+        Args:
+            session: The active voice session.
+            image_data: Raw image bytes.
+            mime_type: MIME type of the image.
+            prompt: Optional text prompt accompanying the image.
+            silent: If True, add to context without requesting a response.
+        """
+        await self._provider.inject_image(
+            session, image_data, mime_type, prompt=prompt, silent=silent
+        )
+        logger.info(
+            "Injected image into session %s (mime=%s, size=%d, prompt=%s)",
+            session.id,
+            mime_type,
+            len(image_data),
+            bool(prompt),
+        )
+
     # -- Session lifecycle --
 
     async def start_session(

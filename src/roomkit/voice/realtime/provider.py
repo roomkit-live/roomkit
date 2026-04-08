@@ -113,6 +113,30 @@ class RealtimeVoiceProvider(ABC):
         """
         ...
 
+    async def inject_image(
+        self,
+        session: VoiceSession,
+        image_data: bytes,
+        mime_type: str = "image/png",
+        *,
+        prompt: str = "",
+        silent: bool = False,
+    ) -> None:
+        """Inject an image into the conversation for multimodal analysis.
+
+        Not all providers support vision. The default implementation
+        raises ``NotImplementedError``. Providers with multimodal input
+        (e.g. Gemini Live) should override this.
+
+        Args:
+            session: The active session.
+            image_data: Raw image bytes.
+            mime_type: MIME type of the image.
+            prompt: Optional text prompt accompanying the image.
+            silent: If True, add to context without requesting a response.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support image injection")
+
     @abstractmethod
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
         """Submit a tool call result back to the provider.
