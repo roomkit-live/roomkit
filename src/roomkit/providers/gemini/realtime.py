@@ -46,6 +46,8 @@ class _GeminiSessionState:
     turn_count: int = 0
     tool_result_bytes: int = 0
     input_sample_rate: int = 16000
+    pending_tool_calls: int = 0
+    queued_injections: list[tuple[bytes, str, str, bool]] = field(default_factory=list)
 
 
 class _GoAwayError(Exception):
@@ -383,11 +385,32 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         prompt: str = "",
         silent: bool = False,
     ) -> None:
-        from google.genai import types
-
         state = self._sessions.get(session.id)
         if state is None or state.live_session is None:
             return
+
+        # Gemini Live API does not accept client_content while a tool response
+        # is pending.  Queue the injection and flush after submit_tool_result.
+        if state.pending_tool_calls > 0:
+            logger.debug(
+                "Queuing image injection for session %s (pending tool calls: %d)",
+                session.id,
+                state.pending_tool_calls,
+            )
+            state.queued_injections.append((image_data, mime_type, prompt, silent))
+            return
+
+        await self._send_image(state, image_data, mime_type, prompt, silent)
+
+    async def _send_image(
+        self,
+        state: _GeminiSessionState,
+        image_data: bytes,
+        mime_type: str,
+        prompt: str,
+        silent: bool,
+    ) -> None:
+        from google.genai import types
 
         parts: list[types.Part] = []
         if prompt:
@@ -435,6 +458,20 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 )
             ],
         )
+
+        # Decrement pending counter and flush queued image injections
+        state.pending_tool_calls = max(0, state.pending_tool_calls - 1)
+        if state.pending_tool_calls == 0 and state.queued_injections:
+            injections = state.queued_injections[:]
+            state.queued_injections.clear()
+            for image_data, mime_type, prompt, silent in injections:
+                logger.debug(
+                    "Flushing queued image injection for session %s (mime=%s, size=%d)",
+                    session.id,
+                    mime_type,
+                    len(image_data),
+                )
+                await self._send_image(state, image_data, mime_type, prompt, silent)
 
     async def interrupt(self, session: VoiceSession) -> None:
         # Gemini doesn't have a direct cancel; send empty to reset
@@ -988,6 +1025,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         # Handle tool calls
         if hasattr(response, "tool_call") and response.tool_call:
             for fc in response.tool_call.function_calls:
+                state.pending_tool_calls += 1
                 await self._fire_tool_call_callbacks(
                     session,
                     fc.id,
