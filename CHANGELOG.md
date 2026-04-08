@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0a12] — 2026-04-08
+
+### Fixed
+
+- **PostgresStore v1→v2 auto-migration** — detect old JSONB blob schema (`data` column on `rooms`) and drop v1 tables before creating v2 relational schema. Handles CI environments and existing deployments transparently.
+- **PostgresStore test mocks aligned with v2 schema** — row-builder helpers replace stale `{"data": json}` mocks with proper relational column dicts.
+
+## [0.7.0a11] — 2026-04-04
+
+### Added
+
+- **Activity persistence with interleaved tool calls** — AI responses are persisted as individual events per segment (text, tool call start, tool call end) with shared `correlation_id` and sequential indexing, replacing the single concatenated text blob.
+- **`ToolCallContent`** — new content type for tool call events (name, id, args, result, status, duration, error).
+- **`EventFilter`** — rich query filter (event types, source, time range, correlation_id, visibility) for `list_events`.
+- **`PersistencePolicy`** — write-side control (`persist_types` / `exclude_types`) checked before every `add_event` call.
+- **`get_conversation()`** / **`get_timeline()`** — convenience methods on `ConversationStore` for AI context rebuilding and full activity logs.
+- **`deliver_stream` interleaved events** — stream generator yields `str | RoomEvent`, delivering text segments and tool call events inline during streaming with correct chronological order.
+- **Human-in-the-loop tool handler** — `HumanInputToolHandler` pauses tool execution awaiting user input, with `PendingInput` model for tracking pending questions.
+- **`tool_definitions` support on `HumanInputToolHandler`** — `AITool` definitions are auto-injected into the AI context with deduplication.
+- **`organization_id` parameter on `create_room`** — set the org/tenant ID at room creation time for multi-tenant isolation.
+
+### Fixed
+
+- **Tool call events broadcast to transport channels** — removed broadcast blocking for `TOOL_CALL_START`/`TOOL_CALL_END`; the AI channel's self-loop guard already prevents re-responses.
+- **Tool call events delivered to streaming channels** — `exclude_delivery` now only applies to `MESSAGE` events; tool calls are delivered to all channels.
+- **All segment events delivered inline during streaming** — text segments and tool call events are both delivered during the stream, not deferred.
+- **`segment_stream` yield guard** — track persisted event count to avoid yielding stale events when persist is a no-op.
+- **PostgresStore JSONB codec** — register `json.dumps`/`json.loads` codec on pool init for proper JSONB serialization.
+- **Multi-agent tool call guard** — `AIChannel.on_event` skips `TOOL_CALL_START`/`TOOL_CALL_END` to prevent spurious responses to another agent's tool calls.
+- **`model_dump(mode='json')` in PostgresStore** — datetime fields serialized as ISO strings before JSONB encoding.
+- **Stream consumer `RoomEvent` filtering** — `deliver_stream` consumers in `base.py`, `cli.py`, `_voice_tts.py` filter `RoomEvent` items from the `str | RoomEvent` stream.
+- **Session started/ended messages over DataChannel** — `RealtimeVoiceChannel` now notifies the connected client via DataChannel for session lifecycle events.
+- **Clear `_barge_in_active` on speech end** — prevents stale barge-in state when speech detection is a false positive.
+- **Mock TTS audio padded to even byte length** — fixes PCM validation for 16-bit samples.
+
+### Changed
+
+- **PostgresStore relational schema (v2)** — all tables use proper indexed columns instead of JSONB blobs. Events, rooms, bindings, participants, identities, tasks, and observations have individual columns with B-tree indexes. Schema version bumped to 2.
+
+## [0.7.0a10] — 2026-04-03
+
+### Added
+
+- **`BEFORE_TOOL_USE` hook** — pre-execution gate for local tools. Fires before tool execution in `_execute_tools_parallel`. Hooks can block to deny the tool call.
+- **`ExternalToolHandler` ABC** — control and observe tools executed by an external provider (e.g. Claude Code sandbox). Framework injects hook callbacks on `register_channel` so the handler can fire `BEFORE_TOOL_USE` and `ON_TOOL_CALL` hooks.
+- **`PolicyExternalToolHandler`** — concrete implementation with `ToolPolicy`-based auto-approve for standalone/testing.
+- **`AnthropicConfig` `base_url` + `extra_headers`** — allows pointing the Anthropic SDK at a proxy and injecting custom headers.
+
+### Fixed
+
+- **Realtime voice barge-in** — multiple fixes across Gemini provider, channel layer, and transport backends for reliable interruption handling: immediate `clear_audio` on speech detection, `_user_speaking` gate on outbound audio, per-session `_has_pipeline_vad`, and `_rt_interrupted` flag on `LocalAudioBackend`.
+
+## [0.7.0a9] — 2026-04-01
+
+### Added
+
+- **Sandbox tool schemas: write, edit, delete** — three new file modification tools for sandbox executors.
+- **Docker and SmolBSD sandbox examples** — `sandbox_docker.py` (container-based) and `sandbox_smolbsd.py` (VM-isolated).
+- **vLLM + HuggingFace example** — French-language example using Chocolatine-2-4B-Instruct with `SlidingWindowMemory`.
+
+## [0.7.0a8] — 2026-04-01
+
+### Added
+
+- **Face touch detection filter** — MediaPipe-based `FaceTouchFilter` detects hand-to-face contact with zone geometry, false-positive filtering (proximity, z-depth, confirmation, cooldown), and sensitivity presets. Uses generic `FilterEvent` mechanism and `ON_VIDEO_DETECTION` hook trigger.
+- **Supervisor `share_channels` parameter** — allows parent room channels to be shared with every child room during delegation. Threaded through all delegation paths.
+- **`SandboxExecutor` ABC** — sandboxed command execution for AI agents with 7 reference tool schemas (read, ls, grep, find, git, diff, bash), system prompt preamble, and `AIChannel` integration via `sandbox` constructor parameter.
+
+### Fixed
+
+- **Face touch filter review fixes** — video pipeline close on channel teardown, model filename mismatch, thread-safe model init, partial download cleanup, 3D distance for z-depth filtering.
+- **Supervisor `_running` race** — `asyncio.Lock` in `async_delivery` path, `_dedup_cache` eviction.
+
 ## [0.7.0a7] — 2026-03-27
 
 ### Added
