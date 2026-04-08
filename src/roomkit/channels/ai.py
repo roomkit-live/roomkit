@@ -48,6 +48,7 @@ from roomkit.models.enums import (
     ChannelDirection,
     ChannelMediaType,
     ChannelType,
+    EventType,
 )
 from roomkit.models.event import RoomEvent
 from roomkit.models.steering import SteeringDirective
@@ -281,6 +282,12 @@ class AIChannel(
         Otherwise falls back to the non-streaming generate path.
         """
         if event.source.channel_id == self.channel_id:
+            return ChannelOutput.empty()
+
+        # Skip tool call events — these are activity records, not messages
+        # to respond to. Prevents multi-agent rooms from generating
+        # spurious responses to another agent's tool calls.
+        if event.type in (EventType.TOOL_CALL_START, EventType.TOOL_CALL_END):
             return ChannelOutput.empty()
 
         # Track current room for tool call hooks

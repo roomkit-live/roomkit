@@ -395,6 +395,16 @@ class PostgresStore(ConversationStore):
             telemetry.end_span(span_id, status="error", error_message=str(exc))
             raise
 
+    @staticmethod
+    async def _init_connection(conn: Any) -> None:
+        """Register JSONB codec so dicts are auto-serialized on write."""
+        await conn.set_type_codec(
+            "jsonb",
+            encoder=json.dumps,
+            decoder=json.loads,
+            schema="pg_catalog",
+        )
+
     async def init(self, min_size: int = 2, max_size: int = 10) -> None:
         """Create the connection pool (if needed) and ensure schema exists."""
         if self._pool is None:
@@ -402,6 +412,7 @@ class PostgresStore(ConversationStore):
                 self._dsn,
                 min_size=min_size,
                 max_size=max_size,
+                init=self._init_connection,
             )
         async with self._acquire() as conn:
             await conn.execute(_SCHEMA)

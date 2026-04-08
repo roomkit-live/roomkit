@@ -177,22 +177,26 @@ class InboundStreamingMixin(HelpersMixin):
                     accumulated_text.append(delta)
                     yield delta
                 elif isinstance(delta, ToolCallStartMarker):
-                    # Persist text before the tool call and yield it as an event
+                    # Persist text before the tool call and yield if new
+                    count = len(persisted_events)
                     await _persist_text_segment()
-                    if persisted_events:
+                    if len(persisted_events) > count:
                         yield persisted_events[-1]
                     # Persist and yield tool call start
+                    count = len(persisted_events)
                     await _persist_tool_start(delta)
-                    if persisted_events:
+                    if len(persisted_events) > count:
                         yield persisted_events[-1]
                 elif isinstance(delta, ToolCallEndMarker):
+                    count = len(persisted_events)
                     await _persist_tool_end(delta)
-                    if persisted_events:
+                    if len(persisted_events) > count:
                         yield persisted_events[-1]
 
             # Persist final text segment and yield it
+            count = len(persisted_events)
             await _persist_text_segment()
-            if persisted_events:
+            if len(persisted_events) > count:
                 yield persisted_events[-1]
 
         delivered_to: set[str] = set()
