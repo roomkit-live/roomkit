@@ -299,11 +299,15 @@ class InboundStreamingMixin(HelpersMixin):
                                 ]
                             }
                         )
+                        # Text segments were already streamed to streaming
+                        # channels — exclude them. Tool call events were NOT
+                        # streamed, so deliver to all channels.
+                        is_text = seg_event.type == EventType.MESSAGE
                         reentry_result = await router.broadcast(
                             seg_event,
                             binding,
                             reentry_ctx,
-                            exclude_delivery=sr_result.delivered_to,
+                            exclude_delivery=(sr_result.delivered_to if is_text else None),
                         )
                         for blocked in reentry_result.blocked_events:
                             await self._store.add_event(blocked)
