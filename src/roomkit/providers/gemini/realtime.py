@@ -368,9 +368,18 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         # For Gemini, turn_complete=True triggers a response.
         # Silent mode: set turn_complete=False so the text is added
         # as context without requesting a model turn.
+        effective_role = role if role in ("user", "model") else "user"
+        logger.debug(
+            "inject_text session %s: role=%s, silent=%s, len=%d, preview=%.200s",
+            session.id,
+            effective_role,
+            silent,
+            len(text),
+            text,
+        )
         await state.live_session.send_client_content(
             turns=types.Content(
-                role=role if role in ("user", "model") else "user",
+                role=effective_role,
                 parts=[types.Part(text=text)],
             ),
             turn_complete=not silent,
@@ -754,10 +763,14 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
                 uptime = time.monotonic() - state.started_at if state.started_at else 0.0
                 close_code = getattr(exc, "code", None)
+                # Extract detailed error info from Gemini APIError
+                response_json = getattr(exc, "response_json", None)
+                status_code = getattr(exc, "status_code", None)
                 logger.warning(
                     "Gemini session %s disconnected — "
                     "uptime=%.1fs, turns=%d, tool_result_bytes=%d, "
-                    "audio_chunks=%d, close_code=%s, error=%s: %s",
+                    "audio_chunks=%d, close_code=%s, error=%s: %s, "
+                    "status_code=%s, response_json=%s, pending_tools=%d",
                     session.id,
                     uptime,
                     state.turn_count,
@@ -766,6 +779,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     close_code,
                     type(exc).__name__,
                     exc,
+                    status_code,
+                    response_json,
+                    state.pending_tool_calls,
                 )
                 state.live_session = None
                 # Suppress duplicate send_audio_failed errors during reconnect
