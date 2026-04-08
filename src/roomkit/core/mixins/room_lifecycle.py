@@ -81,6 +81,7 @@ class RoomLifecycleMixin(HelpersMixin):
         metadata: dict[str, Any] | None = None,
         recorders: list[RoomRecorderBinding] | None = None,
         orchestration: Orchestration | None | Any = _ORCHESTRATION_UNSET,
+        organization_id: str | None = None,
     ) -> Room:
         """Create a new room.
 
@@ -91,9 +92,12 @@ class RoomLifecycleMixin(HelpersMixin):
                 room-level media recording.
             orchestration: Orchestration strategy for this room. Overrides
                 the kit-level default. Pass ``None`` to explicitly disable.
+            organization_id: Optional organization/tenant ID for multi-tenant
+                isolation. Stored on the room and used for org-level queries.
         """
         room = Room(
             id=room_id or uuid4().hex,
+            organization_id=organization_id,
             metadata=metadata or {},
         )
         result = await self._store.create_room(room)
