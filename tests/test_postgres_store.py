@@ -114,6 +114,132 @@ def _make_observation(room_id: str = "room-1", obs_id: str = "obs-1") -> Observa
     return Observation(id=obs_id, room_id=room_id, channel_id="ch-1", content="Noticed something")
 
 
+# ── Row builders (simulate asyncpg Record dicts) ──────────────────
+
+
+def _room_row(room: Room) -> dict:
+    """Convert a Room model to a dict matching the relational DB columns."""
+    return {
+        "id": room.id,
+        "organization_id": room.organization_id,
+        "status": room.status.value,
+        "event_count": room.event_count,
+        "latest_index": room.latest_index,
+        "metadata": room.metadata,
+        "timers": room.timers.model_dump(mode="json"),
+        "created_at": room.created_at,
+        "updated_at": room.updated_at,
+        "closed_at": room.closed_at,
+    }
+
+
+def _event_row(event: RoomEvent) -> dict:
+    """Convert a RoomEvent model to a dict matching the relational DB columns."""
+    return {
+        "id": event.id,
+        "room_id": event.room_id,
+        "type": event.type.value,
+        "content": event.content.model_dump(mode="json"),
+        "source_channel_id": event.source.channel_id,
+        "source_channel_type": event.source.channel_type.value,
+        "source_direction": event.source.direction.value,
+        "source_participant_id": event.source.participant_id,
+        "source_provider": event.source.provider,
+        "source_extra": {},
+        "status": event.status.value,
+        "visibility": event.visibility,
+        "response_visibility": event.response_visibility,
+        "index": event.index,
+        "chain_depth": event.chain_depth,
+        "correlation_id": event.correlation_id,
+        "parent_event_id": event.parent_event_id,
+        "idempotency_key": event.idempotency_key,
+        "blocked_by": event.blocked_by,
+        "metadata": event.metadata,
+        "channel_data": event.channel_data.model_dump(mode="json"),
+        "created_at": event.created_at,
+    }
+
+
+def _binding_row(binding: ChannelBinding) -> dict:
+    """Convert a ChannelBinding model to a dict matching the relational DB columns."""
+    return {
+        "channel_id": binding.channel_id,
+        "room_id": binding.room_id,
+        "channel_type": binding.channel_type.value,
+        "category": binding.category.value,
+        "direction": binding.direction.value,
+        "access": binding.access.value,
+        "muted": binding.muted,
+        "output_muted": binding.output_muted,
+        "visibility": binding.visibility,
+        "participant_id": binding.participant_id,
+        "last_read_index": binding.last_read_index,
+        "attached_at": binding.attached_at,
+        "capabilities": binding.capabilities.model_dump(mode="json"),
+        "metadata": binding.metadata,
+    }
+
+
+def _participant_row(participant: Participant) -> dict:
+    """Convert a Participant model to a dict matching the relational DB columns."""
+    return {
+        "id": participant.id,
+        "room_id": participant.room_id,
+        "channel_id": participant.channel_id,
+        "display_name": participant.display_name,
+        "role": participant.role.value,
+        "status": participant.status.value,
+        "identification": participant.identification.value,
+        "identity_id": participant.identity_id,
+        "external_id": participant.external_id,
+        "joined_at": participant.joined_at,
+        "resolved_at": participant.resolved_at,
+        "resolved_by": participant.resolved_by,
+        "metadata": participant.metadata,
+    }
+
+
+def _identity_row(identity: Identity) -> dict:
+    """Convert an Identity model to a dict matching the relational DB columns."""
+    return {
+        "id": identity.id,
+        "organization_id": identity.organization_id,
+        "display_name": identity.display_name,
+        "email": identity.email,
+        "channel_addresses": identity.channel_addresses,
+        "metadata": identity.metadata,
+    }
+
+
+def _task_row(task: Task) -> dict:
+    """Convert a Task model to a dict matching the relational DB columns."""
+    return {
+        "id": task.id,
+        "room_id": task.room_id,
+        "title": task.title,
+        "description": task.description,
+        "assigned_to": task.assigned_to,
+        "status": task.status.value if hasattr(task.status, "value") else task.status,
+        "created_at": task.created_at,
+        "metadata": task.metadata,
+    }
+
+
+def _observation_row(obs: Observation) -> dict:
+    """Convert an Observation model to a dict matching the relational DB columns."""
+    return {
+        "id": obs.id,
+        "room_id": obs.room_id,
+        "channel_id": obs.channel_id,
+        "content": obs.content,
+        "category": obs.category,
+        "confidence": obs.confidence,
+        "created_at": obs.created_at,
+        "metadata": obs.metadata,
+    }
+
+
 class TestPostgresStore:
     def test_constructor_with_dsn(self) -> None:
         mock_asyncpg = _build_mock_asyncpg()
@@ -266,7 +392,7 @@ class TestPostgresStore:
     async def test_get_room_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
         room = _make_room()
-        mock_conn.fetchrow.return_value = {"data": room.model_dump_json()}
+        mock_conn.fetchrow.return_value = _room_row(room)
         result = await store.get_room("room-1")
         assert result is not None
         assert result.id == "room-1"
@@ -300,7 +426,7 @@ class TestPostgresStore:
     async def test_list_rooms(self) -> None:
         store, mock_conn = _make_store_with_pool()
         room = _make_room()
-        mock_conn.fetch.return_value = [{"data": room.model_dump_json()}]
+        mock_conn.fetch.return_value = [_room_row(room)]
         result = await store.list_rooms(offset=0, limit=10)
         assert len(result) == 1
         assert result[0].id == "room-1"
@@ -325,7 +451,7 @@ class TestPostgresStore:
     async def test_find_rooms_with_org_id(self) -> None:
         store, mock_conn = _make_store_with_pool()
         room = _make_room()
-        mock_conn.fetch.return_value = [{"data": room.model_dump_json()}]
+        mock_conn.fetch.return_value = [_room_row(room)]
         result = await store.find_rooms(organization_id="org-1")
         assert len(result) == 1
         call_args = mock_conn.fetch.call_args
@@ -374,7 +500,7 @@ class TestPostgresStore:
     async def test_find_latest_room_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
         room = _make_room()
-        mock_conn.fetchrow.return_value = {"data": room.model_dump_json()}
+        mock_conn.fetchrow.return_value = _room_row(room)
         result = await store.find_latest_room("p-1")
         assert result is not None
         assert result.id == "room-1"
@@ -436,7 +562,7 @@ class TestPostgresStore:
     async def test_get_event_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
         event = _make_event()
-        mock_conn.fetchrow.return_value = {"data": event.model_dump_json()}
+        mock_conn.fetchrow.return_value = _event_row(event)
         result = await store.get_event("evt-1")
         assert result is not None
         assert result.id == "evt-1"
@@ -458,7 +584,7 @@ class TestPostgresStore:
     async def test_list_events_basic(self) -> None:
         store, mock_conn = _make_store_with_pool()
         event = _make_event()
-        mock_conn.fetch.return_value = [{"data": event.model_dump_json()}]
+        mock_conn.fetch.return_value = [_event_row(event)]
         result = await store.list_events("room-1")
         assert len(result) == 1
         call_args = mock_conn.fetch.call_args
@@ -485,7 +611,7 @@ class TestPostgresStore:
     async def test_list_events_with_before_index(self) -> None:
         store, mock_conn = _make_store_with_pool()
         event = _make_event()
-        mock_conn.fetch.return_value = [{"data": event.model_dump_json()}]
+        mock_conn.fetch.return_value = [_event_row(event)]
         result = await store.list_events("room-1", before_index=10)
         assert len(result) == 1
         call_args = mock_conn.fetch.call_args
@@ -551,7 +677,7 @@ class TestPostgresStore:
     async def test_get_binding_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
         binding = _make_binding()
-        mock_conn.fetchrow.return_value = {"data": binding.model_dump_json()}
+        mock_conn.fetchrow.return_value = _binding_row(binding)
         result = await store.get_binding("room-1", "ch-1")
         assert result is not None
         assert result.channel_id == "ch-1"
@@ -585,7 +711,7 @@ class TestPostgresStore:
     async def test_list_bindings(self) -> None:
         store, mock_conn = _make_store_with_pool()
         binding = _make_binding()
-        mock_conn.fetch.return_value = [{"data": binding.model_dump_json()}]
+        mock_conn.fetch.return_value = [_binding_row(binding)]
         result = await store.list_bindings("room-1")
         assert len(result) == 1
         assert result[0].channel_id == "ch-1"
@@ -609,7 +735,7 @@ class TestPostgresStore:
     async def test_get_participant_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
         participant = _make_participant()
-        mock_conn.fetchrow.return_value = {"data": participant.model_dump_json()}
+        mock_conn.fetchrow.return_value = _participant_row(participant)
         result = await store.get_participant("room-1", "p-1")
         assert result is not None
         assert result.id == "p-1"
@@ -631,7 +757,7 @@ class TestPostgresStore:
     async def test_list_participants(self) -> None:
         store, mock_conn = _make_store_with_pool()
         participant = _make_participant()
-        mock_conn.fetch.return_value = [{"data": participant.model_dump_json()}]
+        mock_conn.fetch.return_value = [_participant_row(participant)]
         result = await store.list_participants("room-1")
         assert len(result) == 1
         assert result[0].id == "p-1"
@@ -640,24 +766,26 @@ class TestPostgresStore:
 
     async def test_mark_read(self) -> None:
         store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchrow.return_value = {"index": 5}
         await store.mark_read("room-1", "ch-1", "evt-5")
         call_args = mock_conn.execute.call_args
         assert "read_markers" in call_args[0][0]
 
     async def test_mark_all_read_with_events(self) -> None:
         store, mock_conn = _make_store_with_pool()
-        mock_conn.fetchrow.return_value = {"id": "evt-10"}
         await store.mark_all_read("room-1", "ch-1")
-        # Should have called fetchrow (get latest event) + execute (upsert marker)
-        assert mock_conn.fetchrow.await_count >= 1
+        # Single execute with COALESCE subquery
         assert mock_conn.execute.await_count >= 1
+        call_args = mock_conn.execute.call_args
+        assert "read_markers" in call_args[0][0]
 
     async def test_mark_all_read_no_events(self) -> None:
         store, mock_conn = _make_store_with_pool()
-        mock_conn.fetchrow.return_value = None
         await store.mark_all_read("room-1", "ch-1")
-        # No execute call because no events exist
-        mock_conn.execute.assert_not_awaited()
+        # Single execute with COALESCE handles the empty case
+        assert mock_conn.execute.await_count >= 1
+        call_args = mock_conn.execute.call_args
+        assert "COALESCE" in call_args[0][0]
 
     async def test_get_unread_count_no_marker(self) -> None:
         store, mock_conn = _make_store_with_pool()
@@ -669,12 +797,10 @@ class TestPostgresStore:
 
     async def test_get_unread_count_with_marker_and_index(self) -> None:
         store, mock_conn = _make_store_with_pool()
-        # First fetchrow: marker exists
-        # Second fetchrow: last_read_event index
-        # Third fetchrow: unread count
+        # First fetchrow: marker with event_index
+        # Second fetchrow: count of events after that index
         mock_conn.fetchrow.side_effect = [
-            {"event_id": "evt-5"},
-            {"idx": 5},
+            {"event_index": 5},
             {"cnt": 3},
         ]
         result = await store.get_unread_count("room-1", "ch-1")
@@ -682,10 +808,9 @@ class TestPostgresStore:
 
     async def test_get_unread_count_marker_event_missing(self) -> None:
         store, mock_conn = _make_store_with_pool()
-        # Marker exists but event has no index
+        # Marker with event_index, count query returns result
         mock_conn.fetchrow.side_effect = [
-            {"event_id": "evt-5"},
-            None,
+            {"event_index": 5},
             {"cnt": 10},
         ]
         result = await store.get_unread_count("room-1", "ch-1")
@@ -693,9 +818,9 @@ class TestPostgresStore:
 
     async def test_get_unread_count_marker_event_null_index(self) -> None:
         store, mock_conn = _make_store_with_pool()
+        # Marker with event_index, count query
         mock_conn.fetchrow.side_effect = [
-            {"event_id": "evt-5"},
-            {"idx": None},
+            {"event_index": 3},
             {"cnt": 8},
         ]
         result = await store.get_unread_count("room-1", "ch-1")
@@ -722,7 +847,7 @@ class TestPostgresStore:
     async def test_get_identity_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
         identity = _make_identity()
-        mock_conn.fetchrow.return_value = {"data": identity.model_dump_json()}
+        mock_conn.fetchrow.return_value = _identity_row(identity)
         result = await store.get_identity("id-1")
         assert result is not None
         assert result.id == "id-1"
@@ -736,7 +861,7 @@ class TestPostgresStore:
     async def test_resolve_identity_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
         identity = _make_identity()
-        mock_conn.fetchrow.return_value = {"data": identity.model_dump_json()}
+        mock_conn.fetchrow.return_value = _identity_row(identity)
         result = await store.resolve_identity("sms", "+1234567890")
         assert result is not None
         assert result.id == "id-1"
@@ -750,7 +875,7 @@ class TestPostgresStore:
     async def test_link_address_new_address(self) -> None:
         store, mock_conn = _make_store_with_pool()
         identity = _make_identity()
-        mock_conn.fetchrow.return_value = {"data": identity.model_dump_json()}
+        mock_conn.fetchrow.return_value = _identity_row(identity)
         await store.link_address("id-1", "email", "user@example.com")
         # Should have: fetchrow (get identity) + execute (update identities) +
         # execute (upsert identity_addresses)
@@ -759,7 +884,7 @@ class TestPostgresStore:
     async def test_link_address_existing_address(self) -> None:
         store, mock_conn = _make_store_with_pool()
         identity = _make_identity()
-        mock_conn.fetchrow.return_value = {"data": identity.model_dump_json()}
+        mock_conn.fetchrow.return_value = _identity_row(identity)
         # Link an address that already exists in the identity
         await store.link_address("id-1", "sms", "+1234567890")
         # Should still upsert the address row, but NOT update identity data
@@ -787,7 +912,7 @@ class TestPostgresStore:
     async def test_get_task_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
         task = _make_task()
-        mock_conn.fetchrow.return_value = {"data": task.model_dump_json()}
+        mock_conn.fetchrow.return_value = _task_row(task)
         result = await store.get_task("task-1")
         assert result is not None
         assert result.id == "task-1"
@@ -801,7 +926,7 @@ class TestPostgresStore:
     async def test_list_tasks_no_status(self) -> None:
         store, mock_conn = _make_store_with_pool()
         task = _make_task()
-        mock_conn.fetch.return_value = [{"data": task.model_dump_json()}]
+        mock_conn.fetch.return_value = [_task_row(task)]
         result = await store.list_tasks("room-1")
         assert len(result) == 1
 
@@ -833,7 +958,7 @@ class TestPostgresStore:
     async def test_list_observations(self) -> None:
         store, mock_conn = _make_store_with_pool()
         obs = _make_observation()
-        mock_conn.fetch.return_value = [{"data": obs.model_dump_json()}]
+        mock_conn.fetch.return_value = [_observation_row(obs)]
         result = await store.list_observations("room-1")
         assert len(result) == 1
         assert result[0].id == "obs-1"
