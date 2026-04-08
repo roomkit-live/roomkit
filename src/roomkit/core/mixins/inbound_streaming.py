@@ -283,16 +283,14 @@ class InboundStreamingMixin(HelpersMixin):
         for sr in pending_streams:
             sr_result = await self._handle_streaming_response(router, sr, room_id, context)
             if sr_result and sr_result.events:
-                # Broadcast persisted segments to non-streaming channels.
-                # Only MESSAGE events are broadcast — tool call events are
-                # persisted but not broadcast, to avoid triggering AI
-                # re-responses from intelligence channels.
+                # Broadcast all persisted segments to non-streaming channels.
+                # Tool call events are safe to broadcast — the AI channel's
+                # self-loop guard (ai.py:283) skips events from its own
+                # channel_id, so no AI re-response is triggered.
                 first_event = sr_result.events[0]
                 binding = await self._store.get_binding(room_id, first_event.source.channel_id)
                 if binding:
                     for seg_event in sr_result.events:
-                        if seg_event.type != EventType.MESSAGE:
-                            continue
                         reentry_ctx = context.model_copy(
                             update={
                                 "recent_events": [
