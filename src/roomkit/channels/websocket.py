@@ -171,16 +171,24 @@ class WebSocketChannel(Channel):
 
     async def deliver_stream(
         self,
-        text_stream: AsyncIterator[str],
+        text_stream: AsyncIterator[Any],
         event: RoomEvent,
         binding: ChannelBinding,
         context: RoomContext,
     ) -> ChannelOutput:
-        """Deliver a streaming text response to connected clients.
+        """Deliver a streaming response with interleaved events to clients.
 
-        Streaming-capable connections receive ``stream_start``, ``stream_chunk``,
-        and ``stream_end`` messages progressively. Non-streaming connections
-        receive the final complete event via the regular ``send_fn``.
+        The stream yields ``str`` for text deltas and ``RoomEvent`` for
+        persisted events (text segments, tool calls). Streaming-capable
+        connections receive:
+
+        - ``stream_start`` — streaming begins
+        - ``stream_chunk`` — text delta (drives the live bubble)
+        - ``event`` — persisted event (tool call, text segment)
+        - ``stream_end`` — streaming complete
+
+        Non-streaming connections receive all persisted events via
+        the regular ``send_fn``.
         """
         stream_id = uuid.uuid4().hex
         room_id = event.room_id
@@ -199,30 +207,49 @@ class WebSocketChannel(Channel):
         for conn_id in list(self._stream_send_fns):
             await self._send_stream_message(conn_id, start_msg)
 
-        # Stream chunks — build text incrementally to avoid O(N^2) joins
+        # Stream: text deltas as stream_chunk, RoomEvents as event messages
         accumulated: list[str] = []
         running_text = ""
+        segment_events: list[RoomEvent] = []
         try:
             async for delta in text_stream:
-                accumulated.append(delta)
-                running_text += delta
-                chunk_msg = StreamChunk(
-                    room_id=room_id,
-                    stream_id=stream_id,
-                    delta=delta,
-                    text=running_text,
-                )
-                for conn_id in list(self._stream_send_fns):
-                    await self._send_stream_message(conn_id, chunk_msg)
+                if isinstance(delta, str):
+                    accumulated.append(delta)
+                    running_text += delta
+                    chunk_msg = StreamChunk(
+                        room_id=room_id,
+                        stream_id=stream_id,
+                        delta=delta,
+                        text=running_text,
+                    )
+                    for conn_id in list(self._stream_send_fns):
+                        await self._send_stream_message(conn_id, chunk_msg)
+                elif isinstance(delta, RoomEvent):
+                    # Deliver persisted event inline during streaming
+                    segment_events.append(delta)
+                    for conn_id, send_fn in list(self._connections.items()):
+                        try:
+                            await send_fn(conn_id, delta)
+                        except Exception:
+                            self._handle_send_error(conn_id)
         except Exception as exc:
             error_msg = StreamError(room_id=room_id, stream_id=stream_id, error=str(exc))
             for conn_id in list(self._stream_send_fns):
                 await self._send_stream_message(conn_id, error_msg)
             raise
 
-        # Build final event
-        final_text = running_text
-        final_event = event.model_copy(update={"content": TextContent(body=final_text)})
+        # Build final event — use last text segment if segments exist,
+        # otherwise use the full accumulated text
+        if segment_events:
+            # Segments were delivered inline — stream_end carries no event
+            # (the UI already has all events)
+            segmented_meta = {**event.metadata, "_segmented": True}
+            final_event = event.model_copy(
+                update={"content": TextContent(body=""), "metadata": segmented_meta}
+            )
+        else:
+            # Simple text response — stream_end carries the full text
+            final_event = event.model_copy(update={"content": TextContent(body=running_text)})
 
         # Send stream_end to streaming connections
         end_msg = StreamEnd(room_id=room_id, stream_id=stream_id, event=final_event)

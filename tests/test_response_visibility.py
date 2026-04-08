@@ -114,7 +114,8 @@ class _StreamingTarget(Channel):
     ) -> None:
         chunks: list[str] = []
         async for delta in stream:
-            chunks.append(delta)
+            if isinstance(delta, str):
+                chunks.append(delta)
         self.stream_texts.append("".join(chunks))
 
 

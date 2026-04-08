@@ -167,45 +167,33 @@ class InboundStreamingMixin(HelpersMixin):
             if stored is not None:
                 persisted_events.append(stored)
 
-        async def _deliver_to_streaming_targets(event: RoomEvent) -> None:
-            """Deliver a persisted event to streaming channels inline."""
-            for channel, binding in streaming_targets:
-                try:
-                    await channel.deliver(event, binding, context)
-                except Exception:
-                    logger.debug("Inline delivery to %s failed", binding.channel_id)
-
-        # Generator that filters markers from the raw stream.
-        # Transport channels only see str deltas; markers trigger persistence
-        # and inline delivery to streaming channels.
-        async def text_only_stream() -> Any:
-            """Yield only text deltas; persist and deliver segments at boundaries."""
-            has_tool_calls = False
+        # Generator that yields text deltas and persisted events.
+        # Text deltas drive the streaming bubble; RoomEvents are delivered
+        # as regular events interleaved between stream chunks.
+        async def segment_stream() -> Any:
+            """Yield str for text deltas, RoomEvent for persisted segments."""
             async for delta in sr.stream:
                 if isinstance(delta, str):
                     accumulated_text.append(delta)
                     yield delta
                 elif isinstance(delta, ToolCallStartMarker):
-                    has_tool_calls = True
-                    # Persist text segment before the tool call and deliver it
+                    # Persist text before the tool call and yield it as an event
                     await _persist_text_segment()
                     if persisted_events:
-                        await _deliver_to_streaming_targets(persisted_events[-1])
-                    # Persist and deliver tool call start
+                        yield persisted_events[-1]
+                    # Persist and yield tool call start
                     await _persist_tool_start(delta)
                     if persisted_events:
-                        await _deliver_to_streaming_targets(persisted_events[-1])
+                        yield persisted_events[-1]
                 elif isinstance(delta, ToolCallEndMarker):
-                    # Persist and deliver tool call end
                     await _persist_tool_end(delta)
                     if persisted_events:
-                        await _deliver_to_streaming_targets(persisted_events[-1])
+                        yield persisted_events[-1]
 
-            # Persist final text segment. Deliver it only when tool calls were
-            # present (segmented mode). Otherwise stream_end carries the event.
+            # Persist final text segment and yield it
             await _persist_text_segment()
-            if has_tool_calls and persisted_events:
-                await _deliver_to_streaming_targets(persisted_events[-1])
+            if persisted_events:
+                yield persisted_events[-1]
 
         delivered_to: set[str] = set()
         if streaming_targets:
@@ -219,7 +207,7 @@ class InboundStreamingMixin(HelpersMixin):
                 correlation_id=correlation_id,
             )
             try:
-                await channel.deliver_stream(text_only_stream(), placeholder, binding, context)
+                await channel.deliver_stream(segment_stream(), placeholder, binding, context)
                 delivered_to.add(binding.channel_id)
             except Exception as exc:
                 logger.exception("Streaming delivery to %s failed", binding.channel_id)
@@ -243,7 +231,7 @@ class InboundStreamingMixin(HelpersMixin):
                 )
         else:
             # No streaming targets — consume stream (triggers persistence via markers)
-            async for _ in text_only_stream():
+            async for _ in segment_stream():
                 pass
 
         if not persisted_events:
