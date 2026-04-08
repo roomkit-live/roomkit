@@ -167,23 +167,45 @@ class InboundStreamingMixin(HelpersMixin):
             if stored is not None:
                 persisted_events.append(stored)
 
+        async def _deliver_to_streaming_targets(event: RoomEvent) -> None:
+            """Deliver a persisted event to streaming channels inline."""
+            for channel, binding in streaming_targets:
+                try:
+                    await channel.deliver(event, binding, context)
+                except Exception:
+                    logger.debug("Inline delivery to %s failed", binding.channel_id)
+
         # Generator that filters markers from the raw stream.
-        # Transport channels only see str deltas; markers trigger persistence.
+        # Transport channels only see str deltas; markers trigger persistence
+        # and inline delivery to streaming channels.
         async def text_only_stream() -> Any:
-            """Yield only text deltas; persist segments at marker boundaries."""
+            """Yield only text deltas; persist and deliver segments at boundaries."""
+            has_tool_calls = False
             async for delta in sr.stream:
                 if isinstance(delta, str):
                     accumulated_text.append(delta)
                     yield delta
                 elif isinstance(delta, ToolCallStartMarker):
-                    # Text segment boundary — persist text before the tool call
+                    has_tool_calls = True
+                    # Persist text segment before the tool call and deliver it
                     await _persist_text_segment()
+                    if persisted_events:
+                        await _deliver_to_streaming_targets(persisted_events[-1])
+                    # Persist and deliver tool call start
                     await _persist_tool_start(delta)
+                    if persisted_events:
+                        await _deliver_to_streaming_targets(persisted_events[-1])
                 elif isinstance(delta, ToolCallEndMarker):
+                    # Persist and deliver tool call end
                     await _persist_tool_end(delta)
+                    if persisted_events:
+                        await _deliver_to_streaming_targets(persisted_events[-1])
 
-            # Persist any remaining text after the stream ends
+            # Persist final text segment. Deliver it only when tool calls were
+            # present (segmented mode). Otherwise stream_end carries the event.
             await _persist_text_segment()
+            if has_tool_calls and persisted_events:
+                await _deliver_to_streaming_targets(persisted_events[-1])
 
         delivered_to: set[str] = set()
         if streaming_targets:
