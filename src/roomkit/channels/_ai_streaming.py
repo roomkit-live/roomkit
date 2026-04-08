@@ -284,7 +284,7 @@ class AIStreamingMixin:
                         yield event.text
                     elif isinstance(event, StreamToolCall):
                         tool_calls.append(event)
-                        # External tools: fire hooks immediately as they arrive
+                        # External tools: fire hooks and yield persistence markers
                         if self._tool_handler is None and self._external_tool_handler is not None:
                             handler = self._external_tool_handler
                             # Extract result from arguments if embedded by proxy
@@ -292,6 +292,14 @@ class AIStreamingMixin:
                             tool_result = args.pop("_result", None)
                             tool_is_error = args.pop("_is_error", False)
 
+                            # Yield start marker for store persistence
+                            yield ToolCallStartMarker(
+                                tool_name=event.name,
+                                tool_id=event.id,
+                                arguments=args,
+                            )
+
+                            t0_ext = time.monotonic()
                             decision = await handler.process_tool_call(
                                 event.name,
                                 args,
@@ -313,6 +321,18 @@ class AIStreamingMixin:
                                 is_error=bool(tool_is_error),
                                 tool_call_id=event.id,
                                 room_id=room_id,
+                            )
+
+                            # Yield end marker for store persistence
+                            ext_duration_ms = int((time.monotonic() - t0_ext) * 1000)
+                            yield ToolCallEndMarker(
+                                tool_name=event.name,
+                                tool_id=event.id,
+                                arguments=args,
+                                result=effective_result,
+                                status="failed" if tool_is_error else "completed",
+                                duration_ms=ext_duration_ms,
+                                error=effective_result if tool_is_error else None,
                             )
                     elif isinstance(event, StreamDone):
                         if event.usage:
@@ -372,9 +392,8 @@ class AIStreamingMixin:
                                 )
                                 await self._before_tool_call_hook(pre_event)
 
-                    # External tools are executed by the provider — we don't
-                    # have their lifecycle (start/end/result). No markers are
-                    # yielded; persistence for external tools is not yet supported.
+                    # External tools were handled inline during streaming.
+                    # Persistence markers were yielded alongside hook callbacks.
                     return
 
                 if _round_idx >= self._max_tool_rounds:
