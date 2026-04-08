@@ -22,6 +22,28 @@ from roomkit.models.task import Observation, Task
 from roomkit.store.base import ConversationStore
 
 _SCHEMA = """\
+-- Schema migration: drop v1 tables (JSONB blob schema) if present.
+-- Detects v1 by checking for the 'data' column on the rooms table.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'rooms' AND column_name = 'data'
+    ) THEN
+        RAISE NOTICE 'Detected v1 JSONB schema — dropping old tables for v2 migration';
+        DROP TABLE IF EXISTS read_markers CASCADE;
+        DROP TABLE IF EXISTS observations CASCADE;
+        DROP TABLE IF EXISTS tasks CASCADE;
+        DROP TABLE IF EXISTS identity_addresses CASCADE;
+        DROP TABLE IF EXISTS identities CASCADE;
+        DROP TABLE IF EXISTS participants CASCADE;
+        DROP TABLE IF EXISTS bindings CASCADE;
+        DROP TABLE IF EXISTS events CASCADE;
+        DROP TABLE IF EXISTS rooms CASCADE;
+        DROP TABLE IF EXISTS schema_version CASCADE;
+    END IF;
+END $$;
+
 -- rooms
 CREATE TABLE IF NOT EXISTS rooms (
     id              TEXT PRIMARY KEY,
