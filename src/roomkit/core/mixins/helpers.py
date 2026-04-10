@@ -322,7 +322,7 @@ class HelpersMixin:
             raise RoomNotFoundError(f"Room {room_id} not found")
         bindings = await self._store.list_bindings(room_id)
         participants = await self._store.list_participants(room_id)
-        recent = await self._store.list_events(room_id, offset=0, limit=50)
+        recent = await self._store.get_conversation(room_id, limit=50)
         return RoomContext(
             room=room,
             bindings=bindings,
