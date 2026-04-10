@@ -413,6 +413,7 @@ def mount_fastrtc_realtime(
     *,
     path: str = "/rtc-realtime",
     auth: AuthCallback | None = None,
+    rtc_configuration: dict[str, Any] | None = None,
 ) -> None:
     """Mount FastRTC WebRTC endpoints for realtime voice transport.
 
@@ -426,6 +427,9 @@ def mount_fastrtc_realtime(
         auth: Optional async callback for authenticating connections. Receives
             the FastRTC context and returns a metadata dict on success or
             ``None`` to reject. Rejected connections are silently dropped.
+        rtc_configuration: Optional server-side RTCPeerConnection config
+            (e.g. ``{"iceServers": [...]}``).  Passed through to aiortc so the
+            server can gather TURN relay candidates.
     """
     from fastrtc import Stream
 
@@ -435,7 +439,12 @@ def mount_fastrtc_realtime(
         output_sample_rate=transport._output_sample_rate,
         auth=auth,
     )
-    stream = Stream(handler=handler, modality="audio", mode="send-receive")
+    stream = Stream(
+        handler=handler,
+        modality="audio",
+        mode="send-receive",
+        server_rtc_configuration=rtc_configuration,
+    )
     transport._stream = stream
     stream.mount(app, path=path)
     logger.info("FastRTC realtime transport mounted at %s", path)
