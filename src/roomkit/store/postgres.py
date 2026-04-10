@@ -44,6 +44,21 @@ BEGIN
     END IF;
 END $$;
 
+-- Migration: idx_participants_channel must NOT be unique.
+-- Multiple participants can share the same channel in group rooms.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE indexname = 'idx_participants_channel'
+        AND indexdef LIKE '%UNIQUE%'
+    ) THEN
+        DROP INDEX idx_participants_channel;
+        CREATE INDEX idx_participants_channel ON participants(room_id, channel_id);
+        RAISE NOTICE 'Converted idx_participants_channel from UNIQUE to regular index';
+    END IF;
+END $$;
+
 -- rooms
 CREATE TABLE IF NOT EXISTS rooms (
     id              TEXT PRIMARY KEY,
@@ -132,7 +147,7 @@ CREATE TABLE IF NOT EXISTS participants (
     metadata       JSONB NOT NULL DEFAULT '{}',
     PRIMARY KEY (room_id, id)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_channel
+CREATE INDEX IF NOT EXISTS idx_participants_channel
     ON participants(room_id, channel_id);
 
 -- identities
