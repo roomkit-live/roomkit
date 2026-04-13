@@ -230,6 +230,14 @@ class AIStreamingMixin:
                 _dedup_buffer: list[str] = []
 
                 async for event in self._generate_stream_with_retry(context):
+                    # Check cancel between every stream event — allows immediate
+                    # cancellation instead of waiting for the full stream to finish.
+                    if loop_ctx.cancel_event.is_set():
+                        logger.info(
+                            "Streaming cancelled mid-generation at round %d", _round_idx
+                        )
+                        return
+
                     if isinstance(event, StreamThinkingDelta):
                         if not thinking_started and room_id:
                             thinking_started = True
