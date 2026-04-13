@@ -255,6 +255,8 @@ class VoiceHooksMixin:
     ) -> None:
         if not self._framework:
             return
+        if not self._framework.hook_engine.has_hooks(HookTrigger.ON_VAD_AUDIO_LEVEL):
+            return
         try:
             from roomkit.voice.events import VADAudioLevelEvent
 
@@ -283,6 +285,8 @@ class VoiceHooksMixin:
         trigger: HookTrigger,
     ) -> None:
         if not self._framework:
+            return
+        if not self._framework.hook_engine.has_hooks(trigger):
             return
         try:
             from roomkit.voice.events import AudioLevelEvent

@@ -320,6 +320,9 @@ class RealtimeSpeechMixin:
         """Fire an ON_INPUT_AUDIO_LEVEL or ON_OUTPUT_AUDIO_LEVEL hook."""
         if not self._framework:
             return
+        # Skip expensive _build_context (4 DB queries) when no hooks are registered
+        if not self._framework.hook_engine.has_hooks(trigger):
+            return
         from roomkit.telemetry.context import reset_span
 
         _, _tok = self._rt_span_ctx(session.id)

@@ -233,9 +233,7 @@ class AIStreamingMixin:
                     # Check cancel between every stream event — allows immediate
                     # cancellation instead of waiting for the full stream to finish.
                     if loop_ctx.cancel_event.is_set():
-                        logger.info(
-                            "Streaming cancelled mid-generation at round %d", _round_idx
-                        )
+                        logger.info("Streaming cancelled mid-generation at round %d", _round_idx)
                         return
 
                     if isinstance(event, StreamThinkingDelta):
