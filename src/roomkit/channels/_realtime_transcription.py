@@ -137,6 +137,15 @@ class RealtimeTranscriptionMixin:
             )
             return
 
+        # Tool-call-as-text recovery: detect when the model speaks a tool
+        # call (e.g. "call:send_to_agent{task:...}") instead of invoking it.
+        if role == "assistant" and getattr(self, "_tool_recovery_enabled", False):
+            recovered, remaining = self._try_recover_tool_call_from_text(session, text)
+            if recovered:
+                if not remaining or not remaining.strip():
+                    return  # entire text was a tool call — suppress
+                text = remaining  # continue with remaining speech
+
         from roomkit.telemetry.context import reset_span
 
         _, _tok = self._rt_span_ctx(session.id)

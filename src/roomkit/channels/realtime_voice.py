@@ -20,6 +20,7 @@ from roomkit.channels._realtime_context import (
 )
 from roomkit.channels._realtime_response import RealtimeResponseMixin
 from roomkit.channels._realtime_speech import RealtimeSpeechMixin
+from roomkit.channels._realtime_tool_recovery import RealtimeToolRecoveryMixin
 from roomkit.channels._realtime_tools import RealtimeToolsMixin
 from roomkit.channels._realtime_transcription import RealtimeTranscriptionMixin
 from roomkit.channels._voice_pipeline import VoicePipelineMixin
@@ -61,6 +62,7 @@ logger = logging.getLogger("roomkit.channels.realtime_voice")
 
 
 class RealtimeVoiceChannel(
+    RealtimeToolRecoveryMixin,
     RealtimeToolsMixin,
     RealtimeTranscriptionMixin,
     RealtimeSpeechMixin,
@@ -120,6 +122,7 @@ class RealtimeVoiceChannel(
         recording: Any | None = None,
         skills: SkillRegistry | None = None,
         script_executor: ScriptExecutor | None = None,
+        tool_recovery: bool = True,
     ) -> None:
         """Initialize realtime voice channel.
 
@@ -165,6 +168,9 @@ class RealtimeVoiceChannel(
                 and the skills preamble is appended to the system prompt.
             script_executor: Optional ``ScriptExecutor`` for running
                 skill scripts.  Ignored when *skills* is ``None``.
+            tool_recovery: If True, detect tool calls that the model emits
+                as text (e.g. ``call:name{args}``) and execute them.
+                Defaults to True.
         """
         super().__init__(channel_id)
         self._provider: RealtimeVoiceProvider = provider
@@ -177,6 +183,7 @@ class RealtimeVoiceChannel(
         self._output_sample_rate = output_sample_rate
         self._transport_sample_rate = transport_sample_rate
         self._emit_transcription_events = emit_transcription_events
+        self._tool_recovery_enabled = tool_recovery
 
         # Extract Tool objects: split into definition dicts + composed handler
         from roomkit.tools.base import Tool as _ToolProto

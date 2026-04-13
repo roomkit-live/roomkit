@@ -25,6 +25,7 @@ class SpanKind(StrEnum):
     REALTIME_SESSION = "realtime.session"
     REALTIME_TURN = "realtime.turn"
     REALTIME_TOOL_CALL = "realtime.tool_call"
+    REALTIME_TOOL_RECOVERY = "realtime.tool_recovery"
     HOOK_SYNC = "hook.sync"
     HOOK_ASYNC = "hook.async"
     INBOUND_PIPELINE = "framework.inbound"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -25,6 +26,22 @@ from roomkit.voice.realtime.provider import (
 )
 
 logger = logging.getLogger("roomkit.providers.gemini.realtime")
+
+_MAX_INJECT_TEXT_LENGTH = 32_000
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+
+def _sanitize_gemini_text(text: str) -> str:
+    """Sanitize text for safe injection into the Gemini Live API.
+
+    Strips null bytes, control characters (except whitespace),
+    unpaired surrogates, and truncates to max length.
+    """
+    text = _CONTROL_CHAR_RE.sub("", text)
+    text = text.encode("utf-8", errors="surrogatepass").decode("utf-8", errors="ignore")
+    if len(text) > _MAX_INJECT_TEXT_LENGTH:
+        text = text[:_MAX_INJECT_TEXT_LENGTH] + "... [truncated]"
+    return text
 
 
 @dataclass
@@ -365,6 +382,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if state is None or state.live_session is None:
             return
 
+        # Sanitize to prevent 1007 disconnects from control chars / surrogates.
+        text = _sanitize_gemini_text(text)
+        if not text.strip():
+            logger.debug("inject_text: empty after sanitization, skipping (session %s)", session.id)
+            return
+
         # For Gemini, turn_complete=True triggers a response.
         # Silent mode: set turn_complete=False so the text is added
         # as context without requesting a model turn.
@@ -423,7 +446,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         parts: list[types.Part] = []
         if prompt:
-            parts.append(types.Part(text=prompt))
+            prompt = _sanitize_gemini_text(prompt)
+            if prompt.strip():
+                parts.append(types.Part(text=prompt))
         parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=image_data)))
 
         await state.live_session.send_client_content(
