@@ -116,8 +116,7 @@ class RealtimeToolRecoveryMixin:
         remaining = prefix if prefix else None
 
         logger.warning(
-            "Recovered tool call from assistant text: tool=%s, args=%s, "
-            "session=%s, raw=%.300s",
+            "Recovered tool call from assistant text: tool=%s, args=%s, session=%s, raw=%.300s",
             tool_name,
             list(arguments.keys()),
             session.id,
@@ -147,9 +146,7 @@ class RealtimeToolRecoveryMixin:
         with self._state_lock:
             session_tools = self._session_tools.get(session_id)
         tools = session_tools or self._tools or []
-        return {
-            t["name"] for t in tools if isinstance(t, dict) and "name" in t
-        }
+        return {t["name"] for t in tools if isinstance(t, dict) and "name" in t}
 
     def _tool_param_names(self, tool_name: str, session_id: str) -> list[str]:
         with self._state_lock:
@@ -157,9 +154,7 @@ class RealtimeToolRecoveryMixin:
         tools = session_tools or self._tools or []
         for t in tools:
             if isinstance(t, dict) and t.get("name") == tool_name:
-                return list(
-                    t.get("parameters", {}).get("properties", {}).keys()
-                )
+                return list(t.get("parameters", {}).get("properties", {}).keys())
         return []
 
     def _tool_param_types(self, tool_name: str, session_id: str) -> dict[str, str]:
