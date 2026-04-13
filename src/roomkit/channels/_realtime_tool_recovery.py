@@ -13,6 +13,7 @@ injected back as silent text context so the model can reference it.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -320,13 +321,9 @@ def _coerce_types(args: dict[str, Any], param_types: dict[str, str]) -> dict[str
         if expected == "boolean":
             args[key] = value.lower() in ("true", "1", "yes")
         elif expected == "integer":
-            try:
+            with contextlib.suppress(ValueError):
                 args[key] = int(value)
-            except ValueError:
-                pass
         elif expected == "number":
-            try:
+            with contextlib.suppress(ValueError):
                 args[key] = float(value)
-            except ValueError:
-                pass
     return args

@@ -385,7 +385,10 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         # Sanitize to prevent 1007 disconnects from control chars / surrogates.
         text = _sanitize_gemini_text(text)
         if not text.strip():
-            logger.debug("inject_text: empty after sanitization, skipping (session %s)", session.id)
+            logger.debug(
+                "inject_text: empty after sanitization, skipping (session %s)",
+                session.id,
+            )
             return
 
         # For Gemini, turn_complete=True triggers a response.
