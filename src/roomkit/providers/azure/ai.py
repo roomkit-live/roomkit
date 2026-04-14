@@ -26,11 +26,13 @@ class AzureAIProvider(OpenAIAIProvider):
             ) from exc
         self._config = config
         self._api_status_error = _openai.APIStatusError
+        self._api_connection_error = _openai.APIConnectionError
         self._client = _openai.AsyncAzureOpenAI(
             api_key=config.api_key.get_secret_value(),
             azure_endpoint=config.azure_endpoint,
             api_version=config.api_version,
             timeout=config.timeout,
+            max_retries=config.max_retries,
         )
 
     @property

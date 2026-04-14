@@ -22,9 +22,12 @@ class OpenAIConfig(BaseModel):
     model: str = "gpt-4o"
     max_tokens: int = 1024
     temperature: float = 0.7
-    timeout: float = 120.0
-    """HTTP request timeout in seconds. Increase for local servers that
-    load models on first request (e.g. Ollama)."""
+    timeout: float = 30.0
+    """HTTP request timeout in seconds. Override for servers that need
+    longer (e.g. Ollama cold-starting a model on first request)."""
+    max_retries: int = 0
+    """SDK-level retry count. Default 0 because RoomKit's RetryPolicy
+    handles retries at the right layer with proper backoff and fallback."""
     include_stream_usage: bool = False
     """When True, request token usage in streaming responses via
     ``stream_options.include_usage``. The usage is included in the

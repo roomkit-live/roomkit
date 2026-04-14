@@ -121,10 +121,12 @@ class OpenAIAIProvider(AIProvider):
             ) from exc
         self._config = config
         self._api_status_error = _openai.APIStatusError
+        self._api_connection_error = _openai.APIConnectionError
         self._client = _openai.AsyncOpenAI(
             api_key=config.api_key.get_secret_value(),
             base_url=config.base_url,
             timeout=config.timeout,
+            max_retries=config.max_retries,
         )
 
     @property
@@ -275,6 +277,12 @@ class OpenAIAIProvider(AIProvider):
             response = await self._client.chat.completions.create(**kwargs)
         except ProviderError:
             raise
+        except self._api_connection_error as exc:
+            raise ProviderError(
+                str(exc),
+                retryable=True,
+                provider=self._provider_name,
+            ) from exc
         except self._api_status_error as exc:
             retryable = exc.status_code in (429, 500, 502, 503)
             raise ProviderError(
@@ -462,6 +470,12 @@ class OpenAIAIProvider(AIProvider):
 
             yield StreamDone(finish_reason=finish_reason, usage=usage)
 
+        except self._api_connection_error as exc:
+            raise ProviderError(
+                str(exc),
+                retryable=True,
+                provider=self._provider_name,
+            ) from exc
         except self._api_status_error as exc:
             raise ProviderError(
                 str(exc),
