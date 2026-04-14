@@ -95,7 +95,7 @@ class _MockBackend:
 class TestTurnDetection:
     async def test_complete_turn_routes_immediately(self):
         """When turn detector says complete, text is routed and ON_TURN_COMPLETE fires."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from roomkit.voice.base import VoiceSession
 
@@ -117,6 +117,7 @@ class TestTurnDetection:
         # Mock framework
         mock_fw = AsyncMock()
         mock_fw._build_context = AsyncMock(return_value=AsyncMock())
+        mock_fw.hook_engine.has_hooks = MagicMock(return_value=True)
         mock_fw.hook_engine.run_async_hooks = AsyncMock()
         mock_fw.hook_engine.run_sync_hooks = AsyncMock(
             return_value=AsyncMock(allowed=True, event="Hello world")
@@ -148,7 +149,7 @@ class TestTurnDetection:
 
     async def test_incomplete_turn_accumulates(self):
         """When turn detector says incomplete, text accumulates."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from roomkit.voice.base import VoiceSession
 
@@ -173,6 +174,7 @@ class TestTurnDetection:
 
         mock_fw = AsyncMock()
         mock_fw._build_context = AsyncMock(return_value=AsyncMock())
+        mock_fw.hook_engine.has_hooks = MagicMock(return_value=True)
         mock_fw.hook_engine.run_async_hooks = AsyncMock()
         mock_fw.hook_engine.run_sync_hooks = AsyncMock(
             side_effect=[
@@ -220,7 +222,7 @@ class TestTurnDetection:
 
     async def test_no_turn_detector_routes_immediately(self):
         """Without a turn detector, text is routed immediately (existing behaviour)."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from roomkit.voice.base import VoiceSession
 
@@ -237,6 +239,7 @@ class TestTurnDetection:
 
         mock_fw = AsyncMock()
         mock_fw._build_context = AsyncMock(return_value=AsyncMock())
+        mock_fw.hook_engine.has_hooks = MagicMock(return_value=True)
         mock_fw.hook_engine.run_async_hooks = AsyncMock()
         mock_fw.hook_engine.run_sync_hooks = AsyncMock(
             return_value=AsyncMock(allowed=True, event="Hello")
