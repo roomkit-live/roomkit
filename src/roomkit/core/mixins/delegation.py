@@ -90,7 +90,8 @@ async def run_agent_in_child_room(
     for sr in result.streaming_responses:
         parts: list[str] = []
         async for delta in sr.stream:
-            parts.append(delta)
+            if isinstance(delta, str):
+                parts.append(delta)
         text = "".join(parts)
         if text:
             resp_event = RoomEvent(

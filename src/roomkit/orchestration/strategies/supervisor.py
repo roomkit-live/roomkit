@@ -868,7 +868,8 @@ async def _extract_output_text(output: ChannelOutput) -> str:
     if output.response_stream is not None:
         parts: list[str] = []
         async for chunk in output.response_stream:
-            parts.append(chunk)
+            if isinstance(chunk, str):
+                parts.append(chunk)
         return "".join(parts)
 
     return ""
