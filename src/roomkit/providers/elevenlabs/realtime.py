@@ -18,17 +18,7 @@ from typing import Any
 
 from roomkit.providers.elevenlabs.config import ElevenLabsRealtimeConfig
 from roomkit.voice.base import VoiceSession, VoiceSessionState
-from roomkit.voice.realtime.provider import (
-    RealtimeAudioCallback,
-    RealtimeErrorCallback,
-    RealtimeResponseEndCallback,
-    RealtimeResponseStartCallback,
-    RealtimeSpeechEndCallback,
-    RealtimeSpeechStartCallback,
-    RealtimeToolCallCallback,
-    RealtimeTranscriptionCallback,
-    RealtimeVoiceProvider,
-)
+from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 logger = logging.getLogger("roomkit.providers.elevenlabs.realtime")
 
@@ -53,22 +43,13 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
     """
 
     def __init__(self, config: ElevenLabsRealtimeConfig) -> None:
+        super().__init__()
         self._config = config
 
         # Per-session state
         self._sessions: dict[str, VoiceSession] = {}
         self._conversations: dict[str, Any] = {}  # AsyncConversation objects
         self._input_callbacks: dict[str, Any] = {}  # async audio input callbacks
-
-        # Callbacks
-        self._audio_callbacks: list[RealtimeAudioCallback] = []
-        self._transcription_callbacks: list[RealtimeTranscriptionCallback] = []
-        self._speech_start_callbacks: list[RealtimeSpeechStartCallback] = []
-        self._speech_end_callbacks: list[RealtimeSpeechEndCallback] = []
-        self._tool_call_callbacks: list[RealtimeToolCallCallback] = []
-        self._response_start_callbacks: list[RealtimeResponseStartCallback] = []
-        self._response_end_callbacks: list[RealtimeResponseEndCallback] = []
-        self._error_callbacks: list[RealtimeErrorCallback] = []
 
         # Track active responses
         self._responding: set[str] = set()
@@ -238,53 +219,56 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             if session:
                 await self.disconnect(session)
 
-    # -- Callback registration --
-
-    def on_audio(self, callback: RealtimeAudioCallback) -> None:
-        self._audio_callbacks.append(callback)
-
-    def on_transcription(self, callback: RealtimeTranscriptionCallback) -> None:
-        self._transcription_callbacks.append(callback)
-
-    def on_speech_start(self, callback: RealtimeSpeechStartCallback) -> None:
-        self._speech_start_callbacks.append(callback)
-
-    def on_speech_end(self, callback: RealtimeSpeechEndCallback) -> None:
-        self._speech_end_callbacks.append(callback)
-
-    def on_tool_call(self, callback: RealtimeToolCallCallback) -> None:
-        self._tool_call_callbacks.append(callback)
-
-    def on_response_start(self, callback: RealtimeResponseStartCallback) -> None:
-        self._response_start_callbacks.append(callback)
-
-    def on_response_end(self, callback: RealtimeResponseEndCallback) -> None:
-        self._response_end_callbacks.append(callback)
-
-    def on_error(self, callback: RealtimeErrorCallback) -> None:
-        self._error_callbacks.append(callback)
-
     # -- Async callback factories for SDK --
 
     def _make_agent_response_cb(self, session: VoiceSession) -> Any:
         async def cb(text: str) -> None:
             self._responding.discard(session.id)
-            await self._fire_transcription_callbacks(session, text, "assistant", True)
-            await self._fire_callbacks(self._response_end_callbacks, session)
+            await self._fire(
+                self._transcription_callbacks,
+                session,
+                text,
+                "assistant",
+                True,
+                label="transcription",
+            )
+            await self._fire(
+                self._response_end_callbacks,
+                session,
+                label="response_end",
+            )
 
         return cb
 
     def _make_correction_cb(self, session: VoiceSession) -> Any:
         async def cb(original: str, corrected: str) -> None:
-            await self._fire_transcription_callbacks(session, corrected, "assistant", True)
+            await self._fire(
+                self._transcription_callbacks,
+                session,
+                corrected,
+                "assistant",
+                True,
+                label="transcription",
+            )
 
         return cb
 
     def _make_user_transcript_cb(self, session: VoiceSession) -> Any:
         async def cb(text: str) -> None:
-            await self._fire_transcription_callbacks(session, text, "user", True)
+            await self._fire(
+                self._transcription_callbacks,
+                session,
+                text,
+                "user",
+                True,
+                label="transcription",
+            )
             # Transcript arrival signals the user finished speaking
-            await self._fire_callbacks(self._speech_end_callbacks, session)
+            await self._fire(
+                self._speech_end_callbacks,
+                session,
+                label="speech_end",
+            )
 
         return cb
 
@@ -293,61 +277,6 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             logger.debug("ElevenLabs latency: %dms (session %s)", latency, session.id)
 
         return cb
-
-    # -- Callback helpers --
-
-    async def _fire_callbacks(self, callbacks: list[Any], session: VoiceSession) -> None:
-        for cb in callbacks:
-            try:
-                result = cb(session)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in callback for session %s", session.id)
-
-    async def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
-        for cb in self._audio_callbacks:
-            try:
-                result = cb(session, audio)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in audio callback for session %s", session.id)
-
-    async def _fire_transcription_callbacks(
-        self, session: VoiceSession, text: str, role: str, is_final: bool
-    ) -> None:
-        for cb in self._transcription_callbacks:
-            try:
-                result = cb(session, text, role, is_final)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in transcription callback for session %s", session.id)
-
-    async def _fire_tool_call_callbacks(
-        self,
-        session: VoiceSession,
-        call_id: str,
-        name: str,
-        arguments: dict[str, Any],
-    ) -> None:
-        for cb in self._tool_call_callbacks:
-            try:
-                result = cb(session, call_id, name, arguments)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in tool call callback for session %s", session.id)
-
-    async def _fire_error_callbacks(self, session: VoiceSession, code: str, message: str) -> None:
-        for cb in self._error_callbacks:
-            try:
-                result = cb(session, code, message)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in error callback for session %s", session.id)
 
 
 class _AsyncBridgeAudioInterface:
@@ -383,9 +312,13 @@ class _AsyncBridgeAudioInterface:
         # Fire response_start on first audio chunk
         if session.id not in provider._responding:
             provider._responding.add(session.id)
-            await provider._fire_callbacks(provider._response_start_callbacks, session)
+            await provider._fire(
+                provider._response_start_callbacks,
+                session,
+                label="response_start",
+            )
 
-        await provider._fire_audio_callbacks(session, audio)
+        await provider._fire(provider._audio_callbacks, session, audio, label="audio")
 
     async def interrupt(self) -> None:
         """Called by SDK when user interrupted agent playback."""

@@ -22,17 +22,7 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from roomkit.voice.base import VoiceSession, VoiceSessionState
-from roomkit.voice.realtime.provider import (
-    RealtimeAudioCallback,
-    RealtimeErrorCallback,
-    RealtimeResponseEndCallback,
-    RealtimeResponseStartCallback,
-    RealtimeSpeechEndCallback,
-    RealtimeSpeechStartCallback,
-    RealtimeToolCallCallback,
-    RealtimeTranscriptionCallback,
-    RealtimeVoiceProvider,
-)
+from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 try:
     import numpy as np
@@ -120,6 +110,7 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
         response_end_timeout: float = 1.0,
         seed: int = -1,
     ) -> None:
+        super().__init__()
         self._server_url = server_url.rstrip("/")
         self._ssl_verify = ssl_verify
         self._default_voice_prompt = default_voice_prompt
@@ -127,16 +118,6 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
         self._default_seed = seed
 
         self._states: dict[str, _SessionState] = {}
-
-        # Callbacks
-        self._audio_cbs: list[RealtimeAudioCallback] = []
-        self._transcription_cbs: list[RealtimeTranscriptionCallback] = []
-        self._speech_start_cbs: list[RealtimeSpeechStartCallback] = []
-        self._speech_end_cbs: list[RealtimeSpeechEndCallback] = []
-        self._tool_call_cbs: list[RealtimeToolCallCallback] = []
-        self._response_start_cbs: list[RealtimeResponseStartCallback] = []
-        self._response_end_cbs: list[RealtimeResponseEndCallback] = []
-        self._error_cbs: list[RealtimeErrorCallback] = []
 
     @property
     def name(self) -> str:
@@ -274,10 +255,17 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
                 await asyncio.wait_for(state.ws.close(), timeout=2.0)
         # Flush pending state before marking ended
         if state.responding:
-            await self._fire_callbacks(self._response_end_cbs, session)
+            await self._fire(self._response_end_callbacks, session, label="response_end")
         if state.text_buffer:
             text = "".join(state.text_buffer)
-            await self._fire_transcription_cbs(session, text, "assistant", True)
+            await self._fire(
+                self._transcription_callbacks,
+                session,
+                text,
+                "assistant",
+                True,
+                label="transcription",
+            )
         session.state = VoiceSessionState.ENDED
         logger.info("PersonaPlex session disconnected: %s", session.id)
 
@@ -286,32 +274,6 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
             state = self._states.get(sid)
             if state:
                 await self.disconnect(state.session)
-
-    # -- Callback registration --
-
-    def on_audio(self, cb: RealtimeAudioCallback) -> None:
-        self._audio_cbs.append(cb)
-
-    def on_transcription(self, cb: RealtimeTranscriptionCallback) -> None:
-        self._transcription_cbs.append(cb)
-
-    def on_speech_start(self, cb: RealtimeSpeechStartCallback) -> None:
-        self._speech_start_cbs.append(cb)
-
-    def on_speech_end(self, cb: RealtimeSpeechEndCallback) -> None:
-        self._speech_end_cbs.append(cb)
-
-    def on_tool_call(self, cb: RealtimeToolCallCallback) -> None:
-        self._tool_call_cbs.append(cb)
-
-    def on_response_start(self, cb: RealtimeResponseStartCallback) -> None:
-        self._response_start_cbs.append(cb)
-
-    def on_response_end(self, cb: RealtimeResponseEndCallback) -> None:
-        self._response_end_cbs.append(cb)
-
-    def on_error(self, cb: RealtimeErrorCallback) -> None:
-        self._error_cbs.append(cb)
 
     # -- Internal helpers --
 
@@ -379,7 +341,13 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
             if session.state == VoiceSessionState.ACTIVE:
                 logger.warning("WebSocket closed unexpectedly (session %s)", session_id)
                 session.state = VoiceSessionState.ENDED
-                await self._fire_error_cbs(session, "connection_closed", "WebSocket closed")
+                await self._fire(
+                    self._error_callbacks,
+                    session,
+                    "connection_closed",
+                    "WebSocket closed",
+                    label="error",
+                )
 
     async def _handle_message(self, session_id: str, msg_type: int, payload: bytes) -> None:
         state = self._states.get(session_id)
@@ -402,7 +370,7 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
             return
         if not state.responding:
             state.responding = True
-            await self._fire_callbacks(self._response_start_cbs, state.session)
+            await self._fire(self._response_start_callbacks, state.session, label="response_start")
         # sphn.append_bytes returns decoded PCM directly in some versions;
         # in others it buffers and read_pcm() drains.  Try both.
         pcm_float = state.opus_reader.append_bytes(opus_data)
@@ -418,23 +386,34 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
                     state.session.id,
                 )
             pcm_int16 = (pcm_float * 32768.0).clip(-32768, 32767).astype(np.int16)
-            await self._fire_audio_cbs(state.session, pcm_int16.tobytes())
+            await self._fire(
+                self._audio_callbacks, state.session, pcm_int16.tobytes(), label="audio"
+            )
         self._schedule_response_end(state)
 
     async def _handle_text(self, state: _SessionState, payload: bytes) -> None:
         token = payload.decode("utf-8", errors="replace")
         state.text_buffer.append(token)
         text = "".join(state.text_buffer)
-        await self._fire_transcription_cbs(state.session, text, "assistant", False)
+        await self._fire(
+            self._transcription_callbacks,
+            state.session,
+            text,
+            "assistant",
+            False,
+            label="transcription",
+        )
         if not state.responding:
             state.responding = True
-            await self._fire_callbacks(self._response_start_cbs, state.session)
+            await self._fire(self._response_start_callbacks, state.session, label="response_start")
         self._schedule_response_end(state)
 
     async def _handle_error(self, state: _SessionState, payload: bytes) -> None:
         error_msg = payload.decode("utf-8", errors="replace")
         logger.error("[PersonaPlex] error: %s (session %s)", error_msg, state.session.id)
-        await self._fire_error_cbs(state.session, "server_error", error_msg)
+        await self._fire(
+            self._error_callbacks, state.session, "server_error", error_msg, label="error"
+        )
 
     async def _handle_metadata(self, state: _SessionState, payload: bytes) -> None:
         logger.debug("[PersonaPlex] metadata: %s (session %s)", payload[:200], state.session.id)
@@ -456,45 +435,12 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
             if state.text_buffer:
                 text = "".join(state.text_buffer)
                 state.text_buffer.clear()
-                await self._fire_transcription_cbs(state.session, text, "assistant", True)
-            await self._fire_callbacks(self._response_end_cbs, state.session)
-
-    # -- Callback helpers --
-
-    async def _fire_callbacks(self, callbacks: list[Any], session: VoiceSession) -> None:
-        for cb in callbacks:
-            try:
-                result = cb(session)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Callback error (session %s)", session.id)
-
-    async def _fire_audio_cbs(self, session: VoiceSession, audio: bytes) -> None:
-        for cb in self._audio_cbs:
-            try:
-                result = cb(session, audio)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Audio callback error (session %s)", session.id)
-
-    async def _fire_transcription_cbs(
-        self, session: VoiceSession, text: str, role: str, is_final: bool
-    ) -> None:
-        for cb in self._transcription_cbs:
-            try:
-                result = cb(session, text, role, is_final)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Transcription callback error (session %s)", session.id)
-
-    async def _fire_error_cbs(self, session: VoiceSession, code: str, message: str) -> None:
-        for cb in self._error_cbs:
-            try:
-                result = cb(session, code, message)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error callback error (session %s)", session.id)
+                await self._fire(
+                    self._transcription_callbacks,
+                    state.session,
+                    text,
+                    "assistant",
+                    True,
+                    label="transcription",
+                )
+            await self._fire(self._response_end_callbacks, state.session, label="response_end")

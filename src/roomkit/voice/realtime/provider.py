@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.base import VoiceSession
+
+logger = logging.getLogger("roomkit.voice.realtime.provider")
 
 if TYPE_CHECKING:
     from roomkit.video.video_frame import VideoFrame
@@ -44,7 +47,20 @@ class RealtimeVoiceProvider(ABC):
         await provider.connect(session, system_prompt="You are a helpful agent.")
         await provider.send_audio(session, audio_bytes)
         await provider.disconnect(session)
+
+    Subclasses **must** call ``super().__init__()`` to initialise
+    the callback lists.
     """
+
+    def __init__(self) -> None:
+        self._audio_callbacks: list[RealtimeAudioCallback] = []
+        self._transcription_callbacks: list[RealtimeTranscriptionCallback] = []
+        self._speech_start_callbacks: list[RealtimeSpeechStartCallback] = []
+        self._speech_end_callbacks: list[RealtimeSpeechEndCallback] = []
+        self._tool_call_callbacks: list[RealtimeToolCallCallback] = []
+        self._response_start_callbacks: list[RealtimeResponseStartCallback] = []
+        self._response_end_callbacks: list[RealtimeResponseEndCallback] = []
+        self._error_callbacks: list[RealtimeErrorCallback] = []
 
     @property
     @abstractmethod
@@ -278,61 +294,58 @@ class RealtimeVoiceProvider(ABC):
     # -- Callback registration --
 
     def on_audio(self, callback: RealtimeAudioCallback) -> None:
-        """Register callback for audio output from the provider.
-
-        Args:
-            callback: Called with (session, audio_bytes) when the provider
-                produces audio output.
-        """
+        """Register callback for audio output from the provider."""
+        self._audio_callbacks.append(callback)
 
     def on_transcription(self, callback: RealtimeTranscriptionCallback) -> None:
-        """Register callback for transcription events.
-
-        Args:
-            callback: Called with (session, text, role, is_final).
-        """
+        """Register callback for transcription events."""
+        self._transcription_callbacks.append(callback)
 
     def on_speech_start(self, callback: RealtimeSpeechStartCallback) -> None:
-        """Register callback for speech start detection.
-
-        Args:
-            callback: Called with (session) when user speech is detected.
-        """
+        """Register callback for speech start detection."""
+        self._speech_start_callbacks.append(callback)
 
     def on_speech_end(self, callback: RealtimeSpeechEndCallback) -> None:
-        """Register callback for speech end detection.
-
-        Args:
-            callback: Called with (session) when user speech ends.
-        """
+        """Register callback for speech end detection."""
+        self._speech_end_callbacks.append(callback)
 
     def on_tool_call(self, callback: RealtimeToolCallCallback) -> None:
-        """Register callback for tool/function calls from the AI.
-
-        Args:
-            callback: Called with (session, call_id, name, arguments).
-        """
+        """Register callback for tool/function calls from the AI."""
+        self._tool_call_callbacks.append(callback)
 
     def on_response_start(self, callback: RealtimeResponseStartCallback) -> None:
-        """Register callback for when the AI starts generating a response.
-
-        Args:
-            callback: Called with (session).
-        """
+        """Register callback for when the AI starts generating a response."""
+        self._response_start_callbacks.append(callback)
 
     def on_response_end(self, callback: RealtimeResponseEndCallback) -> None:
-        """Register callback for when the AI finishes a response.
-
-        Args:
-            callback: Called with (session).
-        """
+        """Register callback for when the AI finishes a response."""
+        self._response_end_callbacks.append(callback)
 
     def on_error(self, callback: RealtimeErrorCallback) -> None:
-        """Register callback for provider errors.
+        """Register callback for provider errors."""
+        self._error_callbacks.append(callback)
 
-        Args:
-            callback: Called with (session, code, message).
+    # -- Callback dispatch --
+
+    async def _fire(
+        self,
+        callbacks: list[Any],
+        *args: Any,
+        label: str = "callback",
+    ) -> None:
+        """Fire all registered callbacks with the given arguments.
+
+        Supports both sync and async callbacks. Exceptions are logged
+        but never propagate — one failing callback must not break the
+        provider's event loop.
         """
+        for cb in callbacks:
+            try:
+                result = cb(*args)
+                if hasattr(result, "__await__"):
+                    await result
+            except Exception:
+                logger.exception("Error in %s callback", label)
 
     # -- Manual VAD activity signals --
 

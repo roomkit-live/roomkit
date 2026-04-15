@@ -97,14 +97,14 @@ class TestPersonaPlexRealtimeProvider:
         provider.on_response_end(response_end_cb)
         provider.on_error(error_cb)
 
-        assert audio_cb in provider._audio_cbs
-        assert transcription_cb in provider._transcription_cbs
-        assert speech_start_cb in provider._speech_start_cbs
-        assert speech_end_cb in provider._speech_end_cbs
-        assert tool_call_cb in provider._tool_call_cbs
-        assert response_start_cb in provider._response_start_cbs
-        assert response_end_cb in provider._response_end_cbs
-        assert error_cb in provider._error_cbs
+        assert audio_cb in provider._audio_callbacks
+        assert transcription_cb in provider._transcription_callbacks
+        assert speech_start_cb in provider._speech_start_callbacks
+        assert speech_end_cb in provider._speech_end_callbacks
+        assert tool_call_cb in provider._tool_call_callbacks
+        assert response_start_cb in provider._response_start_callbacks
+        assert response_end_cb in provider._response_end_callbacks
+        assert error_cb in provider._error_callbacks
 
     async def test_close_empty_provider(self):
         mod = _load_provider()

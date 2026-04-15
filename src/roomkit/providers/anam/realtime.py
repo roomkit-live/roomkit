@@ -19,15 +19,7 @@ from typing import Any
 from roomkit.providers.anam.config import AnamConfig
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 from roomkit.voice.realtime.provider import (
-    RealtimeAudioCallback,
     RealtimeAudioVideoProvider,
-    RealtimeErrorCallback,
-    RealtimeResponseEndCallback,
-    RealtimeResponseStartCallback,
-    RealtimeSpeechEndCallback,
-    RealtimeSpeechStartCallback,
-    RealtimeToolCallCallback,
-    RealtimeTranscriptionCallback,
     RealtimeVideoCallback,
 )
 
@@ -104,20 +96,12 @@ class AnamRealtimeProvider(RealtimeAudioVideoProvider):
     """
 
     def __init__(self, config: AnamConfig) -> None:
+        super().__init__()
         self._config = config
         self._states: dict[str, _SessionState] = {}
         self._input_sample_rate: int = 16000
 
-        # Callbacks
-        self._audio_cbs: list[RealtimeAudioCallback] = []
         self._video_cbs: list[RealtimeVideoCallback] = []
-        self._transcription_cbs: list[RealtimeTranscriptionCallback] = []
-        self._speech_start_cbs: list[RealtimeSpeechStartCallback] = []
-        self._speech_end_cbs: list[RealtimeSpeechEndCallback] = []
-        self._tool_call_cbs: list[RealtimeToolCallCallback] = []
-        self._response_start_cbs: list[RealtimeResponseStartCallback] = []
-        self._response_end_cbs: list[RealtimeResponseEndCallback] = []
-        self._error_cbs: list[RealtimeErrorCallback] = []
 
     @property
     def name(self) -> str:
@@ -267,7 +251,7 @@ class AnamRealtimeProvider(RealtimeAudioVideoProvider):
 
         # Flush pending response end
         if state.responding:
-            await self._fire_callbacks(self._response_end_cbs, session)
+            await self._fire(self._response_end_callbacks, session, label="response_end")
 
         # Exit the async context manager (closes WebRTC session)
         if state.anam_ctx is not None:
@@ -285,32 +269,8 @@ class AnamRealtimeProvider(RealtimeAudioVideoProvider):
 
     # -- Callback registration -------------------------------------------------
 
-    def on_audio(self, cb: RealtimeAudioCallback) -> None:
-        self._audio_cbs.append(cb)
-
     def on_video(self, cb: RealtimeVideoCallback) -> None:
         self._video_cbs.append(cb)
-
-    def on_transcription(self, cb: RealtimeTranscriptionCallback) -> None:
-        self._transcription_cbs.append(cb)
-
-    def on_speech_start(self, cb: RealtimeSpeechStartCallback) -> None:
-        self._speech_start_cbs.append(cb)
-
-    def on_speech_end(self, cb: RealtimeSpeechEndCallback) -> None:
-        self._speech_end_cbs.append(cb)
-
-    def on_tool_call(self, cb: RealtimeToolCallCallback) -> None:
-        self._tool_call_cbs.append(cb)
-
-    def on_response_start(self, cb: RealtimeResponseStartCallback) -> None:
-        self._response_start_cbs.append(cb)
-
-    def on_response_end(self, cb: RealtimeResponseEndCallback) -> None:
-        self._response_end_cbs.append(cb)
-
-    def on_error(self, cb: RealtimeErrorCallback) -> None:
-        self._error_cbs.append(cb)
 
     # -- Internal: consume loops -----------------------------------------------
 
@@ -329,7 +289,9 @@ class AnamRealtimeProvider(RealtimeAudioVideoProvider):
                 # Signal response start on first audio frame
                 if not state.responding:
                     state.responding = True
-                    await self._fire_callbacks(self._response_start_cbs, session)
+                    await self._fire(
+                        self._response_start_callbacks, session, label="response_start"
+                    )
 
                 # Convert PyAV AudioFrame → PCM int16 bytes
                 try:
@@ -338,13 +300,19 @@ class AnamRealtimeProvider(RealtimeAudioVideoProvider):
                     logger.debug("Audio frame conversion failed", exc_info=True)
                     continue
 
-                await self._fire_audio_cbs(session, pcm)
+                await self._fire(self._audio_callbacks, session, pcm, label="audio")
         except asyncio.CancelledError:
             raise
         except Exception:
             if session.state == VoiceSessionState.ACTIVE and not state._closed:
                 logger.warning("Anam audio stream ended unexpectedly (session %s)", session_id)
-                await self._fire_error_cbs(session, "audio_stream_closed", "Audio stream ended")
+                await self._fire(
+                    self._error_callbacks,
+                    session,
+                    "audio_stream_closed",
+                    "Audio stream ended",
+                    label="error",
+                )
 
     async def _video_consume_loop(self, session_id: str) -> None:
         """Consume video frames from Anam and fire video callbacks."""
@@ -367,7 +335,7 @@ class AnamRealtimeProvider(RealtimeAudioVideoProvider):
                     logger.debug("Video frame conversion failed", exc_info=True)
                     continue
 
-                await self._fire_video_cbs(session, video_frame)
+                await self._fire(self._video_cbs, session, video_frame, label="video")
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -389,71 +357,3 @@ class AnamRealtimeProvider(RealtimeAudioVideoProvider):
         from roomkit.providers.anam._convert import av_video_to_frame
 
         return av_video_to_frame(av_frame, sequence)
-
-    # -- Callback helpers ------------------------------------------------------
-
-    @staticmethod
-    async def _fire(
-        callbacks: list[Any],
-        *args: Any,
-        label: str = "callback",
-    ) -> None:
-        """Fire a list of callbacks with the given arguments."""
-        for cb in callbacks:
-            try:
-                result = cb(*args)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("%s error", label)
-
-    async def _fire_callbacks(
-        self,
-        callbacks: list[Any],
-        session: VoiceSession,
-    ) -> None:
-        await self._fire(callbacks, session, label="callback")
-
-    async def _fire_audio_cbs(
-        self,
-        session: VoiceSession,
-        audio: bytes,
-    ) -> None:
-        await self._fire(self._audio_cbs, session, audio, label="audio")
-
-    async def _fire_video_cbs(
-        self,
-        session: VoiceSession,
-        video_frame: Any,
-    ) -> None:
-        await self._fire(self._video_cbs, session, video_frame, label="video")
-
-    async def _fire_transcription_cbs(
-        self,
-        session: VoiceSession,
-        text: str,
-        role: str,
-        is_final: bool,
-    ) -> None:
-        await self._fire(
-            self._transcription_cbs,
-            session,
-            text,
-            role,
-            is_final,
-            label="transcription",
-        )
-
-    async def _fire_error_cbs(
-        self,
-        session: VoiceSession,
-        code: str,
-        message: str,
-    ) -> None:
-        await self._fire(
-            self._error_cbs,
-            session,
-            code,
-            message,
-            label="error",
-        )

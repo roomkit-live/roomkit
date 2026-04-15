@@ -22,17 +22,7 @@ from pydantic import SecretStr
 
 from roomkit.providers.xai.config import XAIRealtimeConfig
 from roomkit.voice.base import VoiceSession, VoiceSessionState
-from roomkit.voice.realtime.provider import (
-    RealtimeAudioCallback,
-    RealtimeErrorCallback,
-    RealtimeResponseEndCallback,
-    RealtimeResponseStartCallback,
-    RealtimeSpeechEndCallback,
-    RealtimeSpeechStartCallback,
-    RealtimeToolCallCallback,
-    RealtimeTranscriptionCallback,
-    RealtimeVoiceProvider,
-)
+from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 logger = logging.getLogger("roomkit.providers.xai.realtime")
 
@@ -73,6 +63,7 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
         model: str | None = None,
         base_url: str | None = None,
     ) -> None:
+        super().__init__()
         if config is not None:
             self._config = config
         else:
@@ -91,16 +82,6 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
         self._connections: dict[str, Any] = {}
         self._receive_tasks: dict[str, asyncio.Task[None]] = {}
         self._sessions: dict[str, VoiceSession] = {}
-
-        # Callbacks
-        self._audio_callbacks: list[RealtimeAudioCallback] = []
-        self._transcription_callbacks: list[RealtimeTranscriptionCallback] = []
-        self._speech_start_callbacks: list[RealtimeSpeechStartCallback] = []
-        self._speech_end_callbacks: list[RealtimeSpeechEndCallback] = []
-        self._tool_call_callbacks: list[RealtimeToolCallCallback] = []
-        self._response_start_callbacks: list[RealtimeResponseStartCallback] = []
-        self._response_end_callbacks: list[RealtimeResponseEndCallback] = []
-        self._error_callbacks: list[RealtimeErrorCallback] = []
 
         # Track active responses per session to avoid inject_text conflicts
         self._responding: set[str] = set()
@@ -358,34 +339,6 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
                 await self.disconnect(session)
 
     # ------------------------------------------------------------------
-    # Callback registration
-    # ------------------------------------------------------------------
-
-    def on_audio(self, callback: RealtimeAudioCallback) -> None:
-        self._audio_callbacks.append(callback)
-
-    def on_transcription(self, callback: RealtimeTranscriptionCallback) -> None:
-        self._transcription_callbacks.append(callback)
-
-    def on_speech_start(self, callback: RealtimeSpeechStartCallback) -> None:
-        self._speech_start_callbacks.append(callback)
-
-    def on_speech_end(self, callback: RealtimeSpeechEndCallback) -> None:
-        self._speech_end_callbacks.append(callback)
-
-    def on_tool_call(self, callback: RealtimeToolCallCallback) -> None:
-        self._tool_call_callbacks.append(callback)
-
-    def on_response_start(self, callback: RealtimeResponseStartCallback) -> None:
-        self._response_start_callbacks.append(callback)
-
-    def on_response_end(self, callback: RealtimeResponseEndCallback) -> None:
-        self._response_end_callbacks.append(callback)
-
-    def on_error(self, callback: RealtimeErrorCallback) -> None:
-        self._error_callbacks.append(callback)
-
-    # ------------------------------------------------------------------
     # Receive loop
     # ------------------------------------------------------------------
 
@@ -413,10 +366,12 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
                     session.id,
                 )
                 session.state = VoiceSessionState.ENDED
-                await self._fire_error_callbacks(
+                await self._fire(
+                    self._error_callbacks,
                     session,
                     "connection_closed",
                     f"WebSocket closed unexpectedly for session {session.id}",
+                    label="error",
                 )
             else:
                 logger.debug("xAI WebSocket closed for session %s", session.id)
@@ -442,32 +397,53 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
 
         if event_type == "input_audio_buffer.speech_started":
             logger.info("[VAD] speech_start (session %s)", session.id)
-            await self._fire_callbacks(self._speech_start_callbacks, session)
+            await self._fire(self._speech_start_callbacks, session, label="speech_start")
 
         elif event_type == "input_audio_buffer.speech_stopped":
             logger.info("[VAD] speech_end (session %s)", session.id)
-            await self._fire_callbacks(self._speech_end_callbacks, session)
+            await self._fire(self._speech_end_callbacks, session, label="speech_end")
 
         elif event_type == "response.output_audio.delta":
             audio_b64 = event.get("delta", "")
             if audio_b64:
                 audio_bytes = base64.b64decode(audio_b64)
-                await self._fire_audio_callbacks(session, audio_bytes)
+                await self._fire(self._audio_callbacks, session, audio_bytes, label="audio")
 
         elif event_type == "response.output_audio_transcript.delta":
             text = event.get("delta", "")
             if text:
-                await self._fire_transcription_callbacks(session, text, "assistant", False)
+                await self._fire(
+                    self._transcription_callbacks,
+                    session,
+                    text,
+                    "assistant",
+                    False,
+                    label="transcription",
+                )
 
         elif event_type == ("conversation.item.input_audio_transcription.completed"):
             text = event.get("transcript", "")
             if text:
-                await self._fire_transcription_callbacks(session, text, "user", True)
+                await self._fire(
+                    self._transcription_callbacks,
+                    session,
+                    text,
+                    "user",
+                    True,
+                    label="transcription",
+                )
 
         elif event_type == "response.output_audio_transcript.done":
             text = event.get("transcript", "")
             if text:
-                await self._fire_transcription_callbacks(session, text, "assistant", True)
+                await self._fire(
+                    self._transcription_callbacks,
+                    session,
+                    text,
+                    "assistant",
+                    True,
+                    label="transcription",
+                )
 
         elif event_type == "response.function_call_arguments.done":
             call_id = event.get("call_id", "")
@@ -477,12 +453,19 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
                 arguments = json.loads(args_str)
             except json.JSONDecodeError:
                 arguments = {"raw": args_str}
-            await self._fire_tool_call_callbacks(session, call_id, name, arguments)
+            await self._fire(
+                self._tool_call_callbacks,
+                session,
+                call_id,
+                name,
+                arguments,
+                label="tool_call",
+            )
 
         elif event_type == "response.created":
             self._responding.add(session.id)
             logger.info("[xAI] response_start (session %s)", session.id)
-            await self._fire_callbacks(self._response_start_callbacks, session)
+            await self._fire(self._response_start_callbacks, session, label="response_start")
 
         elif event_type == "response.done":
             response = event.get("response", {})
@@ -500,7 +483,13 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
                     err_message,
                     session.id,
                 )
-                await self._fire_error_callbacks(session, err_code or err_type, err_message)
+                await self._fire(
+                    self._error_callbacks,
+                    session,
+                    err_code or err_type,
+                    err_message,
+                    label="error",
+                )
             else:
                 logger.info(
                     "[xAI] response_done status=%s (session %s)",
@@ -532,7 +521,7 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
                 )
 
             self._responding.discard(session.id)
-            await self._fire_callbacks(self._response_end_callbacks, session)
+            await self._fire(self._response_end_callbacks, session, label="response_end")
 
         elif event_type == "session.created":
             sid = event.get("session", {}).get("id", "")
@@ -549,72 +538,4 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
             code = error.get("code", "unknown")
             message = error.get("message", "Unknown error")
             logger.error("[xAI] error [%s] %s (session %s)", code, message, session.id)
-            await self._fire_error_callbacks(session, code, message)
-
-    # ------------------------------------------------------------------
-    # Callback helpers
-    # ------------------------------------------------------------------
-
-    async def _fire_callbacks(
-        self,
-        callbacks: list[Any],
-        session: VoiceSession,
-    ) -> None:
-        for cb in callbacks:
-            try:
-                result = cb(session)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in callback for session %s", session.id)
-
-    async def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
-        for cb in self._audio_callbacks:
-            try:
-                result = cb(session, audio)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in audio callback for session %s", session.id)
-
-    async def _fire_transcription_callbacks(
-        self,
-        session: VoiceSession,
-        text: str,
-        role: str,
-        is_final: bool,
-    ) -> None:
-        for cb in self._transcription_callbacks:
-            try:
-                result = cb(session, text, role, is_final)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception(
-                    "Error in transcription callback for session %s",
-                    session.id,
-                )
-
-    async def _fire_tool_call_callbacks(
-        self,
-        session: VoiceSession,
-        call_id: str,
-        name: str,
-        arguments: dict[str, Any],
-    ) -> None:
-        for cb in self._tool_call_callbacks:
-            try:
-                result = cb(session, call_id, name, arguments)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in tool call callback for session %s", session.id)
-
-    async def _fire_error_callbacks(self, session: VoiceSession, code: str, message: str) -> None:
-        for cb in self._error_callbacks:
-            try:
-                result = cb(session, code, message)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in error callback for session %s", session.id)
+            await self._fire(self._error_callbacks, session, code, message, label="error")
