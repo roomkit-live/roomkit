@@ -844,8 +844,10 @@ def _make_gemini_provider() -> Any:
         p = GeminiLiveProvider.__new__(GeminiLiveProvider)
 
     # Initialize fields normally set in __init__
+    from roomkit.providers.gemini.realtime import _TranscriptionBuffer
+
     p._sessions = {}
-    p._transcription_buffers = {}
+    p._transcription_buffer = _TranscriptionBuffer()
     p._audio_callbacks = []
     p._transcription_callbacks = []
     p._speech_start_callbacks = []

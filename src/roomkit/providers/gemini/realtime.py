@@ -13,17 +13,7 @@ from typing import Any, cast
 from pydantic import SecretStr
 
 from roomkit.voice.base import VoiceSession, VoiceSessionState
-from roomkit.voice.realtime.provider import (
-    RealtimeAudioCallback,
-    RealtimeErrorCallback,
-    RealtimeResponseEndCallback,
-    RealtimeResponseStartCallback,
-    RealtimeSpeechEndCallback,
-    RealtimeSpeechStartCallback,
-    RealtimeToolCallCallback,
-    RealtimeTranscriptionCallback,
-    RealtimeVoiceProvider,
-)
+from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 logger = logging.getLogger("roomkit.providers.gemini.realtime")
 
@@ -42,6 +32,41 @@ def _sanitize_gemini_text(text: str) -> str:
     if len(text) > _MAX_INJECT_TEXT_LENGTH:
         text = text[:_MAX_INJECT_TEXT_LENGTH] + "... [truncated]"
     return text
+
+
+class _TranscriptionBuffer:
+    """Accumulates Gemini transcription chunks until finished=True.
+
+    Gemini sends transcription text in incremental chunks.  This buffer
+    collects them per (session_id, role) and emits the concatenated
+    result when ``flush`` is called or when ``append`` receives a
+    ``finished=True`` chunk.
+    """
+
+    def __init__(self) -> None:
+        self._buffers: dict[tuple[str, str], list[str]] = {}
+
+    def append(self, session_id: str, role: str, text: str, finished: bool) -> str | None:
+        """Add a chunk. Returns the full text if ``finished``, else None."""
+        key = (session_id, role)
+        self._buffers.setdefault(key, []).append(text)
+        if finished:
+            full = "".join(self._buffers.pop(key, []))
+            return full if full.strip() else None
+        return None
+
+    def flush(self, session_id: str, role: str) -> str | None:
+        """Flush the buffer for a (session, role) pair. Returns text or None."""
+        chunks = self._buffers.pop((session_id, role), [])
+        if chunks:
+            full = "".join(chunks)
+            return full if full.strip() else None
+        return None
+
+    def clear_session(self, session_id: str) -> None:
+        """Remove all buffers for a session."""
+        for key in [k for k in self._buffers if k[0] == session_id]:
+            del self._buffers[key]
 
 
 @dataclass
@@ -65,6 +90,8 @@ class _GeminiSessionState:
     input_sample_rate: int = 16000
     pending_tool_calls: int = 0
     queued_injections: list[tuple[bytes, str, str, bool]] = field(default_factory=list)
+    realtime_input_sent: bool = False
+    queued_text_injections: list[tuple[str, str, bool]] = field(default_factory=list)
 
 
 class _GoAwayError(Exception):
@@ -94,6 +121,8 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         api_key: str | SecretStr,
         model: str = "gemini-3.1-flash-live-preview",
     ) -> None:
+        super().__init__()
+
         try:
             from google import genai as _genai
             from google.genai import types as _types
@@ -121,23 +150,18 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         # Consolidated per-session state: session_id -> _GeminiSessionState
         self._sessions: dict[str, _GeminiSessionState] = {}
 
-        # Transcription buffers: accumulate chunks until finished=True
-        # Key: (session_id, role) -> list of text chunks
-        self._transcription_buffers: dict[tuple[str, str], list[str]] = {}
-
-        # Callbacks
-        self._audio_callbacks: list[RealtimeAudioCallback] = []
-        self._transcription_callbacks: list[RealtimeTranscriptionCallback] = []
-        self._speech_start_callbacks: list[RealtimeSpeechStartCallback] = []
-        self._speech_end_callbacks: list[RealtimeSpeechEndCallback] = []
-        self._tool_call_callbacks: list[RealtimeToolCallCallback] = []
-        self._response_start_callbacks: list[RealtimeResponseStartCallback] = []
-        self._response_end_callbacks: list[RealtimeResponseEndCallback] = []
-        self._error_callbacks: list[RealtimeErrorCallback] = []
+        self._transcription_buffer = _TranscriptionBuffer()
 
     @property
     def name(self) -> str:
         return "GeminiLiveProvider"
+
+    def _get_active_state(self, session: VoiceSession) -> _GeminiSessionState | None:
+        """Return session state if the session is connected, else None."""
+        state = self._sessions.get(session.id)
+        if state is None or state.live_session is None:
+            return None
+        return state
 
     def _build_config(
         self,
@@ -339,12 +363,13 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     async def send_audio(self, session: VoiceSession, audio: bytes) -> None:
         state = self._sessions.get(session.id)
-        if state is None or state.live_session is None:
+        if state is None:
             return
 
         # Buffer audio while reconnecting instead of dropping it
-        if session.state == VoiceSessionState.CONNECTING:
-            state.audio_buffer.append(audio)
+        if state.live_session is None or session.state == VoiceSessionState.CONNECTING:
+            if session.state == VoiceSessionState.CONNECTING:
+                state.audio_buffer.append(audio)
             return
 
         # Skip if connection is already closed
@@ -355,6 +380,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             await state.live_session.send_realtime_input(
                 audio=self._make_audio_blob(audio, state.input_sample_rate),
             )
+            # Mark that realtime input has been used — send_client_content is
+            # no longer safe for this session (interleaving causes 1007 disconnects).
+            state.realtime_input_sent = True
             # Successful send — reset suppression so next failure fires callback
             state.error_suppressed = False
         except Exception as exc:
@@ -365,7 +393,9 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             # Fire error callback only once per reconnection cycle
             if not state.error_suppressed:
                 state.error_suppressed = True
-                await self._fire_error_callbacks(session, "send_audio_failed", str(exc))
+                await self._fire(
+                    self._error_callbacks, session, "send_audio_failed", str(exc), label="error"
+                )
             return
 
     async def inject_text(
@@ -376,10 +406,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         role: str = "user",
         silent: bool = False,
     ) -> None:
-        from google.genai import types
-
-        state = self._sessions.get(session.id)
-        if state is None or state.live_session is None:
+        if (state := self._get_active_state(session)) is None:
             return
 
         # Sanitize to prevent 1007 disconnects from control chars / surrogates.
@@ -391,25 +418,71 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             )
             return
 
-        # For Gemini, turn_complete=True triggers a response.
-        # Silent mode: set turn_complete=False so the text is added
-        # as context without requesting a model turn.
+        # Queue when tool results are pending — Gemini rejects input while
+        # waiting for function responses (same guard as inject_image).
+        if state.pending_tool_calls > 0:
+            logger.debug(
+                "Queuing text injection for session %s (pending tool calls: %d)",
+                session.id,
+                state.pending_tool_calls,
+            )
+            state.queued_text_injections.append((text, role, silent))
+            return
+
+        await self._send_text(state, text, role, silent)
+
+    async def _send_text(
+        self,
+        state: _GeminiSessionState,
+        text: str,
+        role: str,
+        silent: bool,
+    ) -> None:
+        from google.genai import types
+
         effective_role = role if role in ("user", "model") else "user"
         logger.debug(
-            "inject_text session %s: role=%s, silent=%s, len=%d, preview=%.200s",
-            session.id,
+            "inject_text session %s: role=%s, silent=%s, realtime=%s, len=%d, preview=%.200s",
+            state.session.id,
             effective_role,
             silent,
+            state.realtime_input_sent,
             len(text),
             text,
         )
-        await state.live_session.send_client_content(
-            turns=types.Content(
-                role=effective_role,
-                parts=[types.Part(text=text)],
-            ),
-            turn_complete=not silent,
-        )
+
+        if not state.realtime_input_sent:
+            # No audio sent yet — send_client_content is safe and gives full
+            # control over role and turn_complete semantics.
+            await state.live_session.send_client_content(
+                turns=types.Content(
+                    role=effective_role,
+                    parts=[types.Part(text=text)],
+                ),
+                turn_complete=not silent,
+            )
+            return
+
+        # Audio is flowing — must use send_realtime_input to avoid 1007
+        # disconnects from interleaving send_client_content with realtime input.
+        # Limitations: no role parameter, no turn_complete control.
+        if effective_role == "model":
+            logger.warning(
+                "inject_text session %s: role='model' not supported via "
+                "send_realtime_input — sending as user context instead",
+                state.session.id,
+            )
+            text = f"[Assistant previously said] {text}"
+
+        if silent:
+            text = f"[Context update, do not respond to this] {text}"
+            logger.debug(
+                "inject_text session %s: silent mode is best-effort via "
+                "send_realtime_input (model may still respond)",
+                state.session.id,
+            )
+
+        await state.live_session.send_realtime_input(text=text)
 
     async def inject_image(
         self,
@@ -420,8 +493,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         prompt: str = "",
         silent: bool = False,
     ) -> None:
-        state = self._sessions.get(session.id)
-        if state is None or state.live_session is None:
+        if (state := self._get_active_state(session)) is None:
             return
 
         # Gemini Live API does not accept client_content while a tool response
@@ -447,16 +519,41 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     ) -> None:
         from google.genai import types
 
-        parts: list[types.Part] = []
+        # Sanitize once, before branching.
         if prompt:
             prompt = _sanitize_gemini_text(prompt)
-            if prompt.strip():
-                parts.append(types.Part(text=prompt))
-        parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=image_data)))
+            if not prompt.strip():
+                prompt = ""
 
-        await state.live_session.send_client_content(
-            turns=types.Content(role="user", parts=parts),
-            turn_complete=not silent,
+        if not state.realtime_input_sent:
+            # No audio sent yet — send_client_content is safe.
+            parts: list[types.Part] = []
+            if prompt:
+                parts.append(types.Part(text=prompt))
+            parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=image_data)))
+            await state.live_session.send_client_content(
+                turns=types.Content(role="user", parts=parts),
+                turn_complete=not silent,
+            )
+            return
+
+        # Audio is flowing — use send_realtime_input to avoid 1007
+        # disconnects.  The SDK only accepts one argument per call,
+        # so text prompt and media are sent as separate messages.
+        if prompt:
+            if silent:
+                prompt = f"[Context update, do not respond to this] {prompt}"
+            await state.live_session.send_realtime_input(text=prompt)
+        elif silent:
+            # No prompt but silent — send a standalone instruction so the
+            # model doesn't react to the image (no turn_complete equivalent
+            # on the realtime path).
+            await state.live_session.send_realtime_input(
+                text="[Context update, do not respond to this image]"
+            )
+
+        await state.live_session.send_realtime_input(
+            media=types.Blob(mime_type=mime_type, data=image_data),
         )
 
     async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
@@ -464,8 +561,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         from google.genai import types
 
-        state = self._sessions.get(session.id)
-        if state is None or state.live_session is None:
+        if (state := self._get_active_state(session)) is None:
             return
 
         # Track tool result bytes for debugging
@@ -496,31 +592,40 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             ],
         )
 
-        # Decrement pending counter and flush queued image injections
+        # Decrement pending counter and flush queued injections
         state.pending_tool_calls = max(0, state.pending_tool_calls - 1)
-        if state.pending_tool_calls == 0 and state.queued_injections:
-            injections = state.queued_injections[:]
-            state.queued_injections.clear()
-            for image_data, mime_type, prompt, silent in injections:
-                logger.debug(
-                    "Flushing queued image injection for session %s (mime=%s, size=%d)",
-                    session.id,
-                    mime_type,
-                    len(image_data),
-                )
-                await self._send_image(state, image_data, mime_type, prompt, silent)
+        if state.pending_tool_calls == 0:
+            if state.queued_text_injections:
+                text_injections = state.queued_text_injections[:]
+                state.queued_text_injections.clear()
+                for text, role, silent in text_injections:
+                    logger.debug(
+                        "Flushing queued text injection for session %s (len=%d)",
+                        session.id,
+                        len(text),
+                    )
+                    await self._send_text(state, text, role, silent)
+            if state.queued_injections:
+                injections = state.queued_injections[:]
+                state.queued_injections.clear()
+                for image_data, mime_type, prompt, silent in injections:
+                    logger.debug(
+                        "Flushing queued image injection for session %s (mime=%s, size=%d)",
+                        session.id,
+                        mime_type,
+                        len(image_data),
+                    )
+                    await self._send_image(state, image_data, mime_type, prompt, silent)
 
     async def interrupt(self, session: VoiceSession) -> None:
         # Gemini doesn't have a direct cancel; send empty to reset
-        state = self._sessions.get(session.id)
-        if state is None or state.live_session is None:
+        if self._get_active_state(session) is None:
             return
         logger.debug("Interrupt requested for Gemini session %s (no-op)", session.id)
 
     async def send_activity_start(self, session: VoiceSession) -> None:
         """Send ActivityStart to Gemini (manual VAD mode)."""
-        state = self._sessions.get(session.id)
-        if state is None or state.live_session is None:
+        if (state := self._get_active_state(session)) is None:
             return
         from google.genai import types
 
@@ -531,8 +636,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     async def send_activity_end(self, session: VoiceSession) -> None:
         """Send ActivityEnd to Gemini (manual VAD mode)."""
-        state = self._sessions.get(session.id)
-        if state is None or state.live_session is None:
+        if (state := self._get_active_state(session)) is None:
             return
         from google.genai import types
 
@@ -672,32 +776,6 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             self._mime_cache[sample_rate] = mime
         return self._blob_cls(data=data, mime_type=mime)
 
-    # -- Callback registration --
-
-    def on_audio(self, callback: RealtimeAudioCallback) -> None:
-        self._audio_callbacks.append(callback)
-
-    def on_transcription(self, callback: RealtimeTranscriptionCallback) -> None:
-        self._transcription_callbacks.append(callback)
-
-    def on_speech_start(self, callback: RealtimeSpeechStartCallback) -> None:
-        self._speech_start_callbacks.append(callback)
-
-    def on_speech_end(self, callback: RealtimeSpeechEndCallback) -> None:
-        self._speech_end_callbacks.append(callback)
-
-    def on_tool_call(self, callback: RealtimeToolCallCallback) -> None:
-        self._tool_call_callbacks.append(callback)
-
-    def on_response_start(self, callback: RealtimeResponseStartCallback) -> None:
-        self._response_start_callbacks.append(callback)
-
-    def on_response_end(self, callback: RealtimeResponseEndCallback) -> None:
-        self._response_end_callbacks.append(callback)
-
-    def on_error(self, callback: RealtimeErrorCallback) -> None:
-        self._error_callbacks.append(callback)
-
     # -- Receive loop --
 
     _MAX_RECONNECTS = 5
@@ -730,10 +808,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     )
                     state.audio_buffer.clear()
                     session.state = VoiceSessionState.ENDED
-                    await self._fire_error_callbacks(
+                    await self._fire(
+                        self._error_callbacks,
                         session,
                         "max_reconnects",
                         f"Connection lost after {self._MAX_RECONNECTS} reconnect attempts",
+                        label="error",
                     )
                     return
 
@@ -817,9 +897,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     def _clear_transcription_buffers(self, session_id: str) -> None:
         """Remove all transcription buffer entries for a session."""
-        for key in list(self._transcription_buffers):
-            if key[0] == session_id:
-                del self._transcription_buffers[key]
+        self._transcription_buffer.clear_session(session_id)
 
     async def _reconnect(self, session: VoiceSession) -> None:
         """Reconnect to Gemini Live using the stored config."""
@@ -901,6 +979,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     await live_session.send_realtime_input(
                         audio=types.Blob(data=chunk, mime_type=mime),
                     )
+                state.realtime_input_sent = True
             finally:
                 state.audio_buffer.clear()
 
@@ -912,288 +991,240 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         logger.info("Gemini Live session %s reconnected", session.id)
 
+    # Ordered dispatch table for server response handling.  Each entry is
+    # (response_attribute, handler_method).  Order matters: go_away is
+    # processed LAST so all data in the message is handled first.
+    _RESPONSE_HANDLERS: list[tuple[str, str]] = [
+        ("session_resumption_update", "_on_session_resumption"),
+        ("voice_activity", "_on_voice_activity"),
+        ("server_content", "_on_server_content"),
+        ("data", "_on_audio_data"),
+        ("tool_call", "_on_tool_call"),
+        ("usage_metadata", "_on_usage_metadata"),
+        ("go_away", "_on_go_away"),
+    ]
+
     async def _handle_server_response(self, session: VoiceSession, response: Any) -> None:
         """Map Gemini Live responses to callbacks."""
         state = self._sessions.get(session.id)
         if state is None:
             return
 
-        # Log every server message for debugging
-        parts = []
-        if hasattr(response, "data") and response.data:
+        self._log_server_message(session, response)
+
+        for attr, method in self._RESPONSE_HANDLERS:
+            value = getattr(response, attr, None)
+            if value:
+                await getattr(self, method)(session, state, value)
+
+    def _log_server_message(self, session: VoiceSession, response: Any) -> None:
+        """Build a compact debug log line summarising the server message."""
+        parts: list[str] = []
+        if getattr(response, "data", None):
             parts.append(f"audio={len(response.data)}B")
-        if hasattr(response, "server_content") and response.server_content:
-            sc = response.server_content
-            if hasattr(sc, "model_turn") and sc.model_turn:
+        sc = getattr(response, "server_content", None)
+        if sc:
+            if getattr(sc, "model_turn", None):
                 parts.append("model_turn")
-            if hasattr(sc, "turn_complete") and sc.turn_complete:
+            if getattr(sc, "turn_complete", None):
                 parts.append("turn_complete")
-            if hasattr(sc, "interrupted") and sc.interrupted:
+            if getattr(sc, "interrupted", None):
                 parts.append("interrupted")
-            if hasattr(sc, "input_transcription") and sc.input_transcription:
+            if getattr(sc, "input_transcription", None):
                 parts.append(f"input_tx={sc.input_transcription.text!r}")
-            if hasattr(sc, "output_transcription") and sc.output_transcription:
+            if getattr(sc, "output_transcription", None):
                 parts.append(f"output_tx={sc.output_transcription.text!r}")
-        if hasattr(response, "tool_call") and response.tool_call:
+        if getattr(response, "tool_call", None):
             parts.append("tool_call")
-        if hasattr(response, "voice_activity") and response.voice_activity:
-            va = response.voice_activity
-            vtype = getattr(va, "voice_activity_type", "?")
-            parts.append(f"vad={vtype}")
-        if hasattr(response, "go_away") and response.go_away:
+        va = getattr(response, "voice_activity", None)
+        if va:
+            parts.append(f"vad={getattr(va, 'voice_activity_type', '?')}")
+        if getattr(response, "go_away", None):
             parts.append("go_away")
-        if hasattr(response, "session_resumption_update") and response.session_resumption_update:
+        if getattr(response, "session_resumption_update", None):
             parts.append("resumption_update")
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            um = response.usage_metadata
+        um = getattr(response, "usage_metadata", None)
+        if um:
             parts.append(
                 f"usage(prompt={getattr(um, 'prompt_token_count', '?')}"
-                f",candidates={getattr(um, 'candidates_token_count', '?')}"
+                f",response={getattr(um, 'response_token_count', '?')}"
                 f",total={getattr(um, 'total_token_count', '?')})"
             )
         if not parts:
             parts.append(f"unknown_keys={[k for k in dir(response) if not k.startswith('_')]}")
         logger.debug("[Gemini] recv: %s (session %s)", ", ".join(parts), session.id)
 
-        # Handle session resumption updates — store the latest handle
-        if hasattr(response, "session_resumption_update") and response.session_resumption_update:
-            update = response.session_resumption_update
-            if update.resumable and update.new_handle:
-                state.resumption_handle = update.new_handle
-                logger.debug(
-                    "Session resumption handle updated for %s (resumable=%s)",
-                    session.id,
-                    update.resumable,
-                )
-
-        # Handle voice activity detection (speech start/end)
-        # Processed BEFORE audio so that interruption state is up-to-date.
-        if hasattr(response, "voice_activity") and response.voice_activity:
-            va = response.voice_activity
-            if hasattr(va, "voice_activity_type") and va.voice_activity_type:
-                if va.voice_activity_type == "ACTIVITY_START":
-                    logger.info("[VAD] speech_start (session %s)", session.id)
-                    state.user_speech_active = True
-                    await self._fire_callbacks(self._speech_start_callbacks, session)
-                elif va.voice_activity_type == "ACTIVITY_END":
-                    logger.info("[VAD] speech_end (session %s)", session.id)
-                    state.user_speech_active = False
-                    # Flush user transcription buffer — speech ended
-                    await self._flush_transcription_buffer(session, "user")
-                    await self._fire_callbacks(self._speech_end_callbacks, session)
-
-        # Handle server content events
-        if hasattr(response, "server_content") and response.server_content:
-            content = response.server_content
-
-            # Input transcription (user speech-to-text)
-            if hasattr(content, "input_transcription") and content.input_transcription:
-                tr = content.input_transcription
-                if tr.text:
-                    await self._handle_transcription_chunk(
-                        session, tr.text, "user", bool(tr.finished)
-                    )
-
-            # Output transcription (model speech-to-text)
-            if hasattr(content, "output_transcription") and content.output_transcription:
-                tr = content.output_transcription
-                if tr.text:
-                    await self._handle_transcription_chunk(
-                        session, tr.text, "assistant", bool(tr.finished)
-                    )
-
-            # Model started generating (has model_turn with parts)
-            if (
-                hasattr(content, "model_turn")
-                and content.model_turn
-                and not state.response_started
-            ):
-                # Flush user transcription — model responding means user
-                # speech is done and transcription should be complete.
-                await self._flush_transcription_buffer(session, "user")
-                state.response_started = True
-                state.audio_chunk_count = 0
-                logger.info("[Gemini] response_start (session %s)", session.id)
-                await self._fire_callbacks(self._response_start_callbacks, session)
-
-            # Interrupted — user barged in while model was speaking
-            if hasattr(content, "interrupted") and content.interrupted:
-                logger.info(
-                    "[Gemini] INTERRUPTED — AI cut off by barge-in (session %s)",
-                    session.id,
-                )
-                await self._flush_transcription_buffer(session, "assistant")
-                # Fire speech_start ONLY if ACTIVITY_START wasn't already
-                # received — Gemini doesn't always send voice_activity events
-                # before interrupted, so this may be the only trigger for
-                # the channel to call transport.interrupt().
-                if not state.user_speech_active:
-                    state.user_speech_active = True
-                    await self._fire_callbacks(self._speech_start_callbacks, session)
-                if state.response_started:
-                    state.response_started = False
-                    await self._fire_callbacks(self._response_end_callbacks, session)
-
-            # Turn complete
-            if hasattr(content, "turn_complete") and content.turn_complete:
-                # Track turn count
-                state.turn_count += 1
-                # Flush both transcription buffers — turn ended.
-                # User buffer may not have been flushed by ACTIVITY_END
-                # (some models don't send voice_activity events, or
-                # transcription chunks arrive after ACTIVITY_END).
-                logger.info(
-                    "[Gemini] turn_complete (session %s, %d audio chunks)",
-                    session.id,
-                    state.audio_chunk_count,
-                )
-                await self._flush_transcription_buffer(session, "user")
-                await self._flush_transcription_buffer(session, "assistant")
-                state.response_started = False
-                state.user_speech_active = False
-                await self._fire_callbacks(self._response_end_callbacks, session)
-
-        # Handle audio data — AFTER server_content so that response_start
-        # fires before the first audio callback in the same message.
-        if hasattr(response, "data") and response.data:
-            state.audio_chunk_count += 1
-            if state.audio_chunk_count % 50 == 1:
-                logger.debug(
-                    "[Gemini] audio chunk #%d (%d bytes) for session %s",
-                    state.audio_chunk_count,
-                    len(response.data),
-                    session.id,
-                )
-            await self._fire_audio_callbacks(session, response.data)
-
-        # Handle tool calls
-        if hasattr(response, "tool_call") and response.tool_call:
-            for fc in response.tool_call.function_calls:
-                state.pending_tool_calls += 1
-                await self._fire_tool_call_callbacks(
-                    session,
-                    fc.id,
-                    fc.name,
-                    dict(fc.args) if fc.args else {},
-                )
-
-        # Extract usage_metadata if present (sent on turn_complete responses)
-        usage_meta = getattr(response, "usage_metadata", None)
-        if usage_meta is not None:
-            prompt_tokens = getattr(usage_meta, "prompt_token_count", 0) or 0
-            candidates_tokens = getattr(usage_meta, "candidates_token_count", 0) or 0
-            total_tokens = getattr(usage_meta, "total_token_count", 0) or 0
+    async def _on_session_resumption(
+        self, session: VoiceSession, state: _GeminiSessionState, update: Any
+    ) -> None:
+        if update.resumable and update.new_handle:
+            state.resumption_handle = update.new_handle
             logger.debug(
-                "[Gemini] usage: prompt=%d candidates=%d total=%d (session %s)",
-                prompt_tokens,
-                candidates_tokens,
-                total_tokens,
+                "Session resumption handle updated for %s (resumable=%s)",
                 session.id,
+                update.resumable,
             )
-            self._record_usage(session, prompt_tokens, candidates_tokens)
 
-        # Handle GoAway LAST — after processing all other data in this message.
-        # Raising here breaks out of the receive loop and triggers proactive
-        # reconnection with the session resumption handle.
-        if hasattr(response, "go_away") and response.go_away:
-            time_left = getattr(response.go_away, "time_left", "unknown")
-            logger.warning(
-                "Gemini GoAway received for session %s (time_left=%s)",
-                session.id,
-                time_left,
+    async def _on_voice_activity(
+        self, session: VoiceSession, state: _GeminiSessionState, va: Any
+    ) -> None:
+        vtype = getattr(va, "voice_activity_type", None)
+        if not vtype:
+            return
+        if vtype == "ACTIVITY_START":
+            logger.info("[VAD] speech_start (session %s)", session.id)
+            state.user_speech_active = True
+            await self._fire(self._speech_start_callbacks, session, label="speech_start")
+        elif vtype == "ACTIVITY_END":
+            logger.info("[VAD] speech_end (session %s)", session.id)
+            state.user_speech_active = False
+            await self._flush_transcription_buffer(session, "user")
+            await self._fire(self._speech_end_callbacks, session, label="speech_end")
+
+    async def _on_server_content(
+        self, session: VoiceSession, state: _GeminiSessionState, content: Any
+    ) -> None:
+        # Input transcription (user speech-to-text)
+        tr = getattr(content, "input_transcription", None)
+        if tr and tr.text:
+            await self._handle_transcription_chunk(session, tr.text, "user", bool(tr.finished))
+
+        # Output transcription (model speech-to-text)
+        tr = getattr(content, "output_transcription", None)
+        if tr and tr.text:
+            await self._handle_transcription_chunk(
+                session, tr.text, "assistant", bool(tr.finished)
             )
-            raise _GoAwayError()
+
+        # Model started generating
+        if getattr(content, "model_turn", None) and not state.response_started:
+            await self._flush_transcription_buffer(session, "user")
+            state.response_started = True
+            state.audio_chunk_count = 0
+            logger.info("[Gemini] response_start (session %s)", session.id)
+            await self._fire(self._response_start_callbacks, session, label="response_start")
+
+        # Interrupted — user barged in while model was speaking
+        if getattr(content, "interrupted", None):
+            logger.info("[Gemini] INTERRUPTED — AI cut off by barge-in (session %s)", session.id)
+            await self._flush_transcription_buffer(session, "assistant")
+            # Fire speech_start ONLY if ACTIVITY_START wasn't already
+            # received — Gemini doesn't always send voice_activity before
+            # interrupted, so this may be the only trigger.
+            if not state.user_speech_active:
+                state.user_speech_active = True
+                await self._fire(self._speech_start_callbacks, session, label="speech_start")
+            if state.response_started:
+                state.response_started = False
+                await self._fire(self._response_end_callbacks, session, label="response_end")
+
+        # Turn complete
+        if getattr(content, "turn_complete", None):
+            state.turn_count += 1
+            logger.info(
+                "[Gemini] turn_complete (session %s, %d audio chunks)",
+                session.id,
+                state.audio_chunk_count,
+            )
+            await self._flush_transcription_buffer(session, "user")
+            await self._flush_transcription_buffer(session, "assistant")
+            state.response_started = False
+            state.user_speech_active = False
+            await self._fire(self._response_end_callbacks, session, label="response_end")
+
+    async def _on_audio_data(
+        self, session: VoiceSession, state: _GeminiSessionState, data: bytes
+    ) -> None:
+        state.audio_chunk_count += 1
+        if state.audio_chunk_count % 50 == 1:
+            logger.debug(
+                "[Gemini] audio chunk #%d (%d bytes) for session %s",
+                state.audio_chunk_count,
+                len(data),
+                session.id,
+            )
+        await self._fire(self._audio_callbacks, session, data, label="audio")
+
+    async def _on_tool_call(
+        self, session: VoiceSession, state: _GeminiSessionState, tool_call: Any
+    ) -> None:
+        for fc in tool_call.function_calls:
+            state.pending_tool_calls += 1
+            await self._fire(
+                self._tool_call_callbacks,
+                session,
+                fc.id,
+                fc.name,
+                dict(fc.args) if fc.args else {},
+                label="tool_call",
+            )
+
+    async def _on_usage_metadata(
+        self, session: VoiceSession, state: _GeminiSessionState, meta: Any
+    ) -> None:
+        prompt_tokens = getattr(meta, "prompt_token_count", 0) or 0
+        response_tokens = getattr(meta, "response_token_count", 0) or 0
+        total_tokens = getattr(meta, "total_token_count", 0) or 0
+        logger.debug(
+            "[Gemini] usage: prompt=%d response=%d total=%d (session %s)",
+            prompt_tokens,
+            response_tokens,
+            total_tokens,
+            session.id,
+        )
+        self._record_usage(session, prompt_tokens, response_tokens)
+
+    async def _on_go_away(
+        self, session: VoiceSession, state: _GeminiSessionState, go_away: Any
+    ) -> None:
+        time_left = getattr(go_away, "time_left", "unknown")
+        logger.warning(
+            "Gemini GoAway received for session %s (time_left=%s)",
+            session.id,
+            time_left,
+        )
+        raise _GoAwayError()
 
     async def _handle_transcription_chunk(
         self, session: VoiceSession, text: str, role: str, finished: bool
     ) -> None:
-        """Accumulate transcription chunks and fire callback when complete.
-
-        Gemini sends transcription text in incremental chunks.  We buffer
-        them and fire a single ``is_final=True`` callback with the full
-        text when ``finished`` is True.
-        """
-        key = (session.id, role)
-        self._transcription_buffers.setdefault(key, []).append(text)
-
-        if finished:
-            full_text = "".join(self._transcription_buffers.pop(key, []))
-            if full_text.strip():
-                await self._fire_transcription_callbacks(session, full_text, role, True)
-        else:
+        """Accumulate transcription chunks and fire callback when complete."""
+        full_text = self._transcription_buffer.append(session.id, role, text, finished)
+        if full_text:
+            await self._fire(
+                self._transcription_callbacks,
+                session,
+                full_text,
+                role,
+                True,
+                label="transcription",
+            )
+        elif not finished:
             # Send non-final for real-time display in the voice modal
-            await self._fire_transcription_callbacks(session, text, role, False)
+            await self._fire(
+                self._transcription_callbacks,
+                session,
+                text,
+                role,
+                False,
+                label="transcription",
+            )
 
     async def _flush_transcription_buffer(self, session: VoiceSession, role: str) -> None:
-        """Flush accumulated transcription buffer as a final transcription.
-
-        Called at lifecycle boundaries (turn_complete, speech end) to ensure
-        buffered text is emitted even if Gemini never sets ``finished=True``.
-        """
-        key = (session.id, role)
-        chunks = self._transcription_buffers.pop(key, [])
-        if chunks:
-            full_text = "".join(chunks)
-            if full_text.strip():
-                logger.debug(
-                    "Flushing %s transcription buffer (%d chars) for session %s",
-                    role,
-                    len(full_text),
-                    session.id,
-                )
-                await self._fire_transcription_callbacks(session, full_text, role, True)
-
-    # -- Callback helpers --
-
-    async def _fire_callbacks(self, callbacks: list[Any], session: VoiceSession) -> None:
-        for cb in callbacks:
-            try:
-                result = cb(session)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in callback for session %s", session.id)
-
-    async def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
-        for cb in self._audio_callbacks:
-            try:
-                result = cb(session, audio)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in audio callback for session %s", session.id)
-
-    async def _fire_transcription_callbacks(
-        self, session: VoiceSession, text: str, role: str, is_final: bool
-    ) -> None:
-        for cb in self._transcription_callbacks:
-            try:
-                result = cb(session, text, role, is_final)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in transcription callback for session %s", session.id)
-
-    async def _fire_error_callbacks(self, session: VoiceSession, code: str, message: str) -> None:
-        for cb in self._error_callbacks:
-            try:
-                result = cb(session, code, message)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in error callback for session %s", session.id)
-
-    async def _fire_tool_call_callbacks(
-        self,
-        session: VoiceSession,
-        call_id: str,
-        name: str,
-        arguments: dict[str, Any],
-    ) -> None:
-        for cb in self._tool_call_callbacks:
-            try:
-                result = cb(session, call_id, name, arguments)
-                if hasattr(result, "__await__"):
-                    await result
-            except Exception:
-                logger.exception("Error in tool call callback for session %s", session.id)
+        """Flush buffered transcription at lifecycle boundaries."""
+        full_text = self._transcription_buffer.flush(session.id, role)
+        if full_text:
+            logger.debug(
+                "Flushing %s transcription buffer (%d chars) for session %s",
+                role,
+                len(full_text),
+                session.id,
+            )
+            await self._fire(
+                self._transcription_callbacks,
+                session,
+                full_text,
+                role,
+                True,
+                label="transcription",
+            )

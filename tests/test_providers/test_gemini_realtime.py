@@ -476,6 +476,263 @@ class TestGeminiLiveProvider:
         # No session — should return silently
         await provider.inject_text(session, "No session")
 
+    async def test_inject_text_after_audio_uses_realtime_input(self):
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            realtime_input_sent=True,
+        )
+        provider._sessions[session.id] = state
+
+        await provider.inject_text(session, "Hello mid-audio!")
+
+        mock_live_session.send_client_content.assert_not_awaited()
+        mock_live_session.send_realtime_input.assert_awaited_once()
+        call_kwargs = mock_live_session.send_realtime_input.call_args[1]
+        assert call_kwargs["text"] == "Hello mid-audio!"
+
+    async def test_inject_text_silent_after_audio(self):
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            realtime_input_sent=True,
+        )
+        provider._sessions[session.id] = state
+
+        await provider.inject_text(session, "Context only", silent=True)
+
+        mock_live_session.send_client_content.assert_not_awaited()
+        call_kwargs = mock_live_session.send_realtime_input.call_args[1]
+        assert "[Context update, do not respond to this]" in call_kwargs["text"]
+        assert "Context only" in call_kwargs["text"]
+
+    async def test_inject_text_model_role_after_audio(self):
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            realtime_input_sent=True,
+        )
+        provider._sessions[session.id] = state
+
+        await provider.inject_text(session, "Model response", role="model")
+
+        mock_live_session.send_client_content.assert_not_awaited()
+        call_kwargs = mock_live_session.send_realtime_input.call_args[1]
+        assert "[Assistant previously said]" in call_kwargs["text"]
+        assert "Model response" in call_kwargs["text"]
+
+    async def test_inject_text_queued_during_tool_calls(self):
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            pending_tool_calls=1,
+        )
+        provider._sessions[session.id] = state
+
+        await provider.inject_text(session, "Queued text", role="user", silent=True)
+
+        # Should not send anything yet
+        mock_live_session.send_client_content.assert_not_awaited()
+        mock_live_session.send_realtime_input.assert_not_awaited()
+        # Should be queued
+        assert len(state.queued_text_injections) == 1
+        assert state.queued_text_injections[0] == ("Queued text", "user", True)
+
+    async def test_inject_text_flushed_after_tool_result(self):
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            pending_tool_calls=1,
+            queued_text_injections=[("Queued text", "user", False)],
+        )
+        provider._sessions[session.id] = state
+
+        await provider.submit_tool_result(session, "call-1", '{"ok": true}')
+
+        # Tool response sent
+        mock_live_session.send_tool_response.assert_awaited_once()
+        # Queued text flushed via send_client_content (no audio sent)
+        mock_live_session.send_client_content.assert_awaited_once()
+        assert len(state.queued_text_injections) == 0
+
+    async def test_send_audio_sets_realtime_input_sent(self):
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+        session.state = VoiceSessionState.ACTIVE
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            input_sample_rate=16000,
+        )
+        provider._sessions[session.id] = state
+
+        assert state.realtime_input_sent is False
+        await provider.send_audio(session, b"\x00\x00")
+        assert state.realtime_input_sent is True
+
+    async def test_send_image_after_audio_uses_realtime_input(self):
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            realtime_input_sent=True,
+        )
+        provider._sessions[session.id] = state
+
+        await provider.inject_image(
+            session, b"\x89PNG", "image/png", prompt="Describe this", silent=False
+        )
+
+        mock_live_session.send_client_content.assert_not_awaited()
+        # Two calls: one for text prompt, one for media
+        assert mock_live_session.send_realtime_input.await_count == 2
+        first_call = mock_live_session.send_realtime_input.call_args_list[0][1]
+        assert first_call["text"] == "Describe this"
+        second_call = mock_live_session.send_realtime_input.call_args_list[1][1]
+        assert second_call["media"].mime_type == "image/png"
+
+    async def test_send_image_before_audio_uses_client_content(self):
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            realtime_input_sent=False,
+        )
+        provider._sessions[session.id] = state
+
+        await provider.inject_image(
+            session, b"\x89PNG", "image/png", prompt="Describe", silent=False
+        )
+
+        mock_live_session.send_client_content.assert_awaited_once()
+        mock_live_session.send_realtime_input.assert_not_awaited()
+
+    async def test_send_image_after_audio_no_prompt(self):
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            realtime_input_sent=True,
+        )
+        provider._sessions[session.id] = state
+
+        await provider.inject_image(session, b"\x89PNG", "image/png")
+
+        mock_live_session.send_client_content.assert_not_awaited()
+        # Only one call: media only (no prompt, not silent)
+        mock_live_session.send_realtime_input.assert_awaited_once()
+        call_kwargs = mock_live_session.send_realtime_input.call_args[1]
+        assert "media" in call_kwargs
+
+    async def test_send_image_after_audio_silent_no_prompt(self):
+        """Silent image without prompt must send a 'do not respond' instruction."""
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            realtime_input_sent=True,
+        )
+        provider._sessions[session.id] = state
+
+        await provider.inject_image(session, b"\x89PNG", "image/png", silent=True)
+
+        mock_live_session.send_client_content.assert_not_awaited()
+        # Two calls: silent instruction text, then media
+        assert mock_live_session.send_realtime_input.await_count == 2
+        first = mock_live_session.send_realtime_input.call_args_list[0][1]
+        assert "do not respond" in first["text"].lower()
+        second = mock_live_session.send_realtime_input.call_args_list[1][1]
+        assert "media" in second
+
+    async def test_send_image_after_audio_silent_with_prompt(self):
+        """Silent image with prompt: prompt gets the 'do not respond' prefix."""
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            realtime_input_sent=True,
+        )
+        provider._sessions[session.id] = state
+
+        await provider.inject_image(
+            session, b"\x89PNG", "image/png", prompt="Logo update", silent=True
+        )
+
+        mock_live_session.send_client_content.assert_not_awaited()
+        assert mock_live_session.send_realtime_input.await_count == 2
+        first = mock_live_session.send_realtime_input.call_args_list[0][1]
+        assert "[Context update, do not respond to this]" in first["text"]
+        assert "Logo update" in first["text"]
+
+    async def test_inject_text_model_role_and_silent_after_audio(self):
+        """Both role='model' and silent=True: both prefixes applied."""
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+
+        mock_live_session = _make_mock_live_session()
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=mock_live_session,
+            realtime_input_sent=True,
+        )
+        provider._sessions[session.id] = state
+
+        await provider.inject_text(session, "Noted", role="model", silent=True)
+
+        text = mock_live_session.send_realtime_input.call_args[1]["text"]
+        assert "[Assistant previously said]" in text
+        assert "[Context update, do not respond to this]" in text
+        assert "Noted" in text
+
     # ── submit_tool_result() ────────────────────────────────────
 
     async def test_submit_tool_result_json(self):
@@ -632,11 +889,11 @@ class TestGeminiLiveProvider:
             live_session=mock_live_session,
         )
         provider._sessions[session.id] = state
-        provider._transcription_buffers[(session.id, "user")] = ["chunk"]
+        provider._transcription_buffer._buffers[(session.id, "user")] = ["chunk"]
 
         await provider.disconnect(session)
 
-        assert (session.id, "user") not in provider._transcription_buffers
+        assert (session.id, "user") not in provider._transcription_buffer._buffers
 
     async def test_disconnect_cancels_receive_task(self):
         mod = _load_provider()
@@ -1043,7 +1300,7 @@ class TestGeminiLiveProvider:
         response = SimpleNamespace(
             usage_metadata=SimpleNamespace(
                 prompt_token_count=100,
-                candidates_token_count=50,
+                response_token_count=50,
                 total_token_count=150,
             ),
         )
@@ -1123,13 +1380,13 @@ class TestGeminiLiveProvider:
         )
 
         # Buffer some text
-        provider._transcription_buffers[(session.id, "user")] = ["Hello ", "world"]
+        provider._transcription_buffer._buffers[(session.id, "user")] = ["Hello ", "world"]
 
         await provider._flush_transcription_buffer(session, "user")
 
         assert len(transcriptions) == 1
         assert transcriptions[0] == ("Hello world", "user", True)
-        assert (session.id, "user") not in provider._transcription_buffers
+        assert (session.id, "user") not in provider._transcription_buffer._buffers
 
     async def test_flush_empty_buffer_is_noop(self):
         mod = _load_provider()
@@ -1154,7 +1411,7 @@ class TestGeminiLiveProvider:
             lambda s, text, role, final: transcriptions.append((text, role, final))
         )
 
-        provider._transcription_buffers[(session.id, "user")] = ["  ", "\n"]
+        provider._transcription_buffer._buffers[(session.id, "user")] = ["  ", "\n"]
         await provider._flush_transcription_buffer(session, "user")
         assert transcriptions == []
 
@@ -1162,15 +1419,15 @@ class TestGeminiLiveProvider:
         mod = _load_provider()
         provider = mod.GeminiLiveProvider(api_key="test-key")
 
-        provider._transcription_buffers[("s1", "user")] = ["a"]
-        provider._transcription_buffers[("s1", "assistant")] = ["b"]
-        provider._transcription_buffers[("s2", "user")] = ["c"]
+        provider._transcription_buffer._buffers[("s1", "user")] = ["a"]
+        provider._transcription_buffer._buffers[("s1", "assistant")] = ["b"]
+        provider._transcription_buffer._buffers[("s2", "user")] = ["c"]
 
         provider._clear_transcription_buffers("s1")
 
-        assert ("s1", "user") not in provider._transcription_buffers
-        assert ("s1", "assistant") not in provider._transcription_buffers
-        assert ("s2", "user") in provider._transcription_buffers
+        assert ("s1", "user") not in provider._transcription_buffer._buffers
+        assert ("s1", "assistant") not in provider._transcription_buffer._buffers
+        assert ("s2", "user") in provider._transcription_buffer._buffers
 
     # ── _receive_loop() ─────────────────────────────────────────
 
@@ -1263,7 +1520,7 @@ class TestGeminiLiveProvider:
 
         provider.on_error(bad_cb)
 
-        await provider._fire_error_callbacks(session, "test", "test")
+        await provider._fire(provider._error_callbacks, session, "test", "test", label="error")
 
     async def test_tool_call_callback_exception_is_caught(self):
         mod = _load_provider()
