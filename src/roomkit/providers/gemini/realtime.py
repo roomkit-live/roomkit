@@ -152,6 +152,10 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         self._transcription_buffer = _TranscriptionBuffer()
 
+        # Hot-path caches (instance-level to avoid shared mutable class state)
+        self._blob_cls: Any = None
+        self._mime_cache: dict[int, str] = {}
+
     @property
     def name(self) -> str:
         return "GeminiLiveProvider"
@@ -441,10 +445,19 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         from google.genai import types
 
         effective_role = role if role in ("user", "model") else "user"
+        if effective_role != role:
+            logger.debug(
+                "inject_text session %s: role %r not supported by Gemini, coerced to %r",
+                state.session.id,
+                role,
+                effective_role,
+            )
         logger.debug(
-            "inject_text session %s: role=%s, silent=%s, realtime=%s, len=%d, preview=%.200s",
+            "inject_text session %s: role=%s (original=%s), silent=%s, "
+            "realtime=%s, len=%d, preview=%.200s",
             state.session.id,
             effective_role,
+            role,
             silent,
             state.realtime_input_sent,
             len(text),
@@ -722,6 +735,10 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         if state is None:
             return
 
+        # Discard stale queued injections from the old configuration
+        state.queued_text_injections.clear()
+        state.queued_injections.clear()
+
         new_config = self._build_config(
             system_prompt=system_prompt,
             voice=voice,
@@ -761,15 +778,12 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     # -- Hot-path helpers (avoid per-call imports and string formatting) --
 
-    _blob_cls: Any = None
-    _mime_cache: dict[int, str] = {}
-
     def _make_audio_blob(self, data: bytes, sample_rate: int) -> Any:
         """Create a Blob without per-call import or string formatting."""
         if self._blob_cls is None:
             from google.genai import types
 
-            self.__class__._blob_cls = types.Blob
+            self._blob_cls = types.Blob
         mime = self._mime_cache.get(sample_rate)
         if mime is None:
             mime = f"audio/pcm;rate={sample_rate}"

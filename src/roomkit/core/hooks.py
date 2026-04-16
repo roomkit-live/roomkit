@@ -88,6 +88,7 @@ class HookEngine:
     def __init__(self) -> None:
         self._global_hooks: list[HookRegistration] = []
         self._room_hooks: dict[str, list[HookRegistration]] = {}
+        self._trigger_index: set[HookTrigger] = set()
         self._telemetry: Any = None  # Set by RoomKit after init
         self._suppressed_triggers: set[str] = {
             "on_input_audio_level",
@@ -98,16 +99,19 @@ class HookEngine:
     def register(self, hook: HookRegistration) -> None:
         """Register a global hook."""
         self._global_hooks.append(hook)
+        self._trigger_index.add(hook.trigger)
 
     def add_room_hook(self, room_id: str, hook: HookRegistration) -> None:
         """Register a hook for a specific room."""
         self._room_hooks.setdefault(room_id, []).append(hook)
+        self._trigger_index.add(hook.trigger)
 
     def remove_global_hook(self, name: str) -> bool:
         """Remove a global hook by name."""
         for i, h in enumerate(self._global_hooks):
             if h.name == name:
                 self._global_hooks.pop(i)
+                self._rebuild_trigger_index()
                 return True
         return False
 
@@ -117,14 +121,19 @@ class HookEngine:
         for i, h in enumerate(hooks):
             if h.name == name:
                 hooks.pop(i)
+                self._rebuild_trigger_index()
                 return True
         return False
 
     def has_hooks(self, trigger: HookTrigger) -> bool:
-        """Check if any hooks are registered for a trigger (fast, no filtering)."""
-        return any(h.trigger == trigger for h in self._global_hooks) or any(
-            h.trigger == trigger for hooks in self._room_hooks.values() for h in hooks
-        )
+        """Check if any hooks are registered for a trigger (O(1) lookup)."""
+        return trigger in self._trigger_index
+
+    def _rebuild_trigger_index(self) -> None:
+        """Rebuild the trigger index from all registered hooks."""
+        self._trigger_index = {h.trigger for h in self._global_hooks}
+        for hooks in self._room_hooks.values():
+            self._trigger_index.update(h.trigger for h in hooks)
 
     def _hook_matches_event(self, hook: HookRegistration, event: RoomEvent) -> bool:
         """Check if a hook's filters match the given event."""

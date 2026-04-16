@@ -488,9 +488,17 @@ class RealtimeVoiceChannel(
             prompt: Optional text prompt accompanying the image.
             silent: If True, add to context without requesting a response.
         """
-        await self._provider.inject_image(
-            session, image_data, mime_type, prompt=prompt, silent=silent
-        )
+        try:
+            await self._provider.inject_image(
+                session, image_data, mime_type, prompt=prompt, silent=silent
+            )
+        except NotImplementedError:
+            logger.warning(
+                "Provider %s does not support image injection (session %s)",
+                self._provider.name,
+                session.id,
+            )
+            return
         logger.info(
             "Injected image into session %s (mime=%s, size=%d, prompt=%s)",
             session.id,

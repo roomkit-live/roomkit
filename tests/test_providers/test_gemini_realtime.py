@@ -1563,3 +1563,41 @@ class TestGeminiLiveProvider:
         )
         await provider._handle_server_response(session, response)
         assert called == ["async"]
+
+    # ── reconfigure() clears queued injections ─────────────────
+
+    async def test_reconfigure_clears_queued_injections(self):
+        mod = _load_provider()
+        provider = mod.GeminiLiveProvider(api_key="test-key")
+        session = _make_session()
+        session.state = VoiceSessionState.ACTIVE
+
+        state = mod._GeminiSessionState(
+            session=session,
+            live_session=_make_mock_live_session(),
+            pending_tool_calls=1,
+        )
+        provider._sessions[session.id] = state
+
+        # Queue some text and image injections (happens when tool calls are pending)
+        state.queued_text_injections.append(("stale text", "user", False))
+        state.queued_injections.append((b"\x89PNG", "image/png", "", False))
+
+        # Mock _reconnect to avoid real connection logic
+        provider._reconnect = AsyncMock()
+
+        await provider.reconfigure(session, system_prompt="new prompt")
+
+        assert state.queued_text_injections == []
+        assert state.queued_injections == []
+
+    # ── _mime_cache instance isolation ─────────────────────────
+
+    def test_mime_cache_instance_isolation(self):
+        mod = _load_provider()
+        p1 = mod.GeminiLiveProvider(api_key="test-key")
+        p2 = mod.GeminiLiveProvider(api_key="test-key")
+
+        p1._make_audio_blob(b"\x00", 16000)
+        assert 16000 in p1._mime_cache
+        assert 16000 not in p2._mime_cache

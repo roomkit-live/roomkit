@@ -1076,3 +1076,18 @@ class TestEndOfResponseOrdering:
         assert all(ai < eor_index for ai in audio_indices), (
             f"Audio after end_of_response: {call_log}"
         )
+
+
+class TestInjectImageGracefulHandling:
+    """inject_image should not crash when the provider doesn't support it."""
+
+    async def test_inject_image_unsupported_provider_no_exception(
+        self,
+        channel: RealtimeVoiceChannel,
+    ) -> None:
+        session = VoiceSession(id="s1", room_id="r1", channel_id="rt-voice-1")
+        session.state = VoiceSessionState.ACTIVE
+
+        # MockRealtimeProvider does not override inject_image → NotImplementedError
+        # Channel should catch it gracefully, not propagate
+        await channel.inject_image(session, b"\x89PNG\r\n", "image/png")

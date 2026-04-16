@@ -594,3 +594,104 @@ class TestHookFiltering:
             )
 
         assert called == [ChannelType.SMS, ChannelType.EMAIL, ChannelType.WEBSOCKET]
+
+
+class TestTriggerIndex:
+    """Tests for O(1) has_hooks() via _trigger_index."""
+
+    def test_has_hooks_empty(self) -> None:
+        engine = HookEngine()
+        assert engine.has_hooks(HookTrigger.BEFORE_BROADCAST) is False
+
+    def test_has_hooks_after_global_register(self) -> None:
+        engine = HookEngine()
+
+        async def noop(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            return HookResult.allow()
+
+        engine.register(
+            HookRegistration(
+                trigger=HookTrigger.BEFORE_BROADCAST,
+                execution=HookExecution.SYNC,
+                fn=noop,
+                name="h1",
+            )
+        )
+        assert engine.has_hooks(HookTrigger.BEFORE_BROADCAST) is True
+        assert engine.has_hooks(HookTrigger.AFTER_BROADCAST) is False
+
+    def test_has_hooks_after_room_hook(self) -> None:
+        engine = HookEngine()
+
+        async def noop(event: RoomEvent, ctx: RoomContext) -> None:
+            pass
+
+        engine.add_room_hook(
+            "room1",
+            HookRegistration(
+                trigger=HookTrigger.AFTER_BROADCAST,
+                execution=HookExecution.ASYNC,
+                fn=noop,
+                name="h2",
+            ),
+        )
+        assert engine.has_hooks(HookTrigger.AFTER_BROADCAST) is True
+        assert engine.has_hooks(HookTrigger.BEFORE_BROADCAST) is False
+
+    def test_has_hooks_after_remove_global(self) -> None:
+        engine = HookEngine()
+
+        async def noop(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            return HookResult.allow()
+
+        engine.register(
+            HookRegistration(
+                trigger=HookTrigger.BEFORE_BROADCAST,
+                execution=HookExecution.SYNC,
+                fn=noop,
+                name="removeme",
+            )
+        )
+        assert engine.has_hooks(HookTrigger.BEFORE_BROADCAST) is True
+        engine.remove_global_hook("removeme")
+        assert engine.has_hooks(HookTrigger.BEFORE_BROADCAST) is False
+
+    def test_has_hooks_after_remove_room(self) -> None:
+        engine = HookEngine()
+
+        async def noop(event: RoomEvent, ctx: RoomContext) -> None:
+            pass
+
+        engine.add_room_hook(
+            "room1",
+            HookRegistration(
+                trigger=HookTrigger.AFTER_BROADCAST,
+                execution=HookExecution.ASYNC,
+                fn=noop,
+                name="removeme",
+            ),
+        )
+        assert engine.has_hooks(HookTrigger.AFTER_BROADCAST) is True
+        engine.remove_room_hook("room1", "removeme")
+        assert engine.has_hooks(HookTrigger.AFTER_BROADCAST) is False
+
+    def test_trigger_index_survives_partial_removal(self) -> None:
+        """When two hooks share a trigger, removing one keeps the index entry."""
+        engine = HookEngine()
+
+        async def noop(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            return HookResult.allow()
+
+        for name in ("h1", "h2"):
+            engine.register(
+                HookRegistration(
+                    trigger=HookTrigger.BEFORE_BROADCAST,
+                    execution=HookExecution.SYNC,
+                    fn=noop,
+                    name=name,
+                )
+            )
+        engine.remove_global_hook("h1")
+        assert engine.has_hooks(HookTrigger.BEFORE_BROADCAST) is True
+        engine.remove_global_hook("h2")
+        assert engine.has_hooks(HookTrigger.BEFORE_BROADCAST) is False
