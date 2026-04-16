@@ -1591,6 +1591,12 @@ class TestGeminiLiveProvider:
         assert state.queued_text_injections == []
         assert state.queued_injections == []
 
+        # Clean up the receive_task started by reconfigure()
+        if state.receive_task is not None:
+            state.receive_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await state.receive_task
+
     # ── _mime_cache instance isolation ─────────────────────────
 
     def test_mime_cache_instance_isolation(self):

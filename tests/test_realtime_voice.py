@@ -856,6 +856,8 @@ def _make_gemini_provider() -> Any:
     p._response_start_callbacks = []
     p._response_end_callbacks = []
     p._error_callbacks = []
+    p._blob_cls = None
+    p._mime_cache = {}
     return p
 
 
@@ -1085,8 +1087,7 @@ class TestInjectImageGracefulHandling:
         self,
         channel: RealtimeVoiceChannel,
     ) -> None:
-        session = VoiceSession(id="s1", room_id="r1", channel_id="rt-voice-1")
-        session.state = VoiceSessionState.ACTIVE
+        session = _make_session()
 
         # MockRealtimeProvider does not override inject_image → NotImplementedError
         # Channel should catch it gracefully, not propagate
