@@ -21,10 +21,15 @@ class _FakeAPIStatusError(Exception):
         self.status_code = status_code
 
 
+class _FakeAPIConnectionError(Exception):
+    """Stub for openai.APIConnectionError used in tests."""
+
+
 def _mock_openai_module() -> MagicMock:
     """Return a MagicMock that behaves like the openai module."""
     mod = MagicMock()
     mod.APIStatusError = _FakeAPIStatusError
+    mod.APIConnectionError = _FakeAPIConnectionError
     return mod
 
 
@@ -93,7 +98,7 @@ class TestAzureAIConfig:
         cfg = _config()
         assert cfg.max_tokens == 1024
         assert cfg.temperature == 0.7
-        assert cfg.timeout == 120.0
+        assert cfg.timeout == 30.0
 
     def test_custom_api_version(self) -> None:
         cfg = _config(api_version="2025-01-01")
@@ -303,5 +308,6 @@ class TestAzureAIProvider:
                 api_key="azure-test-key",
                 azure_endpoint="https://my-project.services.ai.azure.com",
                 api_version="2024-12-01-preview",
-                timeout=120.0,
+                timeout=30.0,
+                max_retries=0,
             )

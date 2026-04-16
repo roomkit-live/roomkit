@@ -16,9 +16,14 @@ class _FakeAPIStatusError(Exception):
         self.status_code = status_code
 
 
+class _FakeAPIConnectionError(Exception):
+    pass
+
+
 def _mock_openai_module() -> MagicMock:
     mod = MagicMock()
     mod.APIStatusError = _FakeAPIStatusError
+    mod.APIConnectionError = _FakeAPIConnectionError
     return mod
 
 

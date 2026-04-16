@@ -30,10 +30,15 @@ class _FakeAPIStatusError(Exception):
         self.status_code = status_code
 
 
+class _FakeAPIConnectionError(Exception):
+    """Stub for openai.APIConnectionError used in tests."""
+
+
 def _mock_openai_module() -> MagicMock:
     """Return a MagicMock that behaves like the openai module."""
     mod = MagicMock()
     mod.APIStatusError = _FakeAPIStatusError
+    mod.APIConnectionError = _FakeAPIConnectionError
     return mod
 
 
