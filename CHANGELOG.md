@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0a13] — 2026-04-16
+
+### Added
+
+- **`inject_image()` on RealtimeProvider** — multimodal image injection for voice sessions. Gemini Live implementation sends images via `inline_data` Part. Exposed on `RealtimeVoiceChannel` for voice agents analyzing conversation attachments.
+- **Tool-call-in-text recovery** — `RealtimeToolRecoveryMixin` detects when Gemini Live speaks tool calls as text (e.g. `call:send_to_agent{task:...}`) instead of using the function calling API, parses arguments, and dispatches through the normal tool handler pipeline.
+- **Server-side RTCConfiguration passthrough** — `mount_fastrtc_realtime()` now forwards `rtc_configuration` to FastRTC as `server_rtc_configuration`, enabling TURN server credentials and relay candidate gathering.
+
+### Fixed
+
+- **Gemini `inject_text`/`inject_image` 1007 disconnect** — route text and image injection through `send_realtime_input` when audio is already flowing, avoiding `send_client_content` interleaving that causes WebSocket 1007 disconnects. Adds `realtime_input_sent` flag, pending tool call guards, and queued text injection flushing on `submit_tool_result`.
+- **Gemini image injection during pending tool calls** — queue image injections when tool responses are pending (Gemini rejects `send_client_content` in this state) and flush the queue after all tool results are submitted.
+- **`inject_text` sanitization** — strip control characters, null bytes, and unpaired surrogates from `inject_text`/`inject_image` payloads that were causing Gemini 1007 disconnects on conversation switches.
+- **AI context polluted with non-message events** — `_build_context` now uses `get_conversation()` (MESSAGE events only) instead of `list_events()`, preventing channel attachment and tool call events from consuming the 50-event context limit.
+- **OpenAI/vLLM/Azure provider resilience** — lower default timeout from 120s to 30s, add `max_retries` config (default 0, defers to RoomKit RetryPolicy), and make `APIConnectionError` retryable so RetryPolicy handles backoff and fallback. Previously, unreachable vLLM/Ollama would hang for 360s.
+- **Cancel directive ignored during streaming** — `cancel_event` is now checked between every stream event in the streaming tool loop, interrupting mid-generation immediately instead of waiting for the full LLM stream.
+- **Non-str deltas in delegation and supervisor streaming** — guard against non-string delta values.
+- **PostgresStore `idx_participants_channel` non-unique** — allow multiple participants to share the same channel in group rooms. Includes migration to convert existing UNIQUE indexes to regular indexes.
+- **Gemini `usage_metadata` field** — `candidates_token_count` → `response_token_count`.
+- **CI: Python 3.13 test failures** — add `APIConnectionError` stub to OpenAI/Azure/vLLM test mock modules (Python 3.13 rejects MagicMock in `except` clauses) and align Azure test expectations with new timeout/retry defaults.
+
+### Changed
+
+- **RealtimeVoiceProvider callback dispatch refactored** — callback list initialization, `on_*` registration, and generic `_fire()` dispatcher lifted from 6 individual providers (OpenAI, xAI, ElevenLabs, Anam, PersonaPlex, Gemini) into the shared base class, eliminating ~280 LOC of boilerplate.
+
+### Performance
+
+- **Skip hook dispatch when no hooks registered** — short-circuit `_build_context` and audio level callbacks when no hooks are registered for voice/realtime triggers, avoiding 4+ DB queries per event.
+
 ## [0.7.0a12] — 2026-04-08
 
 ### Fixed
@@ -694,7 +723,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[0.7.0a4]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a3...HEAD
+[0.7.0a13]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a12...HEAD
+[0.7.0a12]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a11...v0.7.0a12
+[0.7.0a11]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a10...v0.7.0a11
+[0.7.0a10]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a8...v0.7.0a10
+[0.7.0a8]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a7...v0.7.0a8
+[0.7.0a7]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a6...v0.7.0a7
+[0.7.0a6]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a5...v0.7.0a6
+[0.7.0a5]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a4...v0.7.0a5
+[0.7.0a4]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a3...v0.7.0a4
 [0.7.0a3]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a2...v0.7.0a3
 [0.7.0a2]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a1...v0.7.0a2
 [0.7.0a1]: https://github.com/roomkit-live/roomkit/compare/v0.6.13...v0.7.0a1
