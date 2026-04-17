@@ -86,11 +86,23 @@ echo "    Tagged v${VERSION}."
 echo "==> Building..."
 uv build
 echo "==> Publishing to PyPI..."
+# Only publish artifacts for the current version — uploading the whole dist/
+# dir fails when older wheels from prior releases are still sitting there.
+DIST_FILES=(
+    "dist/roomkit-${VERSION}.tar.gz"
+    "dist/roomkit-${VERSION}-py3-none-any.whl"
+)
+for f in "${DIST_FILES[@]}"; do
+    if [[ ! -f "$f" ]]; then
+        echo "Error: expected build artifact missing: $f"
+        exit 1
+    fi
+done
 if [[ -n "${UV_PUBLISH_TOKEN:-}" ]]; then
-    uv publish
+    uv publish "${DIST_FILES[@]}"
 elif [[ -f "$HOME/.pypirc" ]]; then
     PYPI_TOKEN=$(python3 -c "import configparser; c = configparser.ConfigParser(); c.read('$HOME/.pypirc'); print(c.get('pypi', 'password'))")
-    uv publish --username __token__ --password "$PYPI_TOKEN"
+    uv publish --username __token__ --password "$PYPI_TOKEN" "${DIST_FILES[@]}"
 else
     echo "Error: No PyPI credentials found. Set UV_PUBLISH_TOKEN or create ~/.pypirc"
     exit 1
