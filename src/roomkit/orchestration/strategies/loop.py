@@ -23,6 +23,7 @@ from roomkit.orchestration.state import (
     get_conversation_state,
     set_conversation_state,
 )
+from roomkit.orchestration.status_bus import StatusLevel, post_agent_lifecycle
 from roomkit.orchestration.strategies.supervisor import WorkerStrategy
 
 if TYPE_CHECKING:
@@ -381,8 +382,49 @@ async def _execute_loop(
     for iteration in range(1, max_iterations + 1):
         logger.info("[loop] Iteration %d/%d — producer", iteration, max_iterations)
 
-        delegated = await kit.delegate(room_id, producer.channel_id, current_input, wait=True)
-        producer_output = delegated.result.output if delegated.result else ""
+        post_agent_lifecycle(
+            kit,
+            producer.channel_id,
+            StatusLevel.PENDING,
+            action="iteration",
+            detail=current_input,
+            metadata={
+                "room_id": room_id,
+                "role": "producer",
+                "iteration": iteration,
+                "max_iterations": max_iterations,
+            },
+        )
+        try:
+            delegated = await kit.delegate(room_id, producer.channel_id, current_input, wait=True)
+        except Exception as exc:
+            post_agent_lifecycle(
+                kit,
+                producer.channel_id,
+                StatusLevel.FAILED,
+                action="iteration",
+                detail=str(exc),
+                metadata={
+                    "room_id": room_id,
+                    "role": "producer",
+                    "iteration": iteration,
+                },
+            )
+            raise
+        producer_output = (delegated.result.output if delegated.result else "") or ""
+        post_agent_lifecycle(
+            kit,
+            producer.channel_id,
+            StatusLevel.COMPLETED if producer_output else StatusLevel.FAILED,
+            action="iteration",
+            detail=producer_output or "empty output",
+            metadata={
+                "room_id": room_id,
+                "role": "producer",
+                "iteration": iteration,
+                "task_id": delegated.id,
+            },
+        )
         if not producer_output:
             logger.warning("[loop] Producer returned empty output")
             break
@@ -461,11 +503,44 @@ async def _review_sequential(
     current_input = review_input
 
     for reviewer in reviewers:
-        delegated = await kit.delegate(room_id, reviewer.channel_id, current_input, wait=True)
-        output = delegated.result.output if delegated.result else ""
+        post_agent_lifecycle(
+            kit,
+            reviewer.channel_id,
+            StatusLevel.PENDING,
+            action="review",
+            detail=current_input,
+            metadata={"room_id": room_id, "role": "reviewer", "strategy": "sequential"},
+        )
+        try:
+            delegated = await kit.delegate(room_id, reviewer.channel_id, current_input, wait=True)
+        except Exception as exc:
+            post_agent_lifecycle(
+                kit,
+                reviewer.channel_id,
+                StatusLevel.FAILED,
+                action="review",
+                detail=str(exc),
+                metadata={"room_id": room_id, "role": "reviewer", "strategy": "sequential"},
+            )
+            raise
+        output = (delegated.result.output if delegated.result else "") or ""
         is_approved = "APPROVED" in output.upper() if output else False
 
         name = getattr(reviewer, "role", None) or reviewer.channel_id
+        post_agent_lifecycle(
+            kit,
+            reviewer.channel_id,
+            StatusLevel.COMPLETED if is_approved else StatusLevel.INFO,
+            action="review",
+            detail=output,
+            metadata={
+                "room_id": room_id,
+                "role": "reviewer",
+                "strategy": "sequential",
+                "approved": is_approved,
+                "task_id": delegated.id,
+            },
+        )
         results.append(
             {
                 "reviewer": name,
@@ -490,10 +565,43 @@ async def _review_parallel(
     """Run all reviewers in parallel on the same content."""
 
     async def _review_one(reviewer: Agent) -> dict[str, Any]:
-        delegated = await kit.delegate(room_id, reviewer.channel_id, review_input, wait=True)
-        output = delegated.result.output if delegated.result else ""
+        post_agent_lifecycle(
+            kit,
+            reviewer.channel_id,
+            StatusLevel.PENDING,
+            action="review",
+            detail=review_input,
+            metadata={"room_id": room_id, "role": "reviewer", "strategy": "parallel"},
+        )
+        try:
+            delegated = await kit.delegate(room_id, reviewer.channel_id, review_input, wait=True)
+        except Exception as exc:
+            post_agent_lifecycle(
+                kit,
+                reviewer.channel_id,
+                StatusLevel.FAILED,
+                action="review",
+                detail=str(exc),
+                metadata={"room_id": room_id, "role": "reviewer", "strategy": "parallel"},
+            )
+            raise
+        output = (delegated.result.output if delegated.result else "") or ""
         is_approved = "APPROVED" in output.upper() if output else False
         name = getattr(reviewer, "role", None) or reviewer.channel_id
+        post_agent_lifecycle(
+            kit,
+            reviewer.channel_id,
+            StatusLevel.COMPLETED if is_approved else StatusLevel.INFO,
+            action="review",
+            detail=output,
+            metadata={
+                "room_id": room_id,
+                "role": "reviewer",
+                "strategy": "parallel",
+                "approved": is_approved,
+                "task_id": delegated.id,
+            },
+        )
         return {"reviewer": name, "approved": is_approved, "feedback": output}
 
     results = await asyncio.gather(*[_review_one(r) for r in reviewers])

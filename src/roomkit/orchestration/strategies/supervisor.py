@@ -27,7 +27,7 @@ from roomkit.orchestration.state import (
     ConversationState,
     set_conversation_state,
 )
-from roomkit.orchestration.status_bus import StatusLevel
+from roomkit.orchestration.status_bus import StatusLevel, post_agent_lifecycle
 from roomkit.providers.ai.base import AITool
 
 if TYPE_CHECKING:
@@ -36,31 +36,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.orchestration.strategies.supervisor")
 
-
-def _post_worker_status(
-    kit: RoomKit,
-    worker_id: str,
-    level: StatusLevel,
-    *,
-    action: str = "task",
-    detail: str = "",
-    metadata: dict[str, Any] | None = None,
-) -> None:
-    """Post a worker lifecycle event to ``kit.status_bus``.
-
-    Observability only — swallows exceptions so that a broken bus
-    never blocks a delegation.
-    """
-    try:
-        kit.status_bus.post(
-            worker_id,
-            action,
-            level,
-            detail=detail[:200],
-            metadata=metadata or {},
-        )
-    except Exception:
-        logger.debug("status_bus.post failed for %s", worker_id, exc_info=True)
+# Local alias — the Supervisor strategy specifically tracks worker
+# lifecycle, but the underlying helper is shared with Pipeline / Swarm /
+# Loop so all strategies emit events under the same conventions.
+_post_worker_status = post_agent_lifecycle
 
 
 class WorkerStrategy(StrEnum):

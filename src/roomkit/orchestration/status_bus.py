@@ -348,3 +348,49 @@ class StatusBus:
         done = sum(1 for e in entries if e.status == StatusLevel.COMPLETED)
         lines.append(f"\n  Total: {len(entries)} entries ({ok} ok, {fail} fail, {done} done)")
         logger.info("\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# Shared helper for orchestration strategies
+# ---------------------------------------------------------------------------
+
+
+def post_agent_lifecycle(
+    kit: Any,
+    agent_id: str,
+    level: StatusLevel,
+    *,
+    action: str = "task",
+    detail: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Post an agent lifecycle event to ``kit.status_bus``.
+
+    Shared entry point for all orchestration strategies (Supervisor,
+    Pipeline, Swarm, Loop) so workers, reviewers, and handoff targets
+    all land on the same bus under consistent conventions:
+
+    - ``agent_id``: the agent whose state is being observed.
+    - ``level``: one of ``StatusLevel`` — ``PENDING`` when dispatched,
+      ``COMPLETED`` / ``FAILED`` on terminal, ``INFO`` for transitions
+      (handoffs, iteration boundaries).
+    - ``action``: short verb — ``"task"`` for delegations,
+      ``"handoff"`` for handoff hops, ``"iteration"`` for loop rounds,
+      ``"pipeline"`` for whole-pipeline markers.
+    - ``detail``: human-readable summary, truncated to 200 chars.
+    - ``metadata``: structured context (``room_id``, ``strategy``,
+      ``task_id``, etc.).
+
+    Observability only — swallows exceptions so a broken bus never
+    blocks real orchestration work.
+    """
+    try:
+        kit.status_bus.post(
+            agent_id,
+            action,
+            level,
+            detail=detail[:200],
+            metadata=metadata or {},
+        )
+    except Exception:
+        logger.debug("status_bus.post failed for %s", agent_id, exc_info=True)

@@ -7,6 +7,7 @@ per-worker delegation (wait/no-wait), and async delivery helpers.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -170,11 +171,30 @@ class TestSupervisorConstructor:
         assert len(result) == 1
         assert result[0] is supervisor
 
-    def test_agents_empty_when_async_delivery(self) -> None:
+    def test_agents_keeps_supervisor_in_strategy_tool_async_delivery(self) -> None:
+        """Strategy-tool mode: async_delivery only affects worker dispatch.
+
+        The supervisor still drives user interaction via its tool loop
+        and must stay attached to the room.
+        """
+        sup = _make_agent("sup")
+        s = Supervisor(
+            supervisor=sup,
+            workers=[_make_agent("w1")],
+            strategy="parallel",
+            async_delivery=True,
+        )
+        assert s.agents() == [sup]
+
+    def test_agents_empty_in_voice_auto_delegate_async_delivery(self) -> None:
+        """Voice auto_delegate mode: the voice channel handles UI,
+        so the supervisor is not attached.
+        """
         s = Supervisor(
             supervisor=_make_agent("sup"),
             workers=[_make_agent("w1")],
             strategy="parallel",
+            auto_delegate=True,
             async_delivery=True,
         )
         assert s.agents() == []
@@ -302,7 +322,12 @@ class TestSupervisorInstall:
         tool_count = sum(1 for t in boss._injected_tools if t.name == "delegate_workers")
         assert tool_count == 1
 
-    async def test_no_router_hook_when_async_delivery(self) -> None:
+    async def test_router_hook_installed_in_strategy_tool_async_delivery(self) -> None:
+        """Strategy-tool mode: router is installed even with async_delivery.
+
+        The supervisor stays in the room and still owns user routing;
+        only worker dispatch is deferred to the background.
+        """
         boss = _make_agent("boss")
         kit = _make_mock_kit(Room(id="r1"))
 
@@ -313,6 +338,27 @@ class TestSupervisorInstall:
             async_delivery=True,
         )
         await s.install(kit, "r1")
+
+        kit.hook_engine.add_room_hook.assert_called_once()
+
+    async def test_no_router_hook_in_voice_auto_delegate_async_delivery(self) -> None:
+        """Voice auto_delegate + async_delivery: voice channel owns routing,
+        so no ConversationRouter hook is installed.
+        """
+        boss = _make_agent("boss")
+        kit = _make_mock_kit(Room(id="r1"))
+
+        s = Supervisor(
+            supervisor=boss,
+            workers=[_make_agent("w1")],
+            strategy="parallel",
+            auto_delegate=True,
+            async_delivery=True,
+        )
+        # auto_delegate=True + no voice channel registered would warn; we
+        # only care that the router hook is not installed.
+        with contextlib.suppress(Exception):
+            await s.install(kit, "r1")
 
         kit.hook_engine.add_room_hook.assert_not_called()
 

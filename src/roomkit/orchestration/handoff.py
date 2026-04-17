@@ -24,6 +24,7 @@ from roomkit.orchestration.state import (
     get_conversation_state,
     set_conversation_state,
 )
+from roomkit.orchestration.status_bus import StatusLevel, post_agent_lifecycle
 from roomkit.providers.ai.base import AIMessage, AITool
 
 if TYPE_CHECKING:
@@ -349,6 +350,18 @@ class HandoffHandler:
 
         # Fire rejection hook outside the lock
         if rejected_result is not None:
+            post_agent_lifecycle(
+                self._kit,
+                calling_agent_id,
+                StatusLevel.FAILED,
+                action="handoff",
+                detail=rejected_result.reason or "handoff rejected",
+                metadata={
+                    "room_id": room_id,
+                    "to_agent": request.target_agent_id,
+                    "reason": request.reason,
+                },
+            )
             await self._fire_hook(
                 room_id,
                 room,
@@ -388,6 +401,20 @@ class HandoffHandler:
             request.target_agent_id,
             new_phase,
             room_id,
+        )
+
+        post_agent_lifecycle(
+            self._kit,
+            request.target_agent_id,
+            StatusLevel.INFO,
+            action="handoff",
+            detail=request.reason or f"handoff from {calling_agent_id}",
+            metadata={
+                "room_id": room_id,
+                "from_agent": calling_agent_id,
+                "phase": new_phase,
+                "summary": request.summary,
+            },
         )
 
         result = HandoffResult(
