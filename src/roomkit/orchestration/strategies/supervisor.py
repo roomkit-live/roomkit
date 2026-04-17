@@ -27,6 +27,7 @@ from roomkit.orchestration.state import (
     ConversationState,
     set_conversation_state,
 )
+from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.providers.ai.base import AITool
 
 if TYPE_CHECKING:
@@ -34,6 +35,32 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
 
 logger = logging.getLogger("roomkit.orchestration.strategies.supervisor")
+
+
+def _post_worker_status(
+    kit: RoomKit,
+    worker_id: str,
+    level: StatusLevel,
+    *,
+    action: str = "task",
+    detail: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Post a worker lifecycle event to ``kit.status_bus``.
+
+    Observability only — swallows exceptions so that a broken bus
+    never blocks a delegation.
+    """
+    try:
+        kit.status_bus.post(
+            worker_id,
+            action,
+            level,
+            detail=detail[:200],
+            metadata=metadata or {},
+        )
+    except Exception:
+        logger.debug("status_bus.post failed for %s", worker_id, exc_info=True)
 
 
 class WorkerStrategy(StrEnum):
@@ -118,13 +145,27 @@ class Supervisor(Orchestration):
                 blocks until results are ready. For async channels
                 (voice), runs in background. Requires *strategy*.
 
-            async_delivery: If ``True``, workers run in the background
-                and results are delivered via ``kit.deliver()`` when
-                ready. The conversation continues uninterrupted. For
-                voice channels, injects a ``delegate_workers`` tool
-                that the AI calls when delegation is needed.
-                If ``False`` (default), blocks until results are
-                ready (sync mode).
+            async_delivery: If ``True``, worker delegation returns
+                immediately and results are delivered back to the
+                room via ``kit.deliver()`` when they complete. This
+                keeps the supervisor's tool-loop clock bounded by
+                its own reasoning time rather than aggregated worker
+                wall-clock time. Applies to:
+
+                - strategy-tool mode (``strategy`` set): the
+                  ``delegate_workers`` tool fires background workers
+                  and returns ``{"status": "dispatched", ...}``
+                  immediately. Use ``check_status_bus`` to follow
+                  progress.
+                - voice ``auto_delegate`` mode: injects a
+                  ``delegate_workers`` tool on the voice channel;
+                  supervisor is not attached (voice handles UI).
+
+                Lifecycle events (``pending`` / ``completed`` /
+                ``failed``) are posted to ``kit.status_bus`` for
+                every worker regardless of mode.
+                If ``False`` (default), delegation blocks until
+                results are ready (sync mode).
 
             refine_task: Controls whether the framework extracts a clean
                 topic from the user's message before sending to workers.
@@ -166,18 +207,24 @@ class Supervisor(Orchestration):
     def agents(self) -> list[Agent]:
         """Return agents to attach to the room.
 
-        In async_delivery mode, the supervisor is NOT attached — the
-        conversation channel (e.g. RealtimeVoiceChannel) handles user
-        interaction independently.
+        ``async_delivery`` removes the supervisor from the room ONLY
+        in voice ``auto_delegate`` mode, where a
+        ``RealtimeVoiceChannel`` handles user interaction directly.
+        In strategy-tool or per-worker-tool modes the supervisor
+        still drives the conversation via its tool loop; background
+        dispatch only affects worker delegation, not user routing.
         """
-        if self._async_delivery:
+        if self._async_delivery and self._auto_delegate:
             return []
         return [self._supervisor]
 
     async def install(self, kit: RoomKit, room_id: str) -> None:
         """Wire supervisor routing and delegation tools."""
-        # Router only needed when supervisor agent is in the room
-        if not self._async_delivery:
+        # Router only needed when the supervisor agent is in the room.
+        # In voice async_delivery mode (auto_delegate=True), the voice
+        # channel owns routing and the supervisor is not attached.
+        supervisor_in_room = not (self._async_delivery and self._auto_delegate)
+        if supervisor_in_room:
             router = ConversationRouter(
                 default_agent_id=self._supervisor.channel_id,
             )
@@ -413,9 +460,13 @@ class Supervisor(Orchestration):
         strategy = self._strategy
         workers = self._workers
         share_channels = self._share_channels
+        async_delivery = self._async_delivery
         _lock = asyncio.Lock()
         # Per-room dedup: prevents duplicate calls within the same turn
         _dedup_cache: dict[str, tuple[str, float]] = {}  # room_id → (result, timestamp)
+        # Per-room running flag for async_delivery mode — prevents re-dispatch
+        # while the background pipeline is still in flight.
+        _running: set[str] = set()
         dedup_window = 30.0
 
         async def strategy_handler(name: str, arguments: dict[str, Any]) -> str:
@@ -431,6 +482,60 @@ class Supervisor(Orchestration):
                 cached = _dedup_cache.get(rid)
                 if cached is not None and (time.monotonic() - cached[1]) < dedup_window:
                     return cached[0]
+
+                # Async dispatch: fire-and-return so the supervisor's
+                # tool loop doesn't block on worker execution. Workers
+                # post lifecycle events to the status bus and their
+                # combined output is delivered back to the room via
+                # kit.deliver(), re-triggering the supervisor.
+                if async_delivery:
+                    if rid in _running:
+                        return json.dumps(
+                            {
+                                "status": "already_running",
+                                "message": (
+                                    "Workers are already running for this room. "
+                                    "Do NOT call this tool again. "
+                                    "Use check_status_bus to see progress."
+                                ),
+                            }
+                        )
+                    _running.add(rid)
+
+                    def _clear(_rid: str = rid) -> None:
+                        _running.discard(_rid)
+
+                    task = asyncio.create_task(
+                        _async_run_and_deliver(
+                            kit=kit,
+                            room_id=rid,
+                            strategy=strategy,
+                            workers=workers,
+                            task_desc=task_desc,
+                            share_channels=share_channels,
+                            on_done=_clear,
+                        )
+                    )
+                    task.add_done_callback(log_task_exception)
+
+                    dispatched_response = json.dumps(
+                        {
+                            "status": "dispatched",
+                            "workers": [w.channel_id for w in workers],
+                            "message": (
+                                "Workers are running in the background. "
+                                "Use check_status_bus to follow progress. "
+                                "Their combined results will arrive as a new "
+                                "message in this room when they are done."
+                            ),
+                        }
+                    )
+                    now = time.monotonic()
+                    _dedup_cache[rid] = (dispatched_response, now)
+                    stale = [k for k, (_, ts) in _dedup_cache.items() if now - ts >= dedup_window]
+                    for k in stale:
+                        del _dedup_cache[k]
+                    return dispatched_response
 
                 try:
                     if strategy == WorkerStrategy.SEQUENTIAL:
@@ -509,20 +614,52 @@ class Supervisor(Orchestration):
                 task_desc = arguments.get("task", "")
                 try:
                     if wait:
-                        delegated = await kit.delegate(
-                            rid,
+                        _post_worker_status(
+                            kit,
                             worker_id,
-                            task_desc,
-                            wait=True,
-                            notify=self._supervisor.channel_id,
-                            share_channels=share_channels,
+                            StatusLevel.PENDING,
+                            detail=task_desc,
+                            metadata={"room_id": rid, "mode": "per_worker_wait"},
                         )
+                        try:
+                            delegated = await kit.delegate(
+                                rid,
+                                worker_id,
+                                task_desc,
+                                wait=True,
+                                notify=self._supervisor.channel_id,
+                                share_channels=share_channels,
+                            )
+                        except Exception as exc:
+                            _post_worker_status(
+                                kit,
+                                worker_id,
+                                StatusLevel.FAILED,
+                                detail=str(exc),
+                                metadata={"room_id": rid, "mode": "per_worker_wait"},
+                            )
+                            raise
                         result = delegated.result
+                        result_status = result.status if result else "failed"
+                        result_output = (result.output or result.error or "") if result else ""
+                        _post_worker_status(
+                            kit,
+                            worker_id,
+                            StatusLevel.COMPLETED
+                            if result_status == "completed"
+                            else StatusLevel.FAILED,
+                            detail=result_output,
+                            metadata={
+                                "room_id": rid,
+                                "mode": "per_worker_wait",
+                                "task_id": delegated.id,
+                            },
+                        )
                         return json.dumps(
                             {
-                                "status": result.status if result else "failed",
+                                "status": result_status,
                                 "worker": worker_id,
-                                "result": (result.output or result.error or "") if result else "",
+                                "result": result_output,
                             }
                         )
 
@@ -547,11 +684,41 @@ class Supervisor(Orchestration):
                         share_channels=share_channels,
                     )
                     pending.add(worker_id)
+                    _post_worker_status(
+                        kit,
+                        worker_id,
+                        StatusLevel.PENDING,
+                        detail=task_desc,
+                        metadata={
+                            "room_id": rid,
+                            "mode": "per_worker_async",
+                            "task_id": delegated.id,
+                        },
+                    )
 
                     original_set = delegated._set_result
+                    _bus_kit = kit
+                    _bus_room = rid
+                    _bus_task_id = delegated.id
 
                     def _patched_set(r: Any, *, _wid: str = worker_id or "") -> None:
                         pending.discard(_wid)
+                        output = ""
+                        ok = False
+                        if r is not None:
+                            output = getattr(r, "output", None) or getattr(r, "error", None) or ""
+                            ok = getattr(r, "status", None) == "completed"
+                        _post_worker_status(
+                            _bus_kit,
+                            _wid,
+                            StatusLevel.COMPLETED if ok else StatusLevel.FAILED,
+                            detail=output,
+                            metadata={
+                                "room_id": _bus_room,
+                                "mode": "per_worker_async",
+                                "task_id": _bus_task_id,
+                            },
+                        )
                         original_set(r)
 
                     delegated._set_result = _patched_set  # ty: ignore[invalid-assignment]
@@ -600,7 +767,18 @@ async def _async_run_and_deliver(
     share_channels: list[str] | None = None,
     on_done: Callable[[], None],
 ) -> None:
-    """Background: run workers → deliver results via kit.deliver()."""
+    """Background: run workers → deliver results via kit.deliver().
+
+    Individual worker lifecycle events are posted to ``kit.status_bus``
+    inside ``_run_sequential`` / ``_run_parallel``. This helper emits
+    one additional terminal entry under ``agent_id="orchestration"``
+    so subscribers can observe the pipeline as a whole.
+    """
+    pipeline_meta = {
+        "room_id": room_id,
+        "strategy": str(strategy) if strategy else None,
+        "workers": [w.channel_id for w in workers],
+    }
     try:
         worker_results = await _run_workers(
             kit,
@@ -617,8 +795,24 @@ async def _async_run_and_deliver(
             room_id,
             f"Analysis results are ready. Here's what the analysts found:\n\n{results_text}",
         )
-    except Exception:
+        _post_worker_status(
+            kit,
+            "orchestration",
+            StatusLevel.COMPLETED,
+            action="pipeline",
+            detail=f"{len(workers)} worker(s) completed",
+            metadata=pipeline_meta,
+        )
+    except Exception as exc:
         logger.exception("[async_delegate] Pipeline failed")
+        _post_worker_status(
+            kit,
+            "orchestration",
+            StatusLevel.FAILED,
+            action="pipeline",
+            detail=str(exc),
+            metadata=pipeline_meta,
+        )
     finally:
         on_done()
 
@@ -804,16 +998,46 @@ async def _run_sequential(
     results: list[dict[str, str]] = []
 
     for worker in workers:
-        delegated = await kit.delegate(
-            room_id,
+        _post_worker_status(
+            kit,
             worker.channel_id,
-            current_input,
-            wait=True,
-            share_channels=share_channels,
+            StatusLevel.PENDING,
+            detail=current_input,
+            metadata={"room_id": room_id, "strategy": "sequential"},
         )
+        try:
+            delegated = await kit.delegate(
+                room_id,
+                worker.channel_id,
+                current_input,
+                wait=True,
+                share_channels=share_channels,
+            )
+        except Exception as exc:
+            _post_worker_status(
+                kit,
+                worker.channel_id,
+                StatusLevel.FAILED,
+                detail=str(exc),
+                metadata={"room_id": room_id, "strategy": "sequential"},
+            )
+            raise
         output = ""
+        status_ok = False
         if delegated.result:
             output = delegated.result.output or delegated.result.error or ""
+            status_ok = delegated.result.status == "completed"
+        _post_worker_status(
+            kit,
+            worker.channel_id,
+            StatusLevel.COMPLETED if status_ok else StatusLevel.FAILED,
+            detail=output,
+            metadata={
+                "room_id": room_id,
+                "strategy": "sequential",
+                "task_id": delegated.id,
+            },
+        )
         results.append({"worker": worker.channel_id, "output": output})
         current_input = output
 
@@ -831,16 +1055,46 @@ async def _run_parallel(
     """Run all workers concurrently on the same task."""
 
     async def _delegate_one(worker: Agent) -> dict[str, str]:
-        delegated = await kit.delegate(
-            room_id,
+        _post_worker_status(
+            kit,
             worker.channel_id,
-            task_desc,
-            wait=True,
-            share_channels=share_channels,
+            StatusLevel.PENDING,
+            detail=task_desc,
+            metadata={"room_id": room_id, "strategy": "parallel"},
         )
+        try:
+            delegated = await kit.delegate(
+                room_id,
+                worker.channel_id,
+                task_desc,
+                wait=True,
+                share_channels=share_channels,
+            )
+        except Exception as exc:
+            _post_worker_status(
+                kit,
+                worker.channel_id,
+                StatusLevel.FAILED,
+                detail=str(exc),
+                metadata={"room_id": room_id, "strategy": "parallel"},
+            )
+            raise
         output = ""
+        status_ok = False
         if delegated.result:
             output = delegated.result.output or delegated.result.error or ""
+            status_ok = delegated.result.status == "completed"
+        _post_worker_status(
+            kit,
+            worker.channel_id,
+            StatusLevel.COMPLETED if status_ok else StatusLevel.FAILED,
+            detail=output,
+            metadata={
+                "room_id": room_id,
+                "strategy": "parallel",
+                "task_id": delegated.id,
+            },
+        )
         return {"worker": worker.channel_id, "output": output}
 
     results = await asyncio.gather(*[_delegate_one(w) for w in workers])
