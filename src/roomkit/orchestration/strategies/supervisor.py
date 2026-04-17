@@ -374,19 +374,26 @@ class Supervisor(Orchestration):
                 task_desc = arguments.get("task", "")
                 _running = True
 
-            # Launch workers in background — tool returns immediately
-            task = asyncio.create_task(
-                _async_run_and_deliver(
-                    kit=kit,
-                    room_id=room_id,
-                    strategy=strategy,
-                    workers=workers,
-                    task_desc=task_desc,
-                    share_channels=share_channels,
-                    on_done=lambda: _clear(),
-                )
-            )
-            task.add_done_callback(log_task_exception)
+                # Launch workers inside the lock so _running and the
+                # task creation are atomic. If create_task raises
+                # (shutdown race), release _running so the voice
+                # channel isn't permanently stuck in already_running.
+                try:
+                    task = asyncio.create_task(
+                        _async_run_and_deliver(
+                            kit=kit,
+                            room_id=room_id,
+                            strategy=strategy,
+                            workers=workers,
+                            task_desc=task_desc,
+                            share_channels=share_channels,
+                            on_done=_clear,
+                        )
+                    )
+                    task.add_done_callback(log_task_exception)
+                except BaseException:
+                    _running = False
+                    raise
 
             return json.dumps(
                 {
@@ -396,7 +403,12 @@ class Supervisor(Orchestration):
                 }
             )
 
-        def _clear() -> None:
+        def _clear(**_: Any) -> None:
+            """Accept but ignore ``success`` from _async_run_and_deliver.
+
+            The voice path has no dedup cache to evict on failure, so
+            success/failure doesn't change behaviour here.
+            """
             nonlocal _running
             _running = False
 
@@ -481,21 +493,42 @@ class Supervisor(Orchestration):
                         )
                     _running.add(rid)
 
-                    def _clear(_rid: str = rid) -> None:
-                        _running.discard(_rid)
+                    def _clear(
+                        *,
+                        success: bool = True,
+                        _rid: str = rid,
+                    ) -> None:
+                        """Release the room and evict the dedup entry on failure.
 
-                    task = asyncio.create_task(
-                        _async_run_and_deliver(
-                            kit=kit,
-                            room_id=rid,
-                            strategy=strategy,
-                            workers=workers,
-                            task_desc=task_desc,
-                            share_channels=share_channels,
-                            on_done=_clear,
+                        A failed pipeline must drop its cached
+                        ``"dispatched"`` response — otherwise callers get
+                        that stale string for the full dedup window and
+                        never learn the run failed.
+                        """
+                        _running.discard(_rid)
+                        if not success:
+                            _dedup_cache.pop(_rid, None)
+
+                    # Create the task + populate dedup atomically with the
+                    # _running flag. If create_task raises (shutdown race)
+                    # we must release _running so the room isn't
+                    # permanently marked busy.
+                    try:
+                        task = asyncio.create_task(
+                            _async_run_and_deliver(
+                                kit=kit,
+                                room_id=rid,
+                                strategy=strategy,
+                                workers=workers,
+                                task_desc=task_desc,
+                                share_channels=share_channels,
+                                on_done=_clear,
+                            )
                         )
-                    )
-                    task.add_done_callback(log_task_exception)
+                        task.add_done_callback(log_task_exception)
+                    except BaseException:
+                        _running.discard(rid)
+                        raise
 
                     dispatched_response = json.dumps(
                         {
@@ -744,7 +777,7 @@ async def _async_run_and_deliver(
     workers: list[Agent],
     task_desc: str,
     share_channels: list[str] | None = None,
-    on_done: Callable[[], None],
+    on_done: Callable[..., None],
 ) -> None:
     """Background: run workers → deliver results via kit.deliver().
 
@@ -752,12 +785,19 @@ async def _async_run_and_deliver(
     inside ``_run_sequential`` / ``_run_parallel``. This helper emits
     one additional terminal entry under ``agent_id="orchestration"``
     so subscribers can observe the pipeline as a whole.
+
+    ``on_done`` is called in ``finally`` regardless of outcome. Callers
+    that need to distinguish success from failure can accept the
+    ``success`` keyword argument — e.g. to evict cached dispatch
+    responses that should not be re-served after a failed pipeline.
+    Callers that don't care simply accept no arguments (legacy shape).
     """
     pipeline_meta = {
         "room_id": room_id,
         "strategy": str(strategy) if strategy else None,
         "workers": [w.channel_id for w in workers],
     }
+    pipeline_success = False
     try:
         worker_results = await _run_workers(
             kit,
@@ -782,6 +822,7 @@ async def _async_run_and_deliver(
             detail=f"{len(workers)} worker(s) completed",
             metadata=pipeline_meta,
         )
+        pipeline_success = True
     except Exception as exc:
         logger.exception("[async_delegate] Pipeline failed")
         _post_worker_status(
@@ -793,7 +834,12 @@ async def _async_run_and_deliver(
             metadata=pipeline_meta,
         )
     finally:
-        on_done()
+        # Pass success through when the callback accepts it; older
+        # voice-path callbacks take no args and are called plain.
+        try:
+            on_done(success=pipeline_success)
+        except TypeError:
+            on_done()
 
 
 # ---------------------------------------------------------------------------

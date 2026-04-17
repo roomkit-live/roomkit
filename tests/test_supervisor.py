@@ -7,7 +7,6 @@ per-worker delegation (wait/no-wait), and async delivery helpers.
 
 from __future__ import annotations
 
-import contextlib
 import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -355,10 +354,10 @@ class TestSupervisorInstall:
             auto_delegate=True,
             async_delivery=True,
         )
-        # auto_delegate=True + no voice channel registered would warn; we
-        # only care that the router hook is not installed.
-        with contextlib.suppress(Exception):
-            await s.install(kit, "r1")
+        # install() emits a warning when no RealtimeVoiceChannel is
+        # registered but does not raise — we just assert no router
+        # hook is installed, since the voice channel owns routing.
+        await s.install(kit, "r1")
 
         kit.hook_engine.add_room_hook.assert_not_called()
 
