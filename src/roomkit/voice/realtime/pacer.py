@@ -59,6 +59,7 @@ class OutboundAudioPacer:
         sample_width: int = 2,
         prebuffer_ms: float = 80,
         jitter_headroom_ms: float = 60,
+        fill_with_silence_when_idle: bool = False,
     ) -> None:
         self._send_fn = send_fn
         self._sample_rate = sample_rate
@@ -70,12 +71,30 @@ class OutboundAudioPacer:
         self._frame_bytes = int(sample_rate * channels * sample_width * 0.02)
         # Jitter buffer headroom — audio stays this far ahead of wall-clock
         self._jitter_headroom = jitter_headroom_ms / 1000
+        # When set, on underrun the pacer emits a 20 ms PCM silence frame
+        # instead of stalling. Keeps the RTP stream continuous for receivers
+        # without PLC (notably PSTN via SIP trunks).
+        self._fill_with_silence_when_idle = fill_with_silence_when_idle
+        self._silence_frame = b"\x00" * self._frame_bytes
 
         self._queue: asyncio.Queue[bytes | str] = asyncio.Queue()
         self._interrupt_event = asyncio.Event()
         self._response_done = asyncio.Event()
         self._response_done.set()  # No response in flight initially
         self._task: asyncio.Task[None] | None = None
+
+    async def _emit_silence_frame(self) -> None:
+        """Send one 20 ms PCM silence frame, swallowing send errors.
+
+        Used by the idle/underrun silence-fill paths when
+        ``fill_with_silence_when_idle`` is set.  A send failure here
+        indicates a transport-level problem that will surface again on
+        the next real audio frame; we don't want to abort the pacer.
+        """
+        try:
+            await self._send_fn(self._silence_frame)
+        except Exception:
+            logger.exception("Error sending silence fill frame")
 
     def push(self, audio: bytes) -> None:
         """Enqueue audio (non-blocking). Called from provider callback."""
@@ -183,7 +202,17 @@ class OutboundAudioPacer:
         """Background task: pre-buffer → burst → pace to wall-clock."""
         while True:
             try:
-                item = await self._queue.get()
+                if self._fill_with_silence_when_idle:
+                    # Between responses, poll the queue on a 20 ms cadence
+                    # and emit silence on timeout so the RTP stream stays
+                    # continuous for receivers without PLC (e.g. SIP/PSTN).
+                    try:
+                        item = await asyncio.wait_for(self._queue.get(), timeout=0.02)
+                    except TimeoutError:
+                        await self._emit_silence_frame()
+                        continue
+                else:
+                    item = await self._queue.get()
             except asyncio.CancelledError:
                 return
 
@@ -279,21 +308,35 @@ class OutboundAudioPacer:
                 ahead = cumulative - (time.monotonic() - pace_start)
                 # Wait for the next chunk with a timeout slightly beyond
                 # our lead time.  If the queue runs dry, that's an underrun.
-                wait_timeout = max(ahead + 0.1, 0.1)
+                # When silence-fill is enabled we cap the timeout at 20 ms
+                # so intra-response stalls are filled on the same cadence
+                # as the outer loop's inter-response fill — otherwise the
+                # first underrun still has a ~100 ms hole.
+                wait_timeout = 0.02 if self._fill_with_silence_when_idle else max(ahead + 0.1, 0.1)
                 try:
                     next_item = await asyncio.wait_for(self._queue.get(), timeout=wait_timeout)
                 except asyncio.CancelledError:
                     return
                 except TimeoutError:
-                    # Queue ran dry — TTS/provider not streaming fast enough
-                    underruns += 1
-                    if underruns <= 5:
-                        behind = -(cumulative - (time.monotonic() - pace_start))
-                        logger.warning(
-                            "Pacer underrun #%d: queue empty, %.0fms behind",
-                            underruns,
-                            behind * 1000,
-                        )
+                    # Queue ran dry.  Only count it as a real underrun if
+                    # we've actually fallen behind wall-clock; being ahead
+                    # (jitter_headroom) and just polling empty is normal
+                    # silence-fill behavior and shouldn't log as an error.
+                    behind = -(cumulative - (time.monotonic() - pace_start))
+                    if behind > 0:
+                        underruns += 1
+                        if underruns <= 5:
+                            logger.warning(
+                                "Pacer underrun #%d: queue empty, %.0fms behind",
+                                underruns,
+                                behind * 1000,
+                            )
+                    if self._fill_with_silence_when_idle:
+                        # Emit a 20 ms silence frame to keep the RTP stream
+                        # continuous, then advance the pacing clock so we
+                        # don't try to catch up on the next real audio.
+                        await self._emit_silence_frame()
+                        cumulative += 0.02
                     continue
 
                 if isinstance(next_item, str):

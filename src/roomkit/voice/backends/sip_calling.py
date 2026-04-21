@@ -80,10 +80,15 @@ class SIPCallingHost(Protocol):
     _on_call_callback: Any
     _session_ready_callbacks: list[Any]
     _disconnect_callbacks: list[Any]
+    _send_silence_on_answer: float
 
     def _validate_invite_auth(self, call: Any) -> bool: ...
 
     def _make_audio_handler(self, session: VoiceSession) -> Any: ...
+
+    def _send_pcm_bytes(
+        self, session: VoiceSession, call_session: Any, pcm_data: bytes
+    ) -> None: ...
 
     def _make_dtmf_handler(self, session: VoiceSession) -> Any: ...
 
@@ -118,9 +123,11 @@ class SIPCallingMixin:
     _on_call_callback: Any
     _session_ready_callbacks: list[Any]
     _disconnect_callbacks: list[Any]
+    _send_silence_on_answer: float
     _validate_invite_auth: Any  # see SIPCallingHost — cross-mixin, from SIPAuthMixin
     _make_audio_handler: Any  # see SIPCallingHost — cross-mixin, from SIPAudioMixin
     _make_dtmf_handler: Any  # see SIPCallingHost — cross-mixin, from SIPAudioMixin
+    _send_pcm_bytes: Any  # see SIPCallingHost — cross-mixin, from SIPAudioMixin
 
     # -------------------------------------------------------------------------
     # Inbound call handling
@@ -637,6 +644,17 @@ class SIPCallingMixin:
                     session_id=session.id,
                     room_id=effective_room_id,
                 )
+            )
+
+        if self._send_silence_on_answer > 0:
+            n_samples = int(actual_codec_rate * self._send_silence_on_answer)
+            silence_pcm = b"\x00\x00" * n_samples
+            self._send_pcm_bytes(session, call_session, silence_pcm)
+            logger.info(
+                "Primed outbound RTP with %.0fms of silence (session=%s) to unblock "
+                "PSTN symmetric-RTP learning",
+                self._send_silence_on_answer * 1000,
+                session.id[:8],
             )
 
         if self._on_call_callback is not None:

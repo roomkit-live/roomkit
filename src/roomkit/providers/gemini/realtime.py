@@ -402,6 +402,35 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 )
             return
 
+    async def prime_realtime_input(self, session: VoiceSession) -> None:
+        """Transition the session into realtime_input mode.
+
+        Sends a 20 ms PCM silence frame as the first realtime input, which
+        flips the internal ``realtime_input_sent`` flag so subsequent
+        :meth:`inject_text` calls use ``send_realtime_input`` rather than
+        ``send_client_content``.
+
+        Use this before the first :meth:`inject_text` in scenarios where
+        realtime audio will start flowing immediately afterward
+        (outbound-dial greetings, session-start prompts, etc.).  Some
+        Gemini Live preview models close the connection with code 1008
+        when ``send_client_content`` is interleaved with realtime audio;
+        priming ensures we take the always-safe realtime_input path.
+
+        No-op if no active session exists or realtime_input has already
+        been sent.
+        """
+        state = self._get_active_state(session)
+        if state is None or state.realtime_input_sent:
+            return
+        if state.live_session is None:
+            return
+        silence = b"\x00" * (state.input_sample_rate // 50)  # 20 ms PCM-16
+        await state.live_session.send_realtime_input(
+            audio=self._make_audio_blob(silence, state.input_sample_rate)
+        )
+        state.realtime_input_sent = True
+
     async def inject_text(
         self,
         session: VoiceSession,

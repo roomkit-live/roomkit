@@ -72,6 +72,7 @@ class SIPAudioMixin:
     _dtmf_callbacks: list[Any]
     _disconnect_callbacks: list[Any]
     _trace_emitter: Any
+    _outbound_silence_fill: bool
     _cleanup_session: Any  # see SIPAudioHost — cross-mixin, from SIPCallingMixin
     _log_task_exception: Any  # see SIPAudioHost — cross-mixin, from SIPCallingMixin
 
@@ -358,7 +359,11 @@ class SIPAudioMixin:
         async def rtp_send(data: bytes) -> None:
             self._send_pcm_bytes(session, call_session, data)
 
-        pacer = OutboundAudioPacer(send_fn=rtp_send, sample_rate=state.codec_rate)
+        pacer = OutboundAudioPacer(
+            send_fn=rtp_send,
+            sample_rate=state.codec_rate,
+            fill_with_silence_when_idle=self._outbound_silence_fill,
+        )
         state.pacer = pacer
         task = asyncio.get_running_loop().create_task(
             pacer.start(), name=f"sip_pacer_{session.id}"

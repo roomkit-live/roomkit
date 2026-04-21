@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from datetime import UTC, datetime
@@ -44,10 +45,20 @@ from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import HookTrigger
 from roomkit.models.hook import HookResult
+from roomkit.models.trace import ProtocolTrace
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
 from roomkit.voice.backends.sip import PT_G722, PT_PCMA, PT_PCMU, SIPVoiceBackend
 from roomkit.voice.realtime.events import RealtimeTranscriptionEvent
 from roomkit.voice.realtime.sip_transport import SIPRealtimeTransport
+
+# ---------------------------------------------------------------------------
+# Debug (set SIP_DEBUG=1 to enable verbose SIP/RTP/SDP tracing)
+# ---------------------------------------------------------------------------
+
+if os.environ.get("SIP_DEBUG", "0") in ("1", "true", "yes"):
+    logging.getLogger("roomkit.voice.sip").setLevel(logging.DEBUG)
+    logging.getLogger("aiosipua").setLevel(logging.DEBUG)
+    logging.getLogger("aiortp").setLevel(logging.DEBUG)
 
 # ---------------------------------------------------------------------------
 # Configuration (override via environment variables)
@@ -66,7 +77,9 @@ AUTH_PASS = os.environ.get("SIP_AUTH_PASS", "")
 GEMINI_MODEL = "gemini-3.1-flash-live-preview"
 SYSTEM_PROMPT = (
     "You are a friendly phone assistant making an outbound call. "
-    "Greet the person who picks up and be concise and helpful. "
+    "When the person answers, greet them in one short sentence (no more than "
+    "ten words) and then wait for them to reply. Do not monologue. "
+    "Keep every reply to one or two short sentences. "
     "You have access to a tool that returns the current date and time."
 )
 VOICE = "Aoede"
@@ -104,11 +117,22 @@ async def main() -> None:
     console_cleanup = setup_console(kit)
 
     # -- SIP backend --
+    # send_silence_on_answer=0.5 primes outbound RTP with 500 ms of silence
+    # right after the call is answered. Needed for PSTN trunks that wait for
+    # our RTP before sending their own (symmetric-RTP learning / NAT latching).
+    # jitter_prefetch=3 absorbs ~60 ms of carrier jitter before playout —
+    # reduces audible glitches on PSTN at the cost of +60 ms latency.
+    # outbound_silence_fill=True keeps the RTP stream continuous at 50 pps
+    # during gaps between Gemini TTS chunks. Without it the pacer stalls,
+    # producing choppy audio for PSTN callees (no packet-loss concealment).
     backend = SIPVoiceBackend(
         local_sip_addr=("0.0.0.0", 5070),  # nosec B104
         local_rtp_ip="0.0.0.0",  # nosec B104
         rtp_port_start=10000,
-        rtp_port_end=20000,
+        rtp_port_end=10010,
+        send_silence_on_answer=0.5,
+        jitter_prefetch=3,
+        outbound_silence_fill=True,
     )
 
     # -- Gemini Live provider --
@@ -129,6 +153,60 @@ async def main() -> None:
         output_sample_rate=24000,
     )
     kit.register_channel(realtime)
+
+    # -------------------------------------------------------------------
+    # Debug: SIP/SDP protocol trace + first-RTP-packet tap + remote addr
+    # -------------------------------------------------------------------
+
+    def _trace(event: ProtocolTrace) -> None:
+        logger.info(
+            "[SIP TRACE] %s %s %s  meta=%s",
+            event.direction.upper(),
+            event.protocol,
+            event.summary,
+            {k: v for k, v in event.metadata.items() if k != "x_headers"},
+        )
+        if event.raw:
+            raw = event.raw.decode(errors="replace") if isinstance(event.raw, bytes) else event.raw
+            logger.info("[SIP TRACE RAW]\n%s", raw)
+
+    realtime.on_trace(_trace, protocols=["sip"])
+
+    _first_rtp_seen: dict[str, bool] = {}
+
+    @backend.on_session_ready
+    def _on_ready(session):  # type: ignore[no-untyped-def]
+        state = backend._session_states.get(session.id)  # noqa: SLF001
+        cs = state.call_session if state is not None else None
+        remote = cs.remote_addr if cs is not None else None
+        logger.info(
+            "[SIP READY] session=%s codec_rate=%s clock_rate=%s local_rtp_port=%s remote_rtp=%s",
+            session.id[:8],
+            getattr(state, "codec_rate", None),
+            getattr(state, "clock_rate", None),
+            getattr(state, "rtp_port", None),
+            remote,
+        )
+
+    def _first_packet_tap(session, frame):  # type: ignore[no-untyped-def]
+        sid = session.id
+        if not _first_rtp_seen.get(sid):
+            _first_rtp_seen[sid] = True
+            logger.info(
+                "[RTP FIRST INBOUND] session=%s bytes=%d sample_rate=%s",
+                sid[:8],
+                len(frame.data),
+                frame.sample_rate,
+            )
+
+    _prev_audio_cb = backend._audio_received_callback  # noqa: SLF001
+
+    def _audio_chain(session, frame):  # type: ignore[no-untyped-def]
+        _first_packet_tap(session, frame)
+        if _prev_audio_cb is not None:
+            _prev_audio_cb(session, frame)
+
+    backend._audio_received_callback = _audio_chain  # noqa: SLF001
 
     # -------------------------------------------------------------------
     # Room setup — create once at startup
@@ -166,6 +244,17 @@ async def main() -> None:
             participant_id=session.participant_id or session.id,
             connection=session,
         )
+
+        # Outbound-dial greeting: trigger Gemini to speak first.
+        # Prime the realtime_input channel so the text inject uses the
+        # audio-interleave-safe path, then simulate the callee picking up
+        # — Gemini responds as if someone just answered, producing its
+        # greeting naturally per the system prompt.
+        rt_sessions = realtime.get_room_sessions(room_id)
+        if rt_sessions:
+            rt_session = rt_sessions[0]
+            await gemini.prime_realtime_input(rt_session)
+            await realtime.inject_text(rt_session, "Allô ?", role="user")
 
     @backend.on_call_disconnected
     async def handle_disconnect(session):

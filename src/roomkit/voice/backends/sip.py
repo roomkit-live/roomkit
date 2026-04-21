@@ -103,6 +103,18 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
             without valid credentials are challenged with 401.
         auth_realm: Realm string used in the ``WWW-Authenticate``
             challenge header (default ``"roomkit"``).
+        send_silence_on_answer: Seconds of PCM silence to push through
+            the outbound RTP pacer immediately after an outbound call is
+            answered.  Used to unblock PSTN trunks whose RTP receivers
+            wait for a packet from the caller before forwarding carrier
+            audio ("symmetric RTP learning" / NAT latching).  Default
+            ``0.0`` (disabled).  Typical value when needed: ``0.5``.
+        outbound_silence_fill: When ``True``, the outbound audio pacer
+            emits a 20 ms PCM silence frame whenever its queue runs dry,
+            instead of stalling the RTP stream.  Keeps RTP flowing at a
+            steady 50 pps so PSTN endpoints (which lack packet loss
+            concealment) don't perceive glitches at sentence boundaries.
+            Default ``False`` (pacer pauses during idle gaps).
     """
 
     def __init__(
@@ -123,6 +135,8 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         rtp_inactivity_timeout: float = 30.0,
         auth_users: dict[str, str] | None = None,
         auth_realm: str = "roomkit",
+        send_silence_on_answer: float = 0.0,
+        outbound_silence_fill: bool = False,
     ) -> None:
         self._aiosipua = import_aiosipua()
         self._rtp_bridge = import_rtp_bridge()
@@ -140,6 +154,8 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._jitter_prefetch = jitter_prefetch
         self._skip_audio_gaps = skip_audio_gaps
         self._rtp_inactivity_timeout = rtp_inactivity_timeout
+        self._send_silence_on_answer = send_silence_on_answer
+        self._outbound_silence_fill = outbound_silence_fill
 
         # Inbound authentication
         self._auth_users = auth_users
