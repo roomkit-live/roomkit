@@ -43,6 +43,7 @@ class RealtimeAudioHost(Protocol):
         _framework: The RoomKit framework instance (or None).
         _recording: Recording configuration.
         _user_speaking: Whether the user is currently speaking per session.
+        _user_turn_start_at: Wall-clock of the last user-turn start, per session.
         _barge_in_active: Session IDs with an active barge-in.
 
     Cross-mixin methods (implemented elsewhere in the MRO):
@@ -69,6 +70,7 @@ class RealtimeAudioHost(Protocol):
     _framework: RoomKit | None
     _recording: Any
     _user_speaking: dict[str, bool]
+    _user_turn_start_at: dict[str, Any]
     _barge_in_active: set[str]
 
     def _track_task(self, loop: Any, coro: Any, *, name: str) -> Any: ...
@@ -108,6 +110,7 @@ class RealtimeAudioMixin:
     _framework: RoomKit | None
     _recording: Any
     _user_speaking: dict[str, bool]
+    _user_turn_start_at: dict[str, Any]
     _barge_in_active: set[str]
 
     _track_task: Any  # see RealtimeAudioHost — cross-mixin
@@ -263,8 +266,14 @@ class RealtimeAudioMixin:
 
     def _on_pipeline_speech_start(self, session: VoiceSession) -> None:
         """Handle speech start from local pipeline VAD."""
+        from datetime import UTC, datetime
+
         with self._state_lock:
             self._user_speaking[session.id] = True
+            # Stamp the start-of-turn so transcription emission can use it
+            # as created_at — keeps user utterances sorted before any
+            # tool_calls the agent fires mid-turn.
+            self._user_turn_start_at[session.id] = datetime.now(UTC)
             self._audio_generation[session.id] = self._audio_generation.get(session.id, 0) + 1
             resamplers = self._session_resamplers.get(session.id)
             fwd_count = self._audio_forward_count.get(session.id, 0)

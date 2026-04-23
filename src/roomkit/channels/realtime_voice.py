@@ -271,6 +271,12 @@ class RealtimeVoiceChannel(
         self._idle_events: dict[str, asyncio.Event] = {}
         self._user_speaking: dict[str, bool] = {}
         self._provider_idle: dict[str, bool] = {}
+        # Wall-clock of the last user-turn start (VAD SPEECH_START). Consumed by
+        # _realtime_transcription when emitting the final user turn as a
+        # RoomEvent, so tool_calls fired mid-turn sort after the user message.
+        from datetime import datetime as _dt  # local alias; cross-platform
+
+        self._user_turn_start_at: dict[str, _dt] = {}
 
         # Track fire-and-forget tasks for clean shutdown
         self._scheduled_tasks: set[asyncio.Task[Any]] = set()
@@ -798,6 +804,7 @@ class RealtimeVoiceChannel(
             if idle is not None:
                 idle.set()  # unblock any waiters
             self._user_speaking.pop(session.id, None)
+            self._user_turn_start_at.pop(session.id, None)
             self._provider_idle.pop(session.id, None)
             turn_span_id = self._turn_spans.pop(session.id, None)
             session_span_id = self._session_spans.pop(session.id, None)
@@ -1005,7 +1012,10 @@ class RealtimeVoiceChannel(
     async def deliver(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
-        """No-op delivery — customer is on voice, can't see text."""
+        """No-op for realtime voice — content is injected via kit.deliver()'s
+        ``_deliver_to_realtime_voice`` path, which calls ``inject_text``
+        directly. Events broadcast through channel.deliver() would double-
+        feed the session."""
         return ChannelOutput.empty()
 
     def capabilities(self) -> ChannelCapabilities:

@@ -41,6 +41,7 @@ class RealtimeTranscriptionHost(Protocol):
     _session_rooms: dict[str, str]
     _barge_in_active: set[str]
     _last_assistant_text: dict[str, str]
+    _user_turn_start_at: dict[str, Any]
     _emit_transcription_events: bool
     _framework: RoomKit | None
     channel_id: str
@@ -63,6 +64,7 @@ class RealtimeTranscriptionMixin:
     _session_rooms: dict[str, str]
     _barge_in_active: set[str]
     _last_assistant_text: dict[str, str]
+    _user_turn_start_at: dict[str, Any]
     _emit_transcription_events: bool
     _framework: RoomKit | None
     channel_id: str
@@ -202,14 +204,30 @@ class RealtimeTranscriptionMixin:
             if role == "assistant":
                 self._last_assistant_text[session.id] = final_text
 
-            # Emit final transcriptions as RoomEvents
+            # Emit final transcriptions as RoomEvents.
+            # User transcriptions are finalized at turn_complete, which often
+            # happens AFTER any tool_calls the agent fired mid-turn. Stamp
+            # user turns with the pipeline-VAD SPEECH_START timestamp (captured
+            # in _on_pipeline_speech_start) so they sort chronologically
+            # before the tool calls they triggered — matching what the user
+            # actually experienced (said the thing, then the agent reacted).
+            # Fall back to a small offset if VAD didn't fire (e.g., server-
+            # VAD mode without a local pipeline) so ordering is still
+            # reasonable.
             if self._emit_transcription_events and final_text.strip():
+                from datetime import UTC, datetime, timedelta
+
                 participant_id = session.participant_id if role == "user" else None
                 logger.info(
                     "Emitting transcription as RoomEvent: role=%s, text=%s",
                     role,
                     final_text,
                 )
+                created_at = None
+                if role == "user":
+                    with self._state_lock:
+                        turn_start = self._user_turn_start_at.pop(session.id, None)
+                    created_at = turn_start or (datetime.now(UTC) - timedelta(seconds=2))
                 await self._framework.send_event(
                     room_id,
                     self.channel_id,
@@ -221,6 +239,7 @@ class RealtimeTranscriptionMixin:
                         "role": role,
                     },
                     provider=self.provider_name,
+                    created_at=created_at,
                 )
 
         except Exception:

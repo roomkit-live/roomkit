@@ -159,6 +159,39 @@ class RealtimeToolsMixin:
                     )
                     if updated is not None:
                         await self._provider.reconfigure(session, tools=updated)
+
+                # Fire ON_TOOL_CALL hook observationally — the skill tool
+                # has already executed, but audit + UI-broadcast hooks
+                # need visibility into it the same as any other tool.
+                if self._framework and room_id:
+                    from roomkit.models.tool_call import ToolCallEvent
+
+                    skill_event = ToolCallEvent(
+                        channel_id=self.channel_id,
+                        channel_type=ChannelType.REALTIME_VOICE,
+                        tool_call_id=call_id,
+                        name=name,
+                        arguments=arguments,
+                        result=result_str,
+                        room_id=room_id,
+                        session=session,
+                    )
+                    try:
+                        skill_ctx = await self._framework._build_context(room_id)
+                        await self._framework.hook_engine.run_sync_hooks(
+                            room_id,
+                            HookTrigger.ON_TOOL_CALL,
+                            skill_event,
+                            skill_ctx,
+                            skip_event_filter=True,
+                        )
+                    except Exception:
+                        logger.debug(
+                            "ON_TOOL_CALL observation failed for skill tool %s",
+                            name,
+                            exc_info=True,
+                        )
+
                 await self._provider.submit_tool_result(session, call_id, result_str)
                 telemetry.end_span(tool_span_id)
                 logger.info(

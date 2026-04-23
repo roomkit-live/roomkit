@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -454,6 +455,7 @@ class RoomKit(
         visibility: str = "all",
         provider: str | None = None,
         response_visibility: str | None = None,
+        created_at: datetime | None = None,
     ) -> RoomEvent:
         """Send an event directly into a room from a channel.
 
@@ -477,7 +479,7 @@ class RoomKit(
         await self.get_room(room_id)
         binding = await self._get_binding(room_id, channel_id)
 
-        event = RoomEvent(
+        event_kwargs: dict[str, Any] = dict(
             room_id=room_id,
             type=event_type,
             source=EventSource(
@@ -493,6 +495,9 @@ class RoomKit(
             visibility=visibility,
             response_visibility=response_visibility,
         )
+        if created_at is not None:
+            event_kwargs["created_at"] = created_at
+        event = RoomEvent(**event_kwargs)
 
         telemetry = self._telemetry
         span_id = telemetry.start_span(

@@ -133,7 +133,23 @@ class WaitForIdle(DeliveryStrategy):
 
         channel = ctx.kit.get_channel(channel_id)
         if channel is not None and channel.channel_type in _VOICE_TYPES:
-            await _wait_for_voice_idle(channel, ctx.room_id, self.playback_timeout, self.buffer)
+            try:
+                await _wait_for_voice_idle(
+                    channel, ctx.room_id, self.playback_timeout, self.buffer
+                )
+            except TimeoutError:
+                # Voice never went idle within the budget (user kept talking,
+                # agent kept responding). Don't drop the delivery — the
+                # whole point of kit.deliver() is to eventually reach the
+                # agent. Injecting now is a best-effort fallback; the agent
+                # may hear the content slightly out of order but still acts
+                # on it. Silent drops were the worse UX.
+                logger.warning(
+                    "WaitForIdle: voice never idle within %.1fs in room %s, "
+                    "delivering anyway",
+                    self.playback_timeout,
+                    ctx.room_id,
+                )
 
         await _deliver_to_channel(ctx, channel_id)
 
