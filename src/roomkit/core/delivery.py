@@ -145,8 +145,7 @@ class WaitForIdle(DeliveryStrategy):
                 # may hear the content slightly out of order but still acts
                 # on it. Silent drops were the worse UX.
                 logger.warning(
-                    "WaitForIdle: voice never idle within %.1fs in room %s, "
-                    "delivering anyway",
+                    "WaitForIdle: voice never idle within %.1fs in room %s, delivering anyway",
                     self.playback_timeout,
                     ctx.room_id,
                 )
