@@ -449,6 +449,17 @@ class RealtimeVoiceChannel(
 
     # -- Public helpers --
 
+    async def start_audio_stream(self, session: VoiceSession) -> None:
+        """Open the realtime audio path on the provider.
+
+        Low-level escape hatch for opening the audio stream without
+        injecting any text.  Most callers should use
+        ``inject_text(..., start_audio_stream=True)`` instead — that
+        composes the open + inject in a single call.  No-op on providers
+        that don't need it.
+        """
+        await self._provider.start_audio_stream(session)
+
     async def inject_text(
         self,
         session: VoiceSession,
@@ -456,6 +467,7 @@ class RealtimeVoiceChannel(
         *,
         role: str = "user",
         silent: bool = False,
+        start_audio_stream: bool = False,
     ) -> None:
         """Inject a text turn into the provider session.
 
@@ -466,7 +478,14 @@ class RealtimeVoiceChannel(
             silent: If True, add to conversation context without
                 requesting a response.  The agent sees the text on
                 its next turn but does not react immediately.
+            start_audio_stream: If True, open the realtime audio path
+                on the provider before sending the text.  Set this on
+                the first inject in outbound flows where the app speaks
+                first (e.g. SIP dial greetings); no-op on providers
+                that don't need priming (OpenAI, xAI).
         """
+        if start_audio_stream:
+            await self._provider.start_audio_stream(session)
         await self._provider.inject_text(session, text, role=role, silent=silent)
         logger.info(
             "Injected text into session %s (role=%s, silent=%s, len=%d)",

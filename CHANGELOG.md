@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`OpenAIRealtimeProvider.connect()` silently ignored `input_sample_rate` and `output_sample_rate`.** Input format was hardcoded to `{type: 'audio/pcm', rate: 24000}` and output format was never rebuilt from the parameter. A caller passing the ABC default of 16 kHz got 24 kHz on the wire, so the API played their audio back 1.5× faster than intended. The provider now honours both rates — but per the GA API, PCM is only accepted at 24 kHz, so invalid rates now raise `ValueError` up-front instead of silently mis-routing.
+
+### Added
+
+- **`OpenAIRealtimeProvider` G.711 telephony support.** Pass `input_sample_rate=8000, output_sample_rate=8000` and optionally `provider_config={"codec": "pcmu"}` (default) or `"pcma"` to emit `audio/pcmu` / `audio/pcma` formats. Lets SIP backends at 8 kHz skip a resampler. (PCM is only accepted at 24 kHz by the API.)
+- **`OpenAIRealtimeProvider` additional `provider_config` keys**: `speed` (output playback rate), `idle_timeout_ms` (server_vad), `language` and `transcription_prompt` (passed to `audio.input.transcription`).
+
+### Changed
+
+- **`prime_realtime_input()` → `start_audio_stream()`** and hoisted to the `RealtimeVoiceProvider` ABC as a default no-op. OpenAI/xAI inherit the no-op; Gemini overrides with the 20 ms silence + interleave-safe flag flip. Renames the Gemini-internal term (`realtime_input`) out of the public surface.
+- **`RealtimeVoiceChannel.inject_text(..., start_audio_stream=True)`** — one-shot way to open the realtime audio path and inject the first greeting in a single call, instead of calling `start_audio_stream()` + `inject_text()` separately. Intended for outbound-dial flows where the app speaks first. The channel-level `start_audio_stream()` method remains as a low-level escape hatch for openings without a text inject.
+
+### Removed
+
+- **`GeminiLiveProvider.prime_realtime_input()`** — replaced by `start_audio_stream()` (see above).
+- **`kit.connect_realtime_voice()` and `kit.disconnect_realtime_voice()`** — deprecated shims that forwarded to `kit.join()` / `kit.leave()`. The 0.7.0a1 changelog announced their removal but the code only emitted `DeprecationWarning`; the shims are now actually gone. Use `kit.join(room_id, channel_id, participant_id=..., connection=...)` and `kit.leave(session)` instead.
+
 ## [0.7.0a15] — 2026-04-23
 
 ### Added

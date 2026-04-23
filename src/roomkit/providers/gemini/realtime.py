@@ -402,23 +402,18 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 )
             return
 
-    async def prime_realtime_input(self, session: VoiceSession) -> None:
-        """Transition the session into realtime_input mode.
+    async def start_audio_stream(self, session: VoiceSession) -> None:
+        """Open the realtime audio input path by sending 20 ms of silence.
 
-        Sends a 20 ms PCM silence frame as the first realtime input, which
-        flips the internal ``realtime_input_sent`` flag so subsequent
-        :meth:`inject_text` calls use ``send_realtime_input`` rather than
-        ``send_client_content``.
+        Gemini Live exposes two protocol paths on the same WebSocket —
+        ``send_client_content`` for structured text turns and
+        ``send_realtime_input`` for streaming audio.  Interleaving them
+        after audio has started causes the server to close the socket
+        with code 1008/1007 on some preview models.  Sending one frame
+        of silence up-front commits the session to the realtime path so
+        later :meth:`inject_text` calls stay interleave-safe.
 
-        Use this before the first :meth:`inject_text` in scenarios where
-        realtime audio will start flowing immediately afterward
-        (outbound-dial greetings, session-start prompts, etc.).  Some
-        Gemini Live preview models close the connection with code 1008
-        when ``send_client_content`` is interleaved with realtime audio;
-        priming ensures we take the always-safe realtime_input path.
-
-        No-op if no active session exists or realtime_input has already
-        been sent.
+        No-op if the session is not active or the stream is already open.
         """
         state = self._get_active_state(session)
         if state is None or state.realtime_input_sent:

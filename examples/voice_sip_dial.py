@@ -245,16 +245,14 @@ async def main() -> None:
             connection=session,
         )
 
-        # Outbound-dial greeting: trigger Gemini to speak first.
-        # Prime the realtime_input channel so the text inject uses the
-        # audio-interleave-safe path, then simulate the callee picking up
-        # — Gemini responds as if someone just answered, producing its
-        # greeting naturally per the system prompt.
+        # Outbound-dial greeting: trigger the AI to speak first.
+        # start_audio_stream=True opens the realtime audio path before
+        # the text goes in — the provider then responds as if someone
+        # just answered, producing its greeting per the system prompt.
         rt_sessions = realtime.get_room_sessions(room_id)
         if rt_sessions:
             rt_session = rt_sessions[0]
-            await gemini.prime_realtime_input(rt_session)
-            await realtime.inject_text(rt_session, "Allô ?", role="user")
+            await realtime.inject_text(rt_session, "Allô ?", role="user", start_audio_stream=True)
 
     @backend.on_call_disconnected
     async def handle_disconnect(session):

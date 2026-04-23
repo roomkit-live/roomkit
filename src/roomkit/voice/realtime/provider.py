@@ -347,6 +347,20 @@ class RealtimeVoiceProvider(ABC):
             except Exception:
                 logger.exception("Error in %s callback", label)
 
+    async def start_audio_stream(self, session: VoiceSession) -> None:  # noqa: B027
+        """Open the audio input path on the provider.
+
+        Some providers need to be nudged into "audio is flowing" mode before
+        other operations (e.g. text injection) are safe — for instance, when
+        the application wants to trigger a greeting before the remote side
+        has spoken.  Providers that care override this to send an initial
+        silent audio frame (or flip their protocol state); providers that
+        don't inherit the no-op.
+
+        Safe to call unconditionally.  No-op if the session is not active or
+        the stream has already been opened.
+        """
+
     # -- Manual VAD activity signals --
 
     async def send_activity_start(self, session: VoiceSession) -> None:  # noqa: B027

@@ -466,50 +466,6 @@ class VoiceOpsMixin(HelpersMixin):
         )
         await self.join(room_id, channel_id, session=session)
 
-    async def connect_realtime_voice(
-        self,
-        room_id: str,
-        participant_id: str,
-        channel_id: str,
-        connection: Any,
-        *,
-        metadata: dict[str, Any] | None = None,
-    ) -> Any:
-        """Connect a participant to a realtime voice session.
-
-        .. deprecated::
-            Use :meth:`join` instead::
-
-                session = await kit.join(room_id, channel_id,
-                                         participant_id=participant_id,
-                                         connection=websocket)
-        """
-        warnings.warn(
-            "connect_realtime_voice() is deprecated. Use kit.join() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return await self.join(
-            room_id,
-            channel_id,
-            participant_id=participant_id,
-            connection=connection,
-            metadata=metadata,
-        )
-
-    async def disconnect_realtime_voice(self, session: Any) -> None:
-        """Disconnect a realtime voice session.
-
-        .. deprecated::
-            Use :meth:`leave` instead.
-        """
-        warnings.warn(
-            "disconnect_realtime_voice() is deprecated. Use kit.leave() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        await self.leave(session)
-
     async def transcribe(self, audio: AudioContent) -> TranscriptionResult:
         """Transcribe audio to text using configured STT provider.
 

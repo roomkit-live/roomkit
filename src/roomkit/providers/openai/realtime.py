@@ -22,9 +22,23 @@ _DEFAULT_BASE_URL = "wss://api.openai.com/v1/realtime"
 class OpenAIRealtimeProvider(RealtimeVoiceProvider):
     """Realtime voice provider using the OpenAI Realtime API.
 
-    Connects via WebSocket to OpenAI's Realtime API (GA),
-    handling bidirectional audio streaming with built-in VAD,
-    transcription, and AI responses.
+    Connects via WebSocket to OpenAI's Realtime API (GA), handling
+    bidirectional audio streaming with built-in VAD, transcription,
+    and AI responses.
+
+    **Audio format constraints (GA API):**
+
+    - ``audio/pcm`` is only accepted at ``24000`` Hz (``rate`` is fixed).
+    - ``audio/pcmu`` (G.711 μ-law) and ``audio/pcma`` (G.711 A-law) are
+      accepted for 8 kHz telephony; they have no ``rate`` field.
+    - Other sample rates are rejected by the API.
+
+    ``input_sample_rate`` / ``output_sample_rate`` must therefore be
+    ``24000`` or ``8000``. For 8 kHz, pass ``provider_config["codec"]``
+    as ``"pcmu"`` (default) or ``"pcma"``.
+
+    **Note:** the GA API does not accept ``temperature``; passing it
+    logs a warning and is ignored.
 
     Requires the ``websockets`` package.
 
@@ -90,6 +104,14 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
                 "OpenAI Realtime GA API no longer supports the temperature parameter; ignoring"
             )
 
+        # Validate audio rates up-front — building the format objects will
+        # raise ValueError for unsupported rates, which is easier to debug
+        # before any WebSocket is opened.
+        pc = provider_config or {}
+        codec = pc.get("codec", "pcmu")
+        input_format = self._build_audio_format(input_sample_rate, codec)
+        output_format = self._build_audio_format(output_sample_rate, codec)
+
         url = f"{self._base_url}?model={self._model}"
         headers = {
             "Authorization": f"Bearer {self._api_key.get_secret_value()}",
@@ -103,20 +125,28 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
         self._connections[session.id] = ws
         self._sessions[session.id] = session
 
-        pc = provider_config or {}
+        # Build GA session config — audio settings nest under audio.input / audio.output.
+        transcription: dict[str, Any] = {
+            "model": pc.get("stt_model", "gpt-4o-transcribe"),
+        }
+        if pc.get("language"):
+            transcription["language"] = pc["language"]
+        if pc.get("transcription_prompt"):
+            transcription["prompt"] = pc["transcription_prompt"]
 
-        # Build GA session config — audio settings nest under audio.input / audio.output
         # noise_reduction: "near_field" for headphones/close mic,
         # "far_field" for laptop/conference room speakers.
         nr_type = pc.get("noise_reduction", "far_field")
         audio_input: dict[str, Any] = {
-            "format": {"type": "audio/pcm", "rate": 24000},
-            "transcription": {"model": pc.get("stt_model", "gpt-4o-transcribe")},
+            "format": input_format,
+            "transcription": transcription,
             "noise_reduction": {"type": nr_type},
         }
-        audio_output: dict[str, Any] = {"format": {"type": "audio/pcm", "rate": 24000}}
+        audio_output: dict[str, Any] = {"format": output_format}
         if voice:
             audio_output["voice"] = voice
+        if pc.get("speed") is not None:
+            audio_output["speed"] = float(pc["speed"])
 
         # --- Turn detection / VAD (nested under audio.input in GA) ---
         # Default to semantic_vad — it uses a turn detection model that
@@ -328,12 +358,35 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
                 td["silence_duration_ms"] = int(pc["silence_duration_ms"])
             if pc.get("prefix_padding_ms") is not None:
                 td["prefix_padding_ms"] = int(pc["prefix_padding_ms"])
+            if pc.get("idle_timeout_ms") is not None:
+                td["idle_timeout_ms"] = int(pc["idle_timeout_ms"])
             if pc.get("interrupt_response") is not None:
                 td["interrupt_response"] = bool(pc["interrupt_response"])
             if pc.get("create_response") is not None:
                 td["create_response"] = bool(pc["create_response"])
             return td
         return None
+
+    @staticmethod
+    def _build_audio_format(rate: int, codec: str) -> dict[str, Any]:
+        """Map a PCM sample rate to the GA API's audio format object.
+
+        The GA API only accepts:
+          * ``audio/pcm`` at 24000 Hz
+          * ``audio/pcmu`` (G.711 μ-law) — 8 kHz implied, no ``rate`` field
+          * ``audio/pcma`` (G.711 A-law) — 8 kHz implied, no ``rate`` field
+        """
+        if rate == 24000:
+            return {"type": "audio/pcm", "rate": 24000}
+        if rate == 8000:
+            if codec not in ("pcmu", "pcma"):
+                raise ValueError(
+                    f"OpenAI Realtime 8 kHz requires codec='pcmu' or 'pcma', got {codec!r}"
+                )
+            return {"type": f"audio/{codec}"}
+        raise ValueError(
+            f"OpenAI Realtime API only accepts 24000 Hz (PCM) or 8000 Hz (G.711), got {rate}"
+        )
 
     # -- Receive loop --
 

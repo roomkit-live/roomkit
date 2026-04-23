@@ -193,6 +193,8 @@ class TestOpenAIRealtimeProvider:
                 system_prompt="You are helpful.",
                 voice="alloy",
                 tools=[{"name": "get_weather", "description": "Get weather"}],
+                input_sample_rate=24000,
+                output_sample_rate=24000,
             )
 
         assert session.state == VoiceSessionState.ACTIVE
@@ -216,12 +218,26 @@ class TestOpenAIRealtimeProvider:
             return mock_ws
 
         with patch.dict(sys.modules, {"websockets": MagicMock(connect=fake_connect)}):
-            await provider.connect(session, system_prompt="Test prompt")
+            await provider.connect(
+                session,
+                system_prompt="Test prompt",
+                input_sample_rate=24000,
+                output_sample_rate=24000,
+            )
 
         # The first send should be session.update
         sent = json.loads(mock_ws.send.call_args_list[0][0][0])
         assert sent["type"] == "session.update"
         assert sent["session"]["instructions"] == "Test prompt"
+        # Audio format must be the GA-accepted PCM @ 24 kHz
+        assert sent["session"]["audio"]["input"]["format"] == {
+            "type": "audio/pcm",
+            "rate": 24000,
+        }
+        assert sent["session"]["audio"]["output"]["format"] == {
+            "type": "audio/pcm",
+            "rate": 24000,
+        }
 
         # Clean up
         provider._receive_tasks[session.id].cancel()
@@ -239,12 +255,90 @@ class TestOpenAIRealtimeProvider:
 
         with patch.dict(sys.modules, {"websockets": MagicMock(connect=fake_connect)}):
             # Should log a warning about temperature being ignored
-            await provider.connect(session, temperature=0.7)
+            await provider.connect(
+                session,
+                temperature=0.7,
+                input_sample_rate=24000,
+                output_sample_rate=24000,
+            )
 
         # Clean up
         provider._receive_tasks[session.id].cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await provider._receive_tasks[session.id]
+
+    async def test_connect_g711_pcmu_at_8khz(self):
+        """8 kHz input/output must emit audio/pcmu (telephony path)."""
+        mod = _load_provider()
+        provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
+        session = _make_session()
+        mock_ws = _make_mock_ws()
+
+        async def fake_connect(*args, **kwargs):
+            return mock_ws
+
+        with patch.dict(sys.modules, {"websockets": MagicMock(connect=fake_connect)}):
+            await provider.connect(
+                session,
+                input_sample_rate=8000,
+                output_sample_rate=8000,
+            )
+
+        sent = json.loads(mock_ws.send.call_args_list[0][0][0])
+        assert sent["session"]["audio"]["input"]["format"] == {"type": "audio/pcmu"}
+        assert sent["session"]["audio"]["output"]["format"] == {"type": "audio/pcmu"}
+
+        provider._receive_tasks[session.id].cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await provider._receive_tasks[session.id]
+
+    async def test_connect_g711_pcma_via_codec_config(self):
+        """codec='pcma' selects A-law for 8 kHz."""
+        mod = _load_provider()
+        provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
+        session = _make_session()
+        mock_ws = _make_mock_ws()
+
+        async def fake_connect(*args, **kwargs):
+            return mock_ws
+
+        with patch.dict(sys.modules, {"websockets": MagicMock(connect=fake_connect)}):
+            await provider.connect(
+                session,
+                input_sample_rate=8000,
+                output_sample_rate=8000,
+                provider_config={"codec": "pcma"},
+            )
+
+        sent = json.loads(mock_ws.send.call_args_list[0][0][0])
+        assert sent["session"]["audio"]["input"]["format"] == {"type": "audio/pcma"}
+        assert sent["session"]["audio"]["output"]["format"] == {"type": "audio/pcma"}
+
+        provider._receive_tasks[session.id].cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await provider._receive_tasks[session.id]
+
+    async def test_connect_rejects_unsupported_rate(self):
+        """16 kHz isn't a valid OpenAI Realtime rate — must raise."""
+        import pytest
+
+        mod = _load_provider()
+        provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
+        session = _make_session()
+        mock_ws = _make_mock_ws()
+
+        async def fake_connect(*args, **kwargs):
+            return mock_ws
+
+        with (
+            patch.dict(sys.modules, {"websockets": MagicMock(connect=fake_connect)}),
+            pytest.raises(ValueError, match="24000 Hz.*8000 Hz"),
+        ):
+            await provider.connect(
+                session,
+                input_sample_rate=16000,
+                output_sample_rate=24000,
+            )
 
     # ── send_audio() ────────────────────────────────────────────
 
