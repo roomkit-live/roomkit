@@ -229,8 +229,13 @@ class TwilioWebSocketBackend(VoiceBackend):
             import numpy as np
             import soxr
 
-            stream = soxr.ResampleStream(in_rate, out_rate, 1, dtype=np.int16)
-            logger.info("Resampler: soxr stream (%d -> %d Hz)", in_rate, out_rate)
+            # quality="QQ" (Quick) keeps per-chunk latency at ~one frame.
+            # Default VHQ buffers ~120 ms of filter history before emitting,
+            # which silently drops the first six 20 ms Twilio frames at
+            # call start. QQ is still well above telephony-band fidelity
+            # for 8↔16 kHz.
+            stream = soxr.ResampleStream(in_rate, out_rate, 1, dtype=np.int16, quality="QQ")
+            logger.info("Resampler: soxr stream QQ (%d -> %d Hz)", in_rate, out_rate)
 
             def _soxr(data: bytes) -> bytes:
                 out = stream.resample_chunk(np.frombuffer(data, dtype=np.int16))

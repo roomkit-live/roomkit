@@ -156,8 +156,14 @@ class _PassthroughHandler(AsyncStreamHandler):
             self._transport._unregister_handler(self._webrtc_id)
             logger.info("WebRTC handler shutdown: webrtc_id=%s", self._webrtc_id)
 
-    def send_message(self, message: str) -> None:
-        """Send a message via the WebRTC DataChannel."""
+    def send_message(self, message: str) -> None:  # ty: ignore[invalid-method-override]
+        """Send a message via the WebRTC DataChannel.
+
+        Sync override of FastRTC's async ``send_message``. ``aiortc``'s
+        ``RTCDataChannel.send`` is itself synchronous, and existing call
+        sites (line 284 below) don't await this handler method — keeping
+        it sync preserves that behaviour.
+        """
         if self.channel:
             self.channel.send(message)
 

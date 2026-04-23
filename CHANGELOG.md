@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0a15] — 2026-04-23
+
+### Added
+
+- **PSTN-compatibility for outbound SIP dial** — three opt-in knobs on `SIPVoiceBackend` / `OutboundAudioPacer` that make Gemini-Live (and other realtime) calls viable over carrier trunks:
+  - `send_silence_on_answer` (seconds, default `0.0`) — one-shot PCM silence burst right after `200 OK` so carriers doing symmetric-RTP learning latch our stream before their ~8 s RTP-timeout drops the call.
+  - `outbound_silence_fill` / `OutboundAudioPacer.fill_with_silence_when_idle` — the pacer emits a 20 ms silence frame whenever its queue is empty, keeping RTP flowing at a steady 50 pps regardless of TTS chunk cadence (PSTN endpoints have no packet-loss concealment, so gaps become audible stutter).
+  - `GeminiLiveProvider.prime_realtime_input()` — pre-sends a 20 ms silence frame to flip the internal `realtime_input_sent` flag, so the first `inject_text` uses the audio-interleave-safe path and avoids the 1008 disconnect seen on some Gemini Live preview models.
+- **`examples/voice_sip_dial.py` wiring** — silence priming, jitter prefetch, outbound silence fill, `inject_text`-based greeting trigger, and `SIP_DEBUG` env var for a working outbound PSTN demo end-to-end.
+- **`send_event(..., created_at=)`** — optional override lets callers stamp emitted `RoomEvent`s with a chosen time instead of always "now". Needed so realtime voice transcriptions can carry the actual turn-start time.
+- **`ON_TOOL_CALL` hook for realtime skill-infra tools** — `activate_skill` and friends now fire the tool-call hook so audit and downstream broadcast hooks observe them identically to regular tools.
+
+### Fixed
+
+- **Choppy / cut-off audio on SIP realtime calls** — `RealtimeVoiceChannel` hardcoded `SincResamplerProvider` (pure-Python sin/cos loop, ~17 % of real-time at 24 k→8 k, ~30 % at 24 k→16 k) for per-session transport resamplers. A 100-200 ms Gemini/OpenAI Realtime burst blocked the event loop long enough to drain the `OutboundAudioPacer` 60 ms jitter headroom. Switched to `NumpyResamplerProvider` (vectorized `np.interp`, 6-15× faster) with a Sinc fallback when NumPy is absent — same preference order as `voice/bridge.py`. WebRTC was unaffected (no `transport_sample_rate` set).
+- **Realtime transcription ordering vs. mid-turn tool calls** — user transcriptions now carry the VAD `SPEECH_START` timestamp as `created_at`, so they sort before any tool calls Gemini fired mid-turn (which finalize earlier than transcription). Introduces `_user_turn_start_at` capture on `SPEECH_START`, cleared on session end.
+- **Muted sessions hanging deliveries** — `WaitForIdle` in `core/delivery` now degrades gracefully on timeout: if voice never falls silent (e.g. a muted session where audio can't drain), it delivers anyway instead of silently dropping. A WARN log surfaces the event.
+- **Pacer underrun noise** — `OutboundAudioPacer` only counts/logs an underrun when actually behind wall-clock. Empty-queue polls while the stream is ahead are silent.
+- **`FastRTCStreamHandler.send_message` LSP violation** — suppress the `ty` `invalid-method-override` diagnostic on the sync override of FastRTC's async base method. The override stays sync because `aiortc`'s `RTCDataChannel.send` is itself sync and existing call sites don't await the handler method.
+- **`TwilioWebSocketBackend` dropped first ~120 ms of every call** — `soxr.ResampleStream` at the default `"VHQ"` quality buffers six 20 ms Twilio frames before emitting any output, silently swallowing the opening words of every mu-law → PCM path. Switched to `quality="QQ"` (Quick), which emits a full chunk immediately and is still well above telephony-band fidelity for 8↔16 kHz. Resurfaces the 4 pre-existing resampler test failures as passes.
+
+### Observability
+
+- **Resampler selection logged at session start** — `RealtimeVoiceChannel` now logs which resampler was chosen (NumPy vs. Sinc) and the in/out sample rates, making the audio path visible in production logs.
+- **Resample-slow WARN guard** — inbound and outbound resample calls log at WARN when they exceed a single RTP frame (20 ms), surfacing future regressions as pipeline logs rather than user-reported jitter.
+- **Pacer end-of-response summary includes `max_behind_ms`** — call-quality signal stays observable even when `underruns == 0`.
+
+## [0.7.0a14] — 2026-04-17
+
+### Added
+
+- **`kit.status_bus` lifecycle posts across every orchestration strategy** — `post_agent_lifecycle` helper in `roomkit/orchestration/status_bus.py` with shared conventions (`agent_id` = observed agent; `action` in `task | handoff | iteration | review | pipeline`; detail capped at 200 chars):
+  - **Pipeline & Swarm** post via `HandoffHandler.handle` — `INFO` on every accepted handoff, `FAILED` on every rejected one.
+  - **Loop** posts `PENDING` / `COMPLETED` / `FAILED` around each producer iteration and each reviewer review, in both sequential and parallel modes. Reviewer turns that don't approve stay at `INFO` so subscribers can distinguish "reviewed" from "approved".
+  - **Supervisor** posts worker lifecycle events (pending / completed / failed) from every delegation path — sequential, parallel, and per-worker tools — plus a terminal pipeline-level entry under `agent_id="orchestration"`.
+- **`async_delivery=True` in Supervisor strategy-tool mode** — no longer voice-only. With `strategy="sequential" | "parallel"`, workers dispatch as a background task and the supervisor returns `{"status": "dispatched", ...}` immediately; their combined output arrives back in the room via `kit.deliver()` when done, re-triggering the supervisor. This prevents the 300 s `tool_loop_timeout_seconds` from aggregating worker wall-clock time — each agent's timeout now covers only its own reasoning turn.
+
+### Fixed
+
+- **Supervisor `_running` / `_dedup_cache` atomicity on background failures** — if `asyncio.create_task` raised mid-dispatch (shutdown race), `_running` stayed set forever and the room was permanently marked busy. Both the strategy-tool path and the voice `auto_delegate` path now wrap `create_task` in `try/except BaseException` and discard `_running` on failure.
+- **Stale dedup cache on pipeline failure** — when the background `_async_run_and_deliver` itself failed, its cached "dispatched" response survived for the 30 s dedup window and silently swallowed retries. A success flag threaded through the `on_done` callback now evicts the dedup entry on failure in the strategy-tool path.
+- **Supervisor `agents()` / `install()` attach rules** — `async_delivery` now only skips attaching the supervisor in voice `auto_delegate` mode; strategy-tool mode keeps the supervisor attached so it can continue driving the conversation.
+
+### Chores
+
+- **`chore(release): publish only the current version's artifacts`** — `scripts/release.sh` now uploads exactly the current version's `*.tar.gz` + `*-py3-none-any.whl` instead of the whole `dist/` directory, which was failing when older wheels from prior releases were still sitting there.
+
 ## [0.7.0a13] — 2026-04-16
 
 ### Added
@@ -723,7 +770,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[0.7.0a13]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a12...HEAD
+[0.7.0a15]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a14...HEAD
+[0.7.0a14]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a13...v0.7.0a14
+[0.7.0a13]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a12...v0.7.0a13
 [0.7.0a12]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a11...v0.7.0a12
 [0.7.0a11]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a10...v0.7.0a11
 [0.7.0a10]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a8...v0.7.0a10
