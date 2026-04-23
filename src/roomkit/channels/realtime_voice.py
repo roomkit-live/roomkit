@@ -640,11 +640,33 @@ class RealtimeVoiceChannel(
             needs_inbound = transport_rate != self._input_sample_rate
             needs_outbound = transport_rate != self._output_sample_rate
             if needs_inbound or needs_outbound:
-                from roomkit.voice.pipeline.resampler.sinc import SincResamplerProvider
+                # NumPy first — vectorised linear interp runs 6–15× faster
+                # than the pure-Python sinc fallback, which blocks the event
+                # loop long enough at 24 k → 8/16 k to starve the SIP RTP
+                # pacer (60 ms jitter headroom burns in a single resample
+                # call on a realtime-provider burst). See voice/bridge.py
+                # for the same preference order used elsewhere.
+                try:
+                    from roomkit.voice.pipeline.resampler.numpy import (
+                        NumpyResamplerProvider as _Resampler,
+                    )
+                except ImportError:
+                    from roomkit.voice.pipeline.resampler.sinc import (
+                        SincResamplerProvider as _Resampler,
+                    )
 
                 self._session_resamplers[session.id] = (
-                    SincResamplerProvider(),  # inbound: transport → provider
-                    SincResamplerProvider(),  # outbound: provider → transport
+                    _Resampler(),  # inbound: transport → provider
+                    _Resampler(),  # outbound: provider → transport
+                )
+                logger.info(
+                    "Realtime resampler for session %s: %s (transport=%d, "
+                    "provider_in=%d, provider_out=%d)",
+                    session.id,
+                    _Resampler.__name__,
+                    transport_rate,
+                    self._input_sample_rate,
+                    self._output_sample_rate,
                 )
 
         # Connect to provider (with telemetry span).

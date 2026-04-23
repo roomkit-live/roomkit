@@ -407,7 +407,17 @@ class RealtimeAudioMixin:
                     channels=1,
                     sample_width=2,
                 )
+                t0 = time.monotonic()
                 frame = resamplers[0].resample(frame, self._input_sample_rate, 1, 2)
+                dt_ms = (time.monotonic() - t0) * 1000
+                if dt_ms > 20.0:
+                    logger.warning(
+                        "inbound resample slow: %.1fms in_bytes=%d rate=%d→%d",
+                        dt_ms,
+                        len(audio),
+                        transport_rate,
+                        self._input_sample_rate,
+                    )
                 audio = frame.data
 
             self._fire_audio_level_task(
@@ -535,6 +545,20 @@ class RealtimeAudioMixin:
                 channels=1,
                 sample_width=2,
             )
+            # Runs on the asyncio event loop. A slow resampler here (pure-
+            # Python sinc on a 100 ms realtime-provider burst) blocks RTP
+            # pacing long enough to cause audible gaps on PSTN, so we warn
+            # when the call exceeds a 20 ms (single RTP frame) budget.
+            t0 = time.monotonic()
             frame = resamplers[1].resample(frame, transport_rate, 1, 2)
+            dt_ms = (time.monotonic() - t0) * 1000
+            if dt_ms > 20.0:
+                logger.warning(
+                    "outbound resample slow: %.1fms in_bytes=%d rate=%d→%d",
+                    dt_ms,
+                    len(audio),
+                    self._output_sample_rate,
+                    transport_rate,
+                )
             return bytes(frame.data)
         return audio

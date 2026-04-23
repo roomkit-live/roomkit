@@ -303,9 +303,12 @@ class OutboundAudioPacer:
 
             # --- Paced sending phase: process queue items ---
             underruns = 0
+            max_behind_ms = 0.0
             while True:
                 # Check how far ahead of wall-clock we are
                 ahead = cumulative - (time.monotonic() - pace_start)
+                if -ahead * 1000 > max_behind_ms:
+                    max_behind_ms = -ahead * 1000
                 # Wait for the next chunk with a timeout slightly beyond
                 # our lead time.  If the queue runs dry, that's an underrun.
                 # When silence-fill is enabled we cap the timeout at 20 ms
@@ -343,8 +346,12 @@ class OutboundAudioPacer:
                     if next_item == _STOP:
                         return
                     if next_item == _RESPONSE_END:
-                        if underruns:
-                            logger.info("Pacer: response done, %d underruns", underruns)
+                        if underruns or max_behind_ms > 20:
+                            logger.info(
+                                "Pacer: response done, underruns=%d max_behind=%.0fms",
+                                underruns,
+                                max_behind_ms,
+                            )
                         self._response_done.set()
                         break  # back to outer loop for next response
                     continue

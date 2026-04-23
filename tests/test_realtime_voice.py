@@ -798,8 +798,13 @@ class TestInterruptionFlush:
         # Verify the resampler state was cleared
         resamplers = resample_channel._session_resamplers.get(session.id)
         assert resamplers is not None
-        # Outbound resampler should have no pending state
-        assert len(resamplers[1]._state) == 0
+        # Outbound resampler should have no pending state. The Sinc provider
+        # keeps a look-ahead buffer in ``_state`` (must be empty after
+        # reset); the Numpy provider is stateless so the invariant is
+        # vacuously true — skip the attribute check in that case.
+        state = getattr(resamplers[1], "_state", None)
+        if state is not None:
+            assert len(state) == 0
 
 
 class TestResamplingMatchingRates:
