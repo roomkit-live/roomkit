@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **RFC 3326 BYE `Reason` exposed on SIP sessions** — `SIPVoiceBackend._handle_bye` now parses the carrier `Reason: Q.850 ;cause=N ;text="…"` header on every BYE and stashes the result on `session.metadata["bye_reason"]` (`{"cause": int, "text": str}`). A canonical Q.850 cause→text map fills in `text` when the carrier omits it. The same dict is attached to the inbound BYE `ProtocolTrace` metadata. Lets dialer orchestrators distinguish "user rejected" from "no circuits" from "normal hangup" without re-parsing the wire — the SIP layer just exposes what it sees; consumers decide what to do with it.
+- **`parse_bye_reason()` helper** in `roomkit.voice.backends._sip_types` — accepts `str | bytes | None`, returns the parsed `{"cause", "text"}` dict or `None`.
+
+### Fixed
+
+- **`RealtimeVoiceChannel.start_session()` swallowed `CancelledError` without cleanup.** The bare `except Exception:` around the long `provider.connect()` await didn't catch `asyncio.CancelledError` (Python 3.8+), so when an orchestrator (e.g. SIP dialer on remote BYE) cancelled the in-flight handshake, the cancellation propagated without running resampler / idle-event / skill-state teardown — leaving partial-state leaks on the transport and provider. The handler now catches `(Exception, asyncio.CancelledError)` together, runs cleanup unconditionally, and branches the log path: real exceptions still log at ERROR with a stack, deliberate cancellations log a single INFO line so dashboards stay quiet.
+
+## [0.7.0a16] — 2026-04-23
+
 ### Fixed
 
 - **`OpenAIRealtimeProvider.connect()` silently ignored `input_sample_rate` and `output_sample_rate`.** Input format was hardcoded to `{type: 'audio/pcm', rate: 24000}` and output format was never rebuilt from the parameter. A caller passing the ABC default of 16 kHz got 24 kHz on the wire, so the API played their audio back 1.5× faster than intended. The provider now honours both rates — but per the GA API, PCM is only accepted at 24 kHz, so invalid rates now raise `ValueError` up-front instead of silently mis-routing.
