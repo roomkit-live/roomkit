@@ -5,11 +5,20 @@ from __future__ import annotations
 import asyncio
 import secrets
 import time
+from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
 from roomkit.voice.backends._sip_types import NONCE_TTL, compute_digest, logger, resolve_local_ip
 
-__all__ = ["SIPAuthMixin"]
+__all__ = ["AuthResolver", "SIPAuthMixin"]
+
+
+# Callback consulted per authentication attempt. Receives the username
+# from the digest credentials and returns the matching password, or
+# ``None`` to deny. Synchronous so it can run inside the SIP message
+# loop — back the resolver with an in-memory cache when the source of
+# truth is a database.
+AuthResolver = Callable[[str], str | None]
 
 
 @runtime_checkable
@@ -24,6 +33,7 @@ class SIPAuthHost(Protocol):
         _auth_users: Username-to-password map for inbound auth.
         _auth_realm: Digest authentication realm.
         _auth_nonces: Active nonce-to-expiry map.
+        _auth_resolver: Optional callback-based credential lookup.
         _register_params: Outbound registration parameters.
         _register_response_future: Pending REGISTER response future.
         _registration_task: Background registration renewal task.
@@ -39,6 +49,7 @@ class SIPAuthHost(Protocol):
     _auth_users: dict[str, str] | None
     _auth_realm: str
     _auth_nonces: dict[str, float]
+    _auth_resolver: AuthResolver | None
     _register_params: dict[str, Any] | None
     _register_response_future: asyncio.Future[Any] | None
     _registration_task: asyncio.Task[None] | None
@@ -60,12 +71,44 @@ class SIPAuthMixin:
     _auth_users: dict[str, str] | None
     _auth_realm: str
     _auth_nonces: dict[str, float]
+    _auth_resolver: AuthResolver | None
     _register_params: dict[str, Any] | None
     _register_response_future: asyncio.Future[Any] | None
     _registration_task: asyncio.Task[None] | None
     _registered: bool
     _local_rtp_ip: str
     _advertised_ip: str | None
+
+    # -------------------------------------------------------------------------
+    # Public API: runtime credential resolver
+    # -------------------------------------------------------------------------
+
+    def set_auth_resolver(self, resolver: AuthResolver | None) -> None:
+        """Install a callback that looks up the password for a username.
+
+        Called for every authenticated INVITE.  Returning ``None`` denies
+        the user (the backend sends 403).  Takes precedence over the
+        ``auth_users`` dict passed at construction.
+
+        Pass ``None`` to remove a previously installed resolver and fall
+        back to ``auth_users`` (or disable auth entirely if both are
+        absent).
+
+        Use this when credentials live outside the process — a database,
+        secret manager, or per-tenant config — so they can be added or
+        revoked without restarting the backend.  The resolver runs
+        synchronously inside the SIP message loop, so back it with an
+        in-memory cache when the source of truth is remote.
+        """
+        self._auth_resolver = resolver
+
+    def has_auth(self) -> bool:
+        """True when at least one credential source is configured.
+
+        Use this to gate ``_handle_invite``'s auth check — both an
+        ``auth_users`` dict and a resolver count as "auth enabled".
+        """
+        return bool(self._auth_users) or self._auth_resolver is not None
 
     # -------------------------------------------------------------------------
     # SIP message dispatch (wraps UAS handler for REGISTER interception)
@@ -112,8 +155,18 @@ class SIPAuthMixin:
             self._send_auth_challenge(call)
             return False
 
-        # Validate credentials
-        password = self._auth_users.get(username) if self._auth_users else None
+        # Validate credentials. Resolver wins when set so the application
+        # can override the static dict (or skip the dict entirely for
+        # multi-tenant / database-backed deployments).
+        password: str | None = None
+        if self._auth_resolver is not None:
+            try:
+                password = self._auth_resolver(username)
+            except Exception:
+                logger.exception("SIP auth resolver raised for username=%s", username)
+                password = None
+        if password is None and self._auth_users:
+            password = self._auth_users.get(username)
         if password is None:
             call.reject(403, "Forbidden")
             return False

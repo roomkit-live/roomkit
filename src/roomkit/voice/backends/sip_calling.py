@@ -53,6 +53,7 @@ class SIPCallingHost(Protocol):
 
     Cross-mixin methods (implemented elsewhere in the MRO):
         _validate_invite_auth: Check digest auth on INVITE (SIPAuthMixin).
+        has_auth: Whether either auth_users or a resolver is configured (SIPAuthMixin).
         _make_audio_handler: Create audio callback for session (SIPAudioMixin).
         _make_dtmf_handler: Create DTMF callback for session (SIPAudioMixin).
     """
@@ -84,6 +85,8 @@ class SIPCallingHost(Protocol):
     _send_silence_on_answer: float
 
     def _validate_invite_auth(self, call: Any) -> bool: ...
+
+    def has_auth(self) -> bool: ...
 
     def _make_audio_handler(self, session: VoiceSession) -> Any: ...
 
@@ -126,6 +129,7 @@ class SIPCallingMixin:
     _disconnect_callbacks: list[Any]
     _send_silence_on_answer: float
     _validate_invite_auth: Any  # see SIPCallingHost — cross-mixin, from SIPAuthMixin
+    has_auth: Any  # see SIPCallingHost — cross-mixin, from SIPAuthMixin
     _make_audio_handler: Any  # see SIPCallingHost — cross-mixin, from SIPAudioMixin
     _make_dtmf_handler: Any  # see SIPCallingHost — cross-mixin, from SIPAudioMixin
     _send_pcm_bytes: Any  # see SIPCallingHost — cross-mixin, from SIPAudioMixin
@@ -144,8 +148,10 @@ class SIPCallingMixin:
             self._handle_reinvite(call)
             return
 
-        # Challenge unauthenticated callers when auth is configured
-        if self._auth_users and not self._validate_invite_auth(call):
+        # Challenge unauthenticated callers when auth is configured —
+        # either via the static ``auth_users`` dict or a resolver
+        # installed by ``set_auth_resolver``. Both count.
+        if self.has_auth() and not self._validate_invite_auth(call):
             return
 
         if call.sdp_offer is None:

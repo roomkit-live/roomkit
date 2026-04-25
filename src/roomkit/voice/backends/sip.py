@@ -100,7 +100,11 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
             to disable.  Default 30.
         auth_users: Optional mapping of ``username → password`` for
             inbound digest authentication.  When set, incoming INVITEs
-            without valid credentials are challenged with 401.
+            without valid credentials are challenged with 401.  For
+            multi-tenant or large credential stores prefer
+            :meth:`set_auth_resolver` instead — the resolver is consulted
+            on every authentication attempt, so the application owns
+            credential storage.
         auth_realm: Realm string used in the ``WWW-Authenticate``
             challenge header (default ``"roomkit"``).
         send_silence_on_answer: Seconds of PCM silence to push through
@@ -161,6 +165,10 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._auth_users = auth_users
         self._auth_realm = auth_realm
         self._auth_nonces: dict[str, float] = {}
+        # Optional callback-based credential lookup. Takes precedence over
+        # ``auth_users`` when set. Returning ``None`` denies the user.
+        # Installed at runtime via ``set_auth_resolver``.
+        self._auth_resolver: Callable[[str], str | None] | None = None
 
         # Outbound registration state
         self._register_params: dict[str, Any] | None = None

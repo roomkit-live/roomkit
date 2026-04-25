@@ -223,6 +223,7 @@ def _make_backend(
     b._auth_users = auth_users
     b._auth_realm = auth_realm
     b._auth_nonces = {}
+    b._auth_resolver = None
     b._register_params = None
     b._register_response_future = None
     b._registration_task = None
@@ -456,6 +457,198 @@ class TestInboundAuthValidation:
         finally:
             if original_parse_auth is not None:
                 aiosipua.parse_auth = original_parse_auth  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Auth resolver tests
+# ---------------------------------------------------------------------------
+
+
+def _stub_parse_auth(creds_params: dict[str, str]):
+    """Patch ``aiosipua.parse_auth`` to return ``creds_params``.
+
+    Returns the original so the caller can restore it. Used by tests
+    that exercise ``_validate_invite_auth`` with a pre-built header.
+    """
+    import aiosipua
+
+    original = getattr(aiosipua, "parse_auth", None)
+    mock_creds = MagicMock()
+    mock_creds.params = creds_params
+    aiosipua.parse_auth = lambda s: mock_creds  # type: ignore[attr-defined]
+    return original
+
+
+def _restore_parse_auth(original) -> None:
+    import aiosipua
+
+    if original is not None:
+        aiosipua.parse_auth = original  # type: ignore[attr-defined]
+
+
+class TestAuthResolver:
+    """Test the ``set_auth_resolver`` runtime credential lookup."""
+
+    def test_resolver_authenticates(self) -> None:
+        """A resolver returning the right password authenticates the call."""
+        backend = _make_backend(auth_users=None, auth_realm="test.com")
+
+        resolver_calls: list[str] = []
+
+        def resolver(username: str) -> str | None:
+            resolver_calls.append(username)
+            return "from-resolver" if username == "alice" else None
+
+        backend.set_auth_resolver(resolver)
+
+        nonce = "abc123def456"
+        backend._auth_nonces[nonce] = time.monotonic() + 60
+        uri = "sip:bot@example.com"
+        digest = _compute_digest("alice", "test.com", "from-resolver", "INVITE", uri, nonce)
+
+        call = FakeIncomingCall()
+        call.invite.set_header("authorization", "Digest ...")
+        original = _stub_parse_auth({
+            "username": "alice",
+            "nonce": nonce,
+            "uri": uri,
+            "response": digest,
+        })
+        try:
+            assert backend._validate_invite_auth(call) is True
+            assert resolver_calls == ["alice"]
+            assert not call._rejected
+        finally:
+            _restore_parse_auth(original)
+
+    def test_resolver_returning_none_rejects(self) -> None:
+        backend = _make_backend(auth_users=None, auth_realm="test.com")
+        backend.set_auth_resolver(lambda _username: None)
+
+        nonce = "abc123def456"
+        backend._auth_nonces[nonce] = time.monotonic() + 60
+
+        call = FakeIncomingCall()
+        call.invite.set_header("authorization", "Digest ...")
+        original = _stub_parse_auth({
+            "username": "anyone",
+            "nonce": nonce,
+            "uri": "sip:bot@example.com",
+            "response": "whatever",
+        })
+        try:
+            assert backend._validate_invite_auth(call) is False
+            assert call._rejected
+            assert call._reject_code == 403
+        finally:
+            _restore_parse_auth(original)
+
+    def test_resolver_takes_precedence_over_dict(self) -> None:
+        """When both resolver and auth_users provide credentials, resolver wins.
+
+        Lets the application override stale dict entries without restart
+        — important for credential rotation flows.
+        """
+        backend = _make_backend(
+            auth_users={"alice": "old-password"},
+            auth_realm="test.com",
+        )
+        backend.set_auth_resolver(lambda u: "new-password" if u == "alice" else None)
+
+        nonce = "abc123def456"
+        backend._auth_nonces[nonce] = time.monotonic() + 60
+        uri = "sip:bot@example.com"
+        # Digest computed with the NEW password — only succeeds if the
+        # resolver was consulted, not the dict.
+        digest = _compute_digest("alice", "test.com", "new-password", "INVITE", uri, nonce)
+
+        call = FakeIncomingCall()
+        call.invite.set_header("authorization", "Digest ...")
+        original = _stub_parse_auth({
+            "username": "alice",
+            "nonce": nonce,
+            "uri": uri,
+            "response": digest,
+        })
+        try:
+            assert backend._validate_invite_auth(call) is True
+        finally:
+            _restore_parse_auth(original)
+
+    def test_resolver_falls_through_to_dict(self) -> None:
+        """When the resolver returns None, the static dict is consulted."""
+        backend = _make_backend(
+            auth_users={"alice": "from-dict"},
+            auth_realm="test.com",
+        )
+        backend.set_auth_resolver(lambda _u: None)
+
+        nonce = "abc123def456"
+        backend._auth_nonces[nonce] = time.monotonic() + 60
+        uri = "sip:bot@example.com"
+        digest = _compute_digest("alice", "test.com", "from-dict", "INVITE", uri, nonce)
+
+        call = FakeIncomingCall()
+        call.invite.set_header("authorization", "Digest ...")
+        original = _stub_parse_auth({
+            "username": "alice",
+            "nonce": nonce,
+            "uri": uri,
+            "response": digest,
+        })
+        try:
+            assert backend._validate_invite_auth(call) is True
+        finally:
+            _restore_parse_auth(original)
+
+    def test_resolver_exception_denies(self) -> None:
+        """A raising resolver is caught and treated as a denied user.
+
+        Otherwise a buggy lookup callback would crash the SIP message
+        loop and disconnect every other call on the backend.
+        """
+        backend = _make_backend(auth_users=None, auth_realm="test.com")
+
+        def boom(_username: str) -> str | None:
+            raise RuntimeError("db down")
+
+        backend.set_auth_resolver(boom)
+
+        nonce = "abc123def456"
+        backend._auth_nonces[nonce] = time.monotonic() + 60
+
+        call = FakeIncomingCall()
+        call.invite.set_header("authorization", "Digest ...")
+        original = _stub_parse_auth({
+            "username": "alice",
+            "nonce": nonce,
+            "uri": "sip:bot@example.com",
+            "response": "whatever",
+        })
+        try:
+            assert backend._validate_invite_auth(call) is False
+            assert call._rejected
+            assert call._reject_code == 403
+        finally:
+            _restore_parse_auth(original)
+
+    def test_has_auth_reflects_both_sources(self) -> None:
+        """``has_auth`` is True iff at least one credential source exists."""
+        backend = _make_backend(auth_users=None)
+        assert backend.has_auth() is False
+
+        backend._auth_users = {}
+        assert backend.has_auth() is False  # empty dict still counts as "no auth"
+
+        backend._auth_users = {"alice": "pass"}
+        assert backend.has_auth() is True
+
+        backend._auth_users = None
+        backend.set_auth_resolver(lambda _u: None)
+        assert backend.has_auth() is True  # resolver alone is enough
+
+        backend.set_auth_resolver(None)
+        assert backend.has_auth() is False
 
 
 # ---------------------------------------------------------------------------
