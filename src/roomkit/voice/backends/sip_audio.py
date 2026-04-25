@@ -115,7 +115,18 @@ class SIPAudioMixin:
         )
 
     async def disconnect(self, session: VoiceSession) -> None:
-        """Disconnect a SIP session, sending BYE if the call is still active."""
+        """Disconnect a SIP session, sending BYE if the call is still active.
+
+        For inbound calls, the dialog only reaches ``CONFIRMED`` once the
+        ACK arrives — usually within 1 RTT after our 200 OK. If
+        ``disconnect()`` is called from the ``on_call`` callback (e.g.
+        an application-level routing decision rejects the call right
+        after accept), we may beat the ACK and find the dialog still in
+        ``EARLY``. We poll briefly so the BYE gets sent reliably; if
+        ACK never arrives we log a warning and skip the BYE rather than
+        sending it into an un-confirmed dialog (which the carrier would
+        reject).
+        """
         await self.cancel_audio(session)
 
         state = self._session_states.get(session.id)
@@ -127,6 +138,15 @@ class SIPAudioMixin:
         if call is not None and self._uac is not None:
             try:
                 from aiosipua import DialogState
+
+                # Wait up to ~500 ms for the carrier ACK to land. One
+                # network RTT is the usual case; the longer cap covers
+                # bursty / lossy links. Polling instead of installing
+                # an ACK callback keeps the patch local.
+                for _ in range(50):
+                    if call.dialog.state == DialogState.CONFIRMED:
+                        break
+                    await asyncio.sleep(0.01)
 
                 if call.dialog.state == DialogState.CONFIRMED:
                     self._uac.send_bye(call.dialog, call.source_addr)
@@ -144,6 +164,15 @@ class SIPAudioMixin:
                                 room_id=session.metadata.get("room_id"),
                             )
                         )
+                else:
+                    logger.warning(
+                        "SIP disconnect: dialog still %s after 500ms wait "
+                        "(call_id=%s, session=%s) — skipping BYE; carrier "
+                        "may keep the call alive until its own timeout.",
+                        call.dialog.state,
+                        call.call_id,
+                        session.id,
+                    )
             except Exception:
                 logger.exception("Failed to send BYE for session %s", session.id)
 
