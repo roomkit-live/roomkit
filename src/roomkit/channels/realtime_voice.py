@@ -710,14 +710,33 @@ class RealtimeVoiceChannel(
                     server_vad=not has_pipeline_vad,
                     provider_config=provider_config,
                 )
-        except Exception:
-            logger.exception(
-                "provider.connect failed for session %s; cleaning up transport", session.id
-            )
+        except (Exception, asyncio.CancelledError) as exc:
             self._session_resamplers.pop(session.id, None)
             self._session_transport_rates.pop(session.id, None)
+            self._idle_events.pop(session.id, None)
+            self._user_speaking.pop(session.id, None)
+            self._provider_idle.pop(session.id, None)
+            if self._skill_support:
+                self._skill_support.cleanup_session(session.id)
+            with contextlib.suppress(Exception):
+                await self._provider.disconnect(session)
             with contextlib.suppress(Exception):
                 await self._transport.disconnect(session)
+            # CancelledError here is the orchestrator deliberately aborting
+            # a still-handshaking session (e.g. carrier hung up before the
+            # provider WS connected). It's expected control flow, not a
+            # bug — log it as info without a traceback so dashboards stay
+            # quiet. Real failures keep their full stack trace.
+            if isinstance(exc, asyncio.CancelledError):
+                logger.info(
+                    "provider.connect cancelled for session %s — transport cleaned up",
+                    session.id,
+                )
+            else:
+                logger.exception(
+                    "provider.connect failed for session %s; cleaned up transport",
+                    session.id,
+                )
             raise
 
         session.state = VoiceSessionState.ACTIVE
