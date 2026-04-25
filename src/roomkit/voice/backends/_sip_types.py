@@ -204,6 +204,8 @@ def parse_bye_reason(raw: str | bytes | None) -> dict[str, Any] | None:
             raw = raw.decode("utf-8", errors="replace")
         except Exception:
             return None
+    if not isinstance(raw, str):
+        return None
     m = _BYE_REASON_RE.search(raw)
     if not m:
         return None
