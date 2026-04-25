@@ -143,13 +143,24 @@ class SIPAudioMixin:
                 # network RTT is the usual case; the longer cap covers
                 # bursty / lossy links. Polling instead of installing
                 # an ACK callback keeps the patch local.
+                initial_state = call.dialog.state
+                waited_iterations = 0
                 for _ in range(50):
                     if call.dialog.state == DialogState.CONFIRMED:
                         break
+                    waited_iterations += 1
                     await asyncio.sleep(0.01)
 
                 if call.dialog.state == DialogState.CONFIRMED:
                     self._uac.send_bye(call.dialog, call.source_addr)
+                    logger.info(
+                        "SIP BYE sent for inbound session %s "
+                        "(call_id=%s, initial_state=%s, waited=%dms)",
+                        session.id,
+                        call.call_id,
+                        initial_state,
+                        waited_iterations * 10,
+                    )
 
                     if self._trace_emitter is not None:
                         self._trace_emitter(
