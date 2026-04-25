@@ -13,6 +13,7 @@ from roomkit.voice.backends._sip_types import (
     PT_PCMU,
     SIPSessionState,
     logger,
+    parse_bye_reason,
     resolve_local_ip,
 )
 from roomkit.voice.base import VoiceSession, VoiceSessionState
@@ -385,8 +386,20 @@ class SIPCallingMixin:
         session = state.session if state is not None else None
         call_session = state.call_session if state is not None else None
 
+        # Parse the RFC 3326 ``Reason`` header once and stash it on the
+        # session so downstream consumers (dialer, telemetry) can surface
+        # the carrier-reported Q.850 cause without re-parsing the wire.
+        # We also attach it to the ProtocolTrace metadata so callers that
+        # only watch traces get the same signal.
+        bye_raw = request.serialize() if hasattr(request, "serialize") else None
+        bye_reason = parse_bye_reason(bye_raw)
+        if bye_reason is not None and session is not None:
+            session.metadata["bye_reason"] = bye_reason
+
         if self._trace_emitter is not None and session is not None:
-            bye_raw = request.serialize() if hasattr(request, "serialize") else None
+            trace_metadata: dict[str, Any] = {"call_id": call.call_id}
+            if bye_reason is not None:
+                trace_metadata["bye_reason"] = bye_reason
             self._trace_emitter(
                 ProtocolTrace(
                     channel_id=session.channel_id,
@@ -394,7 +407,7 @@ class SIPCallingMixin:
                     protocol="sip",
                     summary=f"BYE from {call.caller}",
                     raw=bye_raw,
-                    metadata={"call_id": call.call_id},
+                    metadata=trace_metadata,
                     session_id=session.id,
                     room_id=session.metadata.get("room_id"),
                 )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -152,6 +153,66 @@ def compute_digest(
     ha1 = hashlib.md5(f"{username}:{realm}:{password}".encode()).hexdigest()  # nosec B324  # noqa: S324
     ha2 = hashlib.md5(f"{method}:{uri}".encode()).hexdigest()  # nosec B324  # noqa: S324
     return hashlib.md5(f"{ha1}:{nonce}:{ha2}".encode()).hexdigest()  # nosec B324  # noqa: S324
+
+
+# RFC 3326 "Reason" header: ``Reason: Q.850 ;cause=N ;text="…"``.
+# Carriers and PBXs attach this to BYE / CANCEL / 4xx-6xx responses to
+# explain *why* a call leg dropped — essential for the caller's dashboard
+# to distinguish "user rejected" from "no circuits" from "normal hangup".
+_BYE_REASON_RE = re.compile(
+    r'^\s*Reason\s*:\s*Q\.850\s*;\s*cause\s*=\s*(\d+)(?:\s*;\s*text\s*=\s*"([^"]*)")?',
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Q.850 cause codes (ITU-T). Only the ones we regularly see are given a
+# short canonical text; anything else falls through to the header's own
+# ``text=""`` field if present, or a generic "Q.850 cause N" label.
+_Q850_CAUSES: dict[int, str] = {
+    16: "Normal call clearing",
+    17: "User busy",
+    18: "No user responding",
+    19: "No answer from user",
+    21: "Call rejected",
+    22: "Number changed",
+    27: "Destination out of order",
+    28: "Invalid number format",
+    31: "Normal, unspecified",
+    34: "No circuit or channel available",
+    38: "Network out of order",
+    41: "Temporary failure",
+    42: "Switching equipment congestion",
+    47: "Resource unavailable",
+    63: "Service or option unavailable",
+    88: "Incompatible destination",
+}
+
+
+def parse_bye_reason(raw: str | bytes | None) -> dict[str, Any] | None:
+    """Extract ``(cause, text)`` from a BYE's RFC 3326 ``Reason`` header.
+
+    Accepts either the serialized SIP message (str) or its wire bytes.
+    Returns a ``{"cause": int, "text": str}`` dict, or ``None`` if no
+    ``Reason: Q.850 ;cause=N`` header is present. When the carrier
+    omits the ``text=""`` field, a canonical label is looked up from
+    :data:`_Q850_CAUSES`; otherwise ``"Q.850 cause N"`` is used so
+    callers always get something human-readable.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("utf-8", errors="replace")
+        except Exception:
+            return None
+    m = _BYE_REASON_RE.search(raw)
+    if not m:
+        return None
+    cause = int(m.group(1))
+    text = m.group(2)
+    return {
+        "cause": cause,
+        "text": text or _Q850_CAUSES.get(cause) or f"Q.850 cause {cause}",
+    }
 
 
 def resolve_local_ip(local_rtp_ip: str, remote_addr: tuple[str, int]) -> str:
