@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sys
 import time
 import types
@@ -224,6 +225,7 @@ def _make_backend(
     b._auth_realm = auth_realm
     b._auth_nonces = {}
     b._auth_resolver = None
+    b._invite_filter = None
     b._register_params = None
     b._register_response_future = None
     b._registration_task = None
@@ -659,6 +661,142 @@ class TestAuthResolver:
 
         backend.set_auth_resolver(None)
         assert backend.has_auth() is False
+
+
+# ---------------------------------------------------------------------------
+# Invite filter tests
+# ---------------------------------------------------------------------------
+
+
+class TestInviteFilter:
+    """Test ``set_invite_filter`` and the pre-accept reject path."""
+
+    def test_set_filter_stores_callback(self) -> None:
+        backend = _make_backend()
+        assert backend._invite_filter is None
+
+        def my_filter(call: Any) -> tuple[int, str] | None:
+            return None
+
+        backend.set_invite_filter(my_filter)
+        assert backend._invite_filter is my_filter
+
+        backend.set_invite_filter(None)
+        assert backend._invite_filter is None
+
+    @pytest.mark.asyncio
+    async def test_filter_returning_tuple_rejects(self) -> None:
+        """A filter returning ``(status, reason)`` must call ``call.reject``
+        and short-circuit before any RTP/SDP work."""
+        backend = _make_backend()
+        backend.set_invite_filter(lambda call: (403, "Forbidden by filter"))
+
+        call = FakeIncomingCall()
+        # Sanity: dialog state machine sees no responses before
+        assert not call._rejected
+
+        await backend._handle_invite(call)
+
+        assert call._rejected is True
+        assert call._reject_code == 403
+        # No session state created — filter rejected before accept
+        assert call.call_id not in backend._call_to_session
+
+    @pytest.mark.asyncio
+    async def test_filter_returning_none_proceeds(self) -> None:
+        """A filter returning ``None`` lets the call continue.
+
+        The downstream SDP path will reject with 488 because our fake
+        call has a non-None ``sdp_offer`` but the rest of the pipeline
+        (RTP allocation, SDP negotiation) is mocked — it'll fall over
+        before reaching 200 OK. The point of this test is that the
+        filter itself didn't short-circuit.
+        """
+        called: list[Any] = []
+
+        def my_filter(call: Any) -> None:
+            called.append(call)
+            return None
+
+        backend = _make_backend()
+        backend.set_invite_filter(my_filter)
+
+        call = FakeIncomingCall()
+        # _handle_invite will likely error past the filter (RTP/SDP
+        # internals are MagicMock), but we only assert the filter ran
+        # and didn't reject.
+        with contextlib.suppress(Exception):
+            await backend._handle_invite(call)
+
+        assert len(called) == 1
+        assert called[0] is call
+        # Filter returned None — no 4xx rejection from this branch.
+        # If the call ended up rejected, it was the SDP/codec path with
+        # 488, not our 403/404 rejection.
+        if call._rejected:
+            assert call._reject_code != 403
+
+    @pytest.mark.asyncio
+    async def test_async_filter_supported(self) -> None:
+        """Coroutine filters are awaited inside the dispatch task."""
+
+        async def async_filter(_call: Any) -> tuple[int, str]:
+            return (404, "Not Found by async filter")
+
+        backend = _make_backend()
+        backend.set_invite_filter(async_filter)
+
+        call = FakeIncomingCall()
+        await backend._handle_invite(call)
+
+        assert call._rejected is True
+        assert call._reject_code == 404
+
+    @pytest.mark.asyncio
+    async def test_filter_exception_rejects_500(self) -> None:
+        """A raising filter is caught and treated as 500 rejection.
+
+        Otherwise a buggy filter would crash the SIP dispatcher and
+        every subsequent INVITE on the backend.
+        """
+
+        def boom(_call: Any) -> tuple[int, str]:
+            raise RuntimeError("filter exploded")
+
+        backend = _make_backend()
+        backend.set_invite_filter(boom)
+
+        call = FakeIncomingCall()
+        await backend._handle_invite(call)
+
+        assert call._rejected is True
+        assert call._reject_code == 500
+
+    @pytest.mark.asyncio
+    async def test_filter_runs_after_auth(self) -> None:
+        """Failing auth short-circuits before the filter ever runs.
+
+        Order matters: the filter receives an authenticated call, so
+        applications can rely on ``caller_user`` being trustworthy.
+        """
+        called: list[Any] = []
+
+        def my_filter(call: Any) -> None:
+            called.append(call)
+            return None
+
+        backend = _make_backend(auth_users={"alice": "pass"})
+        backend.set_invite_filter(my_filter)
+
+        call = FakeIncomingCall()
+        # No Authorization header → auth challenge sends 401 and returns
+        # without calling the filter.
+        await backend._handle_invite(call)
+
+        assert called == []
+        # 401 challenge sent via send_reply
+        transport: FakeTransport = backend._transport  # type: ignore[assignment]
+        assert any(getattr(r, "status_code", None) == 401 for r in transport.replies)
 
 
 # ---------------------------------------------------------------------------

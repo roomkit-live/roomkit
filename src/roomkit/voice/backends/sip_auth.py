@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, runtime_checkable
 
 from roomkit.voice.backends._sip_types import NONCE_TTL, compute_digest, logger, resolve_local_ip
 
-__all__ = ["AuthResolver", "SIPAuthMixin"]
+__all__ = ["AuthResolver", "InviteFilter", "InviteFilterDecision", "SIPAuthMixin"]
 
 
 # Callback consulted per authentication attempt. Receives the username
@@ -19,6 +19,22 @@ __all__ = ["AuthResolver", "SIPAuthMixin"]
 # loop — back the resolver with an in-memory cache when the source of
 # truth is a database.
 AuthResolver = Callable[[str], str | None]
+
+
+# Pre-accept rejection decision. ``None`` means accept (proceed to SDP +
+# 200 OK); a ``(status_code, reason_phrase)`` tuple means reject the
+# INVITE with that 4xx/5xx response *before* the dialog is confirmed —
+# the carrier never sees a 200 OK. Use 403 / 404 / 488 for the common
+# "no route", "no permission", "no codec" cases respectively.
+InviteFilterDecision = tuple[int, str] | None
+
+
+# Pre-accept hook that the application installs via
+# :meth:`SIPVoiceBackend.set_invite_filter`. Called inside
+# ``_handle_invite`` after the optional auth challenge but before the
+# RTP/SDP/200-OK path. Both sync and async callables are supported —
+# the dispatcher picks the right one with ``iscoroutinefunction``.
+InviteFilter = Callable[[Any], InviteFilterDecision | Awaitable[InviteFilterDecision]]
 
 
 @runtime_checkable
@@ -50,6 +66,7 @@ class SIPAuthHost(Protocol):
     _auth_realm: str
     _auth_nonces: dict[str, float]
     _auth_resolver: AuthResolver | None
+    _invite_filter: InviteFilter | None
     _register_params: dict[str, Any] | None
     _register_response_future: asyncio.Future[Any] | None
     _registration_task: asyncio.Task[None] | None
@@ -72,6 +89,7 @@ class SIPAuthMixin:
     _auth_realm: str
     _auth_nonces: dict[str, float]
     _auth_resolver: AuthResolver | None
+    _invite_filter: InviteFilter | None
     _register_params: dict[str, Any] | None
     _register_response_future: asyncio.Future[Any] | None
     _registration_task: asyncio.Task[None] | None
@@ -82,6 +100,27 @@ class SIPAuthMixin:
     # -------------------------------------------------------------------------
     # Public API: runtime credential resolver
     # -------------------------------------------------------------------------
+
+    def set_invite_filter(self, invite_filter: InviteFilter | None) -> None:
+        """Install a pre-accept hook that runs before SDP / 200 OK.
+
+        The filter receives the ``IncomingCall`` after any auth challenge
+        has succeeded and returns ``None`` to accept (proceed to SDP
+        negotiation and 200 OK) or ``(status, reason)`` to reject the
+        INVITE with that 4xx/5xx response. The carrier never sees a
+        200 OK on a rejection, so CDRs log the call as rejected rather
+        than briefly answered.
+
+        Driving use case: application-layer routing decisions ("DID not
+        provisioned", "tenant not authorized", "outside business hours")
+        that need DB access but should not result in an answered-then-
+        dropped call. Call ``set_invite_filter(None)`` to remove.
+
+        The callback may be sync or async. Async filters run inside the
+        SIP dispatch task and so should keep DB / network calls fast —
+        the dialog is half-set-up while the filter runs.
+        """
+        self._invite_filter = invite_filter
 
     def set_auth_resolver(self, resolver: AuthResolver | None) -> None:
         """Install a callback that looks up the password for a username.

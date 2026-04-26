@@ -54,6 +54,7 @@ class SIPCallingHost(Protocol):
     Cross-mixin methods (implemented elsewhere in the MRO):
         _validate_invite_auth: Check digest auth on INVITE (SIPAuthMixin).
         has_auth: Whether either auth_users or a resolver is configured (SIPAuthMixin).
+        _invite_filter: Optional pre-accept filter (SIPAuthMixin).
         _make_audio_handler: Create audio callback for session (SIPAudioMixin).
         _make_dtmf_handler: Create DTMF callback for session (SIPAudioMixin).
     """
@@ -130,6 +131,7 @@ class SIPCallingMixin:
     _send_silence_on_answer: float
     _validate_invite_auth: Any  # see SIPCallingHost — cross-mixin, from SIPAuthMixin
     has_auth: Any  # see SIPCallingHost — cross-mixin, from SIPAuthMixin
+    _invite_filter: Any  # see SIPCallingHost — cross-mixin, from SIPAuthMixin
     _make_audio_handler: Any  # see SIPCallingHost — cross-mixin, from SIPAudioMixin
     _make_dtmf_handler: Any  # see SIPCallingHost — cross-mixin, from SIPAudioMixin
     _send_pcm_bytes: Any  # see SIPCallingHost — cross-mixin, from SIPAudioMixin
@@ -153,6 +155,25 @@ class SIPCallingMixin:
         # installed by ``set_auth_resolver``. Both count.
         if self.has_auth() and not self._validate_invite_auth(call):
             return
+
+        # Pre-accept filter — let the application reject with a 4xx
+        # before we send 200 OK. Used for application-layer routing
+        # decisions (DID not provisioned, tenant not authorized, etc.)
+        # that need DB access but shouldn't show up in the carrier's
+        # CDR as answered-then-dropped.
+        if self._invite_filter is not None:
+            try:
+                decision = self._invite_filter(call)
+                if asyncio.iscoroutine(decision):
+                    decision = await decision
+            except Exception:
+                logger.exception("SIP invite filter raised — rejecting with 500")
+                call.reject(500, "Server Internal Error")
+                return
+            if decision is not None:
+                status, reason = decision
+                call.reject(status, reason)
+                return
 
         if call.sdp_offer is None:
             call.reject(488, "Not Acceptable Here")

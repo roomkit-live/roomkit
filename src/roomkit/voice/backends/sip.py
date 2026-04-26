@@ -169,6 +169,11 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         # ``auth_users`` when set. Returning ``None`` denies the user.
         # Installed at runtime via ``set_auth_resolver``.
         self._auth_resolver: Callable[[str], str | None] | None = None
+        # Optional pre-accept filter. Runs after auth challenge, before
+        # SDP / 200 OK. Returning a (status, reason) tuple rejects the
+        # INVITE with that 4xx; returning None accepts. Installed at
+        # runtime via ``set_invite_filter``.
+        self._invite_filter: Callable[..., Any] | None = None
 
         # Outbound registration state
         self._register_params: dict[str, Any] | None = None
