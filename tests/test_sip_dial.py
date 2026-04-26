@@ -187,6 +187,7 @@ def backend() -> SIPVoiceBackend:
 
     b._session_states = {}
     b._call_to_session = {}
+    b._recently_ended_call_ids = {}
     b._pending_reinvite_calls = {}
     b._audio_received_callback = None
     b._barge_in_callbacks = []

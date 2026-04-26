@@ -189,6 +189,12 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         # Per-session state
         self._session_states: dict[str, SIPSessionState] = {}
         self._call_to_session: dict[str, str] = {}
+        # call_id -> expiry monotonic timestamp. Populated by
+        # _cleanup_session and consumed by _handle_bye to downgrade
+        # log-level for the carrier-retransmit / cross-BYE race that
+        # would otherwise produce noisy "BYE for unknown call_id"
+        # warnings. Bounded by an opportunistic eviction in cleanup.
+        self._recently_ended_call_ids: dict[str, float] = {}
         self._pending_reinvite_calls: dict[str, Any] = {}
 
         # Callback registrations

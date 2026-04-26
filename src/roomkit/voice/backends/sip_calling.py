@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from typing import Any, Protocol, runtime_checkable
 
 from roomkit.core.task_utils import log_task_exception
@@ -19,6 +20,19 @@ from roomkit.voice.backends._sip_types import (
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 
 __all__ = ["SIPCallingMixin"]
+
+# How long we remember a call_id after cleanup so retransmitted /
+# late carrier BYEs are recognized as cleanup-race noise rather than
+# real state desync. 60 seconds covers the common case of a carrier
+# session timer firing slightly after our own BYE, plus a few RTT
+# retransmits for the BYE-200OK exchange.
+_RECENTLY_ENDED_TTL_SECONDS = 60.0
+
+# Soft cap on the recently-ended set to bound memory under high call
+# churn. Eviction is opportunistic — when the set grows past this,
+# we drop expired entries on the next cleanup. The cap is generous
+# because we only carry one float per ended call_id.
+_RECENTLY_ENDED_SOFT_CAP = 1024
 
 
 @runtime_checkable
@@ -42,6 +56,10 @@ class SIPCallingHost(Protocol):
         _auth_users: Username-to-password map for inbound auth.
         _session_states: Consolidated per-session state.
         _call_to_session: Maps SIP Call-ID to session ID.
+        _recently_ended_call_ids: TTL set of call_ids cleaned up within the last
+            ``_RECENTLY_ENDED_TTL_SECONDS``. Used to differentiate cleanup-race
+            BYEs (carrier retransmits, late counter-BYEs after our own BYE) from
+            real state desync.
         _pending_reinvite_calls: Re-INVITEs pending session creation.
         _available_ports: Pool of available RTP ports.
         _allocated_ports: Currently allocated RTP ports.
@@ -75,6 +93,7 @@ class SIPCallingHost(Protocol):
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
     _call_to_session: dict[str, str]
+    _recently_ended_call_ids: dict[str, float]
     _pending_reinvite_calls: dict[str, Any]
     _available_ports: set[int]
     _allocated_ports: set[int]
@@ -120,6 +139,7 @@ class SIPCallingMixin:
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
     _call_to_session: dict[str, str]
+    _recently_ended_call_ids: dict[str, float]
     _pending_reinvite_calls: dict[str, Any]
     _available_ports: set[int]
     _allocated_ports: set[int]
@@ -406,7 +426,23 @@ class SIPCallingMixin:
         """Handle a remote BYE (call hangup)."""
         session_id = self._call_to_session.get(call.call_id)
         if session_id is None:
-            logger.warning("BYE for unknown call_id: %s", call.call_id)
+            # Two cases here look identical at this layer but mean very
+            # different things to an operator:
+            #   1. A BYE arriving for a call we already finalized — most
+            #      often a carrier retransmit because our 200 OK to its
+            #      BYE got delayed, or a stray BYE from the other side
+            #      after we hung up first. Cosmetic noise.
+            #   2. A BYE for a call_id we never saw — points to a real
+            #      state desync (dropped INVITE, dialog corruption,
+            #      hostile probe).
+            # Distinguish via the recently-ended TTL set so logs reflect
+            # signal vs noise.
+            now = time.monotonic()
+            ended_at = self._recently_ended_call_ids.pop(call.call_id, None)
+            if ended_at is not None and ended_at > now:
+                logger.debug("BYE for recently-ended call_id: %s (cleanup race)", call.call_id)
+            else:
+                logger.warning("BYE for unknown call_id: %s", call.call_id)
             return
 
         state = self._session_states.get(session_id)
@@ -718,10 +754,25 @@ class SIPCallingMixin:
         if state.rtp_port is not None:
             self._release_rtp_port(state.rtp_port)
 
+        # Record the call_ids in the recently-ended TTL set so the next
+        # late carrier BYE for them logs at DEBUG instead of WARNING.
+        # Eviction is opportunistic — we only purge when the set grows
+        # past the soft cap, which keeps the cost per cleanup at O(1)
+        # for the common case.
+        now = time.monotonic()
+        expiry = now + _RECENTLY_ENDED_TTL_SECONDS
         if state.incoming_call is not None:
-            self._call_to_session.pop(state.incoming_call.call_id, None)
+            cid = state.incoming_call.call_id
+            self._call_to_session.pop(cid, None)
+            self._recently_ended_call_ids[cid] = expiry
         if state.outgoing_call is not None:
-            self._call_to_session.pop(state.outgoing_call.call_id, None)
+            cid = state.outgoing_call.call_id
+            self._call_to_session.pop(cid, None)
+            self._recently_ended_call_ids[cid] = expiry
+        if len(self._recently_ended_call_ids) > _RECENTLY_ENDED_SOFT_CAP:
+            self._recently_ended_call_ids = {
+                k: v for k, v in self._recently_ended_call_ids.items() if v > now
+            }
 
         stats = state.audio_stats
         logger.info(

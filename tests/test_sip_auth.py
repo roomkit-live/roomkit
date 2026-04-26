@@ -245,6 +245,7 @@ def _make_backend(
 
     b._session_states = {}
     b._call_to_session = {}
+    b._recently_ended_call_ids = {}
     b._pending_reinvite_calls = {}
     b._audio_received_callback = None
     b._barge_in_callbacks = []
@@ -459,6 +460,71 @@ class TestInboundAuthValidation:
         finally:
             if original_parse_auth is not None:
                 aiosipua.parse_auth = original_parse_auth  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# BYE for unknown call_id classification
+# ---------------------------------------------------------------------------
+
+
+class TestUnknownByeClassification:
+    """``_handle_bye`` distinguishes carrier-retransmit / counter-BYE noise
+    (recently-ended call_ids → DEBUG) from real state desync (truly
+    unknown call_ids → WARNING)."""
+
+    def _fake_bye(self, call_id: str) -> tuple[Any, Any]:
+        call = MagicMock()
+        call.call_id = call_id
+        call.caller = "sip:alice@example.com"
+        request = MagicMock()
+        request.serialize = lambda: b""
+        return call, request
+
+    def test_unknown_bye_warns(self, caplog: Any) -> None:
+        """A BYE for a call_id never seen before logs at WARNING."""
+        backend = _make_backend()
+        call, request = self._fake_bye("never-seen")
+
+        with caplog.at_level("WARNING", logger="roomkit.voice.sip"):
+            backend._handle_bye(call, request)
+
+        warns = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert any("never-seen" in r.message for r in warns)
+
+    def test_recently_ended_bye_debug(self, caplog: Any) -> None:
+        """A BYE for a recently cleaned-up call_id logs at DEBUG, not WARNING.
+
+        Mirrors the real-world case where the carrier retransmits its
+        BYE just after we tore down the call (or sends a counter-BYE in
+        response to ours and our cleanup happens first).
+        """
+        backend = _make_backend()
+        # Mark call_id as recently ended (still within TTL window).
+        backend._recently_ended_call_ids["just-ended"] = time.monotonic() + 30
+        call, request = self._fake_bye("just-ended")
+
+        with caplog.at_level("DEBUG", logger="roomkit.voice.sip"):
+            backend._handle_bye(call, request)
+
+        warns = [r for r in caplog.records if r.levelname == "WARNING"]
+        debugs = [r for r in caplog.records if r.levelname == "DEBUG"]
+        assert not any("just-ended" in r.message for r in warns)
+        assert any("just-ended" in r.message for r in debugs)
+        # Entry consumed — a second late BYE for the same call_id would
+        # fall back to WARNING (state really is broken at that point).
+        assert "just-ended" not in backend._recently_ended_call_ids
+
+    def test_expired_recently_ended_bye_warns(self, caplog: Any) -> None:
+        """An entry past its TTL is treated as truly unknown (WARNING)."""
+        backend = _make_backend()
+        backend._recently_ended_call_ids["expired"] = time.monotonic() - 1
+        call, request = self._fake_bye("expired")
+
+        with caplog.at_level("WARNING", logger="roomkit.voice.sip"):
+            backend._handle_bye(call, request)
+
+        warns = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert any("expired" in r.message for r in warns)
 
 
 # ---------------------------------------------------------------------------
