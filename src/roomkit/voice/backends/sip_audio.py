@@ -57,6 +57,21 @@ class SIPAudioHost(Protocol):
     def _log_task_exception(task: Any) -> None: ...
 
 
+def _format_q850_reason(cause: int | None, text: str | None) -> str | None:
+    """Build an RFC 3326 ``Reason`` header value for a Q.850 cause.
+
+    Returns a header value like ``Q.850 ;cause=21 ;text="Call rejected"``
+    when ``cause`` is provided, ``None`` otherwise. Quotes in the text
+    are stripped to avoid breaking the header syntax.
+    """
+    if cause is None:
+        return None
+    if text:
+        safe_text = text.replace('"', "").replace("\r", " ").replace("\n", " ").strip()
+        return f'Q.850 ;cause={cause} ;text="{safe_text}"'
+    return f"Q.850 ;cause={cause}"
+
+
 class SIPAudioMixin:
     """Mixin providing audio I/O, DTMF, diagnostics, and session lifecycle.
 
@@ -114,8 +129,51 @@ class SIPAudioMixin:
             "matching a pre-created session from an incoming INVITE."
         )
 
-    async def disconnect(self, session: VoiceSession) -> None:
+    def _resolve_in_dialog_destination(self, call: Any) -> tuple[str, int]:
+        """Pick the L4 destination for in-dialog requests on an inbound call.
+
+        SIP routing rules say in-dialog requests (BYE, re-INVITE, INFO)
+        go to the dialog's remote target — i.e. the Contact URI supplied
+        by the remote party in the dialog-establishing INVITE — rather
+        than the L3 source of the original packet. Through a NAT path
+        (Docker bridge, carrier-side SBC) those addresses can diverge
+        sharply: ``call.source_addr`` is the masqueraded outer address,
+        whereas the Contact URI is the application-layer endpoint. We
+        prefer the Contact, fall back to ``source_addr`` only when the
+        dialog has no remote target (defensive — RFC 3261 dialogs always
+        have one for an INVITE).
+        """
+        from aiosipua import parse_uri
+
+        remote_target = getattr(call.dialog, "remote_target", "") or ""
+        if remote_target:
+            try:
+                uri = parse_uri(remote_target)
+                if uri.host:
+                    return (uri.host, uri.port or 5060)
+            except Exception:
+                logger.debug("Failed to parse dialog remote_target %r", remote_target)
+        return call.source_addr
+
+    async def disconnect(
+        self,
+        session: VoiceSession,
+        *,
+        cause: int | None = None,
+        text: str | None = None,
+    ) -> None:
         """Disconnect a SIP session, sending BYE if the call is still active.
+
+        Args:
+            session: The session to tear down.
+            cause: Optional Q.850 cause code (e.g. ``16`` Normal call
+                clearing, ``21`` Call rejected) to attach as an RFC 3326
+                ``Reason`` header on the BYE. When set, lets carriers
+                distinguish a deliberate rejection from a generic hangup
+                in CDRs and downstream IVR logic. Default ``None`` —
+                no Reason header.
+            text: Optional human-readable text for the Reason header.
+                Ignored when ``cause`` is ``None``.
 
         For inbound calls, the dialog only reaches ``CONFIRMED`` once the
         ACK arrives — usually within 1 RTT after our 200 OK. If
@@ -124,8 +182,14 @@ class SIPAudioMixin:
         after accept), we may beat the ACK and find the dialog still in
         ``EARLY``. We poll briefly so the BYE gets sent reliably; if
         ACK never arrives we log a warning and skip the BYE rather than
-        sending it into an un-confirmed dialog (which the carrier would
-        reject).
+        sending it into an un-confirmed dialog.
+
+        Inbound BYEs are built manually rather than via
+        ``IncomingCall.hangup()`` for two reasons: (1) we need to attach
+        custom headers (Reason), and (2) ``hangup()`` sends to the
+        original L3 source address, which through a NAT path can diverge
+        from the carrier's actual SIP listener — the dialog's
+        ``remote_target`` Contact URI is the right destination.
         """
         await self.cancel_audio(session)
 
@@ -135,7 +199,7 @@ class SIPAudioMixin:
         call_session = state.call_session if state is not None else None
 
         # Send BYE for incoming call
-        if call is not None and self._uac is not None:
+        if call is not None:
             try:
                 from aiosipua import DialogState
 
@@ -152,14 +216,50 @@ class SIPAudioMixin:
                     await asyncio.sleep(0.01)
 
                 if call.dialog.state == DialogState.CONFIRMED:
-                    self._uac.send_bye(call.dialog, call.source_addr)
+                    # Build the BYE manually so we can route it to the
+                    # carrier's Contact address rather than the L3 source
+                    # of the original INVITE. ``IncomingCall.hangup()``
+                    # uses ``self.source_addr`` which through a NAT path
+                    # (Docker bridge, carrier-side SBC, etc.) is the
+                    # masqueraded address — sending BYE there leaves the
+                    # private network and never reaches the carrier's
+                    # SIP listener. The dialog's ``remote_target`` was
+                    # set from the INVITE's Contact header at dialog
+                    # creation, so it points at the SIP application
+                    # endpoint, not the L3 NAT mapping.
+                    transport_local = call.transport.local_addr
+                    bye = call.dialog.create_request(
+                        "BYE",
+                        via_host=transport_local[0],
+                        via_port=transport_local[1],
+                    )
+                    bye.headers.set_single(
+                        "Contact",
+                        f"<sip:{transport_local[0]}:{transport_local[1]}>",
+                    )
+                    reason_header = _format_q850_reason(cause, text)
+                    if reason_header is not None:
+                        bye.headers.set_single("Reason", reason_header)
+
+                    dest = self._resolve_in_dialog_destination(call)
+                    call.transport.send(bye, dest)
+                    call.dialog.terminate()
+
+                    bye_first_line = (
+                        bytes(bye).decode("latin-1", "replace").split("\r\n", 1)[0]
+                    )
                     logger.info(
                         "SIP BYE sent for inbound session %s "
-                        "(call_id=%s, initial_state=%s, waited=%dms)",
+                        "(call_id=%s, initial_state=%s, waited=%dms, "
+                        "source=%s, dest=%s, source_addr=%s, request=%r)",
                         session.id,
                         call.call_id,
                         initial_state,
                         waited_iterations * 10,
+                        transport_local,
+                        dest,
+                        call.source_addr,
+                        bye_first_line,
                     )
 
                     if self._trace_emitter is not None:
