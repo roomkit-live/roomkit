@@ -245,9 +245,7 @@ class SIPAudioMixin:
                     call.transport.send(bye, dest)
                     call.dialog.terminate()
 
-                    bye_first_line = (
-                        bytes(bye).decode("latin-1", "replace").split("\r\n", 1)[0]
-                    )
+                    bye_first_line = bytes(bye).decode("latin-1", "replace").split("\r\n", 1)[0]
                     logger.info(
                         "SIP BYE sent for inbound session %s "
                         "(call_id=%s, initial_state=%s, waited=%dms, "

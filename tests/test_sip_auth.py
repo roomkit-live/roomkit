@@ -508,12 +508,14 @@ class TestAuthResolver:
 
         call = FakeIncomingCall()
         call.invite.set_header("authorization", "Digest ...")
-        original = _stub_parse_auth({
-            "username": "alice",
-            "nonce": nonce,
-            "uri": uri,
-            "response": digest,
-        })
+        original = _stub_parse_auth(
+            {
+                "username": "alice",
+                "nonce": nonce,
+                "uri": uri,
+                "response": digest,
+            }
+        )
         try:
             assert backend._validate_invite_auth(call) is True
             assert resolver_calls == ["alice"]
@@ -530,12 +532,14 @@ class TestAuthResolver:
 
         call = FakeIncomingCall()
         call.invite.set_header("authorization", "Digest ...")
-        original = _stub_parse_auth({
-            "username": "anyone",
-            "nonce": nonce,
-            "uri": "sip:bot@example.com",
-            "response": "whatever",
-        })
+        original = _stub_parse_auth(
+            {
+                "username": "anyone",
+                "nonce": nonce,
+                "uri": "sip:bot@example.com",
+                "response": "whatever",
+            }
+        )
         try:
             assert backend._validate_invite_auth(call) is False
             assert call._rejected
@@ -564,12 +568,14 @@ class TestAuthResolver:
 
         call = FakeIncomingCall()
         call.invite.set_header("authorization", "Digest ...")
-        original = _stub_parse_auth({
-            "username": "alice",
-            "nonce": nonce,
-            "uri": uri,
-            "response": digest,
-        })
+        original = _stub_parse_auth(
+            {
+                "username": "alice",
+                "nonce": nonce,
+                "uri": uri,
+                "response": digest,
+            }
+        )
         try:
             assert backend._validate_invite_auth(call) is True
         finally:
@@ -590,12 +596,14 @@ class TestAuthResolver:
 
         call = FakeIncomingCall()
         call.invite.set_header("authorization", "Digest ...")
-        original = _stub_parse_auth({
-            "username": "alice",
-            "nonce": nonce,
-            "uri": uri,
-            "response": digest,
-        })
+        original = _stub_parse_auth(
+            {
+                "username": "alice",
+                "nonce": nonce,
+                "uri": uri,
+                "response": digest,
+            }
+        )
         try:
             assert backend._validate_invite_auth(call) is True
         finally:
@@ -619,12 +627,14 @@ class TestAuthResolver:
 
         call = FakeIncomingCall()
         call.invite.set_header("authorization", "Digest ...")
-        original = _stub_parse_auth({
-            "username": "alice",
-            "nonce": nonce,
-            "uri": "sip:bot@example.com",
-            "response": "whatever",
-        })
+        original = _stub_parse_auth(
+            {
+                "username": "alice",
+                "nonce": nonce,
+                "uri": "sip:bot@example.com",
+                "response": "whatever",
+            }
+        )
         try:
             assert backend._validate_invite_auth(call) is False
             assert call._rejected
