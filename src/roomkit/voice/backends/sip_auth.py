@@ -157,8 +157,12 @@ class SIPAuthMixin:
         """Dispatch SIP messages, intercepting REGISTER responses."""
         sip_response_cls = self._aiosipua.SipResponse
         if isinstance(msg, sip_response_cls) and self._register_response_future is not None:
-            cseq_str = msg.cseq or ""
-            if "REGISTER" in cseq_str and not self._register_response_future.done():
+            cseq = msg.cseq
+            if (
+                cseq is not None
+                and cseq.method == "REGISTER"
+                and not self._register_response_future.done()
+            ):
                 self._register_response_future.set_result(msg)
                 return
         # Delegate everything else to the UAS

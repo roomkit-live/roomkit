@@ -68,6 +68,14 @@ class FakeSipRequest:
         return None
 
 
+@dataclass
+class FakeCSeq:
+    """Mirror of aiosipua.headers.CSeq for tests."""
+
+    seq: int = 0
+    method: str = ""
+
+
 class FakeSipResponse:
     """Minimal SIP response for REGISTER tests."""
 
@@ -76,7 +84,7 @@ class FakeSipResponse:
         self.reason_phrase = reason
         self._headers: dict[str, str] = {}
         self.headers = FakeCaseInsensitiveDict()
-        self.cseq = "1 REGISTER"
+        self.cseq = FakeCSeq(seq=1, method="REGISTER")
         self.body = ""
         self.content_type = ""
 
@@ -879,7 +887,7 @@ class TestSipMessageHandler:
         backend._register_response_future = loop.create_future()
 
         resp = FakeSipResponse(200, "OK")
-        resp.cseq = "1 REGISTER"
+        resp.cseq = FakeCSeq(seq=1, method="REGISTER")
 
         backend._sip_message_handler(resp, ("10.0.0.1", 5060))
 
@@ -894,12 +902,32 @@ class TestSipMessageHandler:
         uas._on_message = lambda msg, addr: calls.append((msg, addr))
 
         resp = FakeSipResponse(200, "OK")
-        resp.cseq = "1 INVITE"
+        resp.cseq = FakeCSeq(seq=1, method="INVITE")
 
         backend._sip_message_handler(resp, ("10.0.0.1", 5060))
 
         assert len(calls) == 1
         assert calls[0][0] is resp
+
+    def test_response_with_missing_cseq_does_not_crash(self) -> None:
+        # Regression: msg.cseq is a CSeq dataclass (or None), not a string.
+        # The handler used to do `"REGISTER" in msg.cseq`, which raised
+        # TypeError on every SIP response.
+        backend = _make_backend()
+        loop = asyncio.new_event_loop()
+        backend._register_response_future = loop.create_future()
+        uas: FakeUAS = backend._uas  # type: ignore[assignment]
+        calls: list = []
+        uas._on_message = lambda msg, addr: calls.append((msg, addr))
+
+        resp = FakeSipResponse(200, "OK")
+        resp.cseq = None  # type: ignore[assignment]
+
+        backend._sip_message_handler(resp, ("10.0.0.1", 5060))
+
+        assert not backend._register_response_future.done()
+        assert len(calls) == 1
+        loop.close()
 
 
 # ---------------------------------------------------------------------------
