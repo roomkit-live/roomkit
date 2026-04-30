@@ -48,6 +48,7 @@ except ImportError:  # websockets not installed
 
 if TYPE_CHECKING:
     from roomkit.channels._realtime_skills import RealtimeSkillSupport
+    from roomkit.channels._realtime_tool_search import RealtimeToolSearchSupport
     from roomkit.core.framework import RoomKit
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
@@ -123,6 +124,9 @@ class RealtimeVoiceChannel(
         skills: SkillRegistry | None = None,
         script_executor: ScriptExecutor | None = None,
         tool_recovery: bool = True,
+        tool_search: bool | None = None,
+        tool_search_pinned: list[str] | None = None,
+        tool_search_threshold: int = 20,
     ) -> None:
         """Initialize realtime voice channel.
 
@@ -171,6 +175,19 @@ class RealtimeVoiceChannel(
             tool_recovery: If True, detect tool calls that the model emits
                 as text (e.g. ``call:name{args}``) and execute them.
                 Defaults to True.
+            tool_search: Auto-enable Tool Search when the catalogue is
+                large enough to exceed the realtime model's reliable
+                tool-selection window (Google: 10–20 active tools on
+                Gemini Live). Pass ``True`` / ``False`` to force,
+                ``None`` (default) for automatic activation when
+                ``len(tools) > tool_search_threshold``.
+            tool_search_pinned: Tool names that should ALWAYS be
+                visible (never hidden behind search). Use for tools
+                the agent calls reflexively — e.g. ``hangup_call``,
+                ``get_datetime``, in-flight session-control tools.
+            tool_search_threshold: Auto-activation threshold and the
+                cap on how many tools may be live at once. Defaults
+                to 20 to match Google's published recommendation.
         """
         super().__init__(channel_id)
         self._provider: RealtimeVoiceProvider = provider
@@ -228,6 +245,25 @@ class RealtimeVoiceChannel(
             from roomkit.channels._realtime_skills import RealtimeSkillSupport
 
             self._skill_support = RealtimeSkillSupport(skills, script_executor)
+
+        # Tool Search support — only activates when the catalogue is large
+        # enough to overflow the realtime model's reliable tool-selection
+        # window (Google Gemini Live: 10–20 active tools). Auto-detect by
+        # default; ``tool_search=True/False`` forces. Composed into the
+        # tool list at session start the same way skills are.
+        self._tool_search_support: RealtimeToolSearchSupport | None = None
+        catalogue_size = len(tool_defs or [])
+        should_enable = tool_search is True or (
+            tool_search is None and catalogue_size > tool_search_threshold
+        )
+        if should_enable and tool_defs:
+            from roomkit.channels._realtime_tool_search import RealtimeToolSearchSupport
+
+            self._tool_search_support = RealtimeToolSearchSupport(
+                tool_defs,
+                pinned=tool_search_pinned,
+                threshold=tool_search_threshold,
+            )
 
         # Lock for shared state accessed from both asyncio and audio threads
         self._state_lock = threading.Lock()
@@ -613,6 +649,17 @@ class RealtimeVoiceChannel(
             tools = skill_defs + (tools or [])
             tools = self._skill_support.get_visible_tools(tools, session.id)
 
+        # Inject Tool Search: replace the full catalogue with the search
+        # tools + pinned subset, and append the search preamble so the
+        # model knows to call find_tools before reaching for the rest.
+        # Order: search tools → skill tools → pinned/exposed catalogue.
+        if self._tool_search_support:
+            from roomkit.channels._tool_search_constants import TOOL_SEARCH_PREAMBLE
+
+            self._tool_search_support.init_session(session.id)
+            tools = self._tool_search_support.visible_tools(session.id, tools or [])
+            system_prompt = (system_prompt or "") + "\n\n" + TOOL_SEARCH_PREAMBLE
+
         # Set up audio pipeline BEFORE accept() so that the PortAudio
         # callback closure captures the pipeline's on_audio_received
         # callback (not the direct _on_client_audio path).
@@ -718,6 +765,8 @@ class RealtimeVoiceChannel(
             self._provider_idle.pop(session.id, None)
             if self._skill_support:
                 self._skill_support.cleanup_session(session.id)
+            if self._tool_search_support:
+                self._tool_search_support.cleanup_session(session.id)
             with contextlib.suppress(Exception):
                 await self._provider.disconnect(session)
             with contextlib.suppress(Exception):
@@ -847,6 +896,9 @@ class RealtimeVoiceChannel(
         # Clean up skill activation state
         if self._skill_support:
             self._skill_support.cleanup_session(session.id)
+        # Clean up tool-search exposure window
+        if self._tool_search_support:
+            self._tool_search_support.cleanup_session(session.id)
 
         with self._state_lock:
             self._sessions.pop(session.id, None)

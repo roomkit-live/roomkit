@@ -22,7 +22,6 @@ from roomkit.channels._skill_constants import (
     TOOL_RUN_SCRIPT,
 )
 from roomkit.channels._skill_handlers import (
-    handle_activate_skill,
     handle_read_reference,
     handle_run_script,
 )
@@ -44,6 +43,16 @@ class RealtimeSkillSupport:
 
     Activation state is tracked per session since each session has its own
     AI conversation.
+
+    Skill body delivery on realtime channels uses ``system_instruction``
+    (refreshed via ``provider.reconfigure``), NOT the activate_skill tool
+    result. Returning a multi-KB skill body through ``submit_tool_result``
+    reliably tipped Gemini Live (and similarly long realtime returns
+    on OpenAI Realtime) into "narrate the script" mode — the model
+    treated the long return as conversational data and stopped emitting
+    function calls for the rest of the session. Routing the body to
+    system_instruction keeps it as binding rules and leaves the tool
+    surface intact.
     """
 
     def __init__(
@@ -55,6 +64,12 @@ class RealtimeSkillSupport:
         self._script_executor = script_executor
         # session_id -> set of activated skill names
         self._activated_skills: dict[str, set[str]] = {}
+        # session_id -> ordered list of (skill_name, instructions) tuples
+        # for skills activated so far in this session. Concatenated into
+        # the system_instruction on the next reconfigure_session call.
+        # Order matches activation sequence so a chained flow can layer
+        # later skills on top of earlier ones.
+        self._activated_bodies: dict[str, list[tuple[str, str]]] = {}
 
     # -- Tool definitions (as dicts, the format provider.connect expects) --
 
@@ -81,10 +96,34 @@ class RealtimeSkillSupport:
     def init_session(self, session_id: str) -> None:
         """Initialize activation state for a new session."""
         self._activated_skills[session_id] = set()
+        self._activated_bodies[session_id] = []
 
     def cleanup_session(self, session_id: str) -> None:
         """Remove activation state when a session ends."""
         self._activated_skills.pop(session_id, None)
+        self._activated_bodies.pop(session_id, None)
+
+    def activated_skills_prompt(self, session_id: str) -> str | None:
+        """Return concatenated bodies of skills activated in this session.
+
+        Used by the channel's tool dispatcher: after activate_skill
+        runs we call ``provider.reconfigure(system_prompt=base + this)``
+        so the skill content lives as binding rules in
+        ``system_instruction`` rather than as a giant tool result that
+        derails realtime function calling.
+
+        Returns ``None`` when no skills have been activated yet so the
+        caller can decide whether a reconfigure is even needed.
+        """
+        bodies = self._activated_bodies.get(session_id) or []
+        if not bodies:
+            return None
+        sections = [
+            f"## Active skill: {name}\n{instructions.strip()}"
+            for name, instructions in bodies
+            if instructions and instructions.strip()
+        ]
+        return "\n\n".join(sections) if sections else None
 
     # -- Tool dispatch --
 
@@ -143,13 +182,47 @@ class RealtimeSkillSupport:
     # -- Internal handlers --
 
     async def _handle_activate_skill(self, arguments: dict[str, Any], session_id: str) -> str:
-        """Load and return full skill instructions, tracking activation."""
-        result_str, skill_name = await handle_activate_skill(arguments, self._skills)
-        # Track activation so gated tools become visible
+        """Acknowledge skill activation; buffer the body for system_instruction.
+
+        Returns a small ACK as the tool result instead of the full skill
+        instructions. The full body is buffered on
+        ``self._activated_bodies[session_id]`` so the channel's tool
+        dispatcher can fold it into ``system_instruction`` via
+        ``provider.reconfigure``. See class docstring for the realtime
+        rationale (long tool results derail Gemini Live function calling).
+        """
+        skill_name = arguments.get("name", "")
+        skill = self._skills.get_skill(skill_name)
+        if skill is None:
+            return json.dumps(
+                {
+                    "error": f"Skill {skill_name!r} not found",
+                    "available_skills": self._skills.skill_names,
+                }
+            )
+
         activated = self._activated_skills.get(session_id)
-        if activated is not None:
+        if activated is not None and skill_name not in activated:
             activated.add(skill_name)
-        return result_str
+            bodies = self._activated_bodies.setdefault(session_id, [])
+            bodies.append((skill.name, skill.instructions))
+
+        payload: dict[str, Any] = {
+            "ok": True,
+            "name": skill.name,
+            "_note": (
+                "Skill instructions are now active in your system rules. "
+                "Follow them. Use other tools to act — do NOT narrate "
+                "tool calls without invoking them."
+            ),
+        }
+        scripts = skill.list_scripts()
+        if scripts:
+            payload["scripts"] = scripts
+        refs = skill.list_references()
+        if refs:
+            payload["references"] = refs
+        return json.dumps(payload)
 
     async def _handle_read_reference(self, arguments: dict[str, Any]) -> str:
         """Read a reference file from a skill."""

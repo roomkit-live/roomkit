@@ -1097,3 +1097,126 @@ class TestInjectImageGracefulHandling:
         # MockRealtimeProvider does not override inject_image → NotImplementedError
         # Channel should catch it gracefully, not propagate
         await channel.inject_image(session, b"\x89PNG\r\n", "image/png")
+
+
+class TestStartSessionCancellation:
+    """Verify start_session cleans up on CancelledError without false-positive logs."""
+
+    async def test_cancel_during_provider_connect_runs_cleanup(
+        self,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """Cancelling provider.connect mid-flight must run cleanup + raise CancelledError."""
+        connect_started = asyncio.Event()
+
+        class HangingProvider(MockRealtimeProvider):
+            async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
+                connect_started.set()
+                await asyncio.sleep(60)  # hang until cancelled
+
+        provider = HangingProvider()
+        channel = RealtimeVoiceChannel(
+            "rt-cancel",
+            provider=provider,
+            transport=transport,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-cancel")
+
+        task = asyncio.create_task(channel.start_session(room.id, "user-1", "fake-ws"))
+        await connect_started.wait()
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # Cleanup ran: transport.disconnect was invoked (best-effort, suppressed
+        # if it would raise — but the call MUST have been attempted).
+        disconnect_calls = [c for c in transport.calls if c.method == "disconnect"]
+        assert len(disconnect_calls) == 1
+
+    async def test_cancel_logs_info_not_error(
+        self,
+        transport: MockRealtimeTransport,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Intentional cancellation logs INFO, not ERROR with a stack trace."""
+        connect_started = asyncio.Event()
+
+        class HangingProvider(MockRealtimeProvider):
+            async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
+                connect_started.set()
+                await asyncio.sleep(60)
+
+        provider = HangingProvider()
+        channel = RealtimeVoiceChannel(
+            "rt-cancel-log",
+            provider=provider,
+            transport=transport,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-cancel-log")
+
+        import logging
+
+        caplog.set_level(logging.INFO, logger="roomkit.channels.realtime_voice")
+
+        task = asyncio.create_task(channel.start_session(room.id, "user-1", "fake-ws"))
+        await connect_started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        msgs = [
+            (r.levelname, r.getMessage())
+            for r in caplog.records
+            if "provider.connect" in r.getMessage()
+        ]
+        assert any(level == "INFO" and "cancelled" in msg for level, msg in msgs), msgs
+        # No ERROR-level dump for an intentional cancel.
+        assert not any(
+            level == "ERROR" and "provider.connect failed" in msg for level, msg in msgs
+        )
+
+    async def test_real_failure_still_logs_error_with_stack(
+        self,
+        transport: MockRealtimeTransport,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Real exceptions still get the ERROR log + stack trace."""
+
+        class FailingProvider(MockRealtimeProvider):
+            async def connect(self, session: VoiceSession, **kwargs: Any) -> None:
+                raise RuntimeError("provider blew up")
+
+        provider = FailingProvider()
+        channel = RealtimeVoiceChannel(
+            "rt-fail",
+            provider=provider,
+            transport=transport,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-fail")
+
+        import logging
+
+        caplog.set_level(logging.INFO, logger="roomkit.channels.realtime_voice")
+
+        with pytest.raises(RuntimeError, match="provider blew up"):
+            await channel.start_session(room.id, "user-1", "fake-ws")
+
+        # ERROR log present; transport cleanup attempted.
+        error_msgs = [
+            r
+            for r in caplog.records
+            if r.levelname == "ERROR" and "provider.connect failed" in r.getMessage()
+        ]
+        assert len(error_msgs) == 1
+        disconnect_calls = [c for c in transport.calls if c.method == "disconnect"]
+        assert len(disconnect_calls) == 1

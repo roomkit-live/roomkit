@@ -53,9 +53,11 @@ class RealtimeToolsHost(Protocol):
     _session_tools: dict[str, Any]
     _tool_handler: Any
     _tools: Any
+    _system_prompt: str | None
     _mute_on_tool_call: bool
     _tool_result_max_length: int
     _skill_support: Any
+    _tool_search_support: Any
     _provider: RealtimeVoiceProvider
     _transport: VoiceBackend
     _framework: RoomKit | None
@@ -78,9 +80,11 @@ class RealtimeToolsMixin:
     _session_tools: dict[str, Any]
     _tool_handler: Any
     _tools: Any
+    _system_prompt: str | None
     _mute_on_tool_call: bool
     _tool_result_max_length: int
     _skill_support: Any
+    _tool_search_support: Any
     _provider: RealtimeVoiceProvider
     _transport: VoiceBackend
     _framework: RoomKit | None
@@ -146,19 +150,57 @@ class RealtimeToolsMixin:
         try:
             result_str: str
 
-            # Step 0: Skill infrastructure tools — handle internally
+            # Step 0a: Tool Search infrastructure tools — handle internally
+            if self._tool_search_support and self._tool_search_support.is_search_tool(name):
+                await self._dispatch_tool_search_call(
+                    session, call_id, name, arguments, room_id, tool_span_id
+                )
+                return
+
+            # Step 0b: Skill infrastructure tools — handle internally
             if self._skill_support and self._skill_support.is_skill_tool(name):
                 result_str = await self._skill_support.handle_tool_call(
                     name, arguments, session.id
                 )
                 if name == TOOL_ACTIVATE_SKILL:
-                    base = self._session_tools.get(session.id, self._tools or [])
-                    all_tools = self._skill_support.skill_tool_dicts() + base
-                    updated = self._skill_support.newly_visible_after_activation(
-                        all_tools, session.id, arguments.get("name", "")
-                    )
-                    if updated is not None:
-                        await self._provider.reconfigure(session, tools=updated)
+                    # Two side effects after a successful activate_skill:
+                    # 1. If the skill gates tools, push the new tool list
+                    #    so previously-hidden tools become visible.
+                    # 2. Push the activated skill's body into
+                    #    ``system_instruction`` via reconfigure so the
+                    #    skill content lives as binding rules. Long
+                    #    bodies returned via ``submit_tool_result``
+                    #    would otherwise derail realtime function
+                    #    calling (Gemini Live falls into "narrate the
+                    #    script" mode after large tool returns).
+                    #
+                    # CRITICAL: ``reconfigure`` rebuilds the provider's
+                    # session config from scratch — passing ``tools=None``
+                    # erases the tool surface. Always pass the current
+                    # visible tool list, even when it is unchanged.
+                    base_tools = self._session_tools.get(session.id, self._tools or [])
+                    all_tools = self._skill_support.skill_tool_dicts() + base_tools
+                    current_visible = self._skill_support.get_visible_tools(all_tools, session.id)
+                    addendum = self._skill_support.activated_skills_prompt(session.id)
+                    if addendum and self._system_prompt:
+                        new_prompt: str | None = f"{self._system_prompt}\n\n{addendum}"
+                    elif addendum:
+                        new_prompt = addendum
+                    else:
+                        new_prompt = None
+
+                    if (
+                        addendum is not None
+                        or self._skill_support.newly_visible_after_activation(
+                            all_tools, session.id, arguments.get("name", "")
+                        )
+                        is not None
+                    ):
+                        await self._provider.reconfigure(
+                            session,
+                            tools=current_visible,
+                            system_prompt=new_prompt,
+                        )
 
                 # Fire ON_TOOL_CALL hook observationally — the skill tool
                 # has already executed, but audit + UI-broadcast hooks
@@ -321,6 +363,96 @@ class RealtimeToolsMixin:
             },
         )
         return result_str
+
+    async def _dispatch_tool_search_call(
+        self,
+        session: VoiceSession,
+        call_id: str,
+        name: str,
+        arguments: dict[str, Any],
+        room_id: str | None,
+        tool_span_id: Any,
+    ) -> None:
+        """Handle find_tools / list_tools and reconfigure on a successful match.
+
+        ``find_tools`` returns ``(json_result, updated_tool_list_or_None)`` —
+        when the second element is non-None the matched tools became
+        invocable for this session and we must push them via
+        ``provider.reconfigure(tools=...)``. ``reconfigure`` rebuilds
+        the provider config from scratch, so we also pass the current
+        ``system_prompt`` (with any active skill addendum) to avoid
+        wiping it. The skills layer is composed back on top so its
+        infra tools (activate_skill, …) stay live.
+        """
+        telemetry = self._telemetry_provider
+        result_str, updated = await self._tool_search_support.handle_tool_call(
+            name, arguments, session.id
+        )
+
+        if updated is not None:
+            # Recompose: skill tools (if any) sit alongside the search-tool
+            # output, then preserve any active skill bodies in the prompt.
+            full_tools = updated
+            if self._skill_support:
+                skill_defs = self._skill_support.skill_tool_dicts()
+                # Avoid duplicating any skill tool already present in updated.
+                seen = {t.get("name") for t in updated}
+                full_tools = [t for t in skill_defs if t.get("name") not in seen] + updated
+                full_tools = self._skill_support.get_visible_tools(full_tools, session.id)
+
+            new_prompt: str | None = self._system_prompt
+            if self._skill_support:
+                addendum = self._skill_support.activated_skills_prompt(session.id)
+                if addendum and new_prompt:
+                    new_prompt = f"{new_prompt}\n\n{addendum}"
+                elif addendum:
+                    new_prompt = addendum
+
+            await self._provider.reconfigure(
+                session,
+                tools=full_tools,
+                system_prompt=new_prompt,
+            )
+
+        # Fire ON_TOOL_CALL hook so audit + UI-broadcast hooks see search calls.
+        if self._framework and room_id:
+            from roomkit.models.tool_call import ToolCallEvent
+
+            search_event = ToolCallEvent(
+                channel_id=self.channel_id,
+                channel_type=ChannelType.REALTIME_VOICE,
+                tool_call_id=call_id,
+                name=name,
+                arguments=arguments,
+                result=result_str,
+                room_id=room_id,
+                session=session,
+            )
+            try:
+                ctx = await self._framework._build_context(room_id)
+                await self._framework.hook_engine.run_sync_hooks(
+                    room_id,
+                    HookTrigger.ON_TOOL_CALL,
+                    search_event,
+                    ctx,
+                    skip_event_filter=True,
+                )
+            except Exception:
+                logger.debug(
+                    "ON_TOOL_CALL observation failed for tool-search tool %s",
+                    name,
+                    exc_info=True,
+                )
+
+        await self._provider.submit_tool_result(session, call_id, result_str)
+        telemetry.end_span(tool_span_id)
+        logger.info(
+            "Tool-search %s(%s) handled for session %s (%d tools now visible)",
+            name,
+            call_id,
+            session.id,
+            len(updated) if updated is not None else 0,
+        )
 
     def _truncate_tool_result(
         self,

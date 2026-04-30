@@ -139,12 +139,19 @@ class TestSkillsPromptInjection:
 
 
 class TestSkillToolHandling:
-    async def test_activate_skill_returns_instructions(
+    async def test_activate_skill_returns_short_ack(
         self,
         tmp_path: Path,
         provider: MockRealtimeProvider,
         transport: MockRealtimeTransport,
     ) -> None:
+        """Tool result for activate_skill is a small ACK, not the full body.
+
+        Returning multi-KB skill bodies through ``submit_tool_result`` derails
+        realtime function calling — Gemini Live and OpenAI Realtime both fall
+        into "narrate the script" mode. The body is delivered via
+        ``system_instruction`` on the next reconfigure (covered separately).
+        """
         registry = _registry_with_skill(tmp_path, body="Do the special thing.")
         channel = RealtimeVoiceChannel(
             "rt-skill",
@@ -168,7 +175,85 @@ class TestSkillToolHandling:
         assert call_id == "call-1"
         result = json.loads(result_json)
         assert result["name"] == "test-skill"
-        assert result["instructions"] == "Do the special thing."
+        assert result["ok"] is True
+        # Body must NOT be in the tool result (the whole point of the change)
+        assert "instructions" not in result
+        assert "Do the special thing." not in result_json
+
+    async def test_activate_skill_buffers_body_for_system_instruction(
+        self,
+        tmp_path: Path,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """Skill body lands on system_prompt via reconfigure after activation."""
+        registry = _registry_with_skill(tmp_path, body="Do the special thing.")
+        channel = RealtimeVoiceChannel(
+            "rt-skill",
+            provider=provider,
+            transport=transport,
+            system_prompt="Base prompt.",
+            skills=registry,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-skill")
+
+        session = await channel.start_session(room.id, "user-1", "fake-ws")
+
+        # Capture the system_prompt argument passed to reconfigure
+        provider.reconfigure = AsyncMock()  # type: ignore[method-assign]
+
+        await provider.simulate_tool_call(
+            session, "call-1", "activate_skill", {"name": "test-skill"}
+        )
+        await asyncio.sleep(0.1)
+
+        provider.reconfigure.assert_called_once()
+        sent_prompt = provider.reconfigure.call_args.kwargs.get("system_prompt", "")
+        assert "Base prompt." in sent_prompt
+        assert "## Active skill: test-skill" in sent_prompt
+        assert "Do the special thing." in sent_prompt
+        # Tools must be passed (None would wipe the surface on Gemini)
+        sent_tools = provider.reconfigure.call_args.kwargs.get("tools")
+        assert sent_tools is not None
+        assert any(t["name"] == "activate_skill" for t in sent_tools)
+
+    async def test_activate_skill_idempotent_does_not_double_stack(
+        self,
+        tmp_path: Path,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """Re-activating the same skill must not append the body twice."""
+        registry = _registry_with_skill(tmp_path, body="Body content.")
+        channel = RealtimeVoiceChannel(
+            "rt-skill",
+            provider=provider,
+            transport=transport,
+            system_prompt="Base.",
+            skills=registry,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-skill")
+
+        session = await channel.start_session(room.id, "user-1", "fake-ws")
+        provider.reconfigure = AsyncMock()  # type: ignore[method-assign]
+
+        await provider.simulate_tool_call(
+            session, "call-a", "activate_skill", {"name": "test-skill"}
+        )
+        await provider.simulate_tool_call(
+            session, "call-b", "activate_skill", {"name": "test-skill"}
+        )
+        await asyncio.sleep(0.1)
+
+        # Body must appear at most once in the latest reconfigure prompt
+        last_prompt = provider.reconfigure.call_args.kwargs.get("system_prompt", "")
+        assert last_prompt.count("Body content.") == 1
 
     async def test_activate_unknown_skill_returns_error(
         self,
