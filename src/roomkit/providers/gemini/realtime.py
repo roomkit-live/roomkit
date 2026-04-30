@@ -92,6 +92,16 @@ class _GeminiSessionState:
     queued_injections: list[tuple[bytes, str, str, bool]] = field(default_factory=list)
     realtime_input_sent: bool = False
     queued_text_injections: list[tuple[str, str, bool]] = field(default_factory=list)
+    # Effective config values, kept in sync across connect + reconfigure
+    # so partial reconfigures (e.g. system_prompt-only) preserve the
+    # other fields. Without these, ``_build_config`` (which treats
+    # ``None`` as "absent") would silently wipe the unspecified fields
+    # — most notably the tools list, leaving the model with no
+    # functions to call after a skill activation.
+    system_prompt: str | None = None
+    voice: str | None = None
+    tools: list[dict[str, Any]] | None = None
+    temperature: float | None = None
 
 
 class _GoAwayError(Exception):
@@ -314,7 +324,135 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             sliding_window=types.SlidingWindow(),
         )
 
+        # Debug dump of what we're handing to Gemini Live. Gated on
+        # ``ROOMKIT_GEMINI_DEBUG=1`` so prod logs stay clean. Useful
+        # for diagnosing why one session invokes tools and another
+        # doesn't — compares cleanly across sessions when copy/pasted.
+        import os as _os
+
+        if _os.environ.get("ROOMKIT_GEMINI_DEBUG", "").lower() in {"1", "true", "yes"}:
+            self._log_config_dump(config, system_prompt, tools)
+
         return types.LiveConnectConfig(**config)
+
+    def _log_config_dump(
+        self,
+        config: dict[str, Any],
+        system_prompt: str | None,
+        tools: list[dict[str, Any]] | None,
+    ) -> None:
+        """Dump the LiveConnectConfig parameters for diagnostics.
+
+        Called from ``_build_config`` when ``ROOMKIT_GEMINI_DEBUG`` is on.
+        Logs at INFO so it's visible without raising the root level.
+        Sister method ``_log_event`` dumps every server event coming the
+        other way (text deltas, tool calls, transcription, errors) so
+        you can see the full request/response cycle in the same log.
+        """
+        import json as _json
+
+        from roomkit.providers.gemini.schema import clean_gemini_schema
+
+        # ── System prompt ────────────────────────────────────────────
+        # Full body, line-prefixed, with a length header so it's easy
+        # to see at a glance. Capped at ~12 KB (~3 K tokens) — beyond
+        # that we lose the per-line layout in container logs.
+        prompt_len = len(system_prompt) if system_prompt else 0
+        logger.info("ROOMKIT_GEMINI_DEBUG: ===== system_prompt (len=%d) =====", prompt_len)
+        if system_prompt:
+            shown = system_prompt[:12000]
+            for line in shown.splitlines():
+                logger.info("ROOMKIT_GEMINI_DEBUG: | %s", line)
+            if prompt_len > 12000:
+                logger.info(
+                    "ROOMKIT_GEMINI_DEBUG: | … [truncated %d chars] …",
+                    prompt_len - 12000,
+                )
+        logger.info("ROOMKIT_GEMINI_DEBUG: ===== /system_prompt =====")
+
+        # ── Tools ────────────────────────────────────────────────────
+        # All tool names + one-line descriptions. With 30+ tools this
+        # is the single most useful piece of context when diagnosing
+        # "model didn't pick the right tool" — you can see at a glance
+        # what the model was actually shown.
+        tool_count = len(tools or [])
+        logger.info("ROOMKIT_GEMINI_DEBUG: ===== tools (count=%d) =====", tool_count)
+        properties_without_type: list[str] = []
+        for tool in tools or []:
+            name = tool.get("name", "?")
+            desc = (tool.get("description") or "").splitlines()[0][:140]
+            cleaned = clean_gemini_schema(tool.get("parameters")) or {}
+            param_count = len(cleaned.get("properties") or {})
+            required = cleaned.get("required") or []
+            logger.info(
+                "ROOMKIT_GEMINI_DEBUG: | %-44s params=%d required=%d desc=%s",
+                name,
+                param_count,
+                len(required),
+                desc,
+            )
+            for prop_name, prop_schema in (cleaned.get("properties") or {}).items():
+                if isinstance(prop_schema, dict) and "type" not in prop_schema:
+                    properties_without_type.append(f"{name}.{prop_name}")
+        logger.info("ROOMKIT_GEMINI_DEBUG: ===== /tools =====")
+
+        if properties_without_type:
+            logger.warning(
+                "ROOMKIT_GEMINI_DEBUG: %d tool properties have NO type after cleaning "
+                "(Gemini will silently reject these tools): %s",
+                len(properties_without_type),
+                properties_without_type[:20],
+            )
+
+        # ── Other config ─────────────────────────────────────────────
+        speech = config.get("speech_config")
+        voice_name = ""
+        if speech is not None:
+            vc = getattr(speech, "voice_config", None)
+            if vc is not None:
+                pre = getattr(vc, "prebuilt_voice_config", None)
+                if pre is not None:
+                    voice_name = getattr(pre, "voice_name", "") or ""
+        logger.info(
+            "ROOMKIT_GEMINI_DEBUG: voice=%r temperature=%s response_modalities=%s "
+            "session_resumption=on context_window_compression=sliding",
+            voice_name,
+            config.get("temperature"),
+            config.get("response_modalities"),
+        )
+
+        # ── First tool's full cleaned schema (for paranoid review) ──
+        if tools:
+            first = tools[0]
+            cleaned_first = {
+                "name": first.get("name"),
+                "description": (first.get("description") or "")[:200],
+                "parameters": clean_gemini_schema(first.get("parameters")) or {},
+            }
+            logger.info(
+                "ROOMKIT_GEMINI_DEBUG: first_tool_full_schema=%s",
+                _json.dumps(cleaned_first)[:2000],
+            )
+
+    def _log_event(self, session_id: str, label: str, **fields: Any) -> None:
+        """Log a single server event from Gemini Live for diagnostics.
+
+        Called from the receive loop and message handlers. ``label`` is
+        a short tag (text_delta, tool_call, transcription, error, …) and
+        ``fields`` are the salient attributes to log. Gated on the same
+        ``ROOMKIT_GEMINI_DEBUG`` env var as the config dump.
+        """
+        import os as _os
+
+        if _os.environ.get("ROOMKIT_GEMINI_DEBUG", "").lower() not in {"1", "true", "yes"}:
+            return
+        rendered = " ".join(f"{k}={v!r}" for k, v in fields.items())
+        logger.info(
+            "ROOMKIT_GEMINI_DEBUG: <<< %s session=%s %s",
+            label,
+            session_id[:8],
+            rendered,
+        )
 
     async def connect(
         self,
@@ -351,6 +489,10 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             live_config=live_config,
             started_at=time.monotonic(),
             input_sample_rate=input_sample_rate,
+            system_prompt=system_prompt,
+            voice=voice,
+            tools=tools,
+            temperature=temperature,
         )
         self._sessions[session.id] = state
 
@@ -604,6 +746,18 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         # Track tool result bytes for debugging
         state.tool_result_bytes += len(result)
 
+        # Diagnostic: log every tool result we send back to Gemini so
+        # the request → response → result cycle is visible end-to-end.
+        # Body is truncated to 800 chars in the log; the full thing is
+        # still sent to Gemini.
+        self._log_event(
+            session.id,
+            "submit_tool_result",
+            call_id=call_id,
+            len=len(result),
+            preview=(result[:800] + ("…" if len(result) > 800 else "")),
+        )
+
         if len(result) > 16384:
             logger.warning(
                 "Large tool result (%d chars) for call %s may cause Gemini to "
@@ -752,6 +906,14 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
         Uses Gemini's session resumption to preserve conversation
         history while switching system prompt, voice, and tools.
+
+        Reconfigure semantics: parameters left at ``None`` are
+        preserved from the session's most recent config. ``_build_config``
+        treats ``None`` as "absent" (it omits the field from the
+        resulting LiveConnectConfig), so without this preservation a
+        partial update like ``reconfigure(system_prompt=new)`` would
+        wipe the existing tools and voice. Passing an empty list /
+        empty string explicitly does still clear the field.
         """
         import contextlib
 
@@ -763,13 +925,30 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         state.queued_text_injections.clear()
         state.queued_injections.clear()
 
+        # Preserve unspecified fields from the previous config so a
+        # partial reconfigure (e.g. system_prompt-only) doesn't wipe
+        # tools/voice/temperature. ``_build_config`` treats ``None``
+        # as "absent" and would otherwise produce a config with no
+        # tools at all.
+        effective_prompt = system_prompt if system_prompt is not None else state.system_prompt
+        effective_voice = voice if voice is not None else state.voice
+        effective_tools = tools if tools is not None else state.tools
+        effective_temperature = temperature if temperature is not None else state.temperature
+
         new_config = self._build_config(
-            system_prompt=system_prompt,
-            voice=voice,
-            tools=tools,
-            temperature=temperature,
+            system_prompt=effective_prompt,
+            voice=effective_voice,
+            tools=effective_tools,
+            temperature=effective_temperature,
             provider_config=provider_config,
         )
+
+        # Remember effective values so the next partial reconfigure
+        # preserves them.
+        state.system_prompt = effective_prompt
+        state.voice = effective_voice
+        state.tools = effective_tools
+        state.temperature = effective_temperature
         state.live_config = new_config
         logger.info(
             "Reconfiguring Gemini session %s (voice=%s)",
@@ -1140,6 +1319,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             state.response_started = True
             state.audio_chunk_count = 0
             logger.info("[Gemini] response_start (session %s)", session.id)
+            self._log_event(session.id, "response_start", turn=state.turn_count)
             await self._fire(self._response_start_callbacks, session, label="response_start")
 
         # Interrupted — user barged in while model was speaking
@@ -1163,6 +1343,13 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                 "[Gemini] turn_complete (session %s, %d audio chunks)",
                 session.id,
                 state.audio_chunk_count,
+            )
+            self._log_event(
+                session.id,
+                "turn_complete",
+                turn=state.turn_count,
+                audio_chunks=state.audio_chunk_count,
+                pending_tool_calls=state.pending_tool_calls,
             )
             await self._flush_transcription_buffer(session, "user")
             await self._flush_transcription_buffer(session, "assistant")
@@ -1188,12 +1375,20 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     ) -> None:
         for fc in tool_call.function_calls:
             state.pending_tool_calls += 1
+            args_dict = dict(fc.args) if fc.args else {}
+            self._log_event(
+                session.id,
+                "function_call",
+                name=fc.name,
+                id=fc.id,
+                args=args_dict,
+            )
             await self._fire(
                 self._tool_call_callbacks,
                 session,
                 fc.id,
                 fc.name,
-                dict(fc.args) if fc.args else {},
+                args_dict,
                 label="tool_call",
             )
 
@@ -1210,6 +1405,19 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
             total_tokens,
             session.id,
         )
+        # Only log the "real" usage tick — when the model evaluates a
+        # new prompt round (prompt_tokens > 0). Gemini emits one usage
+        # event per audio chunk during a response, ALL with
+        # prompt_tokens=0 — those would flood the diagnostic log
+        # without telling us anything useful.
+        if prompt_tokens:
+            self._log_event(
+                session.id,
+                "usage",
+                prompt_tokens=prompt_tokens,
+                response_tokens=response_tokens,
+                total_tokens=total_tokens,
+            )
         self._record_usage(session, prompt_tokens, response_tokens)
 
     async def _on_go_away(
@@ -1229,6 +1437,17 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         """Accumulate transcription chunks and fire callback when complete."""
         full_text = self._transcription_buffer.append(session.id, role, text, finished)
         if full_text:
+            # Log the FINAL transcription so we can see what each side
+            # actually said in the same stream as tool_call events.
+            # Truncate to keep log lines readable; full text still goes
+            # into the room transcript via the callback.
+            self._log_event(
+                session.id,
+                "transcription",
+                role=role,
+                text=full_text[:600] + ("…" if len(full_text) > 600 else ""),
+                len=len(full_text),
+            )
             await self._fire(
                 self._transcription_callbacks,
                 session,
