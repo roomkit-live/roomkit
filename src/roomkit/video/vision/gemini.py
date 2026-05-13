@@ -38,7 +38,7 @@ class GeminiVisionConfig:
     """
 
     api_key: str = ""
-    model: str = "gemini-3.1-flash-lite-preview"
+    model: str = "gemini-3.1-flash-lite"
     prompt: str = DEFAULT_VISION_PROMPT
     max_tokens: int = 1024
     temperature: float = 0.3

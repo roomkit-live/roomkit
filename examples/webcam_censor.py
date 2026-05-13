@@ -74,7 +74,7 @@ def _build_vision(args: argparse.Namespace) -> VisionProvider:
         return GeminiVisionProvider(
             GeminiVisionConfig(
                 api_key=api_key,
-                model="gemini-3.1-flash-lite-preview",
+                model="gemini-3.1-flash-lite",
                 prompt=(
                     "List the objects you see. Include 'person' if any "
                     "human is visible. Respond with comma-separated labels only."

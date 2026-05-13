@@ -161,7 +161,7 @@ async def main() -> None:
 
     gemini_config = GeminiConfig(
         api_key=env["GOOGLE_API_KEY"],
-        model=os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite-preview"),
+        model=os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite"),
         max_tokens=150,
         thinking_level="minimal",
     )

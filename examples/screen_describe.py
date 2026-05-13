@@ -76,7 +76,7 @@ def _build_vision_provider(args: argparse.Namespace) -> VisionProvider:
         return GeminiVisionProvider(
             GeminiVisionConfig(
                 api_key=api_key,
-                model=args.model or "gemini-3.1-flash-lite-preview",
+                model=args.model or "gemini-3.1-flash-lite",
                 prompt=SCREEN_VISION_PROMPT,
             )
         )
@@ -214,7 +214,7 @@ async def main() -> None:
     session = await kit.join("screen-demo", "video-screen", participant_id="local-user")
 
     if args.gemini:
-        mode = f"Gemini ({args.model or 'gemini-3.1-flash-lite-preview'})"
+        mode = f"Gemini ({args.model or 'gemini-3.1-flash-lite'})"
     elif args.ollama:
         mode = f"Ollama ({args.model or 'qwen3.5'})"
     else:

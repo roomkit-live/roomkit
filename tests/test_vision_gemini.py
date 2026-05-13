@@ -11,7 +11,7 @@ from roomkit.video.vision.gemini import GeminiVisionConfig, GeminiVisionProvider
 class TestGeminiVisionConfig:
     def test_defaults(self) -> None:
         config = GeminiVisionConfig()
-        assert config.model == "gemini-3.1-flash-lite-preview"
+        assert config.model == "gemini-3.1-flash-lite"
         assert config.api_key == ""
         assert config.max_tokens == 1024
 
@@ -28,7 +28,7 @@ class TestGeminiVisionConfig:
 class TestGeminiVisionProvider:
     def test_name(self) -> None:
         provider = GeminiVisionProvider(GeminiVisionConfig(api_key="test"))
-        assert provider.name == "gemini-vision:gemini-3.1-flash-lite-preview"
+        assert provider.name == "gemini-vision:gemini-3.1-flash-lite"
 
     def test_custom_model_name(self) -> None:
         config = GeminiVisionConfig(api_key="test", model="gemini-2.5-flash")
@@ -42,7 +42,7 @@ class TestGeminiVisionProvider:
 
     async def test_analyze_frame(self) -> None:
         """Test analyze_frame with a mocked Gemini client."""
-        config = GeminiVisionConfig(api_key="test-key", model="gemini-3.1-flash-lite-preview")
+        config = GeminiVisionConfig(api_key="test-key", model="gemini-3.1-flash-lite")
         provider = GeminiVisionProvider(config)
 
         # Mock response
@@ -70,7 +70,7 @@ class TestGeminiVisionProvider:
         result = await provider.analyze_frame(frame)
 
         assert result.description == "A person at a desk with a monitor"
-        assert result.metadata["model"] == "gemini-3.1-flash-lite-preview"
+        assert result.metadata["model"] == "gemini-3.1-flash-lite"
         assert result.metadata["usage"]["prompt_tokens"] == 80
         assert result.metadata["usage"]["completion_tokens"] == 15
 
