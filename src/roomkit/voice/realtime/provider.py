@@ -72,7 +72,7 @@ class RealtimeVoiceProvider(ABC):
     def supports_mid_session_reconfigure(self) -> bool:
         """Whether ``reconfigure(...)`` can safely run mid-session.
 
-        Some realtime models (notably the ``gemini-3.x`` Live family)
+        Some realtime models (notably ``gemini-3.1-flash-live-preview``)
         reject ``send_client_content`` after the first model turn with
         a WebSocket 1007 close and offer no documented alternative for
         dynamic system_instruction updates. The base reconfigure also

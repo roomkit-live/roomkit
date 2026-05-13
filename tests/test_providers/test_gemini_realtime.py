@@ -124,7 +124,7 @@ class TestGeminiLiveProvider:
         """
         mod = _load_provider()
         for model in (
-            "gemini-3.1-flash-live",
+            "gemini-3.1-flash-live-preview",
             "gemini-3.0-flash-live",
             "gemini-3-experimental",
         ):

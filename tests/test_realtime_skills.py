@@ -389,7 +389,7 @@ class TestSkillToolHandling:
     ) -> None:
         """Providers with supports_mid_session_reconfigure=False must not reconnect.
 
-        On gemini-3.x-flash-live the model rejects
+        On gemini-3.1-flash-live-preview the model rejects
         ``send_client_content`` with WS 1007 after the first model turn
         and session_resumption silently drops in-flight tool calls.
         The channel must respect the provider's capability flag and

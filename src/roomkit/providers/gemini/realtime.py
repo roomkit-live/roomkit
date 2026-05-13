@@ -129,7 +129,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         self,
         *,
         api_key: str | SecretStr,
-        model: str = "gemini-3.1-flash-live",
+        model: str = "gemini-3.1-flash-live-preview",
     ) -> None:
         super().__init__()
 
