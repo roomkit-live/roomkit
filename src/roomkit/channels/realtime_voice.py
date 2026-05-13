@@ -123,6 +123,7 @@ class RealtimeVoiceChannel(
         recording: Any | None = None,
         skills: SkillRegistry | None = None,
         script_executor: ScriptExecutor | None = None,
+        skill_delivery_mode: str | None = None,
         tool_recovery: bool = True,
         tool_search: bool | None = None,
         tool_search_pinned: list[str] | None = None,
@@ -172,6 +173,17 @@ class RealtimeVoiceChannel(
                 and the skills preamble is appended to the system prompt.
             script_executor: Optional ``ScriptExecutor`` for running
                 skill scripts.  Ignored when *skills* is ``None``.
+            skill_delivery_mode: How skill bodies reach the model.
+                ``"inline_full"`` bakes every skill's full instructions
+                into the initial ``system_instruction`` at session start;
+                ``activate_skill`` becomes a declarative ACK and no
+                ``provider.reconfigure`` is needed. ``"on_demand"``
+                keeps the legacy behavior: only metadata is in the
+                prompt, ``activate_skill`` loads the body via
+                ``provider.reconfigure``. Defaults to ``"inline_full"``
+                when the provider reports
+                ``supports_mid_session_reconfigure=False`` (e.g.
+                Gemini 3.x Flash Live), ``"on_demand"`` otherwise.
             tool_recovery: If True, detect tool calls that the model emits
                 as text (e.g. ``call:name{args}``) and execute them.
                 Defaults to True.
@@ -240,11 +252,31 @@ class RealtimeVoiceChannel(
         # Skills support — skill defs are composed into the tool list at
         # session-start / reconfigure time, NOT stored in self._tools, to
         # avoid doubling when reconfigure_session updates self._tools.
+        #
+        # Delivery mode is resolved from the explicit kwarg if given,
+        # otherwise from the provider's reconfigure capability: providers
+        # that cannot safely reconfigure mid-session (Gemini 3.x) must
+        # default to ``inline_full`` so every skill body is in the
+        # initial system_instruction. Others keep the legacy ``on_demand``
+        # behavior so the prompt stays short until a skill is activated.
         self._skill_support: RealtimeSkillSupport | None = None
         if skills and skills.skill_count > 0:
             from roomkit.channels._realtime_skills import RealtimeSkillSupport
 
-            self._skill_support = RealtimeSkillSupport(skills, script_executor)
+            if skill_delivery_mode is None:
+                resolved_mode = (
+                    "on_demand"
+                    if provider.supports_mid_session_reconfigure
+                    else "inline_full"
+                )
+            else:
+                resolved_mode = skill_delivery_mode
+
+            self._skill_support = RealtimeSkillSupport(
+                skills,
+                script_executor,
+                delivery_mode=resolved_mode,
+            )
 
         # Tool Search support — only activates when the catalogue is large
         # enough to overflow the realtime model's reliable tool-selection

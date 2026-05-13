@@ -273,6 +273,115 @@ class TestSkillToolHandling:
             f"Expected submit_tool_result before reconfigure, got {call_order}"
         )
 
+    async def test_inline_full_mode_bakes_bodies_into_initial_prompt(
+        self,
+        tmp_path: Path,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """Providers that can't reconfigure must get full skill bodies upfront.
+
+        ``gemini-3.x-flash-live`` cannot accept dynamic system_instruction
+        updates. The channel resolves ``skill_delivery_mode="inline_full"``
+        for those providers and pre-loads every available skill's
+        instructions into the initial connect() system_prompt.
+        """
+
+        class StaticProvider(MockRealtimeProvider):
+            @property
+            def supports_mid_session_reconfigure(self) -> bool:
+                return False
+
+        registry = _registry_with_skill(
+            tmp_path, body="The secret password is 'banana'."
+        )
+        provider = StaticProvider()
+        channel = RealtimeVoiceChannel(
+            "rt-skill",
+            provider=provider,
+            transport=transport,
+            system_prompt="Base prompt.",
+            skills=registry,
+        )
+
+        captured: dict[str, str | None] = {}
+        original_connect = provider.connect
+
+        async def connect_spy(*args: Any, **kwargs: Any) -> None:
+            captured["system_prompt"] = kwargs.get("system_prompt")
+            await original_connect(*args, **kwargs)
+
+        provider.connect = connect_spy  # type: ignore[method-assign]
+
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-skill")
+        await channel.start_session(room.id, "user-1", "fake-ws")
+
+        prompt = captured.get("system_prompt") or ""
+        assert "Base prompt." in prompt
+        assert "Loaded skill instructions (binding rules)" in prompt
+        assert "## Skill: test-skill" in prompt
+        assert "The secret password is 'banana'." in prompt
+
+    async def test_inline_full_mode_activate_skill_is_pure_ack(
+        self,
+        tmp_path: Path,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """In inline_full mode, activate_skill never reconfigures or buffers.
+
+        The body is already in the initial system_instruction so there
+        is nothing to push and nothing to buffer; the tool exists only
+        to record the activation (and any gated-tool resolution).
+        """
+
+        class StaticProvider(MockRealtimeProvider):
+            @property
+            def supports_mid_session_reconfigure(self) -> bool:
+                return False
+
+        registry = _registry_with_skill(tmp_path, body="Body content.")
+        provider = StaticProvider()
+        channel = RealtimeVoiceChannel(
+            "rt-skill",
+            provider=provider,
+            transport=transport,
+            system_prompt="Base.",
+            skills=registry,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-skill")
+
+        session = await channel.start_session(room.id, "user-1", "fake-ws")
+        provider.reconfigure = AsyncMock()  # type: ignore[method-assign]
+
+        captured_results: list[str] = []
+        original_submit = provider.submit_tool_result
+
+        async def submit_spy(s: Any, call_id: str, result: str) -> None:
+            captured_results.append(result)
+            await original_submit(s, call_id, result)
+
+        provider.submit_tool_result = submit_spy  # type: ignore[method-assign]
+
+        await provider.simulate_tool_call(
+            session, "call-1", "activate_skill", {"name": "test-skill"}
+        )
+        await asyncio.sleep(0.1)
+
+        provider.reconfigure.assert_not_called()
+        assert len(captured_results) == 1
+        ack = json.loads(captured_results[0])
+        assert ack["ok"] is True
+        assert ack["name"] == "test-skill"
+        # The body must NOT be in the ACK (that's the whole point — it's
+        # already in system_instruction; sending it again risks the
+        # "narrate the script" failure mode).
+        assert "Body content." not in captured_results[0]
+
     async def test_reconfigure_skipped_when_provider_cannot_reconfigure(
         self,
         tmp_path: Path,

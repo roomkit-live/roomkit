@@ -19,6 +19,14 @@ SKILLS_PREAMBLE = (
     "using it. Available skills are listed below."
 )
 
+SKILLS_INLINE_PREAMBLE = (
+    "You have access to Agent Skills — specialized knowledge packages whose "
+    "full instructions are already loaded below as binding rules. Each skill "
+    "lists its tools and references. Call activate_skill before using a skill "
+    "so the system records the activation; you do not need to read its body "
+    "first because it is already in your context."
+)
+
 SKILLS_NO_SCRIPTS_NOTE = " Note: Script execution is not available in this environment."
 
 # Shared tool schemas — used by both AIChannel (_ai_tools.py) and
