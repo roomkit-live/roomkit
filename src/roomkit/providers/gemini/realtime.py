@@ -179,9 +179,7 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
         # reconfigure for the whole 3.x family so callers route changes
         # through session-start delivery instead. 2.5-era models keep
         # the old behavior.
-        return not (
-            self._model.startswith("gemini-3.") or self._model.startswith("gemini-3-")
-        )
+        return not (self._model.startswith("gemini-3.") or self._model.startswith("gemini-3-"))
 
     def _get_active_state(self, session: VoiceSession) -> _GeminiSessionState | None:
         """Return session state if the session is connected, else None."""

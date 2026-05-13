@@ -265,9 +265,7 @@ class RealtimeVoiceChannel(
 
             if skill_delivery_mode is None:
                 resolved_mode = (
-                    "on_demand"
-                    if provider.supports_mid_session_reconfigure
-                    else "inline_full"
+                    "on_demand" if provider.supports_mid_session_reconfigure else "inline_full"
                 )
             else:
                 resolved_mode = skill_delivery_mode

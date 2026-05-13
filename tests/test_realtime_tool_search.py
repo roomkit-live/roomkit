@@ -350,9 +350,7 @@ class TestAutoActivation:
                 tool_search=True,  # explicit, would normally force-enable
             )
         assert channel._tool_search_support is None
-        assert any(
-            "Tool Search disabled" in r.message for r in caplog.records
-        )
+        assert any("Tool Search disabled" in r.message for r in caplog.records)
 
 
 class TestSessionStartWiring:

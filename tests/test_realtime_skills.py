@@ -291,9 +291,7 @@ class TestSkillToolHandling:
             def supports_mid_session_reconfigure(self) -> bool:
                 return False
 
-        registry = _registry_with_skill(
-            tmp_path, body="The secret password is 'banana'."
-        )
+        registry = _registry_with_skill(tmp_path, body="The secret password is 'banana'.")
         provider = StaticProvider()
         channel = RealtimeVoiceChannel(
             "rt-skill",
