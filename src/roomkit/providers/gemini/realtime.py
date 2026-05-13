@@ -170,6 +170,19 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
     def name(self) -> str:
         return "GeminiLiveProvider"
 
+    @property
+    def supports_mid_session_reconfigure(self) -> bool:
+        # gemini-3.x live models reject send_client_content with WS 1007
+        # after the first model turn and offer no documented dynamic
+        # system_instruction update. Their session_resumption is also
+        # fragile with non-trivial system prompts. Disable mid-session
+        # reconfigure for the whole 3.x family so callers route changes
+        # through session-start delivery instead. 2.5-era models keep
+        # the old behavior.
+        return not (
+            self._model.startswith("gemini-3.") or self._model.startswith("gemini-3-")
+        )
+
     def _get_active_state(self, session: VoiceSession) -> _GeminiSessionState | None:
         """Return session state if the session is connected, else None."""
         state = self._sessions.get(session.id)

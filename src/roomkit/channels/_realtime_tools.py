@@ -162,45 +162,6 @@ class RealtimeToolsMixin:
                 result_str = await self._skill_support.handle_tool_call(
                     name, arguments, session.id
                 )
-                if name == TOOL_ACTIVATE_SKILL:
-                    # Two side effects after a successful activate_skill:
-                    # 1. If the skill gates tools, push the new tool list
-                    #    so previously-hidden tools become visible.
-                    # 2. Push the activated skill's body into
-                    #    ``system_instruction`` via reconfigure so the
-                    #    skill content lives as binding rules. Long
-                    #    bodies returned via ``submit_tool_result``
-                    #    would otherwise derail realtime function
-                    #    calling (Gemini Live falls into "narrate the
-                    #    script" mode after large tool returns).
-                    #
-                    # CRITICAL: ``reconfigure`` rebuilds the provider's
-                    # session config from scratch — passing ``tools=None``
-                    # erases the tool surface. Always pass the current
-                    # visible tool list, even when it is unchanged.
-                    base_tools = self._session_tools.get(session.id, self._tools or [])
-                    all_tools = self._skill_support.skill_tool_dicts() + base_tools
-                    current_visible = self._skill_support.get_visible_tools(all_tools, session.id)
-                    addendum = self._skill_support.activated_skills_prompt(session.id)
-                    if addendum and self._system_prompt:
-                        new_prompt: str | None = f"{self._system_prompt}\n\n{addendum}"
-                    elif addendum:
-                        new_prompt = addendum
-                    else:
-                        new_prompt = None
-
-                    if (
-                        addendum is not None
-                        or self._skill_support.newly_visible_after_activation(
-                            all_tools, session.id, arguments.get("name", "")
-                        )
-                        is not None
-                    ):
-                        await self._provider.reconfigure(
-                            session,
-                            tools=current_visible,
-                            system_prompt=new_prompt,
-                        )
 
                 # Fire ON_TOOL_CALL hook observationally — the skill tool
                 # has already executed, but audit + UI-broadcast hooks
@@ -234,7 +195,51 @@ class RealtimeToolsMixin:
                             exc_info=True,
                         )
 
+                # Submit the tool result FIRST — the model's pending
+                # function call is bound to the live WebSocket. A
+                # subsequent reconfigure tears that connection down and
+                # replaces it with a fresh ``live_session`` that has no
+                # record of ``call_id``, so the tool response would be
+                # lost and the model would hang forever waiting on it.
                 await self._provider.submit_tool_result(session, call_id, result_str)
+
+                if name == TOOL_ACTIVATE_SKILL and self._provider.supports_mid_session_reconfigure:
+                    # On providers that can safely reconfigure mid-session
+                    # (e.g. Gemini 2.5, OpenAI Realtime), push the activated
+                    # skill's body into ``system_instruction`` so it lives as
+                    # binding rules. Skip when the provider cannot reconfigure
+                    # — the body must reach the model some other way (e.g. the
+                    # ``inline_full`` skill_delivery_mode that bakes every
+                    # skill into the initial system_instruction).
+                    #
+                    # CRITICAL: ``reconfigure`` rebuilds the provider's
+                    # session config from scratch — passing ``tools=None``
+                    # erases the tool surface. Always pass the current
+                    # visible tool list, even when it is unchanged.
+                    base_tools = self._session_tools.get(session.id, self._tools or [])
+                    all_tools = self._skill_support.skill_tool_dicts() + base_tools
+                    current_visible = self._skill_support.get_visible_tools(all_tools, session.id)
+                    addendum = self._skill_support.activated_skills_prompt(session.id)
+                    if addendum and self._system_prompt:
+                        new_prompt: str | None = f"{self._system_prompt}\n\n{addendum}"
+                    elif addendum:
+                        new_prompt = addendum
+                    else:
+                        new_prompt = None
+
+                    if (
+                        addendum is not None
+                        or self._skill_support.newly_visible_after_activation(
+                            all_tools, session.id, arguments.get("name", "")
+                        )
+                        is not None
+                    ):
+                        await self._provider.reconfigure(
+                            session,
+                            tools=current_visible,
+                            system_prompt=new_prompt,
+                        )
+
                 telemetry.end_span(tool_span_id)
                 logger.info(
                     "Skill tool %s(%s) handled for session %s",
@@ -389,31 +394,6 @@ class RealtimeToolsMixin:
             name, arguments, session.id
         )
 
-        if updated is not None:
-            # Recompose: skill tools (if any) sit alongside the search-tool
-            # output, then preserve any active skill bodies in the prompt.
-            full_tools = updated
-            if self._skill_support:
-                skill_defs = self._skill_support.skill_tool_dicts()
-                # Avoid duplicating any skill tool already present in updated.
-                seen = {t.get("name") for t in updated}
-                full_tools = [t for t in skill_defs if t.get("name") not in seen] + updated
-                full_tools = self._skill_support.get_visible_tools(full_tools, session.id)
-
-            new_prompt: str | None = self._system_prompt
-            if self._skill_support:
-                addendum = self._skill_support.activated_skills_prompt(session.id)
-                if addendum and new_prompt:
-                    new_prompt = f"{new_prompt}\n\n{addendum}"
-                elif addendum:
-                    new_prompt = addendum
-
-            await self._provider.reconfigure(
-                session,
-                tools=full_tools,
-                system_prompt=new_prompt,
-            )
-
         # Fire ON_TOOL_CALL hook so audit + UI-broadcast hooks see search calls.
         if self._framework and room_id:
             from roomkit.models.tool_call import ToolCallEvent
@@ -444,7 +424,43 @@ class RealtimeToolsMixin:
                     exc_info=True,
                 )
 
+        # Submit the tool result FIRST: the model's pending call is bound
+        # to the live WebSocket. Reconfigure would tear that connection
+        # down and the response would be lost.
         await self._provider.submit_tool_result(session, call_id, result_str)
+
+        if updated is not None and self._provider.supports_mid_session_reconfigure:
+            # Recompose: skill tools (if any) sit alongside the search-tool
+            # output, then preserve any active skill bodies in the prompt.
+            full_tools = updated
+            if self._skill_support:
+                skill_defs = self._skill_support.skill_tool_dicts()
+                # Avoid duplicating any skill tool already present in updated.
+                seen = {t.get("name") for t in updated}
+                full_tools = [t for t in skill_defs if t.get("name") not in seen] + updated
+                full_tools = self._skill_support.get_visible_tools(full_tools, session.id)
+
+            new_prompt: str | None = self._system_prompt
+            if self._skill_support:
+                addendum = self._skill_support.activated_skills_prompt(session.id)
+                if addendum and new_prompt:
+                    new_prompt = f"{new_prompt}\n\n{addendum}"
+                elif addendum:
+                    new_prompt = addendum
+
+            await self._provider.reconfigure(
+                session,
+                tools=full_tools,
+                system_prompt=new_prompt,
+            )
+        elif updated is not None:
+            logger.debug(
+                "Tool-search match for %s but provider %s cannot reconfigure "
+                "mid-session — newly matched tools will not be exposed this turn",
+                name,
+                self._provider.name,
+            )
+
         telemetry.end_span(tool_span_id)
         logger.info(
             "Tool-search %s(%s) handled for session %s (%d tools now visible)",

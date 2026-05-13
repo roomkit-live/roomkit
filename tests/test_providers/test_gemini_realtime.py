@@ -116,6 +116,32 @@ class TestGeminiLiveProvider:
         )
         assert provider._model == "gemini-2.0-flash-live"
 
+    def test_3x_models_disable_mid_session_reconfigure(self):
+        """gemini-3.* models reject send_client_content with WS 1007
+        after the first model turn and offer no documented dynamic
+        system_instruction update. The provider must advertise that
+        so callers route changes through session-start delivery.
+        """
+        mod = _load_provider()
+        for model in (
+            "gemini-3.1-flash-live-preview",
+            "gemini-3.0-flash-live",
+            "gemini-3-experimental",
+        ):
+            provider = mod.GeminiLiveProvider(api_key="test-key", model=model)
+            assert provider.supports_mid_session_reconfigure is False, (
+                f"{model} must disable mid-session reconfigure"
+            )
+
+    def test_2x_models_allow_mid_session_reconfigure(self):
+        """Pre-3.x Gemini Live models keep the old reconfigure behavior."""
+        mod = _load_provider()
+        for model in ("gemini-2.5-flash-live", "gemini-2.0-flash-live"):
+            provider = mod.GeminiLiveProvider(api_key="test-key", model=model)
+            assert provider.supports_mid_session_reconfigure is True, (
+                f"{model} must keep mid-session reconfigure enabled"
+            )
+
     def test_callback_registration(self):
         mod = _load_provider()
         provider = mod.GeminiLiveProvider(api_key="test-key")

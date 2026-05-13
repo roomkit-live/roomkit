@@ -68,6 +68,30 @@ class RealtimeVoiceProvider(ABC):
         """Provider name (e.g. 'openai_realtime', 'gemini_live')."""
         ...
 
+    @property
+    def supports_mid_session_reconfigure(self) -> bool:
+        """Whether ``reconfigure(...)`` can safely run mid-session.
+
+        Some realtime models (notably ``gemini-3.1-flash-live-preview``)
+        reject ``send_client_content`` after the first model turn with
+        a WebSocket 1007 close and offer no documented alternative for
+        dynamic system_instruction updates. The base reconfigure also
+        tears down the live WebSocket and reconnects via session
+        resumption, which on those models is fragile when the system
+        prompt is non-trivial and silently drops in-flight tool calls
+        (their ``call_id`` is connection-scoped).
+
+        Channels that orchestrate dynamic tool / skill exposure must
+        check this flag before calling ``reconfigure`` and fall back to
+        delivering the same information through a different surface
+        (e.g. baking it into ``system_instruction`` at session start,
+        or returning it through the tool result that triggered the
+        change). Providers default to ``True`` for backwards
+        compatibility; subclasses override to ``False`` when their
+        upstream model cannot safely reconfigure.
+        """
+        return True
+
     @abstractmethod
     async def connect(
         self,

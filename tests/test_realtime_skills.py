@@ -220,6 +220,104 @@ class TestSkillToolHandling:
         assert sent_tools is not None
         assert any(t["name"] == "activate_skill" for t in sent_tools)
 
+    async def test_submit_tool_result_runs_before_reconfigure(
+        self,
+        tmp_path: Path,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """The ACK must reach the original live_session BEFORE reconnect.
+
+        Reconfigure tears down the WebSocket and replaces ``live_session``
+        with a fresh connection that has no record of the in-flight
+        ``call_id``. Submitting the tool result after reconfigure
+        therefore loses the response and wedges the model. Lock the
+        order so the regression cannot return.
+        """
+        registry = _registry_with_skill(tmp_path)
+        channel = RealtimeVoiceChannel(
+            "rt-skill",
+            provider=provider,
+            transport=transport,
+            system_prompt="Base.",
+            skills=registry,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-skill")
+
+        session = await channel.start_session(room.id, "user-1", "fake-ws")
+
+        call_order: list[str] = []
+        original_submit = provider.submit_tool_result
+        original_reconfigure = provider.reconfigure
+
+        async def submit_spy(*args: Any, **kwargs: Any) -> None:
+            call_order.append("submit_tool_result")
+            await original_submit(*args, **kwargs)
+
+        async def reconfigure_spy(*args: Any, **kwargs: Any) -> None:
+            call_order.append("reconfigure")
+            await original_reconfigure(*args, **kwargs)
+
+        provider.submit_tool_result = submit_spy  # type: ignore[method-assign]
+        provider.reconfigure = reconfigure_spy  # type: ignore[method-assign]
+
+        await provider.simulate_tool_call(
+            session, "call-1", "activate_skill", {"name": "test-skill"}
+        )
+        await asyncio.sleep(0.1)
+
+        assert call_order == ["submit_tool_result", "reconfigure"], (
+            f"Expected submit_tool_result before reconfigure, got {call_order}"
+        )
+
+    async def test_reconfigure_skipped_when_provider_cannot_reconfigure(
+        self,
+        tmp_path: Path,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """Providers with supports_mid_session_reconfigure=False must not reconnect.
+
+        On gemini-3.1-flash-live-preview the model rejects
+        ``send_client_content`` with WS 1007 after the first model turn
+        and session_resumption silently drops in-flight tool calls.
+        The channel must respect the provider's capability flag and
+        skip the reconfigure entirely; the ACK alone closes the turn.
+        """
+
+        class StaticProvider(MockRealtimeProvider):
+            @property
+            def supports_mid_session_reconfigure(self) -> bool:
+                return False
+
+        registry = _registry_with_skill(tmp_path, body="Body.")
+        provider = StaticProvider()
+        channel = RealtimeVoiceChannel(
+            "rt-skill",
+            provider=provider,
+            transport=transport,
+            system_prompt="Base.",
+            skills=registry,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-skill")
+
+        session = await channel.start_session(room.id, "user-1", "fake-ws")
+        provider.reconfigure = AsyncMock()  # type: ignore[method-assign]
+        provider.submit_tool_result = AsyncMock()  # type: ignore[method-assign]
+
+        await provider.simulate_tool_call(
+            session, "call-1", "activate_skill", {"name": "test-skill"}
+        )
+        await asyncio.sleep(0.1)
+
+        provider.submit_tool_result.assert_called_once()
+        provider.reconfigure.assert_not_called()
+
     async def test_activate_skill_idempotent_does_not_double_stack(
         self,
         tmp_path: Path,
