@@ -60,7 +60,7 @@ def build_voice_provider(voice_choice: str) -> object:
         api_key=os.environ["GOOGLE_API_KEY"],
         model=os.environ.get(
             "GEMINI_MODEL",
-            "gemini-3.1-flash-live-preview",
+            "gemini-3.1-flash-live",
         ),
     )
 

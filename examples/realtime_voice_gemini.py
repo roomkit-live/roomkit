@@ -43,7 +43,7 @@ async def main() -> None:
     # --- Gemini Live provider ---
     provider = GeminiLiveProvider(
         api_key=env["GOOGLE_API_KEY"],
-        model="gemini-3.1-flash-live-preview",
+        model="gemini-3.1-flash-live",
     )
     transport = WebSocketRealtimeTransport()
 
