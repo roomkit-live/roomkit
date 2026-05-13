@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+import re
+
 import roomkit
 
 
 class TestPublicAPI:
     def test_version_string(self) -> None:
         assert isinstance(roomkit.__version__, str)
-        assert roomkit.__version__ == "0.7.0a17"
+        # PEP 440 release identifier: ``MAJOR.MINOR.PATCH`` with an
+        # optional pre-release suffix (``a``/``b``/``rc`` + digits) and
+        # an optional post/dev tag. Pinning the exact string here would
+        # tie every release commit to a test edit — keep this loose so
+        # the assertion catches a missing or empty version, not a bump.
+        assert re.match(
+            r"^\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?(?:\.post\d+)?(?:\.dev\d+)?$",
+            roomkit.__version__,
+        ), f"unexpected __version__ {roomkit.__version__!r}"
 
     def test_all_names_importable(self) -> None:
         for name in roomkit.__all__:
