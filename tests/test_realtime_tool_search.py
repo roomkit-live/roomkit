@@ -322,6 +322,38 @@ class TestAutoActivation:
         """Threshold default matches Google's published guidance."""
         assert DEFAULT_TOOL_SEARCH_THRESHOLD == 20
 
+    async def test_disabled_when_provider_cannot_reconfigure(
+        self,
+        transport: MockRealtimeTransport,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Tool Search depends on provider.reconfigure to push matched tools.
+
+        Providers that cannot reconfigure mid-session (Gemini 3.x) get
+        Tool Search force-disabled at construction time with an INFO log
+        — silently no-oping the feature would leave a useless
+        ``find_tools`` tool on the model's surface.
+        """
+
+        class StaticProvider(MockRealtimeProvider):
+            @property
+            def supports_mid_session_reconfigure(self) -> bool:
+                return False
+
+        provider = StaticProvider()
+        with caplog.at_level("INFO", logger="roomkit.channels.realtime_voice"):
+            channel = RealtimeVoiceChannel(
+                "rt-static",
+                provider=provider,
+                transport=transport,
+                tools=_make_catalogue(40),
+                tool_search=True,  # explicit, would normally force-enable
+            )
+        assert channel._tool_search_support is None
+        assert any(
+            "Tool Search disabled" in r.message for r in caplog.records
+        )
+
 
 class TestSessionStartWiring:
     async def test_session_start_sends_only_search_and_pinned_tools(

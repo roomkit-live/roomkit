@@ -283,11 +283,28 @@ class RealtimeVoiceChannel(
         # window (Google Gemini Live: 10–20 active tools). Auto-detect by
         # default; ``tool_search=True/False`` forces. Composed into the
         # tool list at session start the same way skills are.
+        #
+        # Tool Search depends on ``provider.reconfigure`` to push newly
+        # matched tools into the session — that's the whole mechanic.
+        # Providers that cannot reconfigure mid-session (Gemini 3.x)
+        # cannot benefit from it; enabling it would either silently
+        # do nothing (Phase A gates the reconfigure call) or worse,
+        # confuse the model with a ``find_tools`` tool whose effect is
+        # invisible. Force-disable in that case with a clear log line.
         self._tool_search_support: RealtimeToolSearchSupport | None = None
         catalogue_size = len(tool_defs or [])
         should_enable = tool_search is True or (
             tool_search is None and catalogue_size > tool_search_threshold
         )
+        if should_enable and not provider.supports_mid_session_reconfigure:
+            logger.info(
+                "Tool Search disabled: provider %s cannot reconfigure mid-session. "
+                "Catalogue size %d exposed verbatim; consider curating "
+                "tools per agent or using skills to gate access.",
+                getattr(provider, "name", type(provider).__name__),
+                catalogue_size,
+            )
+            should_enable = False
         if should_enable and tool_defs:
             from roomkit.channels._realtime_tool_search import RealtimeToolSearchSupport
 
