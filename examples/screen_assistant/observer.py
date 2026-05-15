@@ -126,8 +126,7 @@ def setup_screen_vision(
             return
         if state.tool_in_progress:
             logger.info(
-                "[Vision %d] Suppressed — tool call in progress "
-                "(would race the tool result)",
+                "[Vision %d] Suppressed — tool call in progress (would race the tool result)",
                 state.frame_count,
             )
             return
