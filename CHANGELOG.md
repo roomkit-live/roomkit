@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-15
+
+First stable release after the `0.7.0a1`–`0.7.0a18` alpha series. The
+per-alpha entries below remain as the granular per-PR history; this
+section is the upgrade guide from `0.6.x`.
+
+### Highlights
+
+- **Real-time speech-to-speech AI** is the headline feature. The new `RealtimeVoiceChannel` wraps OpenAI Realtime, Gemini Live, xAI, ElevenLabs, Anam, and PersonaPlex behind one Channel ABC, with a 10-mixin architecture (`_realtime_audio`, `_realtime_tools`, `_realtime_speech`, `_realtime_skills`, `_realtime_transcription`, `_realtime_response`, `_realtime_tool_search`, `_realtime_tool_recovery`, `_realtime_context`, `_skill_handlers`) that the channel composes.
+- **Tool Search** for tool-heavy realtime sessions — `find_tools(query)` + `list_tools` keep the active tool surface under ~20 (the reliable function-calling threshold for Gemini Live) while exposing thousands of tools dynamically via `provider.reconfigure`.
+- **Skill delivery modes** (`on_demand` vs `inline_full`) that handle providers which cannot reconfigure mid-session (Gemini 3.x) by baking skill bodies into `system_instruction` at session start.
+- **Carrier-grade SIP**: NAT traversal via `advertised_ip`, BYE routing fixed for inbound calls behind SBCs, RFC 3326 `Reason` header parse + emit, runtime auth resolver (`set_auth_resolver`), runtime invite filter (`set_invite_filter`), PSTN compatibility knobs for outbound dial.
+- **Orchestration**: `Supervisor` strategy with `sequential` / `parallel` / `auto_delegate` execution + `async_delivery` for non-blocking pipelines, `HandoffHandler` state machine, `Loop` producer/reviewer pattern, all wired to `kit.status_bus` for observable multi-agent flows.
+- **Video / vision**: vision providers (OpenAI, Gemini), avatar providers (MuseTalk lip-sync, WebSocket, Anam cloud), video filters (watermark, YOLO, censor, MediaPipe face-touch detection), screen capture + control tools (`DescribeScreenTool`, `ScreenInputTools`), webcam capture (`DescribeWebcamTool`), PyAV recorder with A/V sync, video bridge.
+- **Storage**: `PostgresStore` v2 relational schema with proper indexes (replacing JSONB blobs), `PostgresKnowledgeSource` for full-text retrieval, `SummarizingMemory` + `RetrievalMemory` providers.
+- **Delivery backends**: pluggable `InMemoryDeliveryBackend` and `RedisDeliveryBackend` (Streams + consumer groups) so deliveries survive process restarts and scale across workers.
+- **Twilio Media Streams** voice backend with stateful soxr resampling and pure-Python G.711 mu-law codec (no `audioop` dependency).
+- **Quality**: `ON_AI_RESPONSE` + `ON_FEEDBACK` hooks, `ConversationScorer` ABC, `ScoringHook`, `QualityTracker` reports.
+
+### Migration from 0.6.x
+
+#### Removed APIs (BREAKING)
+
+- `kit.connect_voice` / `kit.disconnect_voice` / `kit.connect_video` / `kit.disconnect_video` / `kit.bind_voice_session` / `kit.connect_realtime_voice` / `kit.disconnect_realtime_voice` → **use `kit.join(...)` and `kit.leave(session)`** (see `0.7.0a1` and `0.7.0a16`).
+- `RoomKit(stt=..., tts=..., voice=...)` constructor parameters → **pass providers to `VoiceChannel(stt=..., tts=..., backend=...)` directly**. `kit.stt` / `kit.tts` / `kit.voice` properties now look up from registered channels.
+- Top-level `from roomkit import …` exports slimmed from 399 to 66. **Providers, voice/video types, mocks, recording, orchestration, and telemetry must be imported from their subpackages** (e.g. `from roomkit.providers.anthropic.ai import AnthropicAIProvider`).
+- `HookTrigger.ON_REALTIME_TOOL_CALL` → **renamed to `HookTrigger.ON_TOOL_CALL`**. The event payload is now a channel-agnostic `ToolCallEvent`. Return results via `HookResult(action="allow", metadata={"result": ...})`.
+- Tool handler signature: 3-arg `(session, name, arguments)` → **2-arg `(name, arguments)`**. Use `get_current_voice_session()` contextvar for session access in voice tool handlers.
+- `audit_realtime_tool_handler` → **use `audit_tool_handler`** (now channel-agnostic).
+- `parse_voicemeup_webhook()` / `configure_voicemeup_mms()` module-level functions → **per-instance `provider.parse_inbound(payload, channel_id)` / `provider.configure_mms(...)`** (enables multi-tenant isolation).
+- `GeminiLiveProvider.prime_realtime_input()` → **`provider.start_audio_stream(session)`** (also exposed on `RealtimeVoiceChannel.inject_text(..., start_audio_stream=True)`).
+
+#### Behavior changes
+
+- **Recording is opt-out, not opt-in.** Rooms with recorders now capture every attached channel by default. Disable per-channel with `ChannelRecordingConfig(audio=False, video=False)`. Recording now captures both inbound (mic) and outbound (TTS) audio mixed into a single track.
+- **`Tool` protocol is the standard tool registration path.** Pass any object with `.definition: dict` and `.handler(name, args) -> str` via `tools=[my_tool]`. The legacy `tool_handler=` parameter still exists for MCP / audit middleware but `tools=` is the documented surface.
+- **`PostgresStore` is now relational (schema v2).** v1 JSONB-blob databases are auto-migrated on first connect; drops old `data` columns and rebuilds the relational schema.
+- **`OpenAIRealtimeProvider` honours `input_sample_rate` / `output_sample_rate`.** PCM is only accepted at 24 kHz by the GA API; invalid rates now raise `ValueError` at construction.
+- **`audioop` dependency removed.** Replaced with pure-Python G.711 codec + linear interpolation resampler — runs on Python 3.13+ without `audioop-lts`.
+
 ### Security
 
 - **HTTP webhook SSRF guard hardened (`HTTPProviderConfig.webhook_url`).** The previous validator only checked literal-string hostnames and the canonical-dotted-quad output of `ipaddress.ip_address`. Five bypasses landed in production: `http://127.1`, `http://2130706433`, `http://0x7f000001`, `http://localhost.` (trailing-dot DNS form), and any hostname whose A record points to RFC 1918 / loopback / link-local. The new validator lives in `roomkit.providers.url_safety.validate_public_url` and (a) normalizes IPv4 numeric forms via `socket.inet_aton`, (b) strips trailing-dot DNS forms, (c) resolves every A/AAAA record at validation time and rejects on any non-public result. Reject reasons now name the resolved address class (loopback, private, link-local, reserved, multicast, unspecified). Note: DNS rebinding between validation and HTTP request is still possible — pin-on-connect is out of scope for a config-time helper; callers that need it must wire a custom `httpx.AsyncHTTPTransport`.
@@ -14,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`PersonaPlexConfig.ssl_verify` default flipped from `False` to `True`.** The previous default disabled certificate verification (`check_hostname=False`, `verify_mode=CERT_NONE`) on every PersonaPlex connection, justified at the time as a convenience for self-signed dev certs. Secure-by-default is the rule. **Migration**: production deployments are not affected. Local development against self-signed certs must now pass `ssl_verify=False` explicitly. The `PersonaPlexRealtimeProvider(ssl_verify=...)` constructor argument was flipped to match.
 - **Telnyx webhook signatures now check timestamp freshness.** `TelnyxSMSProvider.verify_signature` and `TelnyxRCSProvider.verify_signature` previously accepted any correctly-signed timestamp, so a single captured request could be replayed forever. Both now reject signatures whose timestamp is more than 300 seconds away from the current clock; the window is configurable via the new `tolerance_seconds` kwarg. The two byte-identical verifiers were also factored into `roomkit.providers.telnyx._signature.verify_telnyx_signature`. **Migration**: webhook ingest pipelines that buffer requests longer than 5 minutes between Telnyx and the verifier must pass a larger `tolerance_seconds`.
 - **`DescribeWebcamTool` no longer exposes `save_path` to the AI.** The previous tool schema let the model pass an arbitrary `save_path: string` that the handler resolved via `Path(p).expanduser().resolve()` and wrote a JPEG to — including auto-creating parent directories. A prompt-injected model could overwrite any file the process could write. The schema field is gone; the constructor now takes an operator-controlled `save_dir` and the handler auto-generates `webcam-<utc-timestamp>-<uuid>.jpg` inside that directory. If `save_dir` is unset, captures are not persisted. The model has no way to influence the destination path. **Migration**: callers passing `save_path=...` to `DescribeWebcamTool.analyze` must instead pass `save_dir=...` at construction time. Any `save_path` field included by the model in tool arguments is now silently ignored.
+
+### Full per-PR detail
+
+See entries `0.7.0a1` through `0.7.0a18` below.
 
 ## [0.7.0a18] — 2026-05-13
 
