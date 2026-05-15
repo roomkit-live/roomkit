@@ -339,12 +339,14 @@ class PyAVMediaRecorder(MediaRecorder):
                     ts.frame_count += 1
                 except Exception:
                     logger.error(
-                        "Flush failed for track %s at frame %d",
+                        "Flush failed for track %s at frame %d — skipping",
                         ts.track.id,
                         ts.frame_count,
                         exc_info=True,
                     )
-                    break
+                    # Skip this frame, keep flushing — one corrupt packet
+                    # must not drop every subsequent buffered frame.
+                    continue
             ts.pending.clear()
 
     def _encode_frame(

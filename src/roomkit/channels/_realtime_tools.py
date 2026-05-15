@@ -150,14 +150,14 @@ class RealtimeToolsMixin:
         try:
             result_str: str
 
-            # Step 0a: Tool Search infrastructure tools — handle internally
+            # Tool Search infrastructure tools — handle internally
             if self._tool_search_support and self._tool_search_support.is_search_tool(name):
                 await self._dispatch_tool_search_call(
                     session, call_id, name, arguments, room_id, tool_span_id
                 )
                 return
 
-            # Step 0b: Skill infrastructure tools — handle internally
+            # Skill infrastructure tools — handle internally
             if self._skill_support and self._skill_support.is_skill_tool(name):
                 result_str = await self._skill_support.handle_tool_call(
                     name, arguments, session.id
@@ -249,7 +249,7 @@ class RealtimeToolsMixin:
                 )
                 return
 
-            # Step 1: Run tool_handler (if exists)
+            # Run tool_handler (if exists).
             handler_result: str | None = None
             if self._tool_handler is not None:
                 logger.info(
@@ -267,7 +267,7 @@ class RealtimeToolsMixin:
                     _current_voice_session.reset(token)
                 handler_result = raw if isinstance(raw, str) else json.dumps(raw)
 
-            # Step 2: Run ON_TOOL_CALL hook (if framework + room)
+            # Run ON_TOOL_CALL hook (if framework + room).
             from roomkit.models.tool_call import ToolCallEvent
 
             tool_event = ToolCallEvent(

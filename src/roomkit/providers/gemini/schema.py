@@ -102,8 +102,8 @@ def _collapse_union(obj: dict[str, Any]) -> dict[str, Any]:
 
 
 def _clean(obj: dict[str, Any]) -> dict[str, Any]:
-    # Step 1: collapse union shapes BEFORE stripping unknown keys, so
-    # the union members get inspected rather than silently discarded.
+    # Collapse union shapes BEFORE stripping unknown keys, so the union
+    # members get inspected rather than silently discarded.
     obj = _collapse_union(obj)
 
     result: dict[str, Any] = {}

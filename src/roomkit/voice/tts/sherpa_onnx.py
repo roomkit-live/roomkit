@@ -72,10 +72,10 @@ def _split_text(text: str, max_chars: int = 300) -> list[str]:
     if not text:
         return []
 
-    # Phase 1: split on paragraph breaks
+    # Split on paragraph breaks.
     paragraphs = [p.strip() for p in _PARAGRAPH_RE.split(text) if p.strip()]
 
-    # Phase 2: split each paragraph on sentence boundaries, merge short bits
+    # Split each paragraph on sentence boundaries, merging short bits.
     chunks: list[str] = []
     for para in paragraphs:
         sentences = [s.strip() for s in _SENTENCE_RE.split(para) if s.strip()]
@@ -88,7 +88,7 @@ def _split_text(text: str, max_chars: int = 300) -> list[str]:
                 merged.append(sent)
         chunks.extend(merged)
 
-    # Phase 3: break any chunk that still exceeds max_chars
+    # Break any chunk that still exceeds max_chars.
     result: list[str] = []
     for chunk in chunks:
         if len(chunk) <= max_chars:

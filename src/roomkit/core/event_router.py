@@ -240,7 +240,7 @@ class EventRouter:
                     if self._greeting_gate_fn is not None:
                         await self._greeting_gate_fn(transcoded_event.room_id, 30.0)
 
-                # Step 1: on_event — all channels react
+                # on_event — all channels react.
                 output = await channel.on_event(transcoded_event, binding, context)
                 tr.output = output
 
@@ -256,7 +256,7 @@ class EventRouter:
                     target_results.append(tr)
                     return
 
-                # Step 2: deliver — only transport channels push to external
+                # deliver — only transport channels push to external.
                 if binding.category == ChannelCategory.TRANSPORT:
                     # Skip delivery for channels that already received streaming content
                     if exclude_delivery and binding.channel_id in exclude_delivery:

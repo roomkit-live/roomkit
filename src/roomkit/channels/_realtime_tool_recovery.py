@@ -194,7 +194,7 @@ class RealtimeToolRecoveryMixin:
         )
 
         try:
-            # Step 1: Run tool_handler
+            # Run tool_handler.
             handler_result: str | None = None
             if self._tool_handler is not None:
                 from roomkit.channels._realtime_context import _current_voice_session
@@ -206,7 +206,7 @@ class RealtimeToolRecoveryMixin:
                     _current_voice_session.reset(token)
                 handler_result = raw if isinstance(raw, str) else json.dumps(raw)
 
-            # Step 2: Fire ON_TOOL_CALL hook (for observability / overrides)
+            # Fire ON_TOOL_CALL hook (for observability / overrides).
             from roomkit.models.tool_call import ToolCallEvent
 
             tool_event = ToolCallEvent(
@@ -238,7 +238,7 @@ class RealtimeToolRecoveryMixin:
                     hook_val = hook_result.metadata["result"]
                     result_str = hook_val if isinstance(hook_val, str) else json.dumps(hook_val)
 
-            # Step 3: Inject result as silent context (NOT submit_tool_result).
+            # Inject result as silent context (NOT submit_tool_result).
             # Gemini didn't issue the call, so it doesn't expect a FunctionResponse.
             summary = result_str[:8000] if len(result_str) > 8000 else result_str
             await self._provider.inject_text(

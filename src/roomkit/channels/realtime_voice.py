@@ -285,9 +285,9 @@ class RealtimeVoiceChannel(
         # Tool Search depends on ``provider.reconfigure`` to push newly
         # matched tools into the session — that's the whole mechanic.
         # Providers that cannot reconfigure mid-session (Gemini 3.x)
-        # cannot benefit from it; enabling it would either silently
-        # do nothing (Phase A gates the reconfigure call) or worse,
-        # confuse the model with a ``find_tools`` tool whose effect is
+        # cannot benefit from it; the ``supports_mid_session_reconfigure``
+        # guard below would silently swallow the reconfigure, and worse
+        # the model would still see a ``find_tools`` tool whose effect is
         # invisible. Force-disable in that case with a clear log line.
         self._tool_search_support: RealtimeToolSearchSupport | None = None
         catalogue_size = len(tool_defs or [])
@@ -1078,7 +1078,7 @@ class RealtimeVoiceChannel(
 
     async def disconnect_session(self, session: Any, room_id: str) -> None:
         """Clean up realtime sessions on remote disconnect."""
-        for rt_session in self._get_room_sessions(room_id):
+        for rt_session in self.get_room_sessions(room_id):
             await self.end_session(rt_session)
 
     def update_binding(self, room_id: str, binding: ChannelBinding) -> None:
@@ -1133,7 +1133,7 @@ class RealtimeVoiceChannel(
         room_id = event.room_id
 
         # Inject text into all active sessions for this room
-        for session in self._get_room_sessions(room_id):
+        for session in self.get_room_sessions(room_id):
             try:
                 await self._provider.inject_text(session, text, role=inject_role)
 
@@ -1280,10 +1280,3 @@ class RealtimeVoiceChannel(
             active = session.id in self._sessions
         if active:
             await self.end_session(session)
-
-    # -- Helpers --
-
-    def _get_room_sessions(self, room_id: str) -> list[VoiceSession]:
-        """Get all active sessions for a room."""
-        with self._state_lock:
-            return [s for s in self._sessions.values() if self._session_rooms.get(s.id) == room_id]

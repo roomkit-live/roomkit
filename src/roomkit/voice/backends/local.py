@@ -572,7 +572,7 @@ class LocalAudioBackend(VoiceBackend):
         stream.start()
 
         async def _run() -> None:
-            # Phase 1: consume TTS chunks into the buffer.
+            # Consume TTS chunks into the buffer.
             async for chunk in chunks:
                 if session.id not in self._playing_sessions:
                     return
@@ -580,7 +580,7 @@ class LocalAudioBackend(VoiceBackend):
                     with buf_lock:
                         audio_buf.extend(chunk.data)
 
-            # Phase 2: wait for the PortAudio callback to drain.
+            # Wait for the PortAudio callback to drain.
             producer_done.set()
             with buf_lock:
                 if len(audio_buf) == 0:
