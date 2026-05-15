@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import ipaddress
-from urllib.parse import urlparse
-
 from pydantic import BaseModel, Field, SecretStr, field_validator
+
+from roomkit.providers.url_safety import validate_public_url
 
 
 class HTTPProviderConfig(BaseModel):
@@ -19,33 +18,20 @@ class HTTPProviderConfig(BaseModel):
     @field_validator("webhook_url")
     @classmethod
     def validate_webhook_url(cls, v: str) -> str:
-        """Reject webhook URLs pointing to private/reserved IP ranges."""
-        parsed = urlparse(v)
-        if not parsed.scheme or not parsed.hostname:
-            raise ValueError("webhook_url must be a valid URL with scheme and host")
+        """Reject webhook URLs pointing to private/reserved hosts.
 
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError(f"webhook_url scheme must be http or https, got {parsed.scheme!r}")
+        Resolves every A/AAAA record at validation time and rejects any
+        URL whose host (literal or DNS-resolved) lands in loopback,
+        private, link-local, reserved, multicast, or unspecified space.
+        Numeric IPv4 forms (``127.1``, ``2130706433``, ``0x7f000001``)
+        and the trailing-dot DNS form (``localhost.``) are normalized
+        before the check.
 
-        hostname = parsed.hostname
-
-        # Reject localhost variants
-        if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):  # noqa: S104  # nosec B104
-            raise ValueError("webhook_url must not point to localhost")
-
-        # Check for private/reserved IP addresses
+        Note: DNS rebinding between validation and HTTP request is not
+        defended against here — see :mod:`roomkit.providers.url_safety`
+        for the rationale.
+        """
         try:
-            addr = ipaddress.ip_address(hostname)
-            if addr.is_private or addr.is_reserved or addr.is_loopback:
-                raise ValueError(
-                    f"webhook_url must not point to private/reserved address: {hostname}"
-                )
-            if addr.is_link_local:
-                raise ValueError(f"webhook_url must not point to link-local address: {hostname}")
+            return validate_public_url(v)
         except ValueError as exc:
-            # Re-raise our own ValueErrors
-            if "webhook_url" in str(exc):
-                raise
-            # Not an IP address (it's a hostname) — allow it
-
-        return v
+            raise ValueError(f"webhook_url rejected: {exc}") from None

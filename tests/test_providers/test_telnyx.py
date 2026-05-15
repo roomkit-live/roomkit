@@ -421,13 +421,18 @@ class TestTelnyxSignatureVerification:
         signature = signing_key.sign(signed_payload).signature
         return base64.b64encode(signature).decode()
 
+    def _fresh_timestamp(self) -> str:
+        import time
+
+        return str(int(time.time()))
+
     def test_verify_valid_signature(self) -> None:
         public_key_b64, signing_key = self._generate_keypair()
         cfg = _config()
         provider = TelnyxSMSProvider(cfg, public_key=public_key_b64)
 
         payload = b'{"data": {"payload": {"text": "Hello"}}}'
-        timestamp = "1706443200"
+        timestamp = self._fresh_timestamp()
         signature = self._sign_payload(signing_key, timestamp, payload)
 
         assert provider.verify_signature(payload, signature, timestamp) is True
@@ -438,7 +443,7 @@ class TestTelnyxSignatureVerification:
         provider = TelnyxSMSProvider(cfg, public_key=public_key_b64)
 
         payload = b'{"data": {"payload": {"text": "Hello"}}}'
-        timestamp = "1706443200"
+        timestamp = self._fresh_timestamp()
         invalid_signature = base64.b64encode(b"invalid" * 8).decode()
 
         assert provider.verify_signature(payload, invalid_signature, timestamp) is False
@@ -449,7 +454,7 @@ class TestTelnyxSignatureVerification:
         provider = TelnyxSMSProvider(cfg, public_key=public_key_b64)
 
         original_payload = b'{"data": {"payload": {"text": "Hello"}}}'
-        timestamp = "1706443200"
+        timestamp = self._fresh_timestamp()
         signature = self._sign_payload(signing_key, timestamp, original_payload)
 
         tampered_payload = b'{"data": {"payload": {"text": "Tampered"}}}'
@@ -461,11 +466,29 @@ class TestTelnyxSignatureVerification:
         provider = TelnyxSMSProvider(cfg, public_key=public_key_b64)
 
         payload = b'{"data": {"payload": {"text": "Hello"}}}'
-        timestamp = "1706443200"
+        timestamp = self._fresh_timestamp()
         signature = self._sign_payload(signing_key, timestamp, payload)
 
-        wrong_timestamp = "1706443201"
+        wrong_timestamp = str(int(timestamp) + 1)
         assert provider.verify_signature(payload, signature, wrong_timestamp) is False
+
+    def test_verify_stale_timestamp_replay_rejected(self) -> None:
+        """A signed request older than tolerance_seconds must be rejected."""
+        public_key_b64, signing_key = self._generate_keypair()
+        cfg = _config()
+        provider = TelnyxSMSProvider(cfg, public_key=public_key_b64)
+
+        payload = b'{"data": {"payload": {"text": "Hello"}}}'
+        # 1 hour old — well outside the default 5min window.
+        import time
+
+        stale = str(int(time.time()) - 3600)
+        signature = self._sign_payload(signing_key, stale, payload)
+
+        assert provider.verify_signature(payload, signature, stale) is False
+        # But with a wide enough window, it does verify — proves we
+        # rejected it for freshness, not for a broken signature.
+        assert provider.verify_signature(payload, signature, stale, tolerance_seconds=7200) is True
 
     def test_verify_no_public_key(self) -> None:
         cfg = _config()

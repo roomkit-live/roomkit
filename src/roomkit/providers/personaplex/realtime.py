@@ -105,7 +105,7 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
         self,
         *,
         server_url: str = "wss://localhost:8998/api/chat",
-        ssl_verify: bool = False,
+        ssl_verify: bool = True,
         default_voice_prompt: str = "NATF2.pt",
         response_end_timeout: float = 1.0,
         seed: int = -1,

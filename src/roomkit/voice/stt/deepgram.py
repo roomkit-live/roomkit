@@ -155,38 +155,44 @@ class DeepgramSTTProvider(STTProvider):
         self,
         audio: AudioContent | AudioChunk | AudioFrame,
     ) -> TranscriptionResult:
-        """Transcribe complete audio using the Deepgram REST API."""
+        """Transcribe complete audio using the Deepgram REST API.
+
+        URL-bearing ``AudioContent`` is dispatched via Deepgram's native
+        ``transcribe_url`` so the fetch happens from Deepgram's network,
+        not ours — this removes us from the SSRF surface entirely. Raw
+        bytes (``AudioChunk`` / ``AudioFrame``) go through
+        ``transcribe_file`` as before.
+        """
         t0 = time.monotonic()
 
-        # Get audio bytes
         if hasattr(audio, "url"):
-            import httpx
-
-            async with httpx.AsyncClient() as fetch_client:
-                resp = await fetch_client.get(audio.url)  # ty: ignore[invalid-argument-type]
-                resp.raise_for_status()
-                audio_data = resp.content
+            response = await self._client.listen.v1.media.transcribe_url(
+                url=audio.url,
+                model=self._config.model,
+                language=self._config.language,
+                smart_format=self._config.smart_format,
+                punctuate=self._config.punctuate,
+            )
         else:
             audio_data = audio.data
+            sample_rate = getattr(audio, "sample_rate", 16000)
+            channels = getattr(audio, "channels", 1)
 
-        sample_rate = getattr(audio, "sample_rate", 16000)
-        channels = getattr(audio, "channels", 1)
-
-        response = await self._client.listen.v1.media.transcribe_file(
-            request=audio_data,
-            model=self._config.model,
-            language=self._config.language,
-            smart_format=self._config.smart_format,
-            punctuate=self._config.punctuate,
-            encoding="linear16",
-            multichannel=channels > 1 if channels else None,
-            request_options={
-                "additional_query_parameters": {
-                    "sample_rate": str(sample_rate),
-                    "channels": str(channels),
+            response = await self._client.listen.v1.media.transcribe_file(
+                request=audio_data,
+                model=self._config.model,
+                language=self._config.language,
+                smart_format=self._config.smart_format,
+                punctuate=self._config.punctuate,
+                encoding="linear16",
+                multichannel=channels > 1 if channels else None,
+                request_options={
+                    "additional_query_parameters": {
+                        "sample_rate": str(sample_rate),
+                        "channels": str(channels),
+                    },
                 },
-            },
-        )
+            )
 
         ttfb_ms = (time.monotonic() - t0) * 1000
         logger.debug("Deepgram batch transcription: %.0fms", ttfb_ms)

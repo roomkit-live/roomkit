@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, SecretStr
@@ -226,16 +225,25 @@ class TelnyxRCSProvider(RCSProvider):
         payload: bytes,
         signature: str,
         timestamp: str | None = None,
+        *,
+        tolerance_seconds: int = 300,
     ) -> bool:
-        """Verify a Telnyx webhook signature using ED25519.
+        """Verify a Telnyx webhook signature using Ed25519.
+
+        Checks both the cryptographic signature and that ``timestamp``
+        is within ``tolerance_seconds`` of the current clock — without
+        the freshness check, a captured signed request can be replayed
+        forever.
 
         Args:
             payload: Raw request body bytes.
             signature: Value of the ``Telnyx-Signature-Ed25519`` header.
             timestamp: Value of the ``Telnyx-Timestamp`` header.
+            tolerance_seconds: Maximum allowed clock skew between
+                ``timestamp`` and the current wall clock. Default 300s.
 
         Returns:
-            True if the signature is valid, False otherwise.
+            True iff signature verifies AND timestamp is fresh.
 
         Raises:
             ValueError: If public_key was not provided to the constructor.
@@ -245,28 +253,15 @@ class TelnyxRCSProvider(RCSProvider):
             raise ValueError(
                 "public_key must be provided to TelnyxRCSProvider for signature verification"
             )
+        from roomkit.providers.telnyx._signature import verify_telnyx_signature
 
-        if not timestamp:
-            return False
-
-        try:
-            from nacl.signing import VerifyKey
-        except ImportError as exc:
-            raise ImportError(
-                "PyNaCl is required for Telnyx signature verification. "
-                "Install it with: pip install pynacl"
-            ) from exc
-
-        try:
-            # Telnyx signs: timestamp|payload
-            signed_payload = f"{timestamp}|".encode() + payload
-            signature_bytes = base64.b64decode(signature)
-            public_key_bytes = base64.b64decode(self._public_key)
-            verify_key = VerifyKey(public_key_bytes)
-            verify_key.verify(signed_payload, signature_bytes)
-            return True
-        except Exception:
-            return False
+        return verify_telnyx_signature(
+            payload=payload,
+            signature=signature,
+            timestamp=timestamp,
+            public_key=self._public_key,
+            tolerance_seconds=tolerance_seconds,
+        )
 
     async def close(self) -> None:
         """Close the HTTP client."""

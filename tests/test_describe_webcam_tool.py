@@ -118,7 +118,10 @@ class TestDescribeWebcamTool:
         assert "parameters" in defn
         assert defn["parameters"]["required"] == ["query"]
         assert "device" in defn["parameters"]["properties"]
-        assert "save_path" in defn["parameters"]["properties"]
+        # save_path must NEVER be in the AI-facing schema — that would
+        # let a prompt-injected model write JPEGs to attacker-chosen
+        # paths. Operators set the directory via the constructor.
+        assert "save_path" not in defn["parameters"]["properties"]
 
     async def test_analyze_returns_description(self) -> None:
         vision = MockVisionProvider(descriptions=["A document with text"])
@@ -219,10 +222,9 @@ class TestDescribeWebcamTool:
         result = await tool.handler("other", {})
         assert "Unknown tool" in result
 
-    async def test_analyze_saves_frame_when_save_path_given(self, tmp_path: Path) -> None:
+    async def test_analyze_saves_frame_when_save_dir_configured(self, tmp_path: Path) -> None:
         vision = MockVisionProvider(descriptions=["saved"])
-        tool = DescribeWebcamTool(vision, device=0)
-        dest = tmp_path / "capture.jpg"
+        tool = DescribeWebcamTool(vision, device=0, save_dir=tmp_path)
 
         fake_frame = VideoFrame(
             data=b"\x00" * (10 * 10 * 3),
@@ -239,14 +241,20 @@ class TestDescribeWebcamTool:
                 "roomkit.video.vision.webcam_tool.save_frame",
             ) as mock_save,
         ):
-            result = await tool.analyze("Read", save_path=str(dest))
+            result = await tool.analyze("Read")
 
-        mock_save.assert_called_once_with(fake_frame, str(dest))
+        mock_save.assert_called_once()
+        called_frame, called_path = mock_save.call_args.args
+        assert called_frame is fake_frame
+        # Filename was generated under save_dir — model has no say in it.
+        assert Path(called_path).parent == tmp_path.resolve()
+        assert Path(called_path).name.startswith("webcam-")
+        assert Path(called_path).suffix == ".jpg"
         assert "Image saved" in result
 
-    async def test_analyze_does_not_save_when_no_path(self) -> None:
+    async def test_analyze_does_not_save_when_save_dir_unset(self) -> None:
         vision = MockVisionProvider(descriptions=["no save"])
-        tool = DescribeWebcamTool(vision, device=0)
+        tool = DescribeWebcamTool(vision, device=0)  # no save_dir
 
         fake_frame = VideoFrame(
             data=b"\x00" * (10 * 10 * 3),
@@ -268,6 +276,35 @@ class TestDescribeWebcamTool:
         mock_save.assert_not_called()
         assert "Image saved" not in result
 
+    async def test_handler_ignores_model_supplied_save_path(self, tmp_path: Path) -> None:
+        """The model cannot smuggle a save_path through arguments."""
+        vision = MockVisionProvider(descriptions=["x"])
+        tool = DescribeWebcamTool(vision, device=0, save_dir=tmp_path)
+
+        fake_frame = VideoFrame(
+            data=b"\x00" * (10 * 10 * 3),
+            codec="raw_rgb24",
+            width=10,
+            height=10,
+        )
+        with (
+            patch(
+                "roomkit.video.vision.webcam_tool.capture_webcam_frame",
+                return_value=fake_frame,
+            ),
+            patch(
+                "roomkit.video.vision.webcam_tool.save_frame",
+            ) as mock_save,
+        ):
+            await tool.handler(
+                "describe_webcam",
+                {"query": "q", "save_path": "/etc/passwd"},
+            )
+
+        called_path = mock_save.call_args.args[1]
+        assert Path(called_path).parent == tmp_path.resolve()
+        assert "/etc/passwd" not in str(called_path)
+
     async def test_handler_uses_default_query(self) -> None:
         tool = DescribeWebcamTool(MockVisionProvider(descriptions=["x"]))
         tool.analyze = AsyncMock(return_value="desc")  # type: ignore[method-assign]
@@ -276,7 +313,6 @@ class TestDescribeWebcamTool:
         tool.analyze.assert_called_once_with(  # type: ignore[union-attr]
             "Describe what you see through the webcam.",
             device=None,
-            save_path=None,
         )
 
     async def test_handler_passes_device_to_analyze(self) -> None:
@@ -290,21 +326,6 @@ class TestDescribeWebcamTool:
         tool.analyze.assert_called_once_with(  # type: ignore[union-attr]
             "look",
             device=2,
-            save_path=None,
-        )
-
-    async def test_handler_passes_save_path_to_analyze(self) -> None:
-        tool = DescribeWebcamTool(MockVisionProvider(descriptions=["x"]))
-        tool.analyze = AsyncMock(return_value="desc")  # type: ignore[method-assign]
-
-        await tool.handler(
-            "describe_webcam",
-            {"query": "read", "save_path": "/tmp/shot.jpg"},
-        )
-        tool.analyze.assert_called_once_with(  # type: ignore[union-attr]
-            "read",
-            device=None,
-            save_path="/tmp/shot.jpg",
         )
 
 

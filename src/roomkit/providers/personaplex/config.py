@@ -13,8 +13,10 @@ class PersonaPlexConfig(BaseModel):
 
     Attributes:
         server_url: WebSocket URL of the PersonaPlex server.
-        ssl_verify: Whether to verify SSL certificates. Set to False for
-            self-signed certs (default for PersonaPlex dev servers).
+        ssl_verify: Whether to verify SSL certificates. Defaults to True
+            (secure). Set to False **only** for local development against
+            self-signed certificates — production deployments must keep
+            verification enabled.
         default_voice_prompt: Default voice prompt file (e.g. ``NATF2.pt``).
             Can be overridden per-session via the ``voice`` parameter.
         response_end_timeout: Seconds of silence after the last audio/text
@@ -22,7 +24,7 @@ class PersonaPlexConfig(BaseModel):
     """
 
     server_url: str = "wss://localhost:8998/api/chat"
-    ssl_verify: bool = False
+    ssl_verify: bool = True
     default_voice_prompt: str = "NATF2.pt"
     response_end_timeout: float = 1.0
     seed: int = -1

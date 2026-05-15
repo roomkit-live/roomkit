@@ -25,7 +25,9 @@ Example with RealtimeVoiceChannel::
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -64,14 +66,6 @@ TOOL_DEFINITION: dict[str, Any] = {
                     "Camera device index to capture from. "
                     "Use list_webcams to discover available devices. "
                     "Defaults to the device configured at init time."
-                ),
-            },
-            "save_path": {
-                "type": "string",
-                "description": (
-                    "File path to save the captured image as JPEG. "
-                    "When provided, the frame is written to disk before "
-                    "analysis. Parent directories are created automatically."
                 ),
             },
         },
@@ -293,11 +287,18 @@ class DescribeWebcamTool:
     Args:
         vision: Vision provider for frame analysis.
         device: Camera device index (0 = default webcam).
+        save_dir: Optional operator-controlled directory under which
+            captured frames are persisted. When set, each call writes
+            an auto-named ``webcam-<timestamp>-<uuid>.jpg`` file inside
+            this directory and the AI receives a confirmation. When
+            ``None`` (default), no frames are written to disk. The AI
+            cannot choose the destination — file paths are never
+            accepted from the model.
 
     Example::
 
         vision = GeminiVisionProvider(GeminiVisionConfig(api_key="..."))
-        tool = DescribeWebcamTool(vision, device=0)
+        tool = DescribeWebcamTool(vision, device=0, save_dir="/var/captures")
 
         channel = RealtimeVoiceChannel(
             "voice",
@@ -306,45 +307,53 @@ class DescribeWebcamTool:
         )
     """
 
-    def __init__(self, vision: VisionProvider, *, device: int = 0) -> None:
+    def __init__(
+        self,
+        vision: VisionProvider,
+        *,
+        device: int = 0,
+        save_dir: str | Path | None = None,
+    ) -> None:
         self._vision = vision
         self._device = device
+        self._save_dir: Path | None
+        if save_dir is None:
+            self._save_dir = None
+        else:
+            self._save_dir = Path(save_dir).expanduser().resolve()
 
     @property
     def definition(self) -> dict[str, Any]:
         """Tool definition dict for ``RealtimeVoiceChannel(tools=[...])``."""
         return TOOL_DEFINITION
 
+    def _generate_save_path(self) -> Path:
+        assert self._save_dir is not None
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        return self._save_dir / f"webcam-{ts}-{uuid.uuid4().hex[:12]}.jpg"
+
     async def analyze(
         self,
         query: str,
         *,
         device: int | None = None,
-        save_path: str | None = None,
     ) -> str:
-        """Capture a fresh webcam frame and analyze it with *query*.
-
-        Args:
-            query: Visual question to answer about the frame.
-            device: Camera device index override. ``None`` uses the
-                default configured at init time.
-            save_path: Optional file path to save the captured frame
-                as JPEG before analysis.
-        """
+        """Capture a fresh webcam frame and analyze it with *query*."""
         effective_device = device if device is not None else self._device
         frame = capture_webcam_frame(effective_device)
         if frame is None:
             return "No webcam frame available. Check that a camera is connected."
 
         save_msg = ""
-        if save_path:
+        if self._save_dir is not None:
+            target = self._generate_save_path()
             try:
-                saved = save_frame(frame, save_path)
+                saved = save_frame(frame, target)
                 save_msg = f"\n\n[Image saved to {saved}]"
                 logger.info("Frame saved to %s", saved)
             except Exception as exc:
-                save_msg = f"\n\n[ERROR: Failed to save image to {save_path}: {exc}]"
-                logger.warning("Failed to save frame to %s: %s", save_path, exc)
+                save_msg = f"\n\n[ERROR: Failed to save image: {exc}]"
+                logger.warning("Failed to save frame to %s: %s", target, exc)
 
         result = await self._vision.analyze_frame(frame, prompt=query)
         description = result.description or "Could not analyze the webcam image."
@@ -362,14 +371,11 @@ class DescribeWebcamTool:
         query = str(arguments.get("query", "Describe what you see through the webcam."))
         raw_device = arguments.get("device")
         device = int(raw_device) if raw_device is not None else None
-        raw_path = arguments.get("save_path")
-        path = str(raw_path) if raw_path is not None else None
         logger.info(
-            "describe_webcam(query='%s', device=%s, save_path=%s)",
+            "describe_webcam(query='%s', device=%s)",
             query[:100],
             device,
-            path,
         )
-        result = await self.analyze(query, device=device, save_path=path)
+        result = await self.analyze(query, device=device)
         logger.info("describe_webcam result: %s", result[:200])
         return result
