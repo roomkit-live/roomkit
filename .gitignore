@@ -40,6 +40,7 @@ examples/piper/
 examples/kroko/
 examples/smart-turn/
 examples/*.onnx
+examples/models/
 wa-session.db
 recordings/
 *.pt
