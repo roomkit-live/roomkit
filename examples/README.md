@@ -84,7 +84,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `webcam_recording.py` | Recording | Webcam recording to MP4 file |
 | `webcam_censor.py` | Vision filter | Webcam content censoring with recording |
 | `screen_describe.py` | Screen capture | Screen description with AI analysis |
-| `screen_assistant_ia.py` | Screen + voice | AI screen assistant with speech-to-speech voice |
+| `screen_assistant_ai.py` | Screen + voice | AI screen assistant with speech-to-speech voice |
 | `screen_agent_orchestrated.py` | Screen + agents | Orchestrated screen agent with OmniView vision |
 | `video_live_subtitles.py` | Subtitles | Real-time translated subtitles on webcam video |
 | `avatar_call.py` | Avatar + SIP | SIP call with lip-synced avatar video |

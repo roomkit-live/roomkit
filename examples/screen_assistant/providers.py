@@ -70,3 +70,16 @@ def get_voice_name(voice_choice: str) -> str:
     if voice_choice == "openai":
         return os.environ.get("OPENAI_VOICE", "alloy")
     return os.environ.get("GEMINI_VOICE", "Aoede")
+
+
+def provider_config_for(voice_choice: str) -> dict[str, object]:
+    """Realtime session config tuned for the chosen voice provider."""
+    if voice_choice == "gemini":
+        return {
+            "start_of_speech_sensitivity": "START_SENSITIVITY_LOW",
+            "end_of_speech_sensitivity": "END_SENSITIVITY_LOW",
+            "silence_duration_ms": 1500,
+        }
+    if voice_choice == "openai":
+        return {"eagerness": "low"}
+    return {}
