@@ -13,10 +13,13 @@ from roomkit.providers.teams.conversation_store import (
     ConversationReferenceStore,
     InMemoryConversationReferenceStore,
 )
+from roomkit.providers.teams.models import TeamsMember
 from roomkit.providers.utils import extract_event_text as _extract_event_text
 
 if TYPE_CHECKING:
-    from botbuilder.core import BotFrameworkAdapter
+    from collections.abc import Awaitable, Callable
+
+    from botbuilder.core import BotFrameworkAdapter, TurnContext
 
 logger = logging.getLogger("roomkit.providers.teams")
 
@@ -73,9 +76,8 @@ class BotFrameworkTeamsProvider(TeamsProvider):
             conversation_store or InMemoryConversationReferenceStore()
         )
 
-    @property
-    def adapter(self) -> BotFrameworkAdapter:
-        """The underlying Bot Framework adapter."""
+    def _require_adapter(self) -> BotFrameworkAdapter:
+        """Return the live adapter or raise if the provider has been closed."""
         if self._adapter is None:
             raise RuntimeError("BotFrameworkTeamsProvider has been closed")
         return self._adapter
@@ -86,6 +88,92 @@ class BotFrameworkTeamsProvider(TeamsProvider):
         if self._conversation_store is None:
             raise RuntimeError("BotFrameworkTeamsProvider has been closed")
         return self._conversation_store
+
+    async def process_inbound(
+        self,
+        payload: dict[str, Any],
+        auth_header: str,
+        on_turn: Callable[[TurnContext], Awaitable[None]],
+    ) -> None:
+        """Validate the activity's JWT and dispatch ``on_turn`` with a TurnContext.
+
+        Delegates to :meth:`BotFrameworkAdapter.process_activity`, which
+        performs JWT validation, constructs a connector client for the
+        activity's ``serviceUrl``, and invokes the callback inside a
+        fully-populated turn.
+        """
+        from botbuilder.schema import Activity
+
+        adapter = self._require_adapter()
+        # ``BotFrameworkAdapter.parse_request`` accepts an ``Activity`` or an
+        # aiohttp Request — never a raw dict. Deserialize here so callers can
+        # hand us the JSON payload as the framework receives it on the wire.
+        activity = Activity().deserialize(payload)
+        try:
+            await adapter.process_activity(activity, auth_header, on_turn)
+        except PermissionError:
+            raise
+        except Exception as exc:
+            # Bot Framework's auth failures surface as plain ``Exception``
+            # subclasses; surface them as PermissionError so HTTP layers
+            # can map cleanly to 401.
+            message = str(exc).lower()
+            if "unauthorized" in message or "auth" in message or "token" in message:
+                raise PermissionError(str(exc)) from exc
+            raise
+
+    async def get_member(
+        self,
+        turn_context: TurnContext,
+        member_id: str,
+    ) -> TeamsMember | None:
+        """Resolve a single member via the Teams roster API.
+
+        Uses :meth:`TeamsInfo.get_member`, which falls back from the team-scoped
+        endpoint to the conversation-scoped one — works for personal,
+        ``groupChat``, and ``channel`` conversation types alike. The
+        team-scoped :meth:`TeamsInfo.get_team_member` only handles activities
+        inside a Teams team.
+        """
+        from botbuilder.core.teams import TeamsInfo
+
+        try:
+            account = await TeamsInfo.get_member(turn_context, member_id)
+        except Exception:
+            logger.exception("Teams roster get_member failed: member=%s", member_id)
+            return None
+        if account is None:
+            return None
+        return _account_to_member(account)
+
+    async def list_members(
+        self,
+        turn_context: TurnContext,
+        *,
+        max_count: int | None = None,
+    ) -> list[TeamsMember]:
+        """List participants via paginated roster calls."""
+        from botbuilder.core.teams import TeamsInfo
+
+        members: list[TeamsMember] = []
+        continuation: str | None = None
+        try:
+            while True:
+                page = await TeamsInfo.get_paged_members(
+                    turn_context,
+                    continuation_token=continuation,
+                )
+                for account in page.members or []:
+                    members.append(_account_to_member(account))
+                    if max_count is not None and len(members) >= max_count:
+                        return members
+                continuation = page.continuation_token
+                if not continuation:
+                    break
+        except Exception:
+            logger.exception("Teams roster list_members failed")
+            return members
+        return members
 
     async def send(self, event: RoomEvent, to: str) -> ProviderResult:
         text = self._extract_text(event)
@@ -103,7 +191,6 @@ class BotFrameworkTeamsProvider(TeamsProvider):
         try:
             import time
 
-            from botbuilder.core import TurnContext
             from botbuilder.schema import Activity, ConversationReference
 
             conv_ref = ConversationReference().deserialize(ref)
@@ -119,7 +206,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
                     message_id = response.id
 
             t0 = time.monotonic()
-            await self.adapter.continue_conversation(
+            await self._require_adapter().continue_conversation(
                 conv_ref,
                 _send_callback,
                 self._config.app_id,
@@ -197,7 +284,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
             bot=ChannelAccount(id=self._config.app_id),
         )
 
-        response = await self.adapter.create_conversation(
+        response = await self._require_adapter().create_conversation(
             ConversationReference(service_url=service_url),
             params,  # ty: ignore[invalid-argument-type]
         )
@@ -265,7 +352,7 @@ class BotFrameworkTeamsProvider(TeamsProvider):
             activity=Activity(type="message", text=""),
         )
 
-        response = await self.adapter.create_conversation(
+        response = await self._require_adapter().create_conversation(
             ConversationReference(service_url=service_url),
             params,  # ty: ignore[invalid-argument-type]
         )
@@ -366,3 +453,21 @@ class BotFrameworkTeamsProvider(TeamsProvider):
     async def close(self) -> None:
         self._adapter = None
         self._conversation_store = None
+
+
+def _account_to_member(account: Any) -> TeamsMember:
+    """Map a Teams ChannelAccount / TeamsChannelAccount into a TeamsMember."""
+    teams_id = str(getattr(account, "id", "") or "")
+    name = str(getattr(account, "name", "") or "")
+    aad = getattr(account, "aad_object_id", None)
+    email = getattr(account, "email", None)
+    upn = getattr(account, "user_principal_name", None)
+    role = getattr(account, "role", None)
+    return TeamsMember(
+        teams_user_id=teams_id,
+        aad_object_id=aad if aad else None,
+        name=name,
+        email=email if email else None,
+        user_principal_name=upn if upn else None,
+        role=role if role else None,
+    )

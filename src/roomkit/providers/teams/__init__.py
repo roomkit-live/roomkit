@@ -8,6 +8,7 @@ from roomkit.providers.teams.conversation_store import (
     InMemoryConversationReferenceStore,
 )
 from roomkit.providers.teams.mock import MockTeamsProvider
+from roomkit.providers.teams.models import TeamsMember
 from roomkit.providers.teams.webhook import (
     is_bot_added,
     parse_teams_activity,
@@ -21,6 +22,7 @@ __all__ = [
     "InMemoryConversationReferenceStore",
     "MockTeamsProvider",
     "TeamsConfig",
+    "TeamsMember",
     "TeamsProvider",
     "is_bot_added",
     "parse_teams_activity",
