@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from roomkit.models.delivery import ProviderResult
 from roomkit.models.event import RoomEvent
@@ -159,9 +159,14 @@ class BotFrameworkTeamsProvider(TeamsProvider):
         continuation: str | None = None
         try:
             while True:
-                page = await TeamsInfo.get_paged_members(
-                    turn_context,
-                    continuation_token=continuation,
+                # botbuilder's signature mistypes continuation_token as `str` (accepts
+                # None) and the return as `List[...]` when it's a single object.
+                page = cast(
+                    "Any",
+                    await TeamsInfo.get_paged_members(
+                        turn_context,
+                        continuation_token=continuation,  # ty: ignore[invalid-argument-type]
+                    ),
                 )
                 for account in page.members or []:
                     members.append(_account_to_member(account))
