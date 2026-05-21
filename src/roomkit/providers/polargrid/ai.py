@@ -171,6 +171,7 @@ class PolarGridAIProvider(AIProvider):
             return content
 
         parts: list[str] = []
+        dropped: list[str] = []
         for part in content:
             if isinstance(part, AITextPart):
                 parts.append(part.text)
@@ -180,6 +181,10 @@ class PolarGridAIProvider(AIProvider):
                 # model sees its own prior reasoning prefixed for
                 # context, which is better than dropping it silently.
                 parts.append(f"[thinking]\n{part.thinking}\n[/thinking]")
+            else:
+                dropped.append(type(part).__name__)
+        if dropped:
+            logger.debug("Dropped unsupported content parts: %s", ", ".join(dropped))
         return "".join(parts)
 
     def _build_messages(
@@ -223,29 +228,32 @@ class PolarGridAIProvider(AIProvider):
 
     # -- Error mapping ------------------------------------------------------
 
+    def _retryable_for(self, exc: BaseException) -> bool:
+        """Map an SDK exception to its retryable flag via dispatch table.
+
+        Unknown errors default to retryable so RoomKit's RetryPolicy
+        decides whether to back off or surface immediately.
+        """
+        retry_map: tuple[tuple[type[BaseException], bool], ...] = (
+            (self._auth_error, False),
+            (self._validation_error, False),
+            (self._not_found_error, False),
+            (self._rate_limit_error, True),
+            (self._network_error, True),
+            (self._timeout_error, True),
+            (self._server_error, True),
+        )
+        for exc_type, retryable in retry_map:
+            if isinstance(exc, exc_type):
+                return retryable
+        return True
+
     def _wrap_error(self, exc: BaseException) -> ProviderError:
-        status = getattr(exc, "status_code", None)
-        if isinstance(exc, self._auth_error):
-            return ProviderError(
-                str(exc), retryable=False, provider=self._provider_name, status_code=status
-            )
-        if isinstance(exc, self._validation_error | self._not_found_error):
-            return ProviderError(
-                str(exc), retryable=False, provider=self._provider_name, status_code=status
-            )
-        if isinstance(
-            exc,
-            self._rate_limit_error
-            | self._network_error
-            | self._timeout_error
-            | self._server_error,
-        ):
-            return ProviderError(
-                str(exc), retryable=True, provider=self._provider_name, status_code=status
-            )
-        # Unknown error — let RetryPolicy decide whether to act.
         return ProviderError(
-            str(exc), retryable=True, provider=self._provider_name, status_code=status
+            str(exc),
+            retryable=self._retryable_for(exc),
+            provider=self._provider_name,
+            status_code=getattr(exc, "status_code", None),
         )
 
     # -- Non-streaming ------------------------------------------------------
