@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`BEFORE_BROADCAST` block on reentry events now conforms to RFC §9.5.**
+  When a sync hook returned `HookResult.block(...)` on an AI-response
+  reentry event, the inbound pipeline silently dropped three things: the
+  BLOCKED storage of the event, the `event_blocked` framework event, and
+  delivery of the hook's `injected_events`. The reentry allow/modify path
+  also silently dropped `injected_events` from the hook result. Both
+  paths are now symmetric with the main inbound path via a shared
+  `_handle_block` helper. Five new tests in
+  `tests/test_reentry_block_side_effects.py` lock the behaviour in
+  place.
+
 ## [0.7.0] — 2026-05-15
 
 First stable release after the `0.7.0a1`–`0.7.0a18` alpha series. The

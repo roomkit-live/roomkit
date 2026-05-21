@@ -178,28 +178,13 @@ class InboundLockedMixin(HelpersMixin):
             )
 
         if not sync_result.allowed:
-            # RFC §4.2: Store original event as BLOCKED with audit trail
-            blocked_event = event.model_copy(
-                update={
-                    "status": EventStatus.BLOCKED,
-                    "blocked_by": sync_result.blocked_by or sync_result.reason,
-                }
-            )
-            await self._store.add_event(blocked_event)
-
-            await self._emit_framework_event(
-                "event_blocked",
+            blocked_event = await self._handle_block(
                 room_id=room_id,
-                event_id=event.id,
-                data={
-                    "reason": sync_result.reason,
-                    "blocked_by": sync_result.blocked_by,
-                },
+                event=event,
+                sync_result=sync_result,
+                context=context,
+                update_existing=False,
             )
-
-            # RFC §4.2: Deliver injected events to their target channels
-            await self._deliver_injected_events(sync_result.injected_events, room_id, context)
-
             # Persist side effects from hooks even on blocked path
             await self._persist_side_effects(
                 room_id,
@@ -362,9 +347,27 @@ class InboundLockedMixin(HelpersMixin):
                 reentry_tasks.extend(reentry_sync.tasks)
                 reentry_observations.extend(reentry_sync.observations)
                 if not reentry_sync.allowed:
-                    # Hook blocked this reentry event — skip broadcast
+                    # RFC §9.5 block handling: update to BLOCKED, emit
+                    # event_blocked, deliver InjectedEvents.
+                    # ``update_existing=True`` because reentry events are
+                    # pre-persisted in PENDING above (atomic indexing
+                    # requires the row to exist before the hook fires).
+                    await self._handle_block(
+                        room_id=room_id,
+                        event=reentry,
+                        sync_result=reentry_sync,
+                        context=reentry_ctx,
+                        update_existing=True,
+                    )
                     continue
                 reentry = reentry_sync.event or reentry
+                # RFC §9.5: deliver InjectedEvents produced by an
+                # allow/modify hook on this reentry event (same shape as
+                # the main inbound path in ``_process_locked``).
+                if reentry_sync.injected_events:
+                    await self._deliver_injected_events(
+                        reentry_sync.injected_events, room_id, reentry_ctx
+                    )
 
                 reentry_result = await router.broadcast(
                     reentry,
@@ -419,6 +422,59 @@ class InboundLockedMixin(HelpersMixin):
         await self._emit_framework_event("event_processed", room_id=room_id, event_id=event.id)
 
         return InboundResult(event=event)
+
+    async def _handle_block(
+        self,
+        *,
+        room_id: str,
+        event: RoomEvent,
+        sync_result: Any,
+        context: RoomContext,
+        update_existing: bool,
+    ) -> RoomEvent:
+        """RFC §9.5 block handling: persist BLOCKED, emit framework event,
+        deliver injected side effects. Shared by the main inbound block
+        path and the reentry block path so they cannot drift again.
+
+        ``update_existing=True`` when the event is already in the store
+        (reentry path — events are pre-persisted in PENDING before the
+        hook fires so they get an atomic index). The existing row is
+        updated in place to avoid double-insert.
+
+        ``update_existing=False`` when the event has not yet been stored
+        (main inbound path — the hook decides the terminal status before
+        first storage).
+
+        ``sync_result`` is annotated ``Any`` because importing
+        :class:`SyncPipelineResult` here would re-introduce the
+        ``roomkit.core.hooks`` cycle that the rest of this module
+        deliberately avoids.
+
+        Returns the stored BLOCKED event so the caller can include it
+        in its return value.
+        """
+        blocked_event = event.model_copy(
+            update={
+                "status": EventStatus.BLOCKED,
+                "blocked_by": sync_result.blocked_by or sync_result.reason,
+            }
+        )
+        if update_existing:
+            await self._store.update_event(blocked_event)
+        else:
+            await self._store.add_event(blocked_event)
+
+        await self._emit_framework_event(
+            "event_blocked",
+            room_id=room_id,
+            event_id=event.id,
+            data={
+                "reason": sync_result.reason,
+                "blocked_by": sync_result.blocked_by,
+            },
+        )
+        await self._deliver_injected_events(sync_result.injected_events, room_id, context)
+        return blocked_event
 
     async def _deliver_injected_events(
         self,
