@@ -104,6 +104,8 @@ CONSOLE=1 uv run python examples/<example>.py
 | `anthropic_ai.py` | Anthropic | AI-powered assistant using Anthropic Claude |
 | `openai_ai.py` | OpenAI | AI-powered assistant using OpenAI GPT |
 | `mistral_ai.py` | Mistral | AI-powered assistant using Mistral AI |
+| `ollama_ai.py` | Ollama | AI-powered assistant using Ollama's native API (proper thinking support) |
+| `ollama_cli.py` | Ollama | Interactive CLI test bed — `--think`/`--no-think`, `--stream`/`--no-stream`, `--mcp <url>` |
 | `ai_azure.py` | Azure | Azure AI Foundry with OpenAI-compatible API |
 | `multichannel_bridge.py` | Multi-channel | WebSocket + SMS + Email + HTTP + AI bridged together |
 | `teams_bot.py` | Teams | Microsoft Teams bot via Bot Framework |

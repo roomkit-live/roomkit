@@ -37,7 +37,10 @@ await kit.attach_channel("support", "ai-assistant", category=ChannelCategory.INT
 | Mistral | `MistralAIProvider` | `MistralConfig` | `roomkit[mistral]` |
 | Azure OpenAI | `AzureAIProvider` | `AzureAIConfig` | `roomkit[azure]` |
 | vLLM (local) | `create_vllm_provider()` | `VLLMConfig` | `roomkit[vllm]` |
+| Ollama (local) | `OllamaAIProvider` | `OllamaConfig` | `roomkit[ollama]` |
 | Mock (testing) | `MockAIProvider` | — | built-in |
+
+Pick **Ollama** over the OpenAI-compat shim (`OpenAIAIProvider` pointed at `http://host:11434/v1` or `create_vllm_provider()` with an Ollama URL) whenever the model is a reasoning model (DeepSeek-R1, Qwen 3 thinking variants, etc.) — only the native API exposes the `think` parameter and streams the `thinking` field separately from `content`. See `docs/c7/ollama-provider.md` for the full rundown.
 
 ```python
 # OpenAI

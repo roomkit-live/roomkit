@@ -1,0 +1,60 @@
+"""Ollama provider configuration."""
+
+from __future__ import annotations
+
+from pydantic import BaseModel
+
+
+class OllamaConfig(BaseModel):
+    """Ollama AI provider configuration.
+
+    Wraps the native Ollama ``/api/chat`` endpoint via the
+    ``ollama-python`` SDK. Prefer this over the OpenAI-compatible
+    shim when the model is a reasoning model (DeepSeek-R1, Qwen 3
+    thinking variants, etc.) because Ollama exposes the ``think``
+    parameter and streams the reasoning content as a separate
+    ``thinking`` field — both ignored by the OpenAI-compat endpoint.
+
+    Attributes:
+        host: Base URL of the Ollama server. Default points at the
+            local daemon. The native API lives under ``/api`` on the
+            same host; the SDK appends the path.
+        model: Model identifier to use (e.g. ``"qwen3:8b"``,
+            ``"llama3.2"``, ``"deepseek-r1:7b"``).
+        max_tokens: Maximum tokens to generate in the response. Maps
+            to Ollama's ``options.num_predict``. ``None`` lets the
+            server pick its default.
+        temperature: Sampling temperature. Maps to
+            ``options.temperature``.
+        timeout: HTTP request timeout in seconds. Long default because
+            local models cold-start on first request and reasoning
+            models can take 30-60s before the first token.
+        max_retries: SDK-level retry count. Default 0 because
+            RoomKit's RetryPolicy handles retries at the right layer
+            with proper backoff and fallback.
+        think: Whether the model should produce a ``thinking`` block
+            before its final answer. ``None`` (default) means "use the
+            model's default" — reasoning models think, others don't.
+            ``True`` forces thinking on (no-op for non-reasoning
+            models). ``False`` forces thinking off, even for reasoning
+            models. ``AIContext.thinking_budget`` overrides this at
+            request time: ``None``/``0`` → ``think=False``, ``>0`` →
+            ``think=True``.
+        keep_alive: How long the model stays loaded in memory after
+            the request. Maps to Ollama's ``keep_alive`` parameter.
+            Strings like ``"5m"`` or integer seconds. ``None`` uses
+            the server default (5 minutes).
+        num_ctx: Context window size. Maps to ``options.num_ctx``.
+            ``None`` uses the model's default (typically 2048 — bump
+            for long contexts).
+    """
+
+    host: str = "http://localhost:11434"
+    model: str = "llama3.2"
+    max_tokens: int | None = None
+    temperature: float = 0.7
+    timeout: float = 120.0
+    max_retries: int = 0
+    think: bool | None = None
+    keep_alive: str | int | None = None
+    num_ctx: int | None = None
