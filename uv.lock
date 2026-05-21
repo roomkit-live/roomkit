@@ -3875,6 +3875,19 @@ wheels = [
 ]
 
 [[package]]
+name = "polargrid-sdk"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/68/2a/b86b2300db12b9de96da2b855d120823d20d32cfb44d8eed43695ef1d693/polargrid_sdk-0.7.0.tar.gz", hash = "sha256:71c47eb0eeb515d5a462dc38c63f36c985a1ea04a1a08a739e15248721b2b6ef", size = 37248, upload-time = "2026-05-15T17:28:23.465Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/9e/1bca42abf8df5d40a62341a08c0951eac3b6c069d889de0341e8d4469616/polargrid_sdk-0.7.0-py3-none-any.whl", hash = "sha256:2c871aaace3e308467ce62c4df6a793bdfaa8949059f58bb6236a0ca25865ff8", size = 32934, upload-time = "2026-05-15T17:28:21.628Z" },
+]
+
+[[package]]
 name = "polars"
 version = "1.39.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4995,6 +5008,7 @@ all = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-sdk" },
     { name = "phonenumbers" },
+    { name = "polargrid-sdk" },
     { name = "redis" },
     { name = "rich" },
     { name = "sherpa-onnx" },
@@ -5040,6 +5054,7 @@ dev = [
     { name = "ollama" },
     { name = "openai" },
     { name = "phonenumbers" },
+    { name = "polargrid-sdk" },
     { name = "pre-commit" },
     { name = "pynacl" },
     { name = "pytest" },
@@ -5105,6 +5120,9 @@ opentelemetry = [
 phonenumbers = [
     { name = "phonenumbers" },
 ]
+polargrid = [
+    { name = "polargrid-sdk" },
+]
 postgres = [
     { name = "asyncpg" },
 ]
@@ -5117,6 +5135,7 @@ providers = [
     { name = "mistralai" },
     { name = "ollama" },
     { name = "openai" },
+    { name = "polargrid-sdk" },
     { name = "twilio" },
 ]
 pynacl = [
@@ -5319,6 +5338,10 @@ requires-dist = [
     { name = "phonenumbers", marker = "extra == 'dev'", specifier = ">=8.13" },
     { name = "phonenumbers", marker = "extra == 'phonenumbers'", specifier = ">=8.13" },
     { name = "pillow", marker = "extra == 'video-overlay'", specifier = ">=10.0" },
+    { name = "polargrid-sdk", marker = "extra == 'all'", specifier = ">=0.1" },
+    { name = "polargrid-sdk", marker = "extra == 'dev'", specifier = ">=0.1" },
+    { name = "polargrid-sdk", marker = "extra == 'polargrid'", specifier = ">=0.1" },
+    { name = "polargrid-sdk", marker = "extra == 'providers'", specifier = ">=0.1" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.8" },
     { name = "pyautogui", marker = "extra == 'screen-input'", specifier = ">=0.9" },
     { name = "pydantic", specifier = ">=2.9" },
@@ -5353,7 +5376,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=13.0" },
 ]
-provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "console", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
+provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "console", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "opentelemetry", "phonenumbers", "polargrid", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]
