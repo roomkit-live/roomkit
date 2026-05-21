@@ -10,10 +10,10 @@ endpoint at the time of writing. Passing tools to ``AIChannel`` will
 log a warning and continue with text-only output.
 
 Run with:
-    POLARGRID_API_KEY=pg_... POLARGRID_MODEL=qwen-3.5-9b \\
-        uv run python examples/polargrid_ai.py
+    POLARGRID_API_KEY=pg_... uv run python examples/polargrid_ai.py
 
-Optional:
+Optional overrides (defaults come from PolarGridConfig):
+    POLARGRID_MODEL=qwen-3.5-27b
     POLARGRID_REGION=toronto    # pin a region (toronto/vancouver/montreal
                                 #   or yto-01/yvr-02/yul-01).
                                 # Unset to auto-route to the fastest edge.
@@ -21,14 +21,15 @@ Optional:
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from shared import setup_logging  # noqa: E402
+import asyncio
+
+from shared import require_env, setup_logging
 
 from roomkit import (
     ChannelCategory,
@@ -42,21 +43,14 @@ setup_logging("polargrid_ai")
 
 
 async def main() -> None:
-    api_key = os.environ.get("POLARGRID_API_KEY")
-    if not api_key:
-        print(
-            "POLARGRID_API_KEY is required. Get one at the PolarGrid Console "
-            "and export it before running this example.",
-            file=sys.stderr,
-        )
-        sys.exit(2)
+    env = require_env("POLARGRID_API_KEY")
+    config_kwargs: dict[str, str] = {"api_key": env["POLARGRID_API_KEY"]}
+    if model := os.environ.get("POLARGRID_MODEL"):
+        config_kwargs["model"] = model
+    if region := os.environ.get("POLARGRID_REGION"):
+        config_kwargs["region"] = region
 
-    model = os.environ.get("POLARGRID_MODEL", "qwen-3.5-9b")
-    region = os.environ.get("POLARGRID_REGION") or None
-
-    provider = PolarGridAIProvider(
-        PolarGridConfig(api_key=api_key, model=model, region=region)
-    )
+    provider = PolarGridAIProvider(PolarGridConfig(**config_kwargs))
 
     kit = RoomKit()
 
@@ -78,8 +72,8 @@ async def main() -> None:
             kit,
             room_id="demo-room",
             welcome=(
-                f"\nPolarGrid AI demo — model={model} "
-                f"region={region or 'auto'}\n"
+                f"\nPolarGrid AI demo — model={provider.model_name} "
+                f"region={config_kwargs.get('region', 'auto')}\n"
                 "Type a message and press Enter. Use 'quit' or Ctrl+D to exit.\n"
             ),
         )

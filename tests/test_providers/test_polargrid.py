@@ -89,7 +89,7 @@ def _mock_polargrid_module() -> MagicMock:
 
 
 def _config(**overrides: Any) -> PolarGridConfig:
-    defaults: dict[str, Any] = {"api_key": "pg_test", "model": "qwen-3.5-9b"}
+    defaults: dict[str, Any] = {"api_key": "pg_test", "model": "qwen-3.5-27b"}
     defaults.update(overrides)
     return PolarGridConfig(**defaults)
 
@@ -111,7 +111,7 @@ def _response_obj(
     finish_reason: str = "stop",
     prompt_tokens: int = 11,
     completion_tokens: int = 7,
-    model: str = "qwen-3.5-9b",
+    model: str = "qwen-3.5-27b",
 ) -> SimpleNamespace:
     return SimpleNamespace(
         model=model,
@@ -209,7 +209,7 @@ class TestPolarGridGenerate:
         await provider.generate(_context(max_tokens=512, temperature=0.2))
 
         request = mod._client.chat_completion.await_args.args[0]
-        assert request["model"] == "qwen-3.5-9b"
+        assert request["model"] == "qwen-3.5-27b"
         assert request["temperature"] == 0.2
         assert request["max_tokens"] == 512
         assert request["top_p"] == 0.9
@@ -233,7 +233,7 @@ class TestPolarGridGenerate:
     async def test_generate_empty_choices_returns_empty_content(self) -> None:
         provider, mod = _provider()
         mod._client.chat_completion.return_value = SimpleNamespace(
-            choices=[], usage=None, model="qwen-3.5-9b"
+            choices=[], usage=None, model="qwen-3.5-27b"
         )
 
         resp = await provider.generate(_context())
@@ -398,7 +398,7 @@ class TestPolarGridErrors:
 class TestPolarGridConfig:
     def test_defaults(self) -> None:
         config = PolarGridConfig(api_key="pg_test")
-        assert config.model == "qwen-3.5-9b"
+        assert config.model == "qwen-3.5-27b"
         assert config.region is None
         assert config.temperature == 0.7
         assert config.top_p == 0.9

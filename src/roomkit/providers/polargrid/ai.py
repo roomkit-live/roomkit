@@ -35,6 +35,40 @@ from roomkit.providers.polargrid.config import PolarGridConfig
 logger = logging.getLogger("roomkit.providers.polargrid")
 
 
+def _patch_pg_metadata_decoder(pg_module: Any) -> None:
+    """Make ``PolarGrid._convert_pg_metadata`` tolerant of missing fields.
+
+    polargrid-sdk 0.7.0 unconditionally indexes ``raw["latency_ms"]``,
+    which crashes non-streaming chat completions whenever the edge
+    omits that field (observed on the Toronto edge with
+    ``qwen-3.5-27b``). Streaming is unaffected. We swap in a lenient
+    version that uses ``.get()`` so the response can still deserialize
+    — the pg_metadata block is informational and we don't surface it
+    upstream. Idempotent via a sentinel so reloading providers is safe;
+    remove when the SDK ships its own fix.
+    """
+    client_cls = getattr(pg_module, "PolarGrid", None)
+    if client_cls is None or getattr(client_cls, "_roomkit_metadata_patched", False):
+        return
+
+    @staticmethod  # type: ignore[misc]
+    def _lenient(raw: dict[str, Any] | None) -> Any:
+        if not raw:
+            return None
+        from polargrid.types import PGMetadata
+
+        return PGMetadata(
+            region=raw.get("region", ""),
+            latency_ms=raw.get("latency_ms", 0),
+            model_load_time_ms=raw.get("model_load_time_ms"),
+            queue_time_ms=raw.get("queue_time_ms"),
+            inference_time_ms=raw.get("inference_time_ms"),
+        )
+
+    client_cls._convert_pg_metadata = _lenient
+    client_cls._roomkit_metadata_patched = True
+
+
 class PolarGridAIProvider(AIProvider):
     """AI provider using PolarGrid's chat completions API."""
 
@@ -46,6 +80,7 @@ class PolarGridAIProvider(AIProvider):
                 "polargrid-sdk is required for PolarGridAIProvider. "
                 "Install it with: pip install roomkit[polargrid]"
             ) from exc
+        _patch_pg_metadata_decoder(_pg)
         self._config = config
         self._sdk = _pg
         # Bind exception classes once so we can catch them without

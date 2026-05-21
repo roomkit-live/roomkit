@@ -15,7 +15,11 @@ class PolarGridConfig(BaseModel):
 
     Attributes:
         api_key: PolarGrid API key (``pg_...``), sent as a Bearer token.
-        model: Model identifier (e.g. ``"qwen-3.5-9b"``, ``"qwen-3.5-27b"``).
+        model: Model identifier. As of polargrid-sdk 0.7.0 the
+            Toronto edge serves ``"qwen-3.5-27b"`` (LLM),
+            ``"cohere-transcribe-03-2026"`` (STT), and ``"tada-3b-ml"``.
+            The catalog varies per edge — call ``list_models()`` on
+            the raw SDK client to enumerate what's loaded.
         region: Region to pin. One of ``"toronto"``/``"vancouver"``/
             ``"montreal"`` (or the IDs ``"yto-01"``/``"yvr-02"``/
             ``"yul-01"``). ``None`` lets the SDK auto-route to the
@@ -33,7 +37,7 @@ class PolarGridConfig(BaseModel):
     """
 
     api_key: SecretStr
-    model: str = "qwen-3.5-9b"
+    model: str = "qwen-3.5-27b"
     region: str | None = None
     max_tokens: int | None = None
     temperature: float = 0.7
