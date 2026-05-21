@@ -179,20 +179,28 @@ class OllamaAIProvider(AIProvider):
             options["num_ctx"] = self._config.num_ctx
         return options
 
-    def _resolve_think(self, context: AIContext) -> bool | None:
+    def _resolve_think(self, context: AIContext) -> bool | str | None:
         """Decide the ``think`` value for this request.
 
         Precedence:
-        1. If ``context.thinking_budget`` is set, it wins: ``None`` or
-           ``0`` → ``think=False``, ``>0`` → ``think=True``. This
-           honors the agent-level "Leave empty to disable" contract
-           one layer up.
-        2. Otherwise fall back to the provider config's ``think``.
-        3. Otherwise ``None`` — let the model decide.
+        1. If ``context.thinking_budget`` is set, it gates on/off:
+           ``None``/``0`` → ``think=False``; ``>0`` → honors the
+           provider config's effort string when set (so per-channel
+           ``thinking_budget=4096`` preserves a ``think="high"``
+           default), otherwise ``think=True``.
+        2. Otherwise pass the provider config's ``think`` through
+           verbatim — boolean or effort string.
+        3. ``None`` lets the model decide.
         """
         budget = context.thinking_budget
         if budget is not None:
-            return budget > 0
+            if budget <= 0:
+                return False
+            # >0 means "thinking on" — honor a configured effort level,
+            # otherwise plain True.
+            if isinstance(self._config.think, str):
+                return self._config.think
+            return True
         return self._config.think
 
     def _build_kwargs(self, context: AIContext, stream: bool) -> dict[str, Any]:
@@ -265,6 +273,12 @@ class OllamaAIProvider(AIProvider):
         )
 
     # -- Streaming ----------------------------------------------------------
+
+    async def generate_stream(self, context: AIContext) -> AsyncIterator[str]:
+        """Yield text deltas (thinking content filtered out)."""
+        async for event in self.generate_structured_stream(context):
+            if isinstance(event, StreamTextDelta):
+                yield event.text
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """Yield structured events with thinking streamed separately.

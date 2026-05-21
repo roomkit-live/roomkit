@@ -11,7 +11,7 @@ from .audio import (
     build_vad,
 )
 from .console import setup_console
-from .env import auto_select_provider, os_info, require_env
+from .env import auto_select_provider, env_bool, os_info, require_env
 from .hooks import log_tool_call
 from .lifecycle import run_until_stopped
 from .log import setup_logging
@@ -24,6 +24,7 @@ __all__ = [
     "build_pipeline",
     "build_turn_detector",
     "build_vad",
+    "env_bool",
     "log_tool_call",
     "os_info",
     "require_env",

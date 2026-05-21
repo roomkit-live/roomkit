@@ -28,6 +28,24 @@ def os_info() -> dict[str, str]:
     }
 
 
+def env_bool(name: str, *, default: bool) -> bool:
+    """Parse a boolean environment variable.
+
+    Returns ``default`` when ``name`` is unset or empty.
+    ``0``, ``false``, ``off``, ``no`` (case-insensitive) → ``False``.
+    Anything else → ``True``.
+
+    Usage::
+
+        if env_bool("MY_FEATURE", default=True):
+            ...
+    """
+    val = os.environ.get(name, "").strip().lower()
+    if not val:
+        return default
+    return val not in {"0", "false", "off", "no"}
+
+
 def require_env(*names: str) -> dict[str, str]:
     """Require one or more environment variables, exit with a message if any are missing.
 

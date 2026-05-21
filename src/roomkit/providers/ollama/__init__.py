@@ -10,6 +10,6 @@ about the runtime.
 from __future__ import annotations
 
 from roomkit.providers.ollama.ai import OllamaAIProvider
-from roomkit.providers.ollama.config import OllamaConfig
+from roomkit.providers.ollama.config import OllamaConfig, ThinkEffort
 
-__all__ = ["OllamaAIProvider", "OllamaConfig"]
+__all__ = ["OllamaAIProvider", "OllamaConfig", "ThinkEffort"]

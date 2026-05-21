@@ -5,8 +5,9 @@ deltas. The framework's streaming consumer uses them to persist text segments
 and tool call events at each boundary, rather than concatenating everything
 into a single event.
 
-Transport channels never see these markers — only ``str`` deltas are forwarded
-for real-time display.
+Channels see the full mixed stream and choose what to render. Text-only
+channels filter on ``isinstance(chunk, str)`` and skip the markers; richer
+channels (CLI, web) can render tool calls and thinking inline.
 """
 
 from __future__ import annotations
@@ -45,8 +46,21 @@ class ToolCallEndMarker:
     error: str | None = None
 
 
+@dataclass(slots=True)
+class ThinkingDeltaMarker:
+    """Yielded for each chunk of the model's reasoning text.
+
+    One marker per provider ``StreamThinkingDelta`` event, so reasoning
+    arrives token-by-token in arrival order with the text deltas — no
+    buffering, no race against an out-of-band channel. Channels that
+    want to render reasoning inline handle this marker; others ignore it.
+    """
+
+    thinking: str
+
+
 #: Union of all marker types that may appear in a streaming response.
-StreamMarker = ToolCallStartMarker | ToolCallEndMarker
+StreamMarker = ToolCallStartMarker | ToolCallEndMarker | ThinkingDeltaMarker
 
 #: A single item in the streaming response: either a text delta or a marker.
 StreamDelta = str | StreamMarker

@@ -326,6 +326,38 @@ class TestOllamaThinkParameter:
 
         assert mod.AsyncClient.return_value.chat.await_args.kwargs["think"] is False
 
+    @pytest.mark.parametrize("effort", ["low", "medium", "high"])
+    @pytest.mark.asyncio
+    async def test_think_effort_string_passes_through(self, effort: str) -> None:
+        provider, mod = _provider(think=effort)
+        mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
+
+        await provider.generate(_context())
+
+        assert mod.AsyncClient.return_value.chat.await_args.kwargs["think"] == effort
+
+    @pytest.mark.asyncio
+    async def test_thinking_budget_positive_preserves_effort_string(self) -> None:
+        # Config sets "high" effort; a positive budget at the channel layer
+        # means "thinking on" — the configured level survives.
+        provider, mod = _provider(think="high")
+        mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
+
+        await provider.generate(_context(thinking_budget=4096))
+
+        assert mod.AsyncClient.return_value.chat.await_args.kwargs["think"] == "high"
+
+    @pytest.mark.asyncio
+    async def test_thinking_budget_zero_disables_even_with_effort_config(self) -> None:
+        # Config sets "high" effort, but the channel explicitly says off.
+        # Off wins — no thinking at all.
+        provider, mod = _provider(think="high")
+        mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
+
+        await provider.generate(_context(thinking_budget=0))
+
+        assert mod.AsyncClient.return_value.chat.await_args.kwargs["think"] is False
+
 
 class TestOllamaStreaming:
     @pytest.mark.asyncio
@@ -397,6 +429,24 @@ class TestOllamaStreaming:
             pass
 
         assert mod.AsyncClient.return_value.chat.await_args.kwargs["stream"] is True
+
+    @pytest.mark.asyncio
+    async def test_generate_stream_yields_text_only(self) -> None:
+        provider, mod = _provider()
+        mod.AsyncClient.return_value.chat.return_value = _FakeStream(
+            [
+                _stream_chunk(thinking="Let me "),
+                _stream_chunk(thinking="think."),
+                _stream_chunk(content="42"),
+                _stream_chunk(content=" is "),
+                _stream_chunk(content="it."),
+                _stream_chunk(done=True, done_reason="stop"),
+            ]
+        )
+
+        chunks = [c async for c in provider.generate_stream(_context())]
+
+        assert chunks == ["42", " is ", "it."]
 
 
 class TestOllamaMessageBuilding:

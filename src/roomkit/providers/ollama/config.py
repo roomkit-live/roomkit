@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
+
+#: Effort levels accepted by Ollama's ``think`` parameter for reasoning models.
+ThinkEffort = Literal["low", "medium", "high"]
 
 
 class OllamaConfig(BaseModel):
@@ -32,13 +37,18 @@ class OllamaConfig(BaseModel):
         max_retries: SDK-level retry count. Default 0 because
             RoomKit's RetryPolicy handles retries at the right layer
             with proper backoff and fallback.
-        think: Whether the model should produce a ``thinking`` block
-            before its final answer. ``None`` (default) means "use the
-            model's default" — reasoning models think, others don't.
-            ``True`` forces thinking on (no-op for non-reasoning
-            models). ``False`` forces thinking off, even for reasoning
-            models. ``AIContext.thinking_budget`` overrides this at
+        think: Whether and how hard the model should reason before
+            answering. ``None`` (default) means "use the model's
+            default" — reasoning models think, others don't.
+            ``True``/``False`` force thinking on or off as a boolean.
+            One of ``"low"``, ``"medium"``, ``"high"`` selects an
+            effort level for models that support it (Ollama 0.7+ on
+            reasoning-capable models like gpt-oss and deepseek-r1).
+            Effort strings pass straight through to the Ollama API;
+            unsupported models silently downgrade to boolean
+            behavior. ``AIContext.thinking_budget`` overrides this at
             request time: ``None``/``0`` → ``think=False``, ``>0`` →
+            uses this config value if it's a string, otherwise
             ``think=True``.
         keep_alive: How long the model stays loaded in memory after
             the request. Maps to Ollama's ``keep_alive`` parameter.
@@ -55,6 +65,6 @@ class OllamaConfig(BaseModel):
     temperature: float = 0.7
     timeout: float = 120.0
     max_retries: int = 0
-    think: bool | None = None
+    think: bool | ThinkEffort | None = None
     keep_alive: str | int | None = None
     num_ctx: int | None = None

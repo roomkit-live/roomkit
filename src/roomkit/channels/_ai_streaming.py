@@ -11,7 +11,12 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
-from roomkit.models.streaming import StreamDelta, ToolCallEndMarker, ToolCallStartMarker
+from roomkit.models.streaming import (
+    StreamDelta,
+    ThinkingDeltaMarker,
+    ToolCallEndMarker,
+    ToolCallStartMarker,
+)
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -152,8 +157,69 @@ class AIStreamingMixin:
             return ChannelOutput.empty()
         return ChannelOutput(
             responded=True,
-            response_stream=self._provider.generate_stream(ai_context),
+            response_stream=self._stream_text_with_thinking(ai_context),
         )
+
+    async def _stream_text_with_thinking(
+        self, ai_context: AIContext
+    ) -> AsyncIterator[StreamDelta]:
+        """Yield text deltas + thinking markers, publish realtime events.
+
+        Two parallel mechanisms by design:
+
+        * **Inline (channel stream)** — every ``StreamThinkingDelta`` becomes
+          a :class:`ThinkingDeltaMarker` yielded in arrival order alongside
+          text deltas. Channels that want to render reasoning in line with
+          the answer (CLI, web) consume them; text-only channels filter
+          them out via ``isinstance(chunk, str)``.
+
+        * **Out-of-band (realtime bus)** — a single ``THINKING_END`` event
+          carrying the full accumulated reasoning is published for
+          observers (dashboards, audit logs). This matches the tool-loop
+          and non-streaming paths so subscribers see consistent payloads.
+
+        Falls back to ``generate_stream`` for providers that don't expose
+        a structured stream.
+        """
+        if not self._provider.supports_structured_streaming:
+            async for chunk in self._provider.generate_stream(ai_context):
+                yield chunk
+            return
+
+        room_id = ai_context.room.room.id if ai_context.room else None
+        thinking_parts: list[str] = []
+        thinking_started = False
+
+        async for ev in self._provider.generate_structured_stream(ai_context):
+            if isinstance(ev, StreamThinkingDelta):
+                if not thinking_started and room_id:
+                    thinking_started = True
+                    await self._publish_thinking_event(
+                        EphemeralEventType.THINKING_START, room_id, "", 0
+                    )
+                thinking_parts.append(ev.thinking)
+                yield ThinkingDeltaMarker(thinking=ev.thinking)
+            elif isinstance(ev, StreamTextDelta):
+                if thinking_started and thinking_parts and room_id:
+                    thinking_started = False
+                    await self._publish_thinking_event(
+                        EphemeralEventType.THINKING_END,
+                        room_id,
+                        "".join(thinking_parts),
+                        0,
+                    )
+                    thinking_parts = []
+                yield ev.text
+
+        # Thinking with no following text — close the boundary anyway so
+        # subscribers see the reasoning even if the model emitted nothing else.
+        if thinking_started and thinking_parts and room_id:
+            await self._publish_thinking_event(
+                EphemeralEventType.THINKING_END,
+                room_id,
+                "".join(thinking_parts),
+                0,
+            )
 
     async def _start_streaming_tool_response(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -246,6 +312,10 @@ class AIStreamingMixin:
                                 _round_idx,
                             )
                         thinking_parts.append(event.thinking)
+                        # Inline marker so channels can render reasoning in
+                        # arrival order with text deltas. Realtime bus still
+                        # gets the buffered THINKING_END below for observers.
+                        yield ThinkingDeltaMarker(thinking=event.thinking)
                     elif isinstance(event, StreamTextDelta):
                         if thinking_started and thinking_parts and room_id:
                             thinking_started = False

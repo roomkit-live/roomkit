@@ -16,7 +16,7 @@ from roomkit.models.enums import (
     HookTrigger,
 )
 from roomkit.models.event import RoomEvent, ToolCallContent
-from roomkit.models.streaming import ToolCallEndMarker, ToolCallStartMarker
+from roomkit.models.streaming import ThinkingDeltaMarker, ToolCallEndMarker, ToolCallStartMarker
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -171,10 +171,18 @@ class InboundStreamingMixin(HelpersMixin):
         # Text deltas drive the streaming bubble; RoomEvents are delivered
         # as regular events interleaved between stream chunks.
         async def segment_stream() -> Any:
-            """Yield str for text deltas, RoomEvent for persisted segments."""
+            """Yield str for text deltas, RoomEvent for persisted segments.
+
+            Thinking markers pass straight through to the channel — they
+            carry transient display info only and are not persisted as
+            RoomEvents (the realtime bus still publishes a buffered
+            ``THINKING_END`` for out-of-band observers).
+            """
             async for delta in sr.stream:
                 if isinstance(delta, str):
                     accumulated_text.append(delta)
+                    yield delta
+                elif isinstance(delta, ThinkingDeltaMarker):
                     yield delta
                 elif isinstance(delta, ToolCallStartMarker):
                     # Persist text before the tool call and yield if new

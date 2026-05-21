@@ -32,6 +32,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelMediaType, ChannelType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.streaming import ThinkingDeltaMarker
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -62,15 +63,19 @@ class CLIChannel(Channel):
         prompt: str = "You: ",
         user_color: str = "\033[33m",
         agent_color: str = "\033[36m",
+        thinking_color: str = "\033[2;3m",
         use_color: bool | None = None,
         agent_label: Callable[[str], str] | None = None,
+        show_thinking: bool = False,
     ) -> None:
         super().__init__(channel_id)
         self._prompt = prompt
         self._user_color = user_color
         self._agent_color = agent_color
+        self._thinking_color = thinking_color
         self._use_color = use_color if use_color is not None else _is_tty()
         self._agent_label = agent_label or _default_agent_label
+        self._show_thinking = show_thinking
         self._reset = "\033[0m"
 
     # -- Channel interface ----------------------------------------------------
@@ -116,19 +121,48 @@ class CLIChannel(Channel):
         binding: ChannelBinding,
         context: RoomContext,
     ) -> ChannelOutput:
-        """Stream tokens to stdout as they arrive."""
+        """Stream tokens to stdout as they arrive.
+
+        Renders text deltas as they arrive. When ``show_thinking`` is
+        enabled, :class:`ThinkingDeltaMarker` chunks are rendered in
+        ``thinking_color`` with a leading ``💭`` and a trailing newline
+        before the first text delta, so the reasoning appears coherently
+        above the answer.
+        """
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
 
         label = self._agent_label(event.source.channel_id)
-        prefix = self._colorize(self._agent_color, f"{label}: ")
-        sys.stdout.write(f"\n{prefix}")
+        agent_prefix = self._colorize(self._agent_color, f"{label}: ")
+
+        thinking_open = False
+        answer_started = False
 
         async for chunk in text_stream:
-            if isinstance(chunk, str):
+            if self._show_thinking and isinstance(chunk, ThinkingDeltaMarker):
+                if not thinking_open:
+                    sys.stdout.write(f"\n{self._colorize(self._thinking_color, '💭 ')}")
+                    thinking_open = True
+                if self._use_color:
+                    sys.stdout.write(chunk.thinking)
+                else:
+                    sys.stdout.write(chunk.thinking)
+                sys.stdout.flush()
+            elif isinstance(chunk, str):
+                if thinking_open:
+                    sys.stdout.write(f"{self._reset}\n")
+                    thinking_open = False
+                if not answer_started:
+                    sys.stdout.write(f"\n{agent_prefix}")
+                    answer_started = True
                 sys.stdout.write(chunk)
                 sys.stdout.flush()
 
+        if thinking_open:
+            sys.stdout.write(f"{self._reset}\n")
+        if not answer_started:
+            # No text — at least put the prefix so the user sees something.
+            sys.stdout.write(f"\n{agent_prefix}")
         sys.stdout.write("\n\n")
         sys.stdout.flush()
         return ChannelOutput.empty()
