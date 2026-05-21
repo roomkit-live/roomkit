@@ -76,7 +76,6 @@ async def _run_one(host: str, model: str, label: str, think: Any) -> dict[str, A
             )
         )
         elapsed_ms = int((time.monotonic() - t0) * 1000)
-        print(response.thinking)
         return {
             "label": label,
             "eval_count": response.usage.get("output_tokens", 0),
