@@ -198,6 +198,15 @@ class AIStreamingMixin:
                         EphemeralEventType.THINKING_START, room_id, "", 0
                     )
                 thinking_parts.append(ev.thinking)
+                # Publish each delta on the realtime bus so remote subscribers
+                # (browser WS clients, etc.) see the reasoning stream as it
+                # arrives, not only the buffered text at THINKING_END. The
+                # ``thinking`` field carries the per-chunk delta, not the
+                # accumulator — clients append to their own buffer.
+                if room_id:
+                    await self._publish_thinking_event(
+                        EphemeralEventType.THINKING_DELTA, room_id, ev.thinking, 0
+                    )
                 yield ThinkingDeltaMarker(thinking=ev.thinking)
             elif isinstance(ev, StreamTextDelta):
                 if thinking_started and thinking_parts and room_id:
@@ -312,9 +321,19 @@ class AIStreamingMixin:
                                 _round_idx,
                             )
                         thinking_parts.append(event.thinking)
+                        # Publish the per-chunk delta on the realtime bus so
+                        # remote WS subscribers stream the reasoning live; the
+                        # buffered THINKING_END below still fires so observers
+                        # joining mid-stream can recover the complete trace.
+                        if room_id:
+                            await self._publish_thinking_event(
+                                EphemeralEventType.THINKING_DELTA,
+                                room_id,
+                                event.thinking,
+                                _round_idx,
+                            )
                         # Inline marker so channels can render reasoning in
-                        # arrival order with text deltas. Realtime bus still
-                        # gets the buffered THINKING_END below for observers.
+                        # arrival order with text deltas.
                         yield ThinkingDeltaMarker(thinking=event.thinking)
                     elif isinstance(event, StreamTextDelta):
                         if thinking_started and thinking_parts and room_id:
