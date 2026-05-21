@@ -229,7 +229,9 @@ class InboundLockedMixin(HelpersMixin):
 
         # Refresh context locally by appending the new event (avoids 4 store queries)
         context = context.model_copy(
-            update={"recent_events": [*context.recent_events[-(_RECENT_EVENTS_LIMIT - 1):], event]}
+            update={
+                "recent_events": [*context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :], event]
+            }
         )
 
         # Broadcast to other channels

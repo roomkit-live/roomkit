@@ -316,7 +316,7 @@ class InboundStreamingMixin(HelpersMixin):
                         reentry_ctx = context.model_copy(
                             update={
                                 "recent_events": [
-                                    *context.recent_events[-(_RECENT_EVENTS_LIMIT - 1):],
+                                    *context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :],
                                     seg_event,
                                 ]
                             }
