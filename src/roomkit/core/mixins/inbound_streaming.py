@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
-from roomkit.core.mixins.helpers import HelpersMixin
+from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
@@ -316,7 +316,7 @@ class InboundStreamingMixin(HelpersMixin):
                         reentry_ctx = context.model_copy(
                             update={
                                 "recent_events": [
-                                    *context.recent_events[-49:],
+                                    *context.recent_events[-(_RECENT_EVENTS_LIMIT - 1):],
                                     seg_event,
                                 ]
                             }

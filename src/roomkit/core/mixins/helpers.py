@@ -1,6 +1,27 @@
-"""HelpersMixin — internal helpers shared across framework mixins."""
+"""HelpersMixin — internal helpers shared across framework mixins.
+
+``_RECENT_EVENTS_LIMIT`` is the hard ceiling on how many events the
+in-memory ``RoomContext.recent_events`` carries. Memory providers that
+care about token budget (``BudgetAwareMemory``) trim further per turn,
+so this number is the safety upper bound — large enough that a long
+chat never trips it, small enough that the worst-case memory footprint
+stays sane. The mixins below import it for the per-event append slices
+in ``inbound_locked`` / ``inbound_streaming`` so all three sites stay
+aligned with the initial store fetch.
+
+The previous value (50) predates ``BudgetAwareMemory`` and was
+calibrated for ``SlidingWindowMemory`` (event-count trimming). With
+the token-aware memory provider doing the real work, the event cap
+was both redundant and harmful — it dropped older turns even when
+the token budget had plenty of headroom, producing the visible
+"context shrinks when a long past message rolls off" behavior on
+long conversations.
+"""
 
 from __future__ import annotations
+
+_RECENT_EVENTS_LIMIT = 2_000
+"""Maximum events kept in ``RoomContext.recent_events`` in memory."""
 
 import asyncio
 import contextlib
@@ -322,7 +343,7 @@ class HelpersMixin:
             raise RoomNotFoundError(f"Room {room_id} not found")
         bindings = await self._store.list_bindings(room_id)
         participants = await self._store.list_participants(room_id)
-        recent = await self._store.get_conversation(room_id, limit=50)
+        recent = await self._store.get_conversation(room_id, limit=_RECENT_EVENTS_LIMIT)
         return RoomContext(
             room=room,
             bindings=bindings,

@@ -7,7 +7,7 @@ from collections import deque
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from roomkit.core.mixins.helpers import HelpersMixin
+from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundResult
 from roomkit.models.enums import (
@@ -229,7 +229,7 @@ class InboundLockedMixin(HelpersMixin):
 
         # Refresh context locally by appending the new event (avoids 4 store queries)
         context = context.model_copy(
-            update={"recent_events": [*context.recent_events[-49:], event]}
+            update={"recent_events": [*context.recent_events[-(_RECENT_EVENTS_LIMIT - 1):], event]}
         )
 
         # Broadcast to other channels
@@ -342,7 +342,7 @@ class InboundLockedMixin(HelpersMixin):
             if reentry_binding:
                 # Append reentry event to context locally instead of full rebuild
                 reentry_ctx = context.model_copy(
-                    update={"recent_events": [*context.recent_events[-49:], reentry]}
+                    update={"recent_events": [*context.recent_events[-(_RECENT_EVENTS_LIMIT - 1):], reentry]}
                 )
 
                 # Run BEFORE_BROADCAST sync hooks on reentry events so that
