@@ -207,8 +207,7 @@ class PolarGridAIProvider(AIProvider):
     def _build_request(self, context: AIContext, *, stream: bool) -> dict[str, Any]:
         if context.tools:
             logger.warning(
-                "PolarGrid does not support tool/function calling; "
-                "%d tool(s) will be ignored.",
+                "PolarGrid does not support tool/function calling; %d tool(s) will be ignored.",
                 len(context.tools),
             )
 

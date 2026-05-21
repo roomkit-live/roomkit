@@ -289,9 +289,7 @@ class TestPolarGridStreaming:
                 # Final usage-only chunk with no choices.
                 SimpleNamespace(
                     choices=[],
-                    usage=SimpleNamespace(
-                        prompt_tokens=12, completion_tokens=5, total_tokens=17
-                    ),
+                    usage=SimpleNamespace(prompt_tokens=12, completion_tokens=5, total_tokens=17),
                 ),
             ]
         )
