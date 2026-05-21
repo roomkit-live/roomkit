@@ -342,7 +342,12 @@ class InboundLockedMixin(HelpersMixin):
             if reentry_binding:
                 # Append reentry event to context locally instead of full rebuild
                 reentry_ctx = context.model_copy(
-                    update={"recent_events": [*context.recent_events[-(_RECENT_EVENTS_LIMIT - 1):], reentry]}
+                    update={
+                        "recent_events": [
+                            *context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :],
+                            reentry,
+                        ]
+                    }
                 )
 
                 # Run BEFORE_BROADCAST sync hooks on reentry events so that

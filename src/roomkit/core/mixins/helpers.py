@@ -20,9 +20,6 @@ long conversations.
 
 from __future__ import annotations
 
-_RECENT_EVENTS_LIMIT = 2_000
-"""Maximum events kept in ``RoomContext.recent_events`` in memory."""
-
 import asyncio
 import contextlib
 import logging
@@ -44,6 +41,9 @@ from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
 from roomkit.models.task import Observation, Task
+
+_RECENT_EVENTS_LIMIT = 2_000
+"""Maximum events kept in ``RoomContext.recent_events`` in memory."""
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
