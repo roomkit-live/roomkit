@@ -229,9 +229,7 @@ class TestOllamaAIProviderGenerate:
             _response_obj(content="", tool_calls=[turn]),
         ]
         ctx = _context(tools=[AITool(name="ping", description="x")])
-        ids = [
-            (await provider.generate(ctx)).tool_calls[0].id for _ in range(3)
-        ]
+        ids = [(await provider.generate(ctx)).tool_calls[0].id for _ in range(3)]
         assert len(set(ids)) == 3, ids
 
     @pytest.mark.asyncio
