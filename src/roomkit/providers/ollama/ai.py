@@ -13,6 +13,7 @@ want real-time thinking or explicit control over the reasoning phase.
 from __future__ import annotations
 
 import time
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -374,10 +375,15 @@ class OllamaAIProvider(AIProvider):
             arguments = self._get_attr(func, "arguments", {}) or {}
             if not isinstance(arguments, dict):
                 arguments = {"raw": arguments}
-            # Ollama doesn't issue stable tool-call ids; synthesize one
-            # from the name + a monotonic counter so the consumer can
-            # pair calls with results. The id is local to this run.
-            call_id = self._get_attr(tc, "id", None) or f"call_{name}_{len(result)}"
+            # Ollama doesn't issue stable tool-call ids — synthesize one
+            # the consumer can pair calls with results by. A per-response
+            # counter (``len(result)``) resets each turn and would collide
+            # across turns of the same conversation; downstream code that
+            # dedups START/END events by tool_id then collapses N pairs
+            # into one. Use a uuid4 suffix so every synthesized id is
+            # globally unique. The id is never echoed back to Ollama
+            # (its API matches tool results by role+name, not by id).
+            call_id = self._get_attr(tc, "id", None) or f"call_{name}_{uuid.uuid4().hex[:12]}"
             result.append(AIToolCall(id=str(call_id), name=str(name), arguments=arguments))
         return result
 

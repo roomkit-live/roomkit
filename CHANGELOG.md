@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ollama provider mints unique tool-call ids across turns.** Ollama's
+  native `/api/chat` does not return tool-call ids, so the provider
+  synthesizes them. The previous format was `call_{name}_{i}` where `i`
+  was the index *within a single response message*, so the counter reset
+  to `0` on every turn — every same-named tool call in a conversation
+  ended up sharing the same id (e.g. `call_scheduled_tasks_0` for 18
+  separate calls). Downstream consumers that pair `TOOL_CALL_START` and
+  `TOOL_CALL_END` events by `tool_id` then collapsed all N pairs onto a
+  single timestamp, bunching the UI's tool pills at one point in the
+  chat instead of interleaving them with assistant text. The id now
+  carries a `uuid4` suffix (`call_{name}_{hex12}`) so every synthesized
+  id is globally unique. New regression test in
+  `tests/test_providers/test_ollama.py::test_synthesized_tool_ids_unique_across_turns`.
 - **`BEFORE_BROADCAST` block on reentry events now conforms to RFC §9.5.**
   When a sync hook returned `HookResult.block(...)` on an AI-response
   reentry event, the inbound pipeline silently dropped three things: the

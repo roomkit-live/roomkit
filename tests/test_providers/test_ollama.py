@@ -214,6 +214,27 @@ class TestOllamaAIProviderGenerate:
         assert call.id.startswith("call_get_weather")
 
     @pytest.mark.asyncio
+    async def test_synthesized_tool_ids_unique_across_turns(self) -> None:
+        # Regression: a per-response counter restarted at 0 each turn, so
+        # downstream consumers that pair START/END tool_call events by id
+        # collapsed every same-named call across the conversation onto a
+        # single pair. Each generate() call must mint a fresh id.
+        provider, mod = _provider()
+        turn = {
+            "function": {"name": "ping", "arguments": {}},
+        }
+        mod.AsyncClient.return_value.chat.side_effect = [
+            _response_obj(content="", tool_calls=[turn]),
+            _response_obj(content="", tool_calls=[turn]),
+            _response_obj(content="", tool_calls=[turn]),
+        ]
+        ctx = _context(tools=[AITool(name="ping", description="x")])
+        ids = [
+            (await provider.generate(ctx)).tool_calls[0].id for _ in range(3)
+        ]
+        assert len(set(ids)) == 3, ids
+
+    @pytest.mark.asyncio
     async def test_generate_passes_system_prompt(self) -> None:
         provider, mod = _provider()
         mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
