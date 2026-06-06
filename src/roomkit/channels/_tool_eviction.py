@@ -59,7 +59,14 @@ class ToolEviction:
         )
 
     def handle_read(self, arguments: dict[str, Any]) -> str:
-        """Paginate a previously evicted result."""
+        """Paginate a previously evicted result.
+
+        Pages are size-bounded below the eviction threshold: a page that grew
+        past it would itself be evicted on return, re-stored under a new id,
+        and the agent would chase evicted results forever. Lines longer than
+        the page budget (single-line JSON tool results) are split into chunks
+        so they paginate instead of coming back whole.
+        """
         result_id = arguments.get("result_id", "")
         offset = arguments.get("offset", 0)
         limit = arguments.get("limit", 200)
@@ -70,18 +77,44 @@ class ToolEviction:
                 {"error": f"Result '{result_id}' not found", "available": list(self._store.keys())}
             )
 
-        lines = full_result.splitlines()
+        # Char budget per page: threshold_tokens chars ≈ threshold/4 tokens of
+        # content, leaving ample headroom for JSON escaping (worst case 2×)
+        # plus the response envelope.
+        budget = max(1, self.threshold_tokens)
+        lines = self._paginable_lines(full_result, budget)
         total_lines = len(lines)
-        page = lines[offset : offset + limit]
+
+        page: list[str] = []
+        used = 0
+        for line in lines[offset : offset + limit]:
+            if page and used + len(line) > budget:
+                break
+            page.append(line)
+            used += len(line) + 1
+
+        has_more = (offset + len(page)) < total_lines
         return json.dumps(
             {
                 "content": "\n".join(page),
                 "offset": offset,
                 "lines_returned": len(page),
                 "total_lines": total_lines,
-                "has_more": (offset + limit) < total_lines,
+                "has_more": has_more,
+                "next_offset": offset + len(page) if has_more else None,
             }
         )
+
+    @staticmethod
+    def _paginable_lines(text: str, budget: int) -> list[str]:
+        """Lines of ``text``, with lines longer than ``budget`` split into
+        budget-sized chunks so every line fits within one page."""
+        lines: list[str] = []
+        for line in text.splitlines():
+            if len(line) <= budget:
+                lines.append(line)
+            else:
+                lines.extend(line[i : i + budget] for i in range(0, len(line), budget))
+        return lines
 
     @staticmethod
     def tool_definition() -> AITool:
@@ -90,7 +123,9 @@ class ToolEviction:
             name="read_stored_result",
             description=(
                 "Read a previously evicted large tool result. "
-                "Supports line-based pagination via offset and limit."
+                "Supports line-based pagination via offset and limit; pages "
+                "are size-bounded, so follow next_offset until has_more is "
+                "false to read everything."
             ),
             parameters={
                 "type": "object",
