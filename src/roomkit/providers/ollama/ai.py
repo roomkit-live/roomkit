@@ -228,7 +228,13 @@ class OllamaAIProvider(AIProvider):
     def _wrap_error(self, exc: BaseException) -> ProviderError:
         if isinstance(exc, self._response_error):
             status = getattr(exc, "status_code", None)
-            retryable = status in (429, 500, 502, 503)
+            # No HTTP status (ollama reports -1) means the server aborted
+            # mid-stream — e.g. its chat template failed to parse the
+            # model's own tool-call output ("XML syntax error ... closed by
+            # </function>"). That's a transient generation defect: a retry
+            # regenerates with fresh sampling. Only definite HTTP client
+            # errors stay non-retryable.
+            retryable = status in (None, -1, 429, 500, 502, 503)
             return ProviderError(
                 str(exc),
                 retryable=retryable,

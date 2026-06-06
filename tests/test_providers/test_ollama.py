@@ -541,6 +541,24 @@ class TestOllamaErrors:
         assert exc.value.status_code == 400
 
     @pytest.mark.asyncio
+    async def test_stream_abort_without_status_retryable(self) -> None:
+        """Ollama reports template parse failures of the model's own
+        tool-call output (e.g. qwen emitting malformed XML) as a
+        ResponseError with status -1. That's a transient generation defect
+        — a retry regenerates with fresh sampling."""
+        provider, mod = _provider()
+        mod.AsyncClient.return_value.chat.side_effect = _FakeResponseError(
+            "XML syntax error on line 7: element <parameter> closed by </function>",
+            status_code=-1,
+        )
+
+        with pytest.raises(ProviderError) as exc:
+            await provider.generate(_context())
+
+        assert exc.value.retryable is True
+        assert exc.value.status_code == -1
+
+    @pytest.mark.asyncio
     async def test_connection_error_retryable(self) -> None:
         provider, mod = _provider()
         mod.AsyncClient.return_value.chat.side_effect = RuntimeError("conn refused")
