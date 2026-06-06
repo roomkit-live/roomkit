@@ -131,6 +131,15 @@ class AIContext(BaseModel):
     target_capabilities: ChannelCapabilities | None = None
     target_media_types: list[ChannelMediaType] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    response_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Merged into the metadata of every MESSAGE response event built "
+            "for this turn, on both the streaming and non-streaming paths. "
+            "Set by hosts (e.g. a BEFORE_AI_GENERATION hook) to attach "
+            "turn-level attribution such as RAG sources to the reply."
+        ),
+    )
 
 
 class AIResponse(BaseModel):

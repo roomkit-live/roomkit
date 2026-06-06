@@ -267,6 +267,7 @@ class AIGenerationMixin:
             event.room_id,
             event.chain_depth + 1,
             response.usage,
+            response_metadata=ai_context.response_metadata,
         )
 
         if self._after_response_hook:
@@ -298,12 +299,18 @@ class AIGenerationMixin:
         room_id: str,
         chain_depth: int,
         usage: dict[str, Any] | None,
+        response_metadata: dict[str, Any] | None = None,
     ) -> list[RoomEvent]:
         """Build interleaved text + tool call events from tool loop result.
 
         When there are no tool rounds, returns a single MESSAGE event
         (backward compatible). When rounds exist, returns text segments
         and tool call events in order, sharing a correlation_id.
+
+        ``response_metadata`` (``AIContext.response_metadata``) is merged
+        into every MESSAGE event's metadata — turn-level attribution set
+        by the host travels with the reply from creation, so it is
+        persisted and broadcast without any post-hoc rewrite.
         """
         from uuid import uuid4
 
@@ -313,6 +320,7 @@ class AIGenerationMixin:
             provider=self.provider_name,
         )
         response = loop_result.response
+        message_metadata = {**(response_metadata or {}), "ai_usage": usage}
 
         if not loop_result.rounds:
             # No tool calls — single text event (existing behavior)
@@ -322,7 +330,7 @@ class AIGenerationMixin:
                     source=source,
                     content=TextContent(body=response.content),
                     chain_depth=chain_depth,
-                    metadata={"ai_usage": usage},
+                    metadata=message_metadata,
                 )
             ]
 
@@ -341,6 +349,7 @@ class AIGenerationMixin:
                         content=TextContent(body=rnd.text_before),
                         chain_depth=chain_depth,
                         correlation_id=correlation_id,
+                        metadata=dict(response_metadata or {}),
                     )
                 )
 
@@ -394,7 +403,7 @@ class AIGenerationMixin:
                     content=TextContent(body=response.content),
                     chain_depth=chain_depth,
                     correlation_id=correlation_id,
-                    metadata={"ai_usage": usage},
+                    metadata=message_metadata,
                 )
             )
 
@@ -410,7 +419,7 @@ class AIGenerationMixin:
                     content=TextContent(body=""),
                     chain_depth=chain_depth,
                     correlation_id=correlation_id,
-                    metadata={"ai_usage": usage},
+                    metadata=message_metadata,
                 )
             )
 

@@ -47,6 +47,7 @@ class StreamingResponse:
     source_channel_id: str
     source_channel_type: Any  # ChannelType
     trigger_event: RoomEvent
+    response_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -251,6 +252,7 @@ class EventRouter:
                         source_channel_id=binding.channel_id,
                         source_channel_type=binding.channel_type,
                         trigger_event=transcoded_event,
+                        response_metadata=output.response_metadata,
                     )
                     tr.observations.extend(output.observations)
                     target_results.append(tr)

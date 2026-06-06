@@ -158,6 +158,7 @@ class AIStreamingMixin:
         return ChannelOutput(
             responded=True,
             response_stream=self._stream_text_with_thinking(ai_context),
+            response_metadata=ai_context.response_metadata,
         )
 
     async def _stream_text_with_thinking(
