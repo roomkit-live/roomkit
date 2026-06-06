@@ -83,6 +83,7 @@ class AIContextHost(Protocol):
     _planner: TaskPlanner | None
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
+    _config_provider: Any  # ConfigProvider | None — see channels/_turn_config.py
     channel_id: str
 
     @property
@@ -112,6 +113,7 @@ class AIContextMixin:
     _planner: TaskPlanner | None
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
+    _config_provider: Any  # ConfigProvider | None — see channels/_turn_config.py
     channel_id: str
 
     # Cross-mixin methods — Any annotations avoid MRO shadowing
@@ -125,28 +127,51 @@ class AIContextMixin:
     ) -> AIContext:
         """Build AI context from room events.
 
-        Per-room overrides can be set via binding.metadata:
-        - system_prompt: Override the channel's default system prompt
-        - temperature: Override the channel's default temperature
-        - max_tokens: Override the channel's default max_tokens
-        - tools: List of tool definitions for function calling
-        """
-        # Per-room overrides from binding metadata
-        system_prompt = binding.metadata.get("system_prompt", self._system_prompt)
-        temperature = binding.metadata.get("temperature", self._temperature)
-        max_tokens = binding.metadata.get("max_tokens", self._max_tokens)
-        thinking_budget = binding.metadata.get("thinking_budget", self._thinking_budget)
-        raw_tools = binding.metadata.get("tools", [])
+        Config precedence per field:
+        1. ``binding.metadata`` explicit overrides (system_prompt,
+           temperature, max_tokens, thinking_budget) — per-room operator
+           intent, always wins.
+        2. The channel's ``config_provider`` result, resolved fresh at the
+           start of every turn (see channels/_turn_config.py).
+        3. The channel's constructor defaults.
 
-        # Convert raw tool dicts to AITool instances
-        tools = [
-            AITool(
-                name=t["name"],
-                description=t.get("description", ""),
-                parameters=t.get("parameters", {}),
-            )
-            for t in raw_tools
-        ]
+        ``tools`` is the exception: when a ``config_provider`` is set, its
+        toolset REPLACES ``binding.metadata["tools"]`` — that metadata key
+        is an attach-time snapshot, and the whole point of the provider is
+        that snapshots go stale. Without a provider, the metadata toolset
+        is used as before.
+        """
+        turn = None
+        if self._config_provider is not None:
+            turn = await self._config_provider(binding, context)
+
+        def _pick(key: str, turn_value: Any, default: Any) -> Any:
+            if key in binding.metadata:
+                return binding.metadata[key]
+            return turn_value if turn_value is not None else default
+
+        system_prompt = _pick(
+            "system_prompt", turn.system_prompt if turn else None, self._system_prompt
+        )
+        temperature = _pick("temperature", turn.temperature if turn else None, self._temperature)
+        max_tokens = _pick("max_tokens", turn.max_tokens if turn else None, self._max_tokens)
+        thinking_budget = _pick(
+            "thinking_budget", turn.thinking_budget if turn else None, self._thinking_budget
+        )
+
+        if turn is not None and turn.tools is not None:
+            tools = list(turn.tools)
+        else:
+            raw_tools = binding.metadata.get("tools", [])
+            # Convert raw tool dicts to AITool instances
+            tools = [
+                AITool(
+                    name=t["name"],
+                    description=t.get("description", ""),
+                    parameters=t.get("parameters", {}),
+                )
+                for t in raw_tools
+            ]
 
         # Inject extra tools (user-provided + orchestration handoff, etc.)
         tools.extend(self.extra_tools)

@@ -32,6 +32,7 @@ from roomkit.channels._ai_streaming import AIStreamingMixin
 from roomkit.channels._ai_tools import AIToolsMixin
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tool_eviction import ToolEviction
+from roomkit.channels._turn_config import ConfigProvider
 from roomkit.channels.base import Channel
 from roomkit.memory.base import MemoryProvider
 from roomkit.memory.sliding_window import SlidingWindowMemory
@@ -140,10 +141,15 @@ class AIChannel(
         thinking_budget: int | None = None,
         evict_threshold_tokens: int = 5000,
         enable_planning: bool = False,
+        config_provider: ConfigProvider | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._provider = provider
         self._system_prompt = system_prompt
+        # Per-turn config resolution — see channels/_turn_config.py. When
+        # set, system prompt / tools / sampling are resolved fresh at the
+        # start of every turn instead of living as attach-time snapshots.
+        self._config_provider = config_provider
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._max_context_events = max_context_events
