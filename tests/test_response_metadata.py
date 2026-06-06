@@ -130,6 +130,34 @@ class TestResponseMetadataDirect:
         assert output.response_stream is not None
         assert output.response_metadata["rag_sources"] == _SOURCES
 
+    async def test_streaming_tool_loop_output_carries_response_metadata(self) -> None:
+        # Channels with tools take _start_streaming_tool_response — a
+        # distinct entry point from the no-tools streaming path. Real
+        # agents virtually always have tools, so this is the path that
+        # matters in production.
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            return "result"
+
+        provider = MockAIProvider(responses=["AI reply"], streaming=True)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+
+        async def _hook(gen_event: AIGenerationEvent) -> SyncPipelineResult:
+            _attribution_hook(gen_event)
+            return SyncPipelineResult(allowed=True)
+
+        ch._before_generation_hook = _hook
+        binding = ChannelBinding(
+            channel_id="ai1",
+            room_id="r1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+            metadata={"tools": [{"name": "search", "description": "Search"}]},
+        )
+        output = await ch.on_event(make_event(body="hi", channel_id="sms1"), binding, _ctx())
+
+        assert output.response_stream is not None
+        assert output.response_metadata["rag_sources"] == _SOURCES
+
     async def test_no_hook_means_empty_response_metadata(self) -> None:
         provider = MockAIProvider(responses=["AI reply"], streaming=True)
         ch = AIChannel("ai1", provider=provider)

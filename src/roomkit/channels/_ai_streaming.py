@@ -242,6 +242,7 @@ class AIStreamingMixin:
         return ChannelOutput(
             responded=True,
             response_stream=self._run_streaming_tool_loop(ai_context),
+            response_metadata=ai_context.response_metadata,
         )
 
     async def _run_streaming_tool_loop(self, context: AIContext) -> AsyncIterator[StreamDelta]:
