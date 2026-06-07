@@ -53,6 +53,7 @@ class AIContextHost(Protocol):
         _max_tokens: Default max tokens (overridable per room).
         _thinking_budget: Optional thinking budget for extended thinking.
         _skills: Skill registry for tool injection.
+        _skills_in_prompt: Whether to auto-inject the skills manifest into the prompt.
         _script_executor: Script executor for skill scripts.
         _sandbox: Sandbox executor for ad-hoc command execution.
         _memory: Memory provider for conversation retrieval.
@@ -75,6 +76,7 @@ class AIContextHost(Protocol):
     _max_tokens: int
     _thinking_budget: int | None
     _skills: SkillRegistry | None
+    _skills_in_prompt: bool
     _script_executor: ScriptExecutor | None
     _sandbox: SandboxExecutor | None
     _human_input_handler: HumanInputToolHandler | None
@@ -105,6 +107,7 @@ class AIContextMixin:
     _max_tokens: int
     _thinking_budget: int | None
     _skills: SkillRegistry | None
+    _skills_in_prompt: bool
     _script_executor: ScriptExecutor | None
     _sandbox: SandboxExecutor | None
     _human_input_handler: HumanInputToolHandler | None
@@ -183,15 +186,18 @@ class AIContextMixin:
                 existing_names = {t.name for t in tools}
                 tools.extend(t for t in hi_tools if t.name not in existing_names)
 
-        # Inject skill tools and prompt (infra tools added here, gated tools later)
+        # Inject skill tools and prompt (infra tools added here, gated tools later).
+        # The prompt block is skipped when the host renders its own skills
+        # manifest inside ``system_prompt`` (``skills_in_prompt=False``).
         if self._skills and self._skills.skill_count > 0:
             tools.extend(self._skill_tools())
-            preamble = _SKILLS_PREAMBLE
-            if not self._script_executor:
-                preamble += _SKILLS_NO_SCRIPTS_NOTE
-            skills_xml = self._skills.to_prompt_xml()
-            skill_block = f"\n\n{preamble}\n\n{skills_xml}"
-            system_prompt = (system_prompt or "") + skill_block
+            if self._skills_in_prompt:
+                preamble = _SKILLS_PREAMBLE
+                if not self._script_executor:
+                    preamble += _SKILLS_NO_SCRIPTS_NOTE
+                skills_xml = self._skills.to_prompt_xml()
+                skill_block = f"\n\n{preamble}\n\n{skills_xml}"
+                system_prompt = (system_prompt or "") + skill_block
 
         # Inject sandbox tools and preamble
         if self._sandbox is not None:

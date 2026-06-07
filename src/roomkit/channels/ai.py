@@ -132,6 +132,7 @@ class AIChannel(
         retry_policy: RetryPolicy | None = None,
         fallback_provider: AIProvider | None = None,
         skills: SkillRegistry | None = None,
+        skills_in_prompt: bool = True,
         script_executor: ScriptExecutor | None = None,
         sandbox: SandboxExecutor | None = None,
         external_tool_handler: ExternalToolHandler | None = None,
@@ -160,6 +161,11 @@ class AIChannel(
         self._retry_policy = retry_policy
         self._fallback_provider = fallback_provider
         self._skills = skills
+        # Hosts that render their own skills manifest inside ``system_prompt``
+        # (e.g. positioned above a prompt-cache boundary) set this to False to
+        # skip the automatic preamble+XML injection while keeping the skill
+        # activation tools.
+        self._skills_in_prompt = skills_in_prompt
         self._script_executor = script_executor
         self._sandbox = sandbox
         self._memory = memory or SlidingWindowMemory(max_events=max_context_events)
