@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-06-06
+
+### Added
+
+- **Per-turn config provider for `AIChannel`.** `AIChannel(config_provider=...)`
+  resolves an `AIChannelTurnConfig` (system prompt, tools, temperature,
+  max_tokens, thinking_budget) fresh at the start of every generation
+  turn, so dynamic config — admin edits, per-user gating, feature flags —
+  is never served from a stale attach-time snapshot. Explicit
+  `binding.metadata` overrides still win for prompt/sampling (per-room
+  operator intent); the provider's toolset REPLACES
+  `binding.metadata["tools"]`, since that key is itself an attach-time
+  snapshot. Without a provider, the static path is unchanged.
+  `AIChannelTurnConfig` is exported from `roomkit`. Tests in
+  `tests/test_channels/test_turn_config.py`.
+- **`AIContext.response_metadata` rides every MESSAGE response event.**
+  A `BEFORE_AI_GENERATION` hook can set turn-level attribution (e.g. RAG
+  sources, labels) on `ai_context.response_metadata` and it lands in the
+  metadata of every MESSAGE event of the turn — non-streaming, streaming,
+  and the streaming tool loop — persisted before broadcast, so the stored
+  row and the `stream_end` frame carry it from creation with no post-hoc
+  store rewrite. `ChannelOutput.response_metadata` carries it on the
+  streaming path. Tests in `tests/test_response_metadata.py`.
+
+### Fixed
+
+- **`read_stored_result` pages are size-bounded.** Pagination was
+  line-based, but tool results are often single-line JSON: the page
+  returned the whole payload, exceeded the eviction threshold, got
+  re-stored under a new id, and the agent chased evicted results forever.
+  Pages are now char-budgeted under the threshold (lines longer than the
+  budget split into chunks) and the response carries an explicit
+  `next_offset` cursor.
+- **Ollama provider retries stream aborts without an HTTP status.**
+  Ollama surfaces chat-template parse failures of the model's own
+  tool-call output (e.g. a small model closing `<parameter>` with
+  `</function>`) as a `ResponseError` with status `-1`. Those were
+  classified non-retryable, killing the turn on a transient sampling
+  defect that a regeneration almost always fixes. Statusless aborts now
+  join the retryable set; definite HTTP client errors stay fatal.
+
+## [0.7.1] — 2026-05-22
+
+### Added
+
+- **Native Ollama provider** (`OllamaAIProvider`, `OllamaConfig`) built
+  on `ollama-python`, including thinking effort levels —
+  `OllamaConfig.think` widened from `bool | None` to
+  `bool | "low" | "medium" | "high"` per the Ollama 0.7+ API, with
+  `ThinkEffort` exported from `roomkit.providers.ollama`.
+- **Inline thinking streaming.** New `ThinkingDeltaMarker` in
+  `models/streaming.py` delivers thinking in-band with the text stream so
+  channels render it in arrival order; `CLIChannel(show_thinking=True)`
+  renders it dim-italic inline. `THINKING_DELTA` ephemerals also publish
+  over the realtime bus so remote subscribers see reasoning live (the
+  buffered `THINKING_END` event still fires for observers joining
+  mid-stream).
+- **Teams channel owns inbound dispatch + roster lookups end-to-end.**
+
+### Changed
+
+- **`recent_events` ceiling raised from 50 to 2000.** The event-count cap
+  predates `BudgetAwareMemory` and silently dropped older turns even when
+  the token budget had headroom. A single `_RECENT_EVENTS_LIMIT` constant
+  in `core/mixins/helpers.py` now bounds the in-memory footprint while
+  token-aware memory does the real trimming.
+
 ### Fixed
 
 - **Ollama provider mints unique tool-call ids across turns.** Ollama's
@@ -917,7 +984,13 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[0.7.0a15]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a14...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/roomkit-live/roomkit/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/roomkit-live/roomkit/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a18...v0.7.0
+[0.7.0a18]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a16...v0.7.0a18
+[0.7.0a16]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a15...v0.7.0a16
+[0.7.0a15]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a14...v0.7.0a15
 [0.7.0a14]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a13...v0.7.0a14
 [0.7.0a13]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a12...v0.7.0a13
 [0.7.0a12]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a11...v0.7.0a12
