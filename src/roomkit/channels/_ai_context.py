@@ -139,7 +139,7 @@ class AIContextMixin:
         toolset REPLACES ``binding.metadata["tools"]`` — that metadata key
         is an attach-time snapshot, and the whole point of the provider is
         that snapshots go stale. Without a provider, the metadata toolset
-        is used as before.
+        is used.
         """
         turn = None
         if self._config_provider is not None:
