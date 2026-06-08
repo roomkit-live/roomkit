@@ -76,8 +76,15 @@ class InboundLockedMixin(HelpersMixin):
         resolved_identity: Identity | None = None,
         pending_id_result: IdentityResult | None = None,
         pending_streams_out: list[Any] | None = None,
+        pending_after_broadcast_out: list[tuple[RoomEvent, RoomContext]] | None = None,
     ) -> InboundResult:
-        """Process an event under the room lock."""
+        """Process an event under the room lock.
+
+        AFTER_BROADCAST async hooks are collected into
+        ``pending_after_broadcast_out`` (when provided) so the caller can run
+        them once the room lock is released (RFC §10.1 — async hooks run after
+        the lock, not under it). Without a sink they run inline.
+        """
         # Rebuild context under lock to prevent stale reads
         context = await self._build_context(room_id)
 
@@ -391,9 +398,9 @@ class InboundLockedMixin(HelpersMixin):
                     await self._store.add_event_auto_index(room_id, blocked)
                 # Queue nested reentry events for further broadcasting
                 pending_reentries.extend(reentry_result.reentry_events)
-                # Run AFTER_BROADCAST hooks for reentry events (e.g., AI responses)
-                await self._hook_engine.run_async_hooks(
-                    room_id, HookTrigger.AFTER_BROADCAST, reentry, reentry_ctx
+                # AFTER_BROADCAST hooks for reentry events (e.g., AI responses)
+                await self._dispatch_after_broadcast(
+                    room_id, reentry, reentry_ctx, pending_after_broadcast_out
                 )
 
         # Persist side effects from hooks and broadcast (including reentry)
@@ -409,10 +416,8 @@ class InboundLockedMixin(HelpersMixin):
             context,
         )
 
-        # Run async hooks (after_broadcast)
-        await self._hook_engine.run_async_hooks(
-            room_id, HookTrigger.AFTER_BROADCAST, event, context
-        )
+        # AFTER_BROADCAST async hooks (deferred to run outside the room lock)
+        await self._dispatch_after_broadcast(room_id, event, context, pending_after_broadcast_out)
 
         # Update room state per RFC §3.5 step 15
         room = await self._store.get_room(room_id)
@@ -511,6 +516,36 @@ class InboundLockedMixin(HelpersMixin):
         )
         await self._persist_side_effects(room_id, tasks, observations, blocked_event, context)
         return InboundResult(event=blocked_event, blocked=True, reason=reason)
+
+    async def _dispatch_after_broadcast(
+        self,
+        room_id: str,
+        event: RoomEvent,
+        context: RoomContext,
+        deferred: list[tuple[RoomEvent, RoomContext]] | None,
+    ) -> None:
+        """Run AFTER_BROADCAST async hooks, or defer them to *deferred* so the
+        caller runs them once the room lock is released (RFC §10.1 — async
+        hooks run after the lock, not under it; a slow hook must not hold the
+        lock and block concurrent inbound processing for the room).
+        """
+        if deferred is not None:
+            deferred.append((event, context))
+        else:
+            await self._hook_engine.run_async_hooks(
+                room_id, HookTrigger.AFTER_BROADCAST, event, context
+            )
+
+    async def _run_deferred_after_broadcast(
+        self, room_id: str, pending: list[tuple[RoomEvent, RoomContext]]
+    ) -> None:
+        """Run the AFTER_BROADCAST hooks collected during locked processing,
+        called by inbound/direct-injection callers once the room lock is
+        released (RFC §10.1). Order matches execution: reentry events first,
+        then the trigger event.
+        """
+        for ev, ctx in pending:
+            await self._hook_engine.run_async_hooks(room_id, HookTrigger.AFTER_BROADCAST, ev, ctx)
 
     async def _apply_edit_delete_state(self, event: RoomEvent, target_event: RoomEvent) -> None:
         """Apply RFC §10.3 state updates to an edit/delete target event.

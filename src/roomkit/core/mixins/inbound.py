@@ -47,6 +47,7 @@ class InboundHost(Protocol):
     Cross-mixin methods (provided by other mixins in the MRO):
         _resolve_identity: From :class:`InboundIdentityMixin`.
         _process_locked: From :class:`InboundLockedMixin`.
+        _run_deferred_after_broadcast: From :class:`InboundLockedMixin`.
         _process_streaming_responses: From :class:`InboundStreamingMixin`.
         create_room: From :class:`RoomLifecycleMixin`.
         attach_channel: From :class:`ChannelOpsMixin`.
@@ -88,6 +89,7 @@ class InboundMixin(HelpersMixin):
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _resolve_identity: Any  # see InboundHost
     _process_locked: Any  # see InboundHost
+    _run_deferred_after_broadcast: Any  # see InboundHost
     _process_streaming_responses: Any  # see InboundHost
     create_room: Any  # see InboundHost
     attach_channel: Any  # see InboundHost
@@ -191,6 +193,7 @@ class InboundMixin(HelpersMixin):
 
         # Process under room lock
         pending_streams: list[Any] = []
+        pending_after_broadcast: list[Any] = []
         async with self._lock_manager.locked(room_id):
             try:
                 result: InboundResult = await asyncio.wait_for(
@@ -201,6 +204,7 @@ class InboundMixin(HelpersMixin):
                         resolved_identity=resolved_identity,
                         pending_id_result=pending_id_result,
                         pending_streams_out=pending_streams,
+                        pending_after_broadcast_out=pending_after_broadcast,
                     ),
                     timeout=self._process_timeout,
                 )
@@ -217,6 +221,11 @@ class InboundMixin(HelpersMixin):
                     data={"timeout": self._process_timeout},
                 )
                 return InboundResult(blocked=True, reason="process_timeout")
+
+        # Run AFTER_BROADCAST async hooks now that the room lock is released
+        # (RFC §10.1) — a slow observer hook no longer blocks concurrent
+        # process_inbound calls for the same room.
+        await self._run_deferred_after_broadcast(room_id, pending_after_broadcast)
 
         # Handle streaming responses outside lock (TTS delivery can take seconds;
         # holding the lock would block concurrent process_inbound calls)

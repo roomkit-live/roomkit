@@ -515,10 +515,18 @@ class RoomKit(
             # handling, source write-permission gate, persistence, broadcast,
             # reentry drain and AFTER_BROADCAST hooks. This keeps a single
             # validation/hooks/indexing/persistence model across entry points.
+            pending_after_broadcast: list[Any] = []
             async with self._lock_manager.locked(room_id):
                 context = await self._build_context(room_id)
-                result = await self._process_locked(event, room_id, context)
+                result = await self._process_locked(
+                    event,
+                    room_id,
+                    context,
+                    pending_after_broadcast_out=pending_after_broadcast,
+                )
             event = result.event or event
+            # AFTER_BROADCAST runs outside the room lock (RFC §10.1)
+            await self._run_deferred_after_broadcast(room_id, pending_after_broadcast)
 
             telemetry.end_span(span_id)
         except Exception as exc:
