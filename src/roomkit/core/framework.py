@@ -510,19 +510,15 @@ class RoomKit(
         )
         token = set_current_span(span_id, telemetry_ctx=telemetry.get_span_context(span_id))
         try:
+            # Direct injection traverses the SAME locked pipeline as inbound
+            # (RFC §10.5): index assignment, BEFORE_BROADCAST hooks, edit/delete
+            # handling, source write-permission gate, persistence, broadcast,
+            # reentry drain and AFTER_BROADCAST hooks. This keeps a single
+            # validation/hooks/indexing/persistence model across entry points.
             async with self._lock_manager.locked(room_id):
-                count = await self._store.get_event_count(room_id)
-                event = event.model_copy(update={"index": count})
-                await self._persist_event(event)
-
                 context = await self._build_context(room_id)
-                router = self._get_router()
-                await router.broadcast(event, binding, context)
-
-                # Run AFTER_BROADCAST hooks for observability and fan-out
-                await self._hook_engine.run_async_hooks(
-                    room_id, HookTrigger.AFTER_BROADCAST, event, context
-                )
+                result = await self._process_locked(event, room_id, context)
+            event = result.event or event
 
             telemetry.end_span(span_id)
         except Exception as exc:

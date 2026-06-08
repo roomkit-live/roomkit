@@ -86,6 +86,16 @@ class ChannelBinding(BaseModel):
     retry_policy: RetryPolicy | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def can_write(self) -> bool:
+        """RFC §7.5 — whether this binding may write events into the room.
+
+        True iff the binding has write access (``READ_WRITE`` or
+        ``WRITE_ONLY``) and is not muted. Gates both direct injection into
+        the timeline (inbound pipeline) and source broadcast (event router).
+        """
+        return self.access in (Access.READ_WRITE, Access.WRITE_ONLY) and not self.muted
+
 
 class ChannelOutput(BaseModel):
     """Output produced by a channel after receiving an event."""

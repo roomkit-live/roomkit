@@ -20,6 +20,7 @@ from roomkit.models.enums import (
 from roomkit.models.event import DeleteContent, EditContent, RoomEvent
 from roomkit.models.hook import InjectedEvent
 from roomkit.models.identity import Identity, IdentityResult
+from roomkit.models.task import Observation, Task
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -101,7 +102,11 @@ class InboundLockedMixin(HelpersMixin):
         count = await self._store.get_event_count(room_id)
         event = event.model_copy(update={"index": count})
 
-        # Edit/Delete validation and state updates (RFC §10.3)
+        # Edit/Delete validation (RFC §10.3). The target mutation is deferred
+        # until after BEFORE_BROADCAST hooks allow the event (applied below via
+        # ``_apply_edit_delete_state``), so a moderation hook that blocks an
+        # edit/delete cannot leave the target already mutated.
+        edit_delete_target: RoomEvent | None = None
         if event.type in (EventType.EDIT, EventType.DELETE) and isinstance(
             event.content, (EditContent, DeleteContent)
         ):
@@ -146,22 +151,7 @@ class InboundLockedMixin(HelpersMixin):
                 )
                 return InboundResult(blocked=True, reason="not_original_author")
 
-            # Apply state updates to the target event
-            if isinstance(event.content, EditContent):
-                updated_target = target_event.model_copy(
-                    update={
-                        "content": event.content.new_content,
-                        "metadata": {**target_event.metadata, "edited": True},
-                    }
-                )
-                await self._store.update_event(updated_target)
-            elif isinstance(event.content, DeleteContent):
-                updated_target = target_event.model_copy(
-                    update={
-                        "metadata": {**target_event.metadata, "deleted": True},
-                    }
-                )
-                await self._store.update_event(updated_target)
+            edit_delete_target = target_event
 
         # Run sync hooks (before_broadcast)
         sync_result = await self._hook_engine.run_sync_hooks(
@@ -178,26 +168,43 @@ class InboundLockedMixin(HelpersMixin):
             )
 
         if not sync_result.allowed:
-            blocked_event = await self._handle_block(
-                room_id=room_id,
-                event=event,
-                sync_result=sync_result,
-                context=context,
-                update_existing=False,
-            )
-            # Persist side effects from hooks even on blocked path
-            await self._persist_side_effects(
+            return await self._blocked_result(
                 room_id,
-                sync_result.tasks,
-                sync_result.observations,
-                blocked_event,
+                event,
                 context,
+                reason=sync_result.reason,
+                blocked_by=sync_result.blocked_by,
+                injected_events=sync_result.injected_events,
+                tasks=sync_result.tasks,
+                observations=sync_result.observations,
             )
-
-            return InboundResult(event=blocked_event, blocked=True, reason=sync_result.reason)
 
         # Use potentially modified event
         event = sync_result.event or event
+
+        # RFC §7.5 — a source that cannot write (READ_ONLY/NONE or muted) must
+        # not inject a DELIVERED event into the timeline. Persist it BLOCKED for
+        # audit, still collecting hook side effects (RFC §7.5 rule 3 — side
+        # effects are ALWAYS collected), and stop before broadcast. The source
+        # binding is fetched once here and reused for broadcast below.
+        source_binding = await self._store.get_binding(room_id, event.source.channel_id)
+        if source_binding is not None and not source_binding.can_write:
+            reason = "source_muted" if source_binding.muted else "source_read_only"
+            return await self._blocked_result(
+                room_id,
+                event,
+                context,
+                reason=reason,
+                blocked_by=reason,
+                injected_events=sync_result.injected_events,
+                tasks=sync_result.tasks,
+                observations=sync_result.observations,
+            )
+
+        # Apply edit/delete target mutation now that the event is authorized and
+        # hook-allowed (RFC §10.3 — mutation must not precede the block decision).
+        if edit_delete_target is not None:
+            await self._apply_edit_delete_state(event, edit_delete_target)
 
         # Store event as DELIVERED (respects persistence policy)
         event = event.model_copy(update={"status": EventStatus.DELIVERED})
@@ -207,8 +214,7 @@ class InboundLockedMixin(HelpersMixin):
         if sync_result.injected_events:
             await self._deliver_injected_events(sync_result.injected_events, room_id, context)
 
-        # Get source binding for broadcast
-        source_binding = await self._store.get_binding(room_id, event.source.channel_id)
+        # No source binding → nothing to broadcast to.
         if source_binding is None:
             return InboundResult(event=event)
 
@@ -264,9 +270,10 @@ class InboundLockedMixin(HelpersMixin):
                 data={"error": error_msg},
             )
 
-        # Store blocked events from chain depth enforcement
+        # Store blocked events from chain depth enforcement with an atomic,
+        # monotonic index (RFC §8.1 / §8.3 — blocked events are still indexed).
         for blocked in broadcast_result.blocked_events:
-            await self._store.add_event(blocked)
+            await self._store.add_event_auto_index(room_id, blocked)
             await self._emit_framework_event(
                 "chain_depth_exceeded",
                 room_id=room_id,
@@ -355,7 +362,9 @@ class InboundLockedMixin(HelpersMixin):
                     await self._handle_block(
                         room_id=room_id,
                         event=reentry,
-                        sync_result=reentry_sync,
+                        reason=reentry_sync.reason,
+                        blocked_by=reentry_sync.blocked_by,
+                        injected_events=reentry_sync.injected_events,
                         context=reentry_ctx,
                         update_existing=True,
                     )
@@ -377,9 +386,9 @@ class InboundLockedMixin(HelpersMixin):
                 # Collect tasks/observations from reentry broadcast
                 reentry_tasks.extend(reentry_result.tasks)
                 reentry_observations.extend(reentry_result.observations)
-                # Store reentry's blocked events
+                # Store reentry's blocked events with an atomic, monotonic index
                 for blocked in reentry_result.blocked_events:
-                    await self._store.add_event(blocked)
+                    await self._store.add_event_auto_index(room_id, blocked)
                 # Queue nested reentry events for further broadcasting
                 pending_reentries.extend(reentry_result.reentry_events)
                 # Run AFTER_BROADCAST hooks for reentry events (e.g., AI responses)
@@ -428,13 +437,16 @@ class InboundLockedMixin(HelpersMixin):
         *,
         room_id: str,
         event: RoomEvent,
-        sync_result: Any,
+        reason: str | None,
+        blocked_by: str | None,
+        injected_events: list[InjectedEvent],
         context: RoomContext,
         update_existing: bool,
     ) -> RoomEvent:
         """RFC §9.5 block handling: persist BLOCKED, emit framework event,
-        deliver injected side effects. Shared by the main inbound block
-        path and the reentry block path so they cannot drift again.
+        deliver injected side effects. Shared by the hook-block paths (main
+        inbound + reentry) and the source write-permission block so they
+        cannot drift.
 
         ``update_existing=True`` when the event is already in the store
         (reentry path — events are pre-persisted in PENDING before the
@@ -442,13 +454,8 @@ class InboundLockedMixin(HelpersMixin):
         updated in place to avoid double-insert.
 
         ``update_existing=False`` when the event has not yet been stored
-        (main inbound path — the hook decides the terminal status before
-        first storage).
-
-        ``sync_result`` is annotated ``Any`` because importing
-        :class:`SyncPipelineResult` here would re-introduce the
-        ``roomkit.core.hooks`` cycle that the rest of this module
-        deliberately avoids.
+        (main inbound / permission path — the terminal status is decided
+        before first storage).
 
         Returns the stored BLOCKED event so the caller can include it
         in its return value.
@@ -456,7 +463,7 @@ class InboundLockedMixin(HelpersMixin):
         blocked_event = event.model_copy(
             update={
                 "status": EventStatus.BLOCKED,
-                "blocked_by": sync_result.blocked_by or sync_result.reason,
+                "blocked_by": blocked_by or reason,
             }
         )
         if update_existing:
@@ -469,12 +476,64 @@ class InboundLockedMixin(HelpersMixin):
             room_id=room_id,
             event_id=event.id,
             data={
-                "reason": sync_result.reason,
-                "blocked_by": sync_result.blocked_by,
+                "reason": reason,
+                "blocked_by": blocked_by,
             },
         )
-        await self._deliver_injected_events(sync_result.injected_events, room_id, context)
+        await self._deliver_injected_events(injected_events, room_id, context)
         return blocked_event
+
+    async def _blocked_result(
+        self,
+        room_id: str,
+        event: RoomEvent,
+        context: RoomContext,
+        *,
+        reason: str | None,
+        blocked_by: str | None,
+        injected_events: list[InjectedEvent],
+        tasks: list[Task],
+        observations: list[Observation],
+    ) -> InboundResult:
+        """Persist a BLOCKED event, persist its hook side effects (RFC §7.5
+        rule 3 — side effects are always collected), and return the blocked
+        :class:`InboundResult`. Shared by the hook-block and source
+        write-permission paths so they cannot drift.
+        """
+        blocked_event = await self._handle_block(
+            room_id=room_id,
+            event=event,
+            reason=reason,
+            blocked_by=blocked_by,
+            injected_events=injected_events,
+            context=context,
+            update_existing=False,
+        )
+        await self._persist_side_effects(room_id, tasks, observations, blocked_event, context)
+        return InboundResult(event=blocked_event, blocked=True, reason=reason)
+
+    async def _apply_edit_delete_state(self, event: RoomEvent, target_event: RoomEvent) -> None:
+        """Apply RFC §10.3 state updates to an edit/delete target event.
+
+        Invoked only after the edit/delete event has passed authorization
+        *and* been allowed by BEFORE_BROADCAST hooks, so a blocked
+        edit/delete never mutates the target. Uses the final (post-modify)
+        event content so a ``modify`` hook on the edit is honored.
+        """
+        content = event.content
+        if isinstance(content, EditContent):
+            updated = target_event.model_copy(
+                update={
+                    "content": content.new_content,
+                    "metadata": {**target_event.metadata, "edited": True},
+                }
+            )
+            await self._store.update_event(updated)
+        elif isinstance(content, DeleteContent):
+            updated = target_event.model_copy(
+                update={"metadata": {**target_event.metadata, "deleted": True}}
+            )
+            await self._store.update_event(updated)
 
     async def _deliver_injected_events(
         self,
@@ -484,8 +543,8 @@ class InboundLockedMixin(HelpersMixin):
     ) -> None:
         """Store and deliver injected events to their target channels."""
         for injected in injected_events:
-            # Store the injected event
-            await self._store.add_event(injected.event)
+            # Store the injected event with an atomic, monotonic index (RFC §8.1)
+            stored = await self._store.add_event_auto_index(room_id, injected.event)
 
             # Deliver to target channels
             target_ids = injected.target_channel_ids
@@ -498,9 +557,9 @@ class InboundLockedMixin(HelpersMixin):
                 binding = await self._store.get_binding(room_id, target_id)
                 if channel is not None and binding is not None:
                     try:
-                        await channel.on_event(injected.event, binding, context)
+                        await channel.on_event(stored, binding, context)
                         if binding.category == ChannelCategory.TRANSPORT:
-                            await channel.deliver(injected.event, binding, context)
+                            await channel.deliver(stored, binding, context)
                     except Exception:
                         logger.exception(
                             "Failed to deliver injected event to %s",

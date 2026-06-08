@@ -148,22 +148,15 @@ class EventRouter:
 
         result = BroadcastResult()
 
-        # Check source can write
-        if source_binding.access in (Access.READ_ONLY, Access.NONE):
+        # Check source can write (RFC §7.5). Inbound events from non-writable
+        # sources are already blocked before broadcast in the inbound pipeline;
+        # this guards reentry events and any direct broadcast callers.
+        if not source_binding.can_write:
             logger.debug(
-                "Source %s has no write access",
+                "Source %s cannot write (access=%s, muted=%s) — not broadcasting",
                 source_binding.channel_id,
-                extra={"room_id": event.room_id, "channel_id": source_binding.channel_id},
-            )
-            reset_span(broadcast_token)
-            telemetry.end_span(span_id, attributes={"target_count": 0})
-            return result
-
-        # Check source is not muted
-        if source_binding.muted:
-            logger.debug(
-                "Source %s is muted",
-                source_binding.channel_id,
+                source_binding.access,
+                source_binding.muted,
                 extra={"room_id": event.room_id, "channel_id": source_binding.channel_id},
             )
             reset_span(broadcast_token)
