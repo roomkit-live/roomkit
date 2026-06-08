@@ -183,6 +183,11 @@ class InboundMixin(HelpersMixin):
         # Let channel process inbound
         event = await channel.handle_inbound(message, context)
 
+        # Caller-requested visibility (e.g. ``"transport"`` for a proactive
+        # notification that must not wake the room's intelligence channel).
+        if message.visibility != "all" and event.visibility == "all":
+            event = event.model_copy(update={"visibility": message.visibility})
+
         # Identity resolution pipeline (RFC §7)
         try:
             event, resolved_identity, pending_id_result = await self._resolve_identity(

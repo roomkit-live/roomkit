@@ -38,6 +38,11 @@ class InboundMessage(BaseModel):
     idempotency_key: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     session: Any | None = None
+    # Event visibility scope. The default ``"all"`` reaches every channel
+    # (transports + intelligence). Set ``"transport"`` to deliver into a room
+    # WITHOUT triggering its intelligence channel — e.g. a proactive
+    # notification the agent should not react to.
+    visibility: str = "all"
 
 
 class InboundResult(BaseModel):
