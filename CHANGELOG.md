@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-06-09
+
 ### Added
 
 - **`regenerate_response(room_id)` — re-run the agent on the last inbound
@@ -1061,7 +1063,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/roomkit-live/roomkit/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/roomkit-live/roomkit/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/roomkit-live/roomkit/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a18...v0.7.0
