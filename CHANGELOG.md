@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`regenerate_response(room_id)` — re-run the agent on the last inbound
+  message.** Finds the most recent transport (human) message and re-broadcasts
+  it with intelligence-only visibility, so the agent produces a fresh answer
+  without ingesting a new event: the trigger keeps its identity, index, and
+  timestamp, and transports never see the user message again (no duplicate
+  bubble). The response flows through the existing persistence, streaming, and
+  AFTER_BROADCAST machinery like a first-time turn. Removing the prior answer
+  is the caller's responsibility. Lives in its own `RegenerateMixin`.
+- **`InboundMessage.visibility` — deliver without waking the agent.**
+  `process_inbound` previously had no way to post a message that reaches a
+  room's transports but not its intelligence channel. The new field (default
+  `"all"`) is stamped onto the event, so `visibility="transport"` delivers a
+  proactive notification to the human without the agent replying to it.
+- **Bounded retry when a tool round ends with no final text.** Small local
+  models occasionally run a tool, get the result, then emit nothing instead
+  of a final answer. Both tool loops (streaming and non-streaming) now
+  re-prompt for the final answer with a corrective nudge, bounded by the new
+  `AIChannel(max_empty_retries=...)` parameter (default 1) and guarded by the
+  loop deadline and cancellation.
+- **`skills_in_prompt` flag on `AIChannel`.** Hosts that render their own
+  skills manifest inside `system_prompt` (e.g. positioned above a
+  prompt-cache boundary) set `skills_in_prompt=False` to skip the automatic
+  preamble + registry XML injection while keeping skill activation tools and
+  gating untouched. Default `True` preserves existing behavior.
+- **Per-call tool context accessors: `current_tool_room_id()` and
+  `current_tool_allowed_names()`.** A channel object is registered once per
+  `channel_id` and shared by every room it serves, so room-specific state
+  stored on the channel goes stale the moment another room attaches. Both
+  accessors (exported from `roomkit.tools`) read the tool loop's per-invocation
+  context: the first resolves the originating room from inside a tool handler,
+  the second exposes the turn's resolved toolset so handlers validate calls
+  against it instead of an attach-time snapshot. Outside a tool loop they
+  return `None`.
+- **Telegram inline keyboards from `RichContent`.** The Telegram bot provider
+  now routes `RichContent` to `sendMessage` with a `reply_markup.inline_keyboard`
+  built from `content.buttons` (`{text, callback_data}` or `{text, url}` dicts,
+  one button per row), enabling interactive flows such as approve/reject.
+- **`ChannelBinding.can_write`.** True iff the binding has write access
+  (`READ_WRITE` or `WRITE_ONLY`) and is not muted — the single RFC §7.5 gate
+  shared by the inbound pipeline and the event router.
+
+### Fixed
+
+- **Direct injection (`send_event`) traverses the same locked pipeline as
+  inbound (RFC §10.5).** It previously persisted and broadcast through a
+  separate path, skipping BEFORE_BROADCAST hooks, edit/delete handling, and
+  the source write-permission gate. Three more invariants enforced along the
+  way: an edit/delete target is mutated only after hooks allow the event, so
+  a moderation hook that blocks an edit no longer leaves the target mutated
+  (RFC §10.3); a source whose binding cannot write is stored BLOCKED for
+  audit instead of injecting a DELIVERED event, with hook side effects still
+  collected (RFC §7.5); chain-depth, reentry-blocked, and injected events get
+  a unique monotonic index instead of the model default `0` (RFC §8.1/§8.3).
+  `tests/test_rfc_conformance.py` encodes the invariants.
+- **AFTER_BROADCAST hooks run outside the room lock (RFC §10.1).** They were
+  awaited while the room lock was held, so a slow observer hook blocked
+  concurrent inbound processing for the same room. The locked pipeline now
+  collects the (event, context) pairs and callers run them after releasing
+  the lock — still awaited before returning, so observable ordering is
+  unchanged.
+- **`config_provider` turns reach the tool loop.** `handle_event` gated the
+  tool-loop path on attach-time signals only (binding snapshot, constructor
+  tools, skills), so a host delivering its toolset via `config_provider` got
+  the plain streaming path and the resolved tools were never executable.
+- **Streaming tool loops actually inherit the parent context.** The generator
+  body runs when the consumer iterates — after `handle_event`'s `finally` has
+  reset the contextvar — so participant-role inheritance silently failed and
+  the per-round tools re-application (skill gating) was dead code. The parent
+  context is now captured at stream creation and passed explicitly.
+- **Tool eviction is scoped per room.** The eviction buffer lives on the
+  shared channel object; an unscoped store let `read_stored_result` page
+  through another conversation's oversized tool output and injected the
+  re-read tool into rooms that evicted nothing. The buffer is now keyed by
+  `(room, result_id)`.
+
 ## [0.7.2] — 2026-06-06
 
 ### Added
