@@ -442,6 +442,9 @@ class AIGenerationMixin:
         parent_lctx = _current_loop_ctx.get()
         if parent_lctx is not None:
             loop_ctx.current_participant_role = parent_lctx.current_participant_role
+        loop_ctx.room_id = (context.room.room.id if context.room else None) or (
+            parent_lctx.room_id if parent_lctx else None
+        )
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx
         rounds: list[ToolRound] = []
@@ -488,9 +491,7 @@ class AIGenerationMixin:
                             empty_retries,
                             self._max_empty_retries,
                         )
-                        context.messages.append(
-                            AIMessage(role="user", content=_EMPTY_RETRY_NUDGE)
-                        )
+                        context.messages.append(AIMessage(role="user", content=_EMPTY_RETRY_NUDGE))
                         response = await self._generate_with_retry(context)
                         continue
                     break

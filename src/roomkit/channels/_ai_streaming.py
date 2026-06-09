@@ -261,6 +261,9 @@ class AIStreamingMixin:
         parent_ctx = _current_loop_ctx.get()
         if parent_ctx is not None:
             loop_ctx.current_participant_role = parent_ctx.current_participant_role
+        loop_ctx.room_id = (context.room.room.id if context.room else None) or (
+            parent_ctx.room_id if parent_ctx else None
+        )
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx
         telemetry = self._telemetry_provider

@@ -89,6 +89,7 @@ class _ToolLoopContext:
     activated_skills: set[str] = field(default_factory=set)
     all_context_tools: list[Any] = field(default_factory=list)
     current_participant_role: str | None = None
+    room_id: str | None = None
     steering_queue: asyncio.Queue[SteeringDirective] = field(default_factory=asyncio.Queue)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     loop_id: str = ""
@@ -328,9 +329,14 @@ class AIChannel(
 
         # Resolve participant role for role-based tool policy.
         # Set on a per-invocation _ToolLoopContext visible via contextvar so that
-        # _build_context and the tool loop methods can read it.
+        # _build_context and the tool loop methods can read it. ``room_id``
+        # rides the same contextvar: the channel object is registered once
+        # per channel_id and shared by every room it serves, so per-call
+        # room resolution (``current_tool_room_id``) is the only safe way
+        # for tool handlers to learn the originating room.
         event_ctx = _ToolLoopContext()
         event_ctx.current_participant_role = self._resolve_participant_role(event, context)
+        event_ctx.room_id = context.room.id if context.room else event.room_id
         token = _current_loop_ctx.set(event_ctx)
         try:
             raw_tools = binding.metadata.get("tools", [])
