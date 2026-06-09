@@ -70,6 +70,7 @@ class AIStreamingHost(Protocol):
     _max_tool_rounds: int
     _tool_loop_timeout_seconds: float | None
     _tool_loop_warn_after: int
+    _max_empty_retries: int
     _tool_handler: Any
     _active_loops: dict[str, _ToolLoopContext]
     _after_response_hook: Any
@@ -126,6 +127,7 @@ class AIStreamingMixin:
     _max_tool_rounds: int
     _tool_loop_timeout_seconds: float | None
     _tool_loop_warn_after: int
+    _max_empty_retries: int
     _tool_handler: Any
     _active_loops: dict[str, Any]
     _after_response_hook: Any
@@ -247,7 +249,11 @@ class AIStreamingMixin:
 
     async def _run_streaming_tool_loop(self, context: AIContext) -> AsyncIterator[StreamDelta]:
         """Stream text deltas, executing tool calls between generation rounds."""
-        from roomkit.channels.ai import _current_loop_ctx, _ToolLoopContext
+        from roomkit.channels.ai import (
+            _EMPTY_RETRY_NUDGE,
+            _current_loop_ctx,
+            _ToolLoopContext,
+        )
         from roomkit.telemetry.context import get_current_span
 
         loop_ctx = _ToolLoopContext()
@@ -287,6 +293,8 @@ class AIStreamingMixin:
             )
 
             _dedup_prefix = ""
+            _saw_tool_call_any = False
+            _empty_retries = 0
 
             for _round_idx in range(self._max_tool_rounds + 1):
                 if loop_ctx.cancel_event.is_set():
@@ -465,7 +473,27 @@ class AIStreamingMixin:
                     )
 
                 if not tool_calls:
+                    # Final answer round. If it produced no text *after* a tool
+                    # round, the model skipped verbalizing the result — re-prompt
+                    # once (bounded) for the final answer instead of ending empty.
+                    if (
+                        _saw_tool_call_any
+                        and not "".join(text_parts).strip()
+                        and _empty_retries < self._max_empty_retries
+                        and not (deadline and asyncio.get_running_loop().time() >= deadline)
+                    ):
+                        _empty_retries += 1
+                        logger.warning(
+                            "Streaming empty response after tools; re-prompting for "
+                            "final answer (retry %d/%d)",
+                            _empty_retries,
+                            self._max_empty_retries,
+                        )
+                        context.messages.append(AIMessage(role="user", content=_EMPTY_RETRY_NUDGE))
+                        continue
                     return
+
+                _saw_tool_call_any = True
 
                 # External tools: provider executed them internally.
                 # If ExternalToolHandler is set, hooks were already fired

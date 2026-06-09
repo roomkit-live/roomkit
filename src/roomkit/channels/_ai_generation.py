@@ -87,6 +87,7 @@ class AIGenerationHost(Protocol):
     _max_tool_rounds: int
     _tool_loop_timeout_seconds: float | None
     _tool_loop_warn_after: int
+    _max_empty_retries: int
     _tool_handler: Any
     _active_loops: dict[str, _ToolLoopContext]
     _after_response_hook: Any
@@ -143,6 +144,7 @@ class AIGenerationMixin:
     _max_tool_rounds: int
     _tool_loop_timeout_seconds: float | None
     _tool_loop_warn_after: int
+    _max_empty_retries: int
     _tool_handler: Any
     _active_loops: dict[str, _ToolLoopContext]
     _after_response_hook: Any
@@ -429,7 +431,11 @@ class AIGenerationMixin:
         self, context: AIContext, *, parent_span_id: str | None = None
     ) -> ToolLoopResult:
         """Generate -> execute tools -> re-generate until a text response."""
-        from roomkit.channels.ai import _current_loop_ctx, _ToolLoopContext
+        from roomkit.channels.ai import (
+            _EMPTY_RETRY_NUDGE,
+            _current_loop_ctx,
+            _ToolLoopContext,
+        )
 
         loop_ctx = _ToolLoopContext()
         loop_ctx.loop_id = str(id(loop_ctx))
@@ -439,6 +445,7 @@ class AIGenerationMixin:
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx
         rounds: list[ToolRound] = []
+        empty_retries = 0
         try:
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
@@ -462,6 +469,30 @@ class AIGenerationMixin:
 
             for round_idx in range(self._max_tool_rounds):
                 if not response.tool_calls or self._tool_handler is None:
+                    # Final answer reached. If it is empty *after* we ran tools,
+                    # the model skipped verbalizing the result — re-prompt once
+                    # (bounded) for the final answer instead of returning nothing.
+                    if (
+                        self._tool_handler is not None
+                        and rounds
+                        and not (response.content or "").strip()
+                        and empty_retries < self._max_empty_retries
+                        and not loop_ctx.cancel_event.is_set()
+                        and not (deadline and asyncio.get_running_loop().time() >= deadline)
+                    ):
+                        empty_retries += 1
+                        logger.warning(
+                            "Empty response after %d tool round(s); re-prompting for "
+                            "final answer (retry %d/%d)",
+                            len(rounds),
+                            empty_retries,
+                            self._max_empty_retries,
+                        )
+                        context.messages.append(
+                            AIMessage(role="user", content=_EMPTY_RETRY_NUDGE)
+                        )
+                        response = await self._generate_with_retry(context)
+                        continue
                     break
 
                 if loop_ctx.cancel_event.is_set():

@@ -99,6 +99,16 @@ _current_loop_ctx: contextvars.ContextVar[_ToolLoopContext | None] = contextvars
 )
 
 
+# Corrective nudge re-injected when a generation round ends after tool calls
+# without any final text (common with small local models): the tool results
+# are in context, the model just failed to verbalize the answer. Re-prompting
+# for the final answer recovers it. Bounded by ``max_empty_retries``.
+_EMPTY_RETRY_NUDGE = (
+    "You called tools and already have their results above. Now write your "
+    "final answer to the user in plain text. Do not call any more tools."
+)
+
+
 class AIChannel(
     AIStreamingMixin,
     AIGenerationMixin,
@@ -129,6 +139,7 @@ class AIChannel(
         max_tool_rounds: int = 200,
         tool_loop_timeout_seconds: float | None = 300.0,
         tool_loop_warn_after: int = 50,
+        max_empty_retries: int = 1,
         retry_policy: RetryPolicy | None = None,
         fallback_provider: AIProvider | None = None,
         skills: SkillRegistry | None = None,
@@ -158,6 +169,7 @@ class AIChannel(
         self._max_tool_rounds = max_tool_rounds
         self._tool_loop_timeout_seconds = tool_loop_timeout_seconds
         self._tool_loop_warn_after = tool_loop_warn_after
+        self._max_empty_retries = max_empty_retries
         self._retry_policy = retry_policy
         self._fallback_provider = fallback_provider
         self._skills = skills
