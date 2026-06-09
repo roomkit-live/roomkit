@@ -437,19 +437,8 @@ class AIGenerationMixin:
             _ToolLoopContext,
         )
 
-        loop_ctx = _ToolLoopContext()
-        loop_ctx.loop_id = str(id(loop_ctx))
-        parent_lctx = _current_loop_ctx.get()
-        if parent_lctx is not None:
-            loop_ctx.current_participant_role = parent_lctx.current_participant_role
-            # _build_context ran under the parent ctx and stamped the turn's
-            # full toolset there — without this inheritance the per-round
-            # re-application below never fires (skill-gated tools would stay
-            # hidden after activation) and per-call allowlist accessors see
-            # nothing.
-            loop_ctx.all_context_tools = parent_lctx.all_context_tools
-        loop_ctx.room_id = (context.room.room.id if context.room else None) or (
-            parent_lctx.room_id if parent_lctx else None
+        loop_ctx = _ToolLoopContext.for_loop(
+            _current_loop_ctx.get(), context.room.room.id if context.room else None
         )
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx

@@ -266,22 +266,12 @@ class AIStreamingMixin:
         )
         from roomkit.telemetry.context import get_current_span
 
-        loop_ctx = _ToolLoopContext()
-        loop_ctx.loop_id = str(id(loop_ctx))
         # The handle_event ctx is gone from the contextvar by the time this
         # generator runs (reset in handle_event's finally); the caller
         # captured it at stream creation.
         parent_ctx = parent_loop_ctx if parent_loop_ctx is not None else _current_loop_ctx.get()
-        if parent_ctx is not None:
-            loop_ctx.current_participant_role = parent_ctx.current_participant_role
-            # _build_context ran under the parent ctx and stamped the turn's
-            # full toolset there — without this inheritance the per-round
-            # re-application below never fires (skill-gated tools would stay
-            # hidden after activation) and per-call allowlist accessors see
-            # nothing.
-            loop_ctx.all_context_tools = parent_ctx.all_context_tools
-        loop_ctx.room_id = (context.room.room.id if context.room else None) or (
-            parent_ctx.room_id if parent_ctx else None
+        loop_ctx = _ToolLoopContext.for_loop(
+            parent_ctx, context.room.room.id if context.room else None
         )
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx

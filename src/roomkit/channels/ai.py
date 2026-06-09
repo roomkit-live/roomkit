@@ -94,6 +94,23 @@ class _ToolLoopContext:
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     loop_id: str = ""
 
+    @classmethod
+    def for_loop(cls, parent: _ToolLoopContext | None, room_id: str | None) -> _ToolLoopContext:
+        """Create a tool-loop context inheriting per-turn state from *parent*.
+
+        _build_context ran under the parent (handle_event) ctx and stamped the
+        turn's full toolset there — without this inheritance the per-round
+        tools re-application never fires (skill-gated tools would stay hidden
+        after activation) and per-call allowlist accessors see nothing.
+        """
+        ctx = cls()
+        ctx.loop_id = str(id(ctx))
+        if parent is not None:
+            ctx.current_participant_role = parent.current_participant_role
+            ctx.all_context_tools = parent.all_context_tools
+        ctx.room_id = room_id or (parent.room_id if parent else None)
+        return ctx
+
 
 _current_loop_ctx: contextvars.ContextVar[_ToolLoopContext | None] = contextvars.ContextVar(
     "_current_loop_ctx", default=None
