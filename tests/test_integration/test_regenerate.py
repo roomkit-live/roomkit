@@ -13,16 +13,12 @@ from roomkit.providers.ai.mock import MockAIProvider
 
 def _user_messages(events: list, transport_id: str) -> list:
     return [
-        e
-        for e in events
-        if e.type == EventType.MESSAGE and e.source.channel_id == transport_id
+        e for e in events if e.type == EventType.MESSAGE and e.source.channel_id == transport_id
     ]
 
 
 def _ai_messages(events: list, ai_id: str) -> list:
-    return [
-        e for e in events if e.type == EventType.MESSAGE and e.source.channel_id == ai_id
-    ]
+    return [e for e in events if e.type == EventType.MESSAGE and e.source.channel_id == ai_id]
 
 
 class TestRegenerate:

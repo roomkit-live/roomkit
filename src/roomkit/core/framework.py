@@ -53,6 +53,7 @@ from roomkit.core.mixins import (
     InboundStreamingMixin,
     RealtimeOpsMixin,
     RecordingMixin,
+    RegenerateMixin,
     RoomLifecycleMixin,
     SourceOpsMixin,
     VoiceOpsMixin,
@@ -60,6 +61,7 @@ from roomkit.core.mixins import (
 from roomkit.core.transcoder import DefaultContentTranscoder
 from roomkit.identity.base import IdentityResolver
 from roomkit.models.channel import RateLimit
+from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
     ChannelType,
     EventStatus,
@@ -105,6 +107,7 @@ class RoomKit(
     InboundIdentityMixin,
     InboundLockedMixin,
     InboundStreamingMixin,
+    RegenerateMixin,
     ChannelOpsMixin,
     RoomLifecycleMixin,
     VoiceOpsMixin,
@@ -515,7 +518,7 @@ class RoomKit(
             # handling, source write-permission gate, persistence, broadcast,
             # reentry drain and AFTER_BROADCAST hooks. This keeps a single
             # validation/hooks/indexing/persistence model across entry points.
-            pending_after_broadcast: list[Any] = []
+            pending_after_broadcast: list[tuple[RoomEvent, RoomContext]] = []
             async with self._lock_manager.locked(room_id):
                 context = await self._build_context(room_id)
                 result = await self._process_locked(
