@@ -319,8 +319,9 @@ class TestToolResultTruncation:
         assert len(evicted) < len(large)
         assert "evicted_tc1" in evicted
         assert "Preview:" in evicted
-        # Full result stored for re-reading
-        assert ch._eviction._store.get("evicted_tc1") == large
+        # Full result stored for re-reading, under the room scope of the
+        # call site (no tool loop here → fallback scope "").
+        assert ch._eviction._store.get(("", "evicted_tc1")) == large
 
     def test_result_at_exact_limit_unchanged(self) -> None:
         """Result at the token threshold is not evicted."""

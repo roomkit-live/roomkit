@@ -442,6 +442,12 @@ class AIGenerationMixin:
         parent_lctx = _current_loop_ctx.get()
         if parent_lctx is not None:
             loop_ctx.current_participant_role = parent_lctx.current_participant_role
+            # _build_context ran under the parent ctx and stamped the turn's
+            # full toolset there — without this inheritance the per-round
+            # re-application below never fires (skill-gated tools would stay
+            # hidden after activation) and per-call allowlist accessors see
+            # nothing.
+            loop_ctx.all_context_tools = parent_lctx.all_context_tools
         loop_ctx.room_id = (context.room.room.id if context.room else None) or (
             parent_lctx.room_id if parent_lctx else None
         )

@@ -237,17 +237,27 @@ class AIStreamingMixin:
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
         """Return a streaming response that handles tool calls between rounds."""
+        from roomkit.channels.ai import _current_loop_ctx
+
         ai_context = await self._build_context(event, binding, context)  # ty: ignore[unresolved-attribute]
         ai_context, blocked = await self._fire_before_generation_hook(ai_context, event)  # ty: ignore[unresolved-attribute]
         if blocked:
             return ChannelOutput.empty()
+        # The generator below executes when the CONSUMER iterates the
+        # stream — by then handle_event has reset the loop contextvar, so
+        # the parent ctx (participant role, room, the toolset stamped by
+        # _build_context) must be captured NOW and passed explicitly.
         return ChannelOutput(
             responded=True,
-            response_stream=self._run_streaming_tool_loop(ai_context),
+            response_stream=self._run_streaming_tool_loop(
+                ai_context, parent_loop_ctx=_current_loop_ctx.get()
+            ),
             response_metadata=ai_context.response_metadata,
         )
 
-    async def _run_streaming_tool_loop(self, context: AIContext) -> AsyncIterator[StreamDelta]:
+    async def _run_streaming_tool_loop(
+        self, context: AIContext, *, parent_loop_ctx: Any | None = None
+    ) -> AsyncIterator[StreamDelta]:
         """Stream text deltas, executing tool calls between generation rounds."""
         from roomkit.channels.ai import (
             _EMPTY_RETRY_NUDGE,
@@ -258,9 +268,18 @@ class AIStreamingMixin:
 
         loop_ctx = _ToolLoopContext()
         loop_ctx.loop_id = str(id(loop_ctx))
-        parent_ctx = _current_loop_ctx.get()
+        # The handle_event ctx is gone from the contextvar by the time this
+        # generator runs (reset in handle_event's finally); the caller
+        # captured it at stream creation.
+        parent_ctx = parent_loop_ctx if parent_loop_ctx is not None else _current_loop_ctx.get()
         if parent_ctx is not None:
             loop_ctx.current_participant_role = parent_ctx.current_participant_role
+            # _build_context ran under the parent ctx and stamped the turn's
+            # full toolset there — without this inheritance the per-round
+            # re-application below never fires (skill-gated tools would stay
+            # hidden after activation) and per-call allowlist accessors see
+            # nothing.
+            loop_ctx.all_context_tools = parent_ctx.all_context_tools
         loop_ctx.room_id = (context.room.room.id if context.room else None) or (
             parent_ctx.room_id if parent_ctx else None
         )

@@ -16,7 +16,7 @@ from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.room import Room
 from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
-from roomkit.tools import current_tool_room_id
+from roomkit.tools import current_tool_allowed_names, current_tool_room_id
 from tests.conftest import make_event
 
 
@@ -110,3 +110,50 @@ class TestCurrentToolRoomId:
 
     def test_none_outside_tool_loop(self) -> None:
         assert current_tool_room_id() is None
+
+
+class TestCurrentToolAllowedNames:
+    async def test_handler_sees_turn_toolset_streaming(self) -> None:
+        seen: list[set[str] | None] = []
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            seen.append(current_tool_allowed_names())
+            return "ok"
+
+        provider = MockAIProvider(ai_responses=_tool_round_responses(), streaming=True)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+
+        output = await ch.on_event(
+            make_event(room_id="room-a", body="go", channel_id="sms1"),
+            _binding("room-a"),
+            RoomContext(room=Room(id="room-a")),
+        )
+        assert output.response_stream is not None
+        _ = [chunk async for chunk in output.response_stream]
+
+        assert len(seen) == 1
+        assert seen[0] is not None
+        assert "search" in seen[0]
+
+    async def test_handler_sees_turn_toolset_non_streaming(self) -> None:
+        seen: list[set[str] | None] = []
+
+        async def tool_handler(name: str, args: dict[str, Any]) -> str:
+            seen.append(current_tool_allowed_names())
+            return "ok"
+
+        provider = MockAIProvider(ai_responses=_tool_round_responses(), streaming=False)
+        ch = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+
+        await ch.on_event(
+            make_event(room_id="room-b", body="go", channel_id="sms1"),
+            _binding("room-b"),
+            RoomContext(room=Room(id="room-b")),
+        )
+
+        assert len(seen) == 1
+        assert seen[0] is not None
+        assert "search" in seen[0]
+
+    def test_none_outside_tool_loop(self) -> None:
+        assert current_tool_allowed_names() is None

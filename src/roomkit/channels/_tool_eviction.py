@@ -21,15 +21,30 @@ class ToolEviction:
     stored in a FIFO-bounded buffer and replaced with a head/tail preview.
     The ``read_tool_result`` tool definition is injected into the AI
     context so the agent can paginate back through the full output.
+
+    The store is scoped per room: the eviction buffer lives on a channel
+    object shared by every room the channel serves, so an unscoped buffer
+    would leak one conversation's tool output into another (and inject
+    the re-read tool into rooms that evicted nothing). The room comes
+    from the tool-loop context; paths outside a loop share one fallback
+    scope.
     """
 
     def __init__(self, threshold_tokens: int = 5000) -> None:
         self.threshold_tokens = threshold_tokens
-        self._store: OrderedDict[str, str] = OrderedDict()
+        self._store: OrderedDict[tuple[str, str], str] = OrderedDict()
+
+    @staticmethod
+    def _room_scope() -> str:
+        from roomkit.channels.ai import _current_loop_ctx
+
+        ctx = _current_loop_ctx.get()
+        return (ctx.room_id if ctx is not None else None) or ""
 
     @property
     def has_evicted(self) -> bool:
-        return bool(self._store)
+        room = self._room_scope()
+        return any(key[0] == room for key in self._store)
 
     def maybe_evict(self, result: str, tool_call_id: str = "") -> str:
         """Evict large results to the store, returning a preview."""
@@ -38,7 +53,7 @@ class ToolEviction:
             return result
 
         result_id = f"evicted_{tool_call_id}" if tool_call_id else f"evicted_{id(result)}"
-        self._store[result_id] = result
+        self._store[(self._room_scope(), result_id)] = result
         while len(self._store) > _MAX_EVICTED:
             self._store.popitem(last=False)
 
@@ -71,11 +86,11 @@ class ToolEviction:
         offset = arguments.get("offset", 0)
         limit = arguments.get("limit", 200)
 
-        full_result = self._store.get(result_id)
+        room = self._room_scope()
+        full_result = self._store.get((room, result_id))
         if full_result is None:
-            return json.dumps(
-                {"error": f"Result '{result_id}' not found", "available": list(self._store.keys())}
-            )
+            available = [rid for scope, rid in self._store if scope == room]
+            return json.dumps({"error": f"Result '{result_id}' not found", "available": available})
 
         # Char budget per page: threshold_tokens chars ≈ threshold/4 tokens of
         # content, leaving ample headroom for JSON escaping (worst case 2×)

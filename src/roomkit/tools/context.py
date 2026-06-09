@@ -25,3 +25,24 @@ def current_tool_room_id() -> str | None:
 
     ctx = _current_loop_ctx.get()
     return ctx.room_id if ctx is not None else None
+
+
+def current_tool_allowed_names() -> set[str] | None:
+    """Names of every tool in the current turn's resolved toolset.
+
+    ``_build_context`` stamps the turn's full toolset (config-provider
+    result plus channel-injected tools) into the loop context; a host's
+    tool handler can validate an incoming call against it instead of an
+    attach-time snapshot that goes stale on shared channels. Includes
+    skill-gated tools whose *visibility* is filtered per round — gating
+    is presentation, not an execution boundary.
+
+    Returns ``None`` outside a tool loop or before context build, so
+    hosts can fall back to their own allowlist.
+    """
+    from roomkit.channels.ai import _current_loop_ctx
+
+    ctx = _current_loop_ctx.get()
+    if ctx is None or not ctx.all_context_tools:
+        return None
+    return {t.name for t in ctx.all_context_tools if getattr(t, "name", None)}
