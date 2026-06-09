@@ -340,8 +340,13 @@ class AIChannel(
         token = _current_loop_ctx.set(event_ctx)
         try:
             raw_tools = binding.metadata.get("tools", [])
+            # A config_provider may deliver tools at _build_context time even
+            # when the binding carries no snapshot — route to the tool loop
+            # so those tools are executable. An empty turn toolset just runs
+            # the loop for a single round.
             has_tools = (
                 bool(raw_tools)
+                or self._config_provider is not None
                 or bool(self._user_tools)
                 or bool(self._injected_tools)
                 or (self._skills is not None and self._skills.skill_count > 0)
