@@ -773,6 +773,17 @@ class RealtimeVoiceChannel(
                         SincResamplerProvider as _Resampler,
                     )
 
+                    # Pure-Python resampling holds the GIL even inside the
+                    # resample executor — the event loop stalls with it, and
+                    # realtime pacing (SIP headroom 60ms) audibly suffers.
+                    logger.warning(
+                        "numpy unavailable — falling back to the pure-Python "
+                        "sinc resampler for session %s. Realtime pacing may "
+                        "underrun under load; install numpy for GIL-releasing "
+                        "resampling.",
+                        session.id,
+                    )
+
                 self._session_resamplers[session.id] = (
                     _Resampler(),  # inbound: transport → provider
                     _Resampler(),  # outbound: provider → transport
