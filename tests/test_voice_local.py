@@ -536,3 +536,45 @@ class TestRealtimePrebuffer:
         await backend.send_audio(session, _PCM * 100)  # 200B, tiny
         out = _drain_block(backend)
         assert out[:200] == _PCM * 100  # legacy play-immediately behavior
+
+
+class TestContinuousPlayedCallbacks:
+    """Played callbacks fire on every block — silence included.
+
+    The playback-time AEC reference is wired through on_audio_played;
+    skipping silent blocks desyncs the reference timeline from the real
+    speaker output and forces AEC3 delay re-estimation at every gap.
+    """
+
+    async def test_played_callbacks_fire_on_idle_silence(self) -> None:
+        backend, _session = await _rt_backend()
+        played: list[bytes] = []
+        backend.on_audio_played(lambda s, f: played.append(f.data))
+        assert _drain_block(backend) == b"\x00" * _BLOCK  # idle, nothing queued
+        assert played == [b"\x00" * _BLOCK]
+
+    async def test_played_callbacks_fire_during_priming_and_interrupt(self) -> None:
+        backend, session = await _rt_backend()
+        played: list[bytes] = []
+        backend.on_audio_played(lambda s, f: played.append(f.data))
+        await backend.send_audio(session, _PCM * (2880 // 2))  # sub-prebuffer
+        _drain_block(backend)  # priming hold
+        backend.interrupt(session)
+        _drain_block(backend)  # interrupted mute
+        assert played == [b"\x00" * _BLOCK, b"\x00" * _BLOCK]
+
+    async def test_transport_aec_reference_still_skips_silence(self) -> None:
+        aec = MagicMock()
+        backend, _ = _make_backend(
+            input_sample_rate=24000,
+            output_sample_rate=24000,
+            block_duration_ms=20,
+            aec=aec,
+        )
+        session = await backend.connect("room-1", "user-1", "voice-1")
+        await backend.accept(session, None)
+        _drain_block(backend)  # idle silence — transport-level policy unchanged
+        aec.feed_reference.assert_not_called()
+        await backend.send_audio(session, _PCM * (5760 // 2))
+        _drain_block(backend)  # real audio
+        aec.feed_reference.assert_called()

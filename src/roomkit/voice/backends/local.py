@@ -854,18 +854,16 @@ class LocalAudioBackend(VoiceBackend):
         underrun_no = 0
 
         with self._rt_buf_lock:
-            # When interrupted, output silence immediately — don't drain
-            # any buffered audio.  This ensures barge-in stops playback
-            # within one PortAudio callback (~20ms).
-            if self._rt_interrupted:
-                outdata[:bytes_needed] = b"\x00" * bytes_needed
-                return
-
-            # Priming: hold silence until enough audio is buffered to ride
-            # out provider burst jitter.  Released early when the response
-            # is complete (short responses) or after ~100ms without a new
-            # append (missing end-of-response valve).
-            if self._rt_priming:
+            buf = self._rt_output_buffer
+            # When interrupted, never drain — barge-in mutes playback within
+            # one callback (~20ms).  While priming, hold silence until enough
+            # audio is buffered to ride out provider burst jitter; released
+            # early when the response is complete (short responses) or after
+            # ~100ms without a new append (missing end-of-response valve).
+            # Both paths fall through so the tail still runs: the AEC
+            # reference and played callbacks must see silence blocks too.
+            draining = not self._rt_interrupted
+            if draining and self._rt_priming:
                 release = (
                     self._rt_buffered_bytes >= max(self._rt_prebuffer_bytes, 1)
                     or (self._rt_response_complete and self._rt_buffered_bytes > 0)
@@ -874,46 +872,42 @@ class LocalAudioBackend(VoiceBackend):
                         and self._rt_prime_idle_blocks >= self._rt_prime_max_idle_blocks
                     )
                 )
-                if not release:
-                    self._rt_prime_idle_blocks += 1
-                    outdata[:bytes_needed] = b"\x00" * bytes_needed
-                    if self._rt_buffered_bytes == 0:
-                        # Idle between responses (not mid-prime): release the
-                        # half-duplex mic mute, as the drain tail used to.
-                        for sid in list(self._playing_sessions):
-                            self._playing_sessions.discard(sid)
-                    return
-                # Drain starts in this same callback — no wasted silent block.
-                self._rt_priming = False
-                self._rt_prime_idle_blocks = 0
-
-            buf = self._rt_output_buffer
-            while written < bytes_needed and buf:
-                chunk = buf[0]
-                avail = len(chunk) - self._rt_buf_offset
-                n = min(avail, bytes_needed - written)
-                src_start = self._rt_buf_offset
-                outdata[written : written + n] = chunk[src_start : src_start + n]
-                written += n
-                self._rt_buf_offset += n
-                if self._rt_buf_offset >= len(chunk):
-                    buf.popleft()
-                    self._rt_buf_offset = 0
-            self._rt_buffered_bytes -= written
-
-            if written < bytes_needed:
-                # Buffer exhausted mid-block: re-arm the prebuffer.  A clean
-                # end (response complete) is expected; anything else is a
-                # mid-response starvation — count it.
-                self._rt_priming = True
-                self._rt_prime_idle_blocks = 0
-                if self._rt_response_complete:
-                    self._rt_response_complete = False
+                if release:
+                    # Drain starts in this same callback — no wasted block.
+                    self._rt_priming = False
+                    self._rt_prime_idle_blocks = 0
                 else:
-                    self._rt_underruns += 1
-                    underrun_no = self._rt_underruns
+                    self._rt_prime_idle_blocks += 1
+                    draining = False
 
-        # Fill remaining with silence
+            if draining:
+                while written < bytes_needed and buf:
+                    chunk = buf[0]
+                    avail = len(chunk) - self._rt_buf_offset
+                    n = min(avail, bytes_needed - written)
+                    src_start = self._rt_buf_offset
+                    outdata[written : written + n] = chunk[src_start : src_start + n]
+                    written += n
+                    self._rt_buf_offset += n
+                    if self._rt_buf_offset >= len(chunk):
+                        buf.popleft()
+                        self._rt_buf_offset = 0
+                self._rt_buffered_bytes -= written
+
+                if written < bytes_needed:
+                    # Buffer exhausted mid-block: re-arm the prebuffer.  A
+                    # clean end (response complete) is expected; anything
+                    # else is a mid-response starvation — count it.
+                    self._rt_priming = True
+                    self._rt_prime_idle_blocks = 0
+                    if self._rt_response_complete:
+                        self._rt_response_complete = False
+                    else:
+                        self._rt_underruns += 1
+                        underrun_no = self._rt_underruns
+
+        # Fill remaining with silence (the whole block when interrupted
+        # or priming)
         if written < bytes_needed:
             outdata[written:] = b"\x00" * (bytes_needed - written)
 
@@ -932,8 +926,14 @@ class LocalAudioBackend(VoiceBackend):
         if self._aec is not None and written > 0 and not self._muted_sessions:
             self._aec_feed_played(bytearray(bytes(outdata)))
 
-        # Notify listeners about played audio
-        if self._audio_played_callbacks and written > 0 and self._sessions:
+        # Notify listeners about played audio — every block, silence
+        # included.  The pipeline AEC reference (wired via on_audio_played)
+        # must be continuous: skipping silent blocks compresses the
+        # reference timeline vs. the actual speaker output, forcing AEC3 to
+        # re-estimate its delay after every gap — measured as ~1s echo-leak
+        # windows at each response start, which Gemini's server VAD can
+        # mistake for user speech (false barge-in).
+        if self._audio_played_callbacks and self._sessions:
             session = next(iter(self._sessions.values()))
             played_frame = AudioFrame(
                 data=bytes(outdata),
