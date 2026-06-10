@@ -7,6 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-06-10
+
+Realtime voice audio-quality release. A field investigation of intermittent
+audio drop-outs on the speech-to-speech path traced three concurrent root
+causes — speaker-buffer starvation, AEC reference desync, and event-loop
+contention — all fixed and validated by before/after measurement: zero
+underruns over a full session, first-second AEC attenuation after each
+response start at -21.5 to -31.9 dB (was -3.8 to -19 dB), steady state
+improved to -28/-38 dB, user-speech passthrough unchanged.
+
+### Added
+
+- **`rt_prebuffer_ms` on `LocalAudioBackend` (default `120`).** The realtime
+  speaker path now primes ~120 ms of audio before starting (and after any
+  underrun) instead of playing from the first byte — the local-speaker
+  analogue of the SIP pacer's prebuffer. A priming state machine honors the
+  channel's `end_of_response` so short responses are not held back, ignores
+  the stale end-of-response that providers fire on barge-in, and drains a
+  partial buffer after ~100 ms if the signal never arrives. The new
+  `rt_underruns` property counts mid-response starvations (warnings capped at
+  the first 5); `rt_prebuffer_ms=0` restores play-on-first-byte.
+- **`pacer_prebuffer_ms` / `pacer_jitter_headroom_ms` on `SIPVoiceBackend`**
+  (defaults `80` / `60`, unchanged). Forwarded to `OutboundAudioPacer`, which
+  already took them — the host could just never set them. Larger headroom
+  absorbs longer host-side stalls on PSTN at the cost of barge-in latency.
+- **`recent_events_window` on `Channel` and `MemoryProvider`.** Channels
+  declare how many recent room events they read per turn (transport channels:
+  0; `AIChannel` forwards its memory provider's window;
+  `SlidingWindowMemory` reports `max_events`; token-aware providers keep the
+  full pool via `DEFAULT_RECENT_EVENTS_WINDOW`).
+- **Event-loop hold observability for realtime paths.** Tool-call handler and
+  `ON_TOOL_CALL` hook segments log wall-time chronos at DEBUG; a WARNING fires
+  when tool-result serialization alone holds the loop past ~50 ms (it runs on
+  the full result before truncation) or when the channel falls back to the
+  pure-Python sinc resampler (which holds the GIL even inside the resample
+  executor). The SIP pacer budget is 60 ms — one fused stretch past it is an
+  audible drop-out on a concurrent call.
+
+### Changed
+
+- **Playback-time AEC reference is fed continuously, silence included.** The
+  pipeline AEC reference (wired via `on_audio_played`) skipped silent blocks,
+  compressing the reference timeline vs. the actual speaker output; AEC3
+  re-estimated its delay at every response start, leaking ~1 s of residual
+  echo that the provider's server VAD could mistake for user speech (false
+  barge-in → buffer flush → audible cut). Every block now reaches the
+  reference, matching how Chrome feeds its AEC3 render stream. The
+  transport-level AEC path (`LocalAudioBackend(aec=...)`) keeps its previous
+  policy.
+- **`RoomContext.recent_events` is sized to what the room's channels read.**
+  `_build_context` loaded the full 2000-event ceiling on every call — for a
+  persistent voice room that meant deserialising 2000 events several times
+  per transcription (~1 s of sync CPU per turn under load). The limit is now
+  the largest `recent_events_window` across bound channels, floored at 50 for
+  hooks and capped at the ceiling; a transport-only voice room loads 50.
+  Text agents with token-aware memory keep the full pool.
+- **Tool-call processing yields between segments.** Handler execution, hook
+  dispatch, and result submission no longer fuse into one event-loop step, so
+  realtime pacing gets a scheduling slot between them.
+
+### Fixed
+
+- **Mid-sentence gaps on local realtime playback.** Any momentary starvation
+  (provider burst jitter, loop contention) inserted audible silence
+  immediately; underruns now re-prime the buffer, converting scattered gaps
+  into one rare, measured re-prime.
+- **Outbound resampling no longer blocks the event loop.** A sync resample in
+  the provider-audio callback starved RTP pacing under concurrent host load
+  (observed: 34.6 ms resample, 186 ms pacer underrun on a live PSTN call).
+  Per-session resampling runs in a per-channel single-thread executor that
+  also serializes the end-of-response flush and barge-in resets, preserving
+  frame order without locks.
+- **Realtime DSP held the GIL on hot paths.** `pcm16_to_mulaw` and `rms_db`
+  per-sample Python loops are vectorised with NumPy (byte-/value-exact,
+  equivalence-tested); the AEC energy diagnostics moved off the lock the
+  PortAudio speaker callback contends on. NumPy stays a lazy optional import
+  — base installs (no voice extras) are unaffected.
+- **Partial transcriptions and speech events skip context builds when no
+  hooks are registered.** Partials stream many times per second while the AI
+  speaks; each paid a full `RoomContext` build for a no-op hook dispatch.
+- **A second realtime session in the same process played no audio.**
+  `LocalAudioBackend._rt_closing` persisted across sessions and silently
+  dropped every queued chunk; `accept()` re-arms it.
+- **FastRTC: sends on a non-open `RTCDataChannel` raised
+  `InvalidStateError`.** The peer can close the data channel while provider
+  audio or transcriptions are still flowing; sends are now gated on
+  `readyState`.
+- **The Gemini local example honors its documented `MUTE_MIC` override.**
+
 ## [0.8.0] — 2026-06-09
 
 ### Added
