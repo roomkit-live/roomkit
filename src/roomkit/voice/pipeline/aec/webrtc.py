@@ -238,24 +238,18 @@ class WebRTCAECProvider(AECProvider):
                 self._ref_fed_count += 1
                 fed_this_call += 1
 
-        if fed_this_call > 0:
+        if fed_this_call > 0 and (self._ref_fed_count <= 3 or self._ref_fed_count % 100 == 0):
             # First feeds at INFO (wiring confirmation); the periodic tick
             # at DEBUG — with a continuous playback-time reference (silence
             # included) it would otherwise log once a second forever.
-            if self._ref_fed_count <= 3:
-                logger.info(
-                    "AEC reference: %d chunks fed (total=%d), bypass=%s",
-                    fed_this_call,
-                    self._ref_fed_count,
-                    self._bypass,
-                )
-            elif self._ref_fed_count % 100 == 0:
-                logger.debug(
-                    "AEC reference: %d chunks fed (total=%d), bypass=%s",
-                    fed_this_call,
-                    self._ref_fed_count,
-                    self._bypass,
-                )
+            level = logging.INFO if self._ref_fed_count <= 3 else logging.DEBUG
+            logger.log(
+                level,
+                "AEC reference: %d chunks fed (total=%d), bypass=%s",
+                fed_this_call,
+                self._ref_fed_count,
+                self._bypass,
+            )
 
     def reset(self) -> None:
         """Reset internal state including the adaptive filter.
