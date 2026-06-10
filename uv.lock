@@ -281,11 +281,11 @@ wheels = [
 
 [[package]]
 name = "aiortp"
-version = "0.3.1"
+version = "0.3.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/be/89/0ca3c11c4e950079dc638a0714d1a7d583076498fb2cb82834757ccc45ff/aiortp-0.3.1.tar.gz", hash = "sha256:e9b04bbb917cbfabf4e1aa589bf49d48da00c40207166d85c3bdb8187f493d2e", size = 55628, upload-time = "2026-03-19T12:48:29.914Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d4/2f/a0f4eb37f24f1ee1195d2fddfb99f5a1b514523de7d2996af51b3c52674d/aiortp-0.3.2.tar.gz", hash = "sha256:febc64957eb9f6468d6d18bcba7621074ae1f1a66fe919e4b301183c330d107f", size = 56699, upload-time = "2026-06-10T19:07:23.472Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bc/e8/1290fac843d462a288a922b964150621c9bed63133d54cb21fedc7f05b41/aiortp-0.3.1-py3-none-any.whl", hash = "sha256:dfac71f6b1a35420410711fc7862273150d8fa202221f87736babc7287cb48e8", size = 40829, upload-time = "2026-03-19T12:48:28.932Z" },
+    { url = "https://files.pythonhosted.org/packages/46/94/ab6b799b2086bb724effc332bcd2442fb247e8324449596cbef7f3b0c40b/aiortp-0.3.2-py3-none-any.whl", hash = "sha256:47bde2938179e013b35427833c51df7962094fef89655b3ce62635b89ba6eb3c", size = 41440, upload-time = "2026-06-10T19:07:22.496Z" },
 ]
 
 [[package]]
@@ -5157,6 +5157,7 @@ sherpa-onnx = [
     { name = "sherpa-onnx" },
 ]
 sip = [
+    { name = "aiortp" },
     { name = "aiosipua", extra = ["rtp"] },
 ]
 smart-turn = [
@@ -5223,8 +5224,9 @@ requires-dist = [
     { name = "aec-audio-processing", marker = "extra == 'webrtc-aec'", specifier = ">=0.1" },
     { name = "aic-sdk", marker = "extra == 'aicoustics'", specifier = ">=2.1" },
     { name = "aioquic", marker = "extra == 'webtransport'", specifier = ">=1.0" },
-    { name = "aiortp", marker = "extra == 'all'", specifier = ">=0.3.1" },
-    { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.3.1" },
+    { name = "aiortp", marker = "extra == 'all'", specifier = ">=0.3.2" },
+    { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.3.2" },
+    { name = "aiortp", marker = "extra == 'sip'", specifier = ">=0.3.2" },
     { name = "aiosipua", extras = ["rtp"], marker = "extra == 'all'", specifier = ">=0.4.1" },
     { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.4.1" },
     { name = "anam", marker = "extra == 'anam'", specifier = ">=0.1" },
