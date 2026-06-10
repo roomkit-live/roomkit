@@ -197,6 +197,47 @@ class TestSIPVoiceBackendInit:
         assert backend._supported_codecs == [9, 0, 8]
 
 
+class TestPacerTuning:
+    """pacer_prebuffer_ms / pacer_jitter_headroom_ms flow into the pacer."""
+
+    @pytest.fixture
+    def tuned_backend(self, mock_aiosipua: MagicMock, mock_rtp_bridge: MagicMock) -> Any:
+        with (
+            patch("roomkit.voice.backends.sip.import_aiosipua", return_value=mock_aiosipua),
+            patch(
+                "roomkit.voice.backends.sip.import_rtp_bridge",
+                return_value=mock_rtp_bridge,
+            ),
+        ):
+            from roomkit.voice.backends.sip import SIPVoiceBackend
+
+            return SIPVoiceBackend(
+                local_sip_addr=("0.0.0.0", 5060),
+                local_rtp_ip="10.0.0.5",
+                pacer_prebuffer_ms=120,
+                pacer_jitter_headroom_ms=100,
+            )
+
+    def test_defaults_preserved(self, backend: Any) -> None:
+        assert backend._pacer_prebuffer_ms == 80
+        assert backend._pacer_jitter_headroom_ms == 60
+
+    async def test_values_reach_the_pacer(
+        self, tuned_backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        call = _make_mock_incoming_call()
+        await tuned_backend._handle_invite(call)
+        state = list(tuned_backend._session_states.values())[0]
+
+        pacer = tuned_backend._ensure_pacer(state.session)
+        try:
+            # codec_rate 8000, mono 16-bit PCM -> 16 bytes per millisecond
+            assert pacer._prebuffer_bytes == int(8000 * 1 * 2 * 120 / 1000)
+            assert pacer._jitter_headroom == pytest.approx(0.100)
+        finally:
+            await pacer.stop()
+
+
 class TestStart:
     async def test_start_creates_transport_uas_uac(
         self, backend: Any, mock_aiosipua: MagicMock

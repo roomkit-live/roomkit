@@ -88,6 +88,8 @@ class SIPAudioMixin:
     _disconnect_callbacks: list[Any]
     _trace_emitter: Any
     _outbound_silence_fill: bool
+    _pacer_prebuffer_ms: float
+    _pacer_jitter_headroom_ms: float
     _cleanup_session: Any  # see SIPAudioHost — cross-mixin, from SIPCallingMixin
     _log_task_exception: Any  # see SIPAudioHost — cross-mixin, from SIPCallingMixin
 
@@ -500,6 +502,8 @@ class SIPAudioMixin:
         pacer = OutboundAudioPacer(
             send_fn=rtp_send,
             sample_rate=state.codec_rate,
+            prebuffer_ms=self._pacer_prebuffer_ms,
+            jitter_headroom_ms=self._pacer_jitter_headroom_ms,
             fill_with_silence_when_idle=self._outbound_silence_fill,
         )
         state.pacer = pacer

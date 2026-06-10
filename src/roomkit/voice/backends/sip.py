@@ -119,6 +119,12 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
             steady 50 pps so PSTN endpoints (which lack packet loss
             concealment) don't perceive glitches at sentence boundaries.
             Default ``False`` (pacer pauses during idle gaps).
+        pacer_prebuffer_ms: Milliseconds of audio the outbound pacer
+            accumulates before its first send.  Default ``80``.
+        pacer_jitter_headroom_ms: Milliseconds of lead the outbound pacer
+            keeps over wall-clock so the remote jitter buffer always has a
+            safety margin.  Larger values absorb longer host-side stalls at
+            the cost of barge-in latency.  Default ``60``.
     """
 
     def __init__(
@@ -141,6 +147,8 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         auth_realm: str = "roomkit",
         send_silence_on_answer: float = 0.0,
         outbound_silence_fill: bool = False,
+        pacer_prebuffer_ms: float = 80,
+        pacer_jitter_headroom_ms: float = 60,
     ) -> None:
         self._aiosipua = import_aiosipua()
         self._rtp_bridge = import_rtp_bridge()
@@ -160,6 +168,8 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._rtp_inactivity_timeout = rtp_inactivity_timeout
         self._send_silence_on_answer = send_silence_on_answer
         self._outbound_silence_fill = outbound_silence_fill
+        self._pacer_prebuffer_ms = pacer_prebuffer_ms
+        self._pacer_jitter_headroom_ms = pacer_jitter_headroom_ms
 
         # Inbound authentication
         self._auth_users = auth_users
