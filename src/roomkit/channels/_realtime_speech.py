@@ -6,7 +6,6 @@ import asyncio
 import logging
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.enums import HookTrigger
@@ -32,7 +31,6 @@ class RealtimeSpeechHost(Protocol):
         _barge_in_active: Session IDs with an active barge-in.
         _last_assistant_text: Last assistant utterance per session.
         _session_resamplers: Per-session (inbound, outbound) resampler pairs.
-        _resample_executor: Single-thread executor owning resampler state.
         _has_pipeline_vad: Per-session flag — whether local pipeline VAD is active.
         _last_input_level_at: Timestamp of last input audio level hook.
         _last_output_level_at: Timestamp of last output audio level hook.
@@ -45,6 +43,7 @@ class RealtimeSpeechHost(Protocol):
         _send_client_message: Send a JSON message to the client UI.
         _update_idle_event: Update the idle signaling event for a session.
         _rt_span_ctx: Get the telemetry span context for a session.
+        _reset_outbound_resampler: Reset via the resample executor (audio mixin).
     """
 
     _state_lock: threading.Lock
@@ -55,7 +54,6 @@ class RealtimeSpeechHost(Protocol):
     _barge_in_active: set[str]
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
-    _resample_executor: ThreadPoolExecutor | None
     _has_pipeline_vad: dict[str, bool]
     _last_input_level_at: float
     _last_output_level_at: float
@@ -70,6 +68,8 @@ class RealtimeSpeechHost(Protocol):
     def _update_idle_event(self, session_id: str) -> None: ...
 
     def _rt_span_ctx(self, session_id: str) -> tuple[Any, Any]: ...
+
+    def _reset_outbound_resampler(self, resamplers: Any) -> None: ...
 
 
 class RealtimeSpeechMixin:
@@ -90,7 +90,6 @@ class RealtimeSpeechMixin:
     _barge_in_active: set[str]
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
-    _resample_executor: ThreadPoolExecutor | None
     _has_pipeline_vad: dict[str, bool]
     _last_input_level_at: float
     _last_output_level_at: float
@@ -102,6 +101,7 @@ class RealtimeSpeechMixin:
     _send_client_message: Any  # see RealtimeSpeechHost — cross-mixin
     _update_idle_event: Any  # see RealtimeSpeechHost — cross-mixin
     _rt_span_ctx: Any  # see RealtimeSpeechHost — cross-mixin
+    _reset_outbound_resampler: Any  # see RealtimeSpeechHost — cross-mixin
 
     # -----------------------------------------------------------------
     # Provider speech events (server-side VAD)
@@ -126,16 +126,7 @@ class RealtimeSpeechMixin:
             is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
             if is_barge_in:
                 self._barge_in_active.add(session.id)
-            # Reset the outbound resampler through the resample executor:
-            # FIFO behind any in-flight resample, so the reset never races
-            # state mutation. Stale outputs are discarded by the generation
-            # check in _send_outbound_audio.
-            if resamplers:
-                ex = self._resample_executor
-                if ex is not None:
-                    ex.submit(resamplers[1].reset)
-                else:
-                    resamplers[1].reset()
+            self._reset_outbound_resampler(resamplers)
         self._update_idle_event(session.id)
 
         if is_barge_in:

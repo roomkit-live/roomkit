@@ -151,6 +151,22 @@ class RealtimeAudioMixin:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._get_resample_executor(), fn, *args)
 
+    def _reset_outbound_resampler(self, resamplers: tuple[Any, Any] | None) -> None:
+        """Reset the outbound resampler through the resample executor.
+
+        FIFO behind any in-flight resample, so the reset never races state
+        mutation. Stale outputs are discarded by the generation check in
+        ``_send_outbound_audio``. Direct call when no executor exists — no
+        resample ever ran, so there is nothing to race.
+        """
+        if not resamplers:
+            return
+        ex = self._resample_executor
+        if ex is not None:
+            ex.submit(resamplers[1].reset)
+        else:
+            resamplers[1].reset()
+
     async def _resample_off_loop(
         self,
         resampler: Any,
@@ -353,16 +369,7 @@ class RealtimeAudioMixin:
             is_barge_in = fwd_count > 0
             if is_barge_in:
                 self._barge_in_active.add(session.id)
-            # Reset the outbound resampler through the resample executor:
-            # FIFO behind any in-flight resample, so the reset never races
-            # state mutation. Stale outputs are discarded by the generation
-            # check in _send_outbound_audio.
-            if resamplers:
-                ex = self._resample_executor
-                if ex is not None:
-                    ex.submit(resamplers[1].reset)
-                else:
-                    resamplers[1].reset()
+            self._reset_outbound_resampler(resamplers)
         self._update_idle_event(session.id)
 
         logger.info(
