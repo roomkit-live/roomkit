@@ -87,7 +87,10 @@ async def main() -> None:
     # barge-in detection on the cleaned audio (like Chrome's native AEC).
     aec = build_aec(sample_rate, block_ms, default="webrtc", enable_ns=False)
     pipeline = build_pipeline(aec=aec) if aec else None
-    mute_mic = aec is None  # mute mic if no AEC (feedback prevention)
+    # Mute mic during playback when no AEC (feedback prevention).
+    # MUTE_MIC=0|1 overrides the auto behavior (same as the OpenAI example).
+    mute_env = os.environ.get("MUTE_MIC")
+    mute_mic = mute_env != "0" if mute_env is not None else aec is None
 
     transport = LocalAudioBackend(
         input_sample_rate=sample_rate,
