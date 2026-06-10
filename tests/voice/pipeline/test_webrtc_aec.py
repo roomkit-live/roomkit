@@ -96,6 +96,25 @@ class TestWebRTCAECProviderProcess:
         assert result.sample_rate == frame.sample_rate
         processor.process_stream.assert_called()
 
+    def test_process_energy_diagnostics(self):
+        """Energy totals are exact integer sums of squares (passthrough mock)."""
+        mock_mod, _, _ = _make_mock_aec_module()
+        provider, _ = _make_provider(mock_mod)
+        provider.set_active(True)
+
+        # 160 samples of amplitude 1000 → energy = 160 * 1000²
+        frame = AudioFrame(
+            data=(1000).to_bytes(2, "little", signed=True) * 160,
+            sample_rate=16000,
+            channels=1,
+            sample_width=2,
+        )
+        provider.process(frame)
+
+        assert provider._total_in_energy == 160 * 1000**2
+        # Mock AP is passthrough, so output energy matches input exactly.
+        assert provider._total_out_energy == provider._total_in_energy
+
 
 class TestWebRTCAECProviderFeedReference:
     def test_feed_reference(self):
