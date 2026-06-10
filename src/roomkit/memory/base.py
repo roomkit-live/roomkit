@@ -9,6 +9,12 @@ from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import AIMessage
 
+# How many recent events a provider that doesn't trim by event count needs from
+# ``RoomContext.recent_events``. Token-aware providers (which trim by budget, not
+# count) inherit this so the framework loads a full pool for them. Mirrors the
+# framework's ``_RECENT_EVENTS_LIMIT`` ceiling, which caps it regardless.
+DEFAULT_RECENT_EVENTS_WINDOW = 2_000
+
 
 @dataclass
 class MemoryResult:
@@ -41,6 +47,18 @@ class MemoryProvider(ABC):
     def name(self) -> str:
         """Human-readable provider name."""
         return type(self).__name__
+
+    @property
+    def recent_events_window(self) -> int:
+        """How many recent events this provider may read from ``RoomContext``.
+
+        The framework uses the largest window across a room's bound channels to
+        decide how many events to load into ``RoomContext.recent_events`` — so a
+        provider that windows to last-N should report N (avoids loading and
+        deserialising the whole ceiling every turn). Defaults to the full pool
+        for providers that don't trim by event count (e.g. token-aware ones).
+        """
+        return DEFAULT_RECENT_EVENTS_WINDOW
 
     @abstractmethod
     async def retrieve(

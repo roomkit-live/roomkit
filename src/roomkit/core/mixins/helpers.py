@@ -43,11 +43,17 @@ from roomkit.models.participant import Participant
 from roomkit.models.task import Observation, Task
 
 _RECENT_EVENTS_LIMIT = 2_000
-"""Maximum events kept in ``RoomContext.recent_events`` in memory."""
+"""Hard ceiling on events kept in ``RoomContext.recent_events`` in memory."""
+
+_RECENT_EVENTS_FLOOR = 50
+"""Events loaded for a room whose channels declare no recent-history need
+(transport-only rooms, e.g. realtime voice). Enough for hooks that glance at
+recent context without paying the full-ceiling deserialisation cost per turn."""
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
     from roomkit.core.hooks import HookEngine, IdentityHookRegistration
+    from roomkit.models.channel import ChannelBinding
     from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.framework")
@@ -336,20 +342,46 @@ class HelpersMixin:
         )
         await self._persist_event_auto_index(room_id, event)
 
-    async def _build_context(self, room_id: str) -> RoomContext:
-        """Build a RoomContext for the given room."""
+    async def _build_context(
+        self, room_id: str, *, recent_limit: int | None = None
+    ) -> RoomContext:
+        """Build a RoomContext for the given room.
+
+        ``recent_limit`` caps how many recent events are loaded into
+        ``RoomContext.recent_events``. When omitted it is derived from the room's
+        bound channels — the largest ``recent_events_window`` any of them
+        declares, floored for hooks and capped at ``_RECENT_EVENTS_LIMIT``. A
+        transport-only room (e.g. realtime voice) whose channels read no history
+        loads just the floor instead of deserialising the whole ceiling per turn.
+        """
         room = await self._store.get_room(room_id)
         if room is None:
             raise RoomNotFoundError(f"Room {room_id} not found")
         bindings = await self._store.list_bindings(room_id)
         participants = await self._store.list_participants(room_id)
-        recent = await self._store.get_conversation(room_id, limit=_RECENT_EVENTS_LIMIT)
+        if recent_limit is None:
+            recent_limit = self._resolve_recent_events_limit(bindings)
+        recent = await self._store.get_conversation(room_id, limit=recent_limit)
         return RoomContext(
             room=room,
             bindings=bindings,
             participants=participants,
             recent_events=recent,
         )
+
+    def _resolve_recent_events_limit(self, bindings: list[ChannelBinding]) -> int:
+        """Events to load = the largest window any bound channel needs.
+
+        Floored at ``_RECENT_EVENTS_FLOOR`` (hooks) and capped at
+        ``_RECENT_EVENTS_LIMIT`` (the in-memory ceiling). A missing/unregistered
+        channel contributes 0, so a room with no history-reading channel —
+        or no bindings at all — loads only the floor.
+        """
+        windows = [
+            getattr(self._channels.get(b.channel_id), "recent_events_window", 0) for b in bindings
+        ]
+        largest = max(windows, default=0)
+        return min(_RECENT_EVENTS_LIMIT, max(_RECENT_EVENTS_FLOOR, largest))
 
     # -- Protocol trace --
 

@@ -390,6 +390,11 @@ class AIChannel(
         """Intelligence channels are not called via deliver by the router."""
         return ChannelOutput.empty()
 
+    @property
+    def recent_events_window(self) -> int:
+        """Recent-events need = this channel's memory provider's window."""
+        return self._memory.recent_events_window
+
     async def close(self) -> None:
         """Close the channel, its provider, memory, and executors."""
         await super().close()
