@@ -73,6 +73,11 @@ class AudioStats:
         self.outbound_max_burst = 0  # max frames in a single _send_pcm_bytes call
         self.outbound_calls = 0  # number of _send_pcm_bytes calls
 
+    def sync_from_rtp(self, rtp_stats: dict[str, Any]) -> None:
+        """Pull RTP-session-sourced counters (no-op on an empty/closed-session dict)."""
+        if rtp_stats:
+            self.concealed_frames = rtp_stats.get("concealed_frames", 0)
+
 
 @dataclass
 class SIPSessionState:

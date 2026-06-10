@@ -492,6 +492,12 @@ class SIPCallingMixin:
     ) -> None:
         """Await call_session close, then clean up state and fire callbacks."""
         if call_session is not None:
+            # Snapshot RTP-sourced counters before close() drops the session —
+            # afterwards CallSession.stats returns {} and the final stats log
+            # would fall back to the last periodic sync (up to 5 s stale).
+            state = self._session_states.get(session_id)
+            if state is not None:
+                state.audio_stats.sync_from_rtp(call_session.stats)
             with contextlib.suppress(Exception):
                 await call_session.close()
 
@@ -780,11 +786,9 @@ class SIPCallingMixin:
 
         stats = state.audio_stats
         if state.call_session is not None:
-            rtp_stats = state.call_session.stats
-            if rtp_stats:
-                # Best-effort refresh; falls back to the last value synced
-                # by the stats loop when the RTP session is already closed.
-                stats.concealed_frames = rtp_stats.get("concealed_frames", 0)
+            # Best-effort refresh; falls back to the value snapshotted at
+            # close time when the RTP session is already gone.
+            stats.sync_from_rtp(state.call_session.stats)
         logger.info(
             "SIP session %s final stats: IN pkts=%d bytes=%d gaps=%d"
             " max_gap=%.0fms concealed=%d | OUT frames=%d bytes=%d",

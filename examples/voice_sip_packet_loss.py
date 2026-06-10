@@ -26,8 +26,10 @@ Usage:
     python examples/voice_sip_packet_loss.py
 
     # Environment variables (all optional):
-    #   SIP_LOCAL_PORT  — local SIP listen port (default: 5060)
-    #   SIP_PLC         — set to 0 to disable concealment (A/B testing)
+    #   SIP_LOCAL_PORT      — local SIP listen port (default: 5060)
+    #   SIP_RTP_PORT_START  — first RTP port (default: 10000; pick a free
+    #                         range if Docker or a PBX holds the default)
+    #   SIP_PLC             — set to 0 to disable concealment (A/B testing)
 
 To observe concealment, call the agent over a lossy link (or simulate
 loss, e.g. ``tc qdisc add dev eth0 root netem loss 5%`` on Linux) and
@@ -51,10 +53,11 @@ from roomkit import RoomKit, VoiceChannel
 from roomkit.voice.backends.sip import SIPVoiceBackend
 
 LOCAL_PORT = int(os.environ.get("SIP_LOCAL_PORT", "5060"))
+RTP_PORT_START = int(os.environ.get("SIP_RTP_PORT_START", "10000"))
 PLC_ENABLED = os.environ.get("SIP_PLC", "1") != "0"
 
 # The periodic per-session stats line (incl. concealed=N) logs at DEBUG
-logging.getLogger("roomkit.voice.backends.sip").setLevel(logging.DEBUG)
+logging.getLogger("roomkit.voice.sip").setLevel(logging.DEBUG)
 
 
 async def main() -> None:
@@ -64,6 +67,8 @@ async def main() -> None:
     backend = SIPVoiceBackend(
         local_sip_addr=("0.0.0.0", LOCAL_PORT),  # nosec B104
         local_rtp_ip="0.0.0.0",  # nosec B104
+        rtp_port_start=RTP_PORT_START,
+        rtp_port_end=RTP_PORT_START + 1000,
         skip_audio_gaps=True,  # default — required for loss confirmation
         plc=PLC_ENABLED,  # default True — replace confirmed losses
     )
