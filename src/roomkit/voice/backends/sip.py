@@ -94,7 +94,13 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
             playout.  Default 0 (start immediately, optimised for low
             latency).
         skip_audio_gaps: When ``True`` (default), gaps in the RTP stream
-            are skipped rather than filled with silence.
+            are skipped rather than stalling the jitter buffer.
+        plc: When ``True`` (default), packets confirmed lost are replaced
+            with concealment PCM (native Opus PLC, or last-frame repetition
+            fading to silence), keeping the inbound stream temporally
+            continuous for the pipeline (recorder duration, AEC alignment).
+            Effective only with ``skip_audio_gaps``.  The per-session
+            ``concealed_frames`` counter is exposed in the audio stats.
         rtp_inactivity_timeout: Seconds of RTP silence before forcing
             session disconnect (safety net for missed BYE).  Set to 0
             to disable.  Default 30.
@@ -142,6 +148,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         jitter_capacity: int = 32,
         jitter_prefetch: int = 0,
         skip_audio_gaps: bool = True,
+        plc: bool = True,
         rtp_inactivity_timeout: float = 30.0,
         auth_users: dict[str, str] | None = None,
         auth_realm: str = "roomkit",
@@ -165,6 +172,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._jitter_capacity = jitter_capacity
         self._jitter_prefetch = jitter_prefetch
         self._skip_audio_gaps = skip_audio_gaps
+        self._plc = plc
         self._rtp_inactivity_timeout = rtp_inactivity_timeout
         self._send_silence_on_answer = send_silence_on_answer
         self._outbound_silence_fill = outbound_silence_fill

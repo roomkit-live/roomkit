@@ -89,6 +89,7 @@ class SIPCallingHost(Protocol):
     _jitter_capacity: int
     _jitter_prefetch: int
     _skip_audio_gaps: bool
+    _plc: bool
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
@@ -135,6 +136,7 @@ class SIPCallingMixin:
     _jitter_capacity: int
     _jitter_prefetch: int
     _skip_audio_gaps: bool
+    _plc: bool
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
@@ -226,6 +228,7 @@ class SIPCallingMixin:
                 jitter_capacity=self._jitter_capacity,
                 jitter_prefetch=self._jitter_prefetch,
                 skip_audio_gaps=self._skip_audio_gaps,
+                plc=self._plc,
             )
         except Exception:
             logger.exception("SDP negotiation failed for call %s", call.call_id)
@@ -619,6 +622,7 @@ class SIPCallingMixin:
                 jitter_capacity=self._jitter_capacity,
                 jitter_prefetch=self._jitter_prefetch,
                 skip_audio_gaps=self._skip_audio_gaps,
+                plc=self._plc,
             )
             await call_session.start()
         except Exception:
@@ -775,14 +779,21 @@ class SIPCallingMixin:
             }
 
         stats = state.audio_stats
+        if state.call_session is not None:
+            rtp_stats = state.call_session.stats
+            if rtp_stats:
+                # Best-effort refresh; falls back to the last value synced
+                # by the stats loop when the RTP session is already closed.
+                stats.concealed_frames = rtp_stats.get("concealed_frames", 0)
         logger.info(
             "SIP session %s final stats: IN pkts=%d bytes=%d gaps=%d"
-            " max_gap=%.0fms | OUT frames=%d bytes=%d",
+            " max_gap=%.0fms concealed=%d | OUT frames=%d bytes=%d",
             session_id[:8],
             stats.inbound_packets,
             stats.inbound_bytes,
             stats.inbound_gaps,
             stats.inbound_max_gap_ms,
+            stats.concealed_frames,
             stats.outbound_frames,
             stats.outbound_bytes,
         )

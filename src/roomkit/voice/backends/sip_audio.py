@@ -356,7 +356,11 @@ class SIPAudioMixin:
                             recv = rtp_stats.get("packets_received", 0)
                             lost = rtp_stats.get("packets_lost", 0)
                             jitter = rtp_stats.get("jitter", 0.0)
-                            rtp_info = f" rtp_recv={recv} rtp_lost={lost} jitter={jitter:.1f}"
+                            stats.concealed_frames = rtp_stats.get("concealed_frames", 0)
+                            rtp_info = (
+                                f" rtp_recv={recv} rtp_lost={lost}"
+                                f" concealed={stats.concealed_frames} jitter={jitter:.1f}"
+                            )
 
                     in_dur = 0.0
                     if stats.inbound_packets > 1:

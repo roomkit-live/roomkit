@@ -49,6 +49,7 @@ class AudioStats:
         "inbound_last_ts",
         "inbound_gaps",
         "inbound_max_gap_ms",
+        "concealed_frames",
         "outbound_frames",
         "outbound_bytes",
         "outbound_first_ts",
@@ -64,6 +65,7 @@ class AudioStats:
         self.inbound_last_ts: float = 0.0
         self.inbound_gaps = 0
         self.inbound_max_gap_ms: float = 0.0
+        self.concealed_frames = 0  # lost packets replaced by PLC (synced from RTP session)
         self.outbound_frames = 0
         self.outbound_bytes = 0
         self.outbound_first_ts: float = 0.0
