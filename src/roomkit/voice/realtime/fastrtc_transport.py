@@ -164,8 +164,15 @@ class _PassthroughHandler(AsyncStreamHandler):
         sites (line 284 below) don't await this handler method — keeping
         it sync preserves that behaviour.
         """
-        if self.channel:
-            self.channel.send(message)
+        # aiortc raises InvalidStateError if the channel isn't "open"; the peer
+        # can close it while provider audio/transcription is still flowing.
+        # (readyState exists on aiortc's RTCDataChannel at runtime; FastRTC's
+        # DataChannel type stub doesn't declare it.)
+        channel = self.channel
+        if channel is None:
+            return
+        if channel.readyState == "open":  # ty: ignore[unresolved-attribute]
+            channel.send(message)
 
     def send_audio_direct(self, audio: bytes) -> None:
         """Send audio directly on the WebSocket, bypassing FastRTC's emit queue.
@@ -173,14 +180,17 @@ class _PassthroughHandler(AsyncStreamHandler):
         Encodes PCM16 LE bytes as mu-law and sends immediately, avoiding
         the double-queue + 20ms sleep latency of the emit pipeline.
         """
-        if not self.channel:
+        # Skip once the peer has closed the channel — sending on a non-"open"
+        # RTCDataChannel raises aiortc's InvalidStateError.
+        channel = self.channel
+        if channel is None or channel.readyState != "open":  # ty: ignore[unresolved-attribute]
             return
 
         from roomkit.voice.backends._mulaw import pcm16_to_mulaw
 
         mulaw = pcm16_to_mulaw(audio)
         payload = base64.b64encode(mulaw).decode("utf-8")
-        self.channel.send(
+        channel.send(
             json.dumps(
                 {
                     "event": "media",

@@ -92,6 +92,7 @@ class TestFastRTCRealtimeTransport:
 
         # Set up a mock data channel via property patch (channel is read-only)
         mock_channel = MagicMock()
+        mock_channel.readyState = "open"
         mock_channel.send = MagicMock()
 
         transport._register_handler(webrtc_id, handler)
@@ -122,6 +123,30 @@ class TestFastRTCRealtimeTransport:
         ):
             # Should not raise
             await transport.send_message(session, {"type": "test"})
+
+    async def test_send_message_closed_channel_noop(self, transport, handler) -> None:
+        """A channel that isn't 'open' must be skipped, not raise InvalidStateError.
+
+        aiortc's RTCDataChannel.send raises when readyState != 'open'; the peer can
+        close the channel while provider audio/transcription is still flowing.
+        """
+        session = _make_session()
+        webrtc_id = "webrtc-123"
+
+        mock_channel = MagicMock()
+        mock_channel.readyState = "closed"
+        mock_channel.send = MagicMock()
+
+        transport._register_handler(webrtc_id, handler)
+        await transport.accept(session, webrtc_id)
+
+        with patch.object(
+            type(handler), "channel", new_callable=lambda: property(lambda self: mock_channel)
+        ):
+            # Should not raise, and must not send on a non-open channel.
+            await transport.send_message(session, {"type": "test"})
+
+        mock_channel.send.assert_not_called()
 
     async def test_receive_fires_audio_callbacks(self, transport, handler) -> None:
         import numpy as np
