@@ -405,3 +405,134 @@ class TestLocalAudioLazyLoader:
 
             cls = get_local_audio_backend()
             assert cls is LocalAudioBackend
+
+
+# ---------------------------------------------------------------------------
+# Realtime speaker prebuffer (priming state machine)
+# ---------------------------------------------------------------------------
+
+_BLOCK = 960  # 20ms @ 24kHz mono int16
+_PCM = b"\x01\x00"
+
+
+def _drain_block(backend) -> bytes:
+    """Invoke the realtime speaker callback for one 20ms block."""
+    out = bytearray(_BLOCK)
+    backend._rt_speaker_callback(out, _BLOCK // 2, None, None)
+    return bytes(out)
+
+
+async def _rt_backend(**kwargs):
+    """LocalAudioBackend in realtime mode (accepted session, mocked stream)."""
+    backend, _ = _make_backend(output_sample_rate=24000, block_duration_ms=20, **kwargs)
+    session = await backend.connect("room-1", "user-1", "voice-1")
+    await backend.accept(session, None)
+    return backend, session
+
+
+class TestRealtimePrebuffer:
+    """Default prebuffer: 120ms = 5760 bytes; one block = 960 bytes."""
+
+    async def test_priming_holds_silence_below_prebuffer(self) -> None:
+        backend, session = await _rt_backend()
+        await backend.send_audio(session, _PCM * (2880 // 2))  # 60ms < 120ms
+        assert _drain_block(backend) == b"\x00" * _BLOCK
+        assert backend._rt_buffered_bytes == 2880  # nothing consumed
+
+    async def test_priming_releases_at_prebuffer_threshold(self) -> None:
+        backend, session = await _rt_backend()
+        await backend.send_audio(session, _PCM * (5760 // 2))  # exactly 120ms
+        # Drain starts in the same callback as the release — no wasted block.
+        assert _drain_block(backend) == _PCM * (_BLOCK // 2)
+        assert backend._rt_buffered_bytes == 5760 - _BLOCK
+
+    async def test_short_response_drains_on_end_of_response(self) -> None:
+        backend, session = await _rt_backend()
+        await backend.send_audio(session, _PCM * 400)  # 800B, far below prebuffer
+        assert _drain_block(backend) == b"\x00" * _BLOCK  # still priming
+        backend.end_of_response(session)
+        out = _drain_block(backend)
+        assert out[:800] == _PCM * 400
+        assert out[800:] == b"\x00" * (_BLOCK - 800)
+        assert backend.rt_underruns == 0  # clean end, not starvation
+        assert backend._rt_response_complete is False  # consumed by the drain
+
+    async def test_end_of_response_noop_while_draining(self) -> None:
+        backend, session = await _rt_backend()
+        await backend.send_audio(session, _PCM * (5760 * 2 // 2))
+        assert _drain_block(backend) == _PCM * (_BLOCK // 2)
+        backend.end_of_response(session)
+        # Mid-drain the flag changes nothing — audio keeps flowing normally.
+        assert _drain_block(backend) == _PCM * (_BLOCK // 2)
+
+    async def test_underrun_counts_and_reprimes(self) -> None:
+        backend, session = await _rt_backend()
+        await backend.send_audio(session, _PCM * (5760 // 2))
+        for _ in range(6):  # 5760 / 960 = 6 full blocks
+            _drain_block(backend)
+        assert backend.rt_underruns == 0
+        _drain_block(backend)  # starved mid-response (no end_of_response)
+        assert backend.rt_underruns == 1
+        # Re-primed: a sub-prebuffer append stays silent again.
+        await backend.send_audio(session, _PCM * (_BLOCK // 2))
+        assert _drain_block(backend) == b"\x00" * _BLOCK
+
+    async def test_clean_end_no_underrun(self) -> None:
+        backend, session = await _rt_backend()
+        await backend.send_audio(session, _PCM * (5760 // 2))
+        backend.end_of_response(session)
+        for _ in range(7):  # 6 audio blocks + 1 exhaustion block
+            _drain_block(backend)
+        assert backend.rt_underruns == 0
+
+    async def test_interrupt_during_priming_discards_partial(self) -> None:
+        backend, session = await _rt_backend()
+        await backend.send_audio(session, _PCM * (2880 // 2))
+        backend.interrupt(session)
+        assert backend._rt_buffered_bytes == 0
+        assert _drain_block(backend) == b"\x00" * _BLOCK
+        # First append clears the interrupt flag but must re-prime from zero.
+        await backend.send_audio(session, _PCM * (_BLOCK // 2))
+        assert backend._rt_interrupted is False
+        assert _drain_block(backend) == b"\x00" * _BLOCK
+        assert backend._rt_buffered_bytes == _BLOCK
+
+    async def test_stale_end_of_response_ignored_after_interrupt(self) -> None:
+        backend, session = await _rt_backend()
+        backend.interrupt(session)
+        backend.end_of_response(session)  # Gemini fires response_end on barge-in
+        assert backend._rt_response_complete is False
+        await backend.send_audio(session, _PCM * (_BLOCK // 2))
+        # Without the guard, the stale EOR would release this audio early.
+        assert _drain_block(backend) == b"\x00" * _BLOCK
+
+    async def test_prime_idle_valve_flushes_partial_buffer(self) -> None:
+        backend, session = await _rt_backend()
+        await backend.send_audio(session, _PCM * 400)  # 800B, EOR never arrives
+        for _ in range(5):  # _rt_prime_max_idle_blocks = 100ms / 20ms = 5
+            assert _drain_block(backend) == b"\x00" * _BLOCK
+        out = _drain_block(backend)  # valve fires after ~100ms of priming
+        assert out[:800] == _PCM * 400
+
+    async def test_accept_after_disconnect_replays(self) -> None:
+        backend, session = await _rt_backend()
+        await backend.disconnect(session)
+        session2 = await backend.connect("room-1", "user-2", "voice-1")
+        await backend.accept(session2, None)
+        await backend.send_audio(session2, _PCM * (_BLOCK // 2))
+        # _rt_closing used to persist across sessions and drop everything.
+        assert backend._rt_buffered_bytes == _BLOCK
+
+    async def test_priming_idle_releases_half_duplex_mute(self) -> None:
+        backend, session = await _rt_backend()  # mute_mic_during_playback=True
+        await backend.send_audio(session, _PCM * (5760 // 2))
+        backend.end_of_response(session)
+        for _ in range(8):  # full drain + idle priming callback
+            _drain_block(backend)
+        assert backend._playing_sessions == set()
+
+    async def test_prebuffer_zero_plays_first_byte(self) -> None:
+        backend, session = await _rt_backend(rt_prebuffer_ms=0)
+        await backend.send_audio(session, _PCM * 100)  # 200B, tiny
+        out = _drain_block(backend)
+        assert out[:200] == _PCM * 100  # legacy play-immediately behavior

@@ -110,6 +110,11 @@ class LocalAudioBackend(VoiceBackend):
             while the speaker is playing (half-duplex).  Prevents echo
             from triggering VAD and false barge-ins when using speakers
             instead of headphones.
+        rt_prebuffer_ms: Audio to accumulate before starting (or resuming
+            after an underrun) realtime speaker playback.  Absorbs burst
+            jitter from realtime providers the same way the SIP pacer's
+            prebuffer does — without it, any momentary starvation inserts
+            an audible mid-sentence gap.  ``0`` plays from the first byte.
     """
 
     def __init__(
@@ -123,6 +128,7 @@ class LocalAudioBackend(VoiceBackend):
         output_device: int | str | None = None,
         aec: AECProvider | None = None,
         mute_mic_during_playback: bool = True,
+        rt_prebuffer_ms: int = 120,
     ) -> None:
         self._sd = _import_sounddevice()
 
@@ -177,6 +183,25 @@ class LocalAudioBackend(VoiceBackend):
         # drops incoming audio.  Set by interrupt(), cleared on next
         # response_start (via send_audio when _playing_sessions is empty).
         self._rt_interrupted = False
+        # Prebuffer priming: while True, the callback outputs silence until
+        # the buffer holds rt_prebuffer_ms of audio (or the response is
+        # complete / the idle valve fires).  Re-armed on every underrun so
+        # starvation produces one rare re-prime instead of scattered gaps.
+        self._rt_prebuffer_bytes = int(output_sample_rate * channels * 2 * rt_prebuffer_ms / 1000)
+        self._rt_priming = True
+        # Set by end_of_response(): allows draining a final partial buffer
+        # smaller than the prebuffer (short responses).
+        self._rt_response_complete = False
+        # Running total of queued-unplayed bytes — O(1) check in the
+        # callback instead of summing the deque under the lock every block.
+        self._rt_buffered_bytes = 0
+        # Mid-response starvation counter (see rt_underruns property).
+        self._rt_underruns = 0
+        # Missing end_of_response safety valve: after ~100ms of priming with
+        # no new audio appended, drain whatever is buffered (mirrors the SIP
+        # pacer's 0.1s accumulate-then-burst timeout).
+        self._rt_prime_idle_blocks = 0
+        self._rt_prime_max_idle_blocks = max(1, 100 // block_duration_ms)
 
         # --- AEC (transport-level reference feeding) ---
         self._aec = aec
@@ -427,8 +452,13 @@ class LocalAudioBackend(VoiceBackend):
                     was_interrupted = self._rt_interrupted
                     self._rt_interrupted = False
                     self._rt_output_buffer.append(audio)
+                    self._rt_buffered_bytes += len(audio)
+                    # New audio means a response is in flight: a stale
+                    # end-of-response must not release the priming gate early.
+                    self._rt_response_complete = False
+                    self._rt_prime_idle_blocks = 0
                 if was_interrupted:
-                    logger.info("[INTERRUPT] cleared — speaker resumed")
+                    logger.info("[INTERRUPT] cleared — buffering for resume")
             return
 
         # VoiceChannel path
@@ -681,8 +711,22 @@ class LocalAudioBackend(VoiceBackend):
         except RuntimeError:
             self._loop = None
 
-        # Create persistent speaker output stream (callback-driven)
+        # Re-arm after a prior disconnect() — _rt_closing persists across
+        # sessions and would silently drop every send_audio() that follows.
+        self._rt_closing.clear()
+
+        # Create persistent speaker output stream (callback-driven).
+        # State reset is gated on stream creation: a second accept() while
+        # another session is mid-playback must not clobber the live buffer.
         if self._rt_output_stream is None:
+            with self._rt_buf_lock:
+                self._rt_output_buffer.clear()
+                self._rt_buf_offset = 0
+                self._rt_buffered_bytes = 0
+                self._rt_priming = True
+                self._rt_response_complete = False
+                self._rt_prime_idle_blocks = 0
+                self._rt_interrupted = False
             self._start_rt_output()
 
         await self.start_listening(session)
@@ -697,6 +741,10 @@ class LocalAudioBackend(VoiceBackend):
             queued = len(self._rt_output_buffer)
             self._rt_output_buffer.clear()
             self._rt_buf_offset = 0
+            self._rt_buffered_bytes = 0
+            self._rt_priming = True
+            self._rt_response_complete = False
+            self._rt_prime_idle_blocks = 0
             self._rt_interrupted = True
         logger.info(
             "[INTERRUPT] flushed %d chunks, speaker muted (session %s)",
@@ -707,6 +755,32 @@ class LocalAudioBackend(VoiceBackend):
         task = self._playback_tasks.pop(session.id, None)
         if task is not None:
             task.cancel()
+
+    def end_of_response(self, session: VoiceSession) -> None:
+        """Mark the AI response complete — release a partial prebuffer.
+
+        Lets the speaker callback drain a final buffer smaller than the
+        prebuffer threshold (short responses).  Ignored while interrupted:
+        providers fire response_end on barge-in too (e.g. Gemini's
+        ``interrupted`` message), and that stale signal must not release
+        the priming gate for the next response.
+        """
+        if not self._realtime_mode:
+            return
+        with self._rt_buf_lock:
+            if self._rt_interrupted:
+                return
+            self._rt_response_complete = True
+
+    @property
+    def rt_underruns(self) -> int:
+        """Mid-response speaker buffer starvations (realtime path).
+
+        Each underrun re-arms the prebuffer, converting scattered silence
+        gaps into one re-prime; a non-zero count means audio chunks are
+        arriving slower than real time (event-loop or network pressure).
+        """
+        return self._rt_underruns
 
     def set_input_muted(self, session: VoiceSession, muted: bool) -> None:
         """Mute/unmute the microphone input for a session."""
@@ -777,6 +851,7 @@ class LocalAudioBackend(VoiceBackend):
 
         bytes_needed = frames * self._channels * 2
         written = 0
+        underrun_no = 0
 
         with self._rt_buf_lock:
             # When interrupted, output silence immediately — don't drain
@@ -785,6 +860,32 @@ class LocalAudioBackend(VoiceBackend):
             if self._rt_interrupted:
                 outdata[:bytes_needed] = b"\x00" * bytes_needed
                 return
+
+            # Priming: hold silence until enough audio is buffered to ride
+            # out provider burst jitter.  Released early when the response
+            # is complete (short responses) or after ~100ms without a new
+            # append (missing end-of-response valve).
+            if self._rt_priming:
+                release = (
+                    self._rt_buffered_bytes >= max(self._rt_prebuffer_bytes, 1)
+                    or (self._rt_response_complete and self._rt_buffered_bytes > 0)
+                    or (
+                        self._rt_buffered_bytes > 0
+                        and self._rt_prime_idle_blocks >= self._rt_prime_max_idle_blocks
+                    )
+                )
+                if not release:
+                    self._rt_prime_idle_blocks += 1
+                    outdata[:bytes_needed] = b"\x00" * bytes_needed
+                    if self._rt_buffered_bytes == 0:
+                        # Idle between responses (not mid-prime): release the
+                        # half-duplex mic mute, as the drain tail used to.
+                        for sid in list(self._playing_sessions):
+                            self._playing_sessions.discard(sid)
+                    return
+                # Drain starts in this same callback — no wasted silent block.
+                self._rt_priming = False
+                self._rt_prime_idle_blocks = 0
 
             buf = self._rt_output_buffer
             while written < bytes_needed and buf:
@@ -798,10 +899,30 @@ class LocalAudioBackend(VoiceBackend):
                 if self._rt_buf_offset >= len(chunk):
                     buf.popleft()
                     self._rt_buf_offset = 0
+            self._rt_buffered_bytes -= written
+
+            if written < bytes_needed:
+                # Buffer exhausted mid-block: re-arm the prebuffer.  A clean
+                # end (response complete) is expected; anything else is a
+                # mid-response starvation — count it.
+                self._rt_priming = True
+                self._rt_prime_idle_blocks = 0
+                if self._rt_response_complete:
+                    self._rt_response_complete = False
+                else:
+                    self._rt_underruns += 1
+                    underrun_no = self._rt_underruns
 
         # Fill remaining with silence
         if written < bytes_needed:
             outdata[written:] = b"\x00" * (bytes_needed - written)
+
+        # Log outside the lock, capped like the SIP pacer's underrun warnings.
+        if underrun_no and underrun_no <= 5:
+            logger.warning(
+                "Speaker underrun #%d — buffer starved mid-response, re-priming",
+                underrun_no,
+            )
 
         # AEC: feed the output frame as reference — but only when audio
         # was actually written AND mic is not muted.  Feeding silence
@@ -837,6 +958,10 @@ class LocalAudioBackend(VoiceBackend):
         with self._rt_buf_lock:
             self._rt_output_buffer.clear()
             self._rt_buf_offset = 0
+            self._rt_buffered_bytes = 0
+            self._rt_priming = True
+            self._rt_response_complete = False
+            self._rt_prime_idle_blocks = 0
         out = self._rt_output_stream
         if out is not None:
             self._rt_output_stream = None
