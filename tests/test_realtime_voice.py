@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -476,6 +476,91 @@ class TestTranscriptionHooks:
             if isinstance(e.content, TextContent) and e.content.body == "Should be blocked"
         ]
         assert len(text_events) == 0
+
+
+class TestHookContextSkip:
+    """Hot paths skip _build_context entirely when no hooks are registered.
+
+    Partial transcriptions stream continuously while the AI speaks and
+    speech events fire on every turn boundary — building a RoomContext
+    (full recent-events load) for a no-op hook dispatch starves the
+    event loop on long sessions.
+    """
+
+    async def test_partial_transcription_skips_context_without_hooks(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+    ) -> None:
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        with patch.object(kit, "_build_context", wraps=kit._build_context) as spy:
+            await provider.simulate_transcription(session, "Hel", "user", False)
+            await asyncio.sleep(0.1)
+
+        spy.assert_not_called()
+
+    async def test_partial_transcription_fires_hook_when_registered(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+    ) -> None:
+        seen: list[str] = []
+
+        @kit.hook(HookTrigger.ON_PARTIAL_TRANSCRIPTION, HookExecution.ASYNC)
+        async def on_partial(event: object, ctx: RoomContext) -> None:
+            seen.append(event.text)  # type: ignore[attr-defined]
+
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        await provider.simulate_transcription(session, "Hel", "user", False)
+        await asyncio.sleep(0.1)
+
+        assert seen == ["Hel"]
+
+    async def test_speech_events_skip_context_without_hooks(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+    ) -> None:
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        with patch.object(kit, "_build_context", wraps=kit._build_context) as spy:
+            await provider.simulate_speech_start(session)
+            await provider.simulate_speech_end(session)
+            await asyncio.sleep(0.1)
+
+        spy.assert_not_called()
+
+    async def test_speech_hooks_fire_when_registered(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+    ) -> None:
+        order: list[str] = []
+
+        @kit.hook(HookTrigger.ON_SPEECH_START, HookExecution.ASYNC)
+        async def on_start(event: object, ctx: RoomContext) -> None:
+            order.append("start")
+
+        @kit.hook(HookTrigger.ON_SPEECH_END, HookExecution.ASYNC)
+        async def on_end(event: object, ctx: RoomContext) -> None:
+            order.append("end")
+
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        await provider.simulate_speech_start(session)
+        await asyncio.sleep(0.05)
+        await provider.simulate_speech_end(session)
+        await asyncio.sleep(0.1)
+
+        assert order == ["start", "end"]
 
 
 class TestSelfLoopPrevention:

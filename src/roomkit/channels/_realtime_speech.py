@@ -230,18 +230,21 @@ class RealtimeSpeechMixin:
 
         _, _tok = self._rt_span_ctx(session.id)
         try:
-            context = await self._framework._build_context(room_id)
             trigger = (
                 HookTrigger.ON_SPEECH_START if event_type == "start" else HookTrigger.ON_SPEECH_END
             )
 
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                trigger,
-                session,
-                context,
-                skip_event_filter=True,
-            )
+            # Skip expensive _build_context when no hooks are registered —
+            # speech events fire on every user turn boundary.
+            if self._framework.hook_engine.has_hooks(trigger):
+                context = await self._framework._build_context(room_id)
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    trigger,
+                    session,
+                    context,
+                    skip_event_filter=True,
+                )
 
             await self._send_client_message(
                 session,
