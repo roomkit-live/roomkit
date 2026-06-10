@@ -241,3 +241,105 @@ async def test_thinking_markers_stream_inline_before_text() -> None:
     assert [c for c in display if isinstance(c, str)] == ["The ", "answer ", "is 2."]
 
     await kit.close()
+
+
+async def test_thinking_coalescer_batches_by_size_without_loss() -> None:
+    """Deltas batch into size-bounded publishes; concatenation stays lossless."""
+    from roomkit.channels._ai_streaming import _ThinkingCoalescer
+
+    published: list[str] = []
+
+    async def publish(event_type: object, room_id: object, text: str, round_idx: int) -> None:
+        assert event_type == EphemeralEventType.THINKING_DELTA
+        assert room_id == "r1"
+        assert round_idx == 0
+        published.append(text)
+
+    # flush_ms huge so only the 16-char size threshold fires (deterministic).
+    coalescer = _ThinkingCoalescer(publish, "r1", 0, flush_ms=1e9, flush_chars=16)
+    for _ in range(10):
+        await coalescer.add("aaaa")  # 4 chars each, 40 total
+    await coalescer.flush()  # residual
+
+    # 40 chars at a 16-char window: 16 + 16 + 8 = three publishes, far fewer
+    # than the ten input deltas, and nothing dropped.
+    assert len(published) == 3
+    assert "".join(published) == "a" * 40
+
+
+async def test_thinking_coalescer_disabled_publishes_each_delta() -> None:
+    """flush_ms=0 disables batching: one publish per delta (pre-coalescing path)."""
+    from roomkit.channels._ai_streaming import _ThinkingCoalescer
+
+    published: list[str] = []
+
+    async def publish(event_type: object, room_id: object, text: str, round_idx: int) -> None:
+        published.append(text)
+
+    coalescer = _ThinkingCoalescer(publish, "r1", 0, flush_ms=0, flush_chars=256)
+    for chunk in ["a", "b", "c"]:
+        await coalescer.add(chunk)
+
+    assert published == ["a", "b", "c"]
+
+
+async def test_thinking_coalescer_flush_empty_is_noop() -> None:
+    """Flushing an empty buffer publishes nothing — no stray events at boundaries."""
+    from roomkit.channels._ai_streaming import _ThinkingCoalescer
+
+    published: list[object] = []
+
+    async def publish(*args: object) -> None:
+        published.append(args)
+
+    coalescer = _ThinkingCoalescer(publish, "r1", 0, flush_ms=1e9, flush_chars=16)
+    await coalescer.flush()
+    assert published == []
+
+
+async def test_streaming_coalesces_thinking_deltas_on_the_bus() -> None:
+    """Simple streaming path batches THINKING_DELTA on the bus, lossless, END intact."""
+    provider = _ChunkedThinkingProvider(
+        thinking_chunks=["aaaa"] * 10,  # 40 chars of reasoning across 10 deltas
+        text_chunks=["done"],
+    )
+    kit = RoomKit()
+
+    sink = _CollectingStreamChannel("sink1")
+    # flush_ms huge → only the 16-char size threshold fires (deterministic).
+    ai = AIChannel(
+        "ai1",
+        provider=provider,
+        thinking_budget=4096,
+        thinking_coalesce_ms=1e9,
+        thinking_coalesce_chars=16,
+    )
+    kit.register_channel(sink)
+    kit.register_channel(ai)
+
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sink1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+
+    received: list[EphemeralEvent] = []
+
+    async def on_event(ev: EphemeralEvent) -> None:
+        received.append(ev)
+
+    await kit.realtime.subscribe_to_room("r1", on_event)
+
+    await kit.process_inbound(
+        InboundMessage(channel_id="sink1", sender_id="u1", content=TextContent(body="hi"))
+    )
+    await asyncio.sleep(0.05)
+
+    deltas = [e for e in received if e.type == EphemeralEventType.THINKING_DELTA]
+    ends = [e for e in received if e.type == EphemeralEventType.THINKING_END]
+
+    # Ten input deltas coalesce into fewer bus publishes, with no reasoning lost.
+    assert 0 < len(deltas) < 10
+    assert "".join(e.data["thinking"] for e in deltas) == "a" * 40
+    assert len(ends) == 1
+    assert ends[0].data["thinking"] == "a" * 40
+
+    await kit.close()

@@ -158,6 +158,8 @@ class AIChannel(
         tool_loop_timeout_seconds: float | None = 300.0,
         tool_loop_warn_after: int = 50,
         max_empty_retries: int = 1,
+        thinking_coalesce_ms: float = 80.0,
+        thinking_coalesce_chars: int = 256,
         retry_policy: RetryPolicy | None = None,
         fallback_provider: AIProvider | None = None,
         skills: SkillRegistry | None = None,
@@ -188,6 +190,12 @@ class AIChannel(
         self._tool_loop_timeout_seconds = tool_loop_timeout_seconds
         self._tool_loop_warn_after = tool_loop_warn_after
         self._max_empty_retries = max_empty_retries
+        # Reasoning-stream coalescing window — see _ThinkingCoalescer. Per-token
+        # thinking deltas are batched into one realtime publish per window so a
+        # long reasoning trace costs 10-100x fewer ephemeral events + WS sends
+        # while staying visibly real-time. 0 ms disables (publish every delta).
+        self._thinking_coalesce_ms = thinking_coalesce_ms
+        self._thinking_coalesce_chars = thinking_coalesce_chars
         self._retry_policy = retry_policy
         self._fallback_provider = fallback_provider
         self._skills = skills
