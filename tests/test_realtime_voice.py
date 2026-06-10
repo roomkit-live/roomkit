@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -363,6 +364,66 @@ class TestToolCalls:
         assert len(provider.tool_results) == 1
         _session_id, _call_id, submitted = provider.tool_results[0]
         assert submitted == small_result
+
+    async def test_dict_tool_result_serialized(
+        self,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """A non-str handler result is JSON-serialized before submission."""
+
+        async def dict_handler(name: str, arguments: dict[str, Any]) -> Any:
+            return {"status": "ok", "value": 42}
+
+        ch = RealtimeVoiceChannel(
+            "rt-dict",
+            provider=provider,
+            transport=transport,
+            tool_handler=dict_handler,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-dict")
+        session = await ch.start_session(room.id, "user-1", "fake-ws")
+
+        await provider.simulate_tool_call(session, "call-d", "dict_tool", {})
+        await asyncio.sleep(0.1)
+
+        assert len(provider.tool_results) == 1
+        assert provider.tool_results[0][2] == '{"status": "ok", "value": 42}'
+
+    async def test_slow_result_serialization_warns(
+        self,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Serialization past the loop-segment budget logs an actionable warning."""
+        monkeypatch.setattr("roomkit.channels._realtime_tools._LOOP_SEGMENT_BUDGET_S", -1.0)
+
+        async def dict_handler(name: str, arguments: dict[str, Any]) -> Any:
+            return {"big": "payload"}
+
+        ch = RealtimeVoiceChannel(
+            "rt-slowser",
+            provider=provider,
+            transport=transport,
+            tool_handler=dict_handler,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-slowser")
+        session = await ch.start_session(room.id, "user-1", "fake-ws")
+
+        with caplog.at_level(logging.WARNING, logger="roomkit.channels.realtime_voice"):
+            await provider.simulate_tool_call(session, "call-w", "big_tool", {})
+            await asyncio.sleep(0.1)
+
+        assert any("held the event loop" in r.message for r in caplog.records)
+        assert len(provider.tool_results) == 1  # result still submitted
 
 
 class TestSpeakingIndicators:

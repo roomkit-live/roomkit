@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import threading
+import time
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._skill_constants import TOOL_ACTIVATE_SKILL
@@ -19,6 +20,14 @@ if TYPE_CHECKING:
     from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 logger = logging.getLogger("roomkit.channels.realtime_voice")
+
+_LOOP_SEGMENT_BUDGET_S = 0.050
+"""Sync work on the event loop past this delays realtime pacing.
+
+The SIP pacer's jitter headroom is 60ms — one fused stretch beyond it is
+an audible drop-out on a concurrent call.  Tool-call segments are timed
+individually so the culprit is named in the logs without an asyncio
+set_debug hunt."""
 
 
 @runtime_checkable
@@ -260,12 +269,38 @@ class RealtimeToolsMixin:
                 )
                 from roomkit.channels._realtime_context import _current_voice_session
 
+                t_seg = time.perf_counter()
                 token = _current_voice_session.set(session)
                 try:
                     raw = await self._tool_handler(name, arguments)
                 finally:
                     _current_voice_session.reset(token)
+                logger.debug(
+                    "tool %s handler segment: %.0fms wall",
+                    name,
+                    (time.perf_counter() - t_seg) * 1000,
+                )
+
+                t_seg = time.perf_counter()
                 handler_result = raw if isinstance(raw, str) else json.dumps(raw)
+                ser_s = time.perf_counter() - t_seg
+                if ser_s > _LOOP_SEGMENT_BUDGET_S:
+                    # Pure sync CPU (wall == loop hold), and it runs on the
+                    # FULL result before truncation caps it.
+                    logger.warning(
+                        "Tool %s result serialization held the event loop for "
+                        "%.0fms (%d chars, budget ~%.0fms) — concurrent "
+                        "realtime audio may underrun; return a string or a "
+                        "compact reference instead of a large object",
+                        name,
+                        ser_s * 1000,
+                        len(handler_result),
+                        _LOOP_SEGMENT_BUDGET_S * 1000,
+                    )
+                # Yield so realtime pacing gets a slot between the handler
+                # segment and hook dispatch — sync hooks run inline next and
+                # would otherwise fuse with this segment into one loop step.
+                await asyncio.sleep(0)
 
             # Run ON_TOOL_CALL hook (if framework + room).
             from roomkit.models.tool_call import ToolCallEvent
@@ -285,6 +320,9 @@ class RealtimeToolsMixin:
                 result_str = await self._fire_tool_hook(
                     tool_event, room_id, handler_result, name, call_id, session
                 )
+                # Same reason as the post-handler yield: don't fuse hook
+                # dispatch with submission into one loop step.
+                await asyncio.sleep(0)
             elif handler_result is not None:
                 result_str = handler_result
             else:
@@ -331,6 +369,7 @@ class RealtimeToolsMixin:
     ) -> str:
         """Fire ON_TOOL_CALL hook and determine final result."""
         assert self._framework is not None  # guarded by caller  # noqa: S101
+        t_seg = time.perf_counter()
         context = await self._framework._build_context(room_id)
         hook_result = await self._framework.hook_engine.run_sync_hooks(
             room_id,
@@ -338,6 +377,12 @@ class RealtimeToolsMixin:
             tool_event,
             context,
             skip_event_filter=True,
+        )
+        # Wall time, not loop hold — sync hooks may legitimately await I/O.
+        logger.debug(
+            "tool %s ON_TOOL_CALL segment: %.0fms wall",
+            name,
+            (time.perf_counter() - t_seg) * 1000,
         )
 
         if not hook_result.allowed:
