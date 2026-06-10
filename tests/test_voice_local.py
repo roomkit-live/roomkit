@@ -535,7 +535,7 @@ class TestRealtimePrebuffer:
         backend, session = await _rt_backend(rt_prebuffer_ms=0)
         await backend.send_audio(session, _PCM * 100)  # 200B, tiny
         out = _drain_block(backend)
-        assert out[:200] == _PCM * 100  # legacy play-immediately behavior
+        assert out[:200] == _PCM * 100  # no priming: plays from the first byte
 
 
 class TestContinuousPlayedCallbacks:

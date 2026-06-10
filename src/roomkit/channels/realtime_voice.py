@@ -179,9 +179,9 @@ class RealtimeVoiceChannel(
                 into the initial ``system_instruction`` at session start;
                 ``activate_skill`` becomes a declarative ACK and no
                 ``provider.reconfigure`` is needed. ``"on_demand"``
-                keeps the legacy behavior: only metadata is in the
-                prompt, ``activate_skill`` loads the body via
-                ``provider.reconfigure``. Defaults to ``"inline_full"``
+                puts only metadata in the prompt; ``activate_skill``
+                loads the body via ``provider.reconfigure``.
+                Defaults to ``"inline_full"``
                 when the provider reports
                 ``supports_mid_session_reconfigure=False`` (e.g.
                 Gemini 3.x Flash Live), ``"on_demand"`` otherwise.
@@ -258,8 +258,8 @@ class RealtimeVoiceChannel(
         # otherwise from the provider's reconfigure capability: providers
         # that cannot safely reconfigure mid-session (Gemini 3.x) must
         # default to ``inline_full`` so every skill body is in the
-        # initial system_instruction. Others keep the legacy ``on_demand``
-        # behavior so the prompt stays short until a skill is activated.
+        # initial system_instruction. Others default to ``on_demand`` so
+        # the prompt stays short until a skill is activated.
         self._skill_support: RealtimeSkillSupport | None = None
         if skills and skills.skill_count > 0:
             from roomkit.channels._realtime_skills import RealtimeSkillSupport
