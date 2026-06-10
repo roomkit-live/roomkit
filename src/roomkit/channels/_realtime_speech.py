@@ -6,6 +6,7 @@ import asyncio
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.enums import HookTrigger
@@ -31,6 +32,7 @@ class RealtimeSpeechHost(Protocol):
         _barge_in_active: Session IDs with an active barge-in.
         _last_assistant_text: Last assistant utterance per session.
         _session_resamplers: Per-session (inbound, outbound) resampler pairs.
+        _resample_executor: Single-thread executor owning resampler state.
         _has_pipeline_vad: Per-session flag — whether local pipeline VAD is active.
         _last_input_level_at: Timestamp of last input audio level hook.
         _last_output_level_at: Timestamp of last output audio level hook.
@@ -53,6 +55,7 @@ class RealtimeSpeechHost(Protocol):
     _barge_in_active: set[str]
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
+    _resample_executor: ThreadPoolExecutor | None
     _has_pipeline_vad: dict[str, bool]
     _last_input_level_at: float
     _last_output_level_at: float
@@ -87,6 +90,7 @@ class RealtimeSpeechMixin:
     _barge_in_active: set[str]
     _last_assistant_text: dict[str, str]
     _session_resamplers: dict[str, Any]
+    _resample_executor: ThreadPoolExecutor | None
     _has_pipeline_vad: dict[str, bool]
     _last_input_level_at: float
     _last_output_level_at: float
@@ -122,10 +126,16 @@ class RealtimeSpeechMixin:
             is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
             if is_barge_in:
                 self._barge_in_active.add(session.id)
-            # Reset outbound resampler inside lock to prevent race with
-            # concurrent _resample_outbound_with calls.
+            # Reset the outbound resampler through the resample executor:
+            # FIFO behind any in-flight resample, so the reset never races
+            # state mutation. Stale outputs are discarded by the generation
+            # check in _send_outbound_audio.
             if resamplers:
-                resamplers[1].reset()
+                ex = self._resample_executor
+                if ex is not None:
+                    ex.submit(resamplers[1].reset)
+                else:
+                    resamplers[1].reset()
         self._update_idle_event(session.id)
 
         if is_barge_in:

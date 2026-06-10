@@ -8,6 +8,7 @@ import contextvars
 import logging
 import threading
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -330,6 +331,10 @@ class RealtimeVoiceChannel(
 
         # Per-session resamplers: (inbound, outbound) pairs
         self._session_resamplers: dict[str, tuple[Any, Any]] = {}
+        # Single-thread executor owning every resampler state mutation
+        # (resample/flush/reset/close) — created lazily by the audio mixin,
+        # shut down in close(). FIFO keeps frames ordered and state safe.
+        self._resample_executor: ThreadPoolExecutor | None = None
         # Per-session transport sample rates (from transport metadata)
         self._session_transport_rates: dict[str, int] = {}
         # Audio forward counters (for diagnostics)
@@ -978,11 +983,21 @@ class RealtimeVoiceChannel(
             telemetry.flush()
 
         if resamplers:
-            for r in resamplers:
-                try:
-                    r.close()
-                except Exception:
-                    logger.exception("Error closing resampler for session %s", session.id)
+
+            def _close_resamplers() -> None:
+                for r in resamplers:
+                    try:
+                        r.close()
+                    except Exception:
+                        logger.exception("Error closing resampler for session %s", session.id)
+
+            # Through the resample executor: FIFO behind any in-flight
+            # resample, so close never races state mutation.
+            ex = self._resample_executor
+            if ex is not None:
+                ex.submit(_close_resamplers)
+            else:
+                _close_resamplers()
 
         # Fire framework event
         if self._framework:
@@ -1208,6 +1223,12 @@ class RealtimeVoiceChannel(
             except TimeoutError:
                 logger.warning("Timed out waiting for %d tasks during close", len(tasks))
         self._scheduled_tasks.clear()
+
+        # Queued resampler close jobs still run; sessions are already ended
+        # so nothing new can be queued.
+        if self._resample_executor is not None:
+            self._resample_executor.shutdown(wait=False)
+            self._resample_executor = None
 
         try:
             await self._provider.close()
