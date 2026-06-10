@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`thinking_coalesce_ms` / `thinking_coalesce_chars` on `AIChannel`
+  (defaults `80.0` / `256`).** Reasoning models emit one thinking delta per
+  token, and publishing each on the realtime bus costs one ephemeral event +
+  fan-out + WS serialise per token — thousands for a long trace, all on the
+  shared event loop. Deltas are batched into one `THINKING_DELTA` publish
+  per time/size window, cutting bus traffic 10-100x while the reasoning
+  stays visibly real-time; clients append deltas, so a coalesced delta
+  renders identically. Flushes larger than the per-event preview cap split
+  into multiple publishes, so no reasoning text is ever truncated.
+  `thinking_coalesce_ms=0` restores one publish per delta. The complete
+  trace still arrives at `THINKING_END`, and the inline
+  `ThinkingDeltaMarker` stream is unaffected.
+
+### Changed
+
+- **RTP and SIP extras require `aiortp>=0.3.2`, which vectorises every audio
+  codec.** G.711 µ-law/A-law run without a per-sample Python loop (encode
+  3x, decode 21x), the G.722 wrapper hands the C extension int16 buffers
+  instead of boxing every sample (1.4-1.7x including codec time), and L16
+  byteswaps in one C-speed pass (12x) — cutting per-frame codec CPU on the
+  SIP/RTP voice path. Wideband G.722 negotiation needs the `G722` package
+  (`pip install aiortp[g722]`, now `>=1.2.3`).
+
 ## [0.9.0] — 2026-06-10
 
 Realtime voice audio-quality release. A field investigation of intermittent
