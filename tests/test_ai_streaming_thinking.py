@@ -283,6 +283,30 @@ async def test_thinking_coalescer_disabled_publishes_each_delta() -> None:
     assert published == ["a", "b", "c"]
 
 
+async def test_thinking_coalescer_flush_splits_at_preview_limit() -> None:
+    """A flush larger than the publish preview cap splits losslessly, never truncates."""
+    from roomkit.channels._ai_events import THINKING_PREVIEW_LIMIT
+    from roomkit.channels._ai_streaming import _ThinkingCoalescer
+
+    published: list[str] = []
+
+    async def publish(event_type: object, room_id: object, text: str, round_idx: int) -> None:
+        published.append(text)
+
+    # Threshold above the preview cap: one buffered batch exceeds what a
+    # single publish may carry.
+    coalescer = _ThinkingCoalescer(
+        publish, "r1", 0, flush_ms=1e9, flush_chars=THINKING_PREVIEW_LIMIT * 3
+    )
+    text = "x" * (THINKING_PREVIEW_LIMIT * 2 + 500)
+    await coalescer.add(text)
+    await coalescer.flush()
+
+    assert len(published) == 3
+    assert all(len(p) <= THINKING_PREVIEW_LIMIT for p in published)
+    assert "".join(published) == text
+
+
 async def test_thinking_coalescer_flush_empty_is_noop() -> None:
     """Flushing an empty buffer publishes nothing — no stray events at boundaries."""
     from roomkit.channels._ai_streaming import _ThinkingCoalescer

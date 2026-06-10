@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.channels._ai_events import THINKING_PREVIEW_LIMIT
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
@@ -53,8 +54,9 @@ class _ThinkingCoalescer:
     trace is still published verbatim at ``THINKING_END``.
 
     A window of ``0`` ms disables batching — every delta publishes immediately.
-    The size threshold stays below ``_publish_thinking_event``'s 1000-char
-    preview cap so a coalesced delta is never truncated.
+    Flushes larger than ``_publish_thinking_event``'s preview cap are split
+    into multiple publishes so a coalesced delta is never truncated, whatever
+    the configured size threshold.
     """
 
     def __init__(
@@ -94,9 +96,13 @@ class _ThinkingCoalescer:
         self._pending.clear()
         self._pending_len = 0
         self._last_publish = time.monotonic()
-        await self._publish(
-            EphemeralEventType.THINKING_DELTA, self._room_id, text, self._round_idx
-        )
+        for i in range(0, len(text), THINKING_PREVIEW_LIMIT):
+            await self._publish(
+                EphemeralEventType.THINKING_DELTA,
+                self._room_id,
+                text[i : i + THINKING_PREVIEW_LIMIT],
+                self._round_idx,
+            )
 
 
 @runtime_checkable
@@ -211,6 +217,16 @@ class AIStreamingMixin:
     _publish_tool_event: Any  # see AIStreamingHost
     _telemetry_provider: Any  # see AIStreamingHost
 
+    def _new_thinking_coalescer(self, room_id: str | None, round_idx: int) -> _ThinkingCoalescer:
+        """Coalescer bound to this channel's publish hook and window config."""
+        return _ThinkingCoalescer(
+            self._publish_thinking_event,
+            room_id,
+            round_idx,
+            flush_ms=self._thinking_coalesce_ms,
+            flush_chars=self._thinking_coalesce_chars,
+        )
+
     async def _start_streaming_response(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
@@ -254,13 +270,7 @@ class AIStreamingMixin:
         room_id = ai_context.room.room.id if ai_context.room else None
         thinking_parts: list[str] = []
         thinking_started = False
-        coalescer = _ThinkingCoalescer(
-            self._publish_thinking_event,
-            room_id,
-            0,
-            flush_ms=self._thinking_coalesce_ms,
-            flush_chars=self._thinking_coalesce_chars,
-        )
+        coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
 
         async for ev in self._provider.generate_structured_stream(ai_context):
             if isinstance(ev, StreamThinkingDelta):
@@ -390,13 +400,7 @@ class AIStreamingMixin:
                 text_parts: list[str] = []
                 tool_calls: list[StreamToolCall] = []
                 thinking_started = False
-                coalescer = _ThinkingCoalescer(
-                    self._publish_thinking_event,
-                    room_id,
-                    _round_idx,
-                    flush_ms=self._thinking_coalesce_ms,
-                    flush_chars=self._thinking_coalesce_chars,
-                )
+                coalescer = self._new_thinking_coalescer(room_id, round_idx=_round_idx)
                 _dedup_active = bool(_dedup_prefix)
                 _dedup_offset = 0
                 _dedup_buffer: list[str] = []
