@@ -281,11 +281,11 @@ wheels = [
 
 [[package]]
 name = "aiortp"
-version = "0.6.0"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b2/79/3e303642b6018065741f9f1560fbd5547d8e342a56c5b22838f0180f4729/aiortp-0.6.0.tar.gz", hash = "sha256:8385b9cc952a59f26defd9332eab567af14792f96fe7bb959b7c7853cbe58026", size = 79613, upload-time = "2026-06-11T11:14:52.14Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/be/ddecb9d9a1bf61dd7da7c1d2d3c98255303e87944bebd7e0cb1c6f7a44f0/aiortp-0.7.0.tar.gz", hash = "sha256:ed5c95288c05ea08fc805ef8cd45e97be45b598d873e55ee4ffcf09cd3ba1cc7", size = 81387, upload-time = "2026-06-11T14:21:21.376Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a8/e8/f561fd9c8f74369c9ffef779195e24f2ad45fb249f024123fe6b9130091a/aiortp-0.6.0-py3-none-any.whl", hash = "sha256:c97c933dbe14f28c3d445dbccbd628786d2762084b6e60a2a7dcea169c24b3c1", size = 56183, upload-time = "2026-06-11T11:14:51.128Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/28/2b58cb243d5273216983f76ba7aa632b159c60c6384eb96cba0a69fa77db/aiortp-0.7.0-py3-none-any.whl", hash = "sha256:c45557cb75267a99ab4b2cb3fd2393e513674cc8e6bfa7d77a162cf8c0da50bc", size = 57109, upload-time = "2026-06-11T14:21:20.375Z" },
 ]
 
 [[package]]
@@ -303,11 +303,11 @@ wheels = [
 
 [[package]]
 name = "aiosipua"
-version = "0.6.0"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/27/48/a27ed9bb62e17f364a03cb140661124c9c329da5e32a9ba330940c8ad6c6/aiosipua-0.6.0.tar.gz", hash = "sha256:4a248714e8d37a452d18ee9d859d0cf6e9ce280a801841ee65d2c3b871724ef9", size = 149392, upload-time = "2026-06-11T11:30:41.45Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/61/10cd8b05006666c98db1ae4165ac8e7073893fe7edc7d896c4e21594c20a/aiosipua-0.7.0.tar.gz", hash = "sha256:8d4d7fe79adeb11c333db5b9f8def131da93a85e6cdc13fb648af32568772083", size = 149895, upload-time = "2026-06-11T14:24:10.021Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/67/b15cf626b016cb2bdd21e6d28cc53300152313a97180307445fc6eac775f/aiosipua-0.6.0-py3-none-any.whl", hash = "sha256:13fa97aee8d414dacbc6d6dfaac21b46ac388b933c75f4b7795816731129fb42", size = 69639, upload-time = "2026-06-11T11:30:40.315Z" },
+    { url = "https://files.pythonhosted.org/packages/63/a5/5ba6da966a176f7ae09a16151a9c0bfd0b15a73f927ab3f90593261a0298/aiosipua-0.7.0-py3-none-any.whl", hash = "sha256:fcc6af9146a0b06c6876c2be8cba258c064df0a5636fdbf6e61f82c5cb10bb75", size = 69841, upload-time = "2026-06-11T14:24:08.966Z" },
 ]
 
 [package.optional-dependencies]
@@ -5224,11 +5224,11 @@ requires-dist = [
     { name = "aec-audio-processing", marker = "extra == 'webrtc-aec'", specifier = ">=0.1" },
     { name = "aic-sdk", marker = "extra == 'aicoustics'", specifier = ">=2.1" },
     { name = "aioquic", marker = "extra == 'webtransport'", specifier = ">=1.0" },
-    { name = "aiortp", marker = "extra == 'all'", specifier = ">=0.6.0" },
-    { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.6.0" },
-    { name = "aiortp", marker = "extra == 'sip'", specifier = ">=0.6.0" },
-    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'all'", specifier = ">=0.6.0" },
-    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.6.0" },
+    { name = "aiortp", marker = "extra == 'all'", specifier = ">=0.7.0" },
+    { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.7.0" },
+    { name = "aiortp", marker = "extra == 'sip'", specifier = ">=0.7.0" },
+    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'all'", specifier = ">=0.7.0" },
+    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.7.0" },
     { name = "anam", marker = "extra == 'anam'", specifier = ">=0.1" },
     { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30" },
