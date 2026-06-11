@@ -213,6 +213,8 @@ def backend() -> SIPVoiceBackend:
     b._jitter_prefetch = 0
     b._skip_audio_gaps = True
     b._plc = True
+    b._cn = False
+    b._cn_payload_type = 13
     b._send_silence_on_answer = 0.0
     b._outbound_silence_fill = False
 

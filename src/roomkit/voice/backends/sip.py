@@ -101,6 +101,10 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
             continuous for the pipeline (recorder duration, AEC alignment).
             Effective only with ``skip_audio_gaps``.  The per-session
             ``concealed_frames`` counter is exposed in the audio stats.
+        cn: When ``True``, outbound silence carries RFC 3389 comfort noise
+            instead of dead air (via aiortp).  Default ``False``.
+        cn_payload_type: RTP payload type for comfort noise (default 13,
+            the static CN assignment).
         rtp_inactivity_timeout: Seconds of RTP silence before forcing
             session disconnect (safety net for missed BYE).  Set to 0
             to disable.  Default 30.
@@ -149,6 +153,8 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         jitter_prefetch: int = 0,
         skip_audio_gaps: bool = True,
         plc: bool = True,
+        cn: bool = False,
+        cn_payload_type: int = 13,
         rtp_inactivity_timeout: float = 30.0,
         auth_users: dict[str, str] | None = None,
         auth_realm: str = "roomkit",
@@ -173,6 +179,8 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._jitter_prefetch = jitter_prefetch
         self._skip_audio_gaps = skip_audio_gaps
         self._plc = plc
+        self._cn = cn
+        self._cn_payload_type = cn_payload_type
         self._rtp_inactivity_timeout = rtp_inactivity_timeout
         self._send_silence_on_answer = send_silence_on_answer
         self._outbound_silence_fill = outbound_silence_fill

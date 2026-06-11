@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`cn` / `cn_payload_type` on `SIPVoiceBackend` (default off) — RFC 3389
+  comfort noise.** With `cn=True`, outbound silence (between TTS responses,
+  while the LLM thinks) carries comfort-noise packets via aiortp instead of
+  dead air, so carriers and handsets don't read the pause as a dead call.
+  Talkspurt resumption is marked on the RTP stream for clean jitter-buffer
+  resync. See `examples/voice_sip_comfort_noise.py`.
+
 ## [0.9.1] — 2026-06-11
 
 ### Added

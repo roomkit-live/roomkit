@@ -90,6 +90,8 @@ class SIPCallingHost(Protocol):
     _jitter_prefetch: int
     _skip_audio_gaps: bool
     _plc: bool
+    _cn: bool
+    _cn_payload_type: int
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
@@ -137,6 +139,8 @@ class SIPCallingMixin:
     _jitter_prefetch: int
     _skip_audio_gaps: bool
     _plc: bool
+    _cn: bool
+    _cn_payload_type: int
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
@@ -229,6 +233,8 @@ class SIPCallingMixin:
                 jitter_prefetch=self._jitter_prefetch,
                 skip_audio_gaps=self._skip_audio_gaps,
                 plc=self._plc,
+                cn=self._cn,
+                cn_payload_type=self._cn_payload_type,
             )
         except Exception:
             logger.exception("SDP negotiation failed for call %s", call.call_id)
@@ -629,6 +635,8 @@ class SIPCallingMixin:
                 jitter_prefetch=self._jitter_prefetch,
                 skip_audio_gaps=self._skip_audio_gaps,
                 plc=self._plc,
+                cn=self._cn,
+                cn_payload_type=self._cn_payload_type,
             )
             await call_session.start()
         except Exception:

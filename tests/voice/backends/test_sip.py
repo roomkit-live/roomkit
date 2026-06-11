@@ -288,6 +288,49 @@ class TestPacketLossConcealment:
         assert state.audio_stats.concealed_frames == 7
 
 
+class TestComfortNoise:
+    """cn/cn_payload_type flow into CallSession (RFC 3389)."""
+
+    def test_default_disabled(self, backend: Any) -> None:
+        assert backend._cn is False
+        assert backend._cn_payload_type == 13
+
+    async def test_cn_defaults_reach_call_session(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+
+        kwargs = mock_rtp_bridge.CallSession.call_args.kwargs
+        assert kwargs["cn"] is False
+        assert kwargs["cn_payload_type"] == 13
+
+    async def test_cn_enabled_reaches_call_session(
+        self, mock_aiosipua: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        with (
+            patch("roomkit.voice.backends.sip.import_aiosipua", return_value=mock_aiosipua),
+            patch(
+                "roomkit.voice.backends.sip.import_rtp_bridge",
+                return_value=mock_rtp_bridge,
+            ),
+        ):
+            from roomkit.voice.backends.sip import SIPVoiceBackend
+
+            b = SIPVoiceBackend(
+                local_sip_addr=("0.0.0.0", 5060),
+                local_rtp_ip="10.0.0.5",
+                cn=True,
+                cn_payload_type=96,
+            )
+        call = _make_mock_incoming_call()
+        await b._handle_invite(call)
+
+        kwargs = mock_rtp_bridge.CallSession.call_args.kwargs
+        assert kwargs["cn"] is True
+        assert kwargs["cn_payload_type"] == 96
+
+
 class TestStart:
     async def test_start_creates_transport_uas_uac(
         self, backend: Any, mock_aiosipua: MagicMock
