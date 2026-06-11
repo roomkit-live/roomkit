@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`RoomKit.unregister_channel(channel_id)`** — the missing inverse of
+  `register_channel`. Pops the channel from the registry, resets the
+  router cache, and returns the channel so the caller can
+  `await channel.close()` explicitly. Integrators creating per-session
+  channels (e.g. one `RealtimeVoiceChannel` per outbound call) previously
+  had no removal API: channels accumulated in the registry and their
+  provider sessions outlived the call — a hung-up Gemini Live session
+  kept its receive loop alive and burned five reconnect attempts on a
+  dead websocket before erroring out.
+
 ### Changed
 
 - **Realtime outbound audio: one resident send worker per session.** Provider
