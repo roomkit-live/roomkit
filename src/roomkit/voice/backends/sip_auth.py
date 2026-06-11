@@ -10,6 +10,11 @@ from typing import Any, Protocol, runtime_checkable
 
 from roomkit.voice.backends._sip_types import NONCE_TTL, compute_digest, logger, resolve_local_ip
 
+# Outbound registration timing: how long register() waits for the first
+# outcome, and the cadence of retries after a later failure or expiry
+REGISTER_TIMEOUT = 5.0
+REGISTER_RETRY_DELAY = 30.0
+
 __all__ = ["AuthResolver", "InviteFilter", "InviteFilterDecision", "SIPAuthMixin"]
 
 
@@ -50,9 +55,9 @@ class SIPAuthHost(Protocol):
         _auth_realm: Digest authentication realm.
         _auth_nonces: Active nonce-to-expiry map.
         _auth_resolver: Optional callback-based credential lookup.
-        _register_params: Outbound registration parameters.
-        _register_response_future: Pending REGISTER response future.
-        _registration_task: Background registration renewal task.
+        _uac: The SIP User Agent Client (routes REGISTER responses).
+        _registration: The aiosipua Registration, when registered.
+        _registration_task: Background registration retry task.
         _registered: Whether currently registered with registrar.
         _local_rtp_ip: Local IP for RTP binding.
         _advertised_ip: IP to advertise in SDP/Contact headers.
@@ -61,14 +66,14 @@ class SIPAuthHost(Protocol):
     _aiosipua: Any
     _transport: Any
     _uas: Any
+    _uac: Any
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _auth_realm: str
     _auth_nonces: dict[str, float]
     _auth_resolver: AuthResolver | None
     _invite_filter: InviteFilter | None
-    _register_params: dict[str, Any] | None
-    _register_response_future: asyncio.Future[Any] | None
+    _registration: Any
     _registration_task: asyncio.Task[None] | None
     _registered: bool
     _local_rtp_ip: str
@@ -84,14 +89,14 @@ class SIPAuthMixin:
     _aiosipua: Any
     _transport: Any
     _uas: Any
+    _uac: Any
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _auth_realm: str
     _auth_nonces: dict[str, float]
     _auth_resolver: AuthResolver | None
     _invite_filter: InviteFilter | None
-    _register_params: dict[str, Any] | None
-    _register_response_future: asyncio.Future[Any] | None
+    _registration: Any
     _registration_task: asyncio.Task[None] | None
     _registered: bool
     _local_rtp_ip: str
@@ -148,25 +153,6 @@ class SIPAuthMixin:
         ``auth_users`` dict and a resolver count as "auth enabled".
         """
         return bool(self._auth_users) or self._auth_resolver is not None
-
-    # -------------------------------------------------------------------------
-    # SIP message dispatch (wraps UAS handler for REGISTER interception)
-    # -------------------------------------------------------------------------
-
-    def _sip_message_handler(self, msg: Any, addr: tuple[str, int]) -> None:
-        """Dispatch SIP messages, intercepting REGISTER responses."""
-        sip_response_cls = self._aiosipua.SipResponse
-        if isinstance(msg, sip_response_cls) and self._register_response_future is not None:
-            cseq = msg.cseq
-            if (
-                cseq is not None
-                and cseq.method == "REGISTER"
-                and not self._register_response_future.done()
-            ):
-                self._register_response_future.set_result(msg)
-                return
-        # Delegate everything else to the UAS
-        self._uas._on_message(msg, addr)
 
     # -------------------------------------------------------------------------
     # Inbound authentication (RFC 2617 digest)
@@ -268,9 +254,11 @@ class SIPAuthMixin:
     ) -> None:
         """Register with a SIP registrar using digest authentication.
 
-        Sends a REGISTER request, handles the 401 challenge automatically,
-        and starts a background task that re-registers before expiry.
-        Call :meth:`close` to unregister and stop the renewal loop.
+        Delegates to :class:`aiosipua.Registration`: the binding refreshes
+        itself before expiry, 423 Min-Expires is honoured, and challenges
+        are answered per RFC 7616 (qop, MD5 and SHA-256).  If the
+        registration later fails or expires, the backend retries every
+        30 s until it sticks or :meth:`close` is called.
 
         Args:
             registrar_addr: ``(host, port)`` of the SIP registrar/PBX.
@@ -284,140 +272,78 @@ class SIPAuthMixin:
                 is rejected.
             TimeoutError: If the registrar does not respond within 5 s.
         """
-        if self._transport is None:
+        if self._transport is None or self._uac is None:
             raise RuntimeError("SIPVoiceBackend.start() must be called before register()")
 
-        self._register_params = {
-            "registrar_addr": registrar_addr,
-            "username": username,
-            "password": password,
-            "domain": domain or registrar_addr[0],
-            "expires": expires,
-        }
+        from aiosipua import Registration, SipDigestAuth
+        from aiosipua.utils import format_addr
 
-        await self._do_register(expires=expires)
-
-        self._registration_task = asyncio.get_running_loop().create_task(
-            self._registration_loop(), name="sip_registration"
-        )
-
-    async def _do_register(self, *, expires: int) -> None:
-        """Execute one REGISTER transaction with digest auth retry."""
-        from aiosipua import (
-            SipRequest,
-            generate_branch,
-            generate_call_id,
-            generate_tag,
-            parse_auth,
-            stringify_auth,
-        )
-        from aiosipua.headers import AuthCredentials, CSeq, Via, stringify_cseq, stringify_via
-
-        params = self._register_params
-        if params is None:
-            raise RuntimeError("No registration parameters configured")
-
-        registrar_addr: tuple[str, int] = params["registrar_addr"]
-        username: str = params["username"]
-        password: str = params["password"]
-        domain: str = params["domain"]
-
+        reg_domain = domain or registrar_addr[0]
         local_ip, local_port = self._transport.local_addr
         if local_ip in ("0.0.0.0", ""):  # nosec B104
             local_ip = resolve_local_ip(self._local_rtp_ip, registrar_addr)
         signaling_ip = self._advertised_ip or local_ip
 
-        from_uri = f"sip:{username}@{domain}"
-        request_uri = f"sip:{domain}"
-        contact_uri = f"sip:{username}@{signaling_ip}:{local_port}"
-        call_id = generate_call_id(signaling_ip)
-        local_tag = generate_tag()
-
-        def _build(cseq_num: int, auth_header: tuple[str, str] | None = None) -> Any:
-            branch = generate_branch()
-            reg = SipRequest(method="REGISTER", uri=request_uri)
-            via = Via(
-                transport="UDP", host=signaling_ip, port=local_port, params={"branch": branch}
-            )
-            reg.headers.append("Via", stringify_via(via))
-            reg.headers.set_single("From", f"<{from_uri}>;tag={local_tag}")
-            reg.headers.set_single("To", f"<{from_uri}>")
-            reg.headers.set_single("Call-ID", call_id)
-            reg.headers.set_single("CSeq", stringify_cseq(CSeq(seq=cseq_num, method="REGISTER")))
-            reg.headers.set_single("Contact", f"<{contact_uri}>;expires={expires}")
-            reg.headers.set_single("Max-Forwards", "70")
-            reg.headers.set_single("Expires", str(expires))
-            if self._user_agent:
-                reg.headers.set_single("User-Agent", self._user_agent)
-            if auth_header is not None:
-                reg.headers.set_single(auth_header[0], auth_header[1])
-            return reg
-
-        async def _send_and_wait(request: Any) -> Any:
-            loop = asyncio.get_running_loop()
-            self._register_response_future = loop.create_future()
-            self._transport.send(request, registrar_addr)
-            try:
-                return await asyncio.wait_for(self._register_response_future, timeout=5.0)
-            finally:
-                self._register_response_future = None
-
-        # First REGISTER (no auth)
-        resp = await _send_and_wait(_build(1))
-
-        if resp.status_code == 200:
-            self._registered = True
-            logger.info("Registered as %s@%s (no auth required)", username, domain)
-            return
-
-        if resp.status_code not in (401, 407):
-            raise RuntimeError(f"REGISTER failed: {resp.status_code} {resp.reason_phrase}")
-
-        # Handle 401/407 challenge
-        hdr = "WWW-Authenticate" if resp.status_code == 401 else "Proxy-Authenticate"
-        challenge_str = resp.get_header(hdr)
-        if not challenge_str:
-            raise RuntimeError(f"No {hdr} in {resp.status_code} response")
-
-        challenge = parse_auth(challenge_str)
-        realm = challenge.params.get("realm", "")
-        nonce = challenge.params.get("nonce", "")
-        if not nonce:
-            raise RuntimeError("Missing nonce in REGISTER auth challenge")
-
-        digest = compute_digest(username, realm, password, "REGISTER", request_uri, nonce)
-        credentials = AuthCredentials(
-            scheme="Digest",
-            params={
-                "username": username,
-                "realm": realm,
-                "nonce": nonce,
-                "uri": request_uri,
-                "response": digest,
-                "algorithm": "MD5",
-            },
+        registration = Registration(
+            self._uac,
+            f"sip:{username}@{reg_domain}",
+            registrar_addr,
+            expires=expires,
+            auth=SipDigestAuth(username, password),
+            contact_uri=f"sip:{username}@{format_addr(signaling_ip, local_port)}",
+            registrar_uri=f"sip:{reg_domain}",
+            user_agent=self._user_agent,
         )
-        auth_hdr = "Authorization" if resp.status_code == 401 else "Proxy-Authorization"
+        self._registration = registration
 
-        # Second REGISTER (with auth)
-        resp2 = await _send_and_wait(_build(2, (auth_hdr, stringify_auth(credentials))))
+        outcome: asyncio.Future[None] = asyncio.get_running_loop().create_future()
 
-        if resp2.status_code != 200:
-            raise RuntimeError(f"REGISTER auth failed: {resp2.status_code} {resp2.reason_phrase}")
+        def _on_registered(reg: Any) -> None:
+            self._registered = True
+            if not outcome.done():
+                outcome.set_result(None)
+            logger.info(
+                "Registered as %s@%s (expires=%ds)", username, reg_domain, reg.granted_expires
+            )
 
-        self._registered = True
-        logger.info("Registered as %s@%s (expires=%ds)", username, domain, expires)
+        def _on_failed(reg: Any, status: int, reason: str) -> None:
+            if not outcome.done():
+                outcome.set_exception(RuntimeError(f"REGISTER failed: {status} {reason}"))
+                return
+            self._on_registration_lost(f"{status} {reason}")
 
-    async def _registration_loop(self) -> None:
-        """Re-register periodically before the current registration expires."""
-        params = self._register_params
-        if params is None:
+        def _on_expired(reg: Any) -> None:
+            self._on_registration_lost("expired without refresh")
+
+        registration.on_registered = _on_registered
+        registration.on_failed = _on_failed
+        registration.on_expired = _on_expired
+
+        registration.register()
+        await asyncio.wait_for(outcome, timeout=REGISTER_TIMEOUT)
+
+    def _on_registration_lost(self, why: str) -> None:
+        """The binding failed or expired after initial success — retry forever."""
+        self._registered = False
+        logger.warning(
+            "SIP registration lost (%s) — retrying every %.0fs", why, REGISTER_RETRY_DELAY
+        )
+        if self._registration is None:
             return
-        expires: int = params["expires"]
-        while True:
-            await asyncio.sleep(expires * 0.8)
-            try:
-                await self._do_register(expires=expires)
-            except Exception:
-                logger.exception("SIP re-registration failed — retrying in 30s")
-                await asyncio.sleep(30)
+        task = self._registration_task
+        if task is not None and not task.done():
+            return
+        self._registration_task = asyncio.get_running_loop().create_task(
+            self._registration_retry_loop(), name="sip_registration_retry"
+        )
+
+    async def _registration_retry_loop(self) -> None:
+        """Re-attempt registration until it sticks or the backend closes."""
+        while not self._registered and self._registration is not None:
+            await asyncio.sleep(REGISTER_RETRY_DELAY)
+            registration = self._registration
+            if registration is None:
+                return
+            registration.register()
+            # Outcome arrives via callbacks; give the registrar a beat
+            await asyncio.sleep(REGISTER_TIMEOUT)

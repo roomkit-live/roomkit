@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Outbound SIP registration delegates to `aiosipua.Registration`.** The
+  hand-rolled REGISTER transaction machinery (~250 lines: message building,
+  response interception, MD5-only digest, 80% renewal loop) is replaced by
+  the upstream client: challenges are now answered per RFC 7616 (`qop`,
+  MD5 **and SHA-256** — registrars requiring qop previously failed), 423
+  Min-Expires is honoured, and the binding refreshes itself before expiry.
+  The `register()` contract is unchanged (awaits the first outcome, raises
+  on rejection, 5 s timeout) and a lost registration still retries every
+  30 s. `close()` still unregisters with `Expires: 0`.
+
 ### Added
 
 - **`cn` / `cn_payload_type` on `SIPVoiceBackend` (default off) — RFC 3389

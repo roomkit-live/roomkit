@@ -202,8 +202,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._invite_filter: Callable[..., Any] | None = None
 
         # Outbound registration state
-        self._register_params: dict[str, Any] | None = None
-        self._register_response_future: asyncio.Future[Any] | None = None
+        self._registration: Any = None
         self._registration_task: asyncio.Task[None] | None = None
         self._registered = False
 
@@ -273,9 +272,6 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
 
         await self._uas.start()
 
-        # Wrap transport handler to intercept REGISTER responses
-        self._transport.on_message = self._sip_message_handler
-
         self._stats_task = asyncio.get_running_loop().create_task(
             self._audio_stats_loop(), name="sip_audio_stats"
         )
@@ -294,13 +290,15 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
                 await self._registration_task
             self._registration_task = None
 
-        # Unregister (expires=0) if currently registered
-        if self._registered and self._transport is not None:
+        # Unregister (expires=0) if currently registered — best effort,
+        # the 200 may race the transport shutdown
+        if self._registered and self._registration is not None:
             try:
-                await self._do_register(expires=0)
+                self._registration.unregister()
             except Exception:
                 logger.debug("Failed to unregister on close", exc_info=True)
             self._registered = False
+        self._registration = None
 
         if self._stats_task is not None:
             self._stats_task.cancel()
