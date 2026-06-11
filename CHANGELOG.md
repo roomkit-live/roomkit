@@ -11,16 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`plc` on `SIPVoiceBackend` (default `True`) — packet loss concealment.**
   RTP packets confirmed lost in transit are replaced with concealment PCM
-  before delivery to the pipeline (via aiortp 0.4.0 / aiosipua 0.4.2): native
+  before delivery to the pipeline (via aiortp 0.5.0 / aiosipua 0.4.2): native
   libopus PLC for Opus, last-frame repetition fading to silence over 60 ms
   for G.711/G.722/L16, silence fill beyond that. The inbound stream stays
   temporally continuous, so recordings keep their duration and AEC reference
   alignment no longer drifts under loss — previously the lost 20 ms frames
   were silently skipped and the timeline compressed. Loss detection is
-  sequence-number based: sender pauses (RFC 4733 DTMF, VAD suppression) are
-  never concealed. The per-session `concealed_frames` counter is synced into
-  the audio stats and appears in the periodic (DEBUG) and final (INFO) stats
+  sequence-number based: VAD/DTX sender pauses are never concealed, and
+  RFC 4733 telephone-events (which consume sequence numbers) are marked as
+  received in the jitter buffer so DTMF digits are neither read as loss nor
+  concealed. The per-session `concealed_frames` counter is synced into the
+  audio stats and appears in the periodic (DEBUG) and final (INFO) stats
   log lines as `concealed=N`. `plc=False` restores skip-silently behavior.
+  Validated end to end with controlled loss injection (aiosipua's
+  `lossy_caller` example): `concealed` matches the sender's dropped count
+  exactly, with and without DTMF interleaved.
 
 ## [0.9.0] — 2026-06-10
 
