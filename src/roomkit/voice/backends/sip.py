@@ -113,6 +113,11 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
             when this is off.  Default ``False``.
         playout_max_delay_ms: Upper bound on the adaptive buffer depth —
             the most latency playout may add to absorb jitter (default 200).
+        duplicate_tx: When ``True``, every outbound RTP datagram is sent
+            twice — the duplicate rides the next frame's send, ~20 ms
+            later (via aiortp).  Receivers dedupe by sequence number, so
+            no negotiation is needed; bandwidth doubles.  The outbound
+            defense for lossy links.  Default ``False``.
         rtp_inactivity_timeout: Seconds of RTP silence before forcing
             session disconnect (safety net for missed BYE).  Set to 0
             to disable.  Default 30.
@@ -165,6 +170,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         cn_payload_type: int = 13,
         playout: bool = False,
         playout_max_delay_ms: int = 200,
+        duplicate_tx: bool = False,
         rtp_inactivity_timeout: float = 30.0,
         auth_users: dict[str, str] | None = None,
         auth_realm: str = "roomkit",
@@ -193,6 +199,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._cn_payload_type = cn_payload_type
         self._playout = playout
         self._playout_max_delay_ms = playout_max_delay_ms
+        self._duplicate_tx = duplicate_tx
         self._rtp_inactivity_timeout = rtp_inactivity_timeout
         self._send_silence_on_answer = send_silence_on_answer
         self._outbound_silence_fill = outbound_silence_fill

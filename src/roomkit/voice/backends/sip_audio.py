@@ -361,6 +361,13 @@ class SIPAudioMixin:
                                 f" rtp_recv={recv} rtp_lost={lost}"
                                 f" concealed={stats.concealed_frames} jitter={jitter:.1f}"
                             )
+                            if stats.has_remote_report:
+                                rj_ms = stats.remote_jitter_units * 1000.0 / st.clock_rate
+                                rtp_info += (
+                                    f" remote_lost={stats.remote_packets_lost}"
+                                    f" remote_loss={stats.remote_fraction_lost / 2.56:.1f}%"
+                                    f" remote_jitter={rj_ms:.0f}ms"
+                                )
 
                     in_dur = 0.0
                     if stats.inbound_packets > 1:

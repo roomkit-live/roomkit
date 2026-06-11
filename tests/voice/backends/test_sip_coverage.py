@@ -88,6 +88,35 @@ class TestAudioStats:
         assert stats.outbound_max_burst == 0
         assert stats.outbound_calls == 0
 
+    def test_sync_from_rtp_receiver_report(self):
+        stats = AudioStats()
+        stats.sync_from_rtp({})
+        assert stats.has_remote_report is False
+
+        # concealed syncs even before any RR arrives
+        stats.sync_from_rtp({"concealed_frames": 3})
+        assert stats.concealed_frames == 3
+        assert stats.has_remote_report is False
+
+        stats.sync_from_rtp(
+            {
+                "concealed_frames": 5,
+                "remote_packets_lost": 12,
+                "remote_fraction_lost": 26,
+                "remote_jitter": 80,
+            }
+        )
+        assert stats.has_remote_report is True
+        assert stats.remote_packets_lost == 12
+        assert stats.remote_fraction_lost == 26
+        assert stats.remote_jitter_units == 80
+
+        # RR values survive a later sync from a dict without RR keys
+        stats.sync_from_rtp({"concealed_frames": 6})
+        assert stats.concealed_frames == 6
+        assert stats.remote_packets_lost == 12
+        assert stats.has_remote_report is True
+
     def test_counter_mutation(self):
         stats = AudioStats()
         stats.inbound_packets = 42

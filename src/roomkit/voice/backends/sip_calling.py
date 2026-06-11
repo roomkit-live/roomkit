@@ -94,6 +94,7 @@ class SIPCallingHost(Protocol):
     _cn_payload_type: int
     _playout: bool
     _playout_max_delay_ms: int
+    _duplicate_tx: bool
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
@@ -145,6 +146,7 @@ class SIPCallingMixin:
     _cn_payload_type: int
     _playout: bool
     _playout_max_delay_ms: int
+    _duplicate_tx: bool
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
@@ -241,6 +243,7 @@ class SIPCallingMixin:
                 cn_payload_type=self._cn_payload_type,
                 playout=self._playout,
                 playout_max_delay_ms=self._playout_max_delay_ms,
+                duplicate_tx=self._duplicate_tx,
             )
         except Exception:
             logger.exception("SDP negotiation failed for call %s", call.call_id)
@@ -645,6 +648,7 @@ class SIPCallingMixin:
                 cn_payload_type=self._cn_payload_type,
                 playout=self._playout,
                 playout_max_delay_ms=self._playout_max_delay_ms,
+                duplicate_tx=self._duplicate_tx,
             )
             await call_session.start()
         except Exception:
@@ -805,9 +809,17 @@ class SIPCallingMixin:
             # Best-effort refresh; falls back to the value snapshotted at
             # close time when the RTP session is already gone.
             stats.sync_from_rtp(state.call_session.stats)
+        rr_info = "none"
+        if stats.has_remote_report:
+            rr_jitter_ms = stats.remote_jitter_units * 1000.0 / state.clock_rate
+            rr_info = (
+                f"lost={stats.remote_packets_lost}"
+                f" loss={stats.remote_fraction_lost / 2.56:.1f}%"
+                f" jitter={rr_jitter_ms:.0f}ms"
+            )
         logger.info(
             "SIP session %s final stats: IN pkts=%d bytes=%d gaps=%d"
-            " max_gap=%.0fms concealed=%d | OUT frames=%d bytes=%d",
+            " max_gap=%.0fms concealed=%d | OUT frames=%d bytes=%d | RR %s",
             session_id[:8],
             stats.inbound_packets,
             stats.inbound_bytes,
@@ -816,6 +828,7 @@ class SIPCallingMixin:
             stats.concealed_frames,
             stats.outbound_frames,
             stats.outbound_bytes,
+            rr_info,
         )
         if state.send_frame_count:
             logger.info(
