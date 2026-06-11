@@ -60,6 +60,10 @@ if os.environ.get("SIP_DEBUG", "0") in ("1", "true", "yes"):
     logging.getLogger("aiosipua").setLevel(logging.DEBUG)
     logging.getLogger("aiortp").setLevel(logging.DEBUG)
 
+if os.environ.get("PACER_DEBUG", "0") in ("1", "true", "yes"):
+    # Prebuffer burst sizes + per-response pacing detail
+    logging.getLogger("roomkit.voice.realtime.pacer").setLevel(logging.DEBUG)
+
 # ---------------------------------------------------------------------------
 # Configuration (override via environment variables)
 # ---------------------------------------------------------------------------
@@ -76,6 +80,8 @@ AUTH_PASS = os.environ.get("SIP_AUTH_PASS", "")
 SIP_LOCAL_PORT = int(os.environ.get("SIP_LOCAL_PORT", "5070"))
 RTP_PORT_START = int(os.environ.get("SIP_RTP_PORT_START", "10000"))
 RTP_PORT_END = int(os.environ.get("SIP_RTP_PORT_END", "10010"))
+PACER_PREBUFFER_MS = float(os.environ.get("SIP_PACER_PREBUFFER_MS", "80"))
+PACER_HEADROOM_MS = float(os.environ.get("SIP_PACER_HEADROOM_MS", "60"))
 
 GEMINI_MODEL = "gemini-3.1-flash-live-preview"
 SYSTEM_PROMPT = (
@@ -136,6 +142,8 @@ async def main() -> None:
         send_silence_on_answer=0.5,
         jitter_prefetch=3,
         outbound_silence_fill=True,
+        pacer_prebuffer_ms=PACER_PREBUFFER_MS,
+        pacer_jitter_headroom_ms=PACER_HEADROOM_MS,
     )
 
     # -- Gemini Live provider --
