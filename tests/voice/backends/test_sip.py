@@ -300,9 +300,7 @@ class TestPacketLossConcealment:
         assert kwargs["playout"] is True
         assert kwargs["playout_max_delay_ms"] == 300
 
-    async def test_playout_defaults_off(
-        self, backend: Any, mock_rtp_bridge: MagicMock
-    ) -> None:
+    async def test_playout_defaults_off(self, backend: Any, mock_rtp_bridge: MagicMock) -> None:
         call = _make_mock_incoming_call()
         await backend._handle_invite(call)
 
