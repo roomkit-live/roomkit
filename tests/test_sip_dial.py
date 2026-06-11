@@ -214,6 +214,8 @@ def backend() -> SIPVoiceBackend:
     b._skip_audio_gaps = True
     b._plc = True
     b._cn = False
+    b._playout = False
+    b._playout_max_delay_ms = 200
     b._cn_payload_type = 13
     b._send_silence_on_answer = 0.0
     b._outbound_silence_fill = False

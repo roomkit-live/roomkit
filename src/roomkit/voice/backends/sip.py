@@ -105,6 +105,14 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
             instead of dead air (via aiortp).  Default ``False``.
         cn_payload_type: RTP payload type for comfort noise (default 13,
             the static CN assignment).
+        playout: When ``True``, inbound audio is delivered on a steady
+            clock through aiortp's adaptive playout buffer — depth tracks
+            the measured network jitter (EWMA), with deadline-based
+            concealment.  The inbound defense for jittery links (WiFi
+            callers, congested paths).  ``jitter_prefetch`` only applies
+            when this is off.  Default ``False``.
+        playout_max_delay_ms: Upper bound on the adaptive buffer depth —
+            the most latency playout may add to absorb jitter (default 200).
         rtp_inactivity_timeout: Seconds of RTP silence before forcing
             session disconnect (safety net for missed BYE).  Set to 0
             to disable.  Default 30.
@@ -155,6 +163,8 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         plc: bool = True,
         cn: bool = False,
         cn_payload_type: int = 13,
+        playout: bool = False,
+        playout_max_delay_ms: int = 200,
         rtp_inactivity_timeout: float = 30.0,
         auth_users: dict[str, str] | None = None,
         auth_realm: str = "roomkit",
@@ -181,6 +191,8 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._plc = plc
         self._cn = cn
         self._cn_payload_type = cn_payload_type
+        self._playout = playout
+        self._playout_max_delay_ms = playout_max_delay_ms
         self._rtp_inactivity_timeout = rtp_inactivity_timeout
         self._send_silence_on_answer = send_silence_on_answer
         self._outbound_silence_fill = outbound_silence_fill

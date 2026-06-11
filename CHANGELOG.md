@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`playout` / `playout_max_delay_ms` on `SIPVoiceBackend`** (default off /
+  200 ms) — adaptive clocked playout for inbound audio, via aiortp's
+  AdaptivePlayout through aiosipua 0.7.0. Buffer depth tracks the measured
+  network jitter (EWMA) with deadline-based concealment, replacing the
+  static `jitter_prefetch` guess — the inbound defense for jittery links
+  (WiFi callers, congested paths). `jitter_prefetch` only applies when
+  playout is off.
+
 ### Changed
 
 - **Outbound SIP registration delegates to `aiosipua.Registration`.** The

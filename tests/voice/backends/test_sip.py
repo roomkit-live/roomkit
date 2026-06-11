@@ -275,6 +275,39 @@ class TestPacketLossConcealment:
 
         assert mock_rtp_bridge.CallSession.call_args.kwargs["plc"] is False
 
+    async def test_playout_reaches_call_session(
+        self, mock_aiosipua: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        with (
+            patch("roomkit.voice.backends.sip.import_aiosipua", return_value=mock_aiosipua),
+            patch(
+                "roomkit.voice.backends.sip.import_rtp_bridge",
+                return_value=mock_rtp_bridge,
+            ),
+        ):
+            from roomkit.voice.backends.sip import SIPVoiceBackend
+
+            b = SIPVoiceBackend(
+                local_sip_addr=("0.0.0.0", 5060),
+                local_rtp_ip="10.0.0.5",
+                playout=True,
+                playout_max_delay_ms=300,
+            )
+        call = _make_mock_incoming_call()
+        await b._handle_invite(call)
+
+        kwargs = mock_rtp_bridge.CallSession.call_args.kwargs
+        assert kwargs["playout"] is True
+        assert kwargs["playout_max_delay_ms"] == 300
+
+    async def test_playout_defaults_off(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+
+        assert mock_rtp_bridge.CallSession.call_args.kwargs["playout"] is False
+
     async def test_concealed_frames_synced_at_cleanup(
         self, backend: Any, mock_call_session: MagicMock
     ) -> None:

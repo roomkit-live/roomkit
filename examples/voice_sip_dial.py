@@ -82,6 +82,8 @@ RTP_PORT_START = int(os.environ.get("SIP_RTP_PORT_START", "10000"))
 RTP_PORT_END = int(os.environ.get("SIP_RTP_PORT_END", "10010"))
 PACER_PREBUFFER_MS = float(os.environ.get("SIP_PACER_PREBUFFER_MS", "80"))
 PACER_HEADROOM_MS = float(os.environ.get("SIP_PACER_HEADROOM_MS", "60"))
+PLAYOUT = os.environ.get("SIP_PLAYOUT", "0") in ("1", "true", "yes")
+PLAYOUT_MAX_DELAY_MS = int(os.environ.get("SIP_PLAYOUT_MAX_DELAY_MS", "200"))
 
 GEMINI_MODEL = "gemini-3.1-flash-live-preview"
 SYSTEM_PROMPT = (
@@ -144,6 +146,8 @@ async def main() -> None:
         outbound_silence_fill=True,
         pacer_prebuffer_ms=PACER_PREBUFFER_MS,
         pacer_jitter_headroom_ms=PACER_HEADROOM_MS,
+        playout=PLAYOUT,
+        playout_max_delay_ms=PLAYOUT_MAX_DELAY_MS,
     )
 
     # -- Gemini Live provider --

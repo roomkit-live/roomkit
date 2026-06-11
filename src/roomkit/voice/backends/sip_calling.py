@@ -92,6 +92,8 @@ class SIPCallingHost(Protocol):
     _plc: bool
     _cn: bool
     _cn_payload_type: int
+    _playout: bool
+    _playout_max_delay_ms: int
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
@@ -141,6 +143,8 @@ class SIPCallingMixin:
     _plc: bool
     _cn: bool
     _cn_payload_type: int
+    _playout: bool
+    _playout_max_delay_ms: int
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
@@ -235,6 +239,8 @@ class SIPCallingMixin:
                 plc=self._plc,
                 cn=self._cn,
                 cn_payload_type=self._cn_payload_type,
+                playout=self._playout,
+                playout_max_delay_ms=self._playout_max_delay_ms,
             )
         except Exception:
             logger.exception("SDP negotiation failed for call %s", call.call_id)
@@ -637,6 +643,8 @@ class SIPCallingMixin:
                 plc=self._plc,
                 cn=self._cn,
                 cn_payload_type=self._cn_payload_type,
+                playout=self._playout,
+                playout_max_delay_ms=self._playout_max_delay_ms,
             )
             await call_session.start()
         except Exception:
