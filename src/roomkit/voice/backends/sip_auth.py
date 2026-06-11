@@ -275,6 +275,14 @@ class SIPAuthMixin:
         if self._transport is None or self._uac is None:
             raise RuntimeError("SIPVoiceBackend.start() must be called before register()")
 
+        # Re-registering replaces the previous binding: stop its timers and
+        # any retry loop so they don't keep firing for the old registrar
+        if self._registration is not None:
+            self._registration._cancel_timers()
+        if self._registration_task is not None:
+            self._registration_task.cancel()
+            self._registration_task = None
+
         from aiosipua import Registration, SipDigestAuth
         from aiosipua.utils import format_addr
 
@@ -344,6 +352,12 @@ class SIPAuthMixin:
             registration = self._registration
             if registration is None:
                 return
-            registration.register()
+            try:
+                registration.register()
+            except Exception:
+                # Transient send failure (transport racing shutdown, network
+                # blip) must not kill the retry loop — that is its one job
+                logger.exception("SIP re-registration attempt failed — will retry")
+                continue
             # Outcome arrives via callbacks; give the registrar a beat
             await asyncio.sleep(REGISTER_TIMEOUT)

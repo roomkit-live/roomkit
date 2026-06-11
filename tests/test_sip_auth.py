@@ -1146,3 +1146,70 @@ class TestComputeDigest:
         expected = hashlib.md5(f"{ha1}:{nonce}:{ha2}".encode()).hexdigest()
 
         assert _compute_digest(username, realm, password, method, uri, nonce) == expected
+
+
+class TestReRegister:
+    async def test_second_register_stops_previous_timers(self, monkeypatch: Any) -> None:
+        """Re-registering must not leave the old binding's timers running."""
+        _install_fake_registration(monkeypatch)
+        backend = _make_backend()
+
+        task = asyncio.ensure_future(
+            backend.register(registrar_addr=REGISTRAR, username="bot", password="secret")
+        )
+        await asyncio.sleep(0)
+        first = FakeRegistration.instances[0]
+        first.on_registered(first)
+        await task
+
+        task = asyncio.ensure_future(
+            backend.register(registrar_addr=("10.0.0.9", 5060), username="bot", password="secret")
+        )
+        await asyncio.sleep(0)
+        second = FakeRegistration.instances[1]
+        second.on_registered(second)
+        await task
+
+        assert first.timers_cancelled is True
+        assert backend._registration is second
+        _cleanup_registration(backend)
+
+    async def test_retry_loop_survives_send_failure(self, monkeypatch: Any) -> None:
+        """A raising register() must not kill the retry loop."""
+        from roomkit.voice.backends import sip_auth
+
+        _install_fake_registration(monkeypatch)
+        monkeypatch.setattr(sip_auth, "REGISTER_RETRY_DELAY", 0.01)
+        monkeypatch.setattr(sip_auth, "REGISTER_TIMEOUT", 0.01)
+        backend = _make_backend()
+
+        task = asyncio.ensure_future(
+            backend.register(registrar_addr=REGISTRAR, username="bot", password="secret")
+        )
+        await asyncio.sleep(0)
+        reg = FakeRegistration.instances[0]
+        reg.on_registered(reg)
+        await task
+
+        # First retry attempt raises; the loop must keep going
+        attempts: list[int] = []
+        original_register = reg.register
+
+        def _flaky_register() -> None:
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise OSError("transport closed")
+            original_register()
+
+        reg.register = _flaky_register  # type: ignore[method-assign]
+        reg.on_expired(reg)
+
+        for _ in range(400):
+            if len(attempts) >= 2:
+                break
+            await asyncio.sleep(0.005)
+        assert len(attempts) >= 2  # survived the raising attempt
+
+        reg.on_registered(reg)
+        assert backend._registered is True
+        _cleanup_registration(backend)
