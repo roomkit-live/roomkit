@@ -342,6 +342,10 @@ class RealtimeVoiceChannel(
         # Per-session generation counter: bumped on interrupt so pending
         # send_audio tasks created before the interrupt become stale and skip.
         self._audio_generation: dict[str, int] = {}
+        # Outbound send queue + resident worker per session — one consumer
+        # task per session instead of one task per 20 ms provider chunk.
+        self._audio_send_queues: dict[str, asyncio.Queue[Any]] = {}
+        self._audio_send_workers: dict[str, asyncio.Task[Any]] = {}
         # Last assistant text per session (for barge-in event context)
         self._last_assistant_text: dict[str, str] = {}
         # Barge-in state: set when user interrupts AI, cleared on next final transcription
@@ -984,6 +988,13 @@ class RealtimeVoiceChannel(
             turn_span_id = self._turn_spans.pop(session.id, None)
             session_span_id = self._session_spans.pop(session.id, None)
             resamplers = self._session_resamplers.pop(session.id, None)
+            send_queue = self._audio_send_queues.pop(session.id, None)
+            self._audio_send_workers.pop(session.id, None)
+
+        # Release the send worker — it exits on the sentinel; anything still
+        # queued belongs to the closed session and is dropped with it.
+        if send_queue is not None:
+            send_queue.put_nowait(None)
 
         # End any active turn span, then the session span
         telemetry = self._telemetry_provider

@@ -1366,3 +1366,115 @@ class TestStartSessionCancellation:
         assert len(error_msgs) == 1
         disconnect_calls = [c for c in transport.calls if c.method == "disconnect"]
         assert len(disconnect_calls) == 1
+
+
+class TestSendWorkerOrdering:
+    """The per-session send worker preserves audio→EOR order structurally."""
+
+    async def test_eor_after_audio_with_yielding_transport(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        room_id: str,
+    ) -> None:
+        """Ordering must hold even when the transport yields mid-send.
+
+        Adversarial transport: parks on the loop before recording each
+        send. With one task per chunk, a later-created end-of-response
+        task could overtake parked audio tasks; the single send worker
+        makes the order structural.
+        """
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        call_log: list[str] = []
+        orig_send_audio = transport.send_audio
+        orig_end_of_response = transport.end_of_response
+
+        async def yielding_send_audio(s: VoiceSession, audio: Any) -> None:
+            await asyncio.sleep(0)
+            call_log.append("audio")
+            await orig_send_audio(s, audio)
+
+        def tracking_end_of_response(s: VoiceSession) -> None:
+            call_log.append("end_of_response")
+            orig_end_of_response(s)
+
+        transport.send_audio = yielding_send_audio  # type: ignore[assignment]
+        transport.end_of_response = tracking_end_of_response  # type: ignore[assignment]
+
+        await provider.simulate_response_start(session)
+        for i in range(5):
+            await provider.simulate_audio(session, f"chunk-{i}".encode())
+        await provider.simulate_response_end(session)
+        await asyncio.sleep(0.1)
+
+        assert call_log.count("audio") == 5
+        eor_index = call_log.index("end_of_response")
+        assert all(i < eor_index for i, v in enumerate(call_log) if v == "audio"), (
+            f"Audio after end_of_response: {call_log}"
+        )
+
+    async def test_one_worker_per_session(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        room_id: str,
+    ) -> None:
+        """A burst of chunks reuses one resident worker, not a task each."""
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        await provider.simulate_response_start(session)
+        for i in range(20):
+            await provider.simulate_audio(session, f"chunk-{i}".encode())
+        await asyncio.sleep(0.05)
+
+        assert len(channel._audio_send_queues) == 1
+        assert len(channel._audio_send_workers) == 1
+        worker = channel._audio_send_workers[session.id]
+        assert not worker.done()
+
+        # Teardown releases the worker via the sentinel
+        await channel.end_session(session)
+        await asyncio.sleep(0.05)
+        assert session.id not in channel._audio_send_queues
+        assert worker.done()
+
+    async def test_barge_in_drains_queued_audio(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        room_id: str,
+    ) -> None:
+        """User speech drops queued (stale) audio without processing it."""
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        gate = asyncio.Event()
+        orig_send_audio = transport.send_audio
+        sent: list[bytes] = []
+
+        async def gated_send_audio(s: VoiceSession, audio: Any) -> None:
+            await gate.wait()
+            sent.append(audio)
+            await orig_send_audio(s, audio)
+
+        transport.send_audio = gated_send_audio  # type: ignore[assignment]
+
+        await provider.simulate_response_start(session)
+        for i in range(10):
+            await provider.simulate_audio(session, f"chunk-{i}".encode())
+        await asyncio.sleep(0.02)  # worker parks on chunk-0 behind the gate
+
+        await provider.simulate_speech_start(session)  # barge-in: drain queue
+        gate.set()
+        await asyncio.sleep(0.05)
+
+        # chunk-0 was in flight behind the gate; the other 9 were drained.
+        # Its generation is stale by the time the gate opens, so at most
+        # the in-flight chunk reaches the transport.
+        assert len(sent) <= 1

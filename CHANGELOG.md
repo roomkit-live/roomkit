@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Realtime outbound audio: one resident send worker per session.** Provider
+  audio chunks and the end-of-response flush now travel through a per-session
+  FIFO queue drained by a single worker task, replacing one task creation per
+  20 ms chunk (50/s, with task tracking and traceback capture under debug
+  instrumentation). Audio → flush → RESPONSE_END ordering becomes structural —
+  it no longer depends on task-creation FIFO surviving awaits inside the
+  transport — and a barge-in drops queued stale chunks at queue speed instead
+  of paying the resample for each. Public behavior is unchanged; covered by
+  an adversarial yielding-transport ordering test.
+
 ### Added
 
 - **`plc` on `SIPVoiceBackend` (default `True`) — packet loss concealment.**

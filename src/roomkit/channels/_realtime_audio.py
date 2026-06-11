@@ -68,6 +68,9 @@ class RealtimeAudioHost(Protocol):
     _recording_tracks: dict[str, Any]
     _audio_forward_count: dict[str, int]
     _audio_generation: dict[str, int]
+    _audio_send_queues: dict[str, asyncio.Queue[Any]]
+    _audio_send_workers: dict[str, Any]
+    _sessions: dict[str, Any]
     _input_sample_rate: int
     _output_sample_rate: int
     _pipeline: AudioPipeline | None
@@ -109,6 +112,9 @@ class RealtimeAudioMixin:
     _recording_tracks: dict[str, Any]
     _audio_forward_count: dict[str, int]
     _audio_generation: dict[str, int]
+    _audio_send_queues: dict[str, asyncio.Queue[Any]]
+    _audio_send_workers: dict[str, Any]
+    _sessions: dict[str, Any]
     _input_sample_rate: int
     _output_sample_rate: int
     _pipeline: AudioPipeline | None
@@ -121,6 +127,7 @@ class RealtimeAudioMixin:
     _barge_in_active: set[str]
 
     _track_task: Any  # see RealtimeAudioHost — cross-mixin
+    _flush_and_signal_end: Any  # see RealtimeResponseMixin — cross-mixin
     _fire_audio_level_task: Any  # see RealtimeAudioHost — cross-mixin
     _update_idle_event: Any  # see RealtimeAudioHost — cross-mixin
     _fire_barge_in_hook: Any  # see RealtimeAudioHost — cross-mixin
@@ -370,6 +377,19 @@ class RealtimeAudioMixin:
             if is_barge_in:
                 self._barge_in_active.add(session.id)
             self._reset_outbound_resampler(resamplers)
+            # Drain queued (now stale) outbound audio so the send worker
+            # never spends resample budget on chunks the interrupt killed.
+            # End-of-response items are kept: transports rely on the marker
+            # to settle their playback state even when the turn is cut.
+            send_queue = self._audio_send_queues.get(session.id)
+            if send_queue is not None:
+                kept: list[Any] = []
+                while not send_queue.empty():
+                    item = send_queue.get_nowait()
+                    if item is not None and item[0] == "eor":
+                        kept.append(item)
+                for item in kept:
+                    send_queue.put_nowait(item)
         self._update_idle_event(session.id)
 
         logger.info(
@@ -513,17 +533,20 @@ class RealtimeAudioMixin:
     # -----------------------------------------------------------------
 
     def _on_provider_audio(self, session: VoiceSession, audio: bytes) -> None:
-        """Snapshot session state and hand provider audio to a send task.
+        """Snapshot session state and enqueue provider audio for the send worker.
 
         Returns ``None`` so the provider's ``_fire_audio_callbacks`` does not
-        await anything — the receive loop is never blocked. Resampling
-        happens inside the task, off the event loop; task-creation order
-        plus the single-thread resample executor keep frames in order.
+        await anything — the receive loop is never blocked. Each session has
+        one resident send worker draining a FIFO queue: frame order is
+        preserved by construction, and a 50 chunks/s burst costs queue puts
+        instead of one task creation per 20 ms chunk.
 
-        Each task captures the current generation counter so that tasks
-        created before an interrupt are silently discarded.
+        Each item captures the current generation counter so that chunks
+        enqueued before an interrupt are silently discarded.
         """
         with self._state_lock:
+            if session.id not in self._sessions:
+                return
             # Drop outbound audio while user is speaking — prevents new
             # provider chunks from refilling the transport buffer after
             # interrupt() flushed it during barge-in.
@@ -541,16 +564,54 @@ class RealtimeAudioMixin:
             self._audio_forward_count[session.id] = (
                 self._audio_forward_count.get(session.id, 0) + 1
             )
+            queue = self._audio_send_queues.get(session.id)
+            spawn_worker = queue is None
+            if queue is None:
+                queue = asyncio.Queue()
+                self._audio_send_queues[session.id] = queue
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-        self._track_task(
-            loop,
-            self._process_provider_audio(session, audio, resamplers, transport_rate, gen),
-            name=f"rt_send_audio:{session.id}",
-        )
+        queue.put_nowait(("audio", audio, resamplers, transport_rate, gen))
+        if spawn_worker:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                with self._state_lock:
+                    self._audio_send_queues.pop(session.id, None)
+                return
+            self._audio_send_workers[session.id] = self._track_task(
+                loop,
+                self._audio_send_worker(session, queue),
+                name=f"rt_send_audio:{session.id}",
+            )
+
+    async def _audio_send_worker(self, session: VoiceSession, queue: asyncio.Queue[Any]) -> None:
+        """Resident consumer: drains the session's outbound queue in order.
+
+        Audio chunks and the end-of-response flush travel through the same
+        queue, so audio -> flush -> RESPONSE_END ordering is structural —
+        it no longer depends on task-creation FIFO surviving awaits in the
+        transport. Exits on the ``None`` sentinel enqueued at session
+        teardown. Stale generations are dropped here, before paying the
+        resample, so a barge-in flushes queued audio at queue speed.
+        """
+        while True:
+            item = await queue.get()
+            if item is None:
+                return
+            try:
+                if item[0] == "audio":
+                    _, audio, resamplers, transport_rate, gen = item
+                    with self._state_lock:
+                        if self._audio_generation.get(session.id, 0) != gen:
+                            continue
+                    await self._process_provider_audio(
+                        session, audio, resamplers, transport_rate, gen
+                    )
+                else:  # "eor" — end-of-response flush + signal
+                    _, resamplers, transport_rate = item
+                    await self._flush_and_signal_end(session, resamplers, transport_rate)
+            except Exception:
+                logger.exception("Error sending provider audio for session %s", session.id)
 
     async def _process_provider_audio(
         self,
