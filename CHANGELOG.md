@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`plc` on `SIPVoiceBackend` (default `True`) — packet loss concealment.**
   RTP packets confirmed lost in transit are replaced with concealment PCM
-  before delivery to the pipeline (via aiortp 0.5.0 / aiosipua 0.4.2): native
+  before delivery to the pipeline (via aiortp 0.5.0 / aiosipua 0.4.3): native
   libopus PLC for Opus, last-frame repetition fading to silence over 60 ms
   for G.711/G.722/L16, silence fill beyond that. The inbound stream stays
   temporally continuous, so recordings keep their duration and AEC reference
