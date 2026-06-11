@@ -52,7 +52,6 @@ class RealtimeResponseHost(Protocol):
     _state_lock: threading.Lock
     _session_rooms: dict[str, str]
     _session_resamplers: dict[str, Any]
-    _audio_send_queues: dict[str, asyncio.Queue[Any]]
     _resample_executor: ThreadPoolExecutor | None
     _session_transport_rates: dict[str, int]
     _output_sample_rate: int
@@ -87,7 +86,6 @@ class RealtimeResponseMixin:
     _state_lock: threading.Lock
     _session_rooms: dict[str, str]
     _session_resamplers: dict[str, Any]
-    _audio_send_queues: dict[str, asyncio.Queue[Any]]
     _resample_executor: ThreadPoolExecutor | None
     _session_transport_rates: dict[str, int]
     _output_sample_rate: int
@@ -134,29 +132,26 @@ class RealtimeResponseMixin:
     def _on_provider_response_end(self, session: VoiceSession) -> Any:
         """Handle AI response end — flush, signal, clear indicator.
 
-        IMPORTANT: the flush + end_of_response travel through the same
-        per-session send queue as the audio chunks, so the send worker
-        delivers audio -> flush -> RESPONSE_END in queue order regardless
-        of awaits inside the transport. When no queue exists (no audio
-        was forwarded this turn), the flush runs as its own task.
+        IMPORTANT: the flush + end_of_response run in one task created
+        AFTER all pending ``_process_provider_audio`` tasks, and take the
+        same single-thread resample-executor hop those tasks take (when
+        outbound resampling is active). Task-creation FIFO plus executor
+        FIFO together preserve audio -> flush -> RESPONSE_END ordering on
+        the pacer queue.
         """
         with self._state_lock:
             resamplers = self._session_resamplers.get(session.id)
             transport_rate = self._session_transport_rates.get(session.id)
-            send_queue = self._audio_send_queues.get(session.id)
 
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        if send_queue is not None:
-            send_queue.put_nowait(("eor", resamplers, transport_rate))
-        else:
-            self._track_task(
-                loop,
-                self._flush_and_signal_end(session, resamplers, transport_rate),
-                name=f"rt_signal_eor:{session.id}",
-            )
+        self._track_task(
+            loop,
+            self._flush_and_signal_end(session, resamplers, transport_rate),
+            name=f"rt_signal_eor:{session.id}",
+        )
         self._track_task(
             loop,
             self._handle_response_indicator(session, is_speaking=False),
