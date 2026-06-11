@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-06-11
+
 ### Added
 
 - **`RoomKit.unregister_channel(channel_id)`** — the missing inverse of
@@ -19,23 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kept its receive loop alive and burned five reconnect attempts on a
   dead websocket before erroring out.
 
-### Changed
-
-- **Realtime outbound audio: one resident send worker per session.** Provider
-  audio chunks and the end-of-response flush now travel through a per-session
-  FIFO queue drained by a single worker task, replacing one task creation per
-  20 ms chunk (50/s, with task tracking and traceback capture under debug
-  instrumentation). Audio → flush → RESPONSE_END ordering becomes structural —
-  it no longer depends on task-creation FIFO surviving awaits inside the
-  transport — and a barge-in drops queued stale chunks at queue speed instead
-  of paying the resample for each. Public behavior is unchanged; covered by
-  an adversarial yielding-transport ordering test.
-
-### Added
-
 - **`plc` on `SIPVoiceBackend` (default `True`) — packet loss concealment.**
   RTP packets confirmed lost in transit are replaced with concealment PCM
-  before delivery to the pipeline (via aiortp 0.5.0 / aiosipua 0.4.3): native
+  before delivery to the pipeline (via aiortp / aiosipua): native
   libopus PLC for Opus, last-frame repetition fading to silence over 60 ms
   for G.711/G.722/L16, silence fill beyond that. The inbound stream stays
   temporally continuous, so recordings keep their duration and AEC reference
@@ -50,6 +38,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Validated end to end with controlled loss injection (aiosipua's
   `lossy_caller` example): `concealed` matches the sender's dropped count
   exactly, with and without DTMF interleaved.
+
+### Changed
+
+- **SIP/RTP extras require aiosipua >= 0.6.0 and aiortp >= 0.6.0.** aiosipua
+  0.5/0.6 bring an RFC conformance overhaul (RFC 7616 digest, RFC-compliant
+  CANCEL, dialog validation, 2xx retransmission), REGISTER/PRACK/REFER/session
+  timers, hardened parsing, and a comfort-noise passthrough backed by aiortp
+  0.6.0 (RFC 3389). RoomKit's SIP backends are source-compatible with the new
+  versions — the aiosipua breaking changes (`send_cancel(call)`, `body: bytes`)
+  touch APIs RoomKit does not call.
+
+- **Realtime outbound audio: one resident send worker per session.** Provider
+  audio chunks and the end-of-response flush now travel through a per-session
+  FIFO queue drained by a single worker task, replacing one task creation per
+  20 ms chunk (50/s, with task tracking and traceback capture under debug
+  instrumentation). Audio → flush → RESPONSE_END ordering becomes structural —
+  it no longer depends on task-creation FIFO surviving awaits inside the
+  transport — and a barge-in drops queued stale chunks at queue speed instead
+  of paying the resample for each. Public behavior is unchanged; covered by
+  an adversarial yielding-transport ordering test.
 
 ## [0.9.0] — 2026-06-10
 
