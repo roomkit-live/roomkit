@@ -5,7 +5,7 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.10.0] — 2026-06-11
 
 ### Added
 
@@ -16,6 +16,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   static `jitter_prefetch` guess — the inbound defense for jittery links
   (WiFi callers, congested paths). `jitter_prefetch` only applies when
   playout is off.
+- **`cn` / `cn_payload_type` on `SIPVoiceBackend` (default off) — RFC 3389
+  comfort noise.** With `cn=True`, outbound silence (between TTS responses,
+  while the LLM thinks) carries comfort-noise packets via aiortp instead of
+  dead air, so carriers and handsets don't read the pause as a dead call.
+  Talkspurt resumption is marked on the RTP stream for clean jitter-buffer
+  resync. See `examples/voice_sip_comfort_noise.py`.
+- **`duplicate_tx` on `SIPVoiceBackend` (default off) — outbound TX
+  redundancy.** Every outbound RTP datagram is sent twice, the duplicate
+  riding the next frame's send ~20 ms later (via aiortp). Receivers dedupe
+  by sequence number, so no negotiation is needed; RTP bandwidth doubles.
+  The outbound defense for lossy links.
+- **RTCP Receiver Report observability in SIP audio stats.** The periodic
+  and final stats lines now carry the remote endpoint's view of our
+  outbound stream — cumulative packets lost, last-interval loss %, and
+  interarrival jitter in ms (`RR lost=… loss=…% jitter=…ms`; `RR none`
+  until a report arrives). Outbound degradation was previously invisible:
+  local stats only measure the inbound leg.
 
 ### Changed
 
@@ -28,15 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The `register()` contract is unchanged (awaits the first outcome, raises
   on rejection, 5 s timeout) and a lost registration still retries every
   30 s. `close()` still unregisters with `Expires: 0`.
-
-### Added
-
-- **`cn` / `cn_payload_type` on `SIPVoiceBackend` (default off) — RFC 3389
-  comfort noise.** With `cn=True`, outbound silence (between TTS responses,
-  while the LLM thinks) carries comfort-noise packets via aiortp instead of
-  dead air, so carriers and handsets don't read the pause as a dead call.
-  Talkspurt resumption is marked on the RTP stream for clean jitter-buffer
-  resync. See `examples/voice_sip_comfort_noise.py`.
+- **Dependency floors: `aiortp>=0.7.0`, `aiosipua[rtp]>=0.7.0`.** The
+  playout wire-clock fix for RFC 3551 G.722 senders, `duplicate_tx`, and
+  the Receiver Report stats keys all live in 0.7.0 of both.
 
 ## [0.9.1] — 2026-06-11
 
@@ -1256,7 +1267,10 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/roomkit-live/roomkit/compare/v0.9.1...v0.10.0
+[0.9.1]: https://github.com/roomkit-live/roomkit/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/roomkit-live/roomkit/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/roomkit-live/roomkit/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/roomkit-live/roomkit/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/roomkit-live/roomkit/compare/v0.7.0...v0.7.1
