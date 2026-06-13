@@ -39,7 +39,7 @@ class MistralAIProvider(AIProvider):
 
     def __init__(self, config: MistralConfig) -> None:
         try:
-            from mistralai import Mistral as _Mistral
+            from mistralai.client import Mistral as _Mistral
         except ImportError as exc:
             raise ImportError(
                 "mistralai is required for MistralAIProvider. "
