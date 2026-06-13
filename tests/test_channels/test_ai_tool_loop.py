@@ -50,7 +50,7 @@ class TestToolLoopTimeout:
         )
 
         # Patch event loop time so it jumps past the deadline after first round
-        original_time = asyncio.get_event_loop().time
+        original_time = asyncio.get_running_loop().time
         time_call_count = 0
 
         def advancing_time() -> float:
@@ -62,7 +62,7 @@ class TestToolLoopTimeout:
             return original_time() + 1000
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        with patch.object(asyncio.get_event_loop(), "time", advancing_time):
+        with patch.object(asyncio.get_running_loop(), "time", advancing_time):
             await ch._run_tool_loop(context)
 
         # Timeout must have stopped the loop — far fewer than max_tool_rounds
@@ -102,7 +102,7 @@ class TestToolLoopTimeout:
         )
 
         # Immediately past deadline from the very first time check
-        original_time = asyncio.get_event_loop().time
+        original_time = asyncio.get_running_loop().time
         call_count = 0
 
         def already_expired() -> float:
@@ -114,7 +114,7 @@ class TestToolLoopTimeout:
             return original_time() + 99999
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        with patch.object(asyncio.get_event_loop(), "time", already_expired):
+        with patch.object(asyncio.get_running_loop(), "time", already_expired):
             response = (await ch._run_tool_loop(context)).response
 
         # At most 1 round completes (the one in-flight when timeout is checked)

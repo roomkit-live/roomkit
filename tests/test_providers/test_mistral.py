@@ -150,6 +150,20 @@ def _stream_events(
 
 
 class TestMistralAIProvider:
+    def test_real_sdk_exposes_mistral_at_imported_path(self) -> None:
+        """Guard against SDK import drift.
+
+        Every other test mocks the mistralai module, so none would catch the
+        real package moving ``Mistral`` (the v1->v2 bump relocated it from
+        ``mistralai`` to ``mistralai.client``). This asserts the provider's
+        import path resolves against the installed SDK; it skips when mistralai
+        is not installed.
+        """
+        pytest.importorskip("mistralai")
+        from mistralai.client import Mistral
+
+        assert Mistral is not None
+
     @pytest.mark.asyncio
     async def test_generate_success(self) -> None:
         with patch.dict("sys.modules", _mistral_modules()):
@@ -278,7 +292,9 @@ class TestMistralAIProvider:
             assert provider.model_name == "mistral-small-latest"
 
     def test_lazy_import_error(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": None}):
+        # Simulate mistralai not installed: null both the package and its v2
+        # `client` submodule (the provider imports `from mistralai.client`).
+        with patch.dict("sys.modules", {"mistralai": None, "mistralai.client": None}):
             import importlib
 
             import roomkit.providers.mistral.ai as mod

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import struct
 from types import SimpleNamespace
@@ -224,7 +223,8 @@ class TestSherpaOnnxSTTProvider:
         result = _pcm_s16le_to_float32(pcm)
         assert abs(result[0] - (-1.0)) < 0.001
 
-    def test_url_audio_raises(self) -> None:
+    @pytest.mark.asyncio
+    async def test_url_audio_raises(self) -> None:
         sherpa = _mock_sherpa_module()
         recognizer_mock = MagicMock()
         sherpa.OfflineRecognizer.from_transducer.return_value = recognizer_mock
@@ -241,7 +241,7 @@ class TestSherpaOnnxSTTProvider:
         audio_content = SimpleNamespace(url="https://example.com/audio.wav")
 
         with pytest.raises(ValueError, match="does not support URL-based"):
-            asyncio.get_event_loop().run_until_complete(provider.transcribe(audio_content))
+            await provider.transcribe(audio_content)
 
     def test_import_error(self) -> None:
         with patch.dict("sys.modules", {"sherpa_onnx": None}):
