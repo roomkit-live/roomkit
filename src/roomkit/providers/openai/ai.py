@@ -456,6 +456,18 @@ class OpenAIAIProvider(AIProvider):
                             if tc_delta.function.arguments:
                                 acc["arguments"] += tc_delta.function.arguments
 
+                # OpenAI-compatible reasoning models (DeepSeek-R1, vLLM with a
+                # reasoning parser) stream reasoning in a dedicated field instead
+                # of inline <think> tags. Surface it as thinking when present.
+                reasoning = getattr(delta, "reasoning_content", None) or getattr(
+                    delta, "reasoning", None
+                )
+                if reasoning:
+                    if first_token:
+                        self._record_ttfb(t0)
+                        first_token = False
+                    yield StreamThinkingDelta(thinking=reasoning)
+
                 # Process text content through the think-tag parser
                 text = delta.content if hasattr(delta, "content") else None
                 if text:

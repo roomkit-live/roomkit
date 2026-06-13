@@ -24,6 +24,7 @@ from roomkit.providers.ai.base import (
     StreamDone,
     StreamEvent,
     StreamTextDelta,
+    StreamThinkingDelta,
     StreamToolCall,
 )
 from roomkit.providers.gemini.config import GeminiConfig
@@ -192,10 +193,21 @@ class GeminiAIProvider(AIProvider):
             max_output_tokens=context.max_tokens,
         )
 
-        # Thinking level for Gemini 3.1 models
-        if self._config.thinking_level:
+        # Thinking config. ``include_thoughts=True`` is required for Gemini to
+        # stream thought summaries — without it the model still reasons but the
+        # reasoning never reaches the response. ``thinking_level`` targets Gemini
+        # 3.x; ``thinking_budget`` (from the per-turn context) targets 2.5.
+        thinking_level = self._config.thinking_level
+        thinking_budget = context.thinking_budget
+        if thinking_level:
             gen_config.thinking_config = self._types.ThinkingConfig(
-                thinking_level=self._config.thinking_level,  # ty: ignore[invalid-argument-type]
+                thinking_level=thinking_level,  # ty: ignore[invalid-argument-type]
+                include_thoughts=True,
+            )
+        elif thinking_budget:
+            gen_config.thinking_config = self._types.ThinkingConfig(
+                thinking_budget=thinking_budget,
+                include_thoughts=True,
             )
 
         if context.system_prompt:
@@ -271,7 +283,11 @@ class GeminiAIProvider(AIProvider):
                         if first_token:
                             self._record_ttfb(t0)
                             first_token = False
-                        yield StreamTextDelta(text=part.text)
+                        # Thought-summary parts are flagged thought=True.
+                        if getattr(part, "thought", False):
+                            yield StreamThinkingDelta(thinking=part.text)
+                        else:
+                            yield StreamTextDelta(text=part.text)
                     elif hasattr(part, "function_call") and part.function_call:
                         fc = part.function_call
                         fc_name: str = fc.name or ""
@@ -304,11 +320,14 @@ class GeminiAIProvider(AIProvider):
     async def generate(self, context: AIContext) -> AIResponse:
         """Generate by consuming the structured stream."""
         text_parts: list[str] = []
+        thinking_parts: list[str] = []
         tool_calls: list[AIToolCall] = []
         done_event: StreamDone | None = None
 
         async for event in self.generate_structured_stream(context):
-            if isinstance(event, StreamTextDelta):
+            if isinstance(event, StreamThinkingDelta):
+                thinking_parts.append(event.thinking)
+            elif isinstance(event, StreamTextDelta):
                 text_parts.append(event.text)
             elif isinstance(event, StreamToolCall):
                 tool_calls.append(
@@ -324,6 +343,7 @@ class GeminiAIProvider(AIProvider):
 
         return AIResponse(
             content="".join(text_parts),
+            thinking="".join(thinking_parts) if thinking_parts else None,
             usage=done_event.usage if done_event else {},
             tool_calls=tool_calls,
             metadata=done_event.metadata if done_event else {},

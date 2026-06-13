@@ -410,6 +410,35 @@ class TestGeminiAIProvider:
             assert events[2].metadata["model"] == "gemini-3.1-flash-lite"
 
     @pytest.mark.asyncio
+    async def test_structured_stream_surfaces_thought_parts(self) -> None:
+        # Gemini flags reasoning summaries with thought=True on the part; the
+        # provider must surface those as thinking, plain text as text.
+        from roomkit.providers.ai.base import StreamThinkingDelta
+
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            thought = SimpleNamespace(text="reasoning", thought=True, function_call=None)
+            answer = SimpleNamespace(text="answer", thought=False, function_call=None)
+            chunk = SimpleNamespace(
+                candidates=[SimpleNamespace(content=SimpleNamespace(parts=[thought, answer]))],
+                usage_metadata=SimpleNamespace(prompt_token_count=3, candidates_token_count=4),
+            )
+            provider._client.aio.models.generate_content_stream.return_value = _FakeStreamIterator(
+                [chunk]
+            )
+
+            events = [
+                e async for e in provider.generate_structured_stream(_context(thinking_budget=512))
+            ]
+            thinking = [e.thinking for e in events if isinstance(e, StreamThinkingDelta)]
+            text = [e.text for e in events if isinstance(e, StreamTextDelta)]
+            assert thinking == ["reasoning"]
+            assert text == ["answer"]
+
+    @pytest.mark.asyncio
     async def test_generate_stream_yields_text(self) -> None:
         mock_genai = _mock_genai_module()
         with patch.dict("sys.modules", _genai_modules(mock_genai)):

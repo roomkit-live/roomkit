@@ -375,6 +375,48 @@ class TestOpenAIAIProvider:
             assert first_thinking < first_text
 
     @pytest.mark.asyncio
+    async def test_structured_stream_with_reasoning_content_field(self) -> None:
+        """Reasoning via a dedicated reasoning_content field (DeepSeek-R1, vLLM)."""
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+
+            chunks = [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content=None, reasoning_content="thinking", tool_calls=None
+                            ),
+                            finish_reason=None,
+                        )
+                    ]
+                ),
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content="answer", tool_calls=None),
+                            finish_reason="stop",
+                        )
+                    ]
+                ),
+            ]
+
+            async def _fake_stream() -> Any:
+                for c in chunks:
+                    yield c
+
+            provider._client.chat.completions.create = AsyncMock(return_value=_fake_stream())
+
+            events = [e async for e in provider.generate_structured_stream(_context())]
+            thinking = [e.thinking for e in events if isinstance(e, StreamThinkingDelta)]
+            text = [e.text for e in events if isinstance(e, StreamTextDelta)]
+            assert thinking == ["thinking"]
+            assert text == ["answer"]
+
+    @pytest.mark.asyncio
     async def test_thinking_part_round_trip(self) -> None:
         """AIThinkingPart in history is re-wrapped as <think> tags."""
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):

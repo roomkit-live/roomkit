@@ -190,6 +190,9 @@ class MistralAIProvider(AIProvider):
         }
         if context.temperature is not None:
             kwargs["temperature"] = context.temperature
+        effort = self._resolve_reasoning_effort(context)
+        if effort is not None:
+            kwargs["reasoning_effort"] = effort
         if context.tools:
             kwargs["tools"] = [
                 {
@@ -203,6 +206,45 @@ class MistralAIProvider(AIProvider):
                 for t in context.tools
             ]
         return kwargs
+
+    def _resolve_reasoning_effort(self, context: AIContext) -> str | None:
+        """Decide ``reasoning_effort`` for this request.
+
+        ``thinking_budget`` gates per-turn: ``None`` passes the provider config
+        through verbatim; ``0`` forces ``"none"`` (reasoning off); ``>0`` honors
+        the configured effort or defaults to ``"high"``. Returns ``None`` to omit
+        the parameter entirely (model decides — Magistral always reasons).
+        """
+        budget = context.thinking_budget
+        if budget is None:
+            return self._config.reasoning_effort
+        if budget <= 0:
+            return "none"
+        return self._config.reasoning_effort or "high"
+
+    @staticmethod
+    def _chunks_to_segments(chunks: list[Any]) -> list[tuple[str, str]]:
+        """Map Mistral structured content chunks to ``(kind, text)`` segments.
+
+        Reasoning models stream ``content`` as a list of typed chunks instead of
+        a plain string: a ``ThinkChunk`` (``type == "thinking"``) carries the
+        reasoning trace in ``.thinking`` (a list of inner text chunks), while a
+        ``TextChunk`` (``type == "text"``) carries answer text in ``.text``.
+        Unknown chunk types are skipped.
+        """
+        segments: list[tuple[str, str]] = []
+        for chunk in chunks:
+            ctype = getattr(chunk, "type", None)
+            if ctype == "thinking":
+                for inner in getattr(chunk, "thinking", None) or []:
+                    inner_text = getattr(inner, "text", None)
+                    if inner_text:
+                        segments.append(("thinking", inner_text))
+            elif ctype == "text":
+                text = getattr(chunk, "text", None)
+                if text:
+                    segments.append(("text", text))
+        return segments
 
     # -- Structured streaming --------------------------------------------------
 
@@ -261,17 +303,24 @@ class MistralAIProvider(AIProvider):
                             if tc_delta.function.arguments:
                                 acc["arguments"] += tc_delta.function.arguments
 
-                # Process text content through the think-tag parser
-                text = delta.content if hasattr(delta, "content") else None
-                if text:
-                    for kind, segment in parser.feed(text):
-                        if first_token:
-                            self._record_ttfb(t0)
-                            first_token = False
-                        if kind == "thinking":
-                            yield StreamThinkingDelta(thinking=segment)
-                        else:
-                            yield StreamTextDelta(text=segment)
+                # Reasoning models stream content as a list of typed chunks
+                # (ThinkChunk / TextChunk); older or non-reasoning models stream
+                # a plain string with optional inline <think>...</think> tags.
+                content = delta.content if hasattr(delta, "content") else None
+                if isinstance(content, list):
+                    segments = self._chunks_to_segments(content)
+                elif content:
+                    segments = list(parser.feed(content))
+                else:
+                    segments = []
+                for kind, segment in segments:
+                    if first_token:
+                        self._record_ttfb(t0)
+                        first_token = False
+                    if kind == "thinking":
+                        yield StreamThinkingDelta(thinking=segment)
+                    else:
+                        yield StreamTextDelta(text=segment)
 
             # Flush any remaining buffered text
             for kind, segment in parser.flush():

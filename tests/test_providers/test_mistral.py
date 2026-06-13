@@ -291,6 +291,78 @@ class TestMistralAIProvider:
             provider = MistralAIProvider(_config(model="mistral-small-latest"))
             assert provider.model_name == "mistral-small-latest"
 
+    @pytest.mark.asyncio
+    async def test_structured_reasoning_chunks_emit_thinking(self) -> None:
+        # Reasoning models stream content as typed chunks (ThinkChunk/TextChunk),
+        # not <think> text — the provider must surface them as thinking/text.
+        with patch.dict("sys.modules", _mistral_modules()):
+            from roomkit.providers.mistral.ai import MistralAIProvider
+
+            provider = MistralAIProvider(_config())
+            think_chunk = SimpleNamespace(
+                type="thinking", thinking=[SimpleNamespace(text="Let me reason")]
+            )
+            text_chunk = SimpleNamespace(type="text", text="The answer")
+            events = [
+                SimpleNamespace(
+                    data=SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(content=[think_chunk], tool_calls=None),
+                                finish_reason=None,
+                            )
+                        ],
+                        usage=None,
+                    )
+                ),
+                SimpleNamespace(
+                    data=SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(content=[text_chunk], tool_calls=None),
+                                finish_reason="stop",
+                            )
+                        ],
+                        usage=SimpleNamespace(prompt_tokens=5, completion_tokens=8),
+                    )
+                ),
+            ]
+            provider._client.chat.stream_async.return_value = _FakeStream(events)
+
+            collected = [e async for e in provider.generate_structured_stream(_context())]
+            thinking = [e.thinking for e in collected if isinstance(e, StreamThinkingDelta)]
+            text = [e.text for e in collected if isinstance(e, StreamTextDelta)]
+            assert thinking == ["Let me reason"]
+            assert text == ["The answer"]
+
+    @pytest.mark.asyncio
+    async def test_thinking_budget_maps_to_reasoning_effort(self) -> None:
+        with patch.dict("sys.modules", _mistral_modules()):
+            from roomkit.providers.mistral.ai import MistralAIProvider
+
+            provider = MistralAIProvider(_config())
+            provider._client.chat.stream_async.return_value = _stream_events(text_chunks=["hi"])
+            await provider.generate(_context(thinking_budget=4096))
+            assert (
+                provider._client.chat.stream_async.call_args.kwargs["reasoning_effort"] == "high"
+            )
+
+            provider._client.chat.stream_async.return_value = _stream_events(text_chunks=["hi"])
+            await provider.generate(_context(thinking_budget=0))
+            assert (
+                provider._client.chat.stream_async.call_args.kwargs["reasoning_effort"] == "none"
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_reasoning_effort_by_default(self) -> None:
+        with patch.dict("sys.modules", _mistral_modules()):
+            from roomkit.providers.mistral.ai import MistralAIProvider
+
+            provider = MistralAIProvider(_config())
+            provider._client.chat.stream_async.return_value = _stream_events(text_chunks=["hi"])
+            await provider.generate(_context())
+            assert "reasoning_effort" not in provider._client.chat.stream_async.call_args.kwargs
+
     def test_lazy_import_error(self) -> None:
         # Simulate mistralai not installed: null both the package and its v2
         # `client` submodule (the provider imports `from mistralai.client`).
