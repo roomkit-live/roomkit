@@ -19,6 +19,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
+    ModelInfo,
     ProviderError,
     StreamDone,
     StreamEvent,
@@ -27,6 +28,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.openai.config import OpenAIConfig
+from roomkit.providers.openai.models import MODELS
 
 # OpenAI models that support vision
 _VISION_MODELS = (
@@ -150,6 +152,23 @@ class OpenAIAIProvider(AIProvider):
     @property
     def supports_structured_streaming(self) -> bool:
         return True
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of OpenAI chat/multimodal models."""
+        return list(MODELS)
+
+    async def list_models(self) -> list[ModelInfo]:
+        """List every model id the configured endpoint exposes.
+
+        The OpenAI ``/v1/models`` response carries only ids — metadata for
+        known chat models is backfilled from the curated catalog. The raw
+        list also includes non-chat models (embeddings, audio); they pass
+        through unfiltered since the endpoint reports no capability field.
+        """
+        page = await self._client.models.list()
+        live = [ModelInfo(id=m.id) for m in page.data]
+        return self._merge_curated(live)
 
     def _format_content(
         self,

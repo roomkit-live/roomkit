@@ -19,6 +19,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
+    ModelInfo,
     ProviderError,
     StreamDone,
     StreamEvent,
@@ -26,6 +27,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.gemini.config import GeminiConfig
+from roomkit.providers.gemini.models import MODELS
 
 
 class GeminiAIProvider(AIProvider):
@@ -62,6 +64,29 @@ class GeminiAIProvider(AIProvider):
     def supports_vision(self) -> bool:
         """All Gemini models support vision."""
         return True
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of Gemini models."""
+        return list(MODELS)
+
+    async def list_models(self) -> list[ModelInfo]:
+        """List generate-content models the Gemini API currently exposes."""
+        live: list[ModelInfo] = []
+        pager = await self._client.aio.models.list()  # ty: ignore[unresolved-attribute]
+        async for m in pager:
+            name = (m.name or "").removeprefix("models/")
+            actions = getattr(m, "supported_actions", None) or []
+            if not name or (actions and "generateContent" not in actions):
+                continue
+            live.append(
+                ModelInfo(
+                    id=name,
+                    display_name=getattr(m, "display_name", None),
+                    context_window=getattr(m, "input_token_limit", None),
+                )
+            )
+        return self._merge_curated(live)
 
     def _format_messages(self, messages: list[AIMessage]) -> list[Any]:
         """Convert AIMessage list to Gemini Content format."""
@@ -132,13 +157,33 @@ class GeminiAIProvider(AIProvider):
             if isinstance(item, AITextPart):
                 parts.append(self._types.Part.from_text(text=item.text))
             elif isinstance(item, AIImagePart):
-                parts.append(
-                    self._types.Part.from_uri(
-                        file_uri=item.url,
-                        mime_type=item.mime_type or "image/jpeg",
-                    )
-                )
+                parts.append(self._image_part(item))
         return parts
+
+    def _image_part(self, item: AIImagePart) -> Any:
+        """Build a Gemini image Part from an ``AIImagePart``.
+
+        RoomKit carries images as ``data:<media_type>;base64,<data>``
+        URIs — the convention the Anthropic and OpenAI providers consume.
+        Gemini's ``from_uri`` expects a fetchable file URI (``gs://`` or
+        ``https://``); handed a data URI it ships a broken reference and
+        the model never sees the image. Decode a data URI to inline bytes
+        via ``from_bytes``; pass a real URI through to ``from_uri``.
+        """
+        url = item.url
+        if url.startswith("data:"):
+            header, _, b64data = url.partition(",")
+            media_type = header[len("data:") :].split(";", 1)[0] or (
+                item.mime_type or "image/jpeg"
+            )
+            return self._types.Part.from_bytes(
+                data=base64.b64decode(b64data),
+                mime_type=media_type,
+            )
+        return self._types.Part.from_uri(
+            file_uri=url,
+            mime_type=item.mime_type or "image/jpeg",
+        )
 
     def _build_gen_config(self, context: AIContext) -> Any:
         """Build Gemini generation config from AIContext."""

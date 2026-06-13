@@ -10,7 +10,9 @@ import pytest
 
 from roomkit.providers.ai.base import (
     AIContext,
+    AIImagePart,
     AIMessage,
+    AITextPart,
     AIThinkingPart,
     AITool,
     AIToolCallPart,
@@ -510,6 +512,51 @@ class TestOllamaMessageBuilding:
         sent = mod.AsyncClient.return_value.chat.await_args.kwargs["messages"]
         tool_msg = sent[-1]
         assert tool_msg == {"role": "tool", "content": "42", "tool_name": "lookup"}
+
+    @pytest.mark.asyncio
+    async def test_data_uri_image_stripped_to_raw_base64(self) -> None:
+        """A ``data:`` URI image must reach Ollama as raw base64.
+
+        RoomKit carries images as ``data:<mime>;base64,<data>`` URIs, but
+        Ollama's SDK rejects the full URI with "Invalid image data,
+        expected base64 string or path to image file". The provider
+        strips the prefix so the model receives a decodable payload.
+        """
+        provider, mod = _provider()
+        mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
+
+        b64 = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+            "AAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        msg = AIMessage(
+            role="user",
+            content=[
+                AITextPart(text="what is this?"),
+                AIImagePart(url=f"data:image/png;base64,{b64}", mime_type="image/png"),
+            ],
+        )
+        await provider.generate(_context(messages=[msg]))
+
+        sent = mod.AsyncClient.return_value.chat.await_args.kwargs["messages"]
+        user_msg = sent[-1]
+        assert user_msg["content"] == "what is this?"
+        assert user_msg["images"] == [b64]
+
+    @pytest.mark.asyncio
+    async def test_plain_base64_image_passes_through(self) -> None:
+        """A bare base64 string (or path) is forwarded unchanged."""
+        provider, mod = _provider()
+        mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
+
+        msg = AIMessage(
+            role="user",
+            content=[AIImagePart(url="/tmp/cat.png", mime_type="image/png")],
+        )
+        await provider.generate(_context(messages=[msg]))
+
+        sent = mod.AsyncClient.return_value.chat.await_args.kwargs["messages"]
+        assert sent[-1]["images"] == ["/tmp/cat.png"]
 
 
 class TestOllamaErrors:

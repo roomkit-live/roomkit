@@ -10,7 +10,9 @@ import pytest
 
 from roomkit.providers.ai.base import (
     AIContext,
+    AIImagePart,
     AIMessage,
+    AITextPart,
     AITool,
     StreamDone,
     StreamTextDelta,
@@ -47,6 +49,9 @@ def _mock_genai_module() -> MagicMock:
     types.Part.from_text = MagicMock(side_effect=lambda text: SimpleNamespace(text=text))
     types.Part.from_uri = MagicMock(
         side_effect=lambda file_uri, mime_type: SimpleNamespace(uri=file_uri, mime_type=mime_type)
+    )
+    types.Part.from_bytes = MagicMock(
+        side_effect=lambda data, mime_type: SimpleNamespace(data=data, mime_type=mime_type)
     )
     types.GenerateContentConfig = MagicMock(side_effect=lambda **kw: SimpleNamespace(**kw))
     types.Tool = MagicMock(side_effect=lambda **kw: SimpleNamespace(**kw))
@@ -196,6 +201,56 @@ class TestGeminiAIProvider:
 
             assert result.content == "Hi there!"
             assert result.metadata["model"] == "gemini-3.1-flash-lite"
+
+    @pytest.mark.asyncio
+    async def test_data_uri_image_decoded_to_inline_bytes(self) -> None:
+        """A ``data:`` URI image must become inline bytes, not a file URI.
+
+        Gemini's ``from_uri`` expects a fetchable URI; a data URI handed
+        to it ships a broken reference and the model never sees the image.
+        The provider routes data URIs through ``from_bytes`` with the
+        decoded payload.
+        """
+        import base64
+
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            raw = b"\x89PNG\r\n\x1a\n fake image bytes"
+            b64 = base64.b64encode(raw).decode()
+            parts = provider._format_content(
+                [
+                    AITextPart(text="what is this?"),
+                    AIImagePart(url=f"data:image/png;base64,{b64}", mime_type="image/png"),
+                ]
+            )
+
+            mock_genai.types.Part.from_uri.assert_not_called()
+            mock_genai.types.Part.from_bytes.assert_called_once_with(
+                data=raw, mime_type="image/png"
+            )
+            assert parts[-1].data == raw
+            assert parts[-1].mime_type == "image/png"
+
+    @pytest.mark.asyncio
+    async def test_real_uri_image_passed_through_from_uri(self) -> None:
+        """A genuine fetchable URI still goes through ``from_uri``."""
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            parts = provider._format_content(
+                [AIImagePart(url="https://example.com/cat.png", mime_type="image/png")]
+            )
+
+            mock_genai.types.Part.from_bytes.assert_not_called()
+            mock_genai.types.Part.from_uri.assert_called_once_with(
+                file_uri="https://example.com/cat.png", mime_type="image/png"
+            )
+            assert parts[-1].uri == "https://example.com/cat.png"
 
     @pytest.mark.asyncio
     async def test_generate_with_system_prompt(self) -> None:

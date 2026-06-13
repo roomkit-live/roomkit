@@ -17,6 +17,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
+    ModelInfo,
     ProviderError,
     StreamDone,
     StreamEvent,
@@ -25,6 +26,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.anthropic.config import AnthropicConfig
+from roomkit.providers.anthropic.models import MODELS
 
 # Claude models that support vision (Claude 3 and later)
 _VISION_MODELS = (
@@ -73,6 +75,19 @@ class AnthropicAIProvider(AIProvider):
     def supports_vision(self) -> bool:
         """Claude 3+ models support vision."""
         return any(self._config.model.startswith(prefix) for prefix in _VISION_MODELS)
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of Claude models."""
+        return list(MODELS)
+
+    async def list_models(self) -> list[ModelInfo]:
+        """List models the Anthropic API currently exposes for this key."""
+        page = await self._client.models.list(limit=1000)
+        live = [
+            ModelInfo(id=m.id, display_name=getattr(m, "display_name", None)) for m in page.data
+        ]
+        return self._merge_curated(live)
 
     def _format_content(
         self,

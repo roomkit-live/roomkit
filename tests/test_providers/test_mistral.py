@@ -237,19 +237,18 @@ class TestMistralAIProvider:
         assert cfg.temperature == 0.7
         assert cfg.server_url is None
 
-    def test_supports_vision_pixtral(self) -> None:
+    def test_supports_vision_advertised_for_any_model(self) -> None:
+        # Vision is per-model on Mistral and the multimodal lineup keeps
+        # shifting (Pixtral deprecated, Mistral Large 3 multimodal). The
+        # provider advertises vision unconditionally and lets the API
+        # reject a non-vision model, rather than filtering images out on a
+        # stale prefix list.
         with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
-            provider = MistralAIProvider(_config(model="pixtral-large-latest"))
-            assert provider.supports_vision is True
-
-    def test_no_vision_for_standard_models(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
-            from roomkit.providers.mistral.ai import MistralAIProvider
-
-            provider = MistralAIProvider(_config(model="mistral-large-latest"))
-            assert provider.supports_vision is False
+            for model in ("pixtral-large-latest", "mistral-large-latest", "mistral-small-latest"):
+                provider = MistralAIProvider(_config(model=model))
+                assert provider.supports_vision is True
 
     def test_supports_streaming(self) -> None:
         with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):

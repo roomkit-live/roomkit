@@ -19,6 +19,13 @@ def create_vllm_provider(config: VLLMConfig) -> OpenAIAIProvider:
     implements the OpenAI Chat Completions API.  The ``openai`` SDK is
     imported lazily when :class:`OpenAIAIProvider` is instantiated.
 
+    Note:
+        The returned provider inherits :meth:`OpenAIAIProvider.available_models`,
+        whose curated catalog lists OpenAI's *hosted* models — not whatever a
+        local vLLM server serves. For a vLLM deployment, call
+        :meth:`~OpenAIAIProvider.list_models` instead: it queries the server's
+        ``/v1/models`` endpoint and returns the models actually loaded there.
+
     Args:
         config: vLLM connection settings.
 

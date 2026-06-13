@@ -29,6 +29,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
+    ModelInfo,
     ProviderError,
     StreamDone,
     StreamEvent,
@@ -37,6 +38,23 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.ollama.config import OllamaConfig
+from roomkit.providers.ollama.models import MODELS
+
+
+def _ollama_image_payload(url: str) -> str:
+    """Reduce an image reference to what Ollama's SDK accepts.
+
+    RoomKit carries images as ``data:<media_type>;base64,<data>`` URIs —
+    the same convention the Anthropic and OpenAI providers consume.
+    Ollama's ``Image`` type only accepts a raw base64 string or a file
+    path; handed a full data URI it raises ``ValueError: Invalid image
+    data, expected base64 string or path to image file``. Strip the
+    ``data:...;base64,`` prefix down to the payload; pass a plain base64
+    string or path through unchanged.
+    """
+    if url.startswith("data:"):
+        return url.partition(",")[2]
+    return url
 
 
 class OllamaAIProvider(AIProvider):
@@ -79,6 +97,20 @@ class OllamaAIProvider(AIProvider):
     @property
     def supports_structured_streaming(self) -> bool:
         return True
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline snapshot of popular public Ollama models."""
+        return list(MODELS)
+
+    async def list_models(self) -> list[ModelInfo]:
+        """List models installed on the configured Ollama server (``/api/tags``)."""
+        resp = await self._client.list()
+        installed = self._get_attr(resp, "models", None) or []
+        live = [
+            ModelInfo(id=name) for m in installed if (name := self._get_attr(m, "model", None))
+        ]
+        return self._merge_curated(live)
 
     # -- Message + tool conversion ------------------------------------------
 
@@ -128,7 +160,7 @@ class OllamaAIProvider(AIProvider):
                 if isinstance(part, AITextPart):
                     text_parts.append(part.text)
                 elif isinstance(part, AIImagePart):
-                    images.append(part.url)
+                    images.append(_ollama_image_payload(part.url))
                 elif isinstance(part, AIThinkingPart):
                     thinking_text = part.thinking
                 elif isinstance(part, AIToolCallPart):

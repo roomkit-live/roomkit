@@ -8,12 +8,20 @@ from roomkit.providers.ai.base import (
     AIContext,
     AIProvider,
     AIResponse,
+    ModelInfo,
     StreamDone,
     StreamEvent,
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
 )
+
+_MOCK_MODELS = [
+    ModelInfo(id="mock", display_name="Mock", context_window=8192, supports_vision=False),
+    ModelInfo(
+        id="mock-vision", display_name="Mock Vision", context_window=8192, supports_vision=True
+    ),
+]
 
 
 class MockAIProvider(AIProvider):
@@ -49,6 +57,11 @@ class MockAIProvider(AIProvider):
     @property
     def supports_structured_streaming(self) -> bool:
         return self._streaming
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Fixed two-entry catalog for exercising model-discovery code."""
+        return list(_MOCK_MODELS)
 
     async def generate(self, context: AIContext) -> AIResponse:
         self.calls.append(context)

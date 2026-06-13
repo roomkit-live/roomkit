@@ -18,6 +18,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
+    ModelInfo,
     ProviderError,
     StreamDone,
     StreamEvent,
@@ -26,15 +27,13 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.mistral.config import MistralConfig
-
-# Mistral models that support vision (Pixtral family)
-_VISION_MODELS = ("pixtral",)
+from roomkit.providers.mistral.models import MODELS
 
 
 class MistralAIProvider(AIProvider):
     """AI provider using the Mistral AI API.
 
-    Supports streaming, tool calling, vision (Pixtral models), and
+    Supports streaming, tool calling, vision (multimodal models), and
     ``<think>`` tag parsing for reasoning models.
     """
 
@@ -61,8 +60,14 @@ class MistralAIProvider(AIProvider):
 
     @property
     def supports_vision(self) -> bool:
-        """Pixtral models support vision."""
-        return any(self._config.model.startswith(prefix) for prefix in _VISION_MODELS)
+        # Vision support is per-model on Mistral and the multimodal lineup
+        # keeps shifting (Pixtral is deprecated; Mistral Large 3 is
+        # multimodal). Rather than maintain a prefix list that goes stale,
+        # pass images through whenever they arrive — the API rejects a
+        # non-vision model itself. Returning True keeps the routing layer
+        # honest: image content reaches the wire instead of being silently
+        # filtered out one layer above.
+        return True
 
     @property
     def supports_streaming(self) -> bool:
@@ -71,6 +76,18 @@ class MistralAIProvider(AIProvider):
     @property
     def supports_structured_streaming(self) -> bool:
         return True
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of Mistral chat/multimodal models."""
+        return list(MODELS)
+
+    async def list_models(self) -> list[ModelInfo]:
+        """List models the Mistral API currently exposes for this key."""
+        resp = await self._client.models.list_async()
+        data = getattr(resp, "data", None) or []
+        live = [ModelInfo(id=m.id) for m in data if getattr(m, "id", None)]
+        return self._merge_curated(live)
 
     # -- Message formatting ----------------------------------------------------
 
