@@ -17,8 +17,9 @@ import logging
 from typing import Any
 
 from roomkit.providers.elevenlabs.config import ElevenLabsRealtimeConfig
+from roomkit.providers.elevenlabs.voices import VOICES as _VOICES
 from roomkit.voice.base import VoiceSession, VoiceSessionState
-from roomkit.voice.realtime.provider import RealtimeVoiceProvider
+from roomkit.voice.realtime.provider import RealtimeVoiceProvider, VoiceInfo
 
 logger = logging.getLogger("roomkit.providers.elevenlabs.realtime")
 
@@ -60,6 +61,30 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
     @property
     def name(self) -> str:
         return "ElevenLabsRealtimeProvider"
+
+    @classmethod
+    def available_voices(cls) -> list[VoiceInfo]:
+        """Curated, offline catalog of ElevenLabs default voices."""
+        return list(_VOICES)
+
+    async def list_voices(self) -> list[VoiceInfo]:
+        """List voices the account exposes via the ElevenLabs voices API."""
+        from elevenlabs import ElevenLabs
+
+        client = ElevenLabs(api_key=self._config.api_key)
+        resp = await asyncio.to_thread(client.voices.get_all)
+        live = [
+            VoiceInfo(
+                id=v.voice_id,
+                name=(v.name or "").split(" - ")[0] or None,
+                gender=(v.labels or {}).get("gender"),
+                language=(v.labels or {}).get("language"),
+                description=v.description or None,
+            )
+            for v in (resp.voices or [])
+            if getattr(v, "voice_id", None)
+        ]
+        return self._merge_curated(live)
 
     # -- Connection lifecycle --
 

@@ -10,8 +10,9 @@ from typing import Any
 
 from pydantic import SecretStr
 
+from roomkit.providers.openai.voices import VOICES as _VOICES
 from roomkit.voice.base import VoiceSession, VoiceSessionState
-from roomkit.voice.realtime.provider import RealtimeVoiceProvider
+from roomkit.voice.realtime.provider import RealtimeVoiceProvider, VoiceInfo
 
 logger = logging.getLogger("roomkit.providers.openai.realtime")
 
@@ -77,6 +78,11 @@ class OpenAIRealtimeProvider(RealtimeVoiceProvider):
     @property
     def name(self) -> str:
         return "OpenAIRealtimeProvider"
+
+    @classmethod
+    def available_voices(cls) -> list[VoiceInfo]:
+        """Curated, offline catalog of OpenAI Realtime voices (fixed set)."""
+        return list(_VOICES)
 
     async def connect(
         self,
