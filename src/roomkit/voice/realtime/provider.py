@@ -46,7 +46,7 @@ class VoiceInfo(BaseModel):
             ``"multilingual"``), else ``None``.
         gender: ``"male"``/``"female"``/``"neutral"`` if known.
         description: Short characterization (e.g. ``"Upbeat"``) if known.
-        deprecated: Whether the provider marks the voice deprecated/legacy.
+        deprecated: Whether the provider marks the voice deprecated.
     """
 
     id: str

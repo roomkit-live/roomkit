@@ -2,7 +2,7 @@
 
 Hand-maintained, offline list returned by ``ElevenLabsRealtimeProvider.available_voices``.
 Voice ids are verified ElevenLabs ``voice_id`` strings pulled from the public
-``GET /v1/voices`` endpoint. ElevenLabs rotates defaults in and out of "legacy",
+``GET /v1/voices`` endpoint. ElevenLabs revises its default voice set over time,
 so treat ``ElevenLabsRealtimeProvider.list_voices()`` (live ``client.voices``) as
 the source of truth; this is an offline fallback.
 """
