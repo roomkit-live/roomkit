@@ -656,3 +656,44 @@ class TestOllamaLazyImport:
             importlib.reload(mod)
             with pytest.raises(ImportError, match="pip install roomkit\\[ollama\\]"):
                 mod.OllamaAIProvider(_config())
+
+
+class TestOllamaListModels:
+    @pytest.mark.asyncio
+    async def test_list_models_attaches_capabilities(self) -> None:
+        """list_models reads /api/tags then probes /api/show for capabilities."""
+        provider, mod = _provider()
+        client = mod.AsyncClient.return_value
+        client.list = AsyncMock(
+            return_value=SimpleNamespace(
+                models=[
+                    SimpleNamespace(model="qwen3:8b"),
+                    SimpleNamespace(model="nomic-embed-text"),
+                ]
+            )
+        )
+        caps = {"qwen3:8b": ["completion", "tools"], "nomic-embed-text": ["embedding"]}
+
+        async def _show(model: str) -> SimpleNamespace:
+            return SimpleNamespace(capabilities=caps[model])
+
+        client.show = AsyncMock(side_effect=_show)
+
+        models = await provider.list_models()
+
+        by_id = {m.id: m for m in models}
+        assert by_id["qwen3:8b"].capabilities == ["completion", "tools"]
+        assert by_id["nomic-embed-text"].capabilities == ["embedding"]
+
+    @pytest.mark.asyncio
+    async def test_list_models_tolerates_show_failure(self) -> None:
+        """A failing /api/show probe yields empty capabilities, not a crash."""
+        provider, mod = _provider()
+        client = mod.AsyncClient.return_value
+        client.list = AsyncMock(return_value=SimpleNamespace(models=[SimpleNamespace(model="m1")]))
+        client.show = AsyncMock(side_effect=RuntimeError("boom"))
+
+        models = await provider.list_models()
+
+        assert models[0].id == "m1"
+        assert models[0].capabilities == []

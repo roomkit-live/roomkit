@@ -209,7 +209,11 @@ class ModelInfo(BaseModel):
         display_name: Human-friendly name (e.g. ``"Claude Sonnet 4"``).
         context_window: Input context window in tokens, if known.
         supports_vision: Whether the model accepts image input, if known.
-        deprecated: Whether the provider marks the model deprecated/legacy.
+        deprecated: Whether the provider marks the model deprecated.
+        capabilities: Provider-reported capability tags (e.g. Ollama's
+            ``"completion"``, ``"embedding"``, ``"vision"``, ``"tools"``).
+            Empty when the source does not report them — consumers treat
+            empty as "unknown, allow everywhere" rather than "none".
     """
 
     id: str
@@ -217,6 +221,7 @@ class ModelInfo(BaseModel):
     context_window: int | None = None
     supports_vision: bool | None = None
     deprecated: bool = False
+    capabilities: list[str] = Field(default_factory=list)
 
 
 class AIProvider(ABC):
