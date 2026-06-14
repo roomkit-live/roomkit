@@ -141,9 +141,7 @@ class TestOpenAIAIProvider:
             ):
                 provider = OpenAIAIProvider(_config(use_max_completion_tokens=flag))
                 provider._client = MagicMock()
-                provider._client.chat.completions.create = AsyncMock(
-                    return_value=_mock_response()
-                )
+                provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
                 await provider.generate(_context(max_tokens=321))
                 call_kwargs = provider._client.chat.completions.create.call_args[1]
                 assert call_kwargs[expected] == 321
@@ -173,9 +171,7 @@ class TestOpenAIAIProvider:
             for effort, present in (("high", True), (None, False)):
                 provider = OpenAIAIProvider(_config(reasoning_effort=effort))
                 provider._client = MagicMock()
-                provider._client.chat.completions.create = AsyncMock(
-                    return_value=_mock_response()
-                )
+                provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
                 await provider.generate(_context())
                 call_kwargs = provider._client.chat.completions.create.call_args[1]
                 assert ("reasoning_effort" in call_kwargs) is present
