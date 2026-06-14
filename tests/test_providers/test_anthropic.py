@@ -263,7 +263,7 @@ class TestAnthropicAIProvider:
 
     def test_thinking_shape_follows_adaptive_flag(self) -> None:
         # use_adaptive_thinking sends the adaptive shape (newer models 400 on
-        # budget_tokens); default keeps the legacy budget_tokens shape. Either
+        # budget_tokens); the default keeps the fixed budget_tokens shape. Either
         # way temperature is dropped while thinking.
         with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
             from roomkit.providers.anthropic.ai import AnthropicAIProvider
@@ -274,8 +274,8 @@ class TestAnthropicAIProvider:
             assert "budget_tokens" not in kwargs["thinking"]
             assert "temperature" not in kwargs
 
-            legacy = AnthropicAIProvider(_config())  # use_adaptive_thinking=False
-            kwargs = legacy._build_kwargs(_context(thinking_budget=8192))
+            fixed = AnthropicAIProvider(_config())  # use_adaptive_thinking=False
+            kwargs = fixed._build_kwargs(_context(thinking_budget=8192))
             assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 8192}
 
     @pytest.mark.asyncio

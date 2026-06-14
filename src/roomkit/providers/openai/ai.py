@@ -275,6 +275,20 @@ class OpenAIAIProvider(AIProvider):
         key = "max_completion_tokens" if self._config.use_max_completion_tokens else "max_tokens"
         return {key: value}
 
+    def _apply_sampling_kwargs(self, kwargs: dict[str, Any], context: AIContext) -> None:
+        """Add temperature and reasoning_effort to a request when applicable.
+
+        Temperature is dropped for models that only accept the default
+        (``supports_custom_temperature=False``). reasoning_effort is omitted on
+        tool turns because Chat Completions rejects it alongside function tools
+        for some models (gpt-5.5: "use /v1/responses instead"); the reasoning
+        trace isn't returned here anyway, so this only forgoes depth tuning.
+        """
+        if context.temperature is not None and self._config.supports_custom_temperature:
+            kwargs["temperature"] = context.temperature
+        if self._config.reasoning_effort is not None and not context.tools:
+            kwargs["reasoning_effort"] = self._config.reasoning_effort
+
     # -- Non-streaming ---------------------------------------------------------
 
     async def generate(self, context: AIContext) -> AIResponse:
@@ -285,14 +299,7 @@ class OpenAIAIProvider(AIProvider):
             **self._token_limit_kwarg(context.max_tokens or self._config.max_tokens),
             "messages": messages,
         }
-        if context.temperature is not None and self._config.supports_custom_temperature:
-            kwargs["temperature"] = context.temperature
-        # Chat Completions rejects reasoning_effort alongside function tools for
-        # some models (gpt-5.5: "use /v1/responses instead"), so only send it
-        # when no tools are in play. The reasoning trace isn't returned here
-        # either way, so this only forgoes depth tuning on tool turns.
-        if self._config.reasoning_effort is not None and not context.tools:
-            kwargs["reasoning_effort"] = self._config.reasoning_effort
+        self._apply_sampling_kwargs(kwargs, context)
 
         # Add tools if provided
         if context.tools:
@@ -310,7 +317,7 @@ class OpenAIAIProvider(AIProvider):
 
         t0 = time.monotonic()
         try:
-            response = await self._client.chat.completions.create(**kwargs)
+            response = await self._client.chat.completions.create(**kwargs)  # ty: ignore[no-matching-overload]
         except ProviderError:
             raise
         except self._api_connection_error as exc:
@@ -409,14 +416,7 @@ class OpenAIAIProvider(AIProvider):
         }
         if self._config.include_stream_usage:
             kwargs["stream_options"] = {"include_usage": True}
-        if context.temperature is not None and self._config.supports_custom_temperature:
-            kwargs["temperature"] = context.temperature
-        # Chat Completions rejects reasoning_effort alongside function tools for
-        # some models (gpt-5.5: "use /v1/responses instead"), so only send it
-        # when no tools are in play. The reasoning trace isn't returned here
-        # either way, so this only forgoes depth tuning on tool turns.
-        if self._config.reasoning_effort is not None and not context.tools:
-            kwargs["reasoning_effort"] = self._config.reasoning_effort
+        self._apply_sampling_kwargs(kwargs, context)
         if context.max_tokens is not None:
             kwargs.update(self._token_limit_kwarg(context.max_tokens))
         if context.tools:
