@@ -150,6 +150,20 @@ class TestOpenAIAIProvider:
                 assert forbidden not in call_kwargs
 
     @pytest.mark.asyncio
+    async def test_temperature_omitted_when_unsupported(self) -> None:
+        # Reasoning models accept only temperature=1; supports_custom_temperature
+        # =False must drop the param entirely rather than send a rejected value.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config(supports_custom_temperature=False))
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+            await provider.generate(_context(temperature=0.7))
+            call_kwargs = provider._client.chat.completions.create.call_args[1]
+            assert "temperature" not in call_kwargs
+
+    @pytest.mark.asyncio
     async def test_generate_maps_usage(self) -> None:
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.openai.ai import OpenAIAIProvider

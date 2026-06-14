@@ -285,7 +285,7 @@ class OpenAIAIProvider(AIProvider):
             **self._token_limit_kwarg(context.max_tokens or self._config.max_tokens),
             "messages": messages,
         }
-        if context.temperature is not None:
+        if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
 
         # Add tools if provided
@@ -403,7 +403,7 @@ class OpenAIAIProvider(AIProvider):
         }
         if self._config.include_stream_usage:
             kwargs["stream_options"] = {"include_usage": True}
-        if context.temperature is not None:
+        if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
         if context.max_tokens is not None:
             kwargs.update(self._token_limit_kwarg(context.max_tokens))

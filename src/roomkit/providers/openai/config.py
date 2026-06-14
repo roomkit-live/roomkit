@@ -38,3 +38,7 @@ class OpenAIConfig(BaseModel):
     gpt-4.1) reject ``max_tokens`` outright. Leave False for
     OpenAI-compatible servers (vLLM, LM Studio, older Azure deployments)
     that only understand ``max_tokens``."""
+    supports_custom_temperature: bool = True
+    """When False, ``temperature`` is omitted from requests. OpenAI's
+    reasoning models (o-series, gpt-5) accept only the default
+    ``temperature=1`` and reject any other value with HTTP 400."""
