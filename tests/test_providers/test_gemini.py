@@ -279,7 +279,7 @@ class TestGeminiAIProvider:
             )
             result = await provider.generate(_context())
 
-            assert result.usage == {"prompt_tokens": 42, "completion_tokens": 7}
+            assert result.usage == {"input_tokens": 42, "output_tokens": 7}
 
     @pytest.mark.asyncio
     async def test_generate_with_tools(self) -> None:
@@ -406,7 +406,7 @@ class TestGeminiAIProvider:
             assert isinstance(events[1], StreamTextDelta)
             assert events[1].text == " world"
             assert isinstance(events[2], StreamDone)
-            assert events[2].usage == {"prompt_tokens": 5, "completion_tokens": 10}
+            assert events[2].usage == {"input_tokens": 5, "output_tokens": 10}
             assert events[2].metadata["model"] == "gemini-3.1-flash-lite"
 
     @pytest.mark.asyncio
@@ -437,6 +437,83 @@ class TestGeminiAIProvider:
             text = [e.text for e in events if isinstance(e, StreamTextDelta)]
             assert thinking == ["reasoning"]
             assert text == ["answer"]
+
+    @pytest.mark.asyncio
+    async def test_duplicate_streamed_function_call_keeps_signature(self) -> None:
+        # Gemini streams the same call across chunks: the first carries its
+        # thought_signature, a later one re-emits it without. The provider must
+        # collapse them into ONE tool call that retains the signature — else
+        # Gemini 3 rejects the next turn with HTTP 400 "missing thought_signature".
+        import base64
+
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            def _fc_chunk(sig: bytes | None) -> SimpleNamespace:
+                part = SimpleNamespace(
+                    text=None,
+                    function_call=SimpleNamespace(name="web_search", args={"q": "x"}),
+                    thought_signature=sig,
+                )
+                return SimpleNamespace(
+                    candidates=[SimpleNamespace(content=SimpleNamespace(parts=[part]))],
+                    usage_metadata=None,
+                )
+
+            final = SimpleNamespace(
+                candidates=None,
+                usage_metadata=SimpleNamespace(prompt_token_count=1, candidates_token_count=1),
+            )
+            provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content_stream.return_value = _FakeStreamIterator(
+                [_fc_chunk(b"sigbytes"), _fc_chunk(None), final]
+            )
+
+            events = [
+                e async for e in provider.generate_structured_stream(_context(thinking_budget=512))
+            ]
+            tool_calls = [e for e in events if isinstance(e, StreamToolCall)]
+            assert len(tool_calls) == 1
+            assert tool_calls[0].name == "web_search"
+            assert tool_calls[0].metadata["thought_signature"] == base64.b64encode(
+                b"sigbytes"
+            ).decode("ascii")
+
+    @pytest.mark.asyncio
+    async def test_distinct_parallel_function_calls_not_merged(self) -> None:
+        # Two web_search calls with different args are distinct — they must NOT
+        # be collapsed by the duplicate-merge logic.
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            def _fc_chunk(query: str) -> SimpleNamespace:
+                part = SimpleNamespace(
+                    text=None,
+                    function_call=SimpleNamespace(name="web_search", args={"q": query}),
+                    thought_signature=b"s",
+                )
+                return SimpleNamespace(
+                    candidates=[SimpleNamespace(content=SimpleNamespace(parts=[part]))],
+                    usage_metadata=None,
+                )
+
+            final = SimpleNamespace(
+                candidates=None,
+                usage_metadata=SimpleNamespace(prompt_token_count=1, candidates_token_count=1),
+            )
+            provider = GeminiAIProvider(_config())
+            provider._client.aio.models.generate_content_stream.return_value = _FakeStreamIterator(
+                [_fc_chunk("alpha"), _fc_chunk("beta"), final]
+            )
+
+            events = [
+                e async for e in provider.generate_structured_stream(_context(thinking_budget=512))
+            ]
+            tool_calls = [e for e in events if isinstance(e, StreamToolCall)]
+            assert len(tool_calls) == 2
+            assert {tc.arguments["q"] for tc in tool_calls} == {"alpha", "beta"}
 
     @pytest.mark.asyncio
     async def test_generate_stream_yields_text(self) -> None:
