@@ -277,11 +277,14 @@ class MistralAIProvider(AIProvider):
                 delta = data.choices[0].delta
                 finish_reason = data.choices[0].finish_reason or finish_reason
 
-                # Extract usage from the stream when available
+                # Extract usage from the stream when available. Normalize to
+                # the canonical key names every other provider emits
+                # (input_tokens / output_tokens) so downstream usage trackers
+                # read one contract — Mistral's SDK calls them prompt/completion.
                 if data.usage:
                     usage = {
-                        "prompt_tokens": data.usage.prompt_tokens,
-                        "completion_tokens": data.usage.completion_tokens,
+                        "input_tokens": data.usage.prompt_tokens,
+                        "output_tokens": data.usage.completion_tokens,
                     }
 
                 # Accumulate streamed tool call deltas

@@ -201,7 +201,7 @@ class TestMistralAIProvider:
             )
             result = await provider.generate(_context())
 
-            assert result.usage == {"prompt_tokens": 42, "completion_tokens": 7}
+            assert result.usage == {"input_tokens": 42, "output_tokens": 7}
 
     @pytest.mark.asyncio
     async def test_generate_with_tools(self) -> None:
@@ -398,7 +398,7 @@ class TestMistralAIProvider:
             assert isinstance(events[1], StreamTextDelta)
             assert events[1].text == " world"
             assert isinstance(events[2], StreamDone)
-            assert events[2].usage == {"prompt_tokens": 5, "completion_tokens": 10}
+            assert events[2].usage == {"input_tokens": 5, "output_tokens": 10}
 
     @pytest.mark.asyncio
     async def test_generate_stream_yields_text(self) -> None:
