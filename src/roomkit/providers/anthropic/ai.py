@@ -247,6 +247,15 @@ class AnthropicAIProvider(AIProvider):
                                 self._record_ttfb(t0)
                                 first_token = False
                             yield StreamThinkingDelta(thinking=delta.thinking)  # ty: ignore[unresolved-attribute]
+                        elif delta.type == "signature_delta":
+                            # The thinking block's opaque signature arrives as
+                            # its own delta after the text. Surface it so the
+                            # block can be echoed back in history (Anthropic
+                            # 400s on a thinking block missing its signature).
+                            yield StreamThinkingDelta(
+                                thinking="",
+                                signature=delta.signature,  # ty: ignore[unresolved-attribute]
+                            )
                         elif delta.type == "text_delta":
                             if first_token:
                                 self._record_ttfb(t0)
@@ -317,6 +326,7 @@ class AnthropicAIProvider(AIProvider):
     async def generate(self, context: AIContext) -> AIResponse:
         """Generate by consuming the structured stream."""
         thinking_parts: list[str] = []
+        thinking_signature: str | None = None
         text_parts: list[str] = []
         tool_calls: list[AIToolCall] = []
         done_event: StreamDone | None = None
@@ -324,6 +334,8 @@ class AnthropicAIProvider(AIProvider):
         async for event in self.generate_structured_stream(context):
             if isinstance(event, StreamThinkingDelta):
                 thinking_parts.append(event.thinking)
+                if event.signature:
+                    thinking_signature = event.signature
             elif isinstance(event, StreamTextDelta):
                 text_parts.append(event.text)
             elif isinstance(event, StreamToolCall):
@@ -336,6 +348,7 @@ class AnthropicAIProvider(AIProvider):
         return AIResponse(
             content="".join(text_parts),
             thinking="".join(thinking_parts) if thinking_parts else None,
+            thinking_signature=thinking_signature,
             finish_reason=done_event.finish_reason if done_event else None,
             usage=done_event.usage if done_event else {},
             metadata=done_event.metadata if done_event else {},

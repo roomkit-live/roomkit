@@ -397,6 +397,7 @@ class AIStreamingMixin:
                     )
 
                 thinking_parts: list[str] = []
+                thinking_signature: str | None = None
                 text_parts: list[str] = []
                 tool_calls: list[StreamToolCall] = []
                 thinking_started = False
@@ -413,6 +414,12 @@ class AIStreamingMixin:
                         return
 
                     if isinstance(event, StreamThinkingDelta):
+                        if event.signature:
+                            # Signature arrives as its own delta (empty text);
+                            # capture it so the thinking block round-trips.
+                            thinking_signature = event.signature
+                        if not event.thinking:
+                            continue
                         if not thinking_started and room_id:
                             thinking_started = True
                             await self._publish_thinking_event(
@@ -635,8 +642,13 @@ class AIStreamingMixin:
                 )
 
                 parts: list[_ContentPart] = []
-                if thinking_parts:
-                    parts.append(AIThinkingPart(thinking="".join(thinking_parts)))
+                if thinking_parts or thinking_signature:
+                    parts.append(
+                        AIThinkingPart(
+                            thinking="".join(thinking_parts),
+                            signature=thinking_signature,
+                        )
+                    )
                 accumulated_text = "".join(text_parts)
                 if accumulated_text:
                     parts.append(AITextPart(text=accumulated_text))

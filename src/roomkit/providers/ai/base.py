@@ -159,11 +159,15 @@ class AIResponse(BaseModel):
 class StreamThinkingDelta(BaseModel):
     """A thinking/reasoning delta from a streaming AI response.
 
-    Emitted before text deltas when the model is reasoning.
+    Emitted before text deltas when the model is reasoning. A delta may carry
+    only a ``signature`` (with empty ``thinking``): Anthropic streams the
+    thinking block's opaque signature separately, and it must be preserved so
+    the block can be echoed back in history without a 400.
     """
 
     type: Literal["thinking_delta"] = "thinking_delta"
     thinking: str
+    signature: str | None = None
 
 
 class StreamTextDelta(BaseModel):
