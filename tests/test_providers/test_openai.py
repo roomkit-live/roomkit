@@ -164,6 +164,25 @@ class TestOpenAIAIProvider:
             assert "temperature" not in call_kwargs
 
     @pytest.mark.asyncio
+    async def test_reasoning_effort_sent_only_when_configured(self) -> None:
+        # reasoning_effort rides the request only when set on the config;
+        # default (None) omits it so non-reasoning models aren't rejected.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            for effort, present in (("high", True), (None, False)):
+                provider = OpenAIAIProvider(_config(reasoning_effort=effort))
+                provider._client = MagicMock()
+                provider._client.chat.completions.create = AsyncMock(
+                    return_value=_mock_response()
+                )
+                await provider.generate(_context())
+                call_kwargs = provider._client.chat.completions.create.call_args[1]
+                assert ("reasoning_effort" in call_kwargs) is present
+                if present:
+                    assert call_kwargs["reasoning_effort"] == "high"
+
+    @pytest.mark.asyncio
     async def test_generate_maps_usage(self) -> None:
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.openai.ai import OpenAIAIProvider

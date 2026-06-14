@@ -42,3 +42,9 @@ class OpenAIConfig(BaseModel):
     """When False, ``temperature`` is omitted from requests. OpenAI's
     reasoning models (o-series, gpt-5) accept only the default
     ``temperature=1`` and reject any other value with HTTP 400."""
+    reasoning_effort: str | None = None
+    """Reasoning depth for OpenAI reasoning models (o-series, gpt-5):
+    ``"low"`` | ``"medium"`` | ``"high"``. Controls how long the model
+    reasons (quality vs latency/cost); the reasoning trace itself stays
+    hidden in the Chat Completions API. ``None`` = the model's default.
+    Only send it for reasoning models — others reject the parameter."""
