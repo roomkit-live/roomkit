@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Claude, Gemini, and DeepSeek all surface a reasoning trace via
   `StreamThinkingDelta`. See `examples/openrouter_ai.py` and the OpenRouter
   guide.
+- **Gemini on Vertex AI** — `GeminiVertexProvider` / `GeminiVertexConfig` (in
+  the existing `roomkit.providers.gemini` package, no new dependency). A thin
+  subclass of `GeminiAIProvider` that builds the `google-genai` client in
+  Vertex mode (`vertexai=True, project, location`) with Application Default
+  Credentials instead of an API key — same models, processed in a pinned region
+  with no training-data retention (data residency for Québec Law 25 / PIPEDA).
+  `location` is required (no default) so requests can't silently route out of
+  region; `GeminiVertexConfig` subclasses `GeminiConfig` so generation fields
+  can't drift. See `examples/gemini_vertex_ai.py` and the Vertex guide.
 
 ### Changed
 
