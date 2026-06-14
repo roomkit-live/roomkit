@@ -5042,6 +5042,9 @@ ollama = [
 openai = [
     { name = "openai" },
 ]
+openrouter = [
+    { name = "openai" },
+]
 opentelemetry = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-sdk" },
@@ -5252,6 +5255,7 @@ requires-dist = [
     { name = "openai", marker = "extra == 'azure'", specifier = ">=2.28" },
     { name = "openai", marker = "extra == 'dev'", specifier = ">=2.28" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=2.28" },
+    { name = "openai", marker = "extra == 'openrouter'", specifier = ">=2.28" },
     { name = "openai", marker = "extra == 'providers'", specifier = ">=2.28" },
     { name = "openai", marker = "extra == 'realtime-openai'", specifier = ">=2.28" },
     { name = "openai", marker = "extra == 'vllm'", specifier = ">=2.28" },
@@ -5301,7 +5305,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=14.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=14.0" },
 ]
-provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "console", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
+provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "console", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "openrouter", "opentelemetry", "phonenumbers", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]

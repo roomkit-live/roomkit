@@ -12,7 +12,8 @@ Every ``AIProvider`` exposes two model-discovery entry points:
 Run with:
     uv run python examples/list_models.py
 
-Set OPENAI_API_KEY to also see a live ``list_models()`` call against OpenAI.
+Set OPENAI_API_KEY to also see a live ``list_models()`` call against OpenAI, or
+OPENROUTER_API_KEY to list every model OpenRouter exposes (300+).
 """
 
 from __future__ import annotations
@@ -26,10 +27,12 @@ from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.mistral.ai import MistralAIProvider
 from roomkit.providers.ollama.ai import OllamaAIProvider
 from roomkit.providers.openai.ai import OpenAIAIProvider
+from roomkit.providers.openrouter.ai import OpenRouterAIProvider
 
 CURATED_PROVIDERS = {
     "Anthropic": AnthropicAIProvider,
     "OpenAI": OpenAIAIProvider,
+    "OpenRouter": OpenRouterAIProvider,
     "Gemini": GeminiAIProvider,
     "Mistral": MistralAIProvider,
     "Ollama": OllamaAIProvider,
@@ -71,9 +74,29 @@ async def show_live_openai() -> None:
         await provider.close()
 
 
+async def show_live_openrouter() -> None:
+    """Query OpenRouter's live /models — its full catalog, with metadata."""
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        print("\n(set OPENROUTER_API_KEY to list every model OpenRouter exposes)")
+        return
+
+    from roomkit.providers.openrouter.config import OpenRouterConfig
+
+    provider = OpenRouterAIProvider(OpenRouterConfig(api_key=api_key, model="openai/gpt-5.5"))
+    try:
+        live = await provider.list_models()
+        print(f"\nOpenRouter live — {len(live)} models reported by the API")
+        for model in live:
+            print(_format(model))
+    finally:
+        await provider.close()
+
+
 async def main() -> None:
     show_curated_catalogs()
     await show_live_openai()
+    await show_live_openrouter()
 
 
 if __name__ == "__main__":

@@ -5,6 +5,34 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **OpenRouter AI provider** — `OpenRouterAIProvider` / `OpenRouterConfig`
+  (`roomkit[openrouter]`), a thin subclass of `OpenAIAIProvider` giving
+  OpenAI-compatible access to 300+ models behind one key. `OpenRouterConfig`
+  subclasses `OpenAIConfig`, inheriting every request field (so the two can't
+  drift), and adds the routing `base_url` plus optional `site_url`/`app_name`
+  app-attribution headers (`HTTP-Referer`/`X-Title`). `available_models()`
+  ships a curated snapshot of current flagships; `list_models()` reads
+  OpenRouter's rich `/models` endpoint as raw JSON — its entries omit the
+  `object`/`owned_by` fields the OpenAI SDK's `Model` type requires — and maps
+  context windows and vision support. Thinking is requested through
+  OpenRouter's unified `reasoning` parameter (gated by `thinking_budget`), so
+  Claude, Gemini, and DeepSeek all surface a reasoning trace via
+  `StreamThinkingDelta`. See `examples/openrouter_ai.py` and the OpenRouter
+  guide.
+
+### Changed
+
+- **Provider examples follow the `<provider>_ai.py` convention.** `ai_azure.py`
+  → `azure_ai.py`, and it is rewritten on the current `process_inbound` /
+  `attach_channel` API (the old version still called the removed
+  `kit.join`/`kit.send`/`Room.room_id` surface and no longer ran). The new
+  OpenRouter example is `openrouter_ai.py`. The `ai_*` prefix is reserved for
+  AI *feature* demos (memory, thinking, planning, …).
+
 ## [0.11.0] — 2026-06-13
 
 ### Added

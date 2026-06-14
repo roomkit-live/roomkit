@@ -97,6 +97,7 @@ src/roomkit/
 │   ├── gemini/              # GeminiAIProvider, GeminiConfig
 │   ├── mistral/             # MistralAIProvider, MistralConfig
 │   ├── vllm/                # VLLMConfig, create_vllm_provider (local AI)
+│   ├── openrouter/          # OpenRouterAIProvider, OpenRouterConfig (300+ models)
 
 │   ├── sms/                 # SMSProvider ABC, MockSMSProvider, phone utils
 │   ├── twilio/              # TwilioSMSProvider, TwilioRCSProvider
