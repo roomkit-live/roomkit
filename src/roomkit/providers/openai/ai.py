@@ -287,7 +287,11 @@ class OpenAIAIProvider(AIProvider):
         }
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
-        if self._config.reasoning_effort is not None:
+        # Chat Completions rejects reasoning_effort alongside function tools for
+        # some models (gpt-5.5: "use /v1/responses instead"), so only send it
+        # when no tools are in play. The reasoning trace isn't returned here
+        # either way, so this only forgoes depth tuning on tool turns.
+        if self._config.reasoning_effort is not None and not context.tools:
             kwargs["reasoning_effort"] = self._config.reasoning_effort
 
         # Add tools if provided
@@ -407,7 +411,11 @@ class OpenAIAIProvider(AIProvider):
             kwargs["stream_options"] = {"include_usage": True}
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
-        if self._config.reasoning_effort is not None:
+        # Chat Completions rejects reasoning_effort alongside function tools for
+        # some models (gpt-5.5: "use /v1/responses instead"), so only send it
+        # when no tools are in play. The reasoning trace isn't returned here
+        # either way, so this only forgoes depth tuning on tool turns.
+        if self._config.reasoning_effort is not None and not context.tools:
             kwargs["reasoning_effort"] = self._config.reasoning_effort
         if context.max_tokens is not None:
             kwargs.update(self._token_limit_kwarg(context.max_tokens))
