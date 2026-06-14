@@ -128,6 +128,28 @@ class TestOpenAIAIProvider:
             assert messages[1] == {"role": "user", "content": "Hi"}
 
     @pytest.mark.asyncio
+    async def test_token_limit_kwarg_name_follows_config(self) -> None:
+        # Default sends the deprecated max_tokens (OpenAI-compatible servers).
+        # use_max_completion_tokens flips it to the name OpenAI's newer models
+        # require, and never sends both.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            for flag, expected, forbidden in (
+                (False, "max_tokens", "max_completion_tokens"),
+                (True, "max_completion_tokens", "max_tokens"),
+            ):
+                provider = OpenAIAIProvider(_config(use_max_completion_tokens=flag))
+                provider._client = MagicMock()
+                provider._client.chat.completions.create = AsyncMock(
+                    return_value=_mock_response()
+                )
+                await provider.generate(_context(max_tokens=321))
+                call_kwargs = provider._client.chat.completions.create.call_args[1]
+                assert call_kwargs[expected] == 321
+                assert forbidden not in call_kwargs
+
+    @pytest.mark.asyncio
     async def test_generate_maps_usage(self) -> None:
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.openai.ai import OpenAIAIProvider

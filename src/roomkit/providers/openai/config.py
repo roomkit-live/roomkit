@@ -32,3 +32,9 @@ class OpenAIConfig(BaseModel):
     """When True, request token usage in streaming responses via
     ``stream_options.include_usage``. The usage is included in the
     final :class:`StreamDone` event."""
+    use_max_completion_tokens: bool = False
+    """Send the output cap as ``max_completion_tokens`` instead of the
+    deprecated ``max_tokens``. OpenAI's newer models (o-series, gpt-5,
+    gpt-4.1) reject ``max_tokens`` outright. Leave False for
+    OpenAI-compatible servers (vLLM, LM Studio, older Azure deployments)
+    that only understand ``max_tokens``."""

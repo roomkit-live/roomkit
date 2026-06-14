@@ -264,6 +264,17 @@ class OpenAIAIProvider(AIProvider):
                 )
         return result
 
+    def _token_limit_kwarg(self, value: int) -> dict[str, int]:
+        """Build the output-cap kwarg under the name the endpoint expects.
+
+        OpenAI's newer models reject the deprecated ``max_tokens`` and require
+        ``max_completion_tokens``; OpenAI-compatible servers (vLLM, older Azure)
+        only understand ``max_tokens``. ``use_max_completion_tokens`` on the
+        config selects between them.
+        """
+        key = "max_completion_tokens" if self._config.use_max_completion_tokens else "max_tokens"
+        return {key: value}
+
     # -- Non-streaming ---------------------------------------------------------
 
     async def generate(self, context: AIContext) -> AIResponse:
@@ -271,7 +282,7 @@ class OpenAIAIProvider(AIProvider):
 
         kwargs: dict[str, Any] = {
             "model": self._config.model,
-            "max_tokens": context.max_tokens or self._config.max_tokens,
+            **self._token_limit_kwarg(context.max_tokens or self._config.max_tokens),
             "messages": messages,
         }
         if context.temperature is not None:
@@ -395,7 +406,7 @@ class OpenAIAIProvider(AIProvider):
         if context.temperature is not None:
             kwargs["temperature"] = context.temperature
         if context.max_tokens is not None:
-            kwargs["max_tokens"] = context.max_tokens
+            kwargs.update(self._token_limit_kwarg(context.max_tokens))
         if context.tools:
             kwargs["tools"] = [
                 {
