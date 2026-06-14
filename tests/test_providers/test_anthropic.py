@@ -248,6 +248,35 @@ class TestAnthropicAIProvider:
         assert cfg.max_tokens == 1024
         assert cfg.temperature == 0.7
 
+    def test_thinking_shape_follows_adaptive_flag(self) -> None:
+        # use_adaptive_thinking sends the adaptive shape (newer models 400 on
+        # budget_tokens); default keeps the legacy budget_tokens shape. Either
+        # way temperature is dropped while thinking.
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            adaptive = AnthropicAIProvider(_config(use_adaptive_thinking=True))
+            kwargs = adaptive._build_kwargs(_context(thinking_budget=8192, temperature=0.7))
+            assert kwargs["thinking"] == {"type": "adaptive", "display": "summarized"}
+            assert "budget_tokens" not in kwargs["thinking"]
+            assert "temperature" not in kwargs
+
+            legacy = AnthropicAIProvider(_config())  # use_adaptive_thinking=False
+            kwargs = legacy._build_kwargs(_context(thinking_budget=8192))
+            assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 8192}
+
+    def test_temperature_omitted_when_unsupported(self) -> None:
+        # Reasoning models reject any temperature; supports_custom_temperature
+        # =False drops it. thinking_budget=0 means thinking off, so the temp
+        # path is what runs here.
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config(supports_custom_temperature=False))
+            kwargs = provider._build_kwargs(_context(thinking_budget=0, temperature=0.7))
+            assert "thinking" not in kwargs
+            assert "temperature" not in kwargs
+
     @pytest.mark.asyncio
     async def test_sdk_error_wrapped_in_provider_error(self) -> None:
         with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):

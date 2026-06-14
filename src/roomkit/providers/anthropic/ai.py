@@ -184,15 +184,21 @@ class AnthropicAIProvider(AIProvider):
         }
         if context.system_prompt:
             kwargs["system"] = context.system_prompt
-        if context.thinking_budget is not None:
-            # Extended thinking: Anthropic requires temperature=1 when thinking
-            # is enabled and does not accept a temperature parameter.
-            kwargs["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": context.thinking_budget,
-            }
+        if context.thinking_budget is not None and context.thinking_budget > 0:
+            # Extended thinking. Anthropic ignores temperature while thinking,
+            # so it's dropped here regardless of model. Newer models (Opus
+            # 4.7/4.8, Fable 5) reject the budget_tokens shape and want
+            # adaptive thinking instead; ``display: "summarized"`` keeps the
+            # reasoning trace visible (its default is "omitted" on those models).
+            if self._config.use_adaptive_thinking:
+                kwargs["thinking"] = {"type": "adaptive", "display": "summarized"}
+            else:
+                kwargs["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": context.thinking_budget,
+                }
             kwargs.pop("temperature", None)
-        elif context.temperature is not None:
+        elif context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
         if context.tools:
             kwargs["tools"] = [
