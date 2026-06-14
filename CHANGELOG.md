@@ -5,6 +5,61 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-06-13
+
+### Added
+
+- **Model discovery on every AI provider** — `AIProvider.available_models()`
+  (a curated, offline classmethod — no API key, network, or SDK needed) and
+  `list_models()` (a live query against the provider's models endpoint that
+  backfills curated metadata). Both return `ModelInfo` (`id`, `display_name`,
+  `context_window`, `supports_vision`, `deprecated`, `capabilities`). Curated
+  catalogs ship for Anthropic, OpenAI, Gemini, Mistral, and Ollama; Ollama's
+  `list_models()` probes `/api/show` per installed model to attach capability
+  tags. See `examples/list_models.py`.
+- **Voice discovery on every realtime provider** — `RealtimeVoiceProvider.available_voices()`
+  / `list_voices()` returning `VoiceInfo` (`id`, `name`, `language`, `gender`,
+  `description`, `deprecated`). Curated catalogs for OpenAI Realtime (10),
+  Gemini Live (30), xAI Grok (5), PersonaPlex (18), and ElevenLabs (21, with a
+  live `client.voices` query). `VoiceInfo.id` is exactly the `connect(voice=…)`
+  value. See `examples/list_voices.py`.
+- **Reasoning / thinking surfaced across all AI providers.** Providers emit
+  `StreamThinkingDelta` when reasoning is enabled, so the trace renders inline
+  (💭) through `CLIChannel(show_thinking=True)`:
+  - Mistral reads structured `ThinkChunk` content (modern reasoning models no
+    longer use inline `<think>` tags); `MistralConfig.reasoning_effort` maps
+    from `thinking_budget`.
+  - Gemini requests thought summaries (`include_thoughts`) and surfaces
+    `thought=True` parts.
+  - OpenAI surfaces the dedicated `reasoning_content` delta alongside the
+    `<think>` parser; `OpenAIConfig` gains `reasoning_effort`,
+    `supports_custom_temperature`, and `use_max_completion_tokens`.
+  - Anthropic adds adaptive thinking and round-trips the thinking-block
+    signature.
+  - `examples/mistral_ai.py` is now an interactive `CLIChannel` REPL that
+    streams reasoning live.
+
+### Changed
+
+- **Provider SDKs updated to current releases:** mistralai `>=2.0` (PEP 420
+  namespace package — the client import moved to `mistralai.client`),
+  google-genai `>=2.0`, websockets `>=14.0`, plus refreshed anthropic, openai,
+  twilio, neonize, and protobuf (`>=7`) locks.
+- **Image inputs decode `data:` URIs to inline bytes** for Gemini and Ollama
+  rather than shipping a broken file reference.
+
+### Fixed
+
+- **neonize 0.3.18 compatibility** — the `event_global_loop` workaround is
+  guarded by `hasattr` (0.3.18 binds the loop internally and dropped the field).
+- **Azure inherits OpenAI's sampling config** — `AzureAIConfig` gained
+  `reasoning_effort`, `supports_custom_temperature`, and
+  `use_max_completion_tokens`, which the inherited OpenAI request builder reads.
+- **Canonical usage tokens** — Mistral and Gemini report
+  `input_tokens`/`output_tokens` consistently.
+- **Order-dependent event-loop tests** — sync tests moved off the deprecated
+  `asyncio.get_event_loop()` to `asyncio.run()` / `asyncio.get_running_loop()`.
+
 ## [0.10.0] — 2026-06-11
 
 ### Added
