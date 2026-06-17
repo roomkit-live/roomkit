@@ -7,11 +7,14 @@ useful when data residency on Canadian soil is a requirement.
 
 PolarGrid's chat endpoint supports tool / function calling as of
 polargrid-sdk 0.8.4. This example gives the assistant a ``web_search``
-tool (a simple, key-free internet lookup from ``shared/tools.py``) and
-lets PolarGrid call it: ask it a factual question ("What is the speed of
-light?") and the model will run the search, then answer from the result.
-Forcing a specific tool is steered, not hard-guaranteed, on PolarGrid's
-backend.
+tool (``shared/tools.py``) and lets PolarGrid call it: ask a factual
+question ("What is the speed of light?") and the model runs the search,
+then answers from the result. Forcing a specific tool is steered, not
+hard-guaranteed, on PolarGrid's backend.
+
+The search works with no extra setup (key-free Wikipedia lookup). Set
+``TAVILY_API_KEY`` for real web search that also finds niche companies
+and current info — get a free key at https://tavily.com.
 
 Run with:
     POLARGRID_API_KEY=pg_... uv run python examples/polargrid_ai.py
@@ -21,6 +24,7 @@ Optional overrides (defaults come from PolarGridConfig):
     POLARGRID_REGION=toronto    # pin a region (toronto/vancouver/montreal
                                 #   or yto-01/yvr-02/yul-01).
                                 # Unset to auto-route to the fastest edge.
+    TAVILY_API_KEY=tvly-...     # enable real web search (else Wikipedia).
 """
 
 from __future__ import annotations
@@ -85,7 +89,8 @@ async def main() -> None:
             welcome=(
                 f"\nPolarGrid AI demo — model={provider.model_name} "
                 f"region={config_kwargs.get('region', 'auto')}\n"
-                "Tool: web_search (DuckDuckGo). Try 'What is the speed of light?'\n"
+                "Tool: web_search (Wikipedia; Tavily if TAVILY_API_KEY set). "
+                "Try 'What is the speed of light?'\n"
                 "Type a message and press Enter. Use 'quit' or Ctrl+D to exit.\n"
             ),
         )
