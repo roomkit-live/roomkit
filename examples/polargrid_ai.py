@@ -69,7 +69,9 @@ async def main() -> None:
         system_prompt=(
             "You are a helpful assistant. Keep answers concise. "
             "When a question needs current or factual information, use the "
-            "web_search tool and answer from its result."
+            "web_search tool and base your answer strictly on its results. "
+            "If the results don't contain the answer, say the search didn't "
+            "find it rather than guessing from prior knowledge."
         ),
         # A Tool object carries both its schema and its handler, so the
         # AIChannel runs the whole tool loop: model -> web_search -> answer.
