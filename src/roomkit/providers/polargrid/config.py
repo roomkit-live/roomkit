@@ -29,6 +29,14 @@ class PolarGridConfig(BaseModel):
             server pick its default (the API caps at 4096).
         temperature: Sampling temperature (0.0-2.0).
         top_p: Nucleus sampling probability (0.0-1.0).
+        thinking: Toggle qwen's reasoning. PolarGrid's SDK exposes no
+            thinking parameter, so the only lever is qwen's in-prompt
+            soft switch, which the provider appends to the latest user
+            turn: ``True`` adds ``/think`` (reasoning on, surfaced as
+            ``AIResponse.thinking`` / ``StreamThinkingDelta``), ``False``
+            adds ``/no_think``. ``None`` (default) leaves the model's
+            own default untouched. Effectiveness depends on the model and
+            edge honoring the switch.
         timeout: HTTP request timeout in seconds.
         max_retries: SDK-level retry count. Default 0 because RoomKit's
             RetryPolicy handles retries at the right layer with proper
@@ -42,6 +50,7 @@ class PolarGridConfig(BaseModel):
     max_tokens: int | None = None
     temperature: float = 0.7
     top_p: float = 0.9
+    thinking: bool | None = None
     timeout: float = 30.0
     max_retries: int = 0
     debug: bool = False

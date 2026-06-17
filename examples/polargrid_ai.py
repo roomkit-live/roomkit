@@ -16,10 +16,11 @@ The search works with no extra setup (key-free Wikipedia lookup). Set
 ``TAVILY_API_KEY`` for real web search that also finds niche companies
 and current info — get a free key at https://tavily.com.
 
-If the qwen model emits reasoning (inline ``<think>...</think>`` tags),
-the provider splits it out and the CLI shows it as dimmed "thinking"
-separate from the answer. Whether reasoning appears depends on the model
-and edge.
+Set ``POLARGRID_THINKING=1`` to activate qwen's reasoning (appends the
+``/think`` soft switch). When the model emits reasoning as inline
+``<think>...</think>`` tags, the provider splits it out and the CLI shows
+it as dimmed "thinking" (💭) separate from the answer. Whether the switch
+takes effect depends on the model and edge honoring it.
 
 Run with:
     POLARGRID_API_KEY=pg_... uv run python examples/polargrid_ai.py
@@ -29,6 +30,7 @@ Optional overrides (defaults come from PolarGridConfig):
     POLARGRID_REGION=toronto    # pin a region (toronto/vancouver/montreal
                                 #   or yto-01/yvr-02/yul-01).
                                 # Unset to auto-route to the fastest edge.
+    POLARGRID_THINKING=1        # activate qwen reasoning (/think switch).
     TAVILY_API_KEY=tvly-...     # enable real web search (else Wikipedia).
 """
 
@@ -63,11 +65,14 @@ async def main() -> None:
     if region := os.environ.get("POLARGRID_REGION"):
         config_kwargs["region"] = region
 
-    provider = PolarGridAIProvider(PolarGridConfig(**config_kwargs))
+    # POLARGRID_THINKING=1 appends qwen's /think soft switch to activate
+    # reasoning; the CLI then renders it (see show_thinking below).
+    thinking = True if os.environ.get("POLARGRID_THINKING") else None
+    provider = PolarGridAIProvider(PolarGridConfig(**config_kwargs, thinking=thinking))
 
     kit = RoomKit()
 
-    cli = CLIChannel("cli")
+    cli = CLIChannel("cli", show_thinking=True)
     ai = AIChannel(
         "ai-assistant",
         provider=provider,
@@ -95,7 +100,8 @@ async def main() -> None:
             room_id="demo-room",
             welcome=(
                 f"\nPolarGrid AI demo — model={provider.model_name} "
-                f"region={config_kwargs.get('region', 'auto')}\n"
+                f"region={config_kwargs.get('region', 'auto')} "
+                f"thinking={'on' if thinking else 'off'}\n"
                 "Tool: web_search (Wikipedia; Tavily if TAVILY_API_KEY set). "
                 "Try 'What is the speed of light?'\n"
                 "Type a message and press Enter. Use 'quit' or Ctrl+D to exit.\n"

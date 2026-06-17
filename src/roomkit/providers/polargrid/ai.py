@@ -230,7 +230,27 @@ class PolarGridAIProvider(AIProvider):
             result.append({"role": "system", "content": system_prompt})
         for m in messages:
             result.extend(self._render_message(m))
+        self._apply_thinking_directive(result)
         return result
+
+    def _apply_thinking_directive(self, messages: list[dict[str, Any]]) -> None:
+        """Append qwen's ``/think`` / ``/no_think`` soft switch in place.
+
+        PolarGrid's SDK has no thinking parameter, so the only way to
+        toggle qwen's reasoning is the in-prompt soft switch. It is
+        appended to the latest user turn (falling back to the system
+        message); ``thinking=None`` leaves the model default untouched.
+        """
+        if self._config.thinking is None:
+            return
+        directive = "/think" if self._config.thinking else "/no_think"
+        for role in ("user", "system"):
+            for msg in reversed(messages):
+                if msg.get("role") == role and isinstance(msg.get("content"), str):
+                    content = msg["content"]
+                    if directive not in content:
+                        msg["content"] = f"{content} {directive}".strip()
+                    return
 
     def _build_tools(self, tools: list[AITool]) -> list[dict[str, Any]] | None:
         """Convert RoomKit tools to PolarGrid's OpenAI-shaped tool list."""

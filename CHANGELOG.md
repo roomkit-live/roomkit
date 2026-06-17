@@ -30,7 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the reasoning on `AIResponse.thinking` with clean `content`, and
   `generate_structured_stream()` emits `StreamThinkingDelta` (handling
   tags split across chunks) ahead of the text. `generate_stream()`
-  filters thinking out.
+  filters thinking out. Reasoning is often off by default on the edge, so
+  a new `PolarGridConfig.thinking` flag toggles it via qwen's in-prompt
+  soft switch — `True` appends `/think`, `False` appends `/no_think`,
+  `None` (default) leaves the model default. Effectiveness depends on the
+  model/edge honoring the switch.
 
 ### Fixed
 

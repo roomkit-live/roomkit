@@ -563,6 +563,55 @@ class TestPolarGridThinking:
 
         assert "".join(chunks) == "visible"
 
+    @pytest.mark.asyncio
+    async def test_thinking_true_appends_think_directive(self) -> None:
+        provider, mod = _provider(thinking=True)
+        mod._client.chat_completion.return_value = _response_obj(content="ok")
+
+        await provider.generate(_context())
+
+        msgs = mod._client.chat_completion.await_args.args[0]["messages"]
+        user = [m for m in msgs if m["role"] == "user"][-1]
+        assert user["content"].endswith("/think")
+
+    @pytest.mark.asyncio
+    async def test_thinking_false_appends_no_think_directive(self) -> None:
+        provider, mod = _provider(thinking=False)
+        mod._client.chat_completion.return_value = _response_obj(content="ok")
+
+        await provider.generate(_context())
+
+        msgs = mod._client.chat_completion.await_args.args[0]["messages"]
+        user = [m for m in msgs if m["role"] == "user"][-1]
+        assert user["content"].endswith("/no_think")
+
+    @pytest.mark.asyncio
+    async def test_thinking_none_leaves_messages_untouched(self) -> None:
+        provider, mod = _provider()  # thinking defaults to None
+        mod._client.chat_completion.return_value = _response_obj(content="ok")
+
+        await provider.generate(_context())
+
+        msgs = mod._client.chat_completion.await_args.args[0]["messages"]
+        user = [m for m in msgs if m["role"] == "user"][-1]
+        assert user["content"] == "Hi"
+
+    @pytest.mark.asyncio
+    async def test_thinking_falls_back_to_system_when_no_user(self) -> None:
+        provider, mod = _provider(thinking=True)
+        mod._client.chat_completion.return_value = _response_obj(content="ok")
+
+        await provider.generate(
+            _context(
+                messages=[AIMessage(role="assistant", content="prior")],
+                system_prompt="You are helpful.",
+            )
+        )
+
+        msgs = mod._client.chat_completion.await_args.args[0]["messages"]
+        system = [m for m in msgs if m["role"] == "system"][0]
+        assert system["content"].endswith("/think")
+
 
 # ---------------------------------------------------------------------------
 # Multi-turn tool messages
