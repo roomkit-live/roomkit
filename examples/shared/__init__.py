@@ -15,8 +15,10 @@ from .env import auto_select_provider, env_bool, os_info, require_env
 from .hooks import log_tool_call
 from .lifecycle import run_until_stopped
 from .log import setup_logging
+from .tools import WebSearchTool
 
 __all__ = [
+    "WebSearchTool",
     "auto_select_provider",
     "build_aec",
     "build_debug_taps",

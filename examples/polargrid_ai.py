@@ -5,10 +5,13 @@ Wires :class:`roomkit.providers.polargrid.PolarGridAIProvider` into a
 completions from regional edges in Toronto, Vancouver, and Montreal —
 useful when data residency on Canadian soil is a requirement.
 
-Note: PolarGrid's chat endpoint supports tool / function calling as of
-polargrid-sdk 0.8.4 — tools passed to ``AIChannel`` are forwarded and
-tool calls are surfaced back. Forcing a specific tool is steered, not
-hard-guaranteed, on PolarGrid's backend.
+PolarGrid's chat endpoint supports tool / function calling as of
+polargrid-sdk 0.8.4. This example gives the assistant a ``web_search``
+tool (a simple, key-free internet lookup from ``shared/tools.py``) and
+lets PolarGrid call it: ask it a factual question ("What is the speed of
+light?") and the model will run the search, then answer from the result.
+Forcing a specific tool is steered, not hard-guaranteed, on PolarGrid's
+backend.
 
 Run with:
     POLARGRID_API_KEY=pg_... uv run python examples/polargrid_ai.py
@@ -30,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import asyncio
 
-from shared import require_env, setup_logging
+from shared import WebSearchTool, require_env, setup_logging
 
 from roomkit import (
     ChannelCategory,
@@ -59,7 +62,14 @@ async def main() -> None:
     ai = AIChannel(
         "ai-assistant",
         provider=provider,
-        system_prompt="You are a helpful assistant. Keep answers concise.",
+        system_prompt=(
+            "You are a helpful assistant. Keep answers concise. "
+            "When a question needs current or factual information, use the "
+            "web_search tool and answer from its result."
+        ),
+        # A Tool object carries both its schema and its handler, so the
+        # AIChannel runs the whole tool loop: model -> web_search -> answer.
+        tools=[WebSearchTool()],
     )
     kit.register_channel(cli)
     kit.register_channel(ai)
@@ -75,6 +85,7 @@ async def main() -> None:
             welcome=(
                 f"\nPolarGrid AI demo — model={provider.model_name} "
                 f"region={config_kwargs.get('region', 'auto')}\n"
+                "Tool: web_search (DuckDuckGo). Try 'What is the speed of light?'\n"
                 "Type a message and press Enter. Use 'quit' or Ctrl+D to exit.\n"
             ),
         )
