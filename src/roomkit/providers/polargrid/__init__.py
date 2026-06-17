@@ -2,9 +2,10 @@
 
 Regional edges in Toronto, Vancouver, and Montreal make this provider
 useful when data residency on Canadian soil is a requirement. The
-chat-completions endpoint exposes an OpenAI-shaped surface but does
-**not** support tool / function calling — ``context.tools`` is dropped
-with a warning.
+chat-completions endpoint exposes an OpenAI-shaped surface, including
+tool / function calling as of polargrid-sdk 0.8.4 — ``context.tools``
+are forwarded and tool calls are returned both non-streaming and
+streaming.
 """
 
 from __future__ import annotations

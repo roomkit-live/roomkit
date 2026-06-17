@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **PolarGrid provider supports tool / function calling.** Requires
+  `polargrid-sdk>=0.8.4` (was `>=0.1`). `context.tools` are now forwarded
+  to the chat-completions endpoint (OpenAI-shaped `tools`), and tool
+  calls are surfaced back both non-streaming (`AIResponse.tool_calls`)
+  and streaming (`StreamToolCall`, accumulated from the SDK's fragmented
+  `delta.tool_calls`). PolarGrid sends tool arguments as a JSON string;
+  the provider parses them into a dict for RoomKit, preserving malformed
+  payloads under a `raw` key. Multi-turn tool loops render
+  `AIToolCallPart`/`AIToolResultPart` back into structured messages
+  instead of flattening them to text. `tool_choice` is left unset so the
+  backend defaults to `auto` — forcing a specific tool is steered, not
+  hard-guaranteed, on PolarGrid's backend. The SDK 0.8.4 release also
+  fixes the non-streaming `latency_ms` decode crash, so the provider's
+  `_patch_pg_metadata_decoder` monkeypatch was removed.
+
 ### Fixed
 
 - **Ollama provider mints unique tool-call ids across turns.** Ollama's

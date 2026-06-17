@@ -5,9 +5,10 @@ Wires :class:`roomkit.providers.polargrid.PolarGridAIProvider` into a
 completions from regional edges in Toronto, Vancouver, and Montreal —
 useful when data residency on Canadian soil is a requirement.
 
-Note: tool / function calling is not exposed by PolarGrid's chat
-endpoint at the time of writing. Passing tools to ``AIChannel`` will
-log a warning and continue with text-only output.
+Note: PolarGrid's chat endpoint supports tool / function calling as of
+polargrid-sdk 0.8.4 — tools passed to ``AIChannel`` are forwarded and
+tool calls are surfaced back. Forcing a specific tool is steered, not
+hard-guaranteed, on PolarGrid's backend.
 
 Run with:
     POLARGRID_API_KEY=pg_... uv run python examples/polargrid_ai.py

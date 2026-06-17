@@ -1,15 +1,21 @@
 """PolarGrid AI provider — generates responses via PolarGrid chat completions.
 
 PolarGrid serves OpenAI-shaped chat completions from Canadian-hosted
-edges (Toronto / Vancouver / Montreal). Tool / function calling is
-**not** exposed by the chat-completions endpoint at the time of
-writing — ``context.tools`` is dropped with a warning so the caller
-notices the degradation instead of getting silently text-only output
-from a provider it expected to support tools.
+edges (Toronto / Vancouver / Montreal). As of polargrid-sdk 0.8.4 the
+chat-completions endpoint supports tool / function calling: ``context.tools``
+are forwarded, and tool calls come back both non-streaming
+(``message.tool_calls``) and streaming (fragmented ``delta.tool_calls``,
+OpenAI-style). Tool arguments cross the wire as a JSON string and are
+parsed back into a dict for RoomKit.
+
+``tool_choice`` is left unset so the backend defaults to ``auto`` — note
+that forcing a specific tool is *steered*, not hard-guaranteed, on
+PolarGrid's backend.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -23,50 +29,19 @@ from roomkit.providers.ai.base import (
     AIResponse,
     AITextPart,
     AIThinkingPart,
+    AITool,
+    AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
     ProviderError,
     StreamDone,
     StreamEvent,
     StreamTextDelta,
+    StreamToolCall,
 )
 from roomkit.providers.polargrid.config import PolarGridConfig
 
 logger = logging.getLogger("roomkit.providers.polargrid")
-
-
-def _patch_pg_metadata_decoder(pg_module: Any) -> None:
-    """Make ``PolarGrid._convert_pg_metadata`` tolerant of missing fields.
-
-    polargrid-sdk 0.7.0 unconditionally indexes ``raw["latency_ms"]``,
-    which crashes non-streaming chat completions whenever the edge
-    omits that field (observed on the Toronto edge with
-    ``qwen-3.5-27b``). Streaming is unaffected. We swap in a lenient
-    version that uses ``.get()`` so the response can still deserialize
-    — the pg_metadata block is informational and we don't surface it
-    upstream. Idempotent via a sentinel so reloading providers is safe;
-    remove when the SDK ships its own fix.
-    """
-    client_cls = getattr(pg_module, "PolarGrid", None)
-    if client_cls is None or getattr(client_cls, "_roomkit_metadata_patched", False):
-        return
-
-    @staticmethod  # type: ignore[misc]
-    def _lenient(raw: dict[str, Any] | None) -> Any:
-        if not raw:
-            return None
-        from polargrid.types import PGMetadata
-
-        return PGMetadata(
-            region=raw.get("region", ""),
-            latency_ms=raw.get("latency_ms", 0),
-            model_load_time_ms=raw.get("model_load_time_ms"),
-            queue_time_ms=raw.get("queue_time_ms"),
-            inference_time_ms=raw.get("inference_time_ms"),
-        )
-
-    client_cls._convert_pg_metadata = _lenient
-    client_cls._roomkit_metadata_patched = True
 
 
 class PolarGridAIProvider(AIProvider):
@@ -80,7 +55,6 @@ class PolarGridAIProvider(AIProvider):
                 "polargrid-sdk is required for PolarGridAIProvider. "
                 "Install it with: pip install roomkit[polargrid]"
             ) from exc
-        _patch_pg_metadata_decoder(_pg)
         self._config = config
         self._sdk = _pg
         # Bind exception classes once so we can catch them without
@@ -116,9 +90,7 @@ class PolarGridAIProvider(AIProvider):
 
     @property
     def supports_structured_streaming(self) -> bool:
-        # Structured streaming here means "emits StreamEvent objects"
-        # — text deltas + done. Tool-call events would require
-        # endpoint support PolarGrid doesn't ship yet.
+        # Emits StreamEvent objects — text deltas, tool calls, and done.
         return True
 
     # -- Client lifecycle ---------------------------------------------------
@@ -150,7 +122,7 @@ class PolarGridAIProvider(AIProvider):
             self._client = await self._sdk.PolarGrid.create(**kwargs)
         return self._client
 
-    # -- Message conversion -------------------------------------------------
+    # -- Message + tool conversion ------------------------------------------
 
     def _format_content(
         self,
@@ -161,11 +133,10 @@ class PolarGridAIProvider(AIProvider):
     ) -> str:
         """Flatten message content to plain text.
 
-        PolarGrid's chat endpoint only accepts string content — no
-        image parts, no tool parts. Images, tool calls, and tool
-        results are dropped (the channel layer shouldn't be sending
-        them anyway since ``supports_vision`` is False and tools are
-        rejected upstream).
+        PolarGrid's chat endpoint takes string content only — no image
+        parts. Tool-call and tool-result parts are handled structurally
+        in :meth:`_render_message` and skipped here; images are dropped
+        (``supports_vision`` is False).
         """
         if isinstance(content, str):
             return content
@@ -177,15 +148,67 @@ class PolarGridAIProvider(AIProvider):
                 parts.append(part.text)
             elif isinstance(part, AIThinkingPart):
                 # Round-trip thinking back to the model as plain text;
-                # PolarGrid has no dedicated thinking channel. The
-                # model sees its own prior reasoning prefixed for
-                # context, which is better than dropping it silently.
+                # PolarGrid has no dedicated thinking channel. The model
+                # sees its own prior reasoning prefixed for context,
+                # which is better than dropping it silently.
                 parts.append(f"[thinking]\n{part.thinking}\n[/thinking]")
+            elif isinstance(part, (AIToolCallPart, AIToolResultPart)):
+                # Rendered as structured tool messages, not inline text.
+                continue
             else:
                 dropped.append(type(part).__name__)
         if dropped:
             logger.debug("Dropped unsupported content parts: %s", ", ".join(dropped))
         return "".join(parts)
+
+    def _render_message(self, m: AIMessage) -> list[dict[str, Any]]:
+        """Render one RoomKit message into PolarGrid chat message(s).
+
+        Tool calls become an assistant message carrying ``tool_calls``
+        (OpenAI-shaped, ``arguments`` as a JSON string). Tool results
+        become one ``role="tool"`` message each, paired back to their
+        call via ``tool_call_id``. Everything else flattens to a single
+        string-content message (empty ones are skipped).
+        """
+        if isinstance(m.content, str):
+            return [{"role": m.role, "content": m.content}] if m.content else []
+
+        parts = m.content
+        tool_calls = [p for p in parts if isinstance(p, AIToolCallPart)]
+        if tool_calls:
+            text = self._format_content(parts)
+            return [
+                {
+                    "role": m.role,
+                    "content": text or None,
+                    "tool_calls": [
+                        {
+                            "id": p.id,
+                            "type": "function",
+                            "function": {
+                                "name": p.name,
+                                "arguments": json.dumps(p.arguments),
+                            },
+                        }
+                        for p in tool_calls
+                    ],
+                }
+            ]
+
+        tool_results = [p for p in parts if isinstance(p, AIToolResultPart)]
+        if tool_results:
+            return [
+                {
+                    "role": "tool",
+                    "content": r.result,
+                    "tool_call_id": r.tool_call_id,
+                    "name": r.name,
+                }
+                for r in tool_results
+            ]
+
+        text = self._format_content(parts)
+        return [{"role": m.role, "content": text}] if text else []
 
     def _build_messages(
         self,
@@ -196,26 +219,37 @@ class PolarGridAIProvider(AIProvider):
         if system_prompt:
             result.append({"role": "system", "content": system_prompt})
         for m in messages:
-            text = self._format_content(m.content)
-            # Skip messages that flattened to nothing — sending an
-            # empty user/assistant turn confuses the model.
-            if not text:
-                continue
-            result.append({"role": m.role, "content": text})
+            result.extend(self._render_message(m))
         return result
 
-    def _build_request(self, context: AIContext, *, stream: bool) -> dict[str, Any]:
-        if context.tools:
-            logger.warning(
-                "PolarGrid does not support tool/function calling; %d tool(s) will be ignored.",
-                len(context.tools),
-            )
+    def _build_tools(self, tools: list[AITool]) -> list[dict[str, Any]] | None:
+        """Convert RoomKit tools to PolarGrid's OpenAI-shaped tool list."""
+        if not tools:
+            return None
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters,
+                },
+            }
+            for t in tools
+        ]
 
+    def _build_request(self, context: AIContext, *, stream: bool) -> dict[str, Any]:
         req: dict[str, Any] = {
             "model": self._config.model,
             "messages": self._build_messages(context.messages, context.system_prompt),
             "stream": stream,
         }
+        tools = self._build_tools(context.tools)
+        if tools:
+            # No tool_choice in AIContext — leave it unset so PolarGrid
+            # defaults to "auto". Forcing a tool is steered, not hard
+            # guaranteed, on their backend anyway.
+            req["tools"] = tools
         max_tokens = context.max_tokens or self._config.max_tokens
         if max_tokens is not None:
             req["max_tokens"] = max_tokens
@@ -280,12 +314,14 @@ class PolarGridAIProvider(AIProvider):
         finish_reason = getattr(choice, "finish_reason", None)
         usage = self._extract_usage(response)
         model = getattr(response, "model", self._config.model)
+        tool_calls = self._extract_tool_calls(message)
 
         return AIResponse(
             content=content,
             finish_reason=finish_reason,
             usage=usage,
             metadata={"model": model},
+            tool_calls=tool_calls,
         )
 
     # -- Streaming ----------------------------------------------------------
@@ -296,6 +332,15 @@ class PolarGridAIProvider(AIProvider):
                 yield event.text
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        """Yield text deltas, then any tool calls, then done.
+
+        PolarGrid streams tool calls OpenAI-style: fragmented across
+        chunks as ``delta.tool_calls`` with a stable ``index``, the
+        ``id`` on the first fragment, and ``arguments`` concatenated
+        from each fragment's ``function`` dict. We accumulate by index
+        and emit one :class:`StreamToolCall` per call after the text,
+        so the consumer sees text-then-tools in natural order.
+        """
         client = await self._ensure_client()
         request = self._build_request(context, stream=True)
 
@@ -303,6 +348,7 @@ class PolarGridAIProvider(AIProvider):
         first_token = True
         finish_reason: str | None = None
         usage: dict[str, int] = {}
+        tool_accum: dict[int, dict[str, str]] = {}
 
         try:
             stream = client.chat_completion_stream(request)
@@ -318,12 +364,25 @@ class PolarGridAIProvider(AIProvider):
                 choice = choices[0]
                 finish_reason = getattr(choice, "finish_reason", None) or finish_reason
                 delta = getattr(choice, "delta", None)
-                text = getattr(delta, "content", None) if delta else None
+                if delta is None:
+                    continue
+
+                tool_deltas = getattr(delta, "tool_calls", None)
+                if tool_deltas:
+                    if first_token:
+                        self._record_ttfb(t0)
+                        first_token = False
+                    self._accumulate_tool_deltas(tool_accum, tool_deltas)
+
+                text = getattr(delta, "content", None)
                 if text:
                     if first_token:
                         self._record_ttfb(t0)
                         first_token = False
                     yield StreamTextDelta(text=text)
+
+            for event in self._finalize_tool_calls(tool_accum):
+                yield event
 
             yield StreamDone(finish_reason=finish_reason, usage=usage)
         except ProviderError:
@@ -332,6 +391,75 @@ class PolarGridAIProvider(AIProvider):
             raise self._wrap_error(exc) from exc
 
     # -- Helpers ------------------------------------------------------------
+
+    @staticmethod
+    def _parse_arguments(raw: Any) -> dict[str, Any]:
+        """Coerce PolarGrid's JSON-string tool arguments into a dict.
+
+        RoomKit's ``AIToolCall.arguments`` is a dict; PolarGrid sends a
+        JSON string. Already-dict inputs pass through; malformed or
+        non-object JSON is preserved under a ``raw`` key so nothing is
+        silently lost.
+        """
+        if isinstance(raw, dict):
+            return raw
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return {"raw": raw}
+        return parsed if isinstance(parsed, dict) else {"raw": raw}
+
+    def _extract_tool_calls(self, message: Any) -> list[AIToolCall]:
+        """Read non-streaming ``message.tool_calls`` into AIToolCalls."""
+        raw_calls = getattr(message, "tool_calls", None) or []
+        result: list[AIToolCall] = []
+        for tc in raw_calls:
+            func = getattr(tc, "function", None)
+            if func is None:
+                continue
+            name = getattr(func, "name", "") or ""
+            arguments = self._parse_arguments(getattr(func, "arguments", ""))
+            call_id = getattr(tc, "id", None) or f"call_{name}"
+            result.append(AIToolCall(id=str(call_id), name=str(name), arguments=arguments))
+        return result
+
+    @staticmethod
+    def _accumulate_tool_deltas(
+        accum: dict[int, dict[str, str]],
+        deltas: list[Any],
+    ) -> None:
+        """Fold streamed ``ToolCallDelta`` fragments into per-index slots."""
+        for d in deltas:
+            idx = getattr(d, "index", 0) or 0
+            slot = accum.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+            d_id = getattr(d, "id", None)
+            if d_id:
+                slot["id"] = d_id
+            func = getattr(d, "function", None)
+            if not isinstance(func, dict):
+                continue
+            name = func.get("name")
+            if name:
+                slot["name"] = name
+            args = func.get("arguments")
+            if args:
+                slot["arguments"] += args
+
+    def _finalize_tool_calls(self, accum: dict[int, dict[str, str]]) -> list[StreamToolCall]:
+        """Turn accumulated tool-call slots into StreamToolCall events."""
+        events: list[StreamToolCall] = []
+        for idx in sorted(accum):
+            slot = accum[idx]
+            events.append(
+                StreamToolCall(
+                    id=slot["id"],
+                    name=slot["name"],
+                    arguments=self._parse_arguments(slot["arguments"]),
+                )
+            )
+        return events
 
     @staticmethod
     def _extract_usage(obj: Any) -> dict[str, int]:

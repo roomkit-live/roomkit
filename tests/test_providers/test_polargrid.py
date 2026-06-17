@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import json
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,9 +13,12 @@ from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
     AITool,
+    AIToolCallPart,
+    AIToolResultPart,
     ProviderError,
     StreamDone,
     StreamTextDelta,
+    StreamToolCall,
 )
 from roomkit.providers.polargrid.config import PolarGridConfig
 
@@ -165,6 +168,40 @@ def _stream_chunk(
     return SimpleNamespace(**fields)
 
 
+def _tool_chunk(
+    *,
+    index: int = 0,
+    id: str | None = None,
+    name: str | None = None,
+    arguments: str | None = None,
+    finish_reason: str | None = None,
+) -> SimpleNamespace:
+    """A streaming chunk carrying a fragmented tool-call delta.
+
+    Mirrors polargrid-sdk's ``ToolCallDelta``: ``function`` is a dict and
+    arguments arrive in fragments to be concatenated per ``index``.
+    """
+    func: dict[str, Any] = {}
+    if name is not None:
+        func["name"] = name
+    if arguments is not None:
+        func["arguments"] = arguments
+    tc = SimpleNamespace(index=index, id=id, type="function", function=func or None)
+    delta = SimpleNamespace(content=None, tool_calls=[tc])
+    return SimpleNamespace(
+        choices=[SimpleNamespace(index=index, delta=delta, finish_reason=finish_reason)]
+    )
+
+
+def _tool_call_obj(*, id: str, name: str, arguments: str) -> SimpleNamespace:
+    """A non-streaming ``ToolCall``: ``function.arguments`` is a JSON string."""
+    return SimpleNamespace(
+        id=id,
+        type="function",
+        function=SimpleNamespace(name=name, arguments=arguments),
+    )
+
+
 def _provider(mod: MagicMock | None = None, **config_overrides: Any) -> tuple[Any, MagicMock]:
     mod = mod or _mock_polargrid_module()
     with patch.dict("sys.modules", {"polargrid": mod}):
@@ -216,18 +253,78 @@ class TestPolarGridGenerate:
         assert request["stream"] is False
 
     @pytest.mark.asyncio
-    async def test_generate_warns_on_tools_and_drops_them(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    async def test_generate_forwards_tools(self) -> None:
         provider, mod = _provider()
         mod._client.chat_completion.return_value = _response_obj(content="ok")
 
-        with caplog.at_level(logging.WARNING, logger="roomkit.providers.polargrid"):
-            await provider.generate(_context(tools=[AITool(name="t", description="x")]))
+        tool = AITool(
+            name="get_weather",
+            description="Get current weather for a city.",
+            parameters={
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
+            },
+        )
+        await provider.generate(_context(tools=[tool]))
 
-        assert any("does not support tool" in r.message for r in caplog.records)
         request = mod._client.chat_completion.await_args.args[0]
-        assert "tools" not in request
+        assert request["tools"][0]["type"] == "function"
+        assert request["tools"][0]["function"]["name"] == "get_weather"
+        assert request["tools"][0]["function"]["parameters"]["required"] == ["city"]
+        # No tool_choice in AIContext — leave it unset so PolarGrid defaults to auto.
+        assert "tool_choice" not in request
+
+    @pytest.mark.asyncio
+    async def test_generate_extracts_tool_calls(self) -> None:
+        provider, mod = _provider()
+        message = SimpleNamespace(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                _tool_call_obj(
+                    id="call_1",
+                    name="get_weather",
+                    arguments=json.dumps({"city": "Montreal"}),
+                )
+            ],
+        )
+        mod._client.chat_completion.return_value = SimpleNamespace(
+            model="qwen-3.5-27b",
+            choices=[SimpleNamespace(index=0, message=message, finish_reason="tool_calls")],
+            usage=SimpleNamespace(prompt_tokens=5, completion_tokens=3, total_tokens=8),
+        )
+
+        resp = await provider.generate(
+            _context(tools=[AITool(name="get_weather", description="x")])
+        )
+
+        assert resp.content == ""  # content=None coerces to ""
+        assert resp.finish_reason == "tool_calls"
+        assert len(resp.tool_calls) == 1
+        call = resp.tool_calls[0]
+        assert call.id == "call_1"
+        assert call.name == "get_weather"
+        # JSON-string arguments parsed into a dict for RoomKit.
+        assert call.arguments == {"city": "Montreal"}
+
+    @pytest.mark.asyncio
+    async def test_generate_tool_call_malformed_args_preserved(self) -> None:
+        provider, mod = _provider()
+        message = SimpleNamespace(
+            role="assistant",
+            content=None,
+            tool_calls=[_tool_call_obj(id="call_1", name="t", arguments="{not json")],
+        )
+        mod._client.chat_completion.return_value = SimpleNamespace(
+            model="qwen-3.5-27b",
+            choices=[SimpleNamespace(index=0, message=message, finish_reason="tool_calls")],
+            usage=None,
+        )
+
+        resp = await provider.generate(_context())
+
+        assert resp.tool_calls[0].arguments == {"raw": "{not json"}
 
     @pytest.mark.asyncio
     async def test_generate_empty_choices_returns_empty_content(self) -> None:
@@ -326,6 +423,107 @@ class TestPolarGridStreaming:
 
         chunks = [c async for c in provider.generate_stream(_context())]
         assert chunks == ["a", "b"]
+
+    @pytest.mark.asyncio
+    async def test_streaming_emits_tool_calls(self) -> None:
+        provider, mod = _provider()
+        mod._client.chat_completion_stream.return_value = _FakeStream(
+            [
+                # id + name + first arg fragment, then the tail fragment.
+                _tool_chunk(index=0, id="call_1", name="get_weather", arguments='{"ci'),
+                _tool_chunk(index=0, arguments='ty": "Montreal"}'),
+                # Finish marker, then a usage-only chunk.
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            index=0,
+                            delta=SimpleNamespace(content=None, tool_calls=None),
+                            finish_reason="tool_calls",
+                        )
+                    ]
+                ),
+                SimpleNamespace(
+                    choices=[],
+                    usage=SimpleNamespace(prompt_tokens=4, completion_tokens=2, total_tokens=6),
+                ),
+            ]
+        )
+
+        events = [e async for e in provider.generate_structured_stream(_context())]
+        tool_events = [e for e in events if isinstance(e, StreamToolCall)]
+        done_events = [e for e in events if isinstance(e, StreamDone)]
+
+        assert len(tool_events) == 1
+        assert tool_events[0].id == "call_1"
+        assert tool_events[0].name == "get_weather"
+        # Fragmented arguments concatenated then parsed to a dict.
+        assert tool_events[0].arguments == {"city": "Montreal"}
+        assert done_events[0].finish_reason == "tool_calls"
+        assert done_events[0].usage == {"input_tokens": 4, "output_tokens": 2}
+
+    @pytest.mark.asyncio
+    async def test_streaming_text_then_tool_call_ordering(self) -> None:
+        provider, mod = _provider()
+        mod._client.chat_completion_stream.return_value = _FakeStream(
+            [
+                _stream_chunk(content="Let me check. "),
+                _tool_chunk(index=0, id="call_9", name="lookup", arguments="{}"),
+                SimpleNamespace(choices=[], usage=None),
+            ]
+        )
+
+        events = [e async for e in provider.generate_structured_stream(_context())]
+        kinds = [type(e).__name__ for e in events]
+        # Text deltas come before tool calls, StreamDone last.
+        assert kinds == ["StreamTextDelta", "StreamToolCall", "StreamDone"]
+
+
+# ---------------------------------------------------------------------------
+# Multi-turn tool messages
+# ---------------------------------------------------------------------------
+
+
+class TestPolarGridToolMessages:
+    @pytest.mark.asyncio
+    async def test_renders_tool_call_and_result_messages(self) -> None:
+        provider, mod = _provider()
+        mod._client.chat_completion.return_value = _response_obj(content="ok")
+
+        messages = [
+            AIMessage(role="user", content="Weather in Montreal?"),
+            AIMessage(
+                role="assistant",
+                content=[
+                    AIToolCallPart(
+                        id="call_1", name="get_weather", arguments={"city": "Montreal"}
+                    ),
+                ],
+            ),
+            AIMessage(
+                role="tool",
+                content=[
+                    AIToolResultPart(
+                        tool_call_id="call_1", name="get_weather", result="12C, sunny"
+                    ),
+                ],
+            ),
+        ]
+        await provider.generate(_context(messages=messages, system_prompt=None))
+
+        msgs = mod._client.chat_completion.await_args.args[0]["messages"]
+        assistant = next(m for m in msgs if m["role"] == "assistant")
+        assert assistant["tool_calls"][0]["id"] == "call_1"
+        assert assistant["tool_calls"][0]["type"] == "function"
+        assert assistant["tool_calls"][0]["function"]["name"] == "get_weather"
+        # Arguments rendered back as a JSON string for the wire.
+        assert json.loads(assistant["tool_calls"][0]["function"]["arguments"]) == {
+            "city": "Montreal"
+        }
+
+        tool_msg = next(m for m in msgs if m["role"] == "tool")
+        assert tool_msg["content"] == "12C, sunny"
+        assert tool_msg["tool_call_id"] == "call_1"
+        assert tool_msg["name"] == "get_weather"
 
 
 # ---------------------------------------------------------------------------
