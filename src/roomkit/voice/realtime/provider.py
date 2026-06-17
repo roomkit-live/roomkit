@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from pydantic import BaseModel
+
 from roomkit.voice.base import VoiceSession
 
 logger = logging.getLogger("roomkit.voice.realtime.provider")
@@ -26,6 +28,33 @@ RealtimeResponseStartCallback = Callable[[VoiceSession], Any]
 RealtimeResponseEndCallback = Callable[[VoiceSession], Any]
 RealtimeErrorCallback = Callable[[VoiceSession, str, str], Any]
 """(session, code, message)"""
+
+
+class VoiceInfo(BaseModel):
+    """Metadata describing a single voice offered by a realtime voice provider.
+
+    Both the curated catalog (:meth:`RealtimeVoiceProvider.available_voices`) and
+    the live query (:meth:`RealtimeVoiceProvider.list_voices`) return these. Only
+    ``id`` is guaranteed; the remaining fields are best-effort and may be ``None``
+    when the source does not report them.
+
+    Attributes:
+        id: Exact voice identifier passed as ``connect(voice=...)``
+            (e.g. ``"alloy"``, ``"Puck"``, an ElevenLabs ``voice_id``).
+        name: Human-friendly display name.
+        language: Language/locale tag if voice-specific (e.g. ``"en-US"``,
+            ``"multilingual"``), else ``None``.
+        gender: ``"male"``/``"female"``/``"neutral"`` if known.
+        description: Short characterization (e.g. ``"Upbeat"``) if known.
+        deprecated: Whether the provider marks the voice deprecated.
+    """
+
+    id: str
+    name: str | None = None
+    language: str | None = None
+    gender: str | None = None
+    description: str | None = None
+    deprecated: bool = False
 
 
 class RealtimeVoiceProvider(ABC):
@@ -91,6 +120,54 @@ class RealtimeVoiceProvider(ABC):
         upstream model cannot safely reconfigure.
         """
         return True
+
+    @classmethod
+    def available_voices(cls) -> list[VoiceInfo]:
+        """Curated, offline catalog of voices this provider offers.
+
+        No API key or network required — call it on the class to discover the
+        ``voice`` ids that :meth:`connect` accepts. The base returns an empty
+        list; each provider overrides it with its catalog.
+        """
+        return []
+
+    async def list_voices(self) -> list[VoiceInfo]:
+        """Voices reported live by the provider's API.
+
+        The base implementation returns the curated :meth:`available_voices`.
+        Providers whose API exposes a voices endpoint (e.g. ElevenLabs) override
+        this to query it, backfilling metadata from the catalog via
+        :meth:`_merge_curated`. Fixed-voice providers (OpenAI Realtime, Gemini
+        Live) keep the curated list.
+        """
+        return self.available_voices()
+
+    @classmethod
+    def _merge_curated(cls, live: list[VoiceInfo]) -> list[VoiceInfo]:
+        """Backfill metadata absent from live results using the curated catalog.
+
+        For each live voice that also appears in :meth:`available_voices`, fill
+        any missing ``name``/``language``/``gender``/``description`` from the
+        curated entry, keeping whatever the API reported.
+        """
+        curated = {v.id: v for v in cls.available_voices()}
+        merged: list[VoiceInfo] = []
+        for voice in live:
+            match = curated.get(voice.id)
+            if match is None:
+                merged.append(voice)
+                continue
+            merged.append(
+                voice.model_copy(
+                    update={
+                        "name": voice.name or match.name,
+                        "language": voice.language or match.language,
+                        "gender": voice.gender or match.gender,
+                        "description": voice.description or match.description,
+                    }
+                )
+            )
+        return merged
 
     @abstractmethod
     async def connect(

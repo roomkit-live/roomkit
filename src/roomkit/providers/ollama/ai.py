@@ -12,6 +12,7 @@ want real-time thinking or explicit control over the reasoning phase.
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -29,6 +30,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
+    ModelInfo,
     ProviderError,
     StreamDone,
     StreamEvent,
@@ -37,6 +39,28 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.ollama.config import OllamaConfig
+from roomkit.providers.ollama.models import MODELS
+
+# Bounded parallelism for the per-model ``/api/show`` fan-out in
+# ``list_models``. Local Ollama serialises heavy work anyway; 8 keeps the
+# model picker snappy without thundering the server.
+_SHOW_CONCURRENCY = 8
+
+
+def _ollama_image_payload(url: str) -> str:
+    """Reduce an image reference to what Ollama's SDK accepts.
+
+    RoomKit carries images as ``data:<media_type>;base64,<data>`` URIs —
+    the same convention the Anthropic and OpenAI providers consume.
+    Ollama's ``Image`` type only accepts a raw base64 string or a file
+    path; handed a full data URI it raises ``ValueError: Invalid image
+    data, expected base64 string or path to image file``. Strip the
+    ``data:...;base64,`` prefix down to the payload; pass a plain base64
+    string or path through unchanged.
+    """
+    if url.startswith("data:"):
+        return url.partition(",")[2]
+    return url
 
 
 class OllamaAIProvider(AIProvider):
@@ -79,6 +103,43 @@ class OllamaAIProvider(AIProvider):
     @property
     def supports_structured_streaming(self) -> bool:
         return True
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline snapshot of popular public Ollama models."""
+        return list(MODELS)
+
+    async def list_models(self) -> list[ModelInfo]:
+        """List models installed on the configured Ollama server.
+
+        Reads ``/api/tags`` for the installed set, then probes ``/api/show``
+        per model (bounded parallel fan-out) to attach ``capabilities`` —
+        the tags the picker uses to keep completion-only models out of an
+        embeddings channel and vice-versa. A per-model probe failure yields
+        no capabilities for that model (older servers don't ship the field);
+        consumers treat empty as "unknown, allow everywhere".
+        """
+        resp = await self._client.list()
+        installed = self._get_attr(resp, "models", None) or []
+        names = [name for m in installed if (name := self._get_attr(m, "model", None))]
+
+        sem = asyncio.Semaphore(_SHOW_CONCURRENCY)
+
+        async def _capabilities(name: str) -> list[str]:
+            async with sem:
+                try:
+                    shown = await self._client.show(model=name)
+                except Exception:  # noqa: BLE001 — any probe failure → unknown caps
+                    return []
+            caps = self._get_attr(shown, "capabilities", None) or []
+            return [str(c) for c in caps]
+
+        caps_per_model = await asyncio.gather(*(_capabilities(n) for n in names))
+        live = [
+            ModelInfo(id=name, capabilities=caps)
+            for name, caps in zip(names, caps_per_model, strict=True)
+        ]
+        return self._merge_curated(live)
 
     # -- Message + tool conversion ------------------------------------------
 
@@ -128,7 +189,7 @@ class OllamaAIProvider(AIProvider):
                 if isinstance(part, AITextPart):
                     text_parts.append(part.text)
                 elif isinstance(part, AIImagePart):
-                    images.append(part.url)
+                    images.append(_ollama_image_payload(part.url))
                 elif isinstance(part, AIThinkingPart):
                     thinking_text = part.thinking
                 elif isinstance(part, AIToolCallPart):
@@ -228,7 +289,13 @@ class OllamaAIProvider(AIProvider):
     def _wrap_error(self, exc: BaseException) -> ProviderError:
         if isinstance(exc, self._response_error):
             status = getattr(exc, "status_code", None)
-            retryable = status in (429, 500, 502, 503)
+            # No HTTP status (ollama reports -1) means the server aborted
+            # mid-stream — e.g. its chat template failed to parse the
+            # model's own tool-call output ("XML syntax error ... closed by
+            # </function>"). That's a transient generation defect: a retry
+            # regenerates with fresh sampling. Only definite HTTP client
+            # errors stay non-retryable.
+            retryable = status in (None, -1, 429, 500, 502, 503)
             return ProviderError(
                 str(exc),
                 retryable=retryable,

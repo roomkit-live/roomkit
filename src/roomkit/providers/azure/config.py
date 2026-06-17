@@ -33,3 +33,14 @@ class AzureAIConfig(BaseModel):
     handles retries at the right layer with proper backoff and fallback."""
     include_stream_usage: bool = False
     """When True, request token usage in streaming responses."""
+    use_max_completion_tokens: bool = False
+    """Send the output cap as ``max_completion_tokens`` rather than the
+    deprecated ``max_tokens``. Required by newer Azure-hosted OpenAI models;
+    leave False for deployments that only understand ``max_tokens``."""
+    supports_custom_temperature: bool = True
+    """When False, ``temperature`` is omitted — reasoning deployments accept
+    only the default and reject any other value with HTTP 400."""
+    reasoning_effort: str | None = None
+    """Reasoning depth for reasoning deployments (``"low"``/``"medium"``/
+    ``"high"``); ``None`` uses the model default. Only sent for models that
+    accept it."""

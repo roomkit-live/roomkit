@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -364,6 +365,66 @@ class TestToolCalls:
         _session_id, _call_id, submitted = provider.tool_results[0]
         assert submitted == small_result
 
+    async def test_dict_tool_result_serialized(
+        self,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        """A non-str handler result is JSON-serialized before submission."""
+
+        async def dict_handler(name: str, arguments: dict[str, Any]) -> Any:
+            return {"status": "ok", "value": 42}
+
+        ch = RealtimeVoiceChannel(
+            "rt-dict",
+            provider=provider,
+            transport=transport,
+            tool_handler=dict_handler,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-dict")
+        session = await ch.start_session(room.id, "user-1", "fake-ws")
+
+        await provider.simulate_tool_call(session, "call-d", "dict_tool", {})
+        await asyncio.sleep(0.1)
+
+        assert len(provider.tool_results) == 1
+        assert provider.tool_results[0][2] == '{"status": "ok", "value": 42}'
+
+    async def test_slow_result_serialization_warns(
+        self,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Serialization past the loop-segment budget logs an actionable warning."""
+        monkeypatch.setattr("roomkit.channels._realtime_tools._LOOP_SEGMENT_BUDGET_S", -1.0)
+
+        async def dict_handler(name: str, arguments: dict[str, Any]) -> Any:
+            return {"big": "payload"}
+
+        ch = RealtimeVoiceChannel(
+            "rt-slowser",
+            provider=provider,
+            transport=transport,
+            tool_handler=dict_handler,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-slowser")
+        session = await ch.start_session(room.id, "user-1", "fake-ws")
+
+        with caplog.at_level(logging.WARNING, logger="roomkit.channels.realtime_voice"):
+            await provider.simulate_tool_call(session, "call-w", "big_tool", {})
+            await asyncio.sleep(0.1)
+
+        assert any("held the event loop" in r.message for r in caplog.records)
+        assert len(provider.tool_results) == 1  # result still submitted
+
 
 class TestSpeakingIndicators:
     async def test_response_start_sends_speaking_indicator(
@@ -476,6 +537,91 @@ class TestTranscriptionHooks:
             if isinstance(e.content, TextContent) and e.content.body == "Should be blocked"
         ]
         assert len(text_events) == 0
+
+
+class TestHookContextSkip:
+    """Hot paths skip _build_context entirely when no hooks are registered.
+
+    Partial transcriptions stream continuously while the AI speaks and
+    speech events fire on every turn boundary — building a RoomContext
+    (full recent-events load) for a no-op hook dispatch starves the
+    event loop on long sessions.
+    """
+
+    async def test_partial_transcription_skips_context_without_hooks(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+    ) -> None:
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        with patch.object(kit, "_build_context", wraps=kit._build_context) as spy:
+            await provider.simulate_transcription(session, "Hel", "user", False)
+            await asyncio.sleep(0.1)
+
+        spy.assert_not_called()
+
+    async def test_partial_transcription_fires_hook_when_registered(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+    ) -> None:
+        seen: list[str] = []
+
+        @kit.hook(HookTrigger.ON_PARTIAL_TRANSCRIPTION, HookExecution.ASYNC)
+        async def on_partial(event: object, ctx: RoomContext) -> None:
+            seen.append(event.text)  # type: ignore[attr-defined]
+
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        await provider.simulate_transcription(session, "Hel", "user", False)
+        await asyncio.sleep(0.1)
+
+        assert seen == ["Hel"]
+
+    async def test_speech_events_skip_context_without_hooks(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+    ) -> None:
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        with patch.object(kit, "_build_context", wraps=kit._build_context) as spy:
+            await provider.simulate_speech_start(session)
+            await provider.simulate_speech_end(session)
+            await asyncio.sleep(0.1)
+
+        spy.assert_not_called()
+
+    async def test_speech_hooks_fire_when_registered(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+    ) -> None:
+        order: list[str] = []
+
+        @kit.hook(HookTrigger.ON_SPEECH_START, HookExecution.ASYNC)
+        async def on_start(event: object, ctx: RoomContext) -> None:
+            order.append("start")
+
+        @kit.hook(HookTrigger.ON_SPEECH_END, HookExecution.ASYNC)
+        async def on_end(event: object, ctx: RoomContext) -> None:
+            order.append("end")
+
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+        await provider.simulate_speech_start(session)
+        await asyncio.sleep(0.05)
+        await provider.simulate_speech_end(session)
+        await asyncio.sleep(0.1)
+
+        assert order == ["start", "end"]
 
 
 class TestSelfLoopPrevention:
@@ -1220,3 +1366,115 @@ class TestStartSessionCancellation:
         assert len(error_msgs) == 1
         disconnect_calls = [c for c in transport.calls if c.method == "disconnect"]
         assert len(disconnect_calls) == 1
+
+
+class TestSendWorkerOrdering:
+    """The per-session send worker preserves audio→EOR order structurally."""
+
+    async def test_eor_after_audio_with_yielding_transport(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        room_id: str,
+    ) -> None:
+        """Ordering must hold even when the transport yields mid-send.
+
+        Adversarial transport: parks on the loop before recording each
+        send. With one task per chunk, a later-created end-of-response
+        task could overtake parked audio tasks; the single send worker
+        makes the order structural.
+        """
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        call_log: list[str] = []
+        orig_send_audio = transport.send_audio
+        orig_end_of_response = transport.end_of_response
+
+        async def yielding_send_audio(s: VoiceSession, audio: Any) -> None:
+            await asyncio.sleep(0)
+            call_log.append("audio")
+            await orig_send_audio(s, audio)
+
+        def tracking_end_of_response(s: VoiceSession) -> None:
+            call_log.append("end_of_response")
+            orig_end_of_response(s)
+
+        transport.send_audio = yielding_send_audio  # type: ignore[assignment]
+        transport.end_of_response = tracking_end_of_response  # type: ignore[assignment]
+
+        await provider.simulate_response_start(session)
+        for i in range(5):
+            await provider.simulate_audio(session, f"chunk-{i}".encode())
+        await provider.simulate_response_end(session)
+        await asyncio.sleep(0.1)
+
+        assert call_log.count("audio") == 5
+        eor_index = call_log.index("end_of_response")
+        assert all(i < eor_index for i, v in enumerate(call_log) if v == "audio"), (
+            f"Audio after end_of_response: {call_log}"
+        )
+
+    async def test_one_worker_per_session(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        room_id: str,
+    ) -> None:
+        """A burst of chunks reuses one resident worker, not a task each."""
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        await provider.simulate_response_start(session)
+        for i in range(20):
+            await provider.simulate_audio(session, f"chunk-{i}".encode())
+        await asyncio.sleep(0.05)
+
+        assert len(channel._audio_send_queues) == 1
+        assert len(channel._audio_send_workers) == 1
+        worker = channel._audio_send_workers[session.id]
+        assert not worker.done()
+
+        # Teardown releases the worker via the sentinel
+        await channel.end_session(session)
+        await asyncio.sleep(0.05)
+        assert session.id not in channel._audio_send_queues
+        assert worker.done()
+
+    async def test_barge_in_drains_queued_audio(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+        room_id: str,
+    ) -> None:
+        """User speech drops queued (stale) audio without processing it."""
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        gate = asyncio.Event()
+        orig_send_audio = transport.send_audio
+        sent: list[bytes] = []
+
+        async def gated_send_audio(s: VoiceSession, audio: Any) -> None:
+            await gate.wait()
+            sent.append(audio)
+            await orig_send_audio(s, audio)
+
+        transport.send_audio = gated_send_audio  # type: ignore[assignment]
+
+        await provider.simulate_response_start(session)
+        for i in range(10):
+            await provider.simulate_audio(session, f"chunk-{i}".encode())
+        await asyncio.sleep(0.02)  # worker parks on chunk-0 behind the gate
+
+        await provider.simulate_speech_start(session)  # barge-in: drain queue
+        gate.set()
+        await asyncio.sleep(0.05)
+
+        # chunk-0 was in flight behind the gate; the other 9 were drained.
+        # Its generation is stale by the time the gate opens, so at most
+        # the in-flight chunk reaches the transport.
+        assert len(sent) <= 1

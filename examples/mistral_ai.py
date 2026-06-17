@@ -1,84 +1,97 @@
-"""Mistral AI example — AI-powered assistant using Mistral.
+"""Interactive Mistral CLI — chat with reasoning (thinking) streamed live.
+
+Wires a :class:`CLIChannel` (with ``show_thinking=True``) to an
+:class:`AIChannel` backed by Mistral, so the model's reasoning trace renders
+inline (💭) above each answer as it streams. This is the full RoomKit pipeline:
+your input → room → AIChannel → Mistral → streamed thinking + answer → terminal.
+
+Mistral's reasoning models (``mistral-medium-3-5``, ``mistral-small-latest``)
+return reasoning as structured *thinking* chunks; the AIChannel's
+``thinking_budget`` maps to Mistral's ``reasoning_effort`` so ``--no-think``
+turns it off.
+
+Requires:
+    pip install roomkit[mistral]   (and roomkit[console] for colored output)
+
+Environment:
+    MISTRAL_API_KEY   — your Mistral API key
+    MISTRAL_MODEL     — model id (default: mistral-medium-3-5)
 
 Run with:
     MISTRAL_API_KEY=... uv run python examples/mistral_ai.py
+    MISTRAL_API_KEY=... uv run python examples/mistral_ai.py --model magistral-medium-latest
+    MISTRAL_API_KEY=... uv run python examples/mistral_ai.py --no-think
+
+Type a message at the prompt. Type ``quit`` (or Ctrl+D) to exit.
 """
 
 from __future__ import annotations
 
+import argparse
+import asyncio
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import asyncio
+from shared import require_env, setup_logging
 
-from shared import require_env
-
-from roomkit import (
-    ChannelCategory,
-    InboundMessage,
-    RoomEvent,
-    RoomKit,
-    TextContent,
-    WebSocketChannel,
-)
+from roomkit import CLIChannel, RoomKit
 from roomkit.channels.ai import AIChannel
+from roomkit.models.enums import ChannelCategory
 from roomkit.providers.mistral import MistralAIProvider, MistralConfig
 
 
-async def main() -> None:
-    # --- Configuration -------------------------------------------------------
+async def main(args: argparse.Namespace) -> None:
     env = require_env("MISTRAL_API_KEY")
 
-    config = MistralConfig(api_key=env["MISTRAL_API_KEY"])
-    provider = MistralAIProvider(config)
+    provider = MistralAIProvider(MistralConfig(api_key=env["MISTRAL_API_KEY"], model=args.model))
 
-    # --- RoomKit setup -------------------------------------------------------
     kit = RoomKit()
 
-    ws = WebSocketChannel("ws-user")
+    cli = CLIChannel("you", show_thinking=not args.no_think)
     ai = AIChannel(
-        "ai-assistant",
+        "assistant",
         provider=provider,
-        system_prompt="You are a helpful assistant. Keep answers concise.",
+        system_prompt="You are a helpful assistant. Think step by step, then answer concisely.",
+        # >0 enables reasoning (mapped to Mistral reasoning_effort="high"); 0 disables it.
+        thinking_budget=0 if args.no_think else 4096,
     )
 
-    kit.register_channel(ws)
+    kit.register_channel(cli)
     kit.register_channel(ai)
 
-    # Capture what the user receives back.
-    inbox: list[RoomEvent] = []
+    await kit.create_room(room_id="mistral-cli")
+    await kit.attach_channel("mistral-cli", "you")
+    await kit.attach_channel("mistral-cli", "assistant", category=ChannelCategory.INTELLIGENCE)
 
-    async def on_receive(_conn: str, event: RoomEvent) -> None:
-        inbox.append(event)
-
-    ws.register_connection("user-conn", on_receive)
-
-    await kit.create_room(room_id="demo-room")
-    await kit.attach_channel("demo-room", "ws-user")
-    await kit.attach_channel("demo-room", "ai-assistant", category=ChannelCategory.INTELLIGENCE)
-
-    # --- Send a message and get an AI response -------------------------------
-    result = await kit.process_inbound(
-        InboundMessage(
-            channel_id="ws-user",
-            sender_id="user",
-            content=TextContent(body="What is RoomKit?"),
+    think_state = "off" if args.no_think else "on (💭 shown above each answer)"
+    try:
+        await cli.run(
+            kit,
+            room_id="mistral-cli",
+            welcome=f"Mistral · {args.model} · thinking {think_state}\nType 'quit' to exit.",
         )
+    finally:
+        await provider.close()
+
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Interactive Mistral CLI with live reasoning.")
+    p.add_argument(
+        "--model",
+        default=os.environ.get("MISTRAL_MODEL", "mistral-medium-3-5"),
+        help="Mistral model id. Env: MISTRAL_MODEL.",
     )
-    print(f"Sent message -> blocked={result.blocked}")
-
-    # Show the AI response delivered back to the user.
-    for ev in inbox:
-        print(f"  AI replied: {ev.content.body}")  # type: ignore[union-attr]
-
-    # --- Show conversation history -------------------------------------------
-    events = await kit.store.list_events("demo-room")
-    print(f"\nRoom history ({len(events)} events):")
-    for ev in events:
-        print(f"  [{ev.source.channel_id}] {ev.content.body}")  # type: ignore[union-attr]
+    p.add_argument(
+        "--no-think",
+        action="store_true",
+        help="Disable reasoning (reasoning_effort='none') and hide the thinking trace.",
+    )
+    return p.parse_args()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    setup_logging("mistral_ai")
+    asyncio.run(main(_parse_args()))

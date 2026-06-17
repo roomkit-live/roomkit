@@ -43,6 +43,7 @@ class RealtimeSpeechHost(Protocol):
         _send_client_message: Send a JSON message to the client UI.
         _update_idle_event: Update the idle signaling event for a session.
         _rt_span_ctx: Get the telemetry span context for a session.
+        _reset_outbound_resampler: Reset via the resample executor (audio mixin).
     """
 
     _state_lock: threading.Lock
@@ -67,6 +68,8 @@ class RealtimeSpeechHost(Protocol):
     def _update_idle_event(self, session_id: str) -> None: ...
 
     def _rt_span_ctx(self, session_id: str) -> tuple[Any, Any]: ...
+
+    def _reset_outbound_resampler(self, resamplers: Any) -> None: ...
 
 
 class RealtimeSpeechMixin:
@@ -98,6 +101,7 @@ class RealtimeSpeechMixin:
     _send_client_message: Any  # see RealtimeSpeechHost — cross-mixin
     _update_idle_event: Any  # see RealtimeSpeechHost — cross-mixin
     _rt_span_ctx: Any  # see RealtimeSpeechHost — cross-mixin
+    _reset_outbound_resampler: Any  # see RealtimeSpeechHost — cross-mixin
 
     # -----------------------------------------------------------------
     # Provider speech events (server-side VAD)
@@ -122,10 +126,7 @@ class RealtimeSpeechMixin:
             is_barge_in = self._audio_forward_count.get(session.id, 0) > 0
             if is_barge_in:
                 self._barge_in_active.add(session.id)
-            # Reset outbound resampler inside lock to prevent race with
-            # concurrent _resample_outbound_with calls.
-            if resamplers:
-                resamplers[1].reset()
+            self._reset_outbound_resampler(resamplers)
         self._update_idle_event(session.id)
 
         if is_barge_in:
@@ -229,18 +230,21 @@ class RealtimeSpeechMixin:
 
         _, _tok = self._rt_span_ctx(session.id)
         try:
-            context = await self._framework._build_context(room_id)
             trigger = (
                 HookTrigger.ON_SPEECH_START if event_type == "start" else HookTrigger.ON_SPEECH_END
             )
 
-            await self._framework.hook_engine.run_async_hooks(
-                room_id,
-                trigger,
-                session,
-                context,
-                skip_event_filter=True,
-            )
+            # Skip expensive _build_context when no hooks are registered —
+            # speech events fire on every user turn boundary.
+            if self._framework.hook_engine.has_hooks(trigger):
+                context = await self._framework._build_context(room_id)
+                await self._framework.hook_engine.run_async_hooks(
+                    room_id,
+                    trigger,
+                    session,
+                    context,
+                    skip_event_filter=True,
+                )
 
             await self._send_client_message(
                 session,

@@ -131,6 +131,15 @@ class AIContext(BaseModel):
     target_capabilities: ChannelCapabilities | None = None
     target_media_types: list[ChannelMediaType] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    response_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Merged into the metadata of every MESSAGE response event built "
+            "for this turn, on both the streaming and non-streaming paths. "
+            "Set by hosts (e.g. a BEFORE_AI_GENERATION hook) to attach "
+            "turn-level attribution such as RAG sources to the reply."
+        ),
+    )
 
 
 class AIResponse(BaseModel):
@@ -150,11 +159,15 @@ class AIResponse(BaseModel):
 class StreamThinkingDelta(BaseModel):
     """A thinking/reasoning delta from a streaming AI response.
 
-    Emitted before text deltas when the model is reasoning.
+    Emitted before text deltas when the model is reasoning. A delta may carry
+    only a ``signature`` (with empty ``thinking``): Anthropic streams the
+    thinking block's opaque signature separately, and it must be preserved so
+    the block can be echoed back in history without a 400.
     """
 
     type: Literal["thinking_delta"] = "thinking_delta"
     thinking: str
+    signature: str | None = None
 
 
 class StreamTextDelta(BaseModel):
@@ -186,6 +199,35 @@ class StreamDone(BaseModel):
 StreamEvent = StreamThinkingDelta | StreamTextDelta | StreamToolCall | StreamDone
 
 
+class ModelInfo(BaseModel):
+    """Metadata describing a single model offered by an AI provider.
+
+    Both the curated catalog (:meth:`AIProvider.available_models`) and the
+    live API query (:meth:`AIProvider.list_models`) return these. Only ``id``
+    is guaranteed; the remaining fields are best-effort and may be ``None``
+    when the source does not report them.
+
+    Attributes:
+        id: Exact model identifier accepted by the provider's API
+            (e.g. ``"claude-sonnet-4-20250514"``, ``"gpt-4o"``).
+        display_name: Human-friendly name (e.g. ``"Claude Sonnet 4"``).
+        context_window: Input context window in tokens, if known.
+        supports_vision: Whether the model accepts image input, if known.
+        deprecated: Whether the provider marks the model deprecated.
+        capabilities: Provider-reported capability tags (e.g. Ollama's
+            ``"completion"``, ``"embedding"``, ``"vision"``, ``"tools"``).
+            Empty when the source does not report them — consumers treat
+            empty as "unknown, allow everywhere" rather than "none".
+    """
+
+    id: str
+    display_name: str | None = None
+    context_window: int | None = None
+    supports_vision: bool | None = None
+    deprecated: bool = False
+    capabilities: list[str] = Field(default_factory=list)
+
+
 class AIProvider(ABC):
     """AI model provider for generating responses."""
 
@@ -208,6 +250,58 @@ class AIProvider(ABC):
     def supports_structured_streaming(self) -> bool:
         """Whether this provider supports structured streaming with tool calls."""
         return False
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of models known to this provider.
+
+        Returns a hand-maintained list — no API key or network required —
+        so an integrator can discover configurable models by calling this
+        on the class before instantiating. The base returns an empty list;
+        each provider overrides it with its catalog.
+        """
+        return []
+
+    async def list_models(self) -> list[ModelInfo]:
+        """Models reported live by the provider's API.
+
+        The base implementation returns the curated :meth:`available_models`.
+        Providers whose API exposes a models endpoint override this to query
+        it, backfilling missing metadata from the catalog via
+        :meth:`_merge_curated`.
+        """
+        return self.available_models()
+
+    @classmethod
+    def _merge_curated(cls, live: list[ModelInfo]) -> list[ModelInfo]:
+        """Backfill metadata absent from live results using the curated catalog.
+
+        A live models endpoint typically returns ids with little metadata.
+        For each live model that also appears in :meth:`available_models`,
+        fill any missing ``display_name``/``context_window``/``supports_vision``
+        from the curated entry, keeping whatever the API did report.
+        """
+        curated = {m.id: m for m in cls.available_models()}
+        merged: list[ModelInfo] = []
+        for model in live:
+            match = curated.get(model.id)
+            if match is None:
+                merged.append(model)
+                continue
+            merged.append(
+                model.model_copy(
+                    update={
+                        "display_name": model.display_name or match.display_name,
+                        "context_window": model.context_window or match.context_window,
+                        "supports_vision": (
+                            model.supports_vision
+                            if model.supports_vision is not None
+                            else match.supports_vision
+                        ),
+                    }
+                )
+            )
+        return merged
 
     @property
     @abstractmethod

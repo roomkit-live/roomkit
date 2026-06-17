@@ -140,7 +140,7 @@ For development:
 git clone https://github.com/roomkit-live/roomkit.git
 cd roomkit
 uv sync --extra dev
-make all                               # ruff check + mypy --strict + pytest
+make all                               # ruff check + ty + pytest
 ```
 
 Requires **Python 3.12+**.
@@ -519,7 +519,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.
 
 ```bash
 uv sync --extra dev
-make all                # ruff check + mypy --strict + pytest
+make all                # ruff check + ty + pytest
 ```
 
 All new code needs tests. Aim for >90% coverage.

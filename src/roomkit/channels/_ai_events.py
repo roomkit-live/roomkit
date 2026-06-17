@@ -13,6 +13,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.channels.ai")
 
+# Per-event cap on the ``thinking`` payload published to the realtime bus.
+# Producers that must deliver longer text without loss (e.g. the streaming
+# coalescer) split it into multiple events of at most this size.
+THINKING_PREVIEW_LIMIT = 1000
+
 
 class AIEventsMixin:
     """Publishes tool-call and thinking ephemeral events over the realtime backend."""
@@ -80,7 +85,7 @@ class AIEventsMixin:
         """Publish a thinking ephemeral event. Best-effort, never breaks the loop."""
         if self._realtime is None or not room_id:
             return
-        preview_limit = 1000
+        preview_limit = THINKING_PREVIEW_LIMIT
         data: dict[str, Any] = {
             "thinking": thinking[:preview_limit] if len(thinking) > preview_limit else thinking,
             "thinking_length": len(thinking),

@@ -77,9 +77,11 @@ class _FakeStream:
         final_message: SimpleNamespace,
         *,
         thinking_chunks: list[str] | None = None,
+        thinking_signature: str | None = None,
     ) -> None:
         self._text_chunks = text_chunks
         self._thinking_chunks = thinking_chunks or []
+        self._thinking_signature = thinking_signature
         self._final_message = final_message
 
     async def __aenter__(self) -> _FakeStream:
@@ -96,6 +98,15 @@ class _FakeStream:
                 SimpleNamespace(
                     type="content_block_delta",
                     delta=SimpleNamespace(type="thinking_delta", thinking=chunk),
+                )
+            )
+        if self._thinking_signature is not None:
+            self._events.append(
+                SimpleNamespace(
+                    type="content_block_delta",
+                    delta=SimpleNamespace(
+                        type="signature_delta", signature=self._thinking_signature
+                    ),
                 )
             )
         for chunk in self._text_chunks:
@@ -147,6 +158,7 @@ def _mock_stream(
     output_tokens: int = 25,
     tool_use: list[dict[str, Any]] | None = None,
     thinking_chunks: list[str] | None = None,
+    thinking_signature: str | None = None,
 ) -> _FakeStream:
     """Build a fake stream that yields text and returns a final message."""
     final = _mock_response(
@@ -163,6 +175,7 @@ def _mock_stream(
         text_chunks=text_chunks,
         final_message=final,
         thinking_chunks=thinking_chunks,
+        thinking_signature=thinking_signature,
     )
 
 
@@ -247,6 +260,69 @@ class TestAnthropicAIProvider:
         assert cfg.model == "claude-sonnet-4-20250514"
         assert cfg.max_tokens == 1024
         assert cfg.temperature == 0.7
+
+    def test_thinking_shape_follows_adaptive_flag(self) -> None:
+        # use_adaptive_thinking sends the adaptive shape (newer models 400 on
+        # budget_tokens); the default keeps the fixed budget_tokens shape. Either
+        # way temperature is dropped while thinking.
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            adaptive = AnthropicAIProvider(_config(use_adaptive_thinking=True))
+            kwargs = adaptive._build_kwargs(_context(thinking_budget=8192, temperature=0.7))
+            assert kwargs["thinking"] == {"type": "adaptive", "display": "summarized"}
+            assert "budget_tokens" not in kwargs["thinking"]
+            assert "temperature" not in kwargs
+
+            fixed = AnthropicAIProvider(_config())  # use_adaptive_thinking=False
+            kwargs = fixed._build_kwargs(_context(thinking_budget=8192))
+            assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 8192}
+
+    @pytest.mark.asyncio
+    async def test_thinking_signature_captured_from_stream(self) -> None:
+        # The thinking block's signature streams as its own signature_delta;
+        # it must be captured (and round-trip via _format_content), else
+        # Anthropic 400s on a replayed thinking block missing its signature.
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import AIMessage, AIThinkingPart
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.messages.stream = MagicMock(
+                return_value=_mock_stream(
+                    text="answer",
+                    thinking_chunks=["let me think"],
+                    thinking_signature="sig-abc123",
+                )
+            )
+            result = await provider.generate(_context())
+            assert result.thinking == "let me think"
+            assert result.thinking_signature == "sig-abc123"
+
+            # And the signature round-trips when the block is echoed back.
+            block = provider._format_content(
+                [AIThinkingPart(thinking="let me think", signature="sig-abc123")]
+            )[0]
+            assert block == {
+                "type": "thinking",
+                "thinking": "let me think",
+                "signature": "sig-abc123",
+            }
+            # Sanity: AIMessage import keeps the fixture honest about parts.
+            assert AIMessage(role="assistant", content="x").role == "assistant"
+
+    def test_temperature_omitted_when_unsupported(self) -> None:
+        # Reasoning models reject any temperature; supports_custom_temperature
+        # =False drops it. thinking_budget=0 means thinking off, so the temp
+        # path is what runs here.
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config(supports_custom_temperature=False))
+            kwargs = provider._build_kwargs(_context(thinking_budget=0, temperature=0.7))
+            assert "thinking" not in kwargs
+            assert "temperature" not in kwargs
 
     @pytest.mark.asyncio
     async def test_sdk_error_wrapped_in_provider_error(self) -> None:

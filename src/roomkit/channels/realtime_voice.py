@@ -8,6 +8,7 @@ import contextvars
 import logging
 import threading
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -178,9 +179,9 @@ class RealtimeVoiceChannel(
                 into the initial ``system_instruction`` at session start;
                 ``activate_skill`` becomes a declarative ACK and no
                 ``provider.reconfigure`` is needed. ``"on_demand"``
-                keeps the legacy behavior: only metadata is in the
-                prompt, ``activate_skill`` loads the body via
-                ``provider.reconfigure``. Defaults to ``"inline_full"``
+                puts only metadata in the prompt; ``activate_skill``
+                loads the body via ``provider.reconfigure``.
+                Defaults to ``"inline_full"``
                 when the provider reports
                 ``supports_mid_session_reconfigure=False`` (e.g.
                 Gemini 3.x Flash Live), ``"on_demand"`` otherwise.
@@ -257,8 +258,8 @@ class RealtimeVoiceChannel(
         # otherwise from the provider's reconfigure capability: providers
         # that cannot safely reconfigure mid-session (Gemini 3.x) must
         # default to ``inline_full`` so every skill body is in the
-        # initial system_instruction. Others keep the legacy ``on_demand``
-        # behavior so the prompt stays short until a skill is activated.
+        # initial system_instruction. Others default to ``on_demand`` so
+        # the prompt stays short until a skill is activated.
         self._skill_support: RealtimeSkillSupport | None = None
         if skills and skills.skill_count > 0:
             from roomkit.channels._realtime_skills import RealtimeSkillSupport
@@ -330,6 +331,10 @@ class RealtimeVoiceChannel(
 
         # Per-session resamplers: (inbound, outbound) pairs
         self._session_resamplers: dict[str, tuple[Any, Any]] = {}
+        # Single-thread executor owning every resampler state mutation
+        # (resample/flush/reset/close) — created lazily by the audio mixin,
+        # shut down in close(). FIFO keeps frames ordered and state safe.
+        self._resample_executor: ThreadPoolExecutor | None = None
         # Per-session transport sample rates (from transport metadata)
         self._session_transport_rates: dict[str, int] = {}
         # Audio forward counters (for diagnostics)
@@ -337,6 +342,10 @@ class RealtimeVoiceChannel(
         # Per-session generation counter: bumped on interrupt so pending
         # send_audio tasks created before the interrupt become stale and skip.
         self._audio_generation: dict[str, int] = {}
+        # Outbound send queue + resident worker per session — one consumer
+        # task per session instead of one task per 20 ms provider chunk.
+        self._audio_send_queues: dict[str, asyncio.Queue[Any]] = {}
+        self._audio_send_workers: dict[str, asyncio.Task[Any]] = {}
         # Last assistant text per session (for barge-in event context)
         self._last_assistant_text: dict[str, str] = {}
         # Barge-in state: set when user interrupts AI, cleared on next final transcription
@@ -768,6 +777,17 @@ class RealtimeVoiceChannel(
                         SincResamplerProvider as _Resampler,
                     )
 
+                    # Pure-Python resampling holds the GIL even inside the
+                    # resample executor — the event loop stalls with it, and
+                    # realtime pacing (SIP headroom 60ms) audibly suffers.
+                    logger.warning(
+                        "numpy unavailable — falling back to the pure-Python "
+                        "sinc resampler for session %s. Realtime pacing may "
+                        "underrun under load; install numpy for GIL-releasing "
+                        "resampling.",
+                        session.id,
+                    )
+
                 self._session_resamplers[session.id] = (
                     _Resampler(),  # inbound: transport → provider
                     _Resampler(),  # outbound: provider → transport
@@ -968,6 +988,13 @@ class RealtimeVoiceChannel(
             turn_span_id = self._turn_spans.pop(session.id, None)
             session_span_id = self._session_spans.pop(session.id, None)
             resamplers = self._session_resamplers.pop(session.id, None)
+            send_queue = self._audio_send_queues.pop(session.id, None)
+            self._audio_send_workers.pop(session.id, None)
+
+        # Release the send worker — it exits on the sentinel; anything still
+        # queued belongs to the closed session and is dropped with it.
+        if send_queue is not None:
+            send_queue.put_nowait(None)
 
         # End any active turn span, then the session span
         telemetry = self._telemetry_provider
@@ -978,11 +1005,21 @@ class RealtimeVoiceChannel(
             telemetry.flush()
 
         if resamplers:
-            for r in resamplers:
-                try:
-                    r.close()
-                except Exception:
-                    logger.exception("Error closing resampler for session %s", session.id)
+
+            def _close_resamplers() -> None:
+                for r in resamplers:
+                    try:
+                        r.close()
+                    except Exception:
+                        logger.exception("Error closing resampler for session %s", session.id)
+
+            # Through the resample executor: FIFO behind any in-flight
+            # resample, so close never races state mutation.
+            ex = self._resample_executor
+            if ex is not None:
+                ex.submit(_close_resamplers)
+            else:
+                _close_resamplers()
 
         # Fire framework event
         if self._framework:
@@ -1208,6 +1245,12 @@ class RealtimeVoiceChannel(
             except TimeoutError:
                 logger.warning("Timed out waiting for %d tasks during close", len(tasks))
         self._scheduled_tasks.clear()
+
+        # Queued resampler close jobs still run; sessions are already ended
+        # so nothing new can be queued.
+        if self._resample_executor is not None:
+            self._resample_executor.shutdown(wait=False)
+            self._resample_executor = None
 
         try:
             await self._provider.close()

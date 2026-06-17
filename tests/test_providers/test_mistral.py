@@ -50,6 +50,18 @@ def _mock_mistral_module() -> MagicMock:
     return mod
 
 
+def _mistral_modules() -> dict[str, MagicMock]:
+    """sys.modules patch for the mistralai mock.
+
+    The provider imports ``from mistralai.client import Mistral`` (the v2 SDK
+    namespace-package path), so the mock must resolve under both the package
+    and its ``client`` submodule — same instance, so ``mistralai.client.Mistral``
+    is the configured constructor.
+    """
+    mod = _mock_mistral_module()
+    return {"mistralai": mod, "mistralai.client": mod}
+
+
 def _config(**overrides: Any) -> MistralConfig:
     defaults: dict[str, Any] = {"api_key": "test-key"}
     defaults.update(overrides)
@@ -138,9 +150,23 @@ def _stream_events(
 
 
 class TestMistralAIProvider:
+    def test_real_sdk_exposes_mistral_at_imported_path(self) -> None:
+        """Guard against SDK import drift.
+
+        Every other test mocks the mistralai module, so none would catch the
+        real package moving ``Mistral`` (the v1->v2 bump relocated it from
+        ``mistralai`` to ``mistralai.client``). This asserts the provider's
+        import path resolves against the installed SDK; it skips when mistralai
+        is not installed.
+        """
+        pytest.importorskip("mistralai")
+        from mistralai.client import Mistral
+
+        assert Mistral is not None
+
     @pytest.mark.asyncio
     async def test_generate_success(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
             provider = MistralAIProvider(_config())
@@ -154,7 +180,7 @@ class TestMistralAIProvider:
 
     @pytest.mark.asyncio
     async def test_generate_with_system_prompt(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
             provider = MistralAIProvider(_config())
@@ -166,7 +192,7 @@ class TestMistralAIProvider:
 
     @pytest.mark.asyncio
     async def test_generate_maps_usage(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
             provider = MistralAIProvider(_config())
@@ -175,11 +201,11 @@ class TestMistralAIProvider:
             )
             result = await provider.generate(_context())
 
-            assert result.usage == {"prompt_tokens": 42, "completion_tokens": 7}
+            assert result.usage == {"input_tokens": 42, "output_tokens": 7}
 
     @pytest.mark.asyncio
     async def test_generate_with_tools(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
             provider = MistralAIProvider(_config())
@@ -203,7 +229,7 @@ class TestMistralAIProvider:
 
     @pytest.mark.asyncio
     async def test_generate_api_error(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.ai.base import ProviderError
             from roomkit.providers.mistral.ai import MistralAIProvider
 
@@ -218,7 +244,7 @@ class TestMistralAIProvider:
 
     @pytest.mark.asyncio
     async def test_rate_limit_error_is_retryable(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.ai.base import ProviderError
             from roomkit.providers.mistral.ai import MistralAIProvider
 
@@ -237,22 +263,21 @@ class TestMistralAIProvider:
         assert cfg.temperature == 0.7
         assert cfg.server_url is None
 
-    def test_supports_vision_pixtral(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+    def test_supports_vision_advertised_for_any_model(self) -> None:
+        # Vision is per-model on Mistral and the multimodal lineup keeps
+        # shifting (Pixtral deprecated, Mistral Large 3 multimodal). The
+        # provider advertises vision unconditionally and lets the API
+        # reject a non-vision model, rather than filtering images out on a
+        # stale prefix list.
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
-            provider = MistralAIProvider(_config(model="pixtral-large-latest"))
-            assert provider.supports_vision is True
-
-    def test_no_vision_for_standard_models(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
-            from roomkit.providers.mistral.ai import MistralAIProvider
-
-            provider = MistralAIProvider(_config(model="mistral-large-latest"))
-            assert provider.supports_vision is False
+            for model in ("pixtral-large-latest", "mistral-large-latest", "mistral-small-latest"):
+                provider = MistralAIProvider(_config(model=model))
+                assert provider.supports_vision is True
 
     def test_supports_streaming(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
             provider = MistralAIProvider(_config())
@@ -260,14 +285,88 @@ class TestMistralAIProvider:
             assert provider.supports_structured_streaming is True
 
     def test_model_name(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
             provider = MistralAIProvider(_config(model="mistral-small-latest"))
             assert provider.model_name == "mistral-small-latest"
 
+    @pytest.mark.asyncio
+    async def test_structured_reasoning_chunks_emit_thinking(self) -> None:
+        # Reasoning models stream content as typed chunks (ThinkChunk/TextChunk),
+        # not <think> text — the provider must surface them as thinking/text.
+        with patch.dict("sys.modules", _mistral_modules()):
+            from roomkit.providers.mistral.ai import MistralAIProvider
+
+            provider = MistralAIProvider(_config())
+            think_chunk = SimpleNamespace(
+                type="thinking", thinking=[SimpleNamespace(text="Let me reason")]
+            )
+            text_chunk = SimpleNamespace(type="text", text="The answer")
+            events = [
+                SimpleNamespace(
+                    data=SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(content=[think_chunk], tool_calls=None),
+                                finish_reason=None,
+                            )
+                        ],
+                        usage=None,
+                    )
+                ),
+                SimpleNamespace(
+                    data=SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(content=[text_chunk], tool_calls=None),
+                                finish_reason="stop",
+                            )
+                        ],
+                        usage=SimpleNamespace(prompt_tokens=5, completion_tokens=8),
+                    )
+                ),
+            ]
+            provider._client.chat.stream_async.return_value = _FakeStream(events)
+
+            collected = [e async for e in provider.generate_structured_stream(_context())]
+            thinking = [e.thinking for e in collected if isinstance(e, StreamThinkingDelta)]
+            text = [e.text for e in collected if isinstance(e, StreamTextDelta)]
+            assert thinking == ["Let me reason"]
+            assert text == ["The answer"]
+
+    @pytest.mark.asyncio
+    async def test_thinking_budget_maps_to_reasoning_effort(self) -> None:
+        with patch.dict("sys.modules", _mistral_modules()):
+            from roomkit.providers.mistral.ai import MistralAIProvider
+
+            provider = MistralAIProvider(_config())
+            provider._client.chat.stream_async.return_value = _stream_events(text_chunks=["hi"])
+            await provider.generate(_context(thinking_budget=4096))
+            assert (
+                provider._client.chat.stream_async.call_args.kwargs["reasoning_effort"] == "high"
+            )
+
+            provider._client.chat.stream_async.return_value = _stream_events(text_chunks=["hi"])
+            await provider.generate(_context(thinking_budget=0))
+            assert (
+                provider._client.chat.stream_async.call_args.kwargs["reasoning_effort"] == "none"
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_reasoning_effort_by_default(self) -> None:
+        with patch.dict("sys.modules", _mistral_modules()):
+            from roomkit.providers.mistral.ai import MistralAIProvider
+
+            provider = MistralAIProvider(_config())
+            provider._client.chat.stream_async.return_value = _stream_events(text_chunks=["hi"])
+            await provider.generate(_context())
+            assert "reasoning_effort" not in provider._client.chat.stream_async.call_args.kwargs
+
     def test_lazy_import_error(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": None}):
+        # Simulate mistralai not installed: null both the package and its v2
+        # `client` submodule (the provider imports `from mistralai.client`).
+        with patch.dict("sys.modules", {"mistralai": None, "mistralai.client": None}):
             import importlib
 
             import roomkit.providers.mistral.ai as mod
@@ -279,7 +378,7 @@ class TestMistralAIProvider:
 
     @pytest.mark.asyncio
     async def test_structured_stream_yields_events(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
             provider = MistralAIProvider(_config())
@@ -299,11 +398,11 @@ class TestMistralAIProvider:
             assert isinstance(events[1], StreamTextDelta)
             assert events[1].text == " world"
             assert isinstance(events[2], StreamDone)
-            assert events[2].usage == {"prompt_tokens": 5, "completion_tokens": 10}
+            assert events[2].usage == {"input_tokens": 5, "output_tokens": 10}
 
     @pytest.mark.asyncio
     async def test_generate_stream_yields_text(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
             provider = MistralAIProvider(_config())
@@ -319,7 +418,7 @@ class TestMistralAIProvider:
 
     @pytest.mark.asyncio
     async def test_structured_stream_with_tool_calls(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
             provider = MistralAIProvider(_config())
@@ -345,7 +444,7 @@ class TestMistralAIProvider:
 
     @pytest.mark.asyncio
     async def test_structured_stream_with_think_tags(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
             provider = MistralAIProvider(_config())
@@ -368,7 +467,7 @@ class TestMistralAIProvider:
     @pytest.mark.asyncio
     async def test_thinking_part_round_trip(self) -> None:
         """AIThinkingPart in history is re-wrapped as <think> tags."""
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
             provider = MistralAIProvider(_config())
@@ -397,7 +496,7 @@ class TestMistralAIProvider:
 
     @pytest.mark.asyncio
     async def test_structured_stream_api_error(self) -> None:
-        with patch.dict("sys.modules", {"mistralai": _mock_mistral_module()}):
+        with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.ai.base import ProviderError
             from roomkit.providers.mistral.ai import MistralAIProvider
 

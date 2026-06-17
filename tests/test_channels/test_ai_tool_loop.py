@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from unittest.mock import AsyncMock, patch
 
@@ -49,7 +50,7 @@ class TestToolLoopTimeout:
         )
 
         # Patch event loop time so it jumps past the deadline after first round
-        original_time = asyncio.get_event_loop().time
+        original_time = asyncio.get_running_loop().time
         time_call_count = 0
 
         def advancing_time() -> float:
@@ -61,7 +62,7 @@ class TestToolLoopTimeout:
             return original_time() + 1000
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        with patch.object(asyncio.get_event_loop(), "time", advancing_time):
+        with patch.object(asyncio.get_running_loop(), "time", advancing_time):
             await ch._run_tool_loop(context)
 
         # Timeout must have stopped the loop — far fewer than max_tool_rounds
@@ -101,7 +102,7 @@ class TestToolLoopTimeout:
         )
 
         # Immediately past deadline from the very first time check
-        original_time = asyncio.get_event_loop().time
+        original_time = asyncio.get_running_loop().time
         call_count = 0
 
         def already_expired() -> float:
@@ -113,7 +114,7 @@ class TestToolLoopTimeout:
             return original_time() + 99999
 
         context = AIContext(messages=[AIMessage(role="user", content="go")])
-        with patch.object(asyncio.get_event_loop(), "time", already_expired):
+        with patch.object(asyncio.get_running_loop(), "time", already_expired):
             response = (await ch._run_tool_loop(context)).response
 
         # At most 1 round completes (the one in-flight when timeout is checked)
@@ -318,8 +319,9 @@ class TestToolResultTruncation:
         assert len(evicted) < len(large)
         assert "evicted_tc1" in evicted
         assert "Preview:" in evicted
-        # Full result stored for re-reading
-        assert ch._eviction._store.get("evicted_tc1") == large
+        # Full result stored for re-reading, under the room scope of the
+        # call site (no tool loop here → fallback scope "").
+        assert ch._eviction._store.get(("", "evicted_tc1")) == large
 
     def test_result_at_exact_limit_unchanged(self) -> None:
         """Result at the token threshold is not evicted."""
@@ -329,6 +331,62 @@ class TestToolResultTruncation:
         chars = (5000 - 1) * 4
         result = "x" * chars
         assert ch._maybe_truncate_result(result) == result
+
+
+class TestEvictedResultReading:
+    def test_single_line_json_paginates(self) -> None:
+        """A single-line JSON result splits into size-bounded pages instead of
+        coming back whole (line-based slicing returned the entire line)."""
+        provider = MockAIProvider()
+        ch = AIChannel("ai1", provider=provider, evict_threshold_tokens=100)
+        large = json.dumps(
+            {"emails": [{"id": f"msg-{i}", "subject": "x" * 40} for i in range(80)]}
+        )
+        assert "\n" not in large
+        ch._maybe_truncate_result(large, "tc1")
+
+        eviction = ch._eviction
+        pages = []
+        offset = 0
+        while True:
+            out = json.loads(eviction.handle_read({"result_id": "evicted_tc1", "offset": offset}))
+            pages.append(out["content"])
+            if not out["has_more"]:
+                assert out["next_offset"] is None
+                break
+            offset = out["next_offset"]
+        # Whole payload is reachable (pages join with injected newlines)
+        assert "".join(pages) == large
+        assert len(pages) > 1
+
+    def test_read_output_never_reevicted(self) -> None:
+        """The page returned by read_stored_result must stay under the
+        eviction threshold — otherwise it gets re-stored under a new id and
+        the agent chases evicted results forever."""
+        provider = MockAIProvider()
+        ch = AIChannel("ai1", provider=provider, evict_threshold_tokens=100)
+        # Heavy on quotes: worst-case JSON escaping inflation
+        large = json.dumps({"k": '"' * 3000})
+        ch._maybe_truncate_result(large, "tc1")
+
+        out = ch._eviction.handle_read({"result_id": "evicted_tc1"})
+        assert ch._maybe_truncate_result(out, "tc2") == out
+
+    def test_multiline_pagination_keeps_line_semantics(self) -> None:
+        """Short multi-line results still paginate line by line."""
+        provider = MockAIProvider()
+        ch = AIChannel("ai1", provider=provider, evict_threshold_tokens=5000)
+        large = "\n".join(f"line {i} " + "x" * 50 for i in range(500))
+        ch._maybe_truncate_result(large, "tc1")
+
+        out = json.loads(
+            ch._eviction.handle_read({"result_id": "evicted_tc1", "offset": 10, "limit": 5})
+        )
+        assert out["content"] == "\n".join(f"line {i} " + "x" * 50 for i in range(10, 15))
+        assert out["lines_returned"] == 5
+        assert out["total_lines"] == 500
+        assert out["has_more"] is True
+        assert out["next_offset"] == 15
 
 
 class TestContextOverflowRecovery:

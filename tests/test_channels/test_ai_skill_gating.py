@@ -7,6 +7,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 from roomkit.channels._skill_constants import (
+    SKILLS_PREAMBLE as _SKILLS_PREAMBLE,
+)
+from roomkit.channels._skill_constants import (
     TOOL_ACTIVATE_SKILL as _TOOL_ACTIVATE_SKILL,
 )
 from roomkit.channels._skill_constants import (
@@ -703,5 +706,54 @@ class TestRoleBasedPolicy:
             assert "search" in tool_names
             assert "admin_panel" in tool_names
             assert "delete_all" in tool_names
+        finally:
+            _clear_loop_ctx()
+
+
+# ---------------------------------------------------------------------------
+# Skills manifest prompt injection (skills_in_prompt)
+# ---------------------------------------------------------------------------
+
+
+class TestSkillsInPrompt:
+    async def test_manifest_injected_by_default(self) -> None:
+        provider = MockAIProvider(ai_responses=[_final_response()])
+        registry = _skill_registry(("analytics", "Analytics skill", None))
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_handler=AsyncMock(),
+            system_prompt="Base prompt.",
+            skills=registry,
+        )
+        _set_loop_ctx()
+        try:
+            ctx = await ch._build_context(_make_event(), _make_binding(), _make_context())
+            assert ctx.system_prompt is not None
+            assert _SKILLS_PREAMBLE in ctx.system_prompt
+            assert 'name="analytics"' in ctx.system_prompt
+            assert _TOOL_ACTIVATE_SKILL in [t.name for t in ctx.tools]
+        finally:
+            _clear_loop_ctx()
+
+    async def test_manifest_skipped_when_disabled(self) -> None:
+        """Hosts rendering their own manifest pass ``skills_in_prompt=False`` —
+        the prompt stays untouched but the activation tools remain."""
+        provider = MockAIProvider(ai_responses=[_final_response()])
+        registry = _skill_registry(("analytics", "Analytics skill", None))
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_handler=AsyncMock(),
+            system_prompt="Base prompt.",
+            skills=registry,
+            skills_in_prompt=False,
+        )
+        _set_loop_ctx()
+        try:
+            ctx = await ch._build_context(_make_event(), _make_binding(), _make_context())
+            assert ctx.system_prompt == "Base prompt."
+            assert _SKILLS_PREAMBLE not in (ctx.system_prompt or "")
+            assert _TOOL_ACTIVATE_SKILL in [t.name for t in ctx.tools]
         finally:
             _clear_loop_ctx()

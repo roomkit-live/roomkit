@@ -14,6 +14,7 @@ from roomkit.channels import (
     WhatsAppChannel,
     WhatsAppPersonalChannel,
 )
+from roomkit.channels._turn_config import AIChannelTurnConfig
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.av import AudioVideoChannel
@@ -180,6 +181,7 @@ __all__ = [
     # Channels
     "Agent",
     "AIChannel",
+    "AIChannelTurnConfig",
     "AudioVideoChannel",
     "Channel",
     "CLIChannel",

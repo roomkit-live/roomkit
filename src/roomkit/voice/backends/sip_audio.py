@@ -88,6 +88,8 @@ class SIPAudioMixin:
     _disconnect_callbacks: list[Any]
     _trace_emitter: Any
     _outbound_silence_fill: bool
+    _pacer_prebuffer_ms: float
+    _pacer_jitter_headroom_ms: float
     _cleanup_session: Any  # see SIPAudioHost — cross-mixin, from SIPCallingMixin
     _log_task_exception: Any  # see SIPAudioHost — cross-mixin, from SIPCallingMixin
 
@@ -354,7 +356,18 @@ class SIPAudioMixin:
                             recv = rtp_stats.get("packets_received", 0)
                             lost = rtp_stats.get("packets_lost", 0)
                             jitter = rtp_stats.get("jitter", 0.0)
-                            rtp_info = f" rtp_recv={recv} rtp_lost={lost} jitter={jitter:.1f}"
+                            stats.sync_from_rtp(rtp_stats)
+                            rtp_info = (
+                                f" rtp_recv={recv} rtp_lost={lost}"
+                                f" concealed={stats.concealed_frames} jitter={jitter:.1f}"
+                            )
+                            if stats.has_remote_report:
+                                rj_ms = stats.remote_jitter_units * 1000.0 / st.clock_rate
+                                rtp_info += (
+                                    f" remote_lost={stats.remote_packets_lost}"
+                                    f" remote_loss={stats.remote_fraction_lost / 2.56:.1f}%"
+                                    f" remote_jitter={rj_ms:.0f}ms"
+                                )
 
                     in_dur = 0.0
                     if stats.inbound_packets > 1:
@@ -500,6 +513,8 @@ class SIPAudioMixin:
         pacer = OutboundAudioPacer(
             send_fn=rtp_send,
             sample_rate=state.codec_rate,
+            prebuffer_ms=self._pacer_prebuffer_ms,
+            jitter_headroom_ms=self._pacer_jitter_headroom_ms,
             fill_with_silence_when_idle=self._outbound_silence_fill,
         )
         state.pacer = pacer

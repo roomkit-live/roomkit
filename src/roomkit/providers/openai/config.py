@@ -32,3 +32,19 @@ class OpenAIConfig(BaseModel):
     """When True, request token usage in streaming responses via
     ``stream_options.include_usage``. The usage is included in the
     final :class:`StreamDone` event."""
+    use_max_completion_tokens: bool = False
+    """Send the output cap as ``max_completion_tokens`` instead of the
+    deprecated ``max_tokens``. OpenAI's newer models (o-series, gpt-5,
+    gpt-4.1) reject ``max_tokens`` outright. Leave False for
+    OpenAI-compatible servers (vLLM, LM Studio, older Azure deployments)
+    that only understand ``max_tokens``."""
+    supports_custom_temperature: bool = True
+    """When False, ``temperature`` is omitted from requests. OpenAI's
+    reasoning models (o-series, gpt-5) accept only the default
+    ``temperature=1`` and reject any other value with HTTP 400."""
+    reasoning_effort: str | None = None
+    """Reasoning depth for OpenAI reasoning models (o-series, gpt-5):
+    ``"low"`` | ``"medium"`` | ``"high"``. Controls how long the model
+    reasons (quality vs latency/cost); the reasoning trace itself stays
+    hidden in the Chat Completions API. ``None`` = the model's default.
+    Only send it for reasoning models — others reject the parameter."""

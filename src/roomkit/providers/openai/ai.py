@@ -19,6 +19,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
+    ModelInfo,
     ProviderError,
     StreamDone,
     StreamEvent,
@@ -27,6 +28,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.openai.config import OpenAIConfig
+from roomkit.providers.openai.models import MODELS
 
 # OpenAI models that support vision
 _VISION_MODELS = (
@@ -151,6 +153,23 @@ class OpenAIAIProvider(AIProvider):
     def supports_structured_streaming(self) -> bool:
         return True
 
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of OpenAI chat/multimodal models."""
+        return list(MODELS)
+
+    async def list_models(self) -> list[ModelInfo]:
+        """List every model id the configured endpoint exposes.
+
+        The OpenAI ``/v1/models`` response carries only ids — metadata for
+        known chat models is backfilled from the curated catalog. The raw
+        list also includes non-chat models (embeddings, audio); they pass
+        through unfiltered since the endpoint reports no capability field.
+        """
+        page = await self._client.models.list()
+        live = [ModelInfo(id=m.id) for m in page.data]
+        return self._merge_curated(live)
+
     def _format_content(
         self,
         content: (
@@ -245,6 +264,31 @@ class OpenAIAIProvider(AIProvider):
                 )
         return result
 
+    def _token_limit_kwarg(self, value: int) -> dict[str, int]:
+        """Build the output-cap kwarg under the name the endpoint expects.
+
+        OpenAI's newer models reject the deprecated ``max_tokens`` and require
+        ``max_completion_tokens``; OpenAI-compatible servers (vLLM, older Azure)
+        only understand ``max_tokens``. ``use_max_completion_tokens`` on the
+        config selects between them.
+        """
+        key = "max_completion_tokens" if self._config.use_max_completion_tokens else "max_tokens"
+        return {key: value}
+
+    def _apply_sampling_kwargs(self, kwargs: dict[str, Any], context: AIContext) -> None:
+        """Add temperature and reasoning_effort to a request when applicable.
+
+        Temperature is dropped for models that only accept the default
+        (``supports_custom_temperature=False``). reasoning_effort is omitted on
+        tool turns because Chat Completions rejects it alongside function tools
+        for some models (gpt-5.5: "use /v1/responses instead"); the reasoning
+        trace isn't returned here anyway, so this only forgoes depth tuning.
+        """
+        if context.temperature is not None and self._config.supports_custom_temperature:
+            kwargs["temperature"] = context.temperature
+        if self._config.reasoning_effort is not None and not context.tools:
+            kwargs["reasoning_effort"] = self._config.reasoning_effort
+
     # -- Non-streaming ---------------------------------------------------------
 
     async def generate(self, context: AIContext) -> AIResponse:
@@ -252,11 +296,10 @@ class OpenAIAIProvider(AIProvider):
 
         kwargs: dict[str, Any] = {
             "model": self._config.model,
-            "max_tokens": context.max_tokens or self._config.max_tokens,
+            **self._token_limit_kwarg(context.max_tokens or self._config.max_tokens),
             "messages": messages,
         }
-        if context.temperature is not None:
-            kwargs["temperature"] = context.temperature
+        self._apply_sampling_kwargs(kwargs, context)
 
         # Add tools if provided
         if context.tools:
@@ -274,7 +317,7 @@ class OpenAIAIProvider(AIProvider):
 
         t0 = time.monotonic()
         try:
-            response = await self._client.chat.completions.create(**kwargs)
+            response = await self._client.chat.completions.create(**kwargs)  # ty: ignore[no-matching-overload]
         except ProviderError:
             raise
         except self._api_connection_error as exc:
@@ -373,10 +416,9 @@ class OpenAIAIProvider(AIProvider):
         }
         if self._config.include_stream_usage:
             kwargs["stream_options"] = {"include_usage": True}
-        if context.temperature is not None:
-            kwargs["temperature"] = context.temperature
+        self._apply_sampling_kwargs(kwargs, context)
         if context.max_tokens is not None:
-            kwargs["max_tokens"] = context.max_tokens
+            kwargs.update(self._token_limit_kwarg(context.max_tokens))
         if context.tools:
             kwargs["tools"] = [
                 {
@@ -436,6 +478,18 @@ class OpenAIAIProvider(AIProvider):
                                 acc["name"] = tc_delta.function.name
                             if tc_delta.function.arguments:
                                 acc["arguments"] += tc_delta.function.arguments
+
+                # OpenAI-compatible reasoning models (DeepSeek-R1, vLLM with a
+                # reasoning parser) stream reasoning in a dedicated field instead
+                # of inline <think> tags. Surface it as thinking when present.
+                reasoning = getattr(delta, "reasoning_content", None) or getattr(
+                    delta, "reasoning", None
+                )
+                if reasoning:
+                    if first_token:
+                        self._record_ttfb(t0)
+                        first_token = False
+                    yield StreamThinkingDelta(thinking=reasoning)
 
                 # Process text content through the think-tag parser
                 text = delta.content if hasattr(delta, "content") else None

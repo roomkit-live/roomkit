@@ -60,6 +60,10 @@ if os.environ.get("SIP_DEBUG", "0") in ("1", "true", "yes"):
     logging.getLogger("aiosipua").setLevel(logging.DEBUG)
     logging.getLogger("aiortp").setLevel(logging.DEBUG)
 
+if os.environ.get("PACER_DEBUG", "0") in ("1", "true", "yes"):
+    # Prebuffer burst sizes + per-response pacing detail
+    logging.getLogger("roomkit.voice.realtime.pacer").setLevel(logging.DEBUG)
+
 # ---------------------------------------------------------------------------
 # Configuration (override via environment variables)
 # ---------------------------------------------------------------------------
@@ -73,6 +77,13 @@ CODEC = {"pcmu": PT_PCMU, "pcma": PT_PCMA, "g722": PT_G722}.get(
 )
 AUTH_USER = os.environ.get("SIP_AUTH_USER", "")
 AUTH_PASS = os.environ.get("SIP_AUTH_PASS", "")
+SIP_LOCAL_PORT = int(os.environ.get("SIP_LOCAL_PORT", "5070"))
+RTP_PORT_START = int(os.environ.get("SIP_RTP_PORT_START", "10000"))
+RTP_PORT_END = int(os.environ.get("SIP_RTP_PORT_END", "10010"))
+PACER_PREBUFFER_MS = float(os.environ.get("SIP_PACER_PREBUFFER_MS", "80"))
+PACER_HEADROOM_MS = float(os.environ.get("SIP_PACER_HEADROOM_MS", "60"))
+PLAYOUT = os.environ.get("SIP_PLAYOUT", "0") in ("1", "true", "yes")
+PLAYOUT_MAX_DELAY_MS = int(os.environ.get("SIP_PLAYOUT_MAX_DELAY_MS", "200"))
 
 GEMINI_MODEL = "gemini-3.1-flash-live-preview"
 SYSTEM_PROMPT = (
@@ -126,13 +137,17 @@ async def main() -> None:
     # during gaps between Gemini TTS chunks. Without it the pacer stalls,
     # producing choppy audio for PSTN callees (no packet-loss concealment).
     backend = SIPVoiceBackend(
-        local_sip_addr=("0.0.0.0", 5070),  # nosec B104
+        local_sip_addr=("0.0.0.0", SIP_LOCAL_PORT),  # nosec B104
         local_rtp_ip="0.0.0.0",  # nosec B104
-        rtp_port_start=10000,
-        rtp_port_end=10010,
+        rtp_port_start=RTP_PORT_START,
+        rtp_port_end=RTP_PORT_END,
         send_silence_on_answer=0.5,
         jitter_prefetch=3,
         outbound_silence_fill=True,
+        pacer_prebuffer_ms=PACER_PREBUFFER_MS,
+        pacer_jitter_headroom_ms=PACER_HEADROOM_MS,
+        playout=PLAYOUT,
+        playout_max_delay_ms=PLAYOUT_MAX_DELAY_MS,
     )
 
     # -- Gemini Live provider --

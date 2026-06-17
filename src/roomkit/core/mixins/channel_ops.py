@@ -133,6 +133,22 @@ class ChannelOpsMixin(HelpersMixin):
         if isinstance(channel, AgentChannel) and channel.auto_greet and channel.greeting:
             self._register_auto_greet_hook(channel)
 
+    def unregister_channel(self, channel_id: str) -> Channel | None:
+        """Remove a channel from the registry and return it.
+
+        The inverse of :meth:`register_channel`. The channel is returned
+        (not closed) so the caller can ``await channel.close()`` — closing
+        is async and owns the session/provider teardown, so it stays
+        explicit at the call site. Returns ``None`` for an unknown id.
+        Room bindings are untouched; callers tearing down per-session
+        channels typically close the room as well.
+        """
+        channel = self._channels.pop(channel_id, None)
+        if channel is None:
+            return None
+        self._event_router = None  # Reset router cache
+        return channel
+
     async def attach_channel(
         self,
         room_id: str,

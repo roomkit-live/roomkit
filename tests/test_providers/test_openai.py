@@ -128,6 +128,73 @@ class TestOpenAIAIProvider:
             assert messages[1] == {"role": "user", "content": "Hi"}
 
     @pytest.mark.asyncio
+    async def test_token_limit_kwarg_name_follows_config(self) -> None:
+        # Default sends the deprecated max_tokens (OpenAI-compatible servers).
+        # use_max_completion_tokens flips it to the name OpenAI's newer models
+        # require, and never sends both.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            for flag, expected, forbidden in (
+                (False, "max_tokens", "max_completion_tokens"),
+                (True, "max_completion_tokens", "max_tokens"),
+            ):
+                provider = OpenAIAIProvider(_config(use_max_completion_tokens=flag))
+                provider._client = MagicMock()
+                provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+                await provider.generate(_context(max_tokens=321))
+                call_kwargs = provider._client.chat.completions.create.call_args[1]
+                assert call_kwargs[expected] == 321
+                assert forbidden not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_temperature_omitted_when_unsupported(self) -> None:
+        # Reasoning models accept only temperature=1; supports_custom_temperature
+        # =False must drop the param entirely rather than send a rejected value.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config(supports_custom_temperature=False))
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+            await provider.generate(_context(temperature=0.7))
+            call_kwargs = provider._client.chat.completions.create.call_args[1]
+            assert "temperature" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_reasoning_effort_sent_only_when_configured(self) -> None:
+        # reasoning_effort rides the request only when set on the config;
+        # default (None) omits it so non-reasoning models aren't rejected.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            for effort, present in (("high", True), (None, False)):
+                provider = OpenAIAIProvider(_config(reasoning_effort=effort))
+                provider._client = MagicMock()
+                provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+                await provider.generate(_context())
+                call_kwargs = provider._client.chat.completions.create.call_args[1]
+                assert ("reasoning_effort" in call_kwargs) is present
+                if present:
+                    assert call_kwargs["reasoning_effort"] == "high"
+
+    @pytest.mark.asyncio
+    async def test_reasoning_effort_dropped_when_tools_present(self) -> None:
+        # Chat Completions rejects reasoning_effort + function tools for some
+        # models (gpt-5.5), so it's omitted whenever the turn carries tools.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config(reasoning_effort="high"))
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+            tool = AITool(name="get_weather", description="x", parameters={})
+            await provider.generate(_context(tools=[tool]))
+            call_kwargs = provider._client.chat.completions.create.call_args[1]
+            assert "reasoning_effort" not in call_kwargs
+            assert "tools" in call_kwargs
+
+    @pytest.mark.asyncio
     async def test_generate_maps_usage(self) -> None:
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.openai.ai import OpenAIAIProvider
@@ -373,6 +440,48 @@ class TestOpenAIAIProvider:
             )
             first_text = next(i for i, e in enumerate(events) if isinstance(e, StreamTextDelta))
             assert first_thinking < first_text
+
+    @pytest.mark.asyncio
+    async def test_structured_stream_with_reasoning_content_field(self) -> None:
+        """Reasoning via a dedicated reasoning_content field (DeepSeek-R1, vLLM)."""
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+
+            chunks = [
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content=None, reasoning_content="thinking", tool_calls=None
+                            ),
+                            finish_reason=None,
+                        )
+                    ]
+                ),
+                SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content="answer", tool_calls=None),
+                            finish_reason="stop",
+                        )
+                    ]
+                ),
+            ]
+
+            async def _fake_stream() -> Any:
+                for c in chunks:
+                    yield c
+
+            provider._client.chat.completions.create = AsyncMock(return_value=_fake_stream())
+
+            events = [e async for e in provider.generate_structured_stream(_context())]
+            thinking = [e.thinking for e in events if isinstance(e, StreamThinkingDelta)]
+            text = [e.text for e in events if isinstance(e, StreamTextDelta)]
+            assert thinking == ["thinking"]
+            assert text == ["answer"]
 
     @pytest.mark.asyncio
     async def test_thinking_part_round_trip(self) -> None:

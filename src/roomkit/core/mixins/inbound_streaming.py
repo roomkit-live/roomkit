@@ -108,7 +108,13 @@ class InboundStreamingMixin(HelpersMixin):
             )
 
         async def _persist_text_segment() -> None:
-            """Persist the accumulated text as a MESSAGE event."""
+            """Persist the accumulated text as a MESSAGE event.
+
+            ``sr.response_metadata`` (AIContext.response_metadata captured at
+            stream start) rides every MESSAGE segment — persisted before
+            broadcast, so turn-level attribution lands in the stored row
+            and in the stream_end frame without any post-hoc rewrite.
+            """
             if not accumulated_text:
                 return
             text = "".join(accumulated_text)
@@ -121,6 +127,7 @@ class InboundStreamingMixin(HelpersMixin):
                 chain_depth=chain_depth,
                 visibility=visibility,
                 correlation_id=correlation_id,
+                metadata=dict(sr.response_metadata or {}),
             )
             stored = await self._persist_event_auto_index(room_id, event)
             if stored is not None:

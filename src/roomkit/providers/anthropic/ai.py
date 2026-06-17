@@ -17,6 +17,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
+    ModelInfo,
     ProviderError,
     StreamDone,
     StreamEvent,
@@ -25,6 +26,7 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.anthropic.config import AnthropicConfig
+from roomkit.providers.anthropic.models import MODELS
 
 # Claude models that support vision (Claude 3 and later)
 _VISION_MODELS = (
@@ -73,6 +75,19 @@ class AnthropicAIProvider(AIProvider):
     def supports_vision(self) -> bool:
         """Claude 3+ models support vision."""
         return any(self._config.model.startswith(prefix) for prefix in _VISION_MODELS)
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of Claude models."""
+        return list(MODELS)
+
+    async def list_models(self) -> list[ModelInfo]:
+        """List models the Anthropic API currently exposes for this key."""
+        page = await self._client.models.list(limit=1000)
+        live = [
+            ModelInfo(id=m.id, display_name=getattr(m, "display_name", None)) for m in page.data
+        ]
+        return self._merge_curated(live)
 
     def _format_content(
         self,
@@ -169,15 +184,21 @@ class AnthropicAIProvider(AIProvider):
         }
         if context.system_prompt:
             kwargs["system"] = context.system_prompt
-        if context.thinking_budget is not None:
-            # Extended thinking: Anthropic requires temperature=1 when thinking
-            # is enabled and does not accept a temperature parameter.
-            kwargs["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": context.thinking_budget,
-            }
+        if context.thinking_budget is not None and context.thinking_budget > 0:
+            # Extended thinking. Anthropic ignores temperature while thinking,
+            # so it's dropped here regardless of model. Newer models (Opus
+            # 4.7/4.8, Fable 5) reject the budget_tokens shape and want
+            # adaptive thinking instead; ``display: "summarized"`` keeps the
+            # reasoning trace visible (its default is "omitted" on those models).
+            if self._config.use_adaptive_thinking:
+                kwargs["thinking"] = {"type": "adaptive", "display": "summarized"}
+            else:
+                kwargs["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": context.thinking_budget,
+                }
             kwargs.pop("temperature", None)
-        elif context.temperature is not None:
+        elif context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
         if context.tools:
             kwargs["tools"] = [
@@ -226,6 +247,15 @@ class AnthropicAIProvider(AIProvider):
                                 self._record_ttfb(t0)
                                 first_token = False
                             yield StreamThinkingDelta(thinking=delta.thinking)  # ty: ignore[unresolved-attribute]
+                        elif delta.type == "signature_delta":
+                            # The thinking block's opaque signature arrives as
+                            # its own delta after the text. Surface it so the
+                            # block can be echoed back in history (Anthropic
+                            # 400s on a thinking block missing its signature).
+                            yield StreamThinkingDelta(
+                                thinking="",
+                                signature=delta.signature,  # ty: ignore[unresolved-attribute]
+                            )
                         elif delta.type == "text_delta":
                             if first_token:
                                 self._record_ttfb(t0)
@@ -296,6 +326,7 @@ class AnthropicAIProvider(AIProvider):
     async def generate(self, context: AIContext) -> AIResponse:
         """Generate by consuming the structured stream."""
         thinking_parts: list[str] = []
+        thinking_signature: str | None = None
         text_parts: list[str] = []
         tool_calls: list[AIToolCall] = []
         done_event: StreamDone | None = None
@@ -303,6 +334,8 @@ class AnthropicAIProvider(AIProvider):
         async for event in self.generate_structured_stream(context):
             if isinstance(event, StreamThinkingDelta):
                 thinking_parts.append(event.thinking)
+                if event.signature:
+                    thinking_signature = event.signature
             elif isinstance(event, StreamTextDelta):
                 text_parts.append(event.text)
             elif isinstance(event, StreamToolCall):
@@ -315,6 +348,7 @@ class AnthropicAIProvider(AIProvider):
         return AIResponse(
             content="".join(text_parts),
             thinking="".join(thinking_parts) if thinking_parts else None,
+            thinking_signature=thinking_signature,
             finish_reason=done_event.finish_reason if done_event else None,
             usage=done_event.usage if done_event else {},
             metadata=done_event.metadata if done_event else {},

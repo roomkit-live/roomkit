@@ -21,8 +21,9 @@ from typing import Any
 from pydantic import SecretStr
 
 from roomkit.providers.xai.config import XAIRealtimeConfig
+from roomkit.providers.xai.voices import VOICES as _VOICES
 from roomkit.voice.base import VoiceSession, VoiceSessionState
-from roomkit.voice.realtime.provider import RealtimeVoiceProvider
+from roomkit.voice.realtime.provider import RealtimeVoiceProvider, VoiceInfo
 
 logger = logging.getLogger("roomkit.providers.xai.realtime")
 
@@ -92,6 +93,14 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
     @property
     def name(self) -> str:
         return "XAIRealtimeProvider"
+
+    @classmethod
+    def available_voices(cls) -> list[VoiceInfo]:
+        """Curated, offline catalog of xAI Grok built-in voices.
+
+        Not a closed set — the ``voice`` field also accepts custom voice ids.
+        """
+        return list(_VOICES)
 
     # ------------------------------------------------------------------
     # Connection lifecycle

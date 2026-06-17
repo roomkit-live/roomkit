@@ -47,6 +47,18 @@ def _import_webrtc() -> Any:
         ) from exc
 
 
+def _import_numpy() -> Any:
+    """Import numpy, raising a clear error if missing."""
+    try:
+        import numpy as np
+
+        return np
+    except ImportError as exc:
+        raise ImportError(
+            "numpy is required for WebRTCAECProvider. Install it with: pip install numpy"
+        ) from exc
+
+
 class WebRTCAECProvider(AECProvider):
     """AEC provider backed by WebRTC AEC3.
 
@@ -77,6 +89,7 @@ class WebRTCAECProvider(AECProvider):
         enable_agc: bool = False,
     ) -> None:
         ap_cls = _import_webrtc()
+        self._np = _import_numpy()
 
         self._sample_rate = sample_rate
         self._channels = channels
@@ -142,6 +155,8 @@ class WebRTCAECProvider(AECProvider):
         """Remove echo from a captured (mic) audio frame."""
         pcm_in = frame.data
         output_chunks: list[bytes] = []
+        in_processed: list[bytes] = []
+        out_processed: list[bytes] = []
         fb = self._frame_bytes
 
         with self._lock:
@@ -157,20 +172,20 @@ class WebRTCAECProvider(AECProvider):
                     continue
                 result = self._ap.process_stream(chunk)
                 output_chunks.append(result)
-
+                in_processed.append(chunk)
+                out_processed.append(result)
                 self._process_count += 1
 
-                # Energy tracking for diagnostics
-                in_energy = sum(
-                    int.from_bytes(chunk[i : i + 2], "little", signed=True) ** 2
-                    for i in range(0, fb, 2)
-                )
-                out_energy = sum(
-                    int.from_bytes(result[i : i + 2], "little", signed=True) ** 2
-                    for i in range(0, fb, 2)
-                )
-                self._total_in_energy += in_energy
-                self._total_out_energy += out_energy
+        # Energy diagnostics OUTSIDE the lock: the PortAudio speaker callback
+        # blocks on this lock in feed_reference(), and the previous per-sample
+        # Python loop held it for the whole diagnostic — long enough to delay
+        # the realtime audio thread. The lock now covers process_stream only.
+        if in_processed:
+            np = self._np
+            in_s = np.frombuffer(b"".join(in_processed), dtype="<i2").astype(np.int64)
+            out_s = np.frombuffer(b"".join(out_processed), dtype="<i2").astype(np.int64)
+            self._total_in_energy += int(in_s @ in_s)
+            self._total_out_energy += int(out_s @ out_s)
 
         if self._process_count > 0 and self._process_count % _LOG_INTERVAL == 0:
             self._log_stats()
@@ -224,7 +239,12 @@ class WebRTCAECProvider(AECProvider):
                 fed_this_call += 1
 
         if fed_this_call > 0 and (self._ref_fed_count <= 3 or self._ref_fed_count % 100 == 0):
-            logger.info(
+            # First feeds at INFO (wiring confirmation); the periodic tick
+            # at DEBUG — with a continuous playback-time reference (silence
+            # included) it would otherwise log once a second forever.
+            level = logging.INFO if self._ref_fed_count <= 3 else logging.DEBUG
+            logger.log(
+                level,
                 "AEC reference: %d chunks fed (total=%d), bypass=%s",
                 fed_this_call,
                 self._ref_fed_count,

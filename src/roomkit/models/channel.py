@@ -86,6 +86,16 @@ class ChannelBinding(BaseModel):
     retry_policy: RetryPolicy | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def can_write(self) -> bool:
+        """RFC §7.5 — whether this binding may write events into the room.
+
+        True iff the binding has write access (``READ_WRITE`` or
+        ``WRITE_ONLY``) and is not muted. Gates both direct injection into
+        the timeline (inbound pipeline) and source broadcast (event router).
+        """
+        return self.access in (Access.READ_WRITE, Access.WRITE_ONLY) and not self.muted
+
 
 class ChannelOutput(BaseModel):
     """Output produced by a channel after receiving an event."""
@@ -93,6 +103,14 @@ class ChannelOutput(BaseModel):
     responded: bool = False
     response_events: list[RoomEvent] = Field(default_factory=list)
     response_stream: Any = Field(default=None, exclude=True)
+    response_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Turn-level metadata (AIContext.response_metadata) merged into "
+            "the MESSAGE events persisted from response_stream. The "
+            "non-streaming path bakes it into response_events directly."
+        ),
+    )
     tasks: list[Task] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)
     metadata_updates: dict[str, Any] = Field(default_factory=dict)

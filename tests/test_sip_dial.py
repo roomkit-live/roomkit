@@ -71,6 +71,7 @@ class FakeCallSession:
     remote_addr: tuple[str, int] = ("10.0.0.1", 20000)
     on_audio: Any = None
     on_dtmf: Any = None
+    stats: dict[str, Any] = {}  # noqa: RUF012 — read-only stand-in
 
     def __init__(self, **kwargs: Any) -> None:
         # Accept and ignore CallSession constructor params
@@ -211,6 +212,12 @@ def backend() -> SIPVoiceBackend:
     b._jitter_capacity = 32
     b._jitter_prefetch = 0
     b._skip_audio_gaps = True
+    b._plc = True
+    b._cn = False
+    b._playout = False
+    b._duplicate_tx = False
+    b._playout_max_delay_ms = 200
+    b._cn_payload_type = 13
     b._send_silence_on_answer = 0.0
     b._outbound_silence_fill = False
 

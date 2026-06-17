@@ -21,6 +21,11 @@ class SlidingWindowMemory(MemoryProvider):
     def name(self) -> str:
         return "SlidingWindowMemory"
 
+    @property
+    def recent_events_window(self) -> int:
+        # Trims by event count, so only the last ``max_events`` are ever read.
+        return self._max_events
+
     async def retrieve(
         self,
         room_id: str,

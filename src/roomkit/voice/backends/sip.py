@@ -94,7 +94,30 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
             playout.  Default 0 (start immediately, optimised for low
             latency).
         skip_audio_gaps: When ``True`` (default), gaps in the RTP stream
-            are skipped rather than filled with silence.
+            are skipped rather than stalling the jitter buffer.
+        plc: When ``True`` (default), packets confirmed lost are replaced
+            with concealment PCM (native Opus PLC, or last-frame repetition
+            fading to silence), keeping the inbound stream temporally
+            continuous for the pipeline (recorder duration, AEC alignment).
+            Effective only with ``skip_audio_gaps``.  The per-session
+            ``concealed_frames`` counter is exposed in the audio stats.
+        cn: When ``True``, outbound silence carries RFC 3389 comfort noise
+            instead of dead air (via aiortp).  Default ``False``.
+        cn_payload_type: RTP payload type for comfort noise (default 13,
+            the static CN assignment).
+        playout: When ``True``, inbound audio is delivered on a steady
+            clock through aiortp's adaptive playout buffer — depth tracks
+            the measured network jitter (EWMA), with deadline-based
+            concealment.  The inbound defense for jittery links (WiFi
+            callers, congested paths).  ``jitter_prefetch`` only applies
+            when this is off.  Default ``False``.
+        playout_max_delay_ms: Upper bound on the adaptive buffer depth —
+            the most latency playout may add to absorb jitter (default 200).
+        duplicate_tx: When ``True``, every outbound RTP datagram is sent
+            twice — the duplicate rides the next frame's send, ~20 ms
+            later (via aiortp).  Receivers dedupe by sequence number, so
+            no negotiation is needed; bandwidth doubles.  The outbound
+            defense for lossy links.  Default ``False``.
         rtp_inactivity_timeout: Seconds of RTP silence before forcing
             session disconnect (safety net for missed BYE).  Set to 0
             to disable.  Default 30.
@@ -119,6 +142,12 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
             steady 50 pps so PSTN endpoints (which lack packet loss
             concealment) don't perceive glitches at sentence boundaries.
             Default ``False`` (pacer pauses during idle gaps).
+        pacer_prebuffer_ms: Milliseconds of audio the outbound pacer
+            accumulates before its first send.  Default ``80``.
+        pacer_jitter_headroom_ms: Milliseconds of lead the outbound pacer
+            keeps over wall-clock so the remote jitter buffer always has a
+            safety margin.  Larger values absorb longer host-side stalls at
+            the cost of barge-in latency.  Default ``60``.
     """
 
     def __init__(
@@ -136,11 +165,19 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         jitter_capacity: int = 32,
         jitter_prefetch: int = 0,
         skip_audio_gaps: bool = True,
+        plc: bool = True,
+        cn: bool = False,
+        cn_payload_type: int = 13,
+        playout: bool = False,
+        playout_max_delay_ms: int = 200,
+        duplicate_tx: bool = False,
         rtp_inactivity_timeout: float = 30.0,
         auth_users: dict[str, str] | None = None,
         auth_realm: str = "roomkit",
         send_silence_on_answer: float = 0.0,
         outbound_silence_fill: bool = False,
+        pacer_prebuffer_ms: float = 80,
+        pacer_jitter_headroom_ms: float = 60,
     ) -> None:
         self._aiosipua = import_aiosipua()
         self._rtp_bridge = import_rtp_bridge()
@@ -157,9 +194,17 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._jitter_capacity = jitter_capacity
         self._jitter_prefetch = jitter_prefetch
         self._skip_audio_gaps = skip_audio_gaps
+        self._plc = plc
+        self._cn = cn
+        self._cn_payload_type = cn_payload_type
+        self._playout = playout
+        self._playout_max_delay_ms = playout_max_delay_ms
+        self._duplicate_tx = duplicate_tx
         self._rtp_inactivity_timeout = rtp_inactivity_timeout
         self._send_silence_on_answer = send_silence_on_answer
         self._outbound_silence_fill = outbound_silence_fill
+        self._pacer_prebuffer_ms = pacer_prebuffer_ms
+        self._pacer_jitter_headroom_ms = pacer_jitter_headroom_ms
 
         # Inbound authentication
         self._auth_users = auth_users
@@ -176,8 +221,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._invite_filter: Callable[..., Any] | None = None
 
         # Outbound registration state
-        self._register_params: dict[str, Any] | None = None
-        self._register_response_future: asyncio.Future[Any] | None = None
+        self._registration: Any = None
         self._registration_task: asyncio.Task[None] | None = None
         self._registered = False
 
@@ -247,9 +291,6 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
 
         await self._uas.start()
 
-        # Wrap transport handler to intercept REGISTER responses
-        self._transport.on_message = self._sip_message_handler
-
         self._stats_task = asyncio.get_running_loop().create_task(
             self._audio_stats_loop(), name="sip_audio_stats"
         )
@@ -268,13 +309,15 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
                 await self._registration_task
             self._registration_task = None
 
-        # Unregister (expires=0) if currently registered
-        if self._registered and self._transport is not None:
+        # Unregister (expires=0) if currently registered — best effort,
+        # the 200 may race the transport shutdown
+        if self._registered and self._registration is not None:
             try:
-                await self._do_register(expires=0)
+                self._registration.unregister()
             except Exception:
                 logger.debug("Failed to unregister on close", exc_info=True)
             self._registered = False
+        self._registration = None
 
         if self._stats_task is not None:
             self._stats_task.cancel()

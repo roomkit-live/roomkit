@@ -234,8 +234,7 @@ def _make_backend(
     b._auth_nonces = {}
     b._auth_resolver = None
     b._invite_filter = None
-    b._register_params = None
-    b._register_response_future = None
+    b._registration = None
     b._registration_task = None
     b._registered = False
 
@@ -874,64 +873,7 @@ class TestInviteFilter:
 
 
 # ---------------------------------------------------------------------------
-# Message handler interception tests
-# ---------------------------------------------------------------------------
-
-
-class TestSipMessageHandler:
-    """Test that REGISTER responses are intercepted."""
-
-    def test_register_response_intercepted(self) -> None:
-        backend = _make_backend()
-        loop = asyncio.new_event_loop()
-        backend._register_response_future = loop.create_future()
-
-        resp = FakeSipResponse(200, "OK")
-        resp.cseq = FakeCSeq(seq=1, method="REGISTER")
-
-        backend._sip_message_handler(resp, ("10.0.0.1", 5060))
-
-        assert backend._register_response_future.done()
-        assert backend._register_response_future.result() is resp
-        loop.close()
-
-    def test_non_register_delegated_to_uas(self) -> None:
-        backend = _make_backend()
-        uas: FakeUAS = backend._uas  # type: ignore[assignment]
-        calls: list = []
-        uas._on_message = lambda msg, addr: calls.append((msg, addr))
-
-        resp = FakeSipResponse(200, "OK")
-        resp.cseq = FakeCSeq(seq=1, method="INVITE")
-
-        backend._sip_message_handler(resp, ("10.0.0.1", 5060))
-
-        assert len(calls) == 1
-        assert calls[0][0] is resp
-
-    def test_response_with_missing_cseq_does_not_crash(self) -> None:
-        # Regression: msg.cseq is a CSeq dataclass (or None), not a string.
-        # The handler used to do `"REGISTER" in msg.cseq`, which raised
-        # TypeError on every SIP response.
-        backend = _make_backend()
-        loop = asyncio.new_event_loop()
-        backend._register_response_future = loop.create_future()
-        uas: FakeUAS = backend._uas  # type: ignore[assignment]
-        calls: list = []
-        uas._on_message = lambda msg, addr: calls.append((msg, addr))
-
-        resp = FakeSipResponse(200, "OK")
-        resp.cseq = None  # type: ignore[assignment]
-
-        backend._sip_message_handler(resp, ("10.0.0.1", 5060))
-
-        assert not backend._register_response_future.done()
-        assert len(calls) == 1
-        loop.close()
-
-
-# ---------------------------------------------------------------------------
-# Digest computation tests
+# Nonce eviction tests
 # ---------------------------------------------------------------------------
 
 
@@ -958,71 +900,82 @@ class TestNonceEviction:
 
 
 # ---------------------------------------------------------------------------
-# Outbound registration tests
+# Outbound registration tests (FakeRegistration verifies the roomkit wiring;
+# aiosipua's Registration has its own test suite upstream)
 # ---------------------------------------------------------------------------
 
 
-def _setup_aiosipua_mocks() -> tuple:
-    """Set up aiosipua module mocks for register() tests."""
+REGISTRAR = ("10.0.0.1", 5060)
+
+
+class FakeRegistration:
+    """Stand-in for aiosipua.Registration capturing constructor args and calls."""
+
+    instances: list[FakeRegistration] = []  # noqa: RUF012
+
+    def __init__(
+        self,
+        uac: Any,
+        aor: str,
+        registrar: tuple[str, int],
+        *,
+        expires: int = 300,
+        auth: Any = None,
+        contact_uri: str | None = None,
+        registrar_uri: str | None = None,
+        user_agent: str | None = None,
+    ) -> None:
+        self.uac = uac
+        self.aor = aor
+        self.registrar = registrar
+        self.expires = expires
+        self.auth = auth
+        self.contact_uri = contact_uri
+        self.registrar_uri = registrar_uri
+        self.user_agent = user_agent
+        self.granted_expires = 0
+        self.on_registered: Any = None
+        self.on_failed: Any = None
+        self.on_expired: Any = None
+        self.register_calls = 0
+        self.unregister_calls = 0
+        self.timers_cancelled = False
+        FakeRegistration.instances.append(self)
+
+    def register(self) -> None:
+        self.register_calls += 1
+
+    def unregister(self) -> None:
+        self.unregister_calls += 1
+
+    def _cancel_timers(self) -> None:
+        self.timers_cancelled = True
+
+
+def _install_fake_registration(monkeypatch: Any) -> None:
+    """Expose FakeRegistration through the (real or stub) aiosipua module."""
     import aiosipua
 
-    # Save originals
-    originals = {}
-    for name in (
-        "SipRequest",
-        "generate_branch",
-        "generate_call_id",
-        "generate_tag",
-        "parse_auth",
-        "stringify_auth",
-    ):
-        originals[name] = getattr(aiosipua, name, None)
-
-    # Install fakes
-    aiosipua.SipRequest = FakeSipRequest  # type: ignore[attr-defined]
-    aiosipua.generate_branch = lambda: "z9hG4bK-test"  # type: ignore[attr-defined]
-    aiosipua.generate_call_id = lambda ip: "call-id-test"  # type: ignore[attr-defined]
-    aiosipua.generate_tag = lambda: "tag-test"  # type: ignore[attr-defined]
-    aiosipua.stringify_auth = lambda c: "Digest ..."  # type: ignore[attr-defined]
-
-    return originals
+    FakeRegistration.instances = []
+    monkeypatch.setattr(aiosipua, "Registration", FakeRegistration, raising=False)
+    monkeypatch.setattr(
+        aiosipua,
+        "SipDigestAuth",
+        lambda username, password: {"username": username, "password": password},
+        raising=False,
+    )
+    utils_mod = types.ModuleType("aiosipua.utils")
+    utils_mod.format_addr = lambda host, port: f"{host}:{port}"  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "aiosipua.utils", utils_mod)
 
 
-def _restore_aiosipua_mocks(originals: dict) -> None:
-    """Restore aiosipua module to original state."""
-    import aiosipua
-
-    for name, val in originals.items():
-        if val is not None:
-            setattr(aiosipua, name, val)
-
-
-def _setup_headers_mocks() -> tuple:
-    """Set up aiosipua.headers module mocks."""
-    import types
-
-    headers_mod = types.ModuleType("aiosipua.headers")
-    headers_mod.AuthCredentials = MagicMock  # type: ignore[attr-defined]
-    headers_mod.CSeq = lambda seq, method: f"{seq} {method}"  # type: ignore[attr-defined]
-    headers_mod.Via = lambda **kw: "via"  # type: ignore[attr-defined]
-    headers_mod.stringify_cseq = lambda c: str(c)  # type: ignore[attr-defined]
-    headers_mod.stringify_via = lambda v: str(v)  # type: ignore[attr-defined]
-
-    original = sys.modules.get("aiosipua.headers")
-    sys.modules["aiosipua.headers"] = headers_mod
-    return (original,)
-
-
-def _restore_headers_mocks(original: tuple) -> None:
-    """Restore aiosipua.headers module."""
-    if original[0] is not None:
-        sys.modules["aiosipua.headers"] = original[0]
-    else:
-        sys.modules.pop("aiosipua.headers", None)
+def _cleanup_registration(backend: Any) -> None:
+    if backend._registration_task is not None:
+        backend._registration_task.cancel()
 
 
 class TestRegister:
-    """Test outbound SIP REGISTER flow."""
+    """Outbound REGISTER wiring around aiosipua.Registration."""
 
     async def test_register_before_start_raises(self) -> None:
         backend = _make_backend()
@@ -1030,215 +983,149 @@ class TestRegister:
 
         with pytest.raises(RuntimeError, match="start.*must be called"):
             await backend.register(
-                registrar_addr=("10.0.0.1", 5060),
+                registrar_addr=REGISTRAR,
                 username="bot",
                 password="secret",
             )
 
-    async def test_register_200_ok_no_auth(self) -> None:
-        """Registrar accepts without auth challenge."""
+    async def test_register_success(self, monkeypatch: Any) -> None:
+        """on_registered resolves register() and marks the backend registered."""
+        _install_fake_registration(monkeypatch)
         backend = _make_backend()
-        originals = _setup_aiosipua_mocks()
-        headers_orig = _setup_headers_mocks()
 
-        try:
-            # Simulate: transport.send triggers immediate 200 OK
-            async def _resolve_200() -> None:
-                await asyncio.sleep(0.01)
-                fut = backend._register_response_future
-                if fut and not fut.done():
-                    backend._register_response_future.set_result(FakeSipResponse(200, "OK"))
-
-            asyncio.get_running_loop().create_task(_resolve_200())
-            await backend.register(
-                registrar_addr=("10.0.0.1", 5060),
-                username="bot",
-                password="secret",
+        task = asyncio.ensure_future(
+            backend.register(
+                registrar_addr=REGISTRAR, username="bot", password="secret", expires=600
             )
+        )
+        await asyncio.sleep(0)
+        reg = FakeRegistration.instances[0]
+        assert reg.register_calls == 1
+        assert reg.aor == "sip:bot@10.0.0.1"
+        assert reg.expires == 600
+        assert reg.auth == {"username": "bot", "password": "secret"}
+        assert reg.contact_uri == "sip:bot@10.0.0.2:5060"
 
-            assert backend._registered is True
-            assert backend._registration_task is not None
-            backend._registration_task.cancel()
-        finally:
-            _restore_aiosipua_mocks(originals)
-            _restore_headers_mocks(headers_orig)
+        reg.granted_expires = 600
+        reg.on_registered(reg)
+        await task
 
-    async def test_register_401_then_200(self) -> None:
-        """Registrar challenges with 401, retry succeeds."""
+        assert backend._registered is True
+        assert backend._registration is reg
+        _cleanup_registration(backend)
+
+    async def test_register_rejected_raises(self, monkeypatch: Any) -> None:
+        _install_fake_registration(monkeypatch)
         backend = _make_backend()
-        originals = _setup_aiosipua_mocks()
-        headers_orig = _setup_headers_mocks()
 
-        import aiosipua
+        task = asyncio.ensure_future(
+            backend.register(registrar_addr=REGISTRAR, username="bot", password="secret")
+        )
+        await asyncio.sleep(0)
+        reg = FakeRegistration.instances[0]
+        reg.on_failed(reg, 403, "Forbidden")
 
-        mock_challenge = MagicMock()
-        mock_challenge.params = {"realm": "test.com", "nonce": "server-nonce-123"}
-        aiosipua.parse_auth = lambda s: mock_challenge  # type: ignore[attr-defined]
-        aiosipua.stringify_auth = lambda c: "Digest ..."  # type: ignore[attr-defined]
+        with pytest.raises(RuntimeError, match="REGISTER failed: 403"):
+            await task
+        assert backend._registered is False
+        _cleanup_registration(backend)
 
-        try:
-            call_count = 0
+    async def test_register_domain_defaults_to_host(self, monkeypatch: Any) -> None:
+        _install_fake_registration(monkeypatch)
+        backend = _make_backend()
 
-            async def _resolve_responses() -> None:
-                nonlocal call_count
-                while call_count < 2:
-                    await asyncio.sleep(0.01)
-                    fut = backend._register_response_future
-                    if fut and not fut.done():
-                        call_count += 1
-                        if call_count == 1:
-                            resp = FakeSipResponse(401, "Unauthorized")
-                            resp._headers["WWW-Authenticate"] = (
-                                'Digest realm="test.com", nonce="server-nonce-123"'
-                            )
-                            fut.set_result(resp)
-                        else:
-                            fut.set_result(FakeSipResponse(200, "OK"))
+        task = asyncio.ensure_future(
+            backend.register(registrar_addr=REGISTRAR, username="bot", password="secret")
+        )
+        await asyncio.sleep(0)
+        reg = FakeRegistration.instances[0]
+        assert reg.registrar_uri == "sip:10.0.0.1"
+        assert reg.registrar == REGISTRAR
 
-            asyncio.get_running_loop().create_task(_resolve_responses())
-            await backend.register(
-                registrar_addr=("10.0.0.1", 5060),
-                username="bot",
-                password="secret",
-                domain="test.com",
+        reg.on_registered(reg)
+        await task
+        _cleanup_registration(backend)
+
+    async def test_register_explicit_domain(self, monkeypatch: Any) -> None:
+        _install_fake_registration(monkeypatch)
+        backend = _make_backend()
+
+        task = asyncio.ensure_future(
+            backend.register(
+                registrar_addr=REGISTRAR, username="bot", password="secret", domain="pbx.test"
             )
+        )
+        await asyncio.sleep(0)
+        reg = FakeRegistration.instances[0]
+        assert reg.aor == "sip:bot@pbx.test"
+        assert reg.registrar_uri == "sip:pbx.test"
 
-            assert backend._registered is True
-            assert call_count == 2
-            backend._registration_task.cancel()
-        finally:
-            _restore_aiosipua_mocks(originals)
-            _restore_headers_mocks(headers_orig)
+        reg.on_registered(reg)
+        await task
+        _cleanup_registration(backend)
 
-    async def test_register_rejected_raises(self) -> None:
-        """Non-401/407 response raises RuntimeError."""
+    async def test_register_timeout(self, monkeypatch: Any) -> None:
+        """A silent registrar raises TimeoutError."""
+        from roomkit.voice.backends import sip_auth
+
+        _install_fake_registration(monkeypatch)
+        monkeypatch.setattr(sip_auth, "REGISTER_TIMEOUT", 0.05)
         backend = _make_backend()
-        originals = _setup_aiosipua_mocks()
-        headers_orig = _setup_headers_mocks()
 
-        try:
+        with pytest.raises(TimeoutError):
+            await backend.register(registrar_addr=REGISTRAR, username="bot", password="secret")
+        _cleanup_registration(backend)
 
-            async def _resolve_403() -> None:
-                await asyncio.sleep(0.01)
-                fut = backend._register_response_future
-                if fut and not fut.done():
-                    backend._register_response_future.set_result(FakeSipResponse(403, "Forbidden"))
+    async def test_lost_registration_retries(self, monkeypatch: Any) -> None:
+        """Failure after initial success re-registers on the retry cadence."""
+        from roomkit.voice.backends import sip_auth
 
-            asyncio.get_running_loop().create_task(_resolve_403())
-            with pytest.raises(RuntimeError, match="REGISTER failed: 403"):
-                await backend.register(
-                    registrar_addr=("10.0.0.1", 5060),
-                    username="bot",
-                    password="secret",
-                )
-
-            assert backend._registered is False
-        finally:
-            _restore_aiosipua_mocks(originals)
-            _restore_headers_mocks(headers_orig)
-
-    async def test_register_auth_failed_raises(self) -> None:
-        """Second REGISTER (with auth) rejected raises RuntimeError."""
+        _install_fake_registration(monkeypatch)
+        monkeypatch.setattr(sip_auth, "REGISTER_RETRY_DELAY", 0.01)
+        monkeypatch.setattr(sip_auth, "REGISTER_TIMEOUT", 0.01)
         backend = _make_backend()
-        originals = _setup_aiosipua_mocks()
-        headers_orig = _setup_headers_mocks()
 
-        import aiosipua
+        task = asyncio.ensure_future(
+            backend.register(registrar_addr=REGISTRAR, username="bot", password="secret")
+        )
+        await asyncio.sleep(0)
+        reg = FakeRegistration.instances[0]
+        reg.on_registered(reg)
+        await task
+        assert backend._registered is True
 
-        mock_challenge = MagicMock()
-        mock_challenge.params = {"realm": "test.com", "nonce": "nonce1"}
-        aiosipua.parse_auth = lambda s: mock_challenge  # type: ignore[attr-defined]
-        aiosipua.stringify_auth = lambda c: "Digest ..."  # type: ignore[attr-defined]
+        # Watchdog declares the binding dead → retry loop kicks in
+        reg.on_expired(reg)
+        assert backend._registered is False
+        for _ in range(200):
+            if reg.register_calls >= 2:
+                break
+            await asyncio.sleep(0.005)
+        assert reg.register_calls >= 2
 
-        try:
-            call_count = 0
+        # A successful re-registration stops the retrying
+        reg.on_registered(reg)
+        assert backend._registered is True
+        _cleanup_registration(backend)
 
-            async def _resolve() -> None:
-                nonlocal call_count
-                while call_count < 2:
-                    await asyncio.sleep(0.01)
-                    fut = backend._register_response_future
-                    if fut and not fut.done():
-                        call_count += 1
-                        if call_count == 1:
-                            resp = FakeSipResponse(401, "Unauthorized")
-                            resp._headers["WWW-Authenticate"] = (
-                                'Digest realm="test.com", nonce="nonce1"'
-                            )
-                            fut.set_result(resp)
-                        else:
-                            fut.set_result(FakeSipResponse(403, "Forbidden"))
-
-            asyncio.get_running_loop().create_task(_resolve())
-            with pytest.raises(RuntimeError, match="REGISTER auth failed: 403"):
-                await backend.register(
-                    registrar_addr=("10.0.0.1", 5060),
-                    username="bot",
-                    password="secret",
-                    domain="test.com",
-                )
-        finally:
-            _restore_aiosipua_mocks(originals)
-            _restore_headers_mocks(headers_orig)
-
-    async def test_register_stores_params(self) -> None:
-        """register() stores params for re-registration loop."""
+    async def test_close_unregisters(self, monkeypatch: Any) -> None:
+        """close() sends the Expires:0 unregister and drops the registration."""
+        _install_fake_registration(monkeypatch)
         backend = _make_backend()
-        originals = _setup_aiosipua_mocks()
-        headers_orig = _setup_headers_mocks()
 
-        try:
+        task = asyncio.ensure_future(
+            backend.register(registrar_addr=REGISTRAR, username="bot", password="secret")
+        )
+        await asyncio.sleep(0)
+        reg = FakeRegistration.instances[0]
+        reg.on_registered(reg)
+        await task
 
-            async def _resolve_200() -> None:
-                await asyncio.sleep(0.01)
-                fut = backend._register_response_future
-                if fut and not fut.done():
-                    backend._register_response_future.set_result(FakeSipResponse(200, "OK"))
+        await backend.close()
 
-            asyncio.get_running_loop().create_task(_resolve_200())
-            await backend.register(
-                registrar_addr=("10.0.0.1", 5060),
-                username="bot",
-                password="secret",
-                domain="example.com",
-                expires=600,
-            )
-
-            assert backend._register_params is not None
-            assert backend._register_params["username"] == "bot"
-            assert backend._register_params["domain"] == "example.com"
-            assert backend._register_params["expires"] == 600
-            backend._registration_task.cancel()
-        finally:
-            _restore_aiosipua_mocks(originals)
-            _restore_headers_mocks(headers_orig)
-
-    async def test_register_domain_defaults_to_host(self) -> None:
-        """When domain is not provided, defaults to registrar host."""
-        backend = _make_backend()
-        originals = _setup_aiosipua_mocks()
-        headers_orig = _setup_headers_mocks()
-
-        try:
-
-            async def _resolve_200() -> None:
-                await asyncio.sleep(0.01)
-                fut = backend._register_response_future
-                if fut and not fut.done():
-                    backend._register_response_future.set_result(FakeSipResponse(200, "OK"))
-
-            asyncio.get_running_loop().create_task(_resolve_200())
-            await backend.register(
-                registrar_addr=("10.0.0.1", 5060),
-                username="bot",
-                password="secret",
-            )
-
-            assert backend._register_params["domain"] == "10.0.0.1"
-            backend._registration_task.cancel()
-        finally:
-            _restore_aiosipua_mocks(originals)
-            _restore_headers_mocks(headers_orig)
+        assert reg.unregister_calls == 1
+        assert backend._registered is False
+        assert backend._registration is None
 
 
 # ---------------------------------------------------------------------------
@@ -1259,3 +1146,70 @@ class TestComputeDigest:
         expected = hashlib.md5(f"{ha1}:{nonce}:{ha2}".encode()).hexdigest()
 
         assert _compute_digest(username, realm, password, method, uri, nonce) == expected
+
+
+class TestReRegister:
+    async def test_second_register_stops_previous_timers(self, monkeypatch: Any) -> None:
+        """Re-registering must not leave the old binding's timers running."""
+        _install_fake_registration(monkeypatch)
+        backend = _make_backend()
+
+        task = asyncio.ensure_future(
+            backend.register(registrar_addr=REGISTRAR, username="bot", password="secret")
+        )
+        await asyncio.sleep(0)
+        first = FakeRegistration.instances[0]
+        first.on_registered(first)
+        await task
+
+        task = asyncio.ensure_future(
+            backend.register(registrar_addr=("10.0.0.9", 5060), username="bot", password="secret")
+        )
+        await asyncio.sleep(0)
+        second = FakeRegistration.instances[1]
+        second.on_registered(second)
+        await task
+
+        assert first.timers_cancelled is True
+        assert backend._registration is second
+        _cleanup_registration(backend)
+
+    async def test_retry_loop_survives_send_failure(self, monkeypatch: Any) -> None:
+        """A raising register() must not kill the retry loop."""
+        from roomkit.voice.backends import sip_auth
+
+        _install_fake_registration(monkeypatch)
+        monkeypatch.setattr(sip_auth, "REGISTER_RETRY_DELAY", 0.01)
+        monkeypatch.setattr(sip_auth, "REGISTER_TIMEOUT", 0.01)
+        backend = _make_backend()
+
+        task = asyncio.ensure_future(
+            backend.register(registrar_addr=REGISTRAR, username="bot", password="secret")
+        )
+        await asyncio.sleep(0)
+        reg = FakeRegistration.instances[0]
+        reg.on_registered(reg)
+        await task
+
+        # First retry attempt raises; the loop must keep going
+        attempts: list[int] = []
+        original_register = reg.register
+
+        def _flaky_register() -> None:
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise OSError("transport closed")
+            original_register()
+
+        reg.register = _flaky_register  # type: ignore[method-assign]
+        reg.on_expired(reg)
+
+        for _ in range(400):
+            if len(attempts) >= 2:
+                break
+            await asyncio.sleep(0.005)
+        assert len(attempts) >= 2  # survived the raising attempt
+
+        reg.on_registered(reg)
+        assert backend._registered is True
+        _cleanup_registration(backend)

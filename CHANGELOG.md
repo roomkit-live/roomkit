@@ -36,6 +36,450 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `None` (default) leaves the model default. Effectiveness depends on the
   model/edge honoring the switch.
 
+## [0.12.0] — 2026-06-17
+
+### Added
+
+- **OpenRouter AI provider** — `OpenRouterAIProvider` / `OpenRouterConfig`
+  (`roomkit[openrouter]`), a thin subclass of `OpenAIAIProvider` giving
+  OpenAI-compatible access to 300+ models behind one key. `OpenRouterConfig`
+  subclasses `OpenAIConfig`, inheriting every request field (so the two can't
+  drift), and adds the routing `base_url` plus optional `site_url`/`app_name`
+  app-attribution headers (`HTTP-Referer`/`X-Title`). `available_models()`
+  ships a curated snapshot of current flagships; `list_models()` reads
+  OpenRouter's rich `/models` endpoint as raw JSON — its entries omit the
+  `object`/`owned_by` fields the OpenAI SDK's `Model` type requires — and maps
+  context windows and vision support. Thinking is requested through
+  OpenRouter's unified `reasoning` parameter (gated by `thinking_budget`), so
+  Claude, Gemini, and DeepSeek all surface a reasoning trace via
+  `StreamThinkingDelta`. See `examples/openrouter_ai.py` and the OpenRouter
+  guide.
+- **Gemini on Vertex AI** — `GeminiVertexProvider` / `GeminiVertexConfig` (in
+  the existing `roomkit.providers.gemini` package, no new dependency). A thin
+  subclass of `GeminiAIProvider` that builds the `google-genai` client in
+  Vertex mode (`vertexai=True, project, location`) with Application Default
+  Credentials instead of an API key — same models, processed in a pinned region
+  with no training-data retention (data residency for Québec Law 25 / PIPEDA).
+  `location` is required (no default) so requests can't silently route out of
+  region; `GeminiVertexConfig` subclasses `GeminiConfig` so generation fields
+  can't drift. See `examples/gemini_vertex_ai.py` and the Vertex guide.
+
+### Changed
+
+- **Provider examples follow the `<provider>_ai.py` convention.** `ai_azure.py`
+  → `azure_ai.py`, and it is rewritten on the current `process_inbound` /
+  `attach_channel` API (the old version still called the removed
+  `kit.join`/`kit.send`/`Room.room_id` surface and no longer ran). The new
+  OpenRouter example is `openrouter_ai.py`. The `ai_*` prefix is reserved for
+  AI *feature* demos (memory, thinking, planning, …).
+
+## [0.11.0] — 2026-06-13
+
+### Added
+
+- **Model discovery on every AI provider** — `AIProvider.available_models()`
+  (a curated, offline classmethod — no API key, network, or SDK needed) and
+  `list_models()` (a live query against the provider's models endpoint that
+  backfills curated metadata). Both return `ModelInfo` (`id`, `display_name`,
+  `context_window`, `supports_vision`, `deprecated`, `capabilities`). Curated
+  catalogs ship for Anthropic, OpenAI, Gemini, Mistral, and Ollama; Ollama's
+  `list_models()` probes `/api/show` per installed model to attach capability
+  tags. See `examples/list_models.py`.
+- **Voice discovery on every realtime provider** — `RealtimeVoiceProvider.available_voices()`
+  / `list_voices()` returning `VoiceInfo` (`id`, `name`, `language`, `gender`,
+  `description`, `deprecated`). Curated catalogs for OpenAI Realtime (10),
+  Gemini Live (30), xAI Grok (5), PersonaPlex (18), and ElevenLabs (21, with a
+  live `client.voices` query). `VoiceInfo.id` is exactly the `connect(voice=…)`
+  value. See `examples/list_voices.py`.
+- **Reasoning / thinking surfaced across all AI providers.** Providers emit
+  `StreamThinkingDelta` when reasoning is enabled, so the trace renders inline
+  (💭) through `CLIChannel(show_thinking=True)`:
+  - Mistral reads structured `ThinkChunk` content (modern reasoning models no
+    longer use inline `<think>` tags); `MistralConfig.reasoning_effort` maps
+    from `thinking_budget`.
+  - Gemini requests thought summaries (`include_thoughts`) and surfaces
+    `thought=True` parts.
+  - OpenAI surfaces the dedicated `reasoning_content` delta alongside the
+    `<think>` parser; `OpenAIConfig` gains `reasoning_effort`,
+    `supports_custom_temperature`, and `use_max_completion_tokens`.
+  - Anthropic adds adaptive thinking and round-trips the thinking-block
+    signature.
+  - `examples/mistral_ai.py` is now an interactive `CLIChannel` REPL that
+    streams reasoning live.
+
+### Changed
+
+- **Provider SDKs updated to current releases:** mistralai `>=2.0` (PEP 420
+  namespace package — the client import moved to `mistralai.client`),
+  google-genai `>=2.0`, websockets `>=14.0`, plus refreshed anthropic, openai,
+  twilio, neonize, and protobuf (`>=7`) locks.
+- **Image inputs decode `data:` URIs to inline bytes** for Gemini and Ollama
+  rather than shipping a broken file reference.
+
+### Fixed
+
+- **neonize 0.3.18 compatibility** — the `event_global_loop` workaround is
+  guarded by `hasattr` (0.3.18 binds the loop internally and dropped the field).
+- **Azure inherits OpenAI's sampling config** — `AzureAIConfig` gained
+  `reasoning_effort`, `supports_custom_temperature`, and
+  `use_max_completion_tokens`, which the inherited OpenAI request builder reads.
+- **Canonical usage tokens** — Mistral and Gemini report
+  `input_tokens`/`output_tokens` consistently.
+- **Order-dependent event-loop tests** — sync tests moved off the deprecated
+  `asyncio.get_event_loop()` to `asyncio.run()` / `asyncio.get_running_loop()`.
+
+## [0.10.0] — 2026-06-11
+
+### Added
+
+- **`playout` / `playout_max_delay_ms` on `SIPVoiceBackend`** (default off /
+  200 ms) — adaptive clocked playout for inbound audio, via aiortp's
+  AdaptivePlayout through aiosipua 0.7.0. Buffer depth tracks the measured
+  network jitter (EWMA) with deadline-based concealment, replacing the
+  static `jitter_prefetch` guess — the inbound defense for jittery links
+  (WiFi callers, congested paths). `jitter_prefetch` only applies when
+  playout is off.
+- **`cn` / `cn_payload_type` on `SIPVoiceBackend` (default off) — RFC 3389
+  comfort noise.** With `cn=True`, outbound silence (between TTS responses,
+  while the LLM thinks) carries comfort-noise packets via aiortp instead of
+  dead air, so carriers and handsets don't read the pause as a dead call.
+  Talkspurt resumption is marked on the RTP stream for clean jitter-buffer
+  resync. See `examples/voice_sip_comfort_noise.py`.
+- **`duplicate_tx` on `SIPVoiceBackend` (default off) — outbound TX
+  redundancy.** Every outbound RTP datagram is sent twice, the duplicate
+  riding the next frame's send ~20 ms later (via aiortp). Receivers dedupe
+  by sequence number, so no negotiation is needed; RTP bandwidth doubles.
+  The outbound defense for lossy links.
+- **RTCP Receiver Report observability in SIP audio stats.** The periodic
+  and final stats lines now carry the remote endpoint's view of our
+  outbound stream — cumulative packets lost, last-interval loss %, and
+  interarrival jitter in ms (`RR lost=… loss=…% jitter=…ms`; `RR none`
+  until a report arrives). Outbound degradation was previously invisible:
+  local stats only measure the inbound leg.
+
+### Changed
+
+- **Outbound SIP registration delegates to `aiosipua.Registration`.** The
+  hand-rolled REGISTER transaction machinery (~250 lines: message building,
+  response interception, MD5-only digest, 80% renewal loop) is replaced by
+  the upstream client: challenges are now answered per RFC 7616 (`qop`,
+  MD5 **and SHA-256** — registrars requiring qop previously failed), 423
+  Min-Expires is honoured, and the binding refreshes itself before expiry.
+  The `register()` contract is unchanged (awaits the first outcome, raises
+  on rejection, 5 s timeout) and a lost registration still retries every
+  30 s. `close()` still unregisters with `Expires: 0`.
+- **Dependency floors: `aiortp>=0.7.0`, `aiosipua[rtp]>=0.7.0`.** The
+  playout wire-clock fix for RFC 3551 G.722 senders, `duplicate_tx`, and
+  the Receiver Report stats keys all live in 0.7.0 of both.
+
+## [0.9.1] — 2026-06-11
+
+### Added
+
+- **`RoomKit.unregister_channel(channel_id)`** — the missing inverse of
+  `register_channel`. Pops the channel from the registry, resets the
+  router cache, and returns the channel so the caller can
+  `await channel.close()` explicitly. Integrators creating per-session
+  channels (e.g. one `RealtimeVoiceChannel` per outbound call) previously
+  had no removal API: channels accumulated in the registry and their
+  provider sessions outlived the call — a hung-up Gemini Live session
+  kept its receive loop alive and burned five reconnect attempts on a
+  dead websocket before erroring out.
+
+- **`plc` on `SIPVoiceBackend` (default `True`) — packet loss concealment.**
+  RTP packets confirmed lost in transit are replaced with concealment PCM
+  before delivery to the pipeline (via aiortp / aiosipua): native
+  libopus PLC for Opus, last-frame repetition fading to silence over 60 ms
+  for G.711/G.722/L16, silence fill beyond that. The inbound stream stays
+  temporally continuous, so recordings keep their duration and AEC reference
+  alignment no longer drifts under loss — previously the lost 20 ms frames
+  were silently skipped and the timeline compressed. Loss detection is
+  sequence-number based: VAD/DTX sender pauses are never concealed, and
+  RFC 4733 telephone-events (which consume sequence numbers) are marked as
+  received in the jitter buffer so DTMF digits are neither read as loss nor
+  concealed. The per-session `concealed_frames` counter is synced into the
+  audio stats and appears in the periodic (DEBUG) and final (INFO) stats
+  log lines as `concealed=N`. `plc=False` restores skip-silently behavior.
+  Validated end to end with controlled loss injection (aiosipua's
+  `lossy_caller` example): `concealed` matches the sender's dropped count
+  exactly, with and without DTMF interleaved.
+
+### Changed
+
+- **SIP/RTP extras require aiosipua >= 0.6.0 and aiortp >= 0.6.0.** aiosipua
+  0.5/0.6 bring an RFC conformance overhaul (RFC 7616 digest, RFC-compliant
+  CANCEL, dialog validation, 2xx retransmission), REGISTER/PRACK/REFER/session
+  timers, hardened parsing, and a comfort-noise passthrough backed by aiortp
+  0.6.0 (RFC 3389). RoomKit's SIP backends are source-compatible with the new
+  versions — the aiosipua breaking changes (`send_cancel(call)`, `body: bytes`)
+  touch APIs RoomKit does not call.
+
+- **Realtime outbound audio: one resident send worker per session.** Provider
+  audio chunks and the end-of-response flush now travel through a per-session
+  FIFO queue drained by a single worker task, replacing one task creation per
+  20 ms chunk (50/s, with task tracking and traceback capture under debug
+  instrumentation). Audio → flush → RESPONSE_END ordering becomes structural —
+  it no longer depends on task-creation FIFO surviving awaits inside the
+  transport — and a barge-in drops queued stale chunks at queue speed instead
+  of paying the resample for each. Public behavior is unchanged; covered by
+  an adversarial yielding-transport ordering test.
+
+## [0.9.0] — 2026-06-10
+
+Realtime voice audio-quality release. A field investigation of intermittent
+audio drop-outs on the speech-to-speech path traced three concurrent root
+causes — speaker-buffer starvation, AEC reference desync, and event-loop
+contention — all fixed and validated by before/after measurement: zero
+underruns over a full session, first-second AEC attenuation after each
+response start at -21.5 to -31.9 dB (was -3.8 to -19 dB), steady state
+improved to -28/-38 dB, user-speech passthrough unchanged. The same pass
+vectorised the SIP/RTP codec layer (via aiortp 0.3.2) and coalesced AI
+thinking-stream publishes off the shared event loop.
+
+### Added
+
+- **`rt_prebuffer_ms` on `LocalAudioBackend` (default `120`).** The realtime
+  speaker path now primes ~120 ms of audio before starting (and after any
+  underrun) instead of playing from the first byte — the local-speaker
+  analogue of the SIP pacer's prebuffer. A priming state machine honors the
+  channel's `end_of_response` so short responses are not held back, ignores
+  the stale end-of-response that providers fire on barge-in, and drains a
+  partial buffer after ~100 ms if the signal never arrives. The new
+  `rt_underruns` property counts mid-response starvations (warnings capped at
+  the first 5); `rt_prebuffer_ms=0` restores play-on-first-byte.
+- **`pacer_prebuffer_ms` / `pacer_jitter_headroom_ms` on `SIPVoiceBackend`**
+  (defaults `80` / `60`, unchanged). Forwarded to `OutboundAudioPacer`, which
+  already took them — the host could just never set them. Larger headroom
+  absorbs longer host-side stalls on PSTN at the cost of barge-in latency.
+- **`recent_events_window` on `Channel` and `MemoryProvider`.** Channels
+  declare how many recent room events they read per turn (transport channels:
+  0; `AIChannel` forwards its memory provider's window;
+  `SlidingWindowMemory` reports `max_events`; token-aware providers keep the
+  full pool via `DEFAULT_RECENT_EVENTS_WINDOW`).
+- **Event-loop hold observability for realtime paths.** Tool-call handler and
+  `ON_TOOL_CALL` hook segments log wall-time chronos at DEBUG; a WARNING fires
+  when tool-result serialization alone holds the loop past ~50 ms (it runs on
+  the full result before truncation) or when the channel falls back to the
+  pure-Python sinc resampler (which holds the GIL even inside the resample
+  executor). The SIP pacer budget is 60 ms — one fused stretch past it is an
+  audible drop-out on a concurrent call.
+- **`thinking_coalesce_ms` / `thinking_coalesce_chars` on `AIChannel`
+  (defaults `80.0` / `256`).** Reasoning models emit one thinking delta per
+  token, and publishing each on the realtime bus costs one ephemeral event +
+  fan-out + WS serialise per token — thousands for a long trace, all on the
+  shared event loop. Deltas are batched into one `THINKING_DELTA` publish
+  per time/size window, cutting bus traffic 10-100x while the reasoning
+  stays visibly real-time; clients append deltas, so a coalesced delta
+  renders identically. Flushes larger than the per-event preview cap split
+  into multiple publishes, so no reasoning text is ever truncated.
+  `thinking_coalesce_ms=0` restores one publish per delta. The complete
+  trace still arrives at `THINKING_END`, and the inline
+  `ThinkingDeltaMarker` stream is unaffected.
+
+### Changed
+
+- **Playback-time AEC reference is fed continuously, silence included.** The
+  pipeline AEC reference (wired via `on_audio_played`) skipped silent blocks,
+  compressing the reference timeline vs. the actual speaker output; AEC3
+  re-estimated its delay at every response start, leaking ~1 s of residual
+  echo that the provider's server VAD could mistake for user speech (false
+  barge-in → buffer flush → audible cut). Every block now reaches the
+  reference, matching how Chrome feeds its AEC3 render stream. The
+  transport-level AEC path (`LocalAudioBackend(aec=...)`) keeps its previous
+  policy.
+- **`RoomContext.recent_events` is sized to what the room's channels read.**
+  `_build_context` loaded the full 2000-event ceiling on every call — for a
+  persistent voice room that meant deserialising 2000 events several times
+  per transcription (~1 s of sync CPU per turn under load). The limit is now
+  the largest `recent_events_window` across bound channels, floored at 50 for
+  hooks and capped at the ceiling; a transport-only voice room loads 50.
+  Text agents with token-aware memory keep the full pool.
+- **Tool-call processing yields between segments.** Handler execution, hook
+  dispatch, and result submission no longer fuse into one event-loop step, so
+  realtime pacing gets a scheduling slot between them.
+- **RTP and SIP extras require `aiortp>=0.3.2`, which vectorises every audio
+  codec.** G.711 µ-law/A-law run without a per-sample Python loop (encode
+  3x, decode 21x), the G.722 wrapper hands the C extension int16 buffers
+  instead of boxing every sample (1.4-1.7x including codec time), and L16
+  byteswaps in one C-speed pass (12x) — cutting per-frame codec CPU on the
+  SIP/RTP voice path. Wideband G.722 negotiation needs the `G722` package
+  (`pip install aiortp[g722]`, now `>=1.2.3`).
+
+### Fixed
+
+- **Mid-sentence gaps on local realtime playback.** Any momentary starvation
+  (provider burst jitter, loop contention) inserted audible silence
+  immediately; underruns now re-prime the buffer, converting scattered gaps
+  into one rare, measured re-prime.
+- **Outbound resampling no longer blocks the event loop.** A sync resample in
+  the provider-audio callback starved RTP pacing under concurrent host load
+  (observed: 34.6 ms resample, 186 ms pacer underrun on a live PSTN call).
+  Per-session resampling runs in a per-channel single-thread executor that
+  also serializes the end-of-response flush and barge-in resets, preserving
+  frame order without locks.
+- **Realtime DSP held the GIL on hot paths.** `pcm16_to_mulaw` and `rms_db`
+  per-sample Python loops are vectorised with NumPy (byte-/value-exact,
+  equivalence-tested); the AEC energy diagnostics moved off the lock the
+  PortAudio speaker callback contends on. NumPy stays a lazy optional import
+  — base installs (no voice extras) are unaffected.
+- **Partial transcriptions and speech events skip context builds when no
+  hooks are registered.** Partials stream many times per second while the AI
+  speaks; each paid a full `RoomContext` build for a no-op hook dispatch.
+- **A second realtime session in the same process played no audio.**
+  `LocalAudioBackend._rt_closing` persisted across sessions and silently
+  dropped every queued chunk; `accept()` re-arms it.
+- **FastRTC: sends on a non-open `RTCDataChannel` raised
+  `InvalidStateError`.** The peer can close the data channel while provider
+  audio or transcriptions are still flowing; sends are now gated on
+  `readyState`.
+- **The Gemini local example honors its documented `MUTE_MIC` override.**
+
+## [0.8.0] — 2026-06-09
+
+### Added
+
+- **`regenerate_response(room_id)` — re-run the agent on the last inbound
+  message.** Finds the most recent transport (human) message and re-broadcasts
+  it with intelligence-only visibility, so the agent produces a fresh answer
+  without ingesting a new event: the trigger keeps its identity, index, and
+  timestamp, and transports never see the user message again (no duplicate
+  bubble). The response flows through the existing persistence, streaming, and
+  AFTER_BROADCAST machinery like a first-time turn. Removing the prior answer
+  is the caller's responsibility. Lives in its own `RegenerateMixin`.
+- **`InboundMessage.visibility` — deliver without waking the agent.**
+  `process_inbound` previously had no way to post a message that reaches a
+  room's transports but not its intelligence channel. The new field (default
+  `"all"`) is stamped onto the event, so `visibility="transport"` delivers a
+  proactive notification to the human without the agent replying to it.
+- **Bounded retry when a tool round ends with no final text.** Small local
+  models occasionally run a tool, get the result, then emit nothing instead
+  of a final answer. Both tool loops (streaming and non-streaming) now
+  re-prompt for the final answer with a corrective nudge, bounded by the new
+  `AIChannel(max_empty_retries=...)` parameter (default 1) and guarded by the
+  loop deadline and cancellation.
+- **`skills_in_prompt` flag on `AIChannel`.** Hosts that render their own
+  skills manifest inside `system_prompt` (e.g. positioned above a
+  prompt-cache boundary) set `skills_in_prompt=False` to skip the automatic
+  preamble + registry XML injection while keeping skill activation tools and
+  gating untouched. Default `True` preserves existing behavior.
+- **Per-call tool context accessors: `current_tool_room_id()` and
+  `current_tool_allowed_names()`.** A channel object is registered once per
+  `channel_id` and shared by every room it serves, so room-specific state
+  stored on the channel goes stale the moment another room attaches. Both
+  accessors (exported from `roomkit.tools`) read the tool loop's per-invocation
+  context: the first resolves the originating room from inside a tool handler,
+  the second exposes the turn's resolved toolset so handlers validate calls
+  against it instead of an attach-time snapshot. Outside a tool loop they
+  return `None`.
+- **Telegram inline keyboards from `RichContent`.** The Telegram bot provider
+  now routes `RichContent` to `sendMessage` with a `reply_markup.inline_keyboard`
+  built from `content.buttons` (`{text, callback_data}` or `{text, url}` dicts,
+  one button per row), enabling interactive flows such as approve/reject.
+- **`ChannelBinding.can_write`.** True iff the binding has write access
+  (`READ_WRITE` or `WRITE_ONLY`) and is not muted — the single RFC §7.5 gate
+  shared by the inbound pipeline and the event router.
+
+### Fixed
+
+- **Direct injection (`send_event`) traverses the same locked pipeline as
+  inbound (RFC §10.5).** It previously persisted and broadcast through a
+  separate path, skipping BEFORE_BROADCAST hooks, edit/delete handling, and
+  the source write-permission gate. Three more invariants enforced along the
+  way: an edit/delete target is mutated only after hooks allow the event, so
+  a moderation hook that blocks an edit no longer leaves the target mutated
+  (RFC §10.3); a source whose binding cannot write is stored BLOCKED for
+  audit instead of injecting a DELIVERED event, with hook side effects still
+  collected (RFC §7.5); chain-depth, reentry-blocked, and injected events get
+  a unique monotonic index instead of the model default `0` (RFC §8.1/§8.3).
+  `tests/test_rfc_conformance.py` encodes the invariants.
+- **AFTER_BROADCAST hooks run outside the room lock (RFC §10.1).** They were
+  awaited while the room lock was held, so a slow observer hook blocked
+  concurrent inbound processing for the same room. The locked pipeline now
+  collects the (event, context) pairs and callers run them after releasing
+  the lock — still awaited before returning, so observable ordering is
+  unchanged.
+- **`config_provider` turns reach the tool loop.** `handle_event` gated the
+  tool-loop path on attach-time signals only (binding snapshot, constructor
+  tools, skills), so a host delivering its toolset via `config_provider` got
+  the plain streaming path and the resolved tools were never executable.
+- **Streaming tool loops actually inherit the parent context.** The generator
+  body runs when the consumer iterates — after `handle_event`'s `finally` has
+  reset the contextvar — so participant-role inheritance silently failed and
+  the per-round tools re-application (skill gating) was dead code. The parent
+  context is now captured at stream creation and passed explicitly.
+- **Tool eviction is scoped per room.** The eviction buffer lives on the
+  shared channel object; an unscoped store let `read_stored_result` page
+  through another conversation's oversized tool output and injected the
+  re-read tool into rooms that evicted nothing. The buffer is now keyed by
+  `(room, result_id)`.
+
+## [0.7.2] — 2026-06-06
+
+### Added
+
+- **Per-turn config provider for `AIChannel`.** `AIChannel(config_provider=...)`
+  resolves an `AIChannelTurnConfig` (system prompt, tools, temperature,
+  max_tokens, thinking_budget) fresh at the start of every generation
+  turn, so dynamic config — admin edits, per-user gating, feature flags —
+  is never served from a stale attach-time snapshot. Explicit
+  `binding.metadata` overrides still win for prompt/sampling (per-room
+  operator intent); the provider's toolset REPLACES
+  `binding.metadata["tools"]`, since that key is itself an attach-time
+  snapshot. Without a provider, the static path is unchanged.
+  `AIChannelTurnConfig` is exported from `roomkit`. Tests in
+  `tests/test_channels/test_turn_config.py`.
+- **`AIContext.response_metadata` rides every MESSAGE response event.**
+  A `BEFORE_AI_GENERATION` hook can set turn-level attribution (e.g. RAG
+  sources, labels) on `ai_context.response_metadata` and it lands in the
+  metadata of every MESSAGE event of the turn — non-streaming, streaming,
+  and the streaming tool loop — persisted before broadcast, so the stored
+  row and the `stream_end` frame carry it from creation with no post-hoc
+  store rewrite. `ChannelOutput.response_metadata` carries it on the
+  streaming path. Tests in `tests/test_response_metadata.py`.
+
+### Fixed
+
+- **`read_stored_result` pages are size-bounded.** Pagination was
+  line-based, but tool results are often single-line JSON: the page
+  returned the whole payload, exceeded the eviction threshold, got
+  re-stored under a new id, and the agent chased evicted results forever.
+  Pages are now char-budgeted under the threshold (lines longer than the
+  budget split into chunks) and the response carries an explicit
+  `next_offset` cursor.
+- **Ollama provider retries stream aborts without an HTTP status.**
+  Ollama surfaces chat-template parse failures of the model's own
+  tool-call output (e.g. a small model closing `<parameter>` with
+  `</function>`) as a `ResponseError` with status `-1`. Those were
+  classified non-retryable, killing the turn on a transient sampling
+  defect that a regeneration almost always fixes. Statusless aborts now
+  join the retryable set; definite HTTP client errors stay fatal.
+
+## [0.7.1] — 2026-05-22
+
+### Added
+
+- **Native Ollama provider** (`OllamaAIProvider`, `OllamaConfig`) built
+  on `ollama-python`, including thinking effort levels —
+  `OllamaConfig.think` widened from `bool | None` to
+  `bool | "low" | "medium" | "high"` per the Ollama 0.7+ API, with
+  `ThinkEffort` exported from `roomkit.providers.ollama`.
+- **Inline thinking streaming.** New `ThinkingDeltaMarker` in
+  `models/streaming.py` delivers thinking in-band with the text stream so
+  channels render it in arrival order; `CLIChannel(show_thinking=True)`
+  renders it dim-italic inline. `THINKING_DELTA` ephemerals also publish
+  over the realtime bus so remote subscribers see reasoning live (the
+  buffered `THINKING_END` event still fires for observers joining
+  mid-stream).
+- **Teams channel owns inbound dispatch + roster lookups end-to-end.**
+
+### Changed
+
+- **`recent_events` ceiling raised from 50 to 2000.** The event-count cap
+  predates `BudgetAwareMemory` and silently dropped older turns even when
+  the token budget had headroom. A single `_RECENT_EVENTS_LIMIT` constant
+  in `core/mixins/helpers.py` now bounds the in-memory footprint while
+  token-aware memory does the real trimming.
+
 ### Fixed
 
 - **Ollama provider mints unique tool-call ids across turns.** Ollama's
@@ -946,7 +1390,17 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[0.7.0a15]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a14...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/roomkit-live/roomkit/compare/v0.9.1...v0.10.0
+[0.9.1]: https://github.com/roomkit-live/roomkit/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/roomkit-live/roomkit/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/roomkit-live/roomkit/compare/v0.7.2...v0.8.0
+[0.7.2]: https://github.com/roomkit-live/roomkit/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/roomkit-live/roomkit/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a18...v0.7.0
+[0.7.0a18]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a16...v0.7.0a18
+[0.7.0a16]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a15...v0.7.0a16
+[0.7.0a15]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a14...v0.7.0a15
 [0.7.0a14]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a13...v0.7.0a14
 [0.7.0a13]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a12...v0.7.0a13
 [0.7.0a12]: https://github.com/roomkit-live/roomkit/compare/v0.7.0a11...v0.7.0a12

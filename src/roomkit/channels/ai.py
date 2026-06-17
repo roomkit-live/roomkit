@@ -32,6 +32,7 @@ from roomkit.channels._ai_streaming import AIStreamingMixin
 from roomkit.channels._ai_tools import AIToolsMixin
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tool_eviction import ToolEviction
+from roomkit.channels._turn_config import ConfigProvider
 from roomkit.channels.base import Channel
 from roomkit.memory.base import MemoryProvider
 from roomkit.memory.sliding_window import SlidingWindowMemory
@@ -88,13 +89,41 @@ class _ToolLoopContext:
     activated_skills: set[str] = field(default_factory=set)
     all_context_tools: list[Any] = field(default_factory=list)
     current_participant_role: str | None = None
+    room_id: str | None = None
     steering_queue: asyncio.Queue[SteeringDirective] = field(default_factory=asyncio.Queue)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     loop_id: str = ""
 
+    @classmethod
+    def for_loop(cls, parent: _ToolLoopContext | None, room_id: str | None) -> _ToolLoopContext:
+        """Create a tool-loop context inheriting per-turn state from *parent*.
+
+        _build_context ran under the parent (handle_event) ctx and stamped the
+        turn's full toolset there — without this inheritance the per-round
+        tools re-application never fires (skill-gated tools would stay hidden
+        after activation) and per-call allowlist accessors see nothing.
+        """
+        ctx = cls()
+        ctx.loop_id = str(id(ctx))
+        if parent is not None:
+            ctx.current_participant_role = parent.current_participant_role
+            ctx.all_context_tools = parent.all_context_tools
+        ctx.room_id = room_id or (parent.room_id if parent else None)
+        return ctx
+
 
 _current_loop_ctx: contextvars.ContextVar[_ToolLoopContext | None] = contextvars.ContextVar(
     "_current_loop_ctx", default=None
+)
+
+
+# Corrective nudge re-injected when a generation round ends after tool calls
+# without any final text (common with small local models): the tool results
+# are in context, the model just failed to verbalize the answer. Re-prompting
+# for the final answer recovers it. Bounded by ``max_empty_retries``.
+_EMPTY_RETRY_NUDGE = (
+    "You called tools and already have their results above. Now write your "
+    "final answer to the user in plain text. Do not call any more tools."
 )
 
 
@@ -128,9 +157,13 @@ class AIChannel(
         max_tool_rounds: int = 200,
         tool_loop_timeout_seconds: float | None = 300.0,
         tool_loop_warn_after: int = 50,
+        max_empty_retries: int = 1,
+        thinking_coalesce_ms: float = 80.0,
+        thinking_coalesce_chars: int = 256,
         retry_policy: RetryPolicy | None = None,
         fallback_provider: AIProvider | None = None,
         skills: SkillRegistry | None = None,
+        skills_in_prompt: bool = True,
         script_executor: ScriptExecutor | None = None,
         sandbox: SandboxExecutor | None = None,
         external_tool_handler: ExternalToolHandler | None = None,
@@ -140,10 +173,15 @@ class AIChannel(
         thinking_budget: int | None = None,
         evict_threshold_tokens: int = 5000,
         enable_planning: bool = False,
+        config_provider: ConfigProvider | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._provider = provider
         self._system_prompt = system_prompt
+        # Per-turn config resolution — see channels/_turn_config.py. When
+        # set, system prompt / tools / sampling are resolved fresh at the
+        # start of every turn instead of living as attach-time snapshots.
+        self._config_provider = config_provider
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._max_context_events = max_context_events
@@ -151,9 +189,21 @@ class AIChannel(
         self._max_tool_rounds = max_tool_rounds
         self._tool_loop_timeout_seconds = tool_loop_timeout_seconds
         self._tool_loop_warn_after = tool_loop_warn_after
+        self._max_empty_retries = max_empty_retries
+        # Reasoning-stream coalescing window — see _ThinkingCoalescer. Per-token
+        # thinking deltas are batched into one realtime publish per window so a
+        # long reasoning trace costs 10-100x fewer ephemeral events + WS sends
+        # while staying visibly real-time. 0 ms disables (publish every delta).
+        self._thinking_coalesce_ms = thinking_coalesce_ms
+        self._thinking_coalesce_chars = thinking_coalesce_chars
         self._retry_policy = retry_policy
         self._fallback_provider = fallback_provider
         self._skills = skills
+        # Hosts that render their own skills manifest inside ``system_prompt``
+        # (e.g. positioned above a prompt-cache boundary) set this to False to
+        # skip the automatic preamble+XML injection while keeping the skill
+        # activation tools.
+        self._skills_in_prompt = skills_in_prompt
         self._script_executor = script_executor
         self._sandbox = sandbox
         self._memory = memory or SlidingWindowMemory(max_events=max_context_events)
@@ -304,14 +354,24 @@ class AIChannel(
 
         # Resolve participant role for role-based tool policy.
         # Set on a per-invocation _ToolLoopContext visible via contextvar so that
-        # _build_context and the tool loop methods can read it.
+        # _build_context and the tool loop methods can read it. ``room_id``
+        # rides the same contextvar: the channel object is registered once
+        # per channel_id and shared by every room it serves, so per-call
+        # room resolution (``current_tool_room_id``) is the only safe way
+        # for tool handlers to learn the originating room.
         event_ctx = _ToolLoopContext()
         event_ctx.current_participant_role = self._resolve_participant_role(event, context)
+        event_ctx.room_id = context.room.id if context.room else event.room_id
         token = _current_loop_ctx.set(event_ctx)
         try:
             raw_tools = binding.metadata.get("tools", [])
+            # A config_provider may deliver tools at _build_context time even
+            # when the binding carries no snapshot — route to the tool loop
+            # so those tools are executable. An empty turn toolset just runs
+            # the loop for a single round.
             has_tools = (
                 bool(raw_tools)
+                or self._config_provider is not None
                 or bool(self._user_tools)
                 or bool(self._injected_tools)
                 or (self._skills is not None and self._skills.skill_count > 0)
@@ -337,6 +397,11 @@ class AIChannel(
     ) -> ChannelOutput:
         """Intelligence channels are not called via deliver by the router."""
         return ChannelOutput.empty()
+
+    @property
+    def recent_events_window(self) -> int:
+        """Recent-events need = this channel's memory provider's window."""
+        return self._memory.recent_events_window
 
     async def close(self) -> None:
         """Close the channel, its provider, memory, and executors."""

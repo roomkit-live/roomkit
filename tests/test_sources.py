@@ -658,7 +658,7 @@ class TestSourceExponentialBackoff:
         """Restart delay should double on each consecutive failure."""
         kit = RoomKit()
         restart_times: list[float] = []
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         class TimingSource(SourceProvider):
             def __init__(self):
@@ -675,7 +675,7 @@ class TestSourceExponentialBackoff:
 
             async def start(self, emit) -> None:
                 self._attempts += 1
-                restart_times.append(asyncio.get_event_loop().time() - start_time)
+                restart_times.append(asyncio.get_running_loop().time() - start_time)
                 self._status = SourceStatus.CONNECTED
                 raise RuntimeError(f"Failure {self._attempts}")
 
@@ -715,7 +715,7 @@ class TestSourceExponentialBackoff:
         """Backoff should not exceed max_restart_delay."""
         kit = RoomKit()
         delays: list[float] = []
-        last_time = [asyncio.get_event_loop().time()]
+        last_time = [asyncio.get_running_loop().time()]
 
         class DelayTrackingSource(SourceProvider):
             def __init__(self):
@@ -732,7 +732,7 @@ class TestSourceExponentialBackoff:
 
             async def start(self, emit) -> None:
                 self._attempts += 1
-                now = asyncio.get_event_loop().time()
+                now = asyncio.get_running_loop().time()
                 if self._attempts > 1:
                     delays.append(now - last_time[0])
                 last_time[0] = now

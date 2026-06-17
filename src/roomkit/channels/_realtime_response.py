@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.telemetry.base import Attr, SpanKind
@@ -26,7 +27,9 @@ class RealtimeResponseHost(Protocol):
         _state_lock: Guards mutable per-session state from concurrent access.
         _session_rooms: Maps session IDs to room IDs.
         _session_resamplers: Per-session (inbound, outbound) resampler pairs.
+        _resample_executor: Single-thread executor owning resampler state.
         _session_transport_rates: Negotiated transport sample rate per session.
+        _output_sample_rate: Provider output sample rate.
         _audio_forward_count: Count of audio chunks forwarded per session.
         _turn_spans: Active telemetry turn span per session.
         _session_spans: Active telemetry session span per session.
@@ -43,12 +46,16 @@ class RealtimeResponseHost(Protocol):
         _send_client_message: Send a JSON message to the client UI.
         _update_idle_event: Update the idle signaling event for a session.
         _set_idle: Mark a session as idle after response completes.
+        _run_in_resample_executor: Run a resampler-state mutation off-loop.
     """
 
     _state_lock: threading.Lock
     _session_rooms: dict[str, str]
     _session_resamplers: dict[str, Any]
+    _audio_send_queues: dict[str, asyncio.Queue[Any]]
+    _resample_executor: ThreadPoolExecutor | None
     _session_transport_rates: dict[str, int]
+    _output_sample_rate: int
     _audio_forward_count: dict[str, int]
     _turn_spans: dict[str, Any]
     _session_spans: dict[str, Any]
@@ -68,6 +75,8 @@ class RealtimeResponseHost(Protocol):
 
     async def _set_idle(self, session: Any) -> None: ...
 
+    async def _run_in_resample_executor(self, fn: Any, *args: Any) -> Any: ...
+
 
 class RealtimeResponseMixin:
     """Response start/end, idle signaling, turn spans for RealtimeVoiceChannel.
@@ -78,7 +87,10 @@ class RealtimeResponseMixin:
     _state_lock: threading.Lock
     _session_rooms: dict[str, str]
     _session_resamplers: dict[str, Any]
+    _audio_send_queues: dict[str, asyncio.Queue[Any]]
+    _resample_executor: ThreadPoolExecutor | None
     _session_transport_rates: dict[str, int]
+    _output_sample_rate: int
     _audio_forward_count: dict[str, int]
     _turn_spans: dict[str, Any]
     _session_spans: dict[str, Any]
@@ -94,6 +106,7 @@ class RealtimeResponseMixin:
     _send_client_message: Any  # see RealtimeResponseHost — cross-mixin
     _update_idle_event: Any  # see RealtimeResponseHost — cross-mixin
     _set_idle: Any  # see RealtimeResponseHost — cross-mixin
+    _run_in_resample_executor: Any  # see RealtimeResponseHost — cross-mixin
 
     def _on_provider_response_start(self, session: VoiceSession) -> Any:
         """Handle AI response start — activate AEC, publish typing indicator."""
@@ -121,39 +134,29 @@ class RealtimeResponseMixin:
     def _on_provider_response_end(self, session: VoiceSession) -> Any:
         """Handle AI response end — flush, signal, clear indicator.
 
-        IMPORTANT: end_of_response is scheduled as a task (not called
-        synchronously) so it runs AFTER all pending ``_send_outbound_audio``
-        tasks.  Those tasks were created via ``loop.create_task()`` in
-        ``_on_provider_audio`` and asyncio processes ready tasks in FIFO
-        creation order.
+        IMPORTANT: the flush + end_of_response travel through the same
+        per-session send queue as the audio chunks, so the send worker
+        delivers audio -> flush -> RESPONSE_END in queue order regardless
+        of awaits inside the transport. When no queue exists (no audio
+        was forwarded this turn), the flush runs as its own task.
         """
-        # Flush the outbound resampler's pending frame (sinc one-frame delay)
         with self._state_lock:
             resamplers = self._session_resamplers.get(session.id)
             transport_rate = self._session_transport_rates.get(session.id)
-        if resamplers and transport_rate:
-            flushed = resamplers[1].flush(transport_rate, 1, 2)
-            if flushed and flushed.data:
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    pass
-                else:
-                    self._track_task(
-                        loop,
-                        self._transport.send_audio(session, flushed.data),
-                        name=f"rt_flush_audio:{session.id}",
-                    )
+            send_queue = self._audio_send_queues.get(session.id)
 
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        self._track_task(
-            loop,
-            self._signal_end_of_response(session),
-            name=f"rt_signal_eor:{session.id}",
-        )
+        if send_queue is not None:
+            send_queue.put_nowait(("eor", resamplers, transport_rate))
+        else:
+            self._track_task(
+                loop,
+                self._flush_and_signal_end(session, resamplers, transport_rate),
+                name=f"rt_signal_eor:{session.id}",
+            )
         self._track_task(
             loop,
             self._handle_response_indicator(session, is_speaking=False),
@@ -165,13 +168,27 @@ class RealtimeResponseMixin:
             name=f"rt_idle:{session.id}",
         )
 
-    async def _signal_end_of_response(self, session: VoiceSession) -> None:
-        """Signal end-of-response to the transport.
+    async def _flush_and_signal_end(
+        self,
+        session: VoiceSession,
+        resamplers: tuple[Any, Any] | None,
+        transport_rate: int | None,
+    ) -> None:
+        """Flush the outbound resampler's pending frame, then signal end.
 
-        Runs as an asyncio task so it executes AFTER all pending
-        ``_send_outbound_audio`` tasks, preserving audio->RESPONSE_END
-        ordering on the pacer queue.
+        The flush condition mirrors the resample condition in
+        ``_process_provider_audio`` exactly: when outbound chunks hop
+        through the resample executor, so does the flush — keeping the
+        end-of-response marker behind every in-flight frame. When outbound
+        resampling is inactive the resampler holds no state and nothing
+        hops, matching the chunk path again.
         """
+        if resamplers and transport_rate and transport_rate != self._output_sample_rate:
+            flushed = await self._run_in_resample_executor(
+                resamplers[1].flush, transport_rate, 1, 2
+            )
+            if flushed and flushed.data:
+                await self._transport.send_audio(session, flushed.data)
         self._transport.end_of_response(session)
 
     async def _handle_response_indicator(

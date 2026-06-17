@@ -356,9 +356,15 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
             ReceiptEv,
         )
 
+        # neonize <0.3.18 exposed an unstarted ``event_global_loop`` that had to
+        # be repointed at the running loop for callbacks to fire; 0.3.18+ binds
+        # the loop internally and dropped the attribute, so patch only when it is
+        # present (and skip the obsolete workaround on newer versions).
         _running_loop = asyncio.get_running_loop()
-        _neonize_events.event_global_loop = _running_loop
-        _neonize_client.event_global_loop = _running_loop
+        if hasattr(_neonize_events, "event_global_loop"):
+            _neonize_events.event_global_loop = _running_loop
+        if hasattr(_neonize_client, "event_global_loop"):
+            _neonize_client.event_global_loop = _running_loop
 
         from neonize.proto.waCompanionReg.WAWebProtobufsCompanionReg_pb2 import (
             DeviceProps,

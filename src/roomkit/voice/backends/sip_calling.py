@@ -89,6 +89,12 @@ class SIPCallingHost(Protocol):
     _jitter_capacity: int
     _jitter_prefetch: int
     _skip_audio_gaps: bool
+    _plc: bool
+    _cn: bool
+    _cn_payload_type: int
+    _playout: bool
+    _playout_max_delay_ms: int
+    _duplicate_tx: bool
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
@@ -135,6 +141,12 @@ class SIPCallingMixin:
     _jitter_capacity: int
     _jitter_prefetch: int
     _skip_audio_gaps: bool
+    _plc: bool
+    _cn: bool
+    _cn_payload_type: int
+    _playout: bool
+    _playout_max_delay_ms: int
+    _duplicate_tx: bool
     _user_agent: str | None
     _auth_users: dict[str, str] | None
     _session_states: dict[str, SIPSessionState]
@@ -226,6 +238,12 @@ class SIPCallingMixin:
                 jitter_capacity=self._jitter_capacity,
                 jitter_prefetch=self._jitter_prefetch,
                 skip_audio_gaps=self._skip_audio_gaps,
+                plc=self._plc,
+                cn=self._cn,
+                cn_payload_type=self._cn_payload_type,
+                playout=self._playout,
+                playout_max_delay_ms=self._playout_max_delay_ms,
+                duplicate_tx=self._duplicate_tx,
             )
         except Exception:
             logger.exception("SDP negotiation failed for call %s", call.call_id)
@@ -489,6 +507,12 @@ class SIPCallingMixin:
     ) -> None:
         """Await call_session close, then clean up state and fire callbacks."""
         if call_session is not None:
+            # Snapshot RTP-sourced counters before close() drops the session —
+            # afterwards CallSession.stats returns {} and the final stats log
+            # would fall back to the last periodic sync (up to 5 s stale).
+            state = self._session_states.get(session_id)
+            if state is not None:
+                state.audio_stats.sync_from_rtp(call_session.stats)
             with contextlib.suppress(Exception):
                 await call_session.close()
 
@@ -619,6 +643,12 @@ class SIPCallingMixin:
                 jitter_capacity=self._jitter_capacity,
                 jitter_prefetch=self._jitter_prefetch,
                 skip_audio_gaps=self._skip_audio_gaps,
+                plc=self._plc,
+                cn=self._cn,
+                cn_payload_type=self._cn_payload_type,
+                playout=self._playout,
+                playout_max_delay_ms=self._playout_max_delay_ms,
+                duplicate_tx=self._duplicate_tx,
             )
             await call_session.start()
         except Exception:
@@ -775,16 +805,30 @@ class SIPCallingMixin:
             }
 
         stats = state.audio_stats
+        if state.call_session is not None:
+            # Best-effort refresh; falls back to the value snapshotted at
+            # close time when the RTP session is already gone.
+            stats.sync_from_rtp(state.call_session.stats)
+        rr_info = "none"
+        if stats.has_remote_report:
+            rr_jitter_ms = stats.remote_jitter_units * 1000.0 / state.clock_rate
+            rr_info = (
+                f"lost={stats.remote_packets_lost}"
+                f" loss={stats.remote_fraction_lost / 2.56:.1f}%"
+                f" jitter={rr_jitter_ms:.0f}ms"
+            )
         logger.info(
             "SIP session %s final stats: IN pkts=%d bytes=%d gaps=%d"
-            " max_gap=%.0fms | OUT frames=%d bytes=%d",
+            " max_gap=%.0fms concealed=%d | OUT frames=%d bytes=%d | RR %s",
             session_id[:8],
             stats.inbound_packets,
             stats.inbound_bytes,
             stats.inbound_gaps,
             stats.inbound_max_gap_ms,
+            stats.concealed_frames,
             stats.outbound_frames,
             stats.outbound_bytes,
+            rr_info,
         )
         if state.send_frame_count:
             logger.info(

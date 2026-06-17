@@ -112,6 +112,17 @@ class Channel(ABC):
         """Return channel metadata. Override in subclasses."""
         return {}
 
+    @property
+    def recent_events_window(self) -> int:
+        """How many recent room events this channel reads per turn.
+
+        Drives how many events the framework loads into ``RoomContext`` for a
+        room. Transport-only channels (WebSocket, realtime voice) don't consume
+        room history, so the default is 0; AI channels override it with their
+        memory provider's window.
+        """
+        return 0
+
     @abstractmethod
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         """Process an inbound message into a RoomEvent."""

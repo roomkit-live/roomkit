@@ -152,6 +152,21 @@ class TestChannelManagement:
         await kit.attach_channel("r1", "sms1")
         assert await kit.detach_channel("r1", "sms1") is True
 
+    async def test_unregister_channel(self, kit: RoomKit) -> None:
+        ch = SimpleChannel("sms1")
+        kit.register_channel(ch)
+
+        removed = kit.unregister_channel("sms1")
+        assert removed is ch
+
+        # Gone from the registry: attaching now fails
+        await kit.create_room(room_id="r1")
+        with pytest.raises(ChannelNotRegisteredError):
+            await kit.attach_channel("r1", "sms1")
+
+    async def test_unregister_unknown_channel_returns_none(self, kit: RoomKit) -> None:
+        assert kit.unregister_channel("nope") is None
+
     async def test_mute_unmute(self, kit: RoomKit) -> None:
         ch = SimpleChannel("sms1")
         kit.register_channel(ch)

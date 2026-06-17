@@ -10,6 +10,7 @@ from roomkit.models.event import (
     AudioContent,
     LocationContent,
     MediaContent,
+    RichContent,
     RoomEvent,
     VideoContent,
 )
@@ -48,6 +49,8 @@ class TelegramBotProvider(TelegramProvider):
             return await self._send_audio(to, content)
         if isinstance(content, MediaContent):
             return await self._send_media(to, content)
+        if isinstance(content, RichContent):
+            return await self._send_rich(to, content)
         return await self._send_text(to, event)
 
     async def _send_text(self, to: str, event: RoomEvent) -> ProviderResult:
@@ -58,6 +61,39 @@ class TelegramBotProvider(TelegramProvider):
             "sendMessage",
             {"chat_id": to, "text": text},
         )
+
+    async def _send_rich(self, to: str, content: RichContent) -> ProviderResult:
+        """Send rich text with an optional inline keyboard.
+
+        ``content.buttons`` is a list of ``{"text", "callback_data"}`` (or
+        ``{"text", "url"}``) dicts; each becomes a single-button row in
+        Telegram's ``inline_keyboard``. Buttons missing both an action are
+        dropped. Plain text falls back to ``body`` when ``plain_text`` is unset.
+        """
+        text = content.plain_text or content.body
+        if not text:
+            return ProviderResult(success=False, error="empty_message")
+        payload: dict[str, Any] = {"chat_id": to, "text": text}
+        keyboard = self._inline_keyboard(content.buttons)
+        if keyboard:
+            payload["reply_markup"] = {"inline_keyboard": keyboard}
+        return await self._api_call("sendMessage", payload)
+
+    @staticmethod
+    def _inline_keyboard(buttons: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+        rows: list[list[dict[str, Any]]] = []
+        for b in buttons:
+            if not isinstance(b, dict) or not b.get("text"):
+                continue
+            btn: dict[str, Any] = {"text": b["text"]}
+            if b.get("callback_data"):
+                btn["callback_data"] = b["callback_data"]
+            elif b.get("url"):
+                btn["url"] = b["url"]
+            else:
+                continue
+            rows.append([btn])
+        return rows
 
     async def _send_media(self, to: str, content: MediaContent) -> ProviderResult:
         mime = content.mime_type

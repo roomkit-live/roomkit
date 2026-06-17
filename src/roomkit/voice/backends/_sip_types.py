@@ -49,12 +49,17 @@ class AudioStats:
         "inbound_last_ts",
         "inbound_gaps",
         "inbound_max_gap_ms",
+        "concealed_frames",
         "outbound_frames",
         "outbound_bytes",
         "outbound_first_ts",
         "outbound_last_ts",
         "outbound_max_burst",
         "outbound_calls",
+        "remote_packets_lost",
+        "remote_fraction_lost",
+        "remote_jitter_units",
+        "has_remote_report",
     )
 
     def __init__(self) -> None:
@@ -64,12 +69,35 @@ class AudioStats:
         self.inbound_last_ts: float = 0.0
         self.inbound_gaps = 0
         self.inbound_max_gap_ms: float = 0.0
+        self.concealed_frames = 0  # lost packets replaced by PLC (synced from RTP session)
         self.outbound_frames = 0
         self.outbound_bytes = 0
         self.outbound_first_ts: float = 0.0
         self.outbound_last_ts: float = 0.0
         self.outbound_max_burst = 0  # max frames in a single _send_pcm_bytes call
         self.outbound_calls = 0  # number of _send_pcm_bytes calls
+        # RTCP Receiver Report view of OUR outbound stream, as seen by the
+        # remote endpoint.  Raw RFC 3550 units: fraction_lost is 8-bit fixed
+        # point (lost*256/expected, over the last reporting interval) and
+        # jitter is in RTP clock units — convert at the log site, where the
+        # session clock rate is known.
+        self.remote_packets_lost = 0
+        self.remote_fraction_lost = 0
+        self.remote_jitter_units = 0
+        self.has_remote_report = False
+
+    def sync_from_rtp(self, rtp_stats: dict[str, Any]) -> None:
+        """Pull RTP-session-sourced counters (no-op on an empty/closed-session dict)."""
+        if not rtp_stats:
+            return
+        self.concealed_frames = rtp_stats.get("concealed_frames", 0)
+        # RR keys only appear once the remote has sent a Receiver Report;
+        # keep the last-known values across syncs that lack them.
+        if "remote_packets_lost" in rtp_stats:
+            self.has_remote_report = True
+            self.remote_packets_lost = rtp_stats["remote_packets_lost"]
+            self.remote_fraction_lost = rtp_stats["remote_fraction_lost"]
+            self.remote_jitter_units = rtp_stats["remote_jitter"]
 
 
 @dataclass

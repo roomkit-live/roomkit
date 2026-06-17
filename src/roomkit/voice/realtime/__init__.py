@@ -17,6 +17,7 @@ from roomkit.voice.realtime.provider import (
     RealtimeAudioVideoProvider,
     RealtimeVideoCallback,
     RealtimeVoiceProvider,
+    VoiceInfo,
 )
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "RealtimeAVBridge",
     "RealtimeVideoCallback",
     "RealtimeVoiceProvider",
+    "VoiceInfo",
     # Events
     "RealtimeErrorEvent",
     "RealtimeSpeechEvent",

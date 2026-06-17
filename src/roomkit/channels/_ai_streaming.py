@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.channels._ai_events import THINKING_PREVIEW_LIMIT
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
@@ -41,6 +42,69 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.channels.ai")
 
 
+class _ThinkingCoalescer:
+    """Batches per-token thinking deltas into one ``THINKING_DELTA`` publish per window.
+
+    Reasoning models emit one ``StreamThinkingDelta`` per token, and publishing
+    each on the realtime bus is one ephemeral event + fan-out + WS serialise per
+    token — thousands for a long trace, all on the shared event loop. Buffering
+    and publishing once per time/size window (~80 ms / ~256 chars) cuts that
+    10-100x while keeping the reasoning visibly real-time: the UI appends deltas,
+    so a coalesced delta renders identically to many small ones. The complete
+    trace is still published verbatim at ``THINKING_END``.
+
+    A window of ``0`` ms disables batching — every delta publishes immediately.
+    Flushes larger than ``_publish_thinking_event``'s preview cap are split
+    into multiple publishes so a coalesced delta is never truncated, whatever
+    the configured size threshold.
+    """
+
+    def __init__(
+        self,
+        publish: Any,
+        room_id: str | None,
+        round_idx: int,
+        *,
+        flush_ms: float,
+        flush_chars: int,
+    ) -> None:
+        self._publish = publish
+        self._room_id = room_id
+        self._round_idx = round_idx
+        self._flush_ms = flush_ms
+        self._flush_chars = flush_chars
+        self._pending: list[str] = []
+        self._pending_len = 0
+        self._last_publish = time.monotonic()
+
+    async def add(self, delta: str) -> None:
+        """Buffer a delta; publish the batch once the window is exceeded."""
+        self._pending.append(delta)
+        self._pending_len += len(delta)
+        if self._flush_ms <= 0:
+            await self.flush()
+            return
+        elapsed_ms = (time.monotonic() - self._last_publish) * 1000.0
+        if self._pending_len >= self._flush_chars or elapsed_ms >= self._flush_ms:
+            await self.flush()
+
+    async def flush(self) -> None:
+        """Publish whatever is buffered, then reset the window."""
+        if not self._pending:
+            return
+        text = "".join(self._pending)
+        self._pending.clear()
+        self._pending_len = 0
+        self._last_publish = time.monotonic()
+        for i in range(0, len(text), THINKING_PREVIEW_LIMIT):
+            await self._publish(
+                EphemeralEventType.THINKING_DELTA,
+                self._room_id,
+                text[i : i + THINKING_PREVIEW_LIMIT],
+                self._round_idx,
+            )
+
+
 @runtime_checkable
 class AIStreamingHost(Protocol):
     """Contract: capabilities a host class must provide for AIStreamingMixin.
@@ -70,6 +134,9 @@ class AIStreamingHost(Protocol):
     _max_tool_rounds: int
     _tool_loop_timeout_seconds: float | None
     _tool_loop_warn_after: int
+    _max_empty_retries: int
+    _thinking_coalesce_ms: float
+    _thinking_coalesce_chars: int
     _tool_handler: Any
     _active_loops: dict[str, _ToolLoopContext]
     _after_response_hook: Any
@@ -126,6 +193,9 @@ class AIStreamingMixin:
     _max_tool_rounds: int
     _tool_loop_timeout_seconds: float | None
     _tool_loop_warn_after: int
+    _max_empty_retries: int
+    _thinking_coalesce_ms: float
+    _thinking_coalesce_chars: int
     _tool_handler: Any
     _active_loops: dict[str, Any]
     _after_response_hook: Any
@@ -147,6 +217,16 @@ class AIStreamingMixin:
     _publish_tool_event: Any  # see AIStreamingHost
     _telemetry_provider: Any  # see AIStreamingHost
 
+    def _new_thinking_coalescer(self, room_id: str | None, round_idx: int) -> _ThinkingCoalescer:
+        """Coalescer bound to this channel's publish hook and window config."""
+        return _ThinkingCoalescer(
+            self._publish_thinking_event,
+            room_id,
+            round_idx,
+            flush_ms=self._thinking_coalesce_ms,
+            flush_chars=self._thinking_coalesce_chars,
+        )
+
     async def _start_streaming_response(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
@@ -158,6 +238,7 @@ class AIStreamingMixin:
         return ChannelOutput(
             responded=True,
             response_stream=self._stream_text_with_thinking(ai_context),
+            response_metadata=ai_context.response_metadata,
         )
 
     async def _stream_text_with_thinking(
@@ -189,6 +270,7 @@ class AIStreamingMixin:
         room_id = ai_context.room.room.id if ai_context.room else None
         thinking_parts: list[str] = []
         thinking_started = False
+        coalescer = self._new_thinking_coalescer(room_id, round_idx=0)
 
         async for ev in self._provider.generate_structured_stream(ai_context):
             if isinstance(ev, StreamThinkingDelta):
@@ -198,19 +280,17 @@ class AIStreamingMixin:
                         EphemeralEventType.THINKING_START, room_id, "", 0
                     )
                 thinking_parts.append(ev.thinking)
-                # Publish each delta on the realtime bus so remote subscribers
-                # (browser WS clients, etc.) see the reasoning stream as it
-                # arrives, not only the buffered text at THINKING_END. The
-                # ``thinking`` field carries the per-chunk delta, not the
+                # Buffer each delta and publish in windows on the realtime bus so
+                # remote subscribers (browser WS clients, etc.) stream the
+                # reasoning as it arrives, not only the buffered text at
+                # THINKING_END. The ``thinking`` field carries the delta, not the
                 # accumulator — clients append to their own buffer.
-                if room_id:
-                    await self._publish_thinking_event(
-                        EphemeralEventType.THINKING_DELTA, room_id, ev.thinking, 0
-                    )
+                await coalescer.add(ev.thinking)
                 yield ThinkingDeltaMarker(thinking=ev.thinking)
             elif isinstance(ev, StreamTextDelta):
                 if thinking_started and thinking_parts and room_id:
                     thinking_started = False
+                    await coalescer.flush()
                     await self._publish_thinking_event(
                         EphemeralEventType.THINKING_END,
                         room_id,
@@ -223,6 +303,7 @@ class AIStreamingMixin:
         # Thinking with no following text — close the boundary anyway so
         # subscribers see the reasoning even if the model emitted nothing else.
         if thinking_started and thinking_parts and room_id:
+            await coalescer.flush()
             await self._publish_thinking_event(
                 EphemeralEventType.THINKING_END,
                 room_id,
@@ -234,25 +315,42 @@ class AIStreamingMixin:
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
         """Return a streaming response that handles tool calls between rounds."""
+        from roomkit.channels.ai import _current_loop_ctx
+
         ai_context = await self._build_context(event, binding, context)  # ty: ignore[unresolved-attribute]
         ai_context, blocked = await self._fire_before_generation_hook(ai_context, event)  # ty: ignore[unresolved-attribute]
         if blocked:
             return ChannelOutput.empty()
+        # The generator below executes when the CONSUMER iterates the
+        # stream — by then handle_event has reset the loop contextvar, so
+        # the parent ctx (participant role, room, the toolset stamped by
+        # _build_context) must be captured NOW and passed explicitly.
         return ChannelOutput(
             responded=True,
-            response_stream=self._run_streaming_tool_loop(ai_context),
+            response_stream=self._run_streaming_tool_loop(
+                ai_context, parent_loop_ctx=_current_loop_ctx.get()
+            ),
+            response_metadata=ai_context.response_metadata,
         )
 
-    async def _run_streaming_tool_loop(self, context: AIContext) -> AsyncIterator[StreamDelta]:
+    async def _run_streaming_tool_loop(
+        self, context: AIContext, *, parent_loop_ctx: Any | None = None
+    ) -> AsyncIterator[StreamDelta]:
         """Stream text deltas, executing tool calls between generation rounds."""
-        from roomkit.channels.ai import _current_loop_ctx, _ToolLoopContext
+        from roomkit.channels.ai import (
+            _EMPTY_RETRY_NUDGE,
+            _current_loop_ctx,
+            _ToolLoopContext,
+        )
         from roomkit.telemetry.context import get_current_span
 
-        loop_ctx = _ToolLoopContext()
-        loop_ctx.loop_id = str(id(loop_ctx))
-        parent_ctx = _current_loop_ctx.get()
-        if parent_ctx is not None:
-            loop_ctx.current_participant_role = parent_ctx.current_participant_role
+        # The handle_event ctx is gone from the contextvar by the time this
+        # generator runs (reset in handle_event's finally); the caller
+        # captured it at stream creation.
+        parent_ctx = parent_loop_ctx if parent_loop_ctx is not None else _current_loop_ctx.get()
+        loop_ctx = _ToolLoopContext.for_loop(
+            parent_ctx, context.room.room.id if context.room else None
+        )
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx
         telemetry = self._telemetry_provider
@@ -285,6 +383,8 @@ class AIStreamingMixin:
             )
 
             _dedup_prefix = ""
+            _saw_tool_call_any = False
+            _empty_retries = 0
 
             for _round_idx in range(self._max_tool_rounds + 1):
                 if loop_ctx.cancel_event.is_set():
@@ -297,9 +397,11 @@ class AIStreamingMixin:
                     )
 
                 thinking_parts: list[str] = []
+                thinking_signature: str | None = None
                 text_parts: list[str] = []
                 tool_calls: list[StreamToolCall] = []
                 thinking_started = False
+                coalescer = self._new_thinking_coalescer(room_id, round_idx=_round_idx)
                 _dedup_active = bool(_dedup_prefix)
                 _dedup_offset = 0
                 _dedup_buffer: list[str] = []
@@ -312,6 +414,12 @@ class AIStreamingMixin:
                         return
 
                     if isinstance(event, StreamThinkingDelta):
+                        if event.signature:
+                            # Signature arrives as its own delta (empty text);
+                            # capture it so the thinking block round-trips.
+                            thinking_signature = event.signature
+                        if not event.thinking:
+                            continue
                         if not thinking_started and room_id:
                             thinking_started = True
                             await self._publish_thinking_event(
@@ -321,23 +429,18 @@ class AIStreamingMixin:
                                 _round_idx,
                             )
                         thinking_parts.append(event.thinking)
-                        # Publish the per-chunk delta on the realtime bus so
-                        # remote WS subscribers stream the reasoning live; the
-                        # buffered THINKING_END below still fires so observers
-                        # joining mid-stream can recover the complete trace.
-                        if room_id:
-                            await self._publish_thinking_event(
-                                EphemeralEventType.THINKING_DELTA,
-                                room_id,
-                                event.thinking,
-                                _round_idx,
-                            )
+                        # Buffer the per-chunk delta and publish in windows on the
+                        # realtime bus so remote WS subscribers stream the reasoning
+                        # live; the buffered THINKING_END below still fires so
+                        # observers joining mid-stream recover the complete trace.
+                        await coalescer.add(event.thinking)
                         # Inline marker so channels can render reasoning in
                         # arrival order with text deltas.
                         yield ThinkingDeltaMarker(thinking=event.thinking)
                     elif isinstance(event, StreamTextDelta):
                         if thinking_started and thinking_parts and room_id:
                             thinking_started = False
+                            await coalescer.flush()
                             await self._publish_thinking_event(
                                 EphemeralEventType.THINKING_END,
                                 room_id,
@@ -455,6 +558,7 @@ class AIStreamingMixin:
                     _dedup_buffer.clear()
 
                 if thinking_started and thinking_parts and room_id:
+                    await coalescer.flush()
                     await self._publish_thinking_event(
                         EphemeralEventType.THINKING_END,
                         room_id,
@@ -463,7 +567,27 @@ class AIStreamingMixin:
                     )
 
                 if not tool_calls:
+                    # Final answer round. If it produced no text *after* a tool
+                    # round, the model skipped verbalizing the result — re-prompt
+                    # once (bounded) for the final answer instead of ending empty.
+                    if (
+                        _saw_tool_call_any
+                        and not "".join(text_parts).strip()
+                        and _empty_retries < self._max_empty_retries
+                        and not (deadline and asyncio.get_running_loop().time() >= deadline)
+                    ):
+                        _empty_retries += 1
+                        logger.warning(
+                            "Streaming empty response after tools; re-prompting for "
+                            "final answer (retry %d/%d)",
+                            _empty_retries,
+                            self._max_empty_retries,
+                        )
+                        context.messages.append(AIMessage(role="user", content=_EMPTY_RETRY_NUDGE))
+                        continue
                     return
+
+                _saw_tool_call_any = True
 
                 # External tools: provider executed them internally.
                 # If ExternalToolHandler is set, hooks were already fired
@@ -518,8 +642,13 @@ class AIStreamingMixin:
                 )
 
                 parts: list[_ContentPart] = []
-                if thinking_parts:
-                    parts.append(AIThinkingPart(thinking="".join(thinking_parts)))
+                if thinking_parts or thinking_signature:
+                    parts.append(
+                        AIThinkingPart(
+                            thinking="".join(thinking_parts),
+                            signature=thinking_signature,
+                        )
+                    )
                 accumulated_text = "".join(text_parts)
                 if accumulated_text:
                     parts.append(AITextPart(text=accumulated_text))

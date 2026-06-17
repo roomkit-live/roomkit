@@ -6,6 +6,7 @@ import asyncio
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.enums import Access, HookTrigger
@@ -31,6 +32,10 @@ class RealtimeAudioHost(Protocol):
         _state_lock: Guards mutable per-session state from concurrent access.
         _session_bindings: Per-session channel binding info.
         _session_resamplers: Per-session (inbound, outbound) resampler pairs.
+        _resample_executor: Single-thread executor that owns every resampler
+            state mutation (resample/flush/reset/close). One thread = FIFO,
+            so frame order and state integrity hold without locking, and the
+            event loop stays free to pace RTP while a resample runs.
         _session_transport_rates: Negotiated transport sample rate per session.
         _recording_tracks: Per-session recording track and room ID.
         _audio_forward_count: Count of audio chunks forwarded per session.
@@ -58,10 +63,14 @@ class RealtimeAudioHost(Protocol):
     _state_lock: threading.Lock
     _session_bindings: dict[str, Any]
     _session_resamplers: dict[str, Any]
+    _resample_executor: ThreadPoolExecutor | None
     _session_transport_rates: dict[str, int]
     _recording_tracks: dict[str, Any]
     _audio_forward_count: dict[str, int]
     _audio_generation: dict[str, int]
+    _audio_send_queues: dict[str, asyncio.Queue[Any]]
+    _audio_send_workers: dict[str, Any]
+    _sessions: dict[str, Any]
     _input_sample_rate: int
     _output_sample_rate: int
     _pipeline: AudioPipeline | None
@@ -98,10 +107,14 @@ class RealtimeAudioMixin:
     _state_lock: threading.Lock
     _session_bindings: dict[str, Any]
     _session_resamplers: dict[str, Any]
+    _resample_executor: ThreadPoolExecutor | None
     _session_transport_rates: dict[str, int]
     _recording_tracks: dict[str, Any]
     _audio_forward_count: dict[str, int]
     _audio_generation: dict[str, int]
+    _audio_send_queues: dict[str, asyncio.Queue[Any]]
+    _audio_send_workers: dict[str, Any]
+    _sessions: dict[str, Any]
     _input_sample_rate: int
     _output_sample_rate: int
     _pipeline: AudioPipeline | None
@@ -114,11 +127,82 @@ class RealtimeAudioMixin:
     _barge_in_active: set[str]
 
     _track_task: Any  # see RealtimeAudioHost — cross-mixin
+    _flush_and_signal_end: Any  # see RealtimeResponseMixin — cross-mixin
     _fire_audio_level_task: Any  # see RealtimeAudioHost — cross-mixin
     _update_idle_event: Any  # see RealtimeAudioHost — cross-mixin
     _fire_barge_in_hook: Any  # see RealtimeAudioHost — cross-mixin
     _handle_speech_event: Any  # see RealtimeAudioHost — cross-mixin
     _send_client_message: Any  # see RealtimeAudioHost — cross-mixin
+
+    # -----------------------------------------------------------------
+    # Off-loop resampling
+    # -----------------------------------------------------------------
+
+    def _get_resample_executor(self) -> ThreadPoolExecutor:
+        """Lazily create the channel's single-thread resample executor.
+
+        Dedicated (not the loop's default executor) so a 20 ms-budget audio
+        frame never queues behind unrelated host work; single-thread so jobs
+        run FIFO — frame order and resampler-state integrity hold without
+        locking. Only ever called from the event loop thread, so the lazy
+        init needs no guard.
+        """
+        if self._resample_executor is None:
+            self._resample_executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="rk-resample"
+            )
+        return self._resample_executor
+
+    async def _run_in_resample_executor(self, fn: Any, *args: Any) -> Any:
+        """Run a resampler-state mutation (resample/flush) in the executor."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self._get_resample_executor(), fn, *args)
+
+    def _reset_outbound_resampler(self, resamplers: tuple[Any, Any] | None) -> None:
+        """Reset the outbound resampler through the resample executor.
+
+        FIFO behind any in-flight resample, so the reset never races state
+        mutation. Stale outputs are discarded by the generation check in
+        ``_send_outbound_audio``. Direct call when no executor exists — no
+        resample ever ran, so there is nothing to race.
+        """
+        if not resamplers:
+            return
+        ex = self._resample_executor
+        if ex is not None:
+            ex.submit(resamplers[1].reset)
+        else:
+            resamplers[1].reset()
+
+    async def _resample_off_loop(
+        self,
+        resampler: Any,
+        frame: Any,
+        target_rate: int,
+        *,
+        direction: str,
+    ) -> Any:
+        """Resample one frame in the executor, warning past a 20 ms budget.
+
+        The measured time is the executor round-trip (queue wait + compute):
+        past 20 ms — one RTP frame — the resampler is not keeping up with
+        real time, even though the event loop itself stays free.
+        """
+        src_rate = frame.sample_rate
+        in_bytes = len(frame.data)
+        t0 = time.monotonic()
+        result = await self._run_in_resample_executor(resampler.resample, frame, target_rate, 1, 2)
+        dt_ms = (time.monotonic() - t0) * 1000
+        if dt_ms > 20.0:
+            logger.warning(
+                "%s resample slow: %.1fms in_bytes=%d rate=%d→%d",
+                direction,
+                dt_ms,
+                in_bytes,
+                src_rate,
+                target_rate,
+            )
+        return result
 
     # -----------------------------------------------------------------
     # Recording setup
@@ -194,24 +278,45 @@ class RealtimeAudioMixin:
         """Forward processed audio from pipeline to provider.
 
         Called for every frame after pipeline processing (AEC, denoiser,
-        etc.).  Applies inbound resampling if needed, taps recording,
-        then sends to the realtime provider.
+        etc.).  Snapshots per-session state, then hands the frame to a task
+        so inbound resampling runs off the event loop; task-creation order
+        plus the single-thread resample executor keep frames in order.
         """
         if session.state != VoiceSessionState.ACTIVE:
             return
 
-        audio = frame.data
-
-        # Inbound resampling: transport rate -> provider rate (e.g. SIP 8kHz -> 16kHz)
         with self._state_lock:
             resamplers = self._session_resamplers.get(session.id)
             transport_rate = self._session_transport_rates.get(session.id)
             rec = self._recording_tracks.get(session.id)
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._track_task(
+            loop,
+            self._forward_pipeline_frame(session, frame.data, resamplers, transport_rate, rec),
+            name=f"rt_send_audio:{session.id}",
+        )
+
+    async def _forward_pipeline_frame(
+        self,
+        session: VoiceSession,
+        audio: bytes,
+        resamplers: tuple[Any, Any] | None,
+        transport_rate: int | None,
+        rec: Any,
+    ) -> None:
+        """Resample (off-loop), tap recording, send pipeline audio to provider."""
+        # Inbound resampling: transport rate -> provider rate (e.g. SIP 8kHz -> 16kHz)
         if resamplers and transport_rate and transport_rate != self._input_sample_rate:
             from roomkit.voice.audio_frame import AudioFrame as _AudioFrame
 
             f = _AudioFrame(data=audio, sample_rate=transport_rate, channels=1, sample_width=2)
-            f = resamplers[0].resample(f, self._input_sample_rate, 1, 2)
+            f = await self._resample_off_loop(
+                resamplers[0], f, self._input_sample_rate, direction="inbound"
+            )
             audio = f.data
 
         # Recording tap: send processed mic audio to room recorder
@@ -226,16 +331,7 @@ class RealtimeAudioMixin:
             rms_db(audio),
             HookTrigger.ON_INPUT_AUDIO_LEVEL,
         )
-
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-        self._track_task(
-            loop,
-            self._provider.send_audio(session, audio),
-            name=f"rt_send_audio:{session.id}",
-        )
+        await self._provider.send_audio(session, audio)
 
     # -----------------------------------------------------------------
     # Pipeline VAD callbacks
@@ -280,10 +376,20 @@ class RealtimeAudioMixin:
             is_barge_in = fwd_count > 0
             if is_barge_in:
                 self._barge_in_active.add(session.id)
-            # Reset outbound resampler inside lock to prevent race with
-            # concurrent _resample_outbound_with calls.
-            if resamplers:
-                resamplers[1].reset()
+            self._reset_outbound_resampler(resamplers)
+            # Drain queued (now stale) outbound audio so the send worker
+            # never spends resample budget on chunks the interrupt killed.
+            # End-of-response items are kept: transports rely on the marker
+            # to settle their playback state even when the turn is cut.
+            send_queue = self._audio_send_queues.get(session.id)
+            if send_queue is not None:
+                kept: list[Any] = []
+                while not send_queue.empty():
+                    item = send_queue.get_nowait()
+                    if item is not None and item[0] == "eor":
+                        kept.append(item)
+                for item in kept:
+                    send_queue.put_nowait(item)
         self._update_idle_event(session.id)
 
         logger.info(
@@ -407,17 +513,9 @@ class RealtimeAudioMixin:
                     channels=1,
                     sample_width=2,
                 )
-                t0 = time.monotonic()
-                frame = resamplers[0].resample(frame, self._input_sample_rate, 1, 2)
-                dt_ms = (time.monotonic() - t0) * 1000
-                if dt_ms > 20.0:
-                    logger.warning(
-                        "inbound resample slow: %.1fms in_bytes=%d rate=%d→%d",
-                        dt_ms,
-                        len(audio),
-                        transport_rate,
-                        self._input_sample_rate,
-                    )
+                frame = await self._resample_off_loop(
+                    resamplers[0], frame, self._input_sample_rate, direction="inbound"
+                )
                 audio = frame.data
 
             self._fire_audio_level_task(
@@ -435,15 +533,20 @@ class RealtimeAudioMixin:
     # -----------------------------------------------------------------
 
     def _on_provider_audio(self, session: VoiceSession, audio: bytes) -> None:
-        """Resample + forward provider audio to transport.
+        """Snapshot session state and enqueue provider audio for the send worker.
 
         Returns ``None`` so the provider's ``_fire_audio_callbacks`` does not
-        await anything — the receive loop is never blocked.
+        await anything — the receive loop is never blocked. Each session has
+        one resident send worker draining a FIFO queue: frame order is
+        preserved by construction, and a 50 chunks/s burst costs queue puts
+        instead of one task creation per 20 ms chunk.
 
-        Each task captures the current generation counter so that tasks
-        created before an interrupt are silently discarded.
+        Each item captures the current generation counter so that chunks
+        enqueued before an interrupt are silently discarded.
         """
         with self._state_lock:
+            if session.id not in self._sessions:
+                return
             # Drop outbound audio while user is speaking — prevents new
             # provider chunks from refilling the transport buffer after
             # interrupt() flushed it during barge-in.
@@ -456,7 +559,82 @@ class RealtimeAudioMixin:
             binding = self._session_bindings.get(session.id)
             if binding is not None and binding.output_muted:
                 return
-        audio = self._resample_outbound_with(audio, resamplers, transport_rate)
+            # Counted at acceptance (not after the off-loop resample) so the
+            # count is settled by the time response-end bookkeeping pops it.
+            self._audio_forward_count[session.id] = (
+                self._audio_forward_count.get(session.id, 0) + 1
+            )
+            queue = self._audio_send_queues.get(session.id)
+            spawn_worker = queue is None
+            if queue is None:
+                queue = asyncio.Queue()
+                self._audio_send_queues[session.id] = queue
+
+        queue.put_nowait(("audio", audio, resamplers, transport_rate, gen))
+        if spawn_worker:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                with self._state_lock:
+                    self._audio_send_queues.pop(session.id, None)
+                return
+            self._audio_send_workers[session.id] = self._track_task(
+                loop,
+                self._audio_send_worker(session, queue),
+                name=f"rt_send_audio:{session.id}",
+            )
+
+    async def _audio_send_worker(self, session: VoiceSession, queue: asyncio.Queue[Any]) -> None:
+        """Resident consumer: drains the session's outbound queue in order.
+
+        Audio chunks and the end-of-response flush travel through the same
+        queue, so audio -> flush -> RESPONSE_END ordering is structural —
+        it no longer depends on task-creation FIFO surviving awaits in the
+        transport. Exits on the ``None`` sentinel enqueued at session
+        teardown. Stale generations are dropped here, before paying the
+        resample, so a barge-in flushes queued audio at queue speed.
+        """
+        while True:
+            item = await queue.get()
+            if item is None:
+                return
+            try:
+                if item[0] == "audio":
+                    _, audio, resamplers, transport_rate, gen = item
+                    with self._state_lock:
+                        if self._audio_generation.get(session.id, 0) != gen:
+                            continue
+                    await self._process_provider_audio(
+                        session, audio, resamplers, transport_rate, gen
+                    )
+                else:  # "eor" — end-of-response flush + signal
+                    _, resamplers, transport_rate = item
+                    await self._flush_and_signal_end(session, resamplers, transport_rate)
+            except Exception:
+                logger.exception("Error sending provider audio for session %s", session.id)
+
+    async def _process_provider_audio(
+        self,
+        session: VoiceSession,
+        audio: bytes,
+        resamplers: tuple[Any, Any] | None,
+        transport_rate: int | None,
+        gen: int,
+    ) -> None:
+        """Resample (off-loop), run pipeline/taps/recording, send to transport."""
+        if resamplers and transport_rate and transport_rate != self._output_sample_rate:
+            from roomkit.voice.audio_frame import AudioFrame as _AudioFrame
+
+            frame = _AudioFrame(
+                data=audio,
+                sample_rate=self._output_sample_rate,
+                channels=1,
+                sample_width=2,
+            )
+            frame = await self._resample_off_loop(
+                resamplers[1], frame, transport_rate, direction="outbound"
+            )
+            audio = bytes(frame.data)
         if not audio:
             return
 
@@ -491,19 +669,7 @@ class RealtimeAudioMixin:
                     time.monotonic() * 1000,
                 )
 
-        with self._state_lock:
-            self._audio_forward_count[session.id] = (
-                self._audio_forward_count.get(session.id, 0) + 1
-            )
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-        self._track_task(
-            loop,
-            self._send_outbound_audio(session, audio, gen),
-            name=f"rt_send_audio:{session.id}",
-        )
+        await self._send_outbound_audio(session, audio, gen)
 
     async def _send_outbound_audio(self, session: VoiceSession, audio: bytes, gen: int) -> None:
         """Send audio to transport, skipping if the generation is stale."""
@@ -528,37 +694,3 @@ class RealtimeAudioMixin:
         """Fire ON_OUTPUT_AUDIO_LEVEL at real playback pace (PortAudio callback)."""
         raw = audio if isinstance(audio, bytes) else audio.data
         self._fire_audio_level_task(session, rms_db(raw), HookTrigger.ON_OUTPUT_AUDIO_LEVEL)
-
-    def _resample_outbound_with(
-        self,
-        audio: bytes,
-        resamplers: tuple[Any, Any] | None,
-        transport_rate: int | None,
-    ) -> bytes:
-        """Resample outbound audio using pre-snapshotted resamplers/rate."""
-        if resamplers and transport_rate and transport_rate != self._output_sample_rate:
-            from roomkit.voice.audio_frame import AudioFrame as _AudioFrame
-
-            frame = _AudioFrame(
-                data=audio,
-                sample_rate=self._output_sample_rate,
-                channels=1,
-                sample_width=2,
-            )
-            # Runs on the asyncio event loop. A slow resampler here (pure-
-            # Python sinc on a 100 ms realtime-provider burst) blocks RTP
-            # pacing long enough to cause audible gaps on PSTN, so we warn
-            # when the call exceeds a 20 ms (single RTP frame) budget.
-            t0 = time.monotonic()
-            frame = resamplers[1].resample(frame, transport_rate, 1, 2)
-            dt_ms = (time.monotonic() - t0) * 1000
-            if dt_ms > 20.0:
-                logger.warning(
-                    "outbound resample slow: %.1fms in_bytes=%d rate=%d→%d",
-                    dt_ms,
-                    len(audio),
-                    self._output_sample_rate,
-                    transport_rate,
-                )
-            return bytes(frame.data)
-        return audio

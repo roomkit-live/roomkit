@@ -18,6 +18,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
+    ModelInfo,
     ProviderError,
     StreamDone,
     StreamEvent,
@@ -26,21 +27,19 @@ from roomkit.providers.ai.base import (
     StreamToolCall,
 )
 from roomkit.providers.mistral.config import MistralConfig
-
-# Mistral models that support vision (Pixtral family)
-_VISION_MODELS = ("pixtral",)
+from roomkit.providers.mistral.models import MODELS
 
 
 class MistralAIProvider(AIProvider):
     """AI provider using the Mistral AI API.
 
-    Supports streaming, tool calling, vision (Pixtral models), and
+    Supports streaming, tool calling, vision (multimodal models), and
     ``<think>`` tag parsing for reasoning models.
     """
 
     def __init__(self, config: MistralConfig) -> None:
         try:
-            from mistralai import Mistral as _Mistral
+            from mistralai.client import Mistral as _Mistral
         except ImportError as exc:
             raise ImportError(
                 "mistralai is required for MistralAIProvider. "
@@ -61,8 +60,14 @@ class MistralAIProvider(AIProvider):
 
     @property
     def supports_vision(self) -> bool:
-        """Pixtral models support vision."""
-        return any(self._config.model.startswith(prefix) for prefix in _VISION_MODELS)
+        # Vision support is per-model on Mistral and the multimodal lineup
+        # keeps shifting (Pixtral is deprecated; Mistral Large 3 is
+        # multimodal). Rather than maintain a prefix list that goes stale,
+        # pass images through whenever they arrive — the API rejects a
+        # non-vision model itself. Returning True keeps the routing layer
+        # honest: image content reaches the wire instead of being silently
+        # filtered out one layer above.
+        return True
 
     @property
     def supports_streaming(self) -> bool:
@@ -71,6 +76,18 @@ class MistralAIProvider(AIProvider):
     @property
     def supports_structured_streaming(self) -> bool:
         return True
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline catalog of Mistral chat/multimodal models."""
+        return list(MODELS)
+
+    async def list_models(self) -> list[ModelInfo]:
+        """List models the Mistral API currently exposes for this key."""
+        resp = await self._client.models.list_async()
+        data = getattr(resp, "data", None) or []
+        live = [ModelInfo(id=m.id) for m in data if getattr(m, "id", None)]
+        return self._merge_curated(live)
 
     # -- Message formatting ----------------------------------------------------
 
@@ -173,6 +190,9 @@ class MistralAIProvider(AIProvider):
         }
         if context.temperature is not None:
             kwargs["temperature"] = context.temperature
+        effort = self._resolve_reasoning_effort(context)
+        if effort is not None:
+            kwargs["reasoning_effort"] = effort
         if context.tools:
             kwargs["tools"] = [
                 {
@@ -186,6 +206,45 @@ class MistralAIProvider(AIProvider):
                 for t in context.tools
             ]
         return kwargs
+
+    def _resolve_reasoning_effort(self, context: AIContext) -> str | None:
+        """Decide ``reasoning_effort`` for this request.
+
+        ``thinking_budget`` gates per-turn: ``None`` passes the provider config
+        through verbatim; ``0`` forces ``"none"`` (reasoning off); ``>0`` honors
+        the configured effort or defaults to ``"high"``. Returns ``None`` to omit
+        the parameter entirely (model decides — Magistral always reasons).
+        """
+        budget = context.thinking_budget
+        if budget is None:
+            return self._config.reasoning_effort
+        if budget <= 0:
+            return "none"
+        return self._config.reasoning_effort or "high"
+
+    @staticmethod
+    def _chunks_to_segments(chunks: list[Any]) -> list[tuple[str, str]]:
+        """Map Mistral structured content chunks to ``(kind, text)`` segments.
+
+        Reasoning models stream ``content`` as a list of typed chunks instead of
+        a plain string: a ``ThinkChunk`` (``type == "thinking"``) carries the
+        reasoning trace in ``.thinking`` (a list of inner text chunks), while a
+        ``TextChunk`` (``type == "text"``) carries answer text in ``.text``.
+        Unknown chunk types are skipped.
+        """
+        segments: list[tuple[str, str]] = []
+        for chunk in chunks:
+            ctype = getattr(chunk, "type", None)
+            if ctype == "thinking":
+                for inner in getattr(chunk, "thinking", None) or []:
+                    inner_text = getattr(inner, "text", None)
+                    if inner_text:
+                        segments.append(("thinking", inner_text))
+            elif ctype == "text":
+                text = getattr(chunk, "text", None)
+                if text:
+                    segments.append(("text", text))
+        return segments
 
     # -- Structured streaming --------------------------------------------------
 
@@ -218,11 +277,14 @@ class MistralAIProvider(AIProvider):
                 delta = data.choices[0].delta
                 finish_reason = data.choices[0].finish_reason or finish_reason
 
-                # Extract usage from the stream when available
+                # Extract usage from the stream when available. Normalize to
+                # the canonical key names every other provider emits
+                # (input_tokens / output_tokens) so downstream usage trackers
+                # read one contract — Mistral's SDK calls them prompt/completion.
                 if data.usage:
                     usage = {
-                        "prompt_tokens": data.usage.prompt_tokens,
-                        "completion_tokens": data.usage.completion_tokens,
+                        "input_tokens": data.usage.prompt_tokens,
+                        "output_tokens": data.usage.completion_tokens,
                     }
 
                 # Accumulate streamed tool call deltas
@@ -244,17 +306,24 @@ class MistralAIProvider(AIProvider):
                             if tc_delta.function.arguments:
                                 acc["arguments"] += tc_delta.function.arguments
 
-                # Process text content through the think-tag parser
-                text = delta.content if hasattr(delta, "content") else None
-                if text:
-                    for kind, segment in parser.feed(text):
-                        if first_token:
-                            self._record_ttfb(t0)
-                            first_token = False
-                        if kind == "thinking":
-                            yield StreamThinkingDelta(thinking=segment)
-                        else:
-                            yield StreamTextDelta(text=segment)
+                # Reasoning models stream content as a list of typed chunks
+                # (ThinkChunk / TextChunk); older or non-reasoning models stream
+                # a plain string with optional inline <think>...</think> tags.
+                content = delta.content if hasattr(delta, "content") else None
+                if isinstance(content, list):
+                    segments = self._chunks_to_segments(content)
+                elif content:
+                    segments = list(parser.feed(content))
+                else:
+                    segments = []
+                for kind, segment in segments:
+                    if first_token:
+                        self._record_ttfb(t0)
+                        first_token = False
+                    if kind == "thinking":
+                        yield StreamThinkingDelta(thinking=segment)
+                    else:
+                        yield StreamTextDelta(text=segment)
 
             # Flush any remaining buffered text
             for kind, segment in parser.flush():

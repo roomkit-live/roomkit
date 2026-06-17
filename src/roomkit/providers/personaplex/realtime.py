@@ -21,8 +21,9 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote, urlencode
 
+from roomkit.providers.personaplex.voices import VOICES as _VOICES
 from roomkit.voice.base import VoiceSession, VoiceSessionState
-from roomkit.voice.realtime.provider import RealtimeVoiceProvider
+from roomkit.voice.realtime.provider import RealtimeVoiceProvider, VoiceInfo
 
 try:
     import numpy as np
@@ -122,6 +123,11 @@ class PersonaPlexRealtimeProvider(RealtimeVoiceProvider):
     @property
     def name(self) -> str:
         return "PersonaPlexRealtimeProvider"
+
+    @classmethod
+    def available_voices(cls) -> list[VoiceInfo]:
+        """Curated, offline catalog of NVIDIA PersonaPlex voice prompts."""
+        return list(_VOICES)
 
     async def connect(
         self,

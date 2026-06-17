@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import struct
 
+from roomkit.voice.utils import _get_np
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -48,14 +50,18 @@ def pcm16_to_mulaw(pcm_data: bytes) -> bytes:
         _ENCODE_TABLE = _build_encode_table()
 
     n = len(pcm_data) // 2
-    samples = struct.unpack(f"<{n}h", pcm_data[: n * 2])
-    out = bytearray(n)
-    table = _ENCODE_TABLE
-    for i, s in enumerate(samples):
-        sign = 0x80 if s >= 0 else 0x00
-        mag = min(-s if s < 0 else s, _CLIP)
-        out[i] = table[mag >> 1] | sign
-    return bytes(out)
+    if n == 0:
+        return b""
+    # Vectorised G.711 encode: the per-sample table lookup runs as a single
+    # NumPy fancy-index instead of a Python loop, which holds the GIL long
+    # enough to starve realtime RTP pacing (a turn streams dozens of audio
+    # chunks through here on the event loop).
+    np = _get_np()
+    samples = np.frombuffer(pcm_data[: n * 2], dtype="<i2").astype(np.int32)
+    sign = np.where(samples >= 0, 0x80, 0x00).astype(np.uint8)
+    mag = np.minimum(np.abs(samples), _CLIP)
+    table = np.frombuffer(_ENCODE_TABLE, dtype=np.uint8)
+    return (table[mag >> 1] | sign).astype(np.uint8).tobytes()
 
 
 # ---------------------------------------------------------------------------

@@ -10,7 +10,9 @@ import pytest
 
 from roomkit.providers.ai.base import (
     AIContext,
+    AIImagePart,
     AIMessage,
+    AITextPart,
     AIThinkingPart,
     AITool,
     AIToolCallPart,
@@ -511,6 +513,51 @@ class TestOllamaMessageBuilding:
         tool_msg = sent[-1]
         assert tool_msg == {"role": "tool", "content": "42", "tool_name": "lookup"}
 
+    @pytest.mark.asyncio
+    async def test_data_uri_image_stripped_to_raw_base64(self) -> None:
+        """A ``data:`` URI image must reach Ollama as raw base64.
+
+        RoomKit carries images as ``data:<mime>;base64,<data>`` URIs, but
+        Ollama's SDK rejects the full URI with "Invalid image data,
+        expected base64 string or path to image file". The provider
+        strips the prefix so the model receives a decodable payload.
+        """
+        provider, mod = _provider()
+        mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
+
+        b64 = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+            "AAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        msg = AIMessage(
+            role="user",
+            content=[
+                AITextPart(text="what is this?"),
+                AIImagePart(url=f"data:image/png;base64,{b64}", mime_type="image/png"),
+            ],
+        )
+        await provider.generate(_context(messages=[msg]))
+
+        sent = mod.AsyncClient.return_value.chat.await_args.kwargs["messages"]
+        user_msg = sent[-1]
+        assert user_msg["content"] == "what is this?"
+        assert user_msg["images"] == [b64]
+
+    @pytest.mark.asyncio
+    async def test_plain_base64_image_passes_through(self) -> None:
+        """A bare base64 string (or path) is forwarded unchanged."""
+        provider, mod = _provider()
+        mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
+
+        msg = AIMessage(
+            role="user",
+            content=[AIImagePart(url="/tmp/cat.png", mime_type="image/png")],
+        )
+        await provider.generate(_context(messages=[msg]))
+
+        sent = mod.AsyncClient.return_value.chat.await_args.kwargs["messages"]
+        assert sent[-1]["images"] == ["/tmp/cat.png"]
+
 
 class TestOllamaErrors:
     @pytest.mark.asyncio
@@ -539,6 +586,24 @@ class TestOllamaErrors:
 
         assert exc.value.retryable is False
         assert exc.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_stream_abort_without_status_retryable(self) -> None:
+        """Ollama reports template parse failures of the model's own
+        tool-call output (e.g. qwen emitting malformed XML) as a
+        ResponseError with status -1. That's a transient generation defect
+        — a retry regenerates with fresh sampling."""
+        provider, mod = _provider()
+        mod.AsyncClient.return_value.chat.side_effect = _FakeResponseError(
+            "XML syntax error on line 7: element <parameter> closed by </function>",
+            status_code=-1,
+        )
+
+        with pytest.raises(ProviderError) as exc:
+            await provider.generate(_context())
+
+        assert exc.value.retryable is True
+        assert exc.value.status_code == -1
 
     @pytest.mark.asyncio
     async def test_connection_error_retryable(self) -> None:
@@ -591,3 +656,44 @@ class TestOllamaLazyImport:
             importlib.reload(mod)
             with pytest.raises(ImportError, match="pip install roomkit\\[ollama\\]"):
                 mod.OllamaAIProvider(_config())
+
+
+class TestOllamaListModels:
+    @pytest.mark.asyncio
+    async def test_list_models_attaches_capabilities(self) -> None:
+        """list_models reads /api/tags then probes /api/show for capabilities."""
+        provider, mod = _provider()
+        client = mod.AsyncClient.return_value
+        client.list = AsyncMock(
+            return_value=SimpleNamespace(
+                models=[
+                    SimpleNamespace(model="qwen3:8b"),
+                    SimpleNamespace(model="nomic-embed-text"),
+                ]
+            )
+        )
+        caps = {"qwen3:8b": ["completion", "tools"], "nomic-embed-text": ["embedding"]}
+
+        async def _show(model: str) -> SimpleNamespace:
+            return SimpleNamespace(capabilities=caps[model])
+
+        client.show = AsyncMock(side_effect=_show)
+
+        models = await provider.list_models()
+
+        by_id = {m.id: m for m in models}
+        assert by_id["qwen3:8b"].capabilities == ["completion", "tools"]
+        assert by_id["nomic-embed-text"].capabilities == ["embedding"]
+
+    @pytest.mark.asyncio
+    async def test_list_models_tolerates_show_failure(self) -> None:
+        """A failing /api/show probe yields empty capabilities, not a crash."""
+        provider, mod = _provider()
+        client = mod.AsyncClient.return_value
+        client.list = AsyncMock(return_value=SimpleNamespace(models=[SimpleNamespace(model="m1")]))
+        client.show = AsyncMock(side_effect=RuntimeError("boom"))
+
+        models = await provider.list_models()
+
+        assert models[0].id == "m1"
+        assert models[0].capabilities == []

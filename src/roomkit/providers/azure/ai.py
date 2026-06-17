@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from roomkit.providers.ai.base import ModelInfo
 from roomkit.providers.azure.config import AzureAIConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
 
@@ -39,3 +40,12 @@ class AzureAIProvider(OpenAIAIProvider):
     def _provider_name(self) -> str:
         """Provider identifier used in error messages and telemetry."""
         return "azure"
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Azure exposes user-named deployments, not a fixed model catalog.
+
+        Deployment names are chosen per Azure resource, so there is no
+        meaningful offline list — use :meth:`list_models` for the live set.
+        """
+        return []

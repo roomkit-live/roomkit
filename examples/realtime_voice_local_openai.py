@@ -68,7 +68,7 @@ async def main() -> None:
     # --- OpenAI Realtime provider (speech-to-speech) ---
     provider = OpenAIRealtimeProvider(
         api_key=api_key,
-        model=os.environ.get("OPENAI_MODEL", "gpt-realtime-1.5"),
+        model=os.environ.get("OPENAI_MODEL", "gpt-realtime-2"),
     )
 
     # --- Audio pipeline stages ---
