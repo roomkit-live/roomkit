@@ -11,6 +11,14 @@ parsed back into a dict for RoomKit.
 ``tool_choice`` is left unset so the backend defaults to ``auto`` — note
 that forcing a specific tool is *steered*, not hard-guaranteed, on
 PolarGrid's backend.
+
+PolarGrid's SDK exposes no separate reasoning field and no thinking
+toggle, so the qwen models surface their reasoning inline as
+``<think>...</think>`` tags in the message content (the same convention
+vLLM/Ollama reasoning models use). We parse those tags out and surface
+them as ``AIResponse.thinking`` (non-streaming) and
+``StreamThinkingDelta`` (streaming), leaving the answer text clean —
+reusing the OpenAI provider's tag parser.
 """
 
 from __future__ import annotations
@@ -37,8 +45,10 @@ from roomkit.providers.ai.base import (
     StreamDone,
     StreamEvent,
     StreamTextDelta,
+    StreamThinkingDelta,
     StreamToolCall,
 )
+from roomkit.providers.openai.ai import _extract_think_tags, _ThinkTagParser
 from roomkit.providers.polargrid.config import PolarGridConfig
 
 logger = logging.getLogger("roomkit.providers.polargrid")
@@ -310,7 +320,10 @@ class PolarGridAIProvider(AIProvider):
             return AIResponse(content="")
         choice = choices[0]
         message = getattr(choice, "message", None)
-        content = getattr(message, "content", "") or ""
+        raw_content = getattr(message, "content", "") or ""
+        # qwen surfaces reasoning inline as <think>...</think>; split it out
+        # so the answer text is clean and the reasoning rides on .thinking.
+        thinking, content = _extract_think_tags(raw_content)
         finish_reason = getattr(choice, "finish_reason", None)
         usage = self._extract_usage(response)
         model = getattr(response, "model", self._config.model)
@@ -318,6 +331,7 @@ class PolarGridAIProvider(AIProvider):
 
         return AIResponse(
             content=content,
+            thinking=thinking,
             finish_reason=finish_reason,
             usage=usage,
             metadata={"model": model},
@@ -332,14 +346,17 @@ class PolarGridAIProvider(AIProvider):
                 yield event.text
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
-        """Yield text deltas, then any tool calls, then done.
+        """Yield thinking + text deltas, then any tool calls, then done.
 
-        PolarGrid streams tool calls OpenAI-style: fragmented across
-        chunks as ``delta.tool_calls`` with a stable ``index``, the
-        ``id`` on the first fragment, and ``arguments`` concatenated
-        from each fragment's ``function`` dict. We accumulate by index
-        and emit one :class:`StreamToolCall` per call after the text,
-        so the consumer sees text-then-tools in natural order.
+        Content deltas pass through a ``<think>`` tag parser so qwen's
+        inline reasoning is emitted as :class:`StreamThinkingDelta` and
+        the rest as :class:`StreamTextDelta`. Tool calls arrive
+        OpenAI-style: fragmented across chunks as ``delta.tool_calls``
+        with a stable ``index``, the ``id`` on the first fragment, and
+        ``arguments`` concatenated from each fragment's ``function``
+        dict. We accumulate by index and emit one :class:`StreamToolCall`
+        per call after the text, so the consumer sees
+        thinking-then-text-then-tools in natural order.
         """
         client = await self._ensure_client()
         request = self._build_request(context, stream=True)
@@ -349,6 +366,7 @@ class PolarGridAIProvider(AIProvider):
         finish_reason: str | None = None
         usage: dict[str, int] = {}
         tool_accum: dict[int, dict[str, str]] = {}
+        parser = _ThinkTagParser()
 
         try:
             stream = client.chat_completion_stream(request)
@@ -376,10 +394,21 @@ class PolarGridAIProvider(AIProvider):
 
                 text = getattr(delta, "content", None)
                 if text:
-                    if first_token:
-                        self._record_ttfb(t0)
-                        first_token = False
-                    yield StreamTextDelta(text=text)
+                    for kind, segment in parser.feed(text):
+                        if first_token:
+                            self._record_ttfb(t0)
+                            first_token = False
+                        if kind == "thinking":
+                            yield StreamThinkingDelta(thinking=segment)
+                        else:
+                            yield StreamTextDelta(text=segment)
+
+            # Flush any buffered text held back for a partial tag.
+            for kind, segment in parser.flush():
+                if kind == "thinking":
+                    yield StreamThinkingDelta(thinking=segment)
+                else:
+                    yield StreamTextDelta(text=segment)
 
             for event in self._finalize_tool_calls(tool_accum):
                 yield event

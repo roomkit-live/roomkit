@@ -18,6 +18,7 @@ from roomkit.providers.ai.base import (
     ProviderError,
     StreamDone,
     StreamTextDelta,
+    StreamThinkingDelta,
     StreamToolCall,
 )
 from roomkit.providers.polargrid.config import PolarGridConfig
@@ -476,6 +477,91 @@ class TestPolarGridStreaming:
         kinds = [type(e).__name__ for e in events]
         # Text deltas come before tool calls, StreamDone last.
         assert kinds == ["StreamTextDelta", "StreamToolCall", "StreamDone"]
+
+
+# ---------------------------------------------------------------------------
+# Thinking / reasoning (<think> tags)
+# ---------------------------------------------------------------------------
+
+
+class TestPolarGridThinking:
+    @pytest.mark.asyncio
+    async def test_generate_extracts_thinking(self) -> None:
+        provider, mod = _provider()
+        mod._client.chat_completion.return_value = _response_obj(
+            content="<think>Let me reason about it.</think>The answer is 42."
+        )
+
+        resp = await provider.generate(_context())
+
+        assert resp.thinking == "Let me reason about it."
+        assert resp.content == "The answer is 42."
+
+    @pytest.mark.asyncio
+    async def test_generate_no_thinking_leaves_content(self) -> None:
+        provider, mod = _provider()
+        mod._client.chat_completion.return_value = _response_obj(content="Just an answer.")
+
+        resp = await provider.generate(_context())
+
+        assert resp.thinking is None
+        assert resp.content == "Just an answer."
+
+    @pytest.mark.asyncio
+    async def test_streaming_emits_thinking_then_text(self) -> None:
+        provider, mod = _provider()
+        mod._client.chat_completion_stream.return_value = _FakeStream(
+            [
+                _stream_chunk(content="<think>"),
+                _stream_chunk(content="reasoning here"),
+                _stream_chunk(content="</think>"),
+                _stream_chunk(content="final answer", finish_reason="stop"),
+            ]
+        )
+
+        events = [e async for e in provider.generate_structured_stream(_context())]
+        thinking = "".join(e.thinking for e in events if isinstance(e, StreamThinkingDelta))
+        text = "".join(e.text for e in events if isinstance(e, StreamTextDelta))
+
+        assert thinking == "reasoning here"
+        assert text == "final answer"
+        # Order: thinking deltas precede text deltas.
+        kinds = [
+            type(e).__name__
+            for e in events
+            if isinstance(e, StreamThinkingDelta | StreamTextDelta)
+        ]
+        assert kinds == ["StreamThinkingDelta", "StreamTextDelta"]
+
+    @pytest.mark.asyncio
+    async def test_streaming_thinking_tag_split_across_chunks(self) -> None:
+        provider, mod = _provider()
+        mod._client.chat_completion_stream.return_value = _FakeStream(
+            [
+                _stream_chunk(content="<th"),
+                _stream_chunk(content="ink>deep "),
+                _stream_chunk(content="thoughts</thi"),
+                _stream_chunk(content="nk>the answer", finish_reason="stop"),
+            ]
+        )
+
+        events = [e async for e in provider.generate_structured_stream(_context())]
+        thinking = "".join(e.thinking for e in events if isinstance(e, StreamThinkingDelta))
+        text = "".join(e.text for e in events if isinstance(e, StreamTextDelta))
+
+        assert thinking == "deep thoughts"
+        assert text == "the answer"
+
+    @pytest.mark.asyncio
+    async def test_generate_stream_filters_out_thinking(self) -> None:
+        provider, mod = _provider()
+        mod._client.chat_completion_stream.return_value = _FakeStream(
+            [_stream_chunk(content="<think>hidden</think>visible", finish_reason="stop")]
+        )
+
+        chunks = [c async for c in provider.generate_stream(_context())]
+
+        assert "".join(chunks) == "visible"
 
 
 # ---------------------------------------------------------------------------

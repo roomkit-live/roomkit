@@ -16,6 +16,11 @@ The search works with no extra setup (key-free Wikipedia lookup). Set
 ``TAVILY_API_KEY`` for real web search that also finds niche companies
 and current info — get a free key at https://tavily.com.
 
+If the qwen model emits reasoning (inline ``<think>...</think>`` tags),
+the provider splits it out and the CLI shows it as dimmed "thinking"
+separate from the answer. Whether reasoning appears depends on the model
+and edge.
+
 Run with:
     POLARGRID_API_KEY=pg_... uv run python examples/polargrid_ai.py
 
