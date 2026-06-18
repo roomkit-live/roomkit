@@ -424,3 +424,30 @@ async def test_cli_no_dangling_icon_for_empty_thinking_after_tool_round(
     assert out.count("💭") == 1  # only the real first block got an icon
     assert "First reasoning." in out
     assert "💭 \n" not in out
+
+
+@pytest.mark.asyncio
+async def test_cli_defers_agent_prefix_until_real_answer(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The agent prefix waits for real answer text.
+
+    A tool-call round emits a whitespace-only text delta before the final
+    answer; printing the prefix on it would dangle "Assistant:" above the
+    next thinking block. The prefix should land right before the answer.
+    """
+    cli = CLIChannel("cli", show_thinking=True, use_color=False, agent_label=lambda _c: "Bot")
+
+    async def stream() -> AsyncIterator[object]:
+        yield ThinkingDeltaMarker(thinking="\nI'll search.")
+        yield "\n\n"  # tool-call round: whitespace-only text
+        yield ThinkingDeltaMarker(thinking="\nNow summarizing.")
+        yield "The answer."
+
+    event = SimpleNamespace(source=SimpleNamespace(channel_id="ai1"))
+    await cli.deliver_stream(stream(), event, None, None)  # type: ignore[arg-type]
+
+    out = capsys.readouterr().out
+    assert out.count("Bot:") == 1  # exactly one prefix, not one per round
+    # The prefix lands after the 2nd thinking block and right before the answer.
+    assert out.index("Now summarizing.") < out.index("Bot:") < out.index("The answer.")

@@ -160,10 +160,17 @@ class CLIChannel(Channel):
                     # Next thinking block (e.g. after a tool round) trims its
                     # own leading whitespace, so an empty one shows no icon.
                     thinking_has_text = False
+                # Defer the agent prefix until there's real answer text. A
+                # tool-call round emits a whitespace-only delta before the
+                # final answer; printing "Assistant:" on it would dangle the
+                # prefix above the next thinking block.
+                text = chunk if answer_started else chunk.lstrip()
+                if not text:
+                    continue
                 if not answer_started:
                     sys.stdout.write(f"\n{agent_prefix}")
                     answer_started = True
-                sys.stdout.write(chunk)
+                sys.stdout.write(text)
                 sys.stdout.flush()
 
         if thinking_open:
