@@ -14,9 +14,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
+
+import pytest
 
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.base import Channel
+from roomkit.channels.cli import CLIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -367,3 +371,29 @@ async def test_streaming_coalesces_thinking_deltas_on_the_bus() -> None:
     assert ends[0].data["thinking"] == "a" * 40
 
     await kit.close()
+
+
+@pytest.mark.asyncio
+async def test_cli_thinking_icon_shares_line_with_text(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The 💭 sits on the same line as the reasoning text.
+
+    Reasoning models (qwen, etc.) open their ``<think>`` block with a
+    newline, so the first thinking delta is ``"\nLet me..."``. The CLI
+    trims that leading whitespace so the icon and text share a line
+    instead of the icon dangling alone.
+    """
+    cli = CLIChannel("cli", show_thinking=True, use_color=False)
+
+    async def stream() -> AsyncIterator[object]:
+        yield ThinkingDeltaMarker(thinking="\nLet me reason.")
+        yield ThinkingDeltaMarker(thinking=" Step two.")
+        yield "The answer is 42."
+
+    event = SimpleNamespace(source=SimpleNamespace(channel_id="ai1"))
+    await cli.deliver_stream(stream(), event, None, None)  # type: ignore[arg-type]
+
+    out = capsys.readouterr().out
+    assert "💭 Let me reason. Step two." in out
+    assert "💭 \n" not in out  # icon is not left alone on its line
