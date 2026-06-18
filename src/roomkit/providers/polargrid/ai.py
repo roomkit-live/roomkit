@@ -313,8 +313,8 @@ class PolarGridAIProvider(AIProvider):
         if self._config.top_p is not None:
             req["top_p"] = self._config.top_p
         if logger.isEnabledFor(logging.DEBUG):
-            # Full outgoing payload (no API key — that lives on the client),
-            # so the /think | /no_think switch in the messages is visible.
+            # Full outgoing payload — no API key (that lives on the client),
+            # so the enable_thinking flag, tools, and messages are visible.
             # Handy to share with PolarGrid when debugging behavior.
             logger.debug("PolarGrid request: %s", json.dumps(req, ensure_ascii=False))
         return req
