@@ -81,6 +81,7 @@ def _mock_polargrid_module() -> MagicMock:
     # chat_completion_stream is sync-returning-async-iterable; we set
     # its return value per-test to an _FakeStream instance.
     client.chat_completion_stream = MagicMock()
+    client.list_models = AsyncMock()
     client.close = AsyncMock()
 
     # Async constructor (PolarGrid.create) and sync constructor both
@@ -688,6 +689,63 @@ class TestPolarGridToolMessages:
         assert tool_msg["content"] == "12C, sunny"
         assert tool_msg["tool_call_id"] == "call_1"
         assert tool_msg["name"] == "get_weather"
+
+
+# ---------------------------------------------------------------------------
+# Model discovery
+# ---------------------------------------------------------------------------
+
+
+class TestPolarGridModels:
+    def test_available_models_catalog(self) -> None:
+        provider, _ = _provider()
+        models = provider.available_models()
+        by_id = {m.id: m for m in models}
+        assert "qwen-3.5-27b" in by_id
+        assert "qwen-3.6-35b-a3b" in by_id
+        assert by_id["qwen-3.5-27b"].display_name == "Qwen 3.5 27B"
+        # 3.6 is the thinking-capable model (validated on yul-02).
+        assert "thinking" in by_id["qwen-3.6-35b-a3b"].capabilities
+        assert by_id["qwen-3.5-27b"].supports_vision is False
+
+    def test_available_models_is_offline_classmethod(self) -> None:
+        # Callable on the class without an SDK/instance (no network/key).
+        from roomkit.providers.polargrid.ai import PolarGridAIProvider
+
+        ids = [m.id for m in PolarGridAIProvider.available_models()]
+        assert ids == ["qwen-3.5-27b", "qwen-3.6-35b-a3b"]
+
+    @pytest.mark.asyncio
+    async def test_list_models_maps_and_backfills(self) -> None:
+        provider, mod = _provider()
+        mod._client.list_models.return_value = SimpleNamespace(
+            data=[
+                SimpleNamespace(id="qwen-3.6-35b-a3b", pg_model_type="llm"),
+                SimpleNamespace(id="kokoro-82m", pg_model_type="tts"),
+                SimpleNamespace(id="whisper-large-v3-turbo", pg_model_type=None),
+            ]
+        )
+
+        models = await provider.list_models()
+        by_id = {m.id: m for m in models}
+
+        # Live edge models are all returned (chat + STT/TTS).
+        assert set(by_id) == {"qwen-3.6-35b-a3b", "kokoro-82m", "whisper-large-v3-turbo"}
+        # pg_model_type → capabilities; curated backfills the display name.
+        assert by_id["kokoro-82m"].capabilities == ["tts"]
+        assert by_id["qwen-3.6-35b-a3b"].display_name == "Qwen 3.6 35B-A3B"
+        # No pg_model_type and not in catalog → empty capabilities, no crash.
+        assert by_id["whisper-large-v3-turbo"].capabilities == []
+
+    @pytest.mark.asyncio
+    async def test_list_models_wraps_sdk_error(self) -> None:
+        provider, mod = _provider()
+        mod._client.list_models.side_effect = _ServerError("down", status_code=503)
+
+        with pytest.raises(ProviderError) as exc:
+            await provider.list_models()
+
+        assert exc.value.retryable is True
 
 
 # ---------------------------------------------------------------------------

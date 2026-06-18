@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filters thinking out. Validated end-to-end on `qwen-3.6-35b-a3b`.
   Thinking responses are larger and slower, so raise `timeout` and
   `max_tokens` when enabling it.
+- **PolarGrid model discovery.** `PolarGridAIProvider.available_models()`
+  returns a curated, offline catalog of the chat models (`qwen-3.5-27b`,
+  `qwen-3.6-35b-a3b`), and `list_models()` queries the connected edge via
+  the SDK — returning the region-specific set (also the STT/TTS models),
+  with display names backfilled from the catalog. Added to
+  `examples/list_models.py` and the provider guide (with the per-edge
+  availability table). Reasoning-capable `qwen-3.6-35b-a3b` is `yul-02`-only.
 
 ## [0.12.0] — 2026-06-17
 

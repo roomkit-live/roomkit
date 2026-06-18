@@ -42,6 +42,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     AIToolCallPart,
     AIToolResultPart,
+    ModelInfo,
     ProviderError,
     StreamDone,
     StreamEvent,
@@ -51,6 +52,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.openai.ai import _extract_think_tags, _ThinkTagParser
 from roomkit.providers.polargrid.config import PolarGridConfig
+from roomkit.providers.polargrid.models import MODELS
 
 logger = logging.getLogger("roomkit.providers.polargrid")
 
@@ -103,6 +105,45 @@ class PolarGridAIProvider(AIProvider):
     def supports_structured_streaming(self) -> bool:
         # Emits StreamEvent objects — text deltas, tool calls, and done.
         return True
+
+    # -- Model discovery ----------------------------------------------------
+
+    @classmethod
+    def available_models(cls) -> list[ModelInfo]:
+        """Curated, offline snapshot of PolarGrid's chat models.
+
+        See :meth:`list_models` for the live, edge-specific set (which also
+        includes the STT/TTS models).
+        """
+        return list(MODELS)
+
+    async def list_models(self) -> list[ModelInfo]:
+        """Models loaded on the connected edge, via the SDK's ``list_models``.
+
+        Returns whatever the edge reports (chat + STT/TTS), so the result is
+        region-specific — ``qwen-3.6-35b-a3b`` only appears on ``yul-02``.
+        Curated metadata backfills display names / vision where the endpoint
+        leaves them blank.
+        """
+        client = await self._ensure_client()
+        try:
+            response = await client.list_models()
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise self._wrap_error(exc) from exc
+        data = getattr(response, "data", None) or []
+        live = [self._parse_model(m) for m in data]
+        return self._merge_curated(live)
+
+    @staticmethod
+    def _parse_model(model: Any) -> ModelInfo:
+        """Map one SDK ``ModelInfo`` to a roomkit :class:`ModelInfo`."""
+        pg_type = getattr(model, "pg_model_type", None)
+        return ModelInfo(
+            id=str(getattr(model, "id", "")),
+            capabilities=[pg_type] if pg_type else [],
+        )
 
     # -- Client lifecycle ---------------------------------------------------
 

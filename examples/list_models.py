@@ -28,6 +28,7 @@ from roomkit.providers.mistral.ai import MistralAIProvider
 from roomkit.providers.ollama.ai import OllamaAIProvider
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openrouter.ai import OpenRouterAIProvider
+from roomkit.providers.polargrid.ai import PolarGridAIProvider
 
 CURATED_PROVIDERS = {
     "Anthropic": AnthropicAIProvider,
@@ -36,6 +37,7 @@ CURATED_PROVIDERS = {
     "Gemini": GeminiAIProvider,
     "Mistral": MistralAIProvider,
     "Ollama": OllamaAIProvider,
+    "PolarGrid": PolarGridAIProvider,
 }
 
 
