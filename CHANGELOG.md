@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **PolarGrid provider supports tool / function calling.** Requires
-  `polargrid-sdk>=0.8.4` (was `>=0.1`). `context.tools` are now forwarded
+  `polargrid-sdk>=0.8.5` (was `>=0.1`). `context.tools` are now forwarded
   to the chat-completions endpoint (OpenAI-shaped `tools`), and tool
   calls are surfaced back both non-streaming (`AIResponse.tool_calls`)
   and streaming (`StreamToolCall`, accumulated from the SDK's fragmented
@@ -23,18 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hard-guaranteed, on PolarGrid's backend. The SDK 0.8.4 release also
   fixes the non-streaming `latency_ms` decode crash, so the provider's
   `_patch_pg_metadata_decoder` monkeypatch was removed.
-- **PolarGrid provider surfaces qwen reasoning (thinking).** PolarGrid's
-  SDK has no reasoning field or thinking toggle, so the qwen models emit
-  reasoning inline as `<think>...</think>` tags. The provider now parses
-  them (reusing the OpenAI provider's tag parser): `generate()` returns
-  the reasoning on `AIResponse.thinking` with clean `content`, and
+- **PolarGrid provider surfaces qwen reasoning (thinking).** A new
+  `PolarGridConfig.thinking` flag drives the `enable_thinking` request
+  field (polargrid-sdk 0.8.5+): `True` turns reasoning on, `False` off,
+  `None` (default) leaves it unset. qwen then emits reasoning inline as
+  `<think>...</think>` tags, which the provider parses (reusing the
+  OpenAI provider's tag parser): `generate()` returns it on
+  `AIResponse.thinking` with clean `content`, and
   `generate_structured_stream()` emits `StreamThinkingDelta` (handling
-  tags split across chunks) ahead of the text. `generate_stream()`
-  filters thinking out. Reasoning is often off by default on the edge, so
-  a new `PolarGridConfig.thinking` flag toggles it via qwen's in-prompt
-  soft switch — `True` appends `/think`, `False` appends `/no_think`,
-  `None` (default) leaves the model default. Effectiveness depends on the
-  model/edge honoring the switch.
+  tags split across chunks) ahead of the text; `generate_stream()`
+  filters thinking out. Validated end-to-end on `qwen-3.6-35b-a3b`.
+  Thinking responses are larger and slower, so raise `timeout` and
+  `max_tokens` when enabling it.
 
 ## [0.12.0] — 2026-06-17
 

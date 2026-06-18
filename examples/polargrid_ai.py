@@ -6,7 +6,7 @@ completions from regional edges in Toronto, Vancouver, and Montreal —
 useful when data residency on Canadian soil is a requirement.
 
 PolarGrid's chat endpoint supports tool / function calling as of
-polargrid-sdk 0.8.4. This example gives the assistant a ``web_search``
+polargrid-sdk 0.8.5. This example gives the assistant a ``web_search``
 tool (``shared/tools.py``) and lets PolarGrid call it: ask a factual
 question ("What is the speed of light?") and the model runs the search,
 then answers from the result. Forcing a specific tool is steered, not
@@ -16,11 +16,11 @@ The search works with no extra setup (key-free Wikipedia lookup). Set
 ``TAVILY_API_KEY`` for real web search that also finds niche companies
 and current info — get a free key at https://tavily.com.
 
-Set ``POLARGRID_THINKING=1`` to activate qwen's reasoning (appends the
-``/think`` soft switch). When the model emits reasoning as inline
-``<think>...</think>`` tags, the provider splits it out and the CLI shows
-it as dimmed "thinking" (💭) separate from the answer. Whether the switch
-takes effect depends on the model and edge honoring it.
+Set ``POLARGRID_THINKING=1`` to activate qwen's reasoning (sets the
+``enable_thinking`` request flag). The model then emits reasoning as
+inline ``<think>...</think>`` tags; the provider splits it out and the
+CLI shows it as dimmed "thinking" (💭) separate from the answer. Thinking
+responses are larger and slower.
 
 Run with:
     POLARGRID_API_KEY=pg_... uv run python examples/polargrid_ai.py
@@ -30,7 +30,7 @@ Optional overrides (defaults come from PolarGridConfig):
     POLARGRID_REGION=toronto    # pin a region (toronto/vancouver/montreal
                                 #   or yto-01/yvr-02/yul-01).
                                 # Unset to auto-route to the fastest edge.
-    POLARGRID_THINKING=1        # activate qwen reasoning (/think switch).
+    POLARGRID_THINKING=1        # activate qwen reasoning (enable_thinking).
     POLARGRID_DEBUG=1           # log the exact request sent + SDK HTTP debug.
     TAVILY_API_KEY=tvly-...     # enable real web search (else Wikipedia).
 """
@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import asyncio
 
-from shared import WebSearchTool, require_env, setup_logging
+from shared import WebSearchTool, env_bool, require_env, setup_logging
 
 from roomkit import (
     ChannelCategory,
@@ -56,10 +56,13 @@ from roomkit import (
 from roomkit.channels.ai import AIChannel
 from roomkit.providers.polargrid import PolarGridAIProvider, PolarGridConfig
 
-# POLARGRID_DEBUG=1 logs the exact request we send (incl. the /think switch)
-# at DEBUG, plus the SDK's HTTP debug — handy to share with PolarGrid.
-_DEBUG = bool(os.environ.get("POLARGRID_DEBUG"))
-setup_logging("polargrid_ai", level=logging.DEBUG if _DEBUG else logging.INFO)
+# POLARGRID_DEBUG=1 logs the exact request we send (incl. enable_thinking)
+# plus the SDK's HTTP debug — handy to share with PolarGrid. Scoped to the
+# polargrid logger so asyncio/httpcore/httpx noise stays out.
+_DEBUG = env_bool("POLARGRID_DEBUG", default=False)
+setup_logging("polargrid_ai")
+if _DEBUG:
+    logging.getLogger("roomkit.providers.polargrid").setLevel(logging.DEBUG)
 
 
 async def main() -> None:
@@ -70,9 +73,14 @@ async def main() -> None:
     if region := os.environ.get("POLARGRID_REGION"):
         config_kwargs["region"] = region
 
-    # POLARGRID_THINKING=1 appends qwen's /think soft switch to activate
-    # reasoning; the CLI then renders it (see show_thinking below).
-    thinking = True if os.environ.get("POLARGRID_THINKING") else None
+    # POLARGRID_THINKING=1 sets the enable_thinking request flag to activate
+    # reasoning; the CLI then renders it (see show_thinking below). Unset
+    # leaves it at the model default (None); =0 explicitly disables it.
+    thinking = (
+        env_bool("POLARGRID_THINKING", default=False)
+        if "POLARGRID_THINKING" in os.environ
+        else None
+    )
     provider = PolarGridAIProvider(
         PolarGridConfig(**config_kwargs, thinking=thinking, debug=_DEBUG)
     )

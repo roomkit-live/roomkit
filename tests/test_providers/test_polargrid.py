@@ -287,8 +287,8 @@ class TestPolarGridGenerate:
 
         logged = [r.message for r in caplog.records if "PolarGrid request:" in r.message]
         assert logged, "expected the outgoing request to be logged at DEBUG"
-        # The /think switch and messages are visible in the logged payload.
-        assert "/think" in logged[0]
+        # The enable_thinking flag and model are visible in the logged payload.
+        assert '"enable_thinking": true' in logged[0]
         assert '"model": "qwen-3.5-27b"' in logged[0]
 
     @pytest.mark.asyncio
@@ -579,53 +579,37 @@ class TestPolarGridThinking:
         assert "".join(chunks) == "visible"
 
     @pytest.mark.asyncio
-    async def test_thinking_true_appends_think_directive(self) -> None:
+    async def test_thinking_true_sets_enable_thinking(self) -> None:
         provider, mod = _provider(thinking=True)
         mod._client.chat_completion.return_value = _response_obj(content="ok")
 
         await provider.generate(_context())
 
-        msgs = mod._client.chat_completion.await_args.args[0]["messages"]
-        user = [m for m in msgs if m["role"] == "user"][-1]
-        assert user["content"].endswith("/think")
+        request = mod._client.chat_completion.await_args.args[0]
+        assert request["enable_thinking"] is True
+        # The user message is left untouched (no /think prompt hack).
+        user = [m for m in request["messages"] if m["role"] == "user"][-1]
+        assert user["content"] == "Hi"
 
     @pytest.mark.asyncio
-    async def test_thinking_false_appends_no_think_directive(self) -> None:
+    async def test_thinking_false_sets_enable_thinking_false(self) -> None:
         provider, mod = _provider(thinking=False)
         mod._client.chat_completion.return_value = _response_obj(content="ok")
 
         await provider.generate(_context())
 
-        msgs = mod._client.chat_completion.await_args.args[0]["messages"]
-        user = [m for m in msgs if m["role"] == "user"][-1]
-        assert user["content"].endswith("/no_think")
+        request = mod._client.chat_completion.await_args.args[0]
+        assert request["enable_thinking"] is False
 
     @pytest.mark.asyncio
-    async def test_thinking_none_leaves_messages_untouched(self) -> None:
+    async def test_thinking_none_omits_enable_thinking(self) -> None:
         provider, mod = _provider()  # thinking defaults to None
         mod._client.chat_completion.return_value = _response_obj(content="ok")
 
         await provider.generate(_context())
 
-        msgs = mod._client.chat_completion.await_args.args[0]["messages"]
-        user = [m for m in msgs if m["role"] == "user"][-1]
-        assert user["content"] == "Hi"
-
-    @pytest.mark.asyncio
-    async def test_thinking_falls_back_to_system_when_no_user(self) -> None:
-        provider, mod = _provider(thinking=True)
-        mod._client.chat_completion.return_value = _response_obj(content="ok")
-
-        await provider.generate(
-            _context(
-                messages=[AIMessage(role="assistant", content="prior")],
-                system_prompt="You are helpful.",
-            )
-        )
-
-        msgs = mod._client.chat_completion.await_args.args[0]["messages"]
-        system = [m for m in msgs if m["role"] == "system"][0]
-        assert system["content"].endswith("/think")
+        request = mod._client.chat_completion.await_args.args[0]
+        assert "enable_thinking" not in request
 
 
 # ---------------------------------------------------------------------------

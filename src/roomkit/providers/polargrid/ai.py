@@ -12,13 +12,14 @@ parsed back into a dict for RoomKit.
 that forcing a specific tool is *steered*, not hard-guaranteed, on
 PolarGrid's backend.
 
-PolarGrid's SDK exposes no separate reasoning field and no thinking
-toggle, so the qwen models surface their reasoning inline as
-``<think>...</think>`` tags in the message content (the same convention
-vLLM/Ollama reasoning models use). We parse those tags out and surface
-them as ``AIResponse.thinking`` (non-streaming) and
+polargrid-sdk 0.8.5+ exposes an ``enable_thinking`` request flag
+(``PolarGridConfig.thinking``). When on, the qwen models surface their
+reasoning inline as ``<think>...</think>`` tags in the message content
+(the same convention vLLM/Ollama reasoning models use). We parse those
+tags out and surface them as ``AIResponse.thinking`` (non-streaming) and
 ``StreamThinkingDelta`` (streaming), leaving the answer text clean —
-reusing the OpenAI provider's tag parser.
+reusing the OpenAI provider's tag parser. Thinking responses are larger
+and slower (the reasoning counts toward latency and ``max_tokens``).
 """
 
 from __future__ import annotations
@@ -230,27 +231,7 @@ class PolarGridAIProvider(AIProvider):
             result.append({"role": "system", "content": system_prompt})
         for m in messages:
             result.extend(self._render_message(m))
-        self._apply_thinking_directive(result)
         return result
-
-    def _apply_thinking_directive(self, messages: list[dict[str, Any]]) -> None:
-        """Append qwen's ``/think`` / ``/no_think`` soft switch in place.
-
-        PolarGrid's SDK has no thinking parameter, so the only way to
-        toggle qwen's reasoning is the in-prompt soft switch. It is
-        appended to the latest user turn (falling back to the system
-        message); ``thinking=None`` leaves the model default untouched.
-        """
-        if self._config.thinking is None:
-            return
-        directive = "/think" if self._config.thinking else "/no_think"
-        for role in ("user", "system"):
-            for msg in reversed(messages):
-                if msg.get("role") == role and isinstance(msg.get("content"), str):
-                    content = msg["content"]
-                    if directive not in content:
-                        msg["content"] = f"{content} {directive}".strip()
-                    return
 
     def _build_tools(self, tools: list[AITool]) -> list[dict[str, Any]] | None:
         """Convert RoomKit tools to PolarGrid's OpenAI-shaped tool list."""
@@ -280,6 +261,11 @@ class PolarGridAIProvider(AIProvider):
             # defaults to "auto". Forcing a tool is steered, not hard
             # guaranteed, on their backend anyway.
             req["tools"] = tools
+        if self._config.thinking is not None:
+            # polargrid-sdk 0.8.5+ exposes a real thinking toggle; qwen
+            # then emits its reasoning inline as <think>...</think>, which
+            # the streaming/non-streaming paths split out as thinking.
+            req["enable_thinking"] = self._config.thinking
         max_tokens = context.max_tokens or self._config.max_tokens
         if max_tokens is not None:
             req["max_tokens"] = max_tokens
