@@ -101,6 +101,10 @@ async def main() -> None:
         # A Tool object carries both its schema and its handler, so the
         # AIChannel runs the whole tool loop: model -> web_search -> answer.
         tools=[WebSearchTool()],
+        # Reasoning eats into the token budget; give the post-tool answer
+        # room when thinking is on, or it gets truncated to an empty
+        # response and the channel has to re-prompt for the final answer.
+        max_tokens=4096 if thinking else 1024,
     )
     kit.register_channel(cli)
     kit.register_channel(ai)
