@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-06-18
+
+### Added
+
+- **Configurable WebRTC concurrency limit for realtime voice.**
+  `mount_fastrtc_realtime()` now accepts a `concurrency_limit` argument,
+  forwarded to the underlying FastRTC `Stream`. Previously the limit was left at
+  FastRTC's default of 1, so a single shared transport could host only one
+  simultaneous voice session platform-wide; further offers were rejected with
+  `concurrency_limit_reached`. `None` (the default) preserves the old behavior,
+  so this is backward compatible.
+
+### Changed
+
+- **Gemini Live fails fast on permanent disconnects.** When the Live API closes
+  with a non-retryable code (`1007` invalid argument — e.g. a tool schema it
+  won't accept, `1008` policy, `1011` quota), the receive loop now ends the
+  session immediately and fires the error callback as `ws_<code>` instead of
+  burning five doomed reconnect attempts (~10 s). Transient closes still
+  reconnect as before. This lets embedders surface the precise reason to users
+  right away rather than after a silent stall.
+
 ## [0.14.0] — 2026-06-18
 
 ### Added

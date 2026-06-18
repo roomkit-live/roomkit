@@ -355,3 +355,26 @@ class TestFastRTCRealtimeTransport:
         handler.shutdown()
 
         assert webrtc_id not in transport._handlers
+
+
+class TestMountConcurrencyLimit:
+    """``mount_fastrtc_realtime`` must forward ``concurrency_limit`` to Stream."""
+
+    def _mount(self, transport, **kwargs):
+        from roomkit.voice.realtime import fastrtc_transport as mod
+
+        app = MagicMock()
+        with patch("fastrtc.Stream") as mock_stream:
+            mod.mount_fastrtc_realtime(app, transport, **kwargs)
+        return mock_stream
+
+    async def test_concurrency_limit_forwarded(self, transport) -> None:
+        mock_stream = self._mount(transport, concurrency_limit=10)
+        _, kwargs = mock_stream.call_args
+        assert kwargs["concurrency_limit"] == 10
+
+    async def test_concurrency_limit_defaults_to_none(self, transport) -> None:
+        # None preserves FastRTC's own default (a cap of 1).
+        mock_stream = self._mount(transport)
+        _, kwargs = mock_stream.call_args
+        assert kwargs["concurrency_limit"] is None

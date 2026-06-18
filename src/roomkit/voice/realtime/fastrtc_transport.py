@@ -430,6 +430,7 @@ def mount_fastrtc_realtime(
     path: str = "/rtc-realtime",
     auth: AuthCallback | None = None,
     rtc_configuration: dict[str, Any] | None = None,
+    concurrency_limit: int | None = None,
 ) -> None:
     """Mount FastRTC WebRTC endpoints for realtime voice transport.
 
@@ -446,6 +447,12 @@ def mount_fastrtc_realtime(
         rtc_configuration: Optional server-side RTCPeerConnection config
             (e.g. ``{"iceServers": [...]}``).  Passed through to aiortc so the
             server can gather TURN relay candidates.
+        concurrency_limit: Maximum number of concurrent WebRTC connections
+            accepted on this mounted endpoint. ``None`` keeps FastRTC's
+            default of 1; the offer endpoint rejects further connections with
+            ``{"status": "failed", "meta": {"error": "concurrency_limit_reached"}}``
+            once the limit is reached. Raise it to host several simultaneous
+            voice sessions on one transport.
     """
     from fastrtc import Stream
 
@@ -460,6 +467,7 @@ def mount_fastrtc_realtime(
         modality="audio",
         mode="send-receive",
         server_rtc_configuration=rtc_configuration,
+        concurrency_limit=concurrency_limit,
     )
     transport._stream = stream
     stream.mount(app, path=path)

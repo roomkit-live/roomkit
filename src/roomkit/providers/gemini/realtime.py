@@ -1014,6 +1014,15 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
 
     _MAX_RECONNECTS = 5
 
+    # WebSocket close codes that signal a *permanent* setup/policy problem,
+    # not a transient drop. Reconnecting with the same config just reproduces
+    # the failure (and stalls the user ~10s through 5 back-off retries), so we
+    # fail fast and surface the exact code to the embedder instead.
+    #   1007 — invalid argument (e.g. a tool schema Gemini Live won't accept)
+    #   1008 — policy violation
+    #   1011 — internal error, used by Gemini for quota/billing exhaustion
+    _NON_RETRYABLE_CLOSE_CODES = frozenset({1007, 1008, 1011})
+
     async def _receive_loop(self, session: VoiceSession) -> None:
         """Process server events from Gemini Live API.
 
@@ -1126,6 +1135,23 @@ class GeminiLiveProvider(RealtimeVoiceProvider):
                     state.pending_tool_calls,
                 )
                 state.live_session = None
+
+                # Permanent failures (bad config, quota) won't recover by
+                # reconnecting — end the session now and surface the exact
+                # close code so the embedder can show the user a precise reason
+                # instead of a silent disconnect after 5 useless retries.
+                if close_code in self._NON_RETRYABLE_CLOSE_CODES:
+                    state.audio_buffer.clear()
+                    session.state = VoiceSessionState.ENDED
+                    await self._fire(
+                        self._error_callbacks,
+                        session,
+                        f"ws_{close_code}",
+                        str(exc),
+                        label="error",
+                    )
+                    return
+
                 # Suppress duplicate send_audio_failed errors during reconnect
                 state.error_suppressed = True
 
