@@ -157,6 +157,9 @@ class CLIChannel(Channel):
                 if thinking_open:
                     sys.stdout.write(f"{self._reset}\n")
                     thinking_open = False
+                    # Next thinking block (e.g. after a tool round) trims its
+                    # own leading whitespace, so an empty one shows no icon.
+                    thinking_has_text = False
                 if not answer_started:
                     sys.stdout.write(f"\n{agent_prefix}")
                     answer_started = True

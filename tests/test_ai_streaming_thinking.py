@@ -397,3 +397,30 @@ async def test_cli_thinking_icon_shares_line_with_text(
     out = capsys.readouterr().out
     assert "💭 Let me reason. Step two." in out
     assert "💭 \n" not in out  # icon is not left alone on its line
+
+
+@pytest.mark.asyncio
+async def test_cli_no_dangling_icon_for_empty_thinking_after_tool_round(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A whitespace-only thinking block after a text chunk shows no icon.
+
+    In a streaming tool loop the model often opens a near-empty ``<think>``
+    block after the tool result (just ``"\n\n"``). It must not leave a 💭
+    dangling on its own line.
+    """
+    cli = CLIChannel("cli", show_thinking=True, use_color=False)
+
+    async def stream() -> AsyncIterator[object]:
+        yield ThinkingDeltaMarker(thinking="\nFirst reasoning.")
+        yield "Answer one."
+        yield ThinkingDeltaMarker(thinking="\n\n")  # round 2: empty reasoning
+        yield "Answer two."
+
+    event = SimpleNamespace(source=SimpleNamespace(channel_id="ai1"))
+    await cli.deliver_stream(stream(), event, None, None)  # type: ignore[arg-type]
+
+    out = capsys.readouterr().out
+    assert out.count("💭") == 1  # only the real first block got an icon
+    assert "First reasoning." in out
+    assert "💭 \n" not in out
