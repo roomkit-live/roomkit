@@ -31,11 +31,13 @@ Optional overrides (defaults come from PolarGridConfig):
                                 #   or yto-01/yvr-02/yul-01).
                                 # Unset to auto-route to the fastest edge.
     POLARGRID_THINKING=1        # activate qwen reasoning (/think switch).
+    POLARGRID_DEBUG=1           # log the exact request sent + SDK HTTP debug.
     TAVILY_API_KEY=tvly-...     # enable real web search (else Wikipedia).
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -54,7 +56,10 @@ from roomkit import (
 from roomkit.channels.ai import AIChannel
 from roomkit.providers.polargrid import PolarGridAIProvider, PolarGridConfig
 
-setup_logging("polargrid_ai")
+# POLARGRID_DEBUG=1 logs the exact request we send (incl. the /think switch)
+# at DEBUG, plus the SDK's HTTP debug — handy to share with PolarGrid.
+_DEBUG = bool(os.environ.get("POLARGRID_DEBUG"))
+setup_logging("polargrid_ai", level=logging.DEBUG if _DEBUG else logging.INFO)
 
 
 async def main() -> None:
@@ -68,7 +73,9 @@ async def main() -> None:
     # POLARGRID_THINKING=1 appends qwen's /think soft switch to activate
     # reasoning; the CLI then renders it (see show_thinking below).
     thinking = True if os.environ.get("POLARGRID_THINKING") else None
-    provider = PolarGridAIProvider(PolarGridConfig(**config_kwargs, thinking=thinking))
+    provider = PolarGridAIProvider(
+        PolarGridConfig(**config_kwargs, thinking=thinking, debug=_DEBUG)
+    )
 
     kit = RoomKit()
 

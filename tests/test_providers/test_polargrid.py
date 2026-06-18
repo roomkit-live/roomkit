@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -275,6 +276,20 @@ class TestPolarGridGenerate:
         assert request["tools"][0]["function"]["parameters"]["required"] == ["city"]
         # No tool_choice in AIContext — leave it unset so PolarGrid defaults to auto.
         assert "tool_choice" not in request
+
+    @pytest.mark.asyncio
+    async def test_debug_logs_full_request(self, caplog: pytest.LogCaptureFixture) -> None:
+        provider, mod = _provider(thinking=True)
+        mod._client.chat_completion.return_value = _response_obj(content="ok")
+
+        with caplog.at_level(logging.DEBUG, logger="roomkit.providers.polargrid"):
+            await provider.generate(_context())
+
+        logged = [r.message for r in caplog.records if "PolarGrid request:" in r.message]
+        assert logged, "expected the outgoing request to be logged at DEBUG"
+        # The /think switch and messages are visible in the logged payload.
+        assert "/think" in logged[0]
+        assert '"model": "qwen-3.5-27b"' in logged[0]
 
     @pytest.mark.asyncio
     async def test_generate_extracts_tool_calls(self) -> None:
