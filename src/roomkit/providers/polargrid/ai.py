@@ -52,7 +52,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.openai.ai import _extract_think_tags, _ThinkTagParser
 from roomkit.providers.polargrid.config import PolarGridConfig
-from roomkit.providers.polargrid.models import MODELS
+from roomkit.providers.polargrid.models import MODELS, PolarGridRegion
 
 logger = logging.getLogger("roomkit.providers.polargrid")
 
@@ -143,6 +143,18 @@ class PolarGridAIProvider(AIProvider):
             id=str(getattr(model, "id", "")),
             capabilities=[pg_type] if pg_type else [],
         )
+
+    async def connected_region(self) -> PolarGridRegion:
+        """The PolarGrid edge this provider is routed to (id + human name).
+
+        Reports the *connected* edge only — PolarGrid serves no live list
+        of all regions over the edge API (``/v1/status`` 404s on edges).
+        Most useful under auto-routing (``region=None``), where the edge is
+        picked at connect time, to confirm which Canadian edge handles the
+        data (residency / Law 25).
+        """
+        client = await self._ensure_client()
+        return PolarGridRegion(id=client.get_region_id(), name=client.get_region_name())
 
     # -- Client lifecycle ---------------------------------------------------
 

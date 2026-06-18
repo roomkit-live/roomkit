@@ -22,7 +22,26 @@ unset (``None`` = unknown) rather than guessed.
 
 from __future__ import annotations
 
+from pydantic import BaseModel
+
 from roomkit.providers.ai.base import ModelInfo
+
+
+class PolarGridRegion(BaseModel):
+    """The PolarGrid edge a provider is routed to.
+
+    PolarGrid exposes no live list of all regions over the edge API, so
+    this describes only the *connected* edge. Both fields come straight
+    from the SDK client and may be ``None`` before the client is built.
+
+    Attributes:
+        id: Edge id (e.g. ``"yul-02"``, ``"yvr-01"``).
+        name: Human-readable edge name (e.g. ``"Montreal 02"``).
+    """
+
+    id: str | None = None
+    name: str | None = None
+
 
 MODELS: list[ModelInfo] = [
     ModelInfo(

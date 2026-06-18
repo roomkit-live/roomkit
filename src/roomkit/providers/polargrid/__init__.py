@@ -12,5 +12,6 @@ from __future__ import annotations
 
 from roomkit.providers.polargrid.ai import PolarGridAIProvider
 from roomkit.providers.polargrid.config import PolarGridConfig
+from roomkit.providers.polargrid.models import PolarGridRegion
 
-__all__ = ["PolarGridAIProvider", "PolarGridConfig"]
+__all__ = ["PolarGridAIProvider", "PolarGridConfig", "PolarGridRegion"]

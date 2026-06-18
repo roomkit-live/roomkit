@@ -82,6 +82,8 @@ def _mock_polargrid_module() -> MagicMock:
     # its return value per-test to an _FakeStream instance.
     client.chat_completion_stream = MagicMock()
     client.list_models = AsyncMock()
+    client.get_region_id = MagicMock(return_value="yul-02")
+    client.get_region_name = MagicMock(return_value="Montreal 02")
     client.close = AsyncMock()
 
     # Async constructor (PolarGrid.create) and sync constructor both
@@ -746,6 +748,17 @@ class TestPolarGridModels:
             await provider.list_models()
 
         assert exc.value.retryable is True
+
+    @pytest.mark.asyncio
+    async def test_connected_region_reports_edge(self) -> None:
+        provider, mod = _provider(region="toronto")
+        mod._client.get_region_id.return_value = "yto-01"
+        mod._client.get_region_name.return_value = "Toronto 01"
+
+        region = await provider.connected_region()
+
+        assert region.id == "yto-01"
+        assert region.name == "Toronto 01"
 
 
 # ---------------------------------------------------------------------------
