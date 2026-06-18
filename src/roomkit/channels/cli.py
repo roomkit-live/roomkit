@@ -136,26 +136,41 @@ class CLIChannel(Channel):
         agent_prefix = self._colorize(self._agent_color, f"{label}: ")
 
         thinking_open = False
+        thinking_has_text = False
         answer_started = False
 
         async for chunk in text_stream:
             if self._show_thinking and isinstance(chunk, ThinkingDeltaMarker):
+                # Trim whitespace before the first reasoning character so the
+                # 💭 sits on the same line as the text — reasoning models
+                # (qwen, etc.) open their <think> block with a newline.
+                text = chunk.thinking if thinking_has_text else chunk.thinking.lstrip()
+                if not text:
+                    continue
                 if not thinking_open:
                     sys.stdout.write(f"\n{self._colorize(self._thinking_color, '💭 ')}")
                     thinking_open = True
-                if self._use_color:
-                    sys.stdout.write(chunk.thinking)
-                else:
-                    sys.stdout.write(chunk.thinking)
+                thinking_has_text = True
+                sys.stdout.write(text)
                 sys.stdout.flush()
             elif isinstance(chunk, str):
                 if thinking_open:
                     sys.stdout.write(f"{self._reset}\n")
                     thinking_open = False
+                    # Next thinking block (e.g. after a tool round) trims its
+                    # own leading whitespace, so an empty one shows no icon.
+                    thinking_has_text = False
+                # Defer the agent prefix until there's real answer text. A
+                # tool-call round emits a whitespace-only delta before the
+                # final answer; printing "Assistant:" on it would dangle the
+                # prefix above the next thinking block.
+                text = chunk if answer_started else chunk.lstrip()
+                if not text:
+                    continue
                 if not answer_started:
                     sys.stdout.write(f"\n{agent_prefix}")
                     answer_started = True
-                sys.stdout.write(chunk)
+                sys.stdout.write(text)
                 sys.stdout.flush()
 
         if thinking_open:

@@ -14,9 +14,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
+
+import pytest
 
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.base import Channel
+from roomkit.channels.cli import CLIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -367,3 +371,83 @@ async def test_streaming_coalesces_thinking_deltas_on_the_bus() -> None:
     assert ends[0].data["thinking"] == "a" * 40
 
     await kit.close()
+
+
+@pytest.mark.asyncio
+async def test_cli_thinking_icon_shares_line_with_text(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The 💭 sits on the same line as the reasoning text.
+
+    Reasoning models (qwen, etc.) open their ``<think>`` block with a
+    newline, so the first thinking delta is ``"\nLet me..."``. The CLI
+    trims that leading whitespace so the icon and text share a line
+    instead of the icon dangling alone.
+    """
+    cli = CLIChannel("cli", show_thinking=True, use_color=False)
+
+    async def stream() -> AsyncIterator[object]:
+        yield ThinkingDeltaMarker(thinking="\nLet me reason.")
+        yield ThinkingDeltaMarker(thinking=" Step two.")
+        yield "The answer is 42."
+
+    event = SimpleNamespace(source=SimpleNamespace(channel_id="ai1"))
+    await cli.deliver_stream(stream(), event, None, None)  # type: ignore[arg-type]
+
+    out = capsys.readouterr().out
+    assert "💭 Let me reason. Step two." in out
+    assert "💭 \n" not in out  # icon is not left alone on its line
+
+
+@pytest.mark.asyncio
+async def test_cli_no_dangling_icon_for_empty_thinking_after_tool_round(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A whitespace-only thinking block after a text chunk shows no icon.
+
+    In a streaming tool loop the model often opens a near-empty ``<think>``
+    block after the tool result (just ``"\n\n"``). It must not leave a 💭
+    dangling on its own line.
+    """
+    cli = CLIChannel("cli", show_thinking=True, use_color=False)
+
+    async def stream() -> AsyncIterator[object]:
+        yield ThinkingDeltaMarker(thinking="\nFirst reasoning.")
+        yield "Answer one."
+        yield ThinkingDeltaMarker(thinking="\n\n")  # round 2: empty reasoning
+        yield "Answer two."
+
+    event = SimpleNamespace(source=SimpleNamespace(channel_id="ai1"))
+    await cli.deliver_stream(stream(), event, None, None)  # type: ignore[arg-type]
+
+    out = capsys.readouterr().out
+    assert out.count("💭") == 1  # only the real first block got an icon
+    assert "First reasoning." in out
+    assert "💭 \n" not in out
+
+
+@pytest.mark.asyncio
+async def test_cli_defers_agent_prefix_until_real_answer(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The agent prefix waits for real answer text.
+
+    A tool-call round emits a whitespace-only text delta before the final
+    answer; printing the prefix on it would dangle "Assistant:" above the
+    next thinking block. The prefix should land right before the answer.
+    """
+    cli = CLIChannel("cli", show_thinking=True, use_color=False, agent_label=lambda _c: "Bot")
+
+    async def stream() -> AsyncIterator[object]:
+        yield ThinkingDeltaMarker(thinking="\nI'll search.")
+        yield "\n\n"  # tool-call round: whitespace-only text
+        yield ThinkingDeltaMarker(thinking="\nNow summarizing.")
+        yield "The answer."
+
+    event = SimpleNamespace(source=SimpleNamespace(channel_id="ai1"))
+    await cli.deliver_stream(stream(), event, None, None)  # type: ignore[arg-type]
+
+    out = capsys.readouterr().out
+    assert out.count("Bot:") == 1  # exactly one prefix, not one per round
+    # The prefix lands after the 2nd thinking block and right before the answer.
+    assert out.index("Now summarizing.") < out.index("Bot:") < out.index("The answer.")
