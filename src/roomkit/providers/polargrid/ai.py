@@ -92,9 +92,8 @@ class PolarGridAIProvider(AIProvider):
 
     @property
     def supports_vision(self) -> bool:
-        # PolarGrid's current model catalog (qwen-3.5-9b/27b, kokoro,
-        # whisper-large-v3-turbo) doesn't expose vision on the chat
-        # endpoint. Revisit when a multimodal model lands.
+        # No model in PolarGrid's catalog (qwen-3.5-27b, qwen-3.6-35b-a3b,
+        # kokoro, whisper-large-v3-turbo) exposes vision on the chat endpoint.
         return False
 
     @property
@@ -301,7 +300,7 @@ class PolarGridAIProvider(AIProvider):
             # guaranteed, on their backend anyway.
             req["tools"] = tools
         if self._config.thinking is not None:
-            # polargrid-sdk 0.8.5+ exposes a real thinking toggle; qwen
+            # polargrid-sdk 0.8.5+ exposes the enable_thinking flag; qwen
             # then emits its reasoning inline as <think>...</think>, which
             # the streaming/non-streaming paths split out as thinking.
             req["enable_thinking"] = self._config.thinking

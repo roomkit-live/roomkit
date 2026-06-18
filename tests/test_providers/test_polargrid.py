@@ -590,7 +590,7 @@ class TestPolarGridThinking:
 
         request = mod._client.chat_completion.await_args.args[0]
         assert request["enable_thinking"] is True
-        # The user message is left untouched (no /think prompt hack).
+        # The toggle rides on enable_thinking, so the user message is untouched.
         user = [m for m in request["messages"] if m["role"] == "user"][-1]
         assert user["content"] == "Hi"
 
