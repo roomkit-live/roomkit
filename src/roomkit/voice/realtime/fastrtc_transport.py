@@ -156,7 +156,7 @@ class _PassthroughHandler(AsyncStreamHandler):
             self._transport._unregister_handler(self._webrtc_id)
             logger.info("WebRTC handler shutdown: webrtc_id=%s", self._webrtc_id)
 
-    def send_message(self, message: str) -> None:  # ty: ignore[invalid-method-override]
+    def send_message(self, message: str) -> None:
         """Send a message via the WebRTC DataChannel.
 
         Sync override of FastRTC's async ``send_message``. ``aiortc``'s
@@ -171,7 +171,7 @@ class _PassthroughHandler(AsyncStreamHandler):
         channel = self.channel
         if channel is None:
             return
-        if channel.readyState == "open":  # ty: ignore[unresolved-attribute]
+        if channel.readyState == "open":
             channel.send(message)
 
     def send_audio_direct(self, audio: bytes) -> None:
@@ -183,7 +183,7 @@ class _PassthroughHandler(AsyncStreamHandler):
         # Skip once the peer has closed the channel — sending on a non-"open"
         # RTCDataChannel raises aiortc's InvalidStateError.
         channel = self.channel
-        if channel is None or channel.readyState != "open":  # ty: ignore[unresolved-attribute]
+        if channel is None or channel.readyState != "open":
             return
 
         from roomkit.voice.backends._mulaw import pcm16_to_mulaw

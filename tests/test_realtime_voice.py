@@ -829,24 +829,30 @@ class TestResamplingEnabled:
         provider: MockRealtimeProvider,
         transport: MockRealtimeTransport,
         resample_room_id: str,
-        advance,
     ) -> None:
         session = await resample_channel.start_session(resample_room_id, "user-1", "fake-ws")
 
-        # Send 10ms of 8kHz audio (80 samples) as client audio
+        # Send two 10ms chunks of 8kHz audio (80 samples each).
+        # The sinc resampler has a one-frame delay: the first chunk is buffered,
+        # the second triggers output for the first.
         import struct
 
         audio_8k = struct.pack("<80h", *([500] * 80))
         await transport.simulate_client_audio(session, audio_8k)
-        await advance()
+        await transport.simulate_client_audio(session, audio_8k)
+
+        # Resampling runs in a thread pool that other tests share, so zero-delay
+        # event-loop yields are a racy barrier under load. Poll with real time so
+        # the executor thread gets wall-clock to deliver the frame (bounded).
+        for _ in range(200):
+            if provider.sent_audio:
+                break
+            await asyncio.sleep(0.01)
 
         # Provider should receive resampled audio (different size)
-        assert len(provider.sent_audio) == 1
+        assert len(provider.sent_audio) >= 1
         received = provider.sent_audio[0][1]
-        # 8kHz → 16kHz: should be roughly 160 samples (320 bytes)
-        # SincResampler has a one-frame delay on first frame, so first call
-        # produces output for 0 or ~80 samples depending on implementation.
-        # Just verify it's different from input (was resampled).
+        # 8kHz → 16kHz: resampled output should differ from input
         assert received != audio_8k
 
     async def test_outbound_audio_resampled(
