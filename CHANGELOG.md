@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Room lifecycle timers can be set directly.** `create_room()` now accepts a
+  `timers=RoomTimers(...)` argument, and a new `kit.set_room_timers(room_id,
+  timers)` method sets or replaces the timers on an existing room — replacing
+  the previous `model_copy` + `store.update_room` boilerplate. Both entry
+  points fill in `last_activity_at` automatically when it is omitted, so the
+  idle clock starts immediately. `set_room_timers()` preserves an existing
+  activity timestamp when only thresholds change, so adjusting a window
+  mid-conversation never resets the idle clock. Backward compatible: the new
+  `create_room` parameter is optional and defaults to `None`.
+
 ## [0.13.0] — 2026-06-17
 
 ### Added

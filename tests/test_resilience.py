@@ -41,7 +41,7 @@ from roomkit.models.event import (
     TextContent,
     VideoContent,
 )
-from roomkit.models.room import Room
+from roomkit.models.room import Room, RoomTimers
 from roomkit.models.task import Observation, Task
 from roomkit.providers.ai.base import AIResponse
 from tests.conftest import make_binding, make_event
@@ -621,6 +621,81 @@ class TestRoomTimers:
         transitioned = await kit.check_all_timers()
         assert len(transitioned) == 1
         assert transitioned[0].status == RoomStatus.CLOSED
+
+    async def test_create_room_with_timers_stores_them(self) -> None:
+        kit = await self._make_kit()
+        room = await kit.create_room(
+            "r1", timers=RoomTimers(inactive_after_seconds=300, closed_after_seconds=3600)
+        )
+        assert room.timers.inactive_after_seconds == 300
+        assert room.timers.closed_after_seconds == 3600
+        # Persisted, not just returned
+        stored = await kit.get_room("r1")
+        assert stored.timers.closed_after_seconds == 3600
+
+    async def test_create_room_with_timers_starts_clock(self) -> None:
+        """Omitting last_activity_at starts the idle clock at creation time."""
+        kit = await self._make_kit()
+        room = await kit.create_room("r1", timers=RoomTimers(inactive_after_seconds=300))
+        assert room.timers.last_activity_at is not None
+
+    async def test_create_room_with_timers_respects_explicit_activity(self) -> None:
+        kit = await self._make_kit()
+        stamp = datetime.now(UTC) - timedelta(seconds=42)
+        room = await kit.create_room(
+            "r1",
+            timers=RoomTimers(inactive_after_seconds=300, last_activity_at=stamp),
+        )
+        assert room.timers.last_activity_at == stamp
+
+    async def test_create_room_without_timers_has_inert_defaults(self) -> None:
+        kit = await self._make_kit()
+        room = await kit.create_room("r1")
+        assert room.timers.last_activity_at is None
+        assert room.timers.inactive_after_seconds is None
+
+    async def test_create_room_with_timers_is_wired_to_checks(self) -> None:
+        """End-to-end: timers passed at creation actually drive transitions."""
+        kit = await self._make_kit()
+        await kit.create_room(
+            "r1",
+            timers=RoomTimers(
+                inactive_after_seconds=60,
+                last_activity_at=datetime.now(UTC) - timedelta(seconds=120),
+            ),
+        )
+        result = await kit.check_room_timers("r1")
+        assert result.status == RoomStatus.PAUSED
+
+    async def test_set_room_timers_sets_and_starts_clock(self) -> None:
+        kit = await self._make_kit()
+        await kit.create_room("r1")
+        room = await kit.set_room_timers(
+            "r1", RoomTimers(inactive_after_seconds=300, closed_after_seconds=3600)
+        )
+        assert room.timers.inactive_after_seconds == 300
+        assert room.timers.last_activity_at is not None
+
+    async def test_set_room_timers_preserves_existing_activity(self) -> None:
+        """Changing thresholds on a live room must not reset the idle clock."""
+        kit = await self._make_kit()
+        room = await kit.create_room("r1")
+        stamp = datetime.now(UTC) - timedelta(seconds=90)
+        room.timers.last_activity_at = stamp
+        await kit.store.update_room(room)
+
+        updated = await kit.set_room_timers("r1", RoomTimers(closed_after_seconds=7200))
+        assert updated.timers.closed_after_seconds == 7200
+        assert updated.timers.last_activity_at == stamp
+
+    async def test_set_room_timers_respects_explicit_activity(self) -> None:
+        kit = await self._make_kit()
+        await kit.create_room("r1")
+        stamp = datetime.now(UTC) - timedelta(seconds=10)
+        updated = await kit.set_room_timers(
+            "r1", RoomTimers(inactive_after_seconds=300, last_activity_at=stamp)
+        )
+        assert updated.timers.last_activity_at == stamp
 
 
 # ============================================================================

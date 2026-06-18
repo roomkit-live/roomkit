@@ -488,8 +488,13 @@ result = await retry_with_backoff(flaky_function, policy)
 from roomkit import RoomTimers
 
 # Create room with auto-pause after 5 min, auto-close after 1 hour
-room = await kit.create_room(room_id="support-123")
-# Set timers on the room model (timers are evaluated via check_room_timers)
+room = await kit.create_room(
+    room_id="support-123",
+    timers=RoomTimers(inactive_after_seconds=300, closed_after_seconds=3600),
+)
+
+# Adjust timers on an existing room later (no model_copy needed)
+await kit.set_room_timers("support-123", RoomTimers(closed_after_seconds=7200))
 
 # Check timers for one room
 room = await kit.check_room_timers("support-123")

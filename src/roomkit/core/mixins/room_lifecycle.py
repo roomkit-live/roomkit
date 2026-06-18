@@ -21,7 +21,7 @@ from roomkit.models.enums import (
     RoomStatus,
 )
 from roomkit.models.participant import Participant
-from roomkit.models.room import Room
+from roomkit.models.room import Room, RoomTimers
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -82,6 +82,7 @@ class RoomLifecycleMixin(HelpersMixin):
         recorders: list[RoomRecorderBinding] | None = None,
         orchestration: Orchestration | None | Any = _ORCHESTRATION_UNSET,
         organization_id: str | None = None,
+        timers: RoomTimers | None = None,
     ) -> Room:
         """Create a new room.
 
@@ -94,11 +95,19 @@ class RoomLifecycleMixin(HelpersMixin):
                 the kit-level default. Pass ``None`` to explicitly disable.
             organization_id: Optional organization/tenant ID for multi-tenant
                 isolation. Stored on the room and used for org-level queries.
+            timers: Optional lifecycle timers (auto-pause / auto-close on
+                inactivity). When the timers omit ``last_activity_at``, the
+                idle clock starts at creation time. See
+                :meth:`check_room_timers` / :meth:`check_all_timers` for
+                evaluating the thresholds.
         """
+        if timers is not None and timers.last_activity_at is None:
+            timers = timers.model_copy(update={"last_activity_at": datetime.now(UTC)})
         room = Room(
             id=room_id or uuid4().hex,
             organization_id=organization_id,
             metadata=metadata or {},
+            timers=timers or RoomTimers(),
         )
         result = await self._store.create_room(room)
         # Start room-level media recorders
@@ -165,6 +174,24 @@ class RoomLifecycleMixin(HelpersMixin):
                 "room_closed", room_id=room_id, data={"room_id": room_id}
             )
             return result
+
+    async def set_room_timers(self, room_id: str, timers: RoomTimers) -> Room:
+        """Set or replace the lifecycle timers for an existing room.
+
+        When ``timers.last_activity_at`` is unset, the room's existing activity
+        timestamp is preserved (or the current time is used for a room that has
+        seen no activity yet), so adjusting thresholds never resets the idle
+        clock. Use :meth:`check_room_timers` / :meth:`check_all_timers` to apply
+        the thresholds.
+        """
+        async with self._lock_manager.locked(room_id):
+            room = await self.get_room(room_id)
+            last_activity = (
+                timers.last_activity_at or room.timers.last_activity_at or datetime.now(UTC)
+            )
+            timers = timers.model_copy(update={"last_activity_at": last_activity})
+            room = room.model_copy(update={"timers": timers, "updated_at": datetime.now(UTC)})
+            return await self._store.update_room(room)
 
     async def check_room_timers(self, room_id: str) -> Room:
         """Check and apply timer-based transitions for a single room.

@@ -70,8 +70,15 @@ async def main() -> None:
     # --- Room 2: Timer-based auto-transitions ---
     print("\n=== Room 2: Timer-based lifecycle ===")
 
-    # Create room with short timers for demo (normally minutes/hours)
-    room2 = await kit.create_room(room_id="room-timed")
+    # Create room with short timers for demo (normally minutes/hours).
+    # Timers can be set right at creation — last_activity_at starts automatically.
+    room2 = await kit.create_room(
+        room_id="room-timed",
+        timers=RoomTimers(
+            inactive_after_seconds=5,  # Pause after 5s inactivity
+            closed_after_seconds=10,  # Close after 10s inactivity
+        ),
+    )
     await kit.attach_channel("room-timed", "ws-user")
 
     # Simulate activity then inactivity by manipulating timer state
@@ -87,19 +94,16 @@ async def main() -> None:
         )
     )
 
-    # Manually set timers with short thresholds for demo
-    # In production, these would be set at room creation
-    room2 = await kit.get_room("room-timed")
-    room2_updated = room2.model_copy(
-        update={
-            "timers": RoomTimers(
-                inactive_after_seconds=5,  # Pause after 5s inactivity
-                closed_after_seconds=10,  # Close after 10s inactivity
-                last_activity_at=datetime.now(UTC) - timedelta(seconds=6),  # 6s ago
-            )
-        }
+    # Backdate last_activity_at to simulate 6s of inactivity for the demo.
+    # set_room_timers() replaces the timers without the model_copy boilerplate.
+    await kit.set_room_timers(
+        "room-timed",
+        RoomTimers(
+            inactive_after_seconds=5,
+            closed_after_seconds=10,
+            last_activity_at=datetime.now(UTC) - timedelta(seconds=6),  # 6s ago
+        ),
     )
-    await kit.store.update_room(room2_updated)
 
     # Check timers — should transition to PAUSED (6s > 5s threshold)
     room2 = await kit.check_room_timers("room-timed")
@@ -107,16 +111,14 @@ async def main() -> None:
     await asyncio.sleep(0.05)
 
     # Simulate more time passing (11s total)
-    room2_updated = room2.model_copy(
-        update={
-            "timers": RoomTimers(
-                inactive_after_seconds=5,
-                closed_after_seconds=10,
-                last_activity_at=datetime.now(UTC) - timedelta(seconds=11),
-            )
-        }
+    await kit.set_room_timers(
+        "room-timed",
+        RoomTimers(
+            inactive_after_seconds=5,
+            closed_after_seconds=10,
+            last_activity_at=datetime.now(UTC) - timedelta(seconds=11),
+        ),
     )
-    await kit.store.update_room(room2_updated)
 
     room2 = await kit.check_room_timers("room-timed")
     print(f"  After 11s inactivity: status={room2.status}")
@@ -124,18 +126,15 @@ async def main() -> None:
 
     # --- Room 3: check_all_timers for batch processing ---
     print("\n=== Room 3: Batch timer check ===")
-    room3 = await kit.create_room(room_id="room-batch")
-    await kit.attach_channel("room-batch", "ws-user")
-
-    room3_updated = room3.model_copy(
-        update={
-            "timers": RoomTimers(
-                inactive_after_seconds=2,
-                last_activity_at=datetime.now(UTC) - timedelta(seconds=3),
-            )
-        }
+    # Create already-idle room directly via the timers= param
+    await kit.create_room(
+        room_id="room-batch",
+        timers=RoomTimers(
+            inactive_after_seconds=2,
+            last_activity_at=datetime.now(UTC) - timedelta(seconds=3),  # already idle
+        ),
     )
-    await kit.store.update_room(room3_updated)
+    await kit.attach_channel("room-batch", "ws-user")
 
     transitioned = await kit.check_all_timers()
     print(f"  Batch check: {len(transitioned)} room(s) transitioned")
