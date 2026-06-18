@@ -52,7 +52,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.openai.ai import _extract_think_tags, _ThinkTagParser
 from roomkit.providers.polargrid.config import PolarGridConfig
-from roomkit.providers.polargrid.models import MODELS, PolarGridRegion
+from roomkit.providers.polargrid.models import MODELS, REGIONS, PolarGridRegion
 
 logger = logging.getLogger("roomkit.providers.polargrid")
 
@@ -144,17 +144,35 @@ class PolarGridAIProvider(AIProvider):
             capabilities=[pg_type] if pg_type else [],
         )
 
+    @classmethod
+    def available_regions(cls) -> list[PolarGridRegion]:
+        """Curated, offline catalog of PolarGrid edges (id, name, location).
+
+        PolarGrid serves no live full-region list over the edge API, so this
+        is the authoritative static set. Canadian edges have ``location``
+        starting with ``"Canada"`` (data residency / Law 25).
+        """
+        return list(REGIONS)
+
     async def connected_region(self) -> PolarGridRegion:
-        """The PolarGrid edge this provider is routed to (id + human name).
+        """The PolarGrid edge this provider is routed to (id, name, location).
 
         Reports the *connected* edge only — PolarGrid serves no live list
         of all regions over the edge API (``/v1/status`` 404s on edges).
         Most useful under auto-routing (``region=None``), where the edge is
-        picked at connect time, to confirm which Canadian edge handles the
-        data (residency / Law 25).
+        picked at connect time, to confirm which edge handles the data
+        (residency / Law 25). ``location`` is backfilled from
+        :meth:`available_regions`.
         """
         client = await self._ensure_client()
-        return PolarGridRegion(id=client.get_region_id(), name=client.get_region_name())
+        region_id = client.get_region_id()
+        catalog = {r.id: r for r in REGIONS}
+        match = catalog.get(region_id)
+        return PolarGridRegion(
+            id=region_id,
+            name=client.get_region_name() or (match.name if match else None),
+            location=match.location if match else None,
+        )
 
     # -- Client lifecycle ---------------------------------------------------
 

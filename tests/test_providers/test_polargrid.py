@@ -749,8 +749,19 @@ class TestPolarGridModels:
 
         assert exc.value.retryable is True
 
+    def test_available_regions_catalog(self) -> None:
+        provider, _ = _provider()
+        regions = provider.available_regions()
+        by_id = {r.id: r for r in regions}
+        # All 9 documented edges, with the Canada/US residency split.
+        assert len(regions) == 9
+        assert by_id["yul-02"].name == "Montreal 02"
+        assert by_id["yul-02"].location == "Canada East"
+        canadian = [r.id for r in regions if (r.location or "").startswith("Canada")]
+        assert set(canadian) == {"yto-01", "yul-01", "yul-02", "yvr-02"}
+
     @pytest.mark.asyncio
-    async def test_connected_region_reports_edge(self) -> None:
+    async def test_connected_region_reports_edge_with_location(self) -> None:
         provider, mod = _provider(region="toronto")
         mod._client.get_region_id.return_value = "yto-01"
         mod._client.get_region_name.return_value = "Toronto 01"
@@ -758,7 +769,8 @@ class TestPolarGridModels:
         region = await provider.connected_region()
 
         assert region.id == "yto-01"
-        assert region.name == "Toronto 01"
+        assert region.name == "Toronto 01"  # SDK name preferred
+        assert region.location == "Canada Central"  # backfilled from the catalog
 
 
 # ---------------------------------------------------------------------------

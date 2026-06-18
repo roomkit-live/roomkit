@@ -28,19 +28,40 @@ from roomkit.providers.ai.base import ModelInfo
 
 
 class PolarGridRegion(BaseModel):
-    """The PolarGrid edge a provider is routed to.
+    """A PolarGrid edge.
 
-    PolarGrid exposes no live list of all regions over the edge API, so
-    this describes only the *connected* edge. Both fields come straight
-    from the SDK client and may be ``None`` before the client is built.
+    Returned both by the curated catalog (:func:`available_regions`) and
+    by the live :meth:`~roomkit.providers.polargrid.PolarGridAIProvider.connected_region`.
+    PolarGrid exposes no live list of all regions over the edge API, so the
+    connected-edge query reports only the routed edge.
 
     Attributes:
-        id: Edge id (e.g. ``"yul-02"``, ``"yvr-01"``).
+        id: Edge id (e.g. ``"yul-02"``, ``"yvr-02"``).
         name: Human-readable edge name (e.g. ``"Montreal 02"``).
+        location: Geographic placement (e.g. ``"Canada East"``, ``"US West"``)
+            — Canadian edges (``location`` starts with ``"Canada"``) are the
+            ones that keep data on Canadian soil.
     """
 
     id: str | None = None
     name: str | None = None
+    location: str | None = None
+
+
+# Authoritative edge list from PolarGrid's regions guide
+# (https://polargrid.mintlify.app/guides/regions, verified 2026-06-11). The
+# Canada/US split is the data-residency signal (Law 25 / PIPEDA).
+REGIONS: list[PolarGridRegion] = [
+    PolarGridRegion(id="yto-01", name="Toronto", location="Canada Central"),
+    PolarGridRegion(id="yul-01", name="Montreal", location="Canada East"),
+    PolarGridRegion(id="yul-02", name="Montreal 02", location="Canada East"),
+    PolarGridRegion(id="yvr-02", name="Vancouver", location="Canada West"),
+    PolarGridRegion(id="nyc-01", name="New York", location="US East"),
+    PolarGridRegion(id="nyc-02", name="New York 02", location="US East"),
+    PolarGridRegion(id="dfw-01", name="Dallas", location="US Central"),
+    PolarGridRegion(id="dfw-02", name="Dallas 02", location="US Central"),
+    PolarGridRegion(id="sfo-01", name="San Francisco", location="US West"),
+]
 
 
 MODELS: list[ModelInfo] = [

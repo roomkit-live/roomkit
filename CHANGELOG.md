@@ -42,10 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with display names backfilled from the catalog. Added to
   `examples/list_models.py` and the provider guide (with the per-edge
   availability table). Reasoning-capable `qwen-3.6-35b-a3b` is `yul-02`-only.
-  `connected_region()` reports the edge a provider is actually routed to
-  (`PolarGridRegion` id + name) — useful for data residency under
-  auto-routing. PolarGrid serves no live full-region list (the `/v1/status`
-  endpoint 404s on edges), so only the connected edge is exposed.
+  `available_regions()` returns the curated catalog of all nine edges
+  (`PolarGridRegion` id + name + location), and `connected_region()` reports
+  the edge a provider is actually routed to (location backfilled from the
+  catalog) — useful for data residency under auto-routing, where the
+  `location` carries the Canada/US split (Law 25 / PIPEDA). PolarGrid serves
+  no live full-region list (the `/v1/status` endpoint 404s on edges), so the
+  catalog is a static snapshot of PolarGrid's regions guide.
 
 ## [0.12.0] — 2026-06-17
 
