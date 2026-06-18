@@ -13,6 +13,8 @@ import pytest
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
+    AITextPart,
+    AIThinkingPart,
     AITool,
     AIToolCallPart,
     AIToolResultPart,
@@ -610,6 +612,34 @@ class TestPolarGridThinking:
 
         request = mod._client.chat_completion.await_args.args[0]
         assert "enable_thinking" not in request
+
+    @pytest.mark.asyncio
+    async def test_assistant_thinking_not_round_tripped(self) -> None:
+        # qwen echoes any wrapper we feed back, so prior reasoning must be
+        # dropped from history — not re-sent as [thinking] text.
+        provider, mod = _provider()
+        mod._client.chat_completion.return_value = _response_obj(content="ok")
+
+        messages = [
+            AIMessage(role="user", content="hi"),
+            AIMessage(
+                role="assistant",
+                content=[
+                    AIThinkingPart(thinking="secret chain of thought"),
+                    AITextPart(text="Hello!"),
+                ],
+            ),
+            AIMessage(role="user", content="more"),
+        ]
+        await provider.generate(_context(messages=messages, system_prompt=None))
+
+        request = mod._client.chat_completion.await_args.args[0]
+        blob = json.dumps(request)
+        assert "[thinking]" not in blob
+        assert "secret chain of thought" not in blob
+        # The assistant's actual text is still sent.
+        assistant = [m for m in request["messages"] if m["role"] == "assistant"][0]
+        assert assistant["content"] == "Hello!"
 
 
 # ---------------------------------------------------------------------------

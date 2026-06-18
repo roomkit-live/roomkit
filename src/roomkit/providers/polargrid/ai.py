@@ -157,14 +157,12 @@ class PolarGridAIProvider(AIProvider):
         for part in content:
             if isinstance(part, AITextPart):
                 parts.append(part.text)
-            elif isinstance(part, AIThinkingPart):
-                # Round-trip thinking back to the model as plain text;
-                # PolarGrid has no dedicated thinking channel. The model
-                # sees its own prior reasoning prefixed for context,
-                # which is better than dropping it silently.
-                parts.append(f"[thinking]\n{part.thinking}\n[/thinking]")
-            elif isinstance(part, (AIToolCallPart, AIToolResultPart)):
-                # Rendered as structured tool messages, not inline text.
+            elif isinstance(part, (AIThinkingPart, AIToolCallPart, AIToolResultPart)):
+                # Thinking is NOT round-tripped: qwen regenerates its
+                # reasoning each turn and echoes any wrapper we feed back
+                # (qwen multi-turn guidance is to strip <think> from
+                # history). Tool calls/results are rendered as structured
+                # messages by _build_messages, not inline text.
                 continue
             else:
                 dropped.append(type(part).__name__)
