@@ -3,7 +3,9 @@
 xAI exposes a WebSocket-based realtime API at ``wss://api.x.ai/v1/realtime``
 that is wire-compatible with the OpenAI Realtime protocol but uses a flatter
 session configuration format and offers native ``web_search`` / ``x_search``
-tool types.
+tool types. The shared wire plumbing lives in
+:class:`~roomkit.providers.openai.realtime_base.OpenAIRealtimeBase`; only the
+session-config shape and a few log lines differ here.
 
 Requires the ``websockets`` package::
 
@@ -12,18 +14,16 @@ Requires the ``websockets`` package::
 
 from __future__ import annotations
 
-import asyncio
-import base64
-import json
 import logging
 from typing import Any
 
 from pydantic import SecretStr
 
+from roomkit.providers.openai.realtime_base import OpenAIRealtimeBase
 from roomkit.providers.xai.config import XAIRealtimeConfig
 from roomkit.providers.xai.voices import VOICES as _VOICES
-from roomkit.voice.base import VoiceSession, VoiceSessionState
-from roomkit.voice.realtime.provider import RealtimeVoiceProvider, VoiceInfo
+from roomkit.voice.base import VoiceSession
+from roomkit.voice.realtime.provider import VoiceInfo
 
 logger = logging.getLogger("roomkit.providers.xai.realtime")
 
@@ -31,7 +31,7 @@ logger = logging.getLogger("roomkit.providers.xai.realtime")
 XAI_VOICES = ("eve", "ara", "rex", "sal", "leo")
 
 
-class XAIRealtimeProvider(RealtimeVoiceProvider):
+class XAIRealtimeProvider(OpenAIRealtimeBase):
     """Realtime voice provider using the xAI Grok Realtime API.
 
     Connects via WebSocket to xAI's Realtime API, handling bidirectional
@@ -79,17 +79,6 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
 
         self._model = self._config.model
 
-        # Active WebSocket connections: session_id -> ws
-        self._connections: dict[str, Any] = {}
-        self._receive_tasks: dict[str, asyncio.Task[None]] = {}
-        self._sessions: dict[str, VoiceSession] = {}
-
-        # Track active responses per session to avoid inject_text conflicts
-        self._responding: set[str] = set()
-
-    def is_responding(self, session_id: str) -> bool:
-        return session_id in self._responding
-
     @property
     def name(self) -> str:
         return "XAIRealtimeProvider"
@@ -102,47 +91,39 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
         """
         return list(_VOICES)
 
-    # ------------------------------------------------------------------
-    # Connection lifecycle
-    # ------------------------------------------------------------------
+    # -- Provider-specific extension points ---------------------------------
 
-    async def connect(
+    @property
+    def _log_tag(self) -> str:
+        return "xAI"
+
+    @property
+    def _recv_task_prefix(self) -> str:
+        return "xai_rt_recv"
+
+    @property
+    def _websockets_install_hint(self) -> str:
+        return "pip install websockets"
+
+    def _connect_url(self) -> str:
+        return self._config.base_url
+
+    def _auth_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._config.api_key.get_secret_value()}"}
+
+    def _build_session_config(
         self,
-        session: VoiceSession,
         *,
-        system_prompt: str | None = None,
-        voice: str | None = None,
-        tools: list[dict[str, Any]] | None = None,
-        temperature: float | None = None,
-        input_sample_rate: int = 16000,
-        output_sample_rate: int = 24000,
-        server_vad: bool = True,
-        provider_config: dict[str, Any] | None = None,
-    ) -> None:
-        try:
-            import websockets
-        except ImportError as exc:
-            raise ImportError(
-                "websockets is required for XAIRealtimeProvider. "
-                "Install with: pip install websockets"
-            ) from exc
-
-        url = self._config.base_url
-        headers = {
-            "Authorization": f"Bearer {self._config.api_key.get_secret_value()}",
-        }
-
-        ws = await asyncio.wait_for(
-            websockets.connect(url, additional_headers=headers),
-            timeout=30.0,
-        )
-
-        self._connections[session.id] = ws
-        self._sessions[session.id] = session
-
-        pc = provider_config or {}
-
-        # Build xAI session config — flat structure (not nested like OpenAI GA).
+        system_prompt: str | None,
+        voice: str | None,
+        tools: list[dict[str, Any]] | None,
+        temperature: float | None,
+        input_sample_rate: int,
+        output_sample_rate: int,
+        server_vad: bool,
+        pc: dict[str, Any],
+    ) -> dict[str, Any]:
+        # xAI uses a flat session config (not nested like OpenAI GA).
         session_config: dict[str, Any] = {}
 
         voice_id = voice or self._config.voice
@@ -150,7 +131,6 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
 
         if system_prompt:
             session_config["instructions"] = system_prompt
-
         if temperature is not None:
             session_config["temperature"] = temperature
 
@@ -193,358 +173,10 @@ class XAIRealtimeProvider(RealtimeVoiceProvider):
             session_config.get("turn_detection"),
             self._config.model,
         )
+        return session_config
 
-        await ws.send(
-            json.dumps(
-                {
-                    "type": "session.update",
-                    "session": session_config,
-                }
-            )
-        )
+    # -- Provider-specific logging ------------------------------------------
 
-        session.state = VoiceSessionState.ACTIVE
-        session.provider_session_id = session.id
-
-        # Start receive loop
-        self._receive_tasks[session.id] = asyncio.create_task(
-            self._receive_loop(session),
-            name=f"xai_rt_recv:{session.id}",
-        )
-
-        logger.info("xAI Realtime session connected: %s", session.id)
-
-    async def send_audio(self, session: VoiceSession, audio: bytes) -> None:
-        ws = self._connections.get(session.id)
-        if ws is None:
-            return
-        await ws.send(
-            json.dumps(
-                {
-                    "type": "input_audio_buffer.append",
-                    "audio": base64.b64encode(audio).decode("ascii"),
-                }
-            )
-        )
-
-    async def inject_text(
-        self,
-        session: VoiceSession,
-        text: str,
-        *,
-        role: str = "user",
-        silent: bool = False,
-    ) -> None:
-        ws = self._connections.get(session.id)
-        if ws is None:
-            return
-
-        logger.debug(
-            "[xAI →] conversation.item.create (input_text, role=%s, silent=%s)",
-            role,
-            silent,
-        )
-        await ws.send(
-            json.dumps(
-                {
-                    "type": "conversation.item.create",
-                    "item": {
-                        "type": "message",
-                        "role": role if role in ("user", "system") else "user",
-                        "content": [{"type": "input_text", "text": text}],
-                    },
-                }
-            )
-        )
-
-        if silent:
-            logger.debug("[xAI] Silent inject — no response.create")
-            return
-
-        if session.id in self._responding:
-            logger.debug(
-                "[xAI] Skipping response.create — response already active (session %s)",
-                session.id,
-            )
-            return
-
-        logger.debug("[xAI →] response.create")
-        await ws.send(json.dumps({"type": "response.create"}))
-
-    async def submit_tool_result(self, session: VoiceSession, call_id: str, result: str) -> None:
-        ws = self._connections.get(session.id)
-        if ws is None:
-            return
-
-        await ws.send(
-            json.dumps(
-                {
-                    "type": "conversation.item.create",
-                    "item": {
-                        "type": "function_call_output",
-                        "call_id": call_id,
-                        "output": result,
-                    },
-                }
-            )
-        )
-
-        logger.debug("[xAI →] response.create (after tool result)")
-        await ws.send(json.dumps({"type": "response.create"}))
-
-    async def interrupt(self, session: VoiceSession) -> None:
-        ws = self._connections.get(session.id)
-        if ws is None:
-            return
-        logger.debug("[xAI →] response.cancel")
-        await ws.send(json.dumps({"type": "response.cancel"}))
-
-    async def send_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
-        ws = self._connections.get(session.id)
-        if ws is None:
-            return
-        await ws.send(json.dumps(event))
-
-    async def send_activity_start(self, session: VoiceSession) -> None:
-        """No-op — audio flows continuously via input_audio_buffer.append."""
-        logger.debug("[xAI] activity_start (no-op, session %s)", session.id)
-
-    async def send_activity_end(self, session: VoiceSession) -> None:
-        """Commit audio buffer and request a response (manual VAD mode)."""
-        ws = self._connections.get(session.id)
-        if ws is None:
-            return
-        logger.debug("[xAI →] input_audio_buffer.commit (session %s)", session.id)
-        await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
-
-        if session.id in self._responding:
-            logger.debug("[xAI] skip response.create — responding (session %s)", session.id)
-            return
-        logger.debug("[xAI →] response.create (session %s)", session.id)
-        await ws.send(json.dumps({"type": "response.create"}))
-
-    async def disconnect(self, session: VoiceSession) -> None:
-        import contextlib
-
-        task = self._receive_tasks.pop(session.id, None)
-        if task is not None:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await task
-
-        ws = self._connections.pop(session.id, None)
-        self._sessions.pop(session.id, None)
-        self._responding.discard(session.id)
-        if ws is not None:
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(ws.close(), timeout=2.0)
-
-        session.state = VoiceSessionState.ENDED
-
-    async def close(self) -> None:
-        for session_id in list(self._sessions.keys()):
-            session = self._sessions.get(session_id)
-            if session:
-                await self.disconnect(session)
-
-    # ------------------------------------------------------------------
-    # Receive loop
-    # ------------------------------------------------------------------
-
-    async def _receive_loop(self, session: VoiceSession) -> None:
-        """Process server events from xAI Realtime API."""
-        ws = self._connections.get(session.id)
-        if ws is None:
-            return
-
-        try:
-            async for raw_message in ws:
-                try:
-                    event = json.loads(raw_message)
-                    await self._handle_server_event(session, event)
-                except json.JSONDecodeError:
-                    logger.warning("Invalid JSON from xAI for session %s", session.id)
-                except Exception:
-                    logger.exception("Error handling xAI event for session %s", session.id)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            if session.state == VoiceSessionState.ACTIVE:
-                logger.warning(
-                    "xAI WebSocket closed unexpectedly for session %s",
-                    session.id,
-                )
-                session.state = VoiceSessionState.ENDED
-                await self._fire(
-                    self._error_callbacks,
-                    session,
-                    "connection_closed",
-                    f"WebSocket closed unexpectedly for session {session.id}",
-                    label="error",
-                )
-            else:
-                logger.debug("xAI WebSocket closed for session %s", session.id)
-
-    # Event types that carry bulk audio data — skip in protocol log.
-    _NOISY_EVENTS = frozenset(
-        {
-            "response.output_audio.delta",
-            "response.output_audio_transcript.delta",
-        }
-    )
-
-    async def _handle_server_event(self, session: VoiceSession, event: dict[str, Any]) -> None:
-        """Map xAI server events to callbacks."""
-        event_type = event.get("type", "")
-
-        if event_type not in self._NOISY_EVENTS:
-            logger.debug(
-                "[xAI ←] %s %s",
-                event_type,
-                {k: v for k, v in event.items() if k not in ("type", "delta", "audio")},
-            )
-
-        if event_type == "input_audio_buffer.speech_started":
-            logger.info("[VAD] speech_start (session %s)", session.id)
-            await self._fire(self._speech_start_callbacks, session, label="speech_start")
-
-        elif event_type == "input_audio_buffer.speech_stopped":
-            logger.info("[VAD] speech_end (session %s)", session.id)
-            await self._fire(self._speech_end_callbacks, session, label="speech_end")
-
-        elif event_type == "response.output_audio.delta":
-            audio_b64 = event.get("delta", "")
-            if audio_b64:
-                audio_bytes = base64.b64decode(audio_b64)
-                await self._fire(self._audio_callbacks, session, audio_bytes, label="audio")
-
-        elif event_type == "response.output_audio_transcript.delta":
-            text = event.get("delta", "")
-            if text:
-                await self._fire(
-                    self._transcription_callbacks,
-                    session,
-                    text,
-                    "assistant",
-                    False,
-                    label="transcription",
-                )
-
-        elif event_type == ("conversation.item.input_audio_transcription.completed"):
-            text = event.get("transcript", "")
-            if text:
-                await self._fire(
-                    self._transcription_callbacks,
-                    session,
-                    text,
-                    "user",
-                    True,
-                    label="transcription",
-                )
-
-        elif event_type == "response.output_audio_transcript.done":
-            text = event.get("transcript", "")
-            if text:
-                await self._fire(
-                    self._transcription_callbacks,
-                    session,
-                    text,
-                    "assistant",
-                    True,
-                    label="transcription",
-                )
-
-        elif event_type == "response.function_call_arguments.done":
-            call_id = event.get("call_id", "")
-            name = event.get("name", "")
-            args_str = event.get("arguments", "{}")
-            try:
-                arguments = json.loads(args_str)
-            except json.JSONDecodeError:
-                arguments = {"raw": args_str}
-            await self._fire(
-                self._tool_call_callbacks,
-                session,
-                call_id,
-                name,
-                arguments,
-                label="tool_call",
-            )
-
-        elif event_type == "response.created":
-            self._responding.add(session.id)
-            logger.info("[xAI] response_start (session %s)", session.id)
-            await self._fire(self._response_start_callbacks, session, label="response_start")
-
-        elif event_type == "response.done":
-            response = event.get("response", {})
-            status = response.get("status", "")
-            if status == "failed":
-                details = response.get("status_details", {})
-                err = details.get("error", {})
-                err_type = err.get("type", "unknown")
-                err_code = err.get("code", "")
-                err_message = err.get("message", "Unknown error")
-                logger.error(
-                    "[xAI] response FAILED: type=%s code=%s message=%s (session %s)",
-                    err_type,
-                    err_code,
-                    err_message,
-                    session.id,
-                )
-                await self._fire(
-                    self._error_callbacks,
-                    session,
-                    err_code or err_type,
-                    err_message,
-                    label="error",
-                )
-            else:
-                logger.info(
-                    "[xAI] response_done status=%s (session %s)",
-                    status,
-                    session.id,
-                )
-
-            # Extract token usage
-            usage = response.get("usage", {})
-            if usage:
-                input_tokens = usage.get("input_tokens", 0)
-                output_tokens = usage.get("output_tokens", 0)
-                input_details = usage.get("input_token_details", {})
-                output_details = usage.get("output_token_details", {})
-                logger.info(
-                    "[xAI] usage: input=%d output=%d (session %s)",
-                    input_tokens,
-                    output_tokens,
-                    session.id,
-                )
-                self._record_usage(
-                    session,
-                    input_tokens,
-                    output_tokens,
-                    details={
-                        "input_token_details": input_details,
-                        "output_token_details": output_details,
-                    },
-                )
-
-            self._responding.discard(session.id)
-            await self._fire(self._response_end_callbacks, session, label="response_end")
-
-        elif event_type == "session.created":
-            sid = event.get("session", {}).get("id", "")
-            logger.info("[xAI] session.created: id=%s (session %s)", sid, session.id)
-
-        elif event_type == "session.updated":
-            logger.info("[xAI] session.updated (session %s)", session.id)
-
-        elif event_type == "input_audio_buffer.committed":
-            logger.debug("[xAI] audio_buffer committed (session %s)", session.id)
-
-        elif event_type == "error":
-            error = event.get("error", {})
-            code = error.get("code", "unknown")
-            message = error.get("message", "Unknown error")
-            logger.error("[xAI] error [%s] %s (session %s)", code, message, session.id)
-            await self._fire(self._error_callbacks, session, code, message, label="error")
+    async def _on_session_created(self, session: VoiceSession, event: dict[str, Any]) -> None:
+        sid = event.get("session", {}).get("id", "")
+        logger.info("[xAI] session.created: id=%s (session %s)", sid, session.id)
