@@ -682,3 +682,68 @@ class TestExtractThinkTags:
         thinking, text = _extract_think_tags("<think>  \n  </think>answer")
         assert thinking is None
         assert text == "answer"
+
+
+class TestOpenAIHeadersAndExtraBody:
+    def test_default_headers_passed_to_client(self) -> None:
+        mod = _mock_openai_module()
+        with patch.dict("sys.modules", {"openai": mod}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            OpenAIAIProvider(_config(default_headers={"X-Proxy": "v1"}))
+            assert mod.AsyncOpenAI.call_args.kwargs["default_headers"] == {"X-Proxy": "v1"}
+
+    def test_default_headers_none_by_default(self) -> None:
+        mod = _mock_openai_module()
+        with patch.dict("sys.modules", {"openai": mod}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            OpenAIAIProvider(_config())
+            assert mod.AsyncOpenAI.call_args.kwargs["default_headers"] is None
+
+    @pytest.mark.asyncio
+    async def test_extra_body_sent_on_generate(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config(extra_body={"guided_choice": ["yes", "no"]}))
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+            await provider.generate(_context())
+            call_kwargs = provider._client.chat.completions.create.call_args[1]
+            assert call_kwargs["extra_body"] == {"guided_choice": ["yes", "no"]}
+
+    @pytest.mark.asyncio
+    async def test_extra_body_omitted_when_unset(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+            await provider.generate(_context())
+            assert "extra_body" not in provider._client.chat.completions.create.call_args[1]
+
+    @pytest.mark.asyncio
+    async def test_extra_body_sent_on_stream(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config(extra_body={"top_k": 20}))
+            provider._client = MagicMock()
+
+            async def _fake_stream() -> Any:
+                yield SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(content="hi", tool_calls=None),
+                            finish_reason="stop",
+                        )
+                    ]
+                )
+
+            provider._client.chat.completions.create = AsyncMock(return_value=_fake_stream())
+            async for _ in provider.generate_structured_stream(_context()):
+                pass
+            call_kwargs = provider._client.chat.completions.create.call_args[1]
+            assert call_kwargs["extra_body"] == {"top_k": 20}

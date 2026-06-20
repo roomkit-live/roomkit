@@ -31,6 +31,11 @@ Try:
 Environment variables (optional):
     VLLM_MODEL     Model name (default: jpacifico/Chocolatine-2-4B-Instruct-DPO-v2.1)
     VLLM_BASE_URL  Server URL (default: http://localhost:8000/v1)
+    VLLM_API_KEY   Bearer token when the server runs with ``vllm serve --api-key``
+
+``extra_body`` forwards vLLM-specific sampling params (``top_k``,
+``repetition_penalty``, …) and guided-decoding fields the OpenAI schema
+omits; ``headers`` covers a reverse proxy or non-Bearer auth scheme.
 """
 
 from __future__ import annotations
@@ -49,6 +54,7 @@ from roomkit.providers.vllm import VLLMConfig, create_vllm_provider
 
 MODEL = os.environ.get("VLLM_MODEL", "jpacifico/Chocolatine-2-4B-Instruct-DPO-v2.1")
 BASE_URL = os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")
+API_KEY = os.environ.get("VLLM_API_KEY") or "none"  # "none" = no-auth local server
 
 
 async def main() -> None:
@@ -57,8 +63,13 @@ async def main() -> None:
         VLLMConfig(
             model=MODEL,
             base_url=BASE_URL,
+            api_key=API_KEY,
             max_tokens=256,
             temperature=0.8,
+            # vLLM-native sampling params the OpenAI schema omits, forwarded
+            # verbatim in the request body. headers={"X-Proxy": "..."} would
+            # ride alongside for a reverse proxy.
+            extra_body={"top_k": 40, "repetition_penalty": 1.05},
         )
     )
 

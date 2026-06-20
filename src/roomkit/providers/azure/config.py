@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, SecretStr
 
 
@@ -44,3 +46,7 @@ class AzureAIConfig(BaseModel):
     """Reasoning depth for reasoning deployments (``"low"``/``"medium"``/
     ``"high"``); ``None`` uses the model default. Only sent for models that
     accept it."""
+    extra_body: dict[str, Any] | None = None
+    """Extra JSON fields merged into every request body via the SDK's
+    ``extra_body`` — for deployment-specific params the OpenAI schema omits.
+    ``None`` sends a vanilla body."""

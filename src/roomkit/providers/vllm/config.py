@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, SecretStr
 
 
@@ -14,11 +16,20 @@ class VLLMConfig(BaseModel):
     Attributes:
         model: Model name loaded by the vLLM server (required).
         base_url: Base URL of the vLLM OpenAI-compatible endpoint.
-        api_key: API key (vLLM usually needs no auth).
+        api_key: Bearer token sent as ``Authorization: Bearer <key>``.
+            Matches ``vllm serve --api-key``; default ``"none"`` for the
+            common no-auth local server.
         max_tokens: Maximum tokens in the response.
         temperature: Sampling temperature.
         timeout: HTTP request timeout in seconds. Increase for vLLM servers that
             load models lazily on first request.
+        headers: Extra HTTP headers on every request — for a reverse proxy
+            that needs custom headers, or a non-Bearer ``Authorization``
+            scheme. Maps to ``OpenAIConfig.default_headers``.
+        extra_body: Extra JSON fields merged into every request body — the
+            route for vLLM-specific params (``guided_json``/``guided_choice``
+            guided decoding, ``top_k``/``repetition_penalty`` sampling).
+            Maps to ``OpenAIConfig.extra_body``.
     """
 
     model: str
@@ -32,3 +43,9 @@ class VLLMConfig(BaseModel):
     handles retries at the right layer with proper backoff and fallback."""
     include_stream_usage: bool = False
     """When True, request token usage in streaming responses."""
+    headers: dict[str, str] | None = None
+    """Extra HTTP headers sent on every request (proxy headers, non-Bearer
+    auth). ``None`` sends only the SDK defaults."""
+    extra_body: dict[str, Any] | None = None
+    """Extra request-body fields for vLLM-specific params (guided decoding,
+    extra sampling). ``None`` sends a vanilla body."""

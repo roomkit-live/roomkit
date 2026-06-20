@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, SecretStr
 
 
@@ -48,3 +50,15 @@ class OpenAIConfig(BaseModel):
     reasons (quality vs latency/cost); the reasoning trace itself stays
     hidden in the Chat Completions API. ``None`` = the model's default.
     Only send it for reasoning models — others reject the parameter."""
+    default_headers: dict[str, str] | None = None
+    """Extra HTTP headers sent on every request, passed to the SDK's
+    ``default_headers``. Use for an OpenAI-compatible endpoint behind a
+    reverse proxy that needs custom headers, or a non-Bearer
+    ``Authorization`` scheme (e.g. Basic). ``None`` sends only the SDK's
+    own headers; the ``api_key`` Bearer token is unaffected."""
+    extra_body: dict[str, Any] | None = None
+    """Extra JSON fields merged into every Chat Completions request body
+    via the SDK's ``extra_body``. The route for server-specific params the
+    OpenAI schema omits — e.g. vLLM guided decoding
+    (``guided_json``/``guided_choice``) and extra sampling (``top_k``,
+    ``repetition_penalty``, ``min_p``). ``None`` sends a vanilla body."""

@@ -44,5 +44,7 @@ def create_vllm_provider(config: VLLMConfig) -> OpenAIAIProvider:
         timeout=config.timeout,
         max_retries=config.max_retries,
         include_stream_usage=config.include_stream_usage,
+        default_headers=config.headers,
+        extra_body=config.extra_body,
     )
     return OpenAIAIProvider(openai_config)

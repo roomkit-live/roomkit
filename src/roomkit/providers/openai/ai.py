@@ -129,6 +129,7 @@ class OpenAIAIProvider(AIProvider):
             base_url=config.base_url,
             timeout=config.timeout,
             max_retries=config.max_retries,
+            default_headers=config.default_headers,
         )
 
     @property
@@ -289,6 +290,15 @@ class OpenAIAIProvider(AIProvider):
         if self._config.reasoning_effort is not None and not context.tools:
             kwargs["reasoning_effort"] = self._config.reasoning_effort
 
+    def _apply_extra_body(self, kwargs: dict[str, Any]) -> None:
+        """Attach configured ``extra_body`` (server-specific request fields).
+
+        Carries params the OpenAI schema omits — vLLM guided decoding and
+        extra sampling knobs — through the SDK's ``extra_body`` passthrough.
+        """
+        if self._config.extra_body:
+            kwargs["extra_body"] = self._config.extra_body
+
     # -- Non-streaming ---------------------------------------------------------
 
     async def generate(self, context: AIContext) -> AIResponse:
@@ -300,6 +310,7 @@ class OpenAIAIProvider(AIProvider):
             "messages": messages,
         }
         self._apply_sampling_kwargs(kwargs, context)
+        self._apply_extra_body(kwargs)
 
         # Add tools if provided
         if context.tools:
@@ -417,6 +428,7 @@ class OpenAIAIProvider(AIProvider):
         if self._config.include_stream_usage:
             kwargs["stream_options"] = {"include_usage": True}
         self._apply_sampling_kwargs(kwargs, context)
+        self._apply_extra_body(kwargs)
         if context.max_tokens is not None:
             kwargs.update(self._token_limit_kwarg(context.max_tokens))
         if context.tools:
