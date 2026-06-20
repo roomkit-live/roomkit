@@ -10,8 +10,11 @@ keys exposure by the per-turn loop context. But the *scoring*, the
 *result payloads* and the *catalogue listing* are identical — they live
 here so both paths share one implementation.
 
-Every function operates on plain tool dicts (``{"name", "description",
-...}``) — the lingua franca both channels can produce.
+The scoring / rendering helpers operate on plain tool dicts (``{"name",
+"description", ...}``) — the lingua franca both channels can produce. The
+text-channel activation policy (:func:`should_activate_tool_search`) and the
+discovery-tool definitions (:func:`search_tool_defs`) work with ``AITool``
+objects, since that is what the AIChannel assembles per turn.
 """
 
 from __future__ import annotations
@@ -20,7 +23,13 @@ import json
 import re
 from typing import Any
 
-from roomkit.channels._tool_search_constants import DEFAULT_FIND_TOOLS_LIMIT
+from roomkit.channels._tool_search_constants import (
+    DEFAULT_FIND_TOOLS_LIMIT,
+    FIND_TOOLS_SCHEMA,
+    LIST_TOOLS_SCHEMA,
+)
+from roomkit.memory.token_estimator import estimate_tool_tokens
+from roomkit.providers.ai.base import AITool
 
 _TOKEN_SPLIT = re.compile(r"[\W_]+")
 
@@ -138,3 +147,51 @@ def render_list_payload(
             "or prefer find_tools(query=...) for action."
         )
     return json.dumps(payload)
+
+
+# -- Text-channel integration (AITool-based) --------------------------------
+
+
+def search_tool_defs() -> list[AITool]:
+    """The two discovery tools (find_tools / list_tools) as AITool definitions."""
+    return [
+        AITool(
+            name=schema["name"],
+            description=schema["description"],
+            parameters=schema["parameters"],
+        )
+        for schema in (FIND_TOOLS_SCHEMA, LIST_TOOLS_SCHEMA)
+    ]
+
+
+def should_activate_tool_search(
+    *,
+    mode: bool | None,
+    catalogue: list[AITool],
+    pinned: set[str],
+    window: int | None,
+    threshold_pct: float,
+    threshold_count: int,
+) -> bool:
+    """Decide whether Tool Search hides the catalogue for a turn.
+
+    ``mode`` ``True``/``False`` forces on/off. In ``auto`` mode (``None``) the
+    decision self-tunes to the model: defer when the *deferrable* tools
+    (everything except ``pinned``) would cost more than ``threshold_pct`` % of
+    the model's context ``window``. When ``window`` is unknown (custom / local
+    model absent from the provider catalog) it falls back to the
+    ``threshold_count`` tool count — the floor that still protects small local
+    models whose window cannot be read.
+
+    ``catalogue`` is the real tool list, BEFORE the search infra tools are
+    injected, so it reflects the deferrable surface only.
+    """
+    if mode is False:
+        return False
+    if mode is True:
+        return True
+    if window:
+        budget = window * threshold_pct / 100
+        deferrable = (t for t in catalogue if t.name not in pinned)
+        return sum(estimate_tool_tokens(t) for t in deferrable) > budget
+    return len(catalogue) > threshold_count

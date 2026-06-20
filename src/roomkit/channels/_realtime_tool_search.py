@@ -62,9 +62,6 @@ class RealtimeToolSearchSupport:
         threshold: int = 20,
     ) -> None:
         self._catalogue: list[dict[str, Any]] = list(catalogue)
-        self._by_name: dict[str, dict[str, Any]] = {
-            t.get("name", ""): t for t in catalogue if t.get("name")
-        }
         self._pinned_names: set[str] = set(pinned or [])
         self._threshold = threshold
         # session_id -> set of tool names currently exposed by find_tools

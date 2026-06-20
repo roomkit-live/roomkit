@@ -14,12 +14,8 @@ from roomkit.channels._skill_constants import (
 )
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tool_eviction import ToolEviction
-from roomkit.channels._tool_search_constants import (
-    FIND_TOOLS_SCHEMA,
-    LIST_TOOLS_SCHEMA,
-    TOOL_SEARCH_PREAMBLE,
-)
-from roomkit.memory.token_estimator import estimate_tool_tokens
+from roomkit.channels._tool_search import search_tool_defs, should_activate_tool_search
+from roomkit.channels._tool_search_constants import TOOL_SEARCH_PREAMBLE
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import ChannelCategory
 from roomkit.models.event import CompositeContent, MediaContent, TextContent
@@ -139,43 +135,6 @@ class AIContextMixin:
     _apply_tool_filters: Any  # see AIContextHost
     _get_loop_ctx: Any  # see AIContextHost
 
-    def _should_activate_tool_search(self, catalogue: list[AITool]) -> bool:
-        """Decide whether Tool Search hides the catalogue this turn.
-
-        The single seam for the activation policy. ``True``/``False`` force
-        on/off. In ``auto`` mode (``None``) the decision self-tunes to the
-        model: defer when the *deferrable* tools (everything except the pinned
-        set) would cost more than ``tool_search_threshold_pct`` % of the
-        model's context window. When the window is unknown (custom / local
-        model absent from the provider catalog) it falls back to the
-        ``tool_search_threshold`` tool count — the floor that still protects
-        small local models whose window we cannot read.
-
-        ``catalogue`` is the real tool list, BEFORE the search infra tools are
-        injected, so it reflects the deferrable surface only.
-        """
-        if self._tool_search is False:
-            return False
-        if self._tool_search is True:
-            return True
-        window = self._provider.context_window
-        if window:
-            budget = window * self._tool_search_threshold_pct / 100
-            deferrable = (t for t in catalogue if t.name not in self._tool_search_pinned)
-            return sum(estimate_tool_tokens(t) for t in deferrable) > budget
-        return len(catalogue) > self._tool_search_threshold
-
-    def _tool_search_tool_defs(self) -> list[AITool]:
-        """The two discovery tools the model uses to reveal hidden tools."""
-        return [
-            AITool(
-                name=schema["name"],
-                description=schema["description"],
-                parameters=schema["parameters"],
-            )
-            for schema in (FIND_TOOLS_SCHEMA, LIST_TOOLS_SCHEMA)
-        ]
-
     async def _build_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> AIContext:
@@ -292,10 +251,17 @@ class AIContextMixin:
         # Unlike realtime, no provider.reconfigure is needed: the tool loop
         # re-sends its (re-filtered) tool list every round.
         loop_ctx = self._get_loop_ctx()
-        loop_ctx.tool_search_active = self._should_activate_tool_search(tools)
+        loop_ctx.tool_search_active = should_activate_tool_search(
+            mode=self._tool_search,
+            catalogue=tools,
+            pinned=self._tool_search_pinned,
+            window=self._provider.context_window,
+            threshold_pct=self._tool_search_threshold_pct,
+            threshold_count=self._tool_search_threshold,
+        )
         if loop_ctx.tool_search_active:
             existing = {t.name for t in tools}
-            tools.extend(t for t in self._tool_search_tool_defs() if t.name not in existing)
+            tools.extend(t for t in search_tool_defs() if t.name not in existing)
             system_prompt = (system_prompt or "") + f"\n\n{TOOL_SEARCH_PREAMBLE}"
 
         # Store unfiltered tool list for re-application after skill activation
