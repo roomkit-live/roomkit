@@ -218,7 +218,9 @@ class PostgresStore(ConversationStore):
             idx += 1
         if metadata_filter:
             clauses.append(f"metadata @> ${idx}::jsonb")
-            params.append(json.dumps(metadata_filter))
+            # Pass the dict directly — the registered jsonb codec encodes it.
+            # json.dumps() here would double-encode and break containment.
+            params.append(metadata_filter)
             idx += 1
 
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
