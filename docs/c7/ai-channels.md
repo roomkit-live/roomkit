@@ -182,9 +182,10 @@ ai = AIChannel(
     "ai",
     provider=provider,
     tool_handler=handle_tools,
-    tools=big_catalogue,          # e.g. 60+ MCP tools
-    tool_search=None,             # None = auto, True/False = force
-    tool_search_threshold=20,     # auto-enable above this many tools
+    tools=big_catalogue,              # e.g. 60+ MCP tools
+    tool_search=None,                 # None = auto, True/False = force
+    tool_search_threshold_pct=10.0,   # auto-enable above this % of the window
+    tool_search_threshold=20,         # fallback tool count when window unknown
     tool_search_pinned=["get_help"],  # always visible, never searched for
 )
 ```
@@ -203,8 +204,12 @@ How it works:
 
 Notes:
 
-- **Activation is automatic** above `tool_search_threshold` (default 20).
-  Below it, Tool Search is a no-op and every tool is sent as usual.
+- **Activation auto-tunes to the model.** In `auto` mode it defers when the
+  *deferrable* (non-pinned) tools would cost more than `tool_search_threshold_pct`
+  % of the model's context window (default 10%) — a large model is a no-op, a
+  small one defers early. When the window is unknown (custom / local model ids
+  absent from the provider catalog) it falls back to the `tool_search_threshold`
+  tool count. Below the threshold Tool Search is a no-op and every tool is sent.
 - **Pinned tools** stay visible without a search. The discovery tools always
   pass tool-policy and skill gating, so they work even under a restrictive
   `tool_policy`.

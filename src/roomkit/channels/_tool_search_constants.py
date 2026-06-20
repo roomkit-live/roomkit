@@ -19,9 +19,17 @@ TOOL_LIST_TOOLS = "list_tools"
 TOOL_SEARCH_INFRA_TOOL_NAMES: frozenset[str] = frozenset({TOOL_FIND_TOOLS, TOOL_LIST_TOOLS})
 
 # Default ceiling — matches Google's "10–20 active tools" guidance.
-# Above this, the channel hides non-pinned tools behind the search
-# tools and reveals them via reconfigure when the model finds them.
+# Used by the realtime channel, and by the text channel as the FALLBACK
+# tool count when the model's context window is unknown (custom / local
+# model ids absent from the provider catalog).
 DEFAULT_TOOL_SEARCH_THRESHOLD = 20
+
+# Text-channel auto-activation threshold as a percentage of the model's
+# context window: defer the catalogue when the deferrable (non-pinned)
+# tools would cost more than this share of the window. Self-tunes to model
+# size — a large window is a no-op, a small one defers early. Mirrors the
+# Hermes ``threshold_pct`` default.
+DEFAULT_TOOL_SEARCH_THRESHOLD_PCT = 10.0
 
 # Default number of matches returned by find_tools. Small enough to
 # stay well inside the ceiling even when the model immediately invokes

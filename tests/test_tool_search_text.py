@@ -62,6 +62,15 @@ async def _noop_handler(name: str, arguments: dict) -> str:
     return json.dumps({"ok": True, "tool": name})
 
 
+class UnknownWindowProvider(MockAIProvider):
+    """A provider whose active model is absent from the catalog → no known
+    context window (custom / local model). Forces the count-based fallback."""
+
+    @property
+    def model_name(self) -> str:
+        return "some-custom-local-model"
+
+
 def _tool_names(context) -> set[str]:
     return {t.name for t in context.tools}
 
@@ -83,10 +92,15 @@ def _tool_result(context) -> dict:
 
 
 class TestActivationGating:
-    async def test_below_threshold_is_noop(self) -> None:
-        """Small catalogue → no search tools, no preamble, every tool visible."""
+    async def test_under_window_pct_is_noop(self) -> None:
+        """Deferrable tools under the window-% budget → no search tools, all visible.
+
+        Mock window is 8192; a high pct (50%) keeps a small catalogue under budget.
+        """
         provider = MockAIProvider(responses=["hi"])
-        ch = AIChannel("ai1", provider=provider, system_prompt="Be nice.")
+        ch = AIChannel(
+            "ai1", provider=provider, system_prompt="Be nice.", tool_search_threshold_pct=50.0
+        )
         await _run(ch, _binding(_catalogue(3)))
 
         names = _tool_names(provider.calls[0])
@@ -95,16 +109,35 @@ class TestActivationGating:
         assert names == {"widget_0", "widget_1", "widget_2"}
         assert provider.calls[0].system_prompt == "Be nice."
 
-    async def test_auto_enables_above_threshold(self) -> None:
-        """Catalogue over the (custom) threshold auto-activates Tool Search."""
+    async def test_auto_activates_above_window_pct(self) -> None:
+        """Deferrable tools over the window-% budget auto-activate Tool Search.
+
+        A low pct (0.5% of 8192 ≈ 41 tokens) is exceeded by a few tools, so the
+        catalogue is deferred — self-tuning to the model's window, not a count.
+        """
         provider = MockAIProvider(responses=["hi"])
-        ch = AIChannel("ai1", provider=provider, tool_search_threshold=3)
+        ch = AIChannel("ai1", provider=provider, tool_search_threshold_pct=0.5)
         await _run(ch, _binding(_catalogue(5)))
 
         names = _tool_names(provider.calls[0])
         assert "find_tools" in names and "list_tools" in names
-        # The discretionary catalogue is hidden behind the discovery tools.
         assert not any(n.startswith("widget_") for n in names)
+
+    async def test_count_fallback_when_window_unknown(self) -> None:
+        """No known context window → fall back to the tool-count threshold."""
+        # 5 tools > threshold 3 → activate; the % path is unavailable.
+        on = AIChannel(
+            "ai1", provider=UnknownWindowProvider(responses=["hi"]), tool_search_threshold=3
+        )
+        await _run(on, _binding(_catalogue(5)))
+        assert "find_tools" in _tool_names(on._provider.calls[0])  # type: ignore[attr-defined]
+
+        # 2 tools <= threshold 3 → no activation.
+        off = AIChannel(
+            "ai2", provider=UnknownWindowProvider(responses=["hi"]), tool_search_threshold=3
+        )
+        await _run(off, _binding(_catalogue(2)))
+        assert "find_tools" not in _tool_names(off._provider.calls[0])  # type: ignore[attr-defined]
 
     async def test_forced_off_never_activates(self) -> None:
         provider = MockAIProvider(responses=["hi"])

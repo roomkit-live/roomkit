@@ -15,8 +15,11 @@ NEXT tool-loop round — the text loop re-sends its (re-filtered) tool list
 every round, so no provider reconfigure is needed (this is what makes Tool
 Search work on any text/HTTP provider, not just realtime voice).
 
-Activation is automatic above ``tool_search_threshold`` tools (default 20);
-pass ``tool_search=True``/``False`` to force it on/off.
+Activation is automatic (``tool_search=None``) when the deferrable tools would
+exceed ``tool_search_threshold_pct`` % of the model's context window (default
+10%), self-tuning to model size; it falls back to a ``tool_search_threshold``
+tool count when the window is unknown. Pass ``tool_search=True``/``False`` to
+force it on/off (this example forces ``True`` for determinism).
 
 This example uses a scripted MockAIProvider so it runs without API keys and
 prints the visible tool surface at each round.
@@ -144,8 +147,12 @@ async def main() -> None:
         ),
         system_prompt="You are a helpful assistant.",
         tool_handler=tool_handler,
-        # Auto-enables here (catalogue is 28 > 20). Pin one tool so it stays
-        # visible without a search. Use tool_search=True/False to force.
+        # Forced on for a deterministic demo. In production leave tool_search
+        # at its default (None = auto): it self-enables when the deferrable
+        # tools would exceed ~10% of the model's context window
+        # (tool_search_threshold_pct), falling back to a tool count when the
+        # window is unknown. Pin one tool so it stays visible without a search.
+        tool_search=True,
         tool_search_pinned=["get_help"],
     )
     kit.register_channel(ws)
@@ -167,7 +174,7 @@ async def main() -> None:
         metadata={"tools": CATALOGUE},
     )
 
-    print(f"Catalogue: {len(CATALOGUE)} tools (threshold 20 → Tool Search auto-enabled)\n")
+    print(f"Catalogue: {len(CATALOGUE)} tools — Tool Search on (auto in prod: % of window)\n")
 
     await kit.process_inbound(
         InboundMessage(

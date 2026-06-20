@@ -10,6 +10,7 @@ from roomkit.providers.ai.base import (
     AIImagePart,
     AIMessage,
     AITextPart,
+    AITool,
     AIToolCallPart,
     AIToolResultPart,
 )
@@ -21,6 +22,18 @@ if TYPE_CHECKING:
 def estimate_tokens(text: str) -> int:
     """Rough estimate: 1 token ~ 4 characters for English text."""
     return len(text) // 4 + 1
+
+
+def estimate_tool_tokens(tool: AITool) -> int:
+    """Estimate tokens for a single tool definition sent to the model.
+
+    Counts the name, description, and the JSON schema of the parameters —
+    the parts a provider serializes into the request's tool list.
+    """
+    total = estimate_tokens(tool.name) + estimate_tokens(tool.description)
+    if tool.parameters:
+        total += estimate_tokens(json.dumps(tool.parameters))
+    return total
 
 
 def estimate_message_tokens(message: AIMessage) -> int:
@@ -70,7 +83,5 @@ def estimate_context_tokens(context: AIContext) -> int:
         total += estimate_message_tokens(msg)
     if context.tools:
         for tool in context.tools:
-            total += estimate_tokens(tool.name) + estimate_tokens(tool.description)
-            if tool.parameters:
-                total += estimate_tokens(json.dumps(tool.parameters))
+            total += estimate_tool_tokens(tool)
     return total

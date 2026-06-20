@@ -19,6 +19,7 @@ from roomkit.channels._tool_search_constants import (
     LIST_TOOLS_SCHEMA,
     TOOL_SEARCH_PREAMBLE,
 )
+from roomkit.memory.token_estimator import estimate_tool_tokens
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import ChannelCategory
 from roomkit.models.event import CompositeContent, MediaContent, TextContent
@@ -94,6 +95,7 @@ class AIContextHost(Protocol):
     _tool_search: bool | None
     _tool_search_pinned: set[str]
     _tool_search_threshold: int
+    _tool_search_threshold_pct: float
     channel_id: str
 
     @property
@@ -128,6 +130,7 @@ class AIContextMixin:
     _tool_search: bool | None
     _tool_search_pinned: set[str]
     _tool_search_threshold: int
+    _tool_search_threshold_pct: float
     channel_id: str
 
     # Cross-mixin methods — Any annotations avoid MRO shadowing
@@ -139,18 +142,27 @@ class AIContextMixin:
     def _should_activate_tool_search(self, catalogue: list[AITool]) -> bool:
         """Decide whether Tool Search hides the catalogue this turn.
 
-        This is the single seam for the activation policy. Phase 1 is
-        count-based (parity with the realtime channel). A later phase can
-        swap the body for a context-window-percentage rule without touching
-        any other part of the mechanism — every caller routes through here.
+        The single seam for the activation policy. ``True``/``False`` force
+        on/off. In ``auto`` mode (``None``) the decision self-tunes to the
+        model: defer when the *deferrable* tools (everything except the pinned
+        set) would cost more than ``tool_search_threshold_pct`` % of the
+        model's context window. When the window is unknown (custom / local
+        model absent from the provider catalog) it falls back to the
+        ``tool_search_threshold`` tool count — the floor that still protects
+        small local models whose window we cannot read.
 
-        ``catalogue`` is the real tool list, BEFORE the search infra tools
-        are injected, so the count reflects the deferrable surface only.
+        ``catalogue`` is the real tool list, BEFORE the search infra tools are
+        injected, so it reflects the deferrable surface only.
         """
         if self._tool_search is False:
             return False
         if self._tool_search is True:
             return True
+        window = self._provider.context_window
+        if window:
+            budget = window * self._tool_search_threshold_pct / 100
+            deferrable = (t for t in catalogue if t.name not in self._tool_search_pinned)
+            return sum(estimate_tool_tokens(t) for t in deferrable) > budget
         return len(catalogue) > self._tool_search_threshold
 
     def _tool_search_tool_defs(self) -> list[AITool]:

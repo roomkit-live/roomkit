@@ -76,6 +76,23 @@ async def test_base_list_models_falls_back_to_curated() -> None:
     assert [m.id for m in live] == [m.id for m in MockAIProvider.available_models()]
 
 
+def test_context_window_resolves_from_catalog() -> None:
+    # "mock" is in MockAIProvider's catalog with context_window=8192.
+    assert MockAIProvider().context_window == 8192
+
+
+def test_context_window_none_when_model_absent() -> None:
+    class _Bare(AIProvider):
+        @property
+        def model_name(self) -> str:
+            return "some-custom-local-model"  # not in any catalog
+
+        async def generate(self, context: AIContext) -> AIResponse:
+            return AIResponse(content="")
+
+    assert _Bare().context_window is None
+
+
 def test_merge_curated_backfills_missing_metadata() -> None:
     class _Cat(AIProvider):
         @property

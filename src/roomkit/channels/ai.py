@@ -32,7 +32,10 @@ from roomkit.channels._ai_streaming import AIStreamingMixin
 from roomkit.channels._ai_tools import AIToolsMixin
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tool_eviction import ToolEviction
-from roomkit.channels._tool_search_constants import DEFAULT_TOOL_SEARCH_THRESHOLD
+from roomkit.channels._tool_search_constants import (
+    DEFAULT_TOOL_SEARCH_THRESHOLD,
+    DEFAULT_TOOL_SEARCH_THRESHOLD_PCT,
+)
 from roomkit.channels._turn_config import ConfigProvider
 from roomkit.channels.base import Channel
 from roomkit.memory.base import MemoryProvider
@@ -188,6 +191,7 @@ class AIChannel(
         tool_search: bool | None = None,
         tool_search_pinned: list[str] | None = None,
         tool_search_threshold: int = DEFAULT_TOOL_SEARCH_THRESHOLD,
+        tool_search_threshold_pct: float = DEFAULT_TOOL_SEARCH_THRESHOLD_PCT,
     ) -> None:
         super().__init__(channel_id)
         self._provider = provider
@@ -225,14 +229,19 @@ class AIChannel(
         self._eviction = ToolEviction(threshold_tokens=evict_threshold_tokens)
         self._planner = TaskPlanner() if enable_planning else None
         # Tool Search — progressive tool disclosure for large catalogues.
-        # ``None`` auto-enables above ``tool_search_threshold`` tools; True/False
-        # force. Unlike the realtime channel (which pushes matches via
-        # provider.reconfigure), the text loop re-sends its tool list every
-        # round, so revealing a tool is just a per-round re-filter — no provider
-        # capability is required. See ``_should_activate_tool_search``.
+        # ``None`` auto-enables when the deferrable tools would exceed
+        # ``tool_search_threshold_pct`` % of the model's context window (so it
+        # self-tunes: a big model is a no-op, a small one defers early); when
+        # the window is unknown it falls back to the ``tool_search_threshold``
+        # tool count. True/False force on/off. Unlike the realtime channel
+        # (which pushes matches via provider.reconfigure), the text loop
+        # re-sends its tool list every round, so revealing a tool is just a
+        # per-round re-filter — no provider capability is required. See
+        # ``_should_activate_tool_search``.
         self._tool_search = tool_search
         self._tool_search_pinned: set[str] = set(tool_search_pinned or [])
         self._tool_search_threshold = tool_search_threshold
+        self._tool_search_threshold_pct = tool_search_threshold_pct
 
         # Extract Tool objects: split into AITool definitions + composed handler
         from roomkit.tools.compose import extract_tools

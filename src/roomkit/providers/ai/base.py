@@ -314,6 +314,22 @@ class AIProvider(ABC):
         """Model identifier (e.g. 'claude-sonnet-4-20250514', 'gpt-4o')."""
         ...
 
+    @property
+    def context_window(self) -> int | None:
+        """Input context window of the active model in tokens, if known.
+
+        Resolved offline from the curated :meth:`available_models` catalog
+        keyed by :attr:`model_name` — no API key or network. Returns ``None``
+        when the active model is absent from the catalog (custom / local model
+        ids, e.g. an arbitrary vLLM model string), so callers must degrade
+        gracefully rather than assume a window.
+        """
+        name = self.model_name
+        for model in type(self).available_models():
+            if model.id == name:
+                return model.context_window
+        return None
+
     @abstractmethod
     async def generate(self, context: AIContext) -> AIResponse:
         """Generate an AI response from the given context.

@@ -12,17 +12,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tool Search on text/HTTP agents (`AIChannel`).** Progressive tool
   disclosure — previously realtime-only — now works on any text provider.
   `AIChannel` gains `tool_search` (`None` = auto, `True`/`False` = force),
-  `tool_search_pinned`, and `tool_search_threshold` (default 20). When the
-  catalogue exceeds the threshold the model first sees only `find_tools` /
-  `list_tools` plus the pinned set; calling `find_tools(query)` reveals the
-  matched tools on the next tool-loop round. Unlike the realtime channel (which
-  pushes matches via `provider.reconfigure`), the text loop re-sends its
-  re-filtered tool list every round, so no provider capability is required —
-  the same mechanism as skill gating. The discovery tools bypass `tool_policy`
-  and skill gating so they always work; a restrictive policy still governs the
-  revealed tools. The scoring + result rendering is shared with the realtime
-  path via `roomkit.channels._tool_search`. Backward compatible — Tool Search is
-  off below the threshold and a no-op when `tool_search=False`. See
+  `tool_search_pinned`, `tool_search_threshold_pct` (default 10) and
+  `tool_search_threshold` (default 20). In `auto` mode it self-tunes to the
+  model: it hides the catalogue when the deferrable (non-pinned) tools would
+  cost more than `tool_search_threshold_pct` % of the model's context window
+  (resolved from the provider catalog), falling back to the
+  `tool_search_threshold` tool count when the window is unknown (custom / local
+  model ids). The model then sees only `find_tools` / `list_tools` plus the
+  pinned set; calling `find_tools(query)` reveals the matched tools on the next
+  tool-loop round. Unlike the realtime channel (which pushes matches via
+  `provider.reconfigure`), the text loop re-sends its re-filtered tool list
+  every round, so no provider capability is required — the same mechanism as
+  skill gating. The discovery tools bypass `tool_policy` and skill gating so
+  they always work; a restrictive policy still governs the revealed tools. The
+  scoring + result rendering is shared with the realtime path via
+  `roomkit.channels._tool_search`. Also adds `AIProvider.context_window`
+  (resolves the active model's window from the offline catalog) and
+  `token_estimator.estimate_tool_tokens`. Backward compatible — Tool Search is a
+  no-op below the threshold and when `tool_search=False`. See
   `examples/ai_tool_search.py` and `docs/c7/ai-channels.md`.
 - **Ollama endpoint authentication.** `OllamaConfig` now accepts `api_key`
   (a `SecretStr`, sent as `Authorization: Bearer <key>`) and `headers` (extra
