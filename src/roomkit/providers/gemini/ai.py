@@ -11,6 +11,7 @@ from typing import Any, cast
 from uuid import uuid4
 
 from roomkit.providers.ai.base import (
+    RETRYABLE_STATUS_CODES,
     AIContext,
     AIImagePart,
     AIMessage,
@@ -261,7 +262,7 @@ class GeminiAIProvider(AIProvider):
         """Wrap an SDK exception into a ProviderError."""
         status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
         retryable = (
-            status_code in (429, 500, 502, 503)
+            status_code in RETRYABLE_STATUS_CODES
             if status_code
             else any(
                 term in str(exc).lower() for term in ["rate", "limit", "429", "500", "502", "503"]

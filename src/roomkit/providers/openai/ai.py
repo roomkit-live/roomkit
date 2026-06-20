@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 from roomkit.providers.ai.base import (
+    RETRYABLE_STATUS_CODES,
     AIContext,
     AIImagePart,
     AIMessage,
@@ -341,7 +342,7 @@ class OpenAIAIProvider(AIProvider):
                 provider=self._provider_name,
             ) from exc
         except self._api_status_error as exc:
-            retryable = exc.status_code in (429, 500, 502, 503)
+            retryable = exc.status_code in RETRYABLE_STATUS_CODES
             raise ProviderError(
                 str(exc),
                 retryable=retryable,
@@ -548,7 +549,7 @@ class OpenAIAIProvider(AIProvider):
         except self._api_status_error as exc:
             raise ProviderError(
                 str(exc),
-                retryable=exc.status_code in {429, 500, 502, 503},
+                retryable=exc.status_code in RETRYABLE_STATUS_CODES,
                 provider=self._provider_name,
                 status_code=exc.status_code,
             ) from exc

@@ -106,6 +106,11 @@ class ProviderError(Exception):
         self.status_code = status_code
 
 
+# HTTP status codes that are transient and worth retrying for any AI provider.
+# Providers may extend this set with their own (e.g. Anthropic's 529 "overloaded").
+RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503})
+
+
 class AIMessage(BaseModel):
     """A message in the AI conversation context."""
 

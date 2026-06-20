@@ -19,6 +19,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from roomkit.providers.ai.base import (
+    RETRYABLE_STATUS_CODES,
     AIContext,
     AIImagePart,
     AIMessage,
@@ -313,7 +314,7 @@ class OllamaAIProvider(AIProvider):
             # </function>"). That's a transient generation defect: a retry
             # regenerates with fresh sampling. Only definite HTTP client
             # errors stay non-retryable.
-            retryable = status in (None, -1, 429, 500, 502, 503)
+            retryable = status in (None, -1) or status in RETRYABLE_STATUS_CODES
             return ProviderError(
                 str(exc),
                 retryable=retryable,

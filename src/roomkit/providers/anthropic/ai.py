@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from roomkit.providers.ai.base import (
+    RETRYABLE_STATUS_CODES,
     AIContext,
     AIImagePart,
     AIProvider,
@@ -308,7 +309,8 @@ class AnthropicAIProvider(AIProvider):
                 metadata={"model": final.model},
             )
         except self._api_status_error as exc:
-            retryable = exc.status_code in (429, 500, 502, 503, 529)
+            # Anthropic adds 529 "overloaded" to the shared retryable set.
+            retryable = exc.status_code in RETRYABLE_STATUS_CODES or exc.status_code == 529
             raise ProviderError(
                 str(exc),
                 retryable=retryable,
