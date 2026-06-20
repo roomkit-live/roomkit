@@ -38,7 +38,7 @@ class OpenRouterAIProvider(OpenAIAIProvider):
             base_url=config.base_url,
             timeout=config.timeout,
             max_retries=config.max_retries,
-            default_headers=self._attribution_headers(config) or None,
+            default_headers=self._merged_headers(config),
         )
 
     @staticmethod
@@ -54,6 +54,17 @@ class OpenRouterAIProvider(OpenAIAIProvider):
         if config.app_name:
             headers["X-Title"] = config.app_name
         return headers
+
+    def _merged_headers(self, config: OpenRouterConfig) -> dict[str, str] | None:
+        """Attribution headers plus any inherited ``default_headers``.
+
+        ``default_headers`` comes from :class:`OpenAIConfig` (proxy or
+        non-Bearer headers); it layers on top of attribution and wins on key
+        collisions. ``None`` when nothing is set.
+        """
+        headers = self._attribution_headers(config)
+        headers.update(config.default_headers or {})
+        return headers or None
 
     @property
     def _provider_name(self) -> str:

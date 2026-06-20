@@ -213,6 +213,18 @@ class TestOpenRouterAIProvider:
             _, kwargs = mock_mod.AsyncOpenAI.call_args
             assert kwargs["default_headers"] is None
 
+    def test_inherited_default_headers_merge_with_attribution(self) -> None:
+        # default_headers comes from OpenAIConfig; it must layer on top of the
+        # attribution headers, not be silently dropped by the subclass __init__.
+        mock_mod = _mock_openai_module()
+        with patch.dict("sys.modules", {"openai": mock_mod}):
+            from roomkit.providers.openrouter.ai import OpenRouterAIProvider
+
+            OpenRouterAIProvider(_config(app_name="My App", default_headers={"X-Proxy": "v1"}))
+
+            _, kwargs = mock_mod.AsyncOpenAI.call_args
+            assert kwargs["default_headers"] == {"X-Title": "My App", "X-Proxy": "v1"}
+
     def test_lazy_import_error(self) -> None:
         with patch.dict("sys.modules", {"openai": None}):
             import importlib
