@@ -291,13 +291,16 @@ class OpenAIAIProvider(AIProvider):
             kwargs["reasoning_effort"] = self._config.reasoning_effort
 
     def _apply_extra_body(self, kwargs: dict[str, Any]) -> None:
-        """Attach configured ``extra_body`` (server-specific request fields).
+        """Merge configured ``extra_body`` (server-specific request fields).
 
         Carries params the OpenAI schema omits — vLLM guided decoding and
         extra sampling knobs — through the SDK's ``extra_body`` passthrough.
+        Merges into any ``extra_body`` a subclass already populated (e.g.
+        OpenRouter's ``reasoning``) instead of replacing it; keys already set
+        on the request win, so static config never clobbers a per-turn value.
         """
         if self._config.extra_body:
-            kwargs["extra_body"] = self._config.extra_body
+            kwargs["extra_body"] = {**self._config.extra_body, **kwargs.get("extra_body", {})}
 
     # -- Non-streaming ---------------------------------------------------------
 

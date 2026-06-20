@@ -345,6 +345,24 @@ class TestOpenRouterReasoning:
         self._provider(reasoning_effort="high")._apply_sampling_kwargs(kwargs, ctx)
         assert "extra_body" not in kwargs
 
+    @pytest.mark.asyncio
+    async def test_config_extra_body_merges_with_reasoning(self) -> None:
+        # Regression: a configured extra_body must not clobber the reasoning
+        # object OpenRouter sets in _apply_sampling_kwargs — both ride the
+        # request together through the full generate() path.
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openrouter.ai import OpenRouterAIProvider
+
+            provider = OpenRouterAIProvider(
+                _config(reasoning_effort="high", extra_body={"top_k": 20})
+            )
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(return_value=_mock_response())
+            await provider.generate(_context())
+            extra_body = provider._client.chat.completions.create.call_args[1]["extra_body"]
+            assert extra_body["reasoning"] == {"effort": "high"}
+            assert extra_body["top_k"] == 20
+
     def test_temperature_still_applied(self) -> None:
         kwargs: dict[str, Any] = {}
         self._provider()._apply_sampling_kwargs(kwargs, _context(temperature=0.3))
