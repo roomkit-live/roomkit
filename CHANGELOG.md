@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-06-20
+
 ### Added
 
 - **Tool Search on text/HTTP agents (`AIChannel`).** Progressive tool
@@ -31,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `token_estimator.estimate_tool_tokens`. Backward compatible — Tool Search is a
   no-op below the threshold and when `tool_search=False`. See
   `examples/ai_tool_search.py` and `docs/c7/ai-channels.md`.
+
+## [0.16.0] — 2026-06-19
+
+### Added
+
 - **Ollama endpoint authentication.** `OllamaConfig` now accepts `api_key`
   (a `SecretStr`, sent as `Authorization: Bearer <key>`) and `headers` (extra
   proxy / non-Bearer headers), so the native `OllamaAIProvider` can reach a
