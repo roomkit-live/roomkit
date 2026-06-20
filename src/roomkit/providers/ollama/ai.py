@@ -76,7 +76,25 @@ class OllamaAIProvider(AIProvider):
             ) from exc
         self._config = config
         self._response_error = _ollama.ResponseError
-        self._client = _ollama.AsyncClient(host=config.host, timeout=config.timeout)
+        self._client = _ollama.AsyncClient(
+            host=config.host,
+            timeout=config.timeout,
+            headers=self._build_headers(config),
+        )
+
+    @staticmethod
+    def _build_headers(config: OllamaConfig) -> dict[str, str] | None:
+        """Merge configured headers with a Bearer token from ``api_key``.
+
+        Returns ``None`` when nothing is configured so the SDK keeps its
+        default behavior — including its own fallback to the
+        ``OLLAMA_API_KEY`` environment variable. A configured ``api_key``
+        wins over an ``Authorization`` entry supplied via ``headers``.
+        """
+        headers: dict[str, str] = dict(config.headers or {})
+        if config.api_key is not None:
+            headers["Authorization"] = f"Bearer {config.api_key.get_secret_value()}"
+        return headers or None
 
     @property
     def _provider_name(self) -> str:

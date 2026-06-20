@@ -15,6 +15,10 @@ Run with:
     OLLAMA_HOST=http://localhost:11434 OLLAMA_MODEL=qwen3:8b \\
         uv run python examples/ollama_ai.py
 
+Set ``OLLAMA_API_KEY`` to authenticate against a protected endpoint
+(Ollama Cloud/Turbo, or a self-hosted server behind a Bearer-checking
+reverse proxy); it is forwarded as ``Authorization: Bearer <key>``.
+
 ``OLLAMA_THINK`` is tri-state:
   * ``0`` / ``false`` / ``off`` / ``no``  → thinking disabled
   * ``low`` / ``medium`` / ``high``       → thinking on at that effort
@@ -61,7 +65,14 @@ async def main() -> None:
     )
     thinking_budget = 4096 if think_on else 0
 
-    provider = OllamaAIProvider(OllamaConfig(host=host, model=model, think=effort))
+    # api_key=None when unset → the SDK still honors OLLAMA_API_KEY itself.
+    # Pass it explicitly here to show how a key from a secret manager would
+    # flow into the provider config. `or None` collapses an exported-but-empty
+    # var to the clean no-auth path instead of an empty Bearer header.
+    api_key = os.environ.get("OLLAMA_API_KEY") or None
+    provider = OllamaAIProvider(
+        OllamaConfig(host=host, model=model, think=effort, api_key=api_key)
+    )
 
     kit = RoomKit()
 

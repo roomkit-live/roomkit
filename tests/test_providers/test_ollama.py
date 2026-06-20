@@ -617,6 +617,34 @@ class TestOllamaErrors:
         assert exc.value.retryable is True
 
 
+class TestOllamaAuth:
+    def test_api_key_sets_bearer_header(self) -> None:
+        _, mod = _provider(api_key="secret-token")
+        headers = mod.AsyncClient.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "Bearer secret-token"
+
+    def test_custom_headers_passed_through(self) -> None:
+        _, mod = _provider(headers={"X-Proxy-Token": "abc"})
+        headers = mod.AsyncClient.call_args.kwargs["headers"]
+        assert headers == {"X-Proxy-Token": "abc"}
+
+    def test_api_key_wins_over_headers_authorization(self) -> None:
+        # The dedicated api_key field beats an Authorization smuggled in via
+        # headers; unrelated custom headers are preserved alongside it.
+        _, mod = _provider(
+            api_key="real-key",
+            headers={"Authorization": "Bearer stale", "X-Env": "prod"},
+        )
+        headers = mod.AsyncClient.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "Bearer real-key"
+        assert headers["X-Env"] == "prod"
+
+    def test_no_auth_passes_none_headers(self) -> None:
+        # None lets the SDK keep its own OLLAMA_API_KEY env-var fallback.
+        _, mod = _provider()
+        assert mod.AsyncClient.call_args.kwargs["headers"] is None
+
+
 class TestOllamaConfig:
     def test_defaults(self) -> None:
         config = OllamaConfig()
@@ -628,6 +656,15 @@ class TestOllamaConfig:
         assert config.think is None
         assert config.keep_alive is None
         assert config.num_ctx is None
+        assert config.api_key is None
+        assert config.headers is None
+
+    def test_api_key_is_secret(self) -> None:
+        config = OllamaConfig(api_key="super-secret-xyz")
+        assert config.api_key is not None
+        assert config.api_key.get_secret_value() == "super-secret-xyz"
+        # SecretStr masks the value in repr so it never leaks into logs.
+        assert "super-secret-xyz" not in repr(config)
 
     def test_overrides(self) -> None:
         config = OllamaConfig(

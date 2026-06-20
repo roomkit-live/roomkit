@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 #: Effort levels accepted by Ollama's ``think`` parameter for reasoning models.
 ThinkEffort = Literal["low", "medium", "high"]
@@ -57,6 +57,19 @@ class OllamaConfig(BaseModel):
         num_ctx: Context window size. Maps to ``options.num_ctx``.
             ``None`` uses the model's default (typically 2048 — bump
             for long contexts).
+        api_key: Bearer token for a protected Ollama endpoint — Ollama
+            Cloud/Turbo, or a self-hosted server behind a reverse proxy
+            that checks ``Authorization: Bearer``. Sent as the
+            ``Authorization`` header. ``None`` (default) leaves auth to
+            the SDK, which still falls back to the ``OLLAMA_API_KEY``
+            environment variable when it is set. Prefer this field when
+            the key comes from a secret manager rather than the process
+            environment.
+        headers: Extra HTTP headers attached to every request — for a
+            reverse proxy that needs custom headers, or a non-Bearer
+            ``Authorization`` scheme (e.g. Basic). ``api_key`` takes
+            precedence over an ``Authorization`` entry supplied here.
+            ``None`` (default) sends only the SDK's own headers.
     """
 
     host: str = "http://localhost:11434"
@@ -68,3 +81,5 @@ class OllamaConfig(BaseModel):
     think: bool | ThinkEffort | None = None
     keep_alive: str | int | None = None
     num_ctx: int | None = None
+    api_key: SecretStr | None = None
+    headers: dict[str, str] | None = None
