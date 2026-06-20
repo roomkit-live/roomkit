@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Ollama endpoint authentication.** `OllamaConfig` now accepts `api_key`
+  (a `SecretStr`, sent as `Authorization: Bearer <key>`) and `headers` (extra
+  proxy / non-Bearer headers), so the native `OllamaAIProvider` can reach a
+  protected endpoint — Ollama Cloud/Turbo, or a self-hosted server behind a
+  Bearer-checking reverse proxy. `api_key` takes precedence over an
+  `Authorization` entry in `headers`; when both are unset the SDK still falls
+  back to the `OLLAMA_API_KEY` environment variable. Backward compatible —
+  both default to `None`.
+- **Custom headers and `extra_body` passthrough for OpenAI-compatible
+  providers.** `OpenAIConfig` gains `default_headers` (custom proxy / non-Bearer
+  auth headers, forwarded to the SDK) and `extra_body` (merged into every Chat
+  Completions request body) for server-specific params the OpenAI schema omits —
+  vLLM guided decoding (`guided_json`/`guided_choice`) and extra sampling
+  (`top_k`, `repetition_penalty`). `VLLMConfig` exposes these as `headers` /
+  `extra_body`; `AzureAIConfig` gains `extra_body`; `OpenRouterConfig` inherits
+  both, with `default_headers` layered on top of its attribution headers.
+  `extra_body` is merged rather than replaced, so static config never clobbers a
+  per-turn value such as OpenRouter's `reasoning`. vLLM's `api_key` already mapped
+  to a Bearer token. Backward compatible — all new fields default to `None`.
+
 ## [0.15.0] — 2026-06-18
 
 ### Added
