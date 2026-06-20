@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelType, EventStatus, EventType, HookTrigger
+from roomkit.models.enums import ChannelType, EventStatus, EventType, HookTrigger, Visibility
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
 from roomkit.orchestration.state import (
@@ -474,7 +474,7 @@ class HandoffHandler:
             content=TextContent(body=request.reason),
             type=EventType.SYSTEM,
             status=EventStatus.DELIVERED,
-            visibility="internal",
+            visibility=Visibility.INTERNAL,
             metadata={
                 "handoff": True,
                 "from_agent": calling_agent_id,

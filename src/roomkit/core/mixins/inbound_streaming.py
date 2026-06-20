@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
+from roomkit.core.visibility import visibility_allows
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
@@ -276,19 +277,8 @@ class InboundStreamingMixin(HelpersMixin):
                 continue
             if binding.direction == ChannelDirection.OUTBOUND:
                 continue
-            if response_vis is not None and response_vis != "all":
-                if response_vis == "none":
-                    continue
-                if response_vis == "transport":
-                    pass
-                elif response_vis == "intelligence":
-                    continue
-                elif "," in response_vis:
-                    allowed = {cid.strip() for cid in response_vis.split(",") if cid.strip()}
-                    if binding.channel_id not in allowed:
-                        continue
-                elif binding.channel_id != response_vis:
-                    continue
+            if response_vis is not None and not visibility_allows(response_vis, binding):
+                continue
             channel = router.get_channel(binding.channel_id)
             supports = getattr(channel, "supports_streaming_delivery", False) if channel else False
             if channel and supports:

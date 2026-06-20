@@ -27,6 +27,7 @@ from roomkit.models.enums import (
     ChannelType,
     EventType,
     HookTrigger,
+    Visibility,
 )
 from roomkit.voice.base import VoiceCapability
 from roomkit.voice.bridge import AudioBridge, AudioBridgeConfig, BridgeFrameFilter
@@ -1270,7 +1271,7 @@ class VoiceChannel(
         # Skip system events and internal-visibility events — they carry
         # orchestration metadata (e.g. handoff notifications) that should
         # never be spoken aloud via TTS.
-        if event.type == EventType.SYSTEM or event.visibility == "internal":
+        if event.type == EventType.SYSTEM or event.visibility == Visibility.INTERNAL:
             return ChannelOutputModel.empty()
 
         if self._streaming and not self._backend:

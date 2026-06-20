@@ -14,6 +14,7 @@ from roomkit.models.enums import (
     DeleteType,
     EventStatus,
     EventType,
+    Visibility,
 )
 
 
@@ -230,7 +231,7 @@ class RoomEvent(BaseModel):
     content: EventContent
     status: EventStatus = EventStatus.PENDING
     blocked_by: str | None = None
-    visibility: str = "all"
+    visibility: str = Visibility.ALL
     response_visibility: str | None = None
     index: int = Field(default=0, ge=0)
     chain_depth: int = Field(default=0, ge=0)

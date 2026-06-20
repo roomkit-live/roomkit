@@ -17,6 +17,7 @@ from roomkit.models.enums import (
     EventType,
     HookTrigger,
     TaskStatus,
+    Visibility,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
@@ -321,7 +322,7 @@ class DelegationMixin(HelpersMixin):
             content=TextContent(body=f"[Task delegated to {agent_id}] {task}"),
             type=EventType.TASK_DELEGATED,
             status=EventStatus.DELIVERED,
-            visibility="internal",
+            visibility=Visibility.INTERNAL,
             metadata=hook_meta,
         )
         room_context = await self._build_context(room_id)
@@ -478,7 +479,7 @@ class DelegationMixin(HelpersMixin):
             content=TextContent(body=result.output or result.error or ""),
             type=EventType.TASK_COMPLETED,
             status=EventStatus.DELIVERED,
-            visibility="internal",
+            visibility=Visibility.INTERNAL,
             metadata=hook_meta,
         )
         try:

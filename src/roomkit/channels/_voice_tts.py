@@ -10,7 +10,7 @@ from collections import OrderedDict
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from roomkit.models.enums import HookTrigger
+from roomkit.models.enums import EventType, HookTrigger, Visibility
 from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
 from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.voice.utils import rms_db
@@ -289,9 +289,7 @@ class VoiceTTSMixin:
             return ChannelOutputModel.empty()
 
         # Defense-in-depth: skip system/internal events (primary guard is in deliver())
-        from roomkit.models.enums import EventType
-
-        if event.type == EventType.SYSTEM or event.visibility == "internal":
+        if event.type == EventType.SYSTEM or event.visibility == Visibility.INTERNAL:
             return ChannelOutputModel.empty()
 
         # Track event to prevent duplicate TTS delivery (streaming + broadcast)

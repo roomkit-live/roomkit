@@ -13,6 +13,7 @@ from roomkit.models.enums import (
     EventType,
     HookExecution,
     HookTrigger,
+    Visibility,
 )
 
 if TYPE_CHECKING:
@@ -155,7 +156,7 @@ class ChannelOpsMixin(HelpersMixin):
         channel_id: str,
         category: ChannelCategory = ChannelCategory.TRANSPORT,
         access: Access = Access.READ_WRITE,
-        visibility: str = "all",
+        visibility: str = Visibility.ALL,
         **kwargs: Any,
     ) -> ChannelBinding:
         """Attach a registered channel to a room."""

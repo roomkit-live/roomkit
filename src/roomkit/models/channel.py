@@ -14,6 +14,7 @@ from roomkit.models.enums import (
     ChannelMediaType,
     ChannelType,
     DeliveryMode,
+    Visibility,
 )
 from roomkit.models.event import RoomEvent
 from roomkit.models.task import Observation, Task
@@ -77,7 +78,7 @@ class ChannelBinding(BaseModel):
     access: Access = Access.READ_WRITE
     muted: bool = False
     output_muted: bool = False
-    visibility: str = "all"
+    visibility: str = Visibility.ALL
     participant_id: str | None = None
     last_read_index: int | None = Field(default=None, ge=0)
     attached_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

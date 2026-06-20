@@ -14,6 +14,7 @@ from roomkit.models.delivery import InboundMessage, InboundResult
 from roomkit.models.enums import (
     ChannelType,
     HookTrigger,
+    Visibility,
 )
 from roomkit.models.event import RoomEvent
 
@@ -187,7 +188,7 @@ class InboundMixin(HelpersMixin):
 
         # Caller-requested visibility (e.g. ``"transport"`` for a proactive
         # notification that must not wake the room's intelligence channel).
-        if message.visibility != "all" and event.visibility == "all":
+        if message.visibility != Visibility.ALL and event.visibility == Visibility.ALL:
             event = event.model_copy(update={"visibility": message.visibility})
 
         # Identity resolution pipeline (RFC §7)

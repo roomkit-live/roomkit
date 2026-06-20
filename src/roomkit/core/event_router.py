@@ -13,6 +13,7 @@ from roomkit.core.circuit_breaker import CircuitBreaker
 from roomkit.core.rate_limiter import TokenBucketRateLimiter
 from roomkit.core.retry import retry_with_backoff
 from roomkit.core.transcoder import DefaultContentTranscoder
+from roomkit.core.visibility import visibility_allows
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
@@ -21,6 +22,7 @@ from roomkit.models.enums import (
     ChannelDirection,
     ChannelMediaType,
     EventStatus,
+    Visibility,
 )
 from roomkit.models.event import (
     AudioContent,
@@ -164,7 +166,7 @@ class EventRouter:
             return result
 
         # Stamp visibility from source binding
-        if event.visibility == "all" and source_binding.visibility != "all":
+        if event.visibility == Visibility.ALL and source_binding.visibility != Visibility.ALL:
             event = event.model_copy(update={"visibility": source_binding.visibility})
 
         # Determine target bindings (includes muted channels — they can still read)
@@ -460,28 +462,7 @@ class EventRouter:
         This allows callers of send_event() to override visibility per-event.
         """
         vis = event.visibility or source_binding.visibility
-
-        if vis == "all":
-            return True
-
-        if vis == "none":
-            return False
-
-        # "transport" - only visible to transport channels
-        if vis == "transport":
-            return target_binding.category == ChannelCategory.TRANSPORT
-
-        # "intelligence" - only visible to intelligence channels
-        if vis == "intelligence":
-            return target_binding.category == ChannelCategory.INTELLIGENCE
-
-        # Comma-separated list of channel IDs
-        if "," in vis:
-            allowed = {cid.strip() for cid in vis.split(",") if cid.strip()}
-            return target_binding.channel_id in allowed
-
-        # Single channel ID
-        return target_binding.channel_id == vis
+        return visibility_allows(vis, target_binding)
 
     @staticmethod
     def _content_media_type(content: Any) -> ChannelMediaType | None:

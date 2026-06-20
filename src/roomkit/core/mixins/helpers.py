@@ -35,6 +35,7 @@ from roomkit.models.enums import (
     EventType,
     HookTrigger,
     IdentificationStatus,
+    Visibility,
 )
 from roomkit.models.event import EventSource, RoomEvent, SystemContent
 from roomkit.models.framework_event import FrameworkEvent
@@ -267,7 +268,7 @@ class HelpersMixin:
             source=EventSource(channel_id="system", channel_type=ChannelType.SYSTEM),
             content=SystemContent(body=message, code=code, data=data or {}),
             status=EventStatus.DELIVERED,
-            visibility="internal",
+            visibility=Visibility.INTERNAL,
         )
         try:
             context = await self._build_context(room_id)
@@ -316,7 +317,7 @@ class HelpersMixin:
                 source=event.source,
                 content=event.content,
                 status=EventStatus.DELIVERED,
-                visibility="internal",
+                visibility=Visibility.INTERNAL,
                 metadata={"task_id": task.id, "task_title": task.title},
             )
             await self._hook_engine.run_async_hooks(
@@ -338,7 +339,7 @@ class HelpersMixin:
             source=EventSource(channel_id="system", channel_type=ChannelType.SYSTEM),
             content=SystemContent(body=message, code=code, data=data or {}),
             status=EventStatus.DELIVERED,
-            visibility="internal",
+            visibility=Visibility.INTERNAL,
         )
         await self._persist_event_auto_index(room_id, event)
 

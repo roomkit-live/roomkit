@@ -66,6 +66,7 @@ from roomkit.models.enums import (
     HookExecution,
     HookTrigger,
     RoomStatus,
+    Visibility,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.framework_event import FrameworkEvent
@@ -209,6 +210,7 @@ __all__ = [
     "HookExecution",
     "HookTrigger",
     "RoomStatus",
+    "Visibility",
     # Orchestration
     "ConversationPhase",
     "ConversationPipeline",

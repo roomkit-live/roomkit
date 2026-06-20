@@ -67,6 +67,7 @@ from roomkit.models.enums import (
     EventStatus,
     EventType,
     HookTrigger,
+    Visibility,
 )
 from roomkit.models.event import EventSource, RoomEvent
 from roomkit.models.store_filter import PersistencePolicy
@@ -455,7 +456,7 @@ class RoomKit(
         chain_depth: int = 0,
         participant_id: str | None = None,
         metadata: dict[str, Any] | None = None,
-        visibility: str = "all",
+        visibility: str = Visibility.ALL,
         provider: str | None = None,
         response_visibility: str | None = None,
         created_at: datetime | None = None,

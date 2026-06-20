@@ -113,6 +113,22 @@ class Access(StrEnum):
 
 
 @unique
+class Visibility(StrEnum):
+    """Known scope keywords for an event's ``visibility`` field.
+
+    The field is a plain ``str`` because it ALSO accepts channel ids
+    (single, or a comma-separated list). These constants name only the
+    well-known scope keywords so comparisons never rely on raw literals.
+    """
+
+    ALL = "all"
+    NONE = "none"
+    TRANSPORT = "transport"
+    INTELLIGENCE = "intelligence"
+    INTERNAL = "internal"
+
+
+@unique
 class IdentificationStatus(StrEnum):
     IDENTIFIED = "identified"
     PENDING = "pending"

@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from roomkit.models.enums import EventType
+from roomkit.models.enums import EventType, Visibility
 from roomkit.models.event import EventContent, RoomEvent
 
 
@@ -42,7 +42,7 @@ class InboundMessage(BaseModel):
     # (transports + intelligence). Set ``"transport"`` to deliver into a room
     # WITHOUT triggering its intelligence channel — e.g. a proactive
     # notification the agent should not react to.
-    visibility: str = "all"
+    visibility: str = Visibility.ALL
 
 
 class InboundResult(BaseModel):

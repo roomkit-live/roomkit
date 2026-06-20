@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from roomkit.core.delivery import DeliveryContext
 from roomkit.delivery.base import DeliveryItem
 from roomkit.delivery.serialization import deserialize_strategy
-from roomkit.models.enums import EventStatus, EventType, HookTrigger
+from roomkit.models.enums import EventStatus, EventType, HookTrigger, Visibility
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 
 if TYPE_CHECKING:
@@ -48,7 +48,7 @@ def build_delivery_hook_event(
         content=TextContent(body=content),
         type=EventType.MESSAGE,
         status=status,
-        visibility="internal",
+        visibility=Visibility.INTERNAL,
         metadata=meta,
     )
 
