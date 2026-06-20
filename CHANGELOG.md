@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tool Search on text/HTTP agents (`AIChannel`).** Progressive tool
+  disclosure — previously realtime-only — now works on any text provider.
+  `AIChannel` gains `tool_search` (`None` = auto, `True`/`False` = force),
+  `tool_search_pinned`, and `tool_search_threshold` (default 20). When the
+  catalogue exceeds the threshold the model first sees only `find_tools` /
+  `list_tools` plus the pinned set; calling `find_tools(query)` reveals the
+  matched tools on the next tool-loop round. Unlike the realtime channel (which
+  pushes matches via `provider.reconfigure`), the text loop re-sends its
+  re-filtered tool list every round, so no provider capability is required —
+  the same mechanism as skill gating. The discovery tools bypass `tool_policy`
+  and skill gating so they always work; a restrictive policy still governs the
+  revealed tools. The scoring + result rendering is shared with the realtime
+  path via `roomkit.channels._tool_search`. Backward compatible — Tool Search is
+  off below the threshold and a no-op when `tool_search=False`. See
+  `examples/ai_tool_search.py` and `docs/c7/ai-channels.md`.
 - **Ollama endpoint authentication.** `OllamaConfig` now accepts `api_key`
   (a `SecretStr`, sent as `Authorization: Bearer <key>`) and `headers` (extra
   proxy / non-Bearer headers), so the native `OllamaAIProvider` can reach a

@@ -127,6 +127,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | Example | Feature | Description |
 |---------|---------|-------------|
 | `ai_tools_function_calling.py` | Tools | Custom tools, function calling, and per-room tool config |
+| `ai_tool_search.py` | Tools | Progressive tool disclosure for large catalogues (find_tools/list_tools) |
 | `ai_thinking.py` | Reasoning | Extended thinking / chain-of-thought support |
 | `ai_planning.py` | Planning | Structured task tracking with `_plan_tasks` tool |
 | `ai_eviction.py` | Token mgmt | Auto-pagination of large tool results to avoid overflow |

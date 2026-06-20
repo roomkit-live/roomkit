@@ -16,17 +16,25 @@ implements the dynamic-tool-selection pattern Google itself points to:
 
 Activation is per-session — each session has its own match window so
 parallel calls do not cross-contaminate.
+
+The scoring + result rendering is shared with the text/HTTP agent loop
+via :mod:`roomkit.channels._tool_search`; only the session state and the
+``provider.reconfigure`` delivery are realtime-specific and live here.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
 
+from roomkit.channels._tool_search import (
+    normalize_max_results,
+    render_find_payload,
+    render_list_payload,
+    search_catalogue,
+)
 from roomkit.channels._tool_search_constants import (
-    DEFAULT_FIND_TOOLS_LIMIT,
     FIND_TOOLS_SCHEMA,
     LIST_TOOLS_SCHEMA,
     TOOL_FIND_TOOLS,
@@ -35,33 +43,6 @@ from roomkit.channels._tool_search_constants import (
 )
 
 logger = logging.getLogger("roomkit.channels.realtime_voice")
-
-
-_TOKEN_SPLIT = re.compile(r"[\W_]+")
-
-
-def _tokenize(text: str) -> list[str]:
-    return [t.lower() for t in _TOKEN_SPLIT.split(text or "") if t]
-
-
-def _score(query_tokens: list[str], tool: dict[str, Any]) -> int:
-    """Cheap fuzzy match: count overlapping word tokens.
-
-    Name matches weigh 3x, description matches weigh 1x. No external
-    dependencies; runs in microseconds for a few-hundred-tool catalogue
-    so it's safe in the realtime hot path.
-    """
-    if not query_tokens:
-        return 0
-    name_tokens = set(_tokenize(tool.get("name", "")))
-    desc_tokens = set(_tokenize(tool.get("description", "")))
-    score = 0
-    for q in query_tokens:
-        if q in name_tokens:
-            score += 3
-        if q in desc_tokens:
-            score += 1
-    return score
 
 
 class RealtimeToolSearchSupport:
@@ -156,9 +137,6 @@ class RealtimeToolSearchSupport:
         self, arguments: dict[str, Any], session_id: str
     ) -> tuple[str, list[dict[str, Any]] | None]:
         query = str(arguments.get("query", "")).strip()
-        max_results = int(arguments.get("max_results") or DEFAULT_FIND_TOOLS_LIMIT)
-        max_results = max(1, min(max_results, self._threshold))
-
         if not query:
             return (
                 json.dumps(
@@ -170,76 +148,23 @@ class RealtimeToolSearchSupport:
                 None,
             )
 
-        query_tokens = _tokenize(query)
-        scored: list[tuple[int, dict[str, Any]]] = []
-        for tool in self._catalogue:
-            n = tool.get("name", "")
-            if n in TOOL_SEARCH_INFRA_TOOL_NAMES or n in self._pinned_names:
-                continue
-            s = _score(query_tokens, tool)
-            if s > 0:
-                scored.append((s, tool))
-        scored.sort(key=lambda item: item[0], reverse=True)
-        top = scored[:max_results]
+        max_results = normalize_max_results(arguments.get("max_results"), self._threshold)
+        exclude = self._pinned_names | TOOL_SEARCH_INFRA_TOOL_NAMES
+        matches = search_catalogue(self._catalogue, query, max_results, exclude_names=exclude)
 
         # Swap the exposure window — keep only the new matches plus
         # pinned. Prevents unbounded growth of the visible surface
         # across multiple find_tools calls.
-        exposed = {tool.get("name", "") for _, tool in top}
-        self._exposed[session_id] = exposed
+        self._exposed[session_id] = {tool.get("name", "") for tool in matches}
 
-        payload = {
-            "matches": [
-                {
-                    "name": tool.get("name"),
-                    "description": tool.get("description"),
-                }
-                for _, tool in top
-            ],
-            "_note": (
-                "These tools are now invocable. Call the right one directly. "
-                "Do not call find_tools again unless none of these fit."
-            ),
-        }
-        if not top:
-            payload["_note"] = (
-                "No tools matched. Try a different query, or call list_tools "
-                "to see all available tools."
-            )
-        # Tool result stays compact (name + short description only) so
-        # the realtime model does not derail on a long return.
-        result_str = json.dumps(payload)
-
-        if not top:
+        result_str = render_find_payload(matches)
+        if not matches:
             return result_str, None
         # Caller pushes this updated tool list via provider.reconfigure
         return result_str, self.visible_tools(session_id, base_tools=self._catalogue)
 
     def _handle_list_tools(self, arguments: dict[str, Any]) -> str:
         category = str(arguments.get("category", "")).strip()
-        items: list[dict[str, str]] = []
-        for tool in self._catalogue:
-            n = tool.get("name", "")
-            if n in TOOL_SEARCH_INFRA_TOOL_NAMES:
-                continue
-            if category and not n.startswith(category):
-                continue
-            items.append(
-                {
-                    "name": n,
-                    "description": (tool.get("description") or "")[:200],
-                }
-            )
-        # Bound the response so it never blows the realtime tool-result
-        # threshold. 60 items × ~160 chars ≈ 10 KB worst case.
-        truncated = len(items) > 60
-        if truncated:
-            items = items[:60]
-        payload: dict[str, Any] = {"tools": items, "count": len(items)}
-        if truncated:
-            payload["truncated"] = True
-            payload["_note"] = (
-                "Result truncated to 60 entries. Use category= to filter, "
-                "or prefer find_tools(query=...) for action."
-            )
-        return json.dumps(payload)
+        return render_list_payload(
+            self._catalogue, category, exclude_names=TOOL_SEARCH_INFRA_TOOL_NAMES
+        )

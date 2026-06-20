@@ -14,6 +14,11 @@ from roomkit.channels._skill_constants import (
 )
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tool_eviction import ToolEviction
+from roomkit.channels._tool_search_constants import (
+    FIND_TOOLS_SCHEMA,
+    LIST_TOOLS_SCHEMA,
+    TOOL_SEARCH_PREAMBLE,
+)
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import ChannelCategory
 from roomkit.models.event import CompositeContent, MediaContent, TextContent
@@ -86,6 +91,9 @@ class AIContextHost(Protocol):
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
     _config_provider: Any  # ConfigProvider | None — see channels/_turn_config.py
+    _tool_search: bool | None
+    _tool_search_pinned: set[str]
+    _tool_search_threshold: int
     channel_id: str
 
     @property
@@ -117,6 +125,9 @@ class AIContextMixin:
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
     _config_provider: Any  # ConfigProvider | None — see channels/_turn_config.py
+    _tool_search: bool | None
+    _tool_search_pinned: set[str]
+    _tool_search_threshold: int
     channel_id: str
 
     # Cross-mixin methods — Any annotations avoid MRO shadowing
@@ -124,6 +135,34 @@ class AIContextMixin:
     _skill_tools: Any  # see AIContextHost
     _apply_tool_filters: Any  # see AIContextHost
     _get_loop_ctx: Any  # see AIContextHost
+
+    def _should_activate_tool_search(self, catalogue: list[AITool]) -> bool:
+        """Decide whether Tool Search hides the catalogue this turn.
+
+        This is the single seam for the activation policy. Phase 1 is
+        count-based (parity with the realtime channel). A later phase can
+        swap the body for a context-window-percentage rule without touching
+        any other part of the mechanism — every caller routes through here.
+
+        ``catalogue`` is the real tool list, BEFORE the search infra tools
+        are injected, so the count reflects the deferrable surface only.
+        """
+        if self._tool_search is False:
+            return False
+        if self._tool_search is True:
+            return True
+        return len(catalogue) > self._tool_search_threshold
+
+    def _tool_search_tool_defs(self) -> list[AITool]:
+        """The two discovery tools the model uses to reveal hidden tools."""
+        return [
+            AITool(
+                name=schema["name"],
+                description=schema["description"],
+                parameters=schema["parameters"],
+            )
+            for schema in (FIND_TOOLS_SCHEMA, LIST_TOOLS_SCHEMA)
+        ]
 
     async def _build_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -234,8 +273,20 @@ class AIContextMixin:
                     self._planner.current_plan
                 )
 
-        # Store unfiltered tool list for re-application after skill activation
+        # Tool Search — when the catalogue is large, hide it behind the two
+        # discovery tools and let the model reveal what it needs via find_tools.
+        # Decided once here on the REAL catalogue (before the infra tools are
+        # added) and recorded on the loop ctx so every round's re-filter agrees.
+        # Unlike realtime, no provider.reconfigure is needed: the tool loop
+        # re-sends its (re-filtered) tool list every round.
         loop_ctx = self._get_loop_ctx()
+        loop_ctx.tool_search_active = self._should_activate_tool_search(tools)
+        if loop_ctx.tool_search_active:
+            existing = {t.name for t in tools}
+            tools.extend(t for t in self._tool_search_tool_defs() if t.name not in existing)
+            system_prompt = (system_prompt or "") + f"\n\n{TOOL_SEARCH_PREAMBLE}"
+
+        # Store unfiltered tool list for re-application after skill activation
         loop_ctx.all_context_tools = list(tools)
 
         # Apply tool policy + skill gating visibility filters

@@ -166,6 +166,53 @@ await mcp.initialize()
 ai = AIChannel("ai", provider=provider, tools=mcp.tools())
 ```
 
+## Tool Search (Progressive Tool Disclosure)
+
+When an agent has dozens of tools, sending every schema to the model on
+every turn burns context and makes smaller models hallucinate tool names.
+**Tool Search** hides the catalogue behind two discovery tools and lets the
+model reveal only what it needs:
+
+- `find_tools(query)` — search the catalogue by natural language; the
+  matches become directly invocable for the rest of the turn.
+- `list_tools(category=None)` — list the catalogue (name + short description).
+
+```python
+ai = AIChannel(
+    "ai",
+    provider=provider,
+    tool_handler=handle_tools,
+    tools=big_catalogue,          # e.g. 60+ MCP tools
+    tool_search=None,             # None = auto, True/False = force
+    tool_search_threshold=20,     # auto-enable above this many tools
+    tool_search_pinned=["get_help"],  # always visible, never searched for
+)
+```
+
+How it works:
+
+1. The model first sees only `find_tools`/`list_tools` plus the pinned set —
+   the discretionary catalogue is hidden.
+2. It calls `find_tools("send a text message")`; the matches are scored and
+   returned, and their names are recorded for the turn.
+3. On the **next** tool-loop round the matched tools are visible and directly
+   callable. The text loop re-sends its (re-filtered) tool list every round,
+   so no provider reconfigure is needed — this works on **any** text/HTTP
+   provider. (The realtime voice channel offers the same feature via
+   `provider.reconfigure`.)
+
+Notes:
+
+- **Activation is automatic** above `tool_search_threshold` (default 20).
+  Below it, Tool Search is a no-op and every tool is sent as usual.
+- **Pinned tools** stay visible without a search. The discovery tools always
+  pass tool-policy and skill gating, so they work even under a restrictive
+  `tool_policy`.
+- A second `find_tools` call **swaps** the revealed window (keeping the visible
+  surface small); `list_tools` reveals nothing — it is purely informational.
+
+See `examples/ai_tool_search.py` for a runnable, no-API-key walkthrough.
+
 ## Per-Room Configuration
 
 Override AI settings per room via binding metadata:

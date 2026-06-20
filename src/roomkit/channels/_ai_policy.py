@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from roomkit.channels._skill_constants import SKILL_INFRA_TOOL_NAMES
+from roomkit.channels._tool_search_constants import TOOL_SEARCH_INFRA_TOOL_NAMES
 from roomkit.providers.ai.base import AITool
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
 from roomkit.tools.policy import ToolPolicy
@@ -32,6 +33,7 @@ class ToolPolicyHost(Protocol):
 
     _tool_policy: ToolPolicy | None
     _skills: SkillRegistry | None
+    _tool_search_pinned: set[str]
 
     def _get_loop_ctx(self) -> _ToolLoopContext: ...
 
@@ -44,6 +46,7 @@ class AIToolPolicyMixin:
 
     _tool_policy: ToolPolicy | None
     _skills: SkillRegistry | None
+    _tool_search_pinned: set[str]
     _get_loop_ctx: Callable[[], _ToolLoopContext]
 
     def _resolve_participant_role(self, event: RoomEvent, context: RoomContext) -> str | None:
@@ -83,19 +86,33 @@ class AIToolPolicyMixin:
         return gated
 
     def _apply_tool_filters(self, tools: list[AITool]) -> list[AITool]:
-        """Apply tool policy and skill gating to a list of tools.
+        """Apply tool policy, skill gating, and Tool Search to a list of tools.
 
-        Skill infrastructure tools and sandbox tools are *never* filtered
-        — they must always remain visible when configured.
+        Skill infrastructure tools, Tool Search discovery tools, and sandbox
+        tools are *never* filtered — they must always remain visible when
+        configured (e.g. the model still needs ``activate_skill`` and
+        ``find_tools`` while the discretionary catalogue is hidden).
+
+        When Tool Search is active for the turn (``loop_ctx.tool_search_active``,
+        set in ``_build_context``), the discretionary catalogue is collapsed to
+        the pinned set plus the tools already revealed by ``find_tools`` this
+        loop. The re-filter runs every round, so a tool revealed in round N
+        becomes visible in round N+1 — the same mechanism as skill gating.
 
         Uses ``_effective_tool_policy`` which incorporates role-based overrides.
         """
         gated = self._gated_tool_names
         policy = self._effective_tool_policy
+        loop_ctx = self._get_loop_ctx()
+        # ``None`` = Tool Search inactive (no collapse). Otherwise the set of
+        # discretionary tool names that stay visible this round.
+        keep: set[str] | None = None
+        if loop_ctx.tool_search_active:
+            keep = self._tool_search_pinned | loop_ctx.revealed_tools
         result: list[AITool] = []
         for tool in tools:
-            # Skill infra tools always pass
-            if tool.name in self._SKILL_INFRA_TOOLS:
+            # Skill infra + Tool Search discovery tools always pass
+            if tool.name in self._SKILL_INFRA_TOOLS or tool.name in TOOL_SEARCH_INFRA_TOOL_NAMES:
                 result.append(tool)
                 continue
             # Sandbox tools always pass (attached by the channel, not user-managed)
@@ -107,6 +124,10 @@ class AIToolPolicyMixin:
                 continue
             # Skill gating filter
             if tool.name in gated:
+                continue
+            # Tool Search: hide the discretionary catalogue behind find_tools,
+            # exposing only pinned + already-revealed tools.
+            if keep is not None and tool.name not in keep:
                 continue
             result.append(tool)
         return result

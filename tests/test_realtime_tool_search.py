@@ -15,11 +15,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from roomkit import RoomKit
-from roomkit.channels._realtime_tool_search import (
-    RealtimeToolSearchSupport,
-    _score,
-    _tokenize,
-)
+from roomkit.channels._realtime_tool_search import RealtimeToolSearchSupport
+from roomkit.channels._tool_search import score as _score
+from roomkit.channels._tool_search import tokenize as _tokenize
 from roomkit.channels._tool_search_constants import (
     DEFAULT_TOOL_SEARCH_THRESHOLD,
     TOOL_FIND_TOOLS,

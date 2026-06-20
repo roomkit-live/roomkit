@@ -21,6 +21,17 @@ from roomkit.channels._skill_handlers import (
     handle_read_reference,
     handle_run_script,
 )
+from roomkit.channels._tool_search import (
+    normalize_max_results,
+    render_find_payload,
+    render_list_payload,
+    search_catalogue,
+)
+from roomkit.channels._tool_search_constants import (
+    TOOL_FIND_TOOLS,
+    TOOL_LIST_TOOLS,
+    TOOL_SEARCH_INFRA_TOOL_NAMES,
+)
 from roomkit.models.enums import ChannelType
 from roomkit.providers.ai.base import AITool, AIToolResultPart
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
@@ -81,6 +92,9 @@ class AIToolsHost(Protocol):
     _current_room_id: str | None
     _tool_call_hook: ToolCallCallback | None
     _before_tool_call_hook: Any
+    _tool_search: bool | None
+    _tool_search_pinned: set[str]
+    _tool_search_threshold: int
     channel_id: str
 
     @property
@@ -111,6 +125,9 @@ class AIToolsMixin:
     _current_room_id: str | None
     _tool_call_hook: ToolCallCallback | None
     _before_tool_call_hook: Any
+    _tool_search: bool | None
+    _tool_search_pinned: set[str]
+    _tool_search_threshold: int
     channel_id: str
 
     # Cross-mixin methods — Any annotations avoid MRO shadowing
@@ -140,6 +157,7 @@ class AIToolsMixin:
             effective_policy = self._effective_tool_policy
             if (
                 tc.name not in self._SKILL_INFRA_TOOLS
+                and tc.name not in TOOL_SEARCH_INFRA_TOOL_NAMES
                 and not tc.name.startswith(SANDBOX_TOOL_PREFIX)
                 and effective_policy
                 and not effective_policy.is_allowed(tc.name)
@@ -272,6 +290,12 @@ class AIToolsMixin:
             dispatch[TOOL_ACTIVATE_SKILL] = self._handle_activate_skill
             dispatch[TOOL_READ_REFERENCE] = self._handle_read_reference
             dispatch[TOOL_RUN_SCRIPT] = self._handle_run_script
+        # Tool Search discovery tools are channel-managed (they reshape the
+        # visible tool surface, not the world). Registered unless explicitly
+        # disabled; they are only ever injected into context when active.
+        if self._tool_search is not False:
+            dispatch[TOOL_FIND_TOOLS] = self._handle_find_tools
+            dispatch[TOOL_LIST_TOOLS] = self._handle_list_tools
         return dispatch
 
     async def _channel_tool_handler(self, name: str, arguments: dict[str, Any]) -> str:
@@ -310,6 +334,46 @@ class AIToolsMixin:
         if not self._skills:
             return json.dumps({"error": "No skills registry configured"})
         return await handle_run_script(arguments, self._skills, self._script_executor)
+
+    @staticmethod
+    def _tool_search_catalogue(loop_ctx: _ToolLoopContext) -> list[dict[str, Any]]:
+        """The turn's full tool list as score-able dicts (name + description)."""
+        return [
+            {"name": t.name, "description": getattr(t, "description", "") or ""}
+            for t in loop_ctx.all_context_tools
+        ]
+
+    async def _handle_find_tools(self, arguments: dict[str, Any]) -> str:
+        """Reveal catalogue tools matching a query for the rest of the loop.
+
+        Mutates ``loop_ctx.revealed_tools`` (swap window); the next round's
+        tool re-filter exposes the matches. No ``provider.reconfigure`` — the
+        text loop re-sends its tool list every round.
+        """
+        loop_ctx = self._get_loop_ctx()
+        query = str(arguments.get("query", "")).strip()
+        if not query:
+            return json.dumps(
+                {
+                    "error": "query is required",
+                    "hint": "Pass a short natural-language description.",
+                }
+            )
+        catalogue = self._tool_search_catalogue(loop_ctx)
+        max_results = normalize_max_results(
+            arguments.get("max_results"), self._tool_search_threshold
+        )
+        exclude = self._tool_search_pinned | TOOL_SEARCH_INFRA_TOOL_NAMES
+        matches = search_catalogue(catalogue, query, max_results, exclude_names=exclude)
+        loop_ctx.revealed_tools = {m["name"] for m in matches if m.get("name")}
+        return render_find_payload(matches)
+
+    async def _handle_list_tools(self, arguments: dict[str, Any]) -> str:
+        """List the turn's catalogue (name + short description). Reveals nothing."""
+        loop_ctx = self._get_loop_ctx()
+        category = str(arguments.get("category", "")).strip()
+        catalogue = self._tool_search_catalogue(loop_ctx)
+        return render_list_payload(catalogue, category, exclude_names=TOOL_SEARCH_INFRA_TOOL_NAMES)
 
     # -- Extracted tool handlers (delegate to focused modules) -----------------
 

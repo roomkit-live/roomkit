@@ -32,6 +32,7 @@ from roomkit.channels._ai_streaming import AIStreamingMixin
 from roomkit.channels._ai_tools import AIToolsMixin
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tool_eviction import ToolEviction
+from roomkit.channels._tool_search_constants import DEFAULT_TOOL_SEARCH_THRESHOLD
 from roomkit.channels._turn_config import ConfigProvider
 from roomkit.channels.base import Channel
 from roomkit.memory.base import MemoryProvider
@@ -87,7 +88,16 @@ class _ToolLoopContext:
     """Per-invocation state for a tool loop, scoped via contextvar."""
 
     activated_skills: set[str] = field(default_factory=set)
+    # Tool Search: names revealed by ``find_tools`` this loop. Accrues during
+    # the loop (NOT inherited across for_loop) exactly like ``activated_skills``
+    # — round 0 starts empty, a find_tools call reveals matches, and the next
+    # round's tool re-filter shows them.
+    revealed_tools: set[str] = field(default_factory=set)
     all_context_tools: list[Any] = field(default_factory=list)
+    # Whether Tool Search is active for this turn (catalogue over threshold).
+    # Decided once in ``_build_context`` and read by ``_apply_tool_filters`` on
+    # every round, so it is inherited across for_loop like ``all_context_tools``.
+    tool_search_active: bool = False
     current_participant_role: str | None = None
     room_id: str | None = None
     steering_queue: asyncio.Queue[SteeringDirective] = field(default_factory=asyncio.Queue)
@@ -108,6 +118,7 @@ class _ToolLoopContext:
         if parent is not None:
             ctx.current_participant_role = parent.current_participant_role
             ctx.all_context_tools = parent.all_context_tools
+            ctx.tool_search_active = parent.tool_search_active
         ctx.room_id = room_id or (parent.room_id if parent else None)
         return ctx
 
@@ -174,6 +185,9 @@ class AIChannel(
         evict_threshold_tokens: int = 5000,
         enable_planning: bool = False,
         config_provider: ConfigProvider | None = None,
+        tool_search: bool | None = None,
+        tool_search_pinned: list[str] | None = None,
+        tool_search_threshold: int = DEFAULT_TOOL_SEARCH_THRESHOLD,
     ) -> None:
         super().__init__(channel_id)
         self._provider = provider
@@ -210,6 +224,15 @@ class AIChannel(
         self._tool_policy = tool_policy
         self._eviction = ToolEviction(threshold_tokens=evict_threshold_tokens)
         self._planner = TaskPlanner() if enable_planning else None
+        # Tool Search — progressive tool disclosure for large catalogues.
+        # ``None`` auto-enables above ``tool_search_threshold`` tools; True/False
+        # force. Unlike the realtime channel (which pushes matches via
+        # provider.reconfigure), the text loop re-sends its tool list every
+        # round, so revealing a tool is just a per-round re-filter — no provider
+        # capability is required. See ``_should_activate_tool_search``.
+        self._tool_search = tool_search
+        self._tool_search_pinned: set[str] = set(tool_search_pinned or [])
+        self._tool_search_threshold = tool_search_threshold
 
         # Extract Tool objects: split into AITool definitions + composed handler
         from roomkit.tools.compose import extract_tools
