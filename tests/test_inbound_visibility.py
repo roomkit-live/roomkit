@@ -43,8 +43,8 @@ class TestVisibilityAllows:
         assert not visibility_allows(Visibility.NONE, self._intelligence)
 
     def test_internal_reaches_nothing(self) -> None:
-        # Regression lock: "internal" used to fall through to the channel-id
-        # branch and only worked by accident. It must explicitly reach nothing.
+        # Internal-scoped events reach no channel — they live only in stored
+        # room history (delegation, system, handoff events).
         assert not visibility_allows(Visibility.INTERNAL, self._transport)
         assert not visibility_allows(Visibility.INTERNAL, self._intelligence)
 
