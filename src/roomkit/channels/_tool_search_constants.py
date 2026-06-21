@@ -37,20 +37,21 @@ DEFAULT_TOOL_SEARCH_THRESHOLD_PCT = 10.0
 DEFAULT_FIND_TOOLS_LIMIT = 5
 
 TOOL_SEARCH_PREAMBLE = (
-    "You have a large tool surface. Two discovery tools are always "
-    "available:\n"
-    "- `find_tools(query)` — search by natural-language query (e.g. "
-    '"look up contact by phone"). Returns up to a handful of '
-    "matching tools with their full schemas. The matches become "
-    "directly invocable for the rest of the session.\n"
-    "- `list_tools(category=None)` — list every tool you have access "
-    "to with name + short description, optionally filtered by "
-    "category prefix. Use this only when you need an overview; "
-    "prefer `find_tools` for action.\n"
-    "When the caller asks for something you cannot do with the tools "
-    "currently visible, call `find_tools` first, then invoke the "
-    "matched tool. Do NOT narrate that you are searching — call the "
-    "tool and continue."
+    "IMPORTANT — your visible tools are only a SMALL SUBSET of what you can do. "
+    "Many more tools (sending messages, playing music, web search, looking up "
+    "data, calendars, files, …) exist but are hidden until you search for them. "
+    "Two discovery tools are always available:\n"
+    "- `find_tools(query)` — search your FULL tool catalogue by natural-language "
+    'task (e.g. "play music on spotify", "look up a contact by phone"). It '
+    "returns the best matches WITH their parameter schemas, ready to call.\n"
+    "- `list_tools(category=None)` — list every tool you can access (overview "
+    "only; prefer `find_tools` to act).\n"
+    "HARD RULE: never tell the user you cannot do something, that you lack a "
+    "tool, or that a task is outside your capabilities — UNTIL you have called "
+    "`find_tools` for that task and it returned no usable match. If a request "
+    "needs an action you don't see a tool for, your FIRST step is "
+    "`find_tools(query=<the task>)`, then call the matched tool directly. Do NOT "
+    "narrate that you are searching — just call the tool and continue."
 )
 
 FIND_TOOLS_SCHEMA: dict[str, Any] = {

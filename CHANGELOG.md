@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Stronger Tool Search preamble.** The system-prompt instruction now leads with
+  "your visible tools are only a SMALL SUBSET" and a hard rule — never tell the
+  user you lack a capability until you've called `find_tools` for the task. Small
+  / local models were concluding "that's outside my skillset" from the visible
+  tools without ever searching; the directive targets that failure mode.
 - **`find_tools` returns matched tools' parameter schemas inline on text/HTTP
   channels.** Previously each match carried only name + description, so a model
   reading the result knew a tool existed but not how to call it — weak/local
