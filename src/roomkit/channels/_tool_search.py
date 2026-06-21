@@ -46,6 +46,11 @@ _NAME_WEIGHT = 3
 # incidental hit is dropped when a genuinely relevant tool exists, but a
 # uniformly-weak query still returns its best candidates rather than nothing.
 _RELATIVE_SCORE_CUTOFF = 0.5
+# Per-match description cap in find_tools / list_tools results: enough to
+# identify the tool, small enough that a handful of verbose tools can't overflow
+# the result. The model gets the full description + schema when the tool itself
+# is revealed into its tool list.
+_MATCH_DESC_LIMIT = 200
 
 
 def tokenize(text: str) -> list[str]:
@@ -125,31 +130,31 @@ def search_catalogue(
     return [tool for s, tool in scored if s >= cutoff][:max_results]
 
 
-def render_find_payload(matches: list[dict[str, Any]], *, include_schema: bool = False) -> str:
-    """JSON result for a ``find_tools`` call.
+def render_find_payload(matches: list[dict[str, Any]]) -> str:
+    """JSON result for a ``find_tools`` call — compact: name + truncated
+    description per match.
 
-    By default each match carries only ``name`` + ``description`` (compact, so a
-    realtime model does not derail on a long return — it gets the full schema
-    via ``provider.reconfigure``). When ``include_schema`` is set, each match
-    also carries its ``parameters`` JSON schema, so a model that gets the result
-    inline (the text/HTTP loop) can call the matched tool correctly in one shot
-    instead of guessing the arguments.
+    Deliberately omits the parameter schema and truncates the description: a
+    match's only job is to tell the model which tools it can now call. The full
+    schema is delivered separately — the text loop re-sends it in the next
+    round's tool list, the realtime channel pushes it via ``provider.reconfigure``
+    — so inlining it here would only risk blowing the tool-result size limit
+    (verbose multi-action tools like ``outlook``/``gmail`` carry huge
+    descriptions + schemas; a few of them would overflow the result and get
+    evicted, defeating the whole point of the search).
     """
-
-    def _match(tool: dict[str, Any]) -> dict[str, Any]:
-        entry: dict[str, Any] = {
-            "name": tool.get("name"),
-            "description": tool.get("description"),
-        }
-        if include_schema:
-            entry["parameters"] = tool.get("parameters") or {}
-        return entry
-
     payload: dict[str, Any] = {
-        "matches": [_match(tool) for tool in matches],
+        "matches": [
+            {
+                "name": tool.get("name"),
+                "description": (tool.get("description") or "")[:_MATCH_DESC_LIMIT],
+            }
+            for tool in matches
+        ],
         "_note": (
-            "These tools are now invocable. Call the right one directly. "
-            "Do not call find_tools again unless none of these fit."
+            "These tools are now invocable — their full schemas are in your tool "
+            "list. Call the right one directly. Do not call find_tools again "
+            "unless none of these fit."
         ),
     }
     if not matches:
@@ -179,7 +184,9 @@ def render_list_payload(
             continue
         if category and not name.startswith(category):
             continue
-        items.append({"name": name, "description": (tool.get("description") or "")[:200]})
+        items.append(
+            {"name": name, "description": (tool.get("description") or "")[:_MATCH_DESC_LIMIT]}
+        )
 
     truncated = len(items) > limit
     if truncated:

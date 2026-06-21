@@ -337,18 +337,9 @@ class AIToolsMixin:
 
     @staticmethod
     def _tool_search_catalogue(loop_ctx: _ToolLoopContext) -> list[dict[str, Any]]:
-        """The turn's full tool list as score-able dicts.
-
-        Carries ``parameters`` too so ``find_tools`` can return the matched
-        tools' schemas inline — a model that reads the result then knows how to
-        call them, not just that they exist.
-        """
+        """The turn's full tool list as score-able dicts (name + description)."""
         return [
-            {
-                "name": t.name,
-                "description": getattr(t, "description", "") or "",
-                "parameters": getattr(t, "parameters", None) or {},
-            }
+            {"name": t.name, "description": getattr(t, "description", "") or ""}
             for t in loop_ctx.all_context_tools
         ]
 
@@ -375,9 +366,11 @@ class AIToolsMixin:
         exclude = self._tool_search_pinned | TOOL_SEARCH_INFRA_TOOL_NAMES
         matches = search_catalogue(catalogue, query, max_results, exclude_names=exclude)
         loop_ctx.revealed_tools = {m["name"] for m in matches if m.get("name")}
-        # Inline the matched tools' schemas so the model can call them directly
-        # from this result (the text loop has no provider.reconfigure channel).
-        return render_find_payload(matches, include_schema=True)
+        # Compact result (name + short description). The matched tools' full
+        # schemas reach the model via the next round's re-filtered tool list
+        # (loop_ctx.revealed_tools), so inlining them here would only risk
+        # overflowing the tool-result size limit on verbose tools.
+        return render_find_payload(matches)
 
     async def _handle_list_tools(self, arguments: dict[str, Any]) -> str:
         """List the turn's catalogue (name + short description). Reveals nothing."""

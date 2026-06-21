@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`find_tools` result no longer overflows and gets evicted.** Inlining each
+  match's full parameter schema (0.17.1) blew up the result when the matches were
+  verbose multi-action tools (`outlook`, `gmail`, …): a few of them exceeded the
+  tool-result size limit, so the search result was evicted to `read_stored_result`
+  — the model never saw its matches and gave up. `find_tools` is compact again
+  (name + a truncated description); the matched tools' full schemas reach the
+  model the proper way — the text loop re-sends them in the next round's tool
+  list, realtime via `provider.reconfigure`.
+
 ### Changed
 
 - **Relevance-ranked `find_tools` matching.** The matcher now scores candidates

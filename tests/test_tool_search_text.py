@@ -214,11 +214,12 @@ class TestFindToolsReveal:
         # Round 0: send_sms hidden behind find_tools.
         assert "send_sms" not in _tool_names(provider.calls[0])
 
-        # find_tools result lists the match WITH its parameter schema, so the
-        # model can call it directly from the result (not just learn it exists).
+        # find_tools result lists the match compactly (name + description, NO
+        # inline schema — the full schema arrives via the next round's tool list,
+        # so the result can't overflow on verbose tools).
         result = _tool_result(provider.calls[1])
         assert [m["name"] for m in result["matches"]] == ["send_sms"]
-        assert result["matches"][0]["parameters"] == _SMS_TOOL["parameters"]
+        assert "parameters" not in result["matches"][0]
 
         # Round 1: send_sms is now directly invocable; noise stays hidden.
         round1 = _tool_names(provider.calls[1])
