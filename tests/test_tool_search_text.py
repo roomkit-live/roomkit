@@ -49,7 +49,15 @@ def _catalogue(n: int) -> list[dict]:
     ]
 
 
-_SMS_TOOL = {"name": "send_sms", "description": "Send an SMS text message to a phone number."}
+_SMS_TOOL = {
+    "name": "send_sms",
+    "description": "Send an SMS text message to a phone number.",
+    "parameters": {
+        "type": "object",
+        "properties": {"to": {"type": "string"}, "body": {"type": "string"}},
+        "required": ["to", "body"],
+    },
+}
 
 
 async def _noop_handler(name: str, arguments: dict) -> str:
@@ -206,9 +214,11 @@ class TestFindToolsReveal:
         # Round 0: send_sms hidden behind find_tools.
         assert "send_sms" not in _tool_names(provider.calls[0])
 
-        # find_tools result lists the match.
+        # find_tools result lists the match WITH its parameter schema, so the
+        # model can call it directly from the result (not just learn it exists).
         result = _tool_result(provider.calls[1])
         assert [m["name"] for m in result["matches"]] == ["send_sms"]
+        assert result["matches"][0]["parameters"] == _SMS_TOOL["parameters"]
 
         # Round 1: send_sms is now directly invocable; noise stays hidden.
         round1 = _tool_names(provider.calls[1])

@@ -93,15 +93,28 @@ def search_catalogue(
     return [tool for _, tool in scored[:max_results]]
 
 
-def render_find_payload(matches: list[dict[str, Any]]) -> str:
-    """JSON result for a ``find_tools`` call (compact: name + description).
+def render_find_payload(matches: list[dict[str, Any]], *, include_schema: bool = False) -> str:
+    """JSON result for a ``find_tools`` call.
 
-    Kept small so a realtime model does not derail on a long return.
+    By default each match carries only ``name`` + ``description`` (compact, so a
+    realtime model does not derail on a long return — it gets the full schema
+    via ``provider.reconfigure``). When ``include_schema`` is set, each match
+    also carries its ``parameters`` JSON schema, so a model that gets the result
+    inline (the text/HTTP loop) can call the matched tool correctly in one shot
+    instead of guessing the arguments.
     """
+
+    def _match(tool: dict[str, Any]) -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "name": tool.get("name"),
+            "description": tool.get("description"),
+        }
+        if include_schema:
+            entry["parameters"] = tool.get("parameters") or {}
+        return entry
+
     payload: dict[str, Any] = {
-        "matches": [
-            {"name": tool.get("name"), "description": tool.get("description")} for tool in matches
-        ],
+        "matches": [_match(tool) for tool in matches],
         "_note": (
             "These tools are now invocable. Call the right one directly. "
             "Do not call find_tools again unless none of these fit."

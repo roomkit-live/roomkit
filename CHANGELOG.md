@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`find_tools` returns matched tools' parameter schemas inline on text/HTTP
+  channels.** Previously each match carried only name + description, so a model
+  reading the result knew a tool existed but not how to call it — weak/local
+  models then stalled or guessed arguments. The text path now includes each
+  match's `parameters` JSON schema (the realtime path stays compact, since it
+  delivers schemas via `provider.reconfigure`). This makes the tool's advertised
+  "best matches with their schemas" actually true for the text loop.
+
 ### Added
 
 - **Tool Search observability on text/HTTP channels.** When Tool Search defers a
