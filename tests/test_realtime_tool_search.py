@@ -136,9 +136,7 @@ class TestCrossLingualTags:
             ),
             _tool("meteo", "Donne la prevision du jour"),
         ]
-        ranked = search_catalogue(
-            cat, "list files in a directory", 5, exclude_names=frozenset()
-        )
+        ranked = search_catalogue(cat, "list files in a directory", 5, exclude_names=frozenset())
         assert ranked and ranked[0]["name"] == "lister_repertoire"
 
     def test_without_tags_non_english_tool_is_unreachable(self) -> None:
@@ -149,8 +147,7 @@ class TestCrossLingualTags:
             _tool("meteo", "Donne la prevision du jour"),
         ]
         assert (
-            search_catalogue(cat, "list files in a directory", 5, exclude_names=frozenset())
-            == []
+            search_catalogue(cat, "list files in a directory", 5, exclude_names=frozenset()) == []
         )
 
     def test_tags_outweigh_a_bare_description_hit(self) -> None:
