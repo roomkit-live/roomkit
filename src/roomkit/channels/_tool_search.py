@@ -46,11 +46,16 @@ _NAME_WEIGHT = 3
 # incidental hit is dropped when a genuinely relevant tool exists, but a
 # uniformly-weak query still returns its best candidates rather than nothing.
 _RELATIVE_SCORE_CUTOFF = 0.5
-# Per-match description cap in find_tools / list_tools results: enough to
-# identify the tool, small enough that a handful of verbose tools can't overflow
-# the result. The model gets the full description + schema when the tool itself
-# is revealed into its tool list.
+# Per-match description cap in a find_tools result: enough to identify the tool,
+# small enough that a handful of verbose tools can't overflow the result. The
+# model gets the full description + schema when the tool is revealed into its
+# tool list.
 _MATCH_DESC_LIMIT = 200
+# list_tools is an *inventory* (potentially the whole catalogue), so its
+# per-entry description is tiny — a one-line gist. Dumping full descriptions
+# here would re-send the catalogue and defeat Tool Search; the model uses
+# find_tools to get details and to act.
+_LIST_DESC_LIMIT = 64
 
 
 def tokenize(text: str) -> list[str]:
@@ -172,10 +177,12 @@ def render_list_payload(
     exclude_names: frozenset[str] | set[str],
     limit: int = 60,
 ) -> str:
-    """JSON inventory for a ``list_tools`` call (name + short description).
+    """JSON inventory for a ``list_tools`` call (name + one-line gist).
 
-    Bounded to ``limit`` entries so the result never blows a realtime
-    tool-result threshold (~60 × ~160 chars ≈ 10 KB worst case).
+    Deliberately tiny per entry (``_LIST_DESC_LIMIT``): this can be the whole
+    catalogue, so full descriptions would re-send everything and defeat Tool
+    Search. It's an orientation aid — the model uses find_tools for details and
+    to act. Still capped at ``limit`` entries as a final backstop.
     """
     items: list[dict[str, str]] = []
     for tool in catalogue:
@@ -185,7 +192,7 @@ def render_list_payload(
         if category and not name.startswith(category):
             continue
         items.append(
-            {"name": name, "description": (tool.get("description") or "")[:_MATCH_DESC_LIMIT]}
+            {"name": name, "description": (tool.get("description") or "")[:_LIST_DESC_LIMIT]}
         )
 
     truncated = len(items) > limit

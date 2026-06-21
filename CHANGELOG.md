@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`list_tools` is a compact inventory, not a catalogue re-dump.** It returned
+  every tool with a full (200-char) description — re-sending the whole catalogue
+  and defeating Tool Search (a small model that called `list_tools` instead of
+  `find_tools` filled its context with ~3.4k tokens in one result). Each entry is
+  now name + a one-line gist; the model uses `find_tools` for details and to act.
 - **`find_tools` result no longer overflows and gets evicted.** Inlining each
   match's full parameter schema (0.17.1) blew up the result when the matches were
   verbose multi-action tools (`outlook`, `gmail`, …): a few of them exceeded the
