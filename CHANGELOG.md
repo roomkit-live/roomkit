@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-06-21
+
 ### Fixed
 
 - **`list_tools` is a compact inventory, not a catalogue re-dump.** It returned
@@ -55,6 +57,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   realtime channel, which already logged it): `Tool Search active: N tools
   deferred behind find_tools/list_tools (pinned=M, window=W)`. Makes the
   deferral visible in production logs; the text path was previously silent.
+- **Cross-lingual tool search via English tags.** `AITool` gains an optional
+  `tags: list[str]` of English keywords, scored by `search_catalogue` alongside
+  the name (same weight) and description. A query normalized to English now
+  matches a tool whose name/description are written in another language —
+  fixing French/Spanish `find_tools` queries that previously returned nothing
+  (e.g. « liste mes fichiers » → a tool named/described only in French). Tags
+  propagate through both the text and realtime catalogues and are read from MCP
+  tools' `_meta.fastmcp.tags`. The Tool Search preamble now instructs the model
+  to phrase its `find_tools` query in English so both sides meet in one
+  language-invariant space.
 
 ## [0.17.0] — 2026-06-20
 
