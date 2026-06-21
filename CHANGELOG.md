@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tool Search observability on text/HTTP channels.** When Tool Search defers a
+  large catalogue, `AIChannel` now logs one line per turn (parity with the
+  realtime channel, which already logged it): `Tool Search active: N tools
+  deferred behind find_tools/list_tools (pinned=M, window=W)`. Makes the
+  deferral visible in production logs; the text path was previously silent.
+
 ## [0.17.0] — 2026-06-20
 
 ### Added

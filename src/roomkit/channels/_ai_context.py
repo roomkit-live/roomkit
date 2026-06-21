@@ -250,18 +250,28 @@ class AIContextMixin:
         # added) and recorded on the loop ctx so every round's re-filter agrees.
         # Unlike realtime, no provider.reconfigure is needed: the tool loop
         # re-sends its (re-filtered) tool list every round.
+        window = self._provider.context_window
         loop_ctx = self._get_loop_ctx()
         loop_ctx.tool_search_active = should_activate_tool_search(
             mode=self._tool_search,
             catalogue=tools,
             pinned=self._tool_search_pinned,
-            window=self._provider.context_window,
+            window=window,
             threshold_pct=self._tool_search_threshold_pct,
             threshold_count=self._tool_search_threshold,
         )
         if loop_ctx.tool_search_active:
-            existing = {t.name for t in tools}
-            tools.extend(t for t in search_tool_defs() if t.name not in existing)
+            catalogue_names = {t.name for t in tools}
+            # Parity with the realtime channel's Tool Search log: make the
+            # deferral observable (the text path is otherwise silent about it).
+            logger.info(
+                "Tool Search active: %d tools deferred behind find_tools/list_tools "
+                "(pinned=%d, window=%s)",
+                len(tools),
+                len(self._tool_search_pinned & catalogue_names),
+                window if window else "unknown",
+            )
+            tools.extend(t for t in search_tool_defs() if t.name not in catalogue_names)
             system_prompt = (system_prompt or "") + f"\n\n{TOOL_SEARCH_PREAMBLE}"
 
         # Store unfiltered tool list for re-application after skill activation
