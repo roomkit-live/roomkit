@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Relevance-ranked `find_tools` matching.** The matcher now scores candidates
+  with **IDF weighting** — a query word is weighted by how rare it is in the
+  catalogue, so ubiquitous words (`on`, `the`, `de`, `la`) contribute little and
+  a discriminating word (`spotify`) dominates. No stopword list, language-
+  agnostic, self-tuning to the catalogue (smoothed so it never collapses on a
+  tiny catalogue). Tool names are also split on camelCase/PascalCase boundaries
+  (`SpotifySearch` → `spotify` + `search`) so edge / device tools match by name,
+  and only matches within 50% of the best score are kept. Fixes naive
+  token-overlap surfacing unrelated tools (e.g. "play music on spotify" returned
+  `scheduled_tasks`/`colleagues` merely because their text contained "on").
 - **Stronger Tool Search preamble.** The system-prompt instruction now leads with
   "your visible tools are only a SMALL SUBSET" and a hard rule — never tell the
   user you lack a capability until you've called `find_tools` for the task. Small

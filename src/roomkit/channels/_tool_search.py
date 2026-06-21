@@ -20,6 +20,7 @@ objects, since that is what the AIChannel assembles per turn.
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any
 
@@ -32,30 +33,24 @@ from roomkit.memory.token_estimator import estimate_tool_tokens
 from roomkit.providers.ai.base import AITool
 
 _TOKEN_SPLIT = re.compile(r"[\W_]+")
+# Split camelCase / PascalCase so a tool named "SpotifySearch" tokenizes to
+# ["spotify", "search"] (it would otherwise be one opaque token "spotifysearch"
+# that no query word matches). Edge / device tool names are commonly PascalCase;
+# MCP tools are snake_case and tokenize fine on their own.
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_ACRONYM_BOUNDARY = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
+
+# A name-token match counts this many times a description-token match.
+_NAME_WEIGHT = 3
+# Keep only matches scoring within this fraction of the best match — an
+# incidental hit is dropped when a genuinely relevant tool exists, but a
+# uniformly-weak query still returns its best candidates rather than nothing.
+_RELATIVE_SCORE_CUTOFF = 0.5
 
 
 def tokenize(text: str) -> list[str]:
-    return [t.lower() for t in _TOKEN_SPLIT.split(text or "") if t]
-
-
-def score(query_tokens: list[str], tool: dict[str, Any]) -> int:
-    """Cheap fuzzy match: count overlapping word tokens.
-
-    Name matches weigh 3x, description matches weigh 1x. No external
-    dependencies; runs in microseconds for a few-hundred-tool catalogue
-    so it's safe in the realtime hot path.
-    """
-    if not query_tokens:
-        return 0
-    name_tokens = set(tokenize(tool.get("name", "")))
-    desc_tokens = set(tokenize(tool.get("description", "")))
-    s = 0
-    for q in query_tokens:
-        if q in name_tokens:
-            s += 3
-        if q in desc_tokens:
-            s += 1
-    return s
+    text = _ACRONYM_BOUNDARY.sub(" ", _CAMEL_BOUNDARY.sub(" ", text or ""))
+    return [t.lower() for t in _TOKEN_SPLIT.split(text) if t]
 
 
 def normalize_max_results(raw: Any, threshold: int) -> int:
@@ -79,18 +74,55 @@ def search_catalogue(
     ``exclude_names`` skips tools that are always visible anyway (search
     infra + pinned) so a match never points the model back at a tool it
     can already see.
+
+    Scoring is IDF-weighted: each query word is weighted by how *rare* it is in
+    this catalogue, so a word in nearly every tool (``on``, ``the``, ``de``,
+    ``la``) contributes little while a discriminating word (``spotify``)
+    dominates — no stopword list, and it adapts to the catalogue and the query's
+    language. The IDF is smoothed (``log((n+1)/(df+1)) + 1``) so it never
+    collapses to zero on a tiny catalogue. Name matches weigh ``_NAME_WEIGHT``×.
+    Only matches within ``_RELATIVE_SCORE_CUTOFF`` of the best are kept, which
+    drops the common-word-only hits once a genuinely relevant tool exists.
     """
-    query_tokens = tokenize(query)
-    scored: list[tuple[int, dict[str, Any]]] = []
+    query_tokens = set(tokenize(query))
+    if not query_tokens:
+        return []
+
+    # Tokenize every candidate once and build document frequency for IDF.
+    candidates: list[tuple[dict[str, Any], set[str], set[str]]] = []
+    df: dict[str, int] = {}
     for tool in catalogue:
-        name = tool.get("name", "")
-        if name in exclude_names:
+        if tool.get("name", "") in exclude_names:
             continue
-        s = score(query_tokens, tool)
+        name_tokens = set(tokenize(tool.get("name", "")))
+        desc_tokens = set(tokenize(tool.get("description", "")))
+        candidates.append((tool, name_tokens, desc_tokens))
+        for tok in name_tokens | desc_tokens:
+            df[tok] = df.get(tok, 0) + 1
+    n = len(candidates)
+    if n == 0:
+        return []
+
+    weights = {
+        q: (math.log((n + 1) / (df[q] + 1)) + 1 if df.get(q) else 0.0) for q in query_tokens
+    }
+
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for tool, name_tokens, desc_tokens in candidates:
+        s = 0.0
+        for q in query_tokens:
+            w = weights[q]
+            if q in name_tokens:
+                s += _NAME_WEIGHT * w
+            if q in desc_tokens:
+                s += w
         if s > 0:
             scored.append((s, tool))
+    if not scored:
+        return []
     scored.sort(key=lambda item: item[0], reverse=True)
-    return [tool for _, tool in scored[:max_results]]
+    cutoff = scored[0][0] * _RELATIVE_SCORE_CUTOFF
+    return [tool for s, tool in scored if s >= cutoff][:max_results]
 
 
 def render_find_payload(matches: list[dict[str, Any]], *, include_schema: bool = False) -> str:

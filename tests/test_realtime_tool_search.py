@@ -16,7 +16,7 @@ import pytest
 
 from roomkit import RoomKit
 from roomkit.channels._realtime_tool_search import RealtimeToolSearchSupport
-from roomkit.channels._tool_search import score as _score
+from roomkit.channels._tool_search import search_catalogue
 from roomkit.channels._tool_search import tokenize as _tokenize
 from roomkit.channels._tool_search_constants import (
     DEFAULT_TOOL_SEARCH_THRESHOLD,
@@ -75,27 +75,45 @@ class TestTokenize:
     def test_splits_on_non_word(self) -> None:
         assert _tokenize("send_sms to_phone") == ["send", "sms", "to", "phone"]
 
-    def test_lowercases(self) -> None:
-        assert _tokenize("LookupContact") == ["lookupcontact"]
+    def test_splits_camelcase(self) -> None:
+        # PascalCase / camelCase boundaries split so edge-tool names match.
+        assert _tokenize("LookupContact") == ["lookup", "contact"]
+        assert _tokenize("SpotifySearch") == ["spotify", "search"]
 
     def test_empty_string(self) -> None:
         assert _tokenize("") == []
 
 
-class TestScore:
+class TestSearchCatalogue:
+    """IDF-weighted scoring: rare query words win, ubiquitous words are ignored."""
+
     def test_name_match_outweighs_description_match(self) -> None:
-        # "phone" appears once in name (3pts) vs once in description (1pt).
-        name_match = _score(["phone"], _tool("phone_lookup", "find a contact"))
-        desc_match = _score(["phone"], _tool("contact_lookup", "find by phone"))
-        assert name_match > desc_match
-        assert name_match == 3
-        assert desc_match == 1
+        cat = [
+            _tool("phone_lookup", "find a contact"),
+            _tool("contact_lookup", "find by phone"),
+            _tool("weather", "get the forecast"),  # keeps "phone" from being ubiquitous
+        ]
+        ranked = search_catalogue(cat, "phone", 5, exclude_names=frozenset())
+        assert ranked[0]["name"] == "phone_lookup"
 
-    def test_zero_for_no_overlap(self) -> None:
-        assert _score(["unrelated"], _tool("send_sms", "send a message")) == 0
+    def test_no_overlap_returns_nothing(self) -> None:
+        cat = [_tool("send_sms", "send a message")]
+        assert search_catalogue(cat, "unrelated", 5, exclude_names=frozenset()) == []
 
-    def test_empty_query(self) -> None:
-        assert _score([], _tool("anything", "anything")) == 0
+    def test_empty_query_returns_nothing(self) -> None:
+        cat = [_tool("anything", "anything")]
+        assert search_catalogue(cat, "", 5, exclude_names=frozenset()) == []
+
+    def test_ubiquitous_word_does_not_pollute(self) -> None:
+        # "on" is in every description → IDF ~0 → tools matching only "on" are
+        # dropped; the one matching the rare "spotify" wins (camelCase name too).
+        cat = [
+            _tool("SpotifySearch", "Search for tracks on Spotify."),
+            _tool("scheduled_tasks", "Run tasks on-demand."),
+            _tool("colleagues", "Reach colleagues on a call."),
+        ]
+        ranked = search_catalogue(cat, "play music on spotify", 5, exclude_names=frozenset())
+        assert [t["name"] for t in ranked] == ["SpotifySearch"]
 
 
 # ---------------------------------------------------------------------------
