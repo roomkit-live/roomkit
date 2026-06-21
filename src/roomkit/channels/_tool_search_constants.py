@@ -51,7 +51,12 @@ TOOL_SEARCH_PREAMBLE = (
     "`find_tools` for that task and it returned no usable match. If a request "
     "needs an action you don't see a tool for, your FIRST step is "
     "`find_tools(query=<the task>)`, then call the matched tool directly. Do NOT "
-    "narrate that you are searching — just call the tool and continue."
+    "narrate that you are searching — just call the tool and continue.\n"
+    "ALWAYS phrase your `find_tools` query in ENGLISH, even when the conversation "
+    "is in another language — the catalogue is indexed by English keywords, so an "
+    'English query matches reliably (e.g. for « liste mes fichiers » search "list '
+    'files", for « envoyer un message » search "send a message"). Translate the '
+    "user's intent to English keywords first, then search."
 )
 
 FIND_TOOLS_SCHEMA: dict[str, Any] = {

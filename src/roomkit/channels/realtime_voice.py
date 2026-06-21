@@ -227,7 +227,12 @@ class RealtimeVoiceChannel(
 
                 ai_tools, extracted_handler = extract_tools(tools)
                 tool_defs = [
-                    {"name": t.name, "description": t.description, "parameters": t.parameters}
+                    {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                        "tags": getattr(t, "tags", []) or [],
+                    }
                     for t in ai_tools
                 ]
             else:

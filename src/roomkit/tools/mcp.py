@@ -107,10 +107,15 @@ class MCPToolProvider:
         for tool in result.tools:
             if self._tool_filter and not self._tool_filter(tool.name):
                 continue
+            # FastMCP serializes a tool's tags into `_meta["fastmcp"]["tags"]`;
+            # surface them so Tool Search can match this tool cross-lingually.
+            meta = getattr(tool, "meta", None)
+            tags = meta.get("fastmcp", {}).get("tags", []) if isinstance(meta, dict) else []
             ai_tool = AITool(
                 name=tool.name,
                 description=tool.description or "",
                 parameters=tool.inputSchema if tool.inputSchema else {},
+                tags=tags or [],
             )
             self._tools.append(ai_tool)
             self._tool_set.add(tool.name)

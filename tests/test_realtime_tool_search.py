@@ -42,11 +42,12 @@ def transport() -> MockRealtimeTransport:
     return MockRealtimeTransport()
 
 
-def _tool(name: str, description: str = "") -> dict[str, Any]:
+def _tool(name: str, description: str = "", tags: list[str] | None = None) -> dict[str, Any]:
     return {
         "name": name,
         "description": description,
         "parameters": {"type": "object", "properties": {}},
+        "tags": tags or [],
     }
 
 
@@ -114,6 +115,54 @@ class TestSearchCatalogue:
         ]
         ranked = search_catalogue(cat, "play music on spotify", 5, exclude_names=frozenset())
         assert [t["name"] for t in ranked] == ["SpotifySearch"]
+
+
+class TestCrossLingualTags:
+    """English tags make a non-English tool matchable by an English query.
+
+    The model normalizes its find_tools query to English (see preamble); tags
+    give the catalogue a language-invariant surface so the two sides meet in
+    English even when the tool's own name/description are in another language.
+    """
+
+    def test_english_tags_match_non_english_tool(self) -> None:
+        # Name + description are French — zero English-token overlap with the
+        # query — so only the English tags can surface this tool.
+        cat = [
+            _tool(
+                "lister_repertoire",
+                "Affiche les fichiers d'un dossier",
+                tags=["list", "files", "directory", "folder"],
+            ),
+            _tool("meteo", "Donne la prevision du jour"),
+        ]
+        ranked = search_catalogue(
+            cat, "list files in a directory", 5, exclude_names=frozenset()
+        )
+        assert ranked and ranked[0]["name"] == "lister_repertoire"
+
+    def test_without_tags_non_english_tool_is_unreachable(self) -> None:
+        # Same tool, no tags: the English query finds nothing — this is the bug
+        # the tags feature fixes, pinned here as a regression guard.
+        cat = [
+            _tool("lister_repertoire", "Affiche les fichiers d'un dossier"),
+            _tool("meteo", "Donne la prevision du jour"),
+        ]
+        assert (
+            search_catalogue(cat, "list files in a directory", 5, exclude_names=frozenset())
+            == []
+        )
+
+    def test_tags_outweigh_a_bare_description_hit(self) -> None:
+        # A tool tagged for the concept beats one that merely mentions a query
+        # word in passing in its description.
+        cat = [
+            _tool("send_message", "Send a chat message", tags=["message", "chat", "send"]),
+            _tool("audit_log", "Logs every message for compliance"),
+            _tool("weather", "get the forecast"),  # keeps "message" non-ubiquitous
+        ]
+        ranked = search_catalogue(cat, "send a message", 5, exclude_names=frozenset())
+        assert ranked[0]["name"] == "send_message"
 
 
 # ---------------------------------------------------------------------------

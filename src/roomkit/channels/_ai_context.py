@@ -182,6 +182,7 @@ class AIContextMixin:
                     name=t["name"],
                     description=t.get("description", ""),
                     parameters=t.get("parameters", {}),
+                    tags=t.get("tags", []) or [],
                 )
                 for t in raw_tools
             ]

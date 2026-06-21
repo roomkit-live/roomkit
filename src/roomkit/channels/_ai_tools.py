@@ -337,9 +337,13 @@ class AIToolsMixin:
 
     @staticmethod
     def _tool_search_catalogue(loop_ctx: _ToolLoopContext) -> list[dict[str, Any]]:
-        """The turn's full tool list as score-able dicts (name + description)."""
+        """The turn's full tool list as score-able dicts (name + description + tags)."""
         return [
-            {"name": t.name, "description": getattr(t, "description", "") or ""}
+            {
+                "name": t.name,
+                "description": getattr(t, "description", "") or "",
+                "tags": getattr(t, "tags", []) or [],
+            }
             for t in loop_ctx.all_context_tools
         ]
 

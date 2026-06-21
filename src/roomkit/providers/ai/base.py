@@ -36,6 +36,11 @@ class AITool(BaseModel):
     name: str
     description: str
     parameters: dict[str, Any] = Field(default_factory=dict)
+    # English keyword aliases scored by Tool Search alongside name/description.
+    # A language-invariant search surface: a French/Spanish query (normalized to
+    # English by the model) matches these even when the tool's name/description
+    # is in another language. Optional — tools without tags score as before.
+    tags: list[str] = Field(default_factory=list)
 
 
 class AIToolCall(BaseModel):

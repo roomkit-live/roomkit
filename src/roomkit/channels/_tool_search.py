@@ -42,6 +42,10 @@ _ACRONYM_BOUNDARY = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
 
 # A name-token match counts this many times a description-token match.
 _NAME_WEIGHT = 3
+# A tag-token match weighs as much as a name match. Tags are curated English
+# keywords — the deliberate cross-lingual bridge — so they must weigh enough to
+# surface a tool whose name/description are written in another language.
+_TAGS_WEIGHT = 3
 # Keep only matches scoring within this fraction of the best match — an
 # incidental hit is dropped when a genuinely relevant tool exists, but a
 # uniformly-weak query still returns its best candidates rather than nothing.
@@ -90,24 +94,28 @@ def search_catalogue(
     ``la``) contributes little while a discriminating word (``spotify``)
     dominates — no stopword list, and it adapts to the catalogue and the query's
     language. The IDF is smoothed (``log((n+1)/(df+1)) + 1``) so it never
-    collapses to zero on a tiny catalogue. Name matches weigh ``_NAME_WEIGHT``×.
-    Only matches within ``_RELATIVE_SCORE_CUTOFF`` of the best are kept, which
-    drops the common-word-only hits once a genuinely relevant tool exists.
+    collapses to zero on a tiny catalogue. Name matches weigh ``_NAME_WEIGHT``×
+    and tag matches ``_TAGS_WEIGHT``× (tags are curated English keywords — the
+    cross-lingual bridge — so an English-normalized query matches them even when
+    the tool's own name/description are in another language). Only matches within
+    ``_RELATIVE_SCORE_CUTOFF`` of the best are kept, which drops the
+    common-word-only hits once a genuinely relevant tool exists.
     """
     query_tokens = set(tokenize(query))
     if not query_tokens:
         return []
 
     # Tokenize every candidate once and build document frequency for IDF.
-    candidates: list[tuple[dict[str, Any], set[str], set[str]]] = []
+    candidates: list[tuple[dict[str, Any], set[str], set[str], set[str]]] = []
     df: dict[str, int] = {}
     for tool in catalogue:
         if tool.get("name", "") in exclude_names:
             continue
         name_tokens = set(tokenize(tool.get("name", "")))
         desc_tokens = set(tokenize(tool.get("description", "")))
-        candidates.append((tool, name_tokens, desc_tokens))
-        for tok in name_tokens | desc_tokens:
+        tags_tokens = set(tokenize(" ".join(str(t) for t in (tool.get("tags") or []))))
+        candidates.append((tool, name_tokens, desc_tokens, tags_tokens))
+        for tok in name_tokens | desc_tokens | tags_tokens:
             df[tok] = df.get(tok, 0) + 1
     n = len(candidates)
     if n == 0:
@@ -118,12 +126,14 @@ def search_catalogue(
     }
 
     scored: list[tuple[float, dict[str, Any]]] = []
-    for tool, name_tokens, desc_tokens in candidates:
+    for tool, name_tokens, desc_tokens, tags_tokens in candidates:
         s = 0.0
         for q in query_tokens:
             w = weights[q]
             if q in name_tokens:
                 s += _NAME_WEIGHT * w
+            if q in tags_tokens:
+                s += _TAGS_WEIGHT * w
             if q in desc_tokens:
                 s += w
         if s > 0:
