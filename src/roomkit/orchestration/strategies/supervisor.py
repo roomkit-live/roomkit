@@ -1041,9 +1041,7 @@ def _worker_label(worker: Agent) -> str:
     """Human-readable label for a worker, used to attribute its output when
     composing the next worker's input and the supervisor's review brief."""
     return (
-        getattr(worker, "role", None)
-        or getattr(worker, "description", None)
-        or worker.channel_id
+        getattr(worker, "role", None) or getattr(worker, "description", None) or worker.channel_id
     )
 
 

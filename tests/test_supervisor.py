@@ -673,7 +673,6 @@ class TestRunSequential:
         parsed = json.loads(result)
         assert parsed["results"][0]["output"] == "Worker error"
 
-
     async def test_per_task_timeout_fails_one_worker_and_continues(self) -> None:
         # A worker that exceeds its per-task budget is recorded as failed, but
         # the chain keeps running the rest (no single global timeout aborts all).
