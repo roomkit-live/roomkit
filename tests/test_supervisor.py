@@ -7,6 +7,7 @@ per-worker delegation (wait/no-wait), and async delivery helpers.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -24,13 +25,16 @@ from roomkit.orchestration.strategies.supervisor import (
     Supervisor,
     WorkerStrategy,
     _async_run_and_deliver,
+    _compose_sequential_input,
     _extract_output_text,
+    _format_supervisor_review,
     _format_worker_results,
     _one_pass_delegate,
     _run_parallel,
     _run_sequential,
     _run_workers,
     _two_pass_delegate,
+    _worker_label,
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks.models import DelegatedTaskResult
@@ -487,8 +491,11 @@ class TestStrategyToolHandler:
         await s.install(kit, "r1")
 
         result = await boss.tool_handler("delegate_workers", {"task": "analyze"})
-        parsed = json.loads(result)
-        assert parsed["status"] == "completed"
+        # The handler hands the supervisor a review brief (prose), not raw JSON:
+        # the request, the worker output, and an instruction to verify + deliver.
+        assert "analyze" in result
+        assert "result" in result
+        assert "deliver" in result.lower()
 
     async def test_parallel_strategy_tool(self) -> None:
         boss = _make_agent("boss")
@@ -510,9 +517,10 @@ class TestStrategyToolHandler:
         await s.install(kit, "r1")
 
         result = await boss.tool_handler("delegate_workers", {"task": "analyze"})
-        parsed = json.loads(result)
-        assert parsed["status"] == "completed"
-        assert len(parsed["results"]) == 2
+        # Review brief carries both workers' outputs for the supervisor to verify.
+        assert "analyze" in result
+        assert "result 1" in result
+        assert "result 2" in result
 
     async def test_strategy_tool_unknown_falls_through(self) -> None:
         boss = _make_agent("boss")
@@ -614,10 +622,10 @@ class TestRunWorkers:
 
 
 class TestRunSequential:
-    async def test_chains_output(self) -> None:
+    async def test_chains_output_with_original_task_preserved(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
-        w1 = _make_agent("w1")
-        w2 = _make_agent("w2")
+        w1 = _make_agent("w1", role="Researcher")
+        w2 = _make_agent("w2", role="Analyst")
         kit.delegate = AsyncMock(
             side_effect=[
                 _delegated_task_with_output("first output"),
@@ -630,9 +638,22 @@ class TestRunSequential:
         assert parsed["status"] == "completed"
         assert len(parsed["results"]) == 2
 
-        # Second worker should receive first worker's output as input
-        second_call = kit.delegate.call_args_list[1]
-        assert second_call[0][2] == "first output"
+        # First worker gets the task verbatim.
+        assert kit.delegate.call_args_list[0][0][2] == "initial task"
+        # Second worker gets the ORIGINAL task + the prior output (labeled),
+        # not just the bare predecessor output — otherwise it has no task.
+        second_input = kit.delegate.call_args_list[1][0][2]
+        assert "initial task" in second_input
+        assert "first output" in second_input
+        assert "Researcher" in second_input
+
+    async def test_first_worker_input_is_unchanged_task(self) -> None:
+        kit = _make_mock_kit(Room(id="r1"))
+        w1 = _make_agent("w1")
+        kit.delegate = AsyncMock(return_value=_delegated_task_with_output("out"))
+
+        await _run_sequential(kit, "r1", [w1], "just do this")
+        assert kit.delegate.call_args_list[0][0][2] == "just do this"
 
     async def test_empty_result(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
@@ -653,6 +674,26 @@ class TestRunSequential:
         assert parsed["results"][0]["output"] == "Worker error"
 
 
+    async def test_per_task_timeout_fails_one_worker_and_continues(self) -> None:
+        # A worker that exceeds its per-task budget is recorded as failed, but
+        # the chain keeps running the rest (no single global timeout aborts all).
+        kit = _make_mock_kit(Room(id="r1"))
+        w1 = _make_agent("w1", role="Slow")
+        w2 = _make_agent("w2", role="Fast")
+
+        async def _delegate(room_id, channel_id, task, **kwargs):  # noqa: ANN001, ANN202
+            if channel_id == "w1":
+                await asyncio.sleep(1)  # exceeds the 0.05s budget below
+            return _delegated_task_with_output("fast output")
+
+        kit.delegate = AsyncMock(side_effect=_delegate)
+
+        result = await _run_sequential(kit, "r1", [w1, w2], "task", task_timeout=0.05)
+        parsed = json.loads(result)
+        assert "timed out" in parsed["results"][0]["output"].lower()
+        assert parsed["results"][1]["output"] == "fast output"
+
+
 class TestRunParallel:
     async def test_concurrent_workers(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
@@ -669,6 +710,50 @@ class TestRunParallel:
         parsed = json.loads(result)
         assert parsed["status"] == "completed"
         assert len(parsed["results"]) == 2
+
+
+# -- Tests: sequential input composition + supervisor review brief ------------
+
+
+class TestSequentialContextAndReview:
+    def test_worker_label_prefers_role_then_description(self) -> None:
+        assert _worker_label(_make_agent("w", role="Analyst")) == "Analyst"
+        assert _worker_label(_make_agent("w", description="Does X")) == "Does X"
+        assert _worker_label(_make_agent("w")) == "w"
+
+    def test_first_worker_gets_task_unchanged(self) -> None:
+        assert _compose_sequential_input("the task", []) == "the task"
+
+    def test_later_worker_gets_task_plus_labeled_prior_outputs(self) -> None:
+        composed = _compose_sequential_input(
+            "summarize the news",
+            [("Researcher", "raw findings"), ("Analyst", "the analysis")],
+        )
+        assert "summarize the news" in composed
+        assert "Researcher" in composed and "raw findings" in composed
+        assert "Analyst" in composed and "the analysis" in composed
+
+    def test_review_brief_includes_request_and_labeled_outputs(self) -> None:
+        w1 = _make_agent("agent:w1", role="Researcher")
+        w2 = _make_agent("agent:w2", role="Report writer")
+        result_json = json.dumps(
+            {
+                "status": "completed",
+                "results": [
+                    {"worker": "agent:w1", "output": "found facts"},
+                    {"worker": "agent:w2", "output": "the report"},
+                ],
+            }
+        )
+        brief = _format_supervisor_review("write a report", result_json, [w1, w2])
+        assert "write a report" in brief
+        assert "Researcher" in brief and "found facts" in brief
+        assert "Report writer" in brief and "the report" in brief
+        # The supervisor is told to verify and deliver, not to invent.
+        assert "deliver" in brief.lower()
+
+    def test_review_brief_passes_through_unparseable_payload(self) -> None:
+        assert _format_supervisor_review("task", "not json", []) == "not json"
 
 
 # -- Tests: _extract_output_text ---------------------------------------------

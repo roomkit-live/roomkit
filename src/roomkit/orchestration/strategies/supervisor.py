@@ -49,6 +49,14 @@ class WorkerStrategy(StrEnum):
     PARALLEL = "parallel"
 
 
+# Per-worker delegation budget. Each delegated task is bounded individually,
+# so the supervisor's chain is governed by a per-task limit rather than one
+# global timeout (a single global can never be coherent: it must cover the
+# *sum* of every worker, which scales with team size). A worker that exceeds
+# this fails on its own budget and the chain keeps going.
+_DEFAULT_TASK_TIMEOUT_SECONDS = 120.0
+
+
 class Supervisor(Orchestration):
     """Supervisor orchestration strategy.
 
@@ -102,6 +110,7 @@ class Supervisor(Orchestration):
         delegation_message: str | None = "I'm dispatching my team to work on this.",
         wait_for_result: bool = True,
         share_channels: list[str] | None = None,
+        task_timeout: float = _DEFAULT_TASK_TIMEOUT_SECONDS,
     ) -> None:
         """Initialise the supervisor strategy.
 
@@ -167,6 +176,13 @@ class Supervisor(Orchestration):
                 example, passing ``["system", "ws-status"]`` attaches
                 those channels to each worker's child room so the
                 worker can emit events visible on those channels.
+
+            task_timeout: Per-worker delegation budget in seconds
+                (default 120). Each delegated task is bounded
+                individually so the chain is governed per-task rather
+                than by a single global timeout that can never be
+                coherent across team sizes. A worker that exceeds it is
+                recorded as failed and the run continues.
         """
         self._supervisor = supervisor
         self._workers = list(workers)
@@ -178,6 +194,7 @@ class Supervisor(Orchestration):
         self._delegation_message = delegation_message
         self._wait_for_result = wait_for_result
         self._share_channels = list(share_channels) if share_channels else []
+        self._task_timeout = task_timeout
 
         if auto_delegate and self._strategy is None:
             msg = "auto_delegate=True requires strategy to be set"
@@ -452,6 +469,7 @@ class Supervisor(Orchestration):
         workers = self._workers
         share_channels = self._share_channels
         async_delivery = self._async_delivery
+        task_timeout = self._task_timeout
         _lock = asyncio.Lock()
         # Per-room dedup: prevents duplicate calls within the same turn
         _dedup_cache: dict[str, tuple[str, float]] = {}  # room_id → (result, timestamp)
@@ -557,6 +575,7 @@ class Supervisor(Orchestration):
                             workers,
                             task_desc,
                             share_channels=share_channels,
+                            task_timeout=task_timeout,
                         )
                     else:
                         result = await _run_parallel(
@@ -565,14 +584,19 @@ class Supervisor(Orchestration):
                             workers,
                             task_desc,
                             share_channels=share_channels,
+                            task_timeout=task_timeout,
                         )
+                    # Hand the supervisor a review brief, not the raw payload:
+                    # it verifies the team's work against the request and
+                    # delivers the final answer in its next turn.
+                    review = _format_supervisor_review(task_desc, result, workers)
                     now = time.monotonic()
-                    _dedup_cache[rid] = (result, now)
+                    _dedup_cache[rid] = (review, now)
                     # Evict expired entries to prevent unbounded growth
                     stale = [k for k, (_, ts) in _dedup_cache.items() if now - ts >= dedup_window]
                     for k in stale:
                         del _dedup_cache[k]
-                    return result
+                    return review
                 except Exception as exc:
                     logger.exception("Strategy delegation failed")
                     return json.dumps({"error": str(exc)})
@@ -988,6 +1012,7 @@ async def _run_workers(
     task_desc: str,
     *,
     share_channels: list[str] | None = None,
+    task_timeout: float = _DEFAULT_TASK_TIMEOUT_SECONDS,
 ) -> list[dict[str, str]]:
     """Run workers according to strategy and return raw results."""
     if strategy == WorkerStrategy.SEQUENTIAL:
@@ -997,6 +1022,7 @@ async def _run_workers(
             workers,
             task_desc,
             share_channels=share_channels,
+            task_timeout=task_timeout,
         )
     else:
         result_json = await _run_parallel(
@@ -1005,9 +1031,63 @@ async def _run_workers(
             workers,
             task_desc,
             share_channels=share_channels,
+            task_timeout=task_timeout,
         )
     parsed = json.loads(result_json)
     return parsed.get("results", [])
+
+
+def _worker_label(worker: Agent) -> str:
+    """Human-readable label for a worker, used to attribute its output when
+    composing the next worker's input and the supervisor's review brief."""
+    return (
+        getattr(worker, "role", None)
+        or getattr(worker, "description", None)
+        or worker.channel_id
+    )
+
+
+def _compose_sequential_input(task_desc: str, prior_steps: list[tuple[str, str]]) -> str:
+    """Build a worker's input for sequential delegation.
+
+    The first worker (no prior steps) gets the task unchanged. Every later
+    worker gets the original task plus each prior worker's labeled output, so
+    the goal and accumulated work survive the chain — a worker handed only its
+    predecessor's raw output has no task to act on and just converses with it.
+    """
+    if not prior_steps:
+        return task_desc
+    blocks = [f"Original task:\n{task_desc}", "", "Work already completed by the team:"]
+    for label, output in prior_steps:
+        blocks.append(f"\n--- {label} ---\n{output or '(no output)'}")
+    blocks.append("\nBuild on the work above to complete your part of the original task.")
+    return "\n".join(blocks)
+
+
+def _format_supervisor_review(task_desc: str, result_json: str, workers: list[Agent]) -> str:
+    """Re-present the workers' combined results to the supervisor as a review
+    brief: the original request, then each worker's labeled output, with an
+    instruction to verify the work and deliver one final answer (or flag what's
+    missing). Returns the raw payload unchanged if it can't be parsed."""
+    try:
+        parsed = json.loads(result_json)
+    except (ValueError, TypeError):
+        return result_json
+    labels = {w.channel_id: _worker_label(w) for w in workers}
+    lines = [
+        "Your team has finished. Review their work against the user's request "
+        "below, then deliver ONE final answer to the user. If the work is "
+        "incomplete or wrong, say what's missing — do not invent content.",
+        "",
+        f"User request:\n{task_desc}",
+        "",
+        "Team output:",
+    ]
+    for item in parsed.get("results", []):
+        cid = item.get("worker", "")
+        label = labels.get(cid) or cid or "worker"
+        lines.append(f"\n--- {label} ---\n{item.get('output') or '(no output)'}")
+    return "\n".join(lines)
 
 
 async def _run_sequential(
@@ -1017,27 +1097,49 @@ async def _run_sequential(
     task_desc: str,
     *,
     share_channels: list[str] | None = None,
+    task_timeout: float = _DEFAULT_TASK_TIMEOUT_SECONDS,
 ) -> str:
-    """Run workers in order, each receiving the previous output."""
-    current_input = task_desc
+    """Run workers in order, each receiving the original task plus every prior
+    worker's output (see :func:`_compose_sequential_input`).
+
+    Each delegation is bounded by *task_timeout*; a worker that exceeds it is
+    recorded as failed and the chain continues so the rest of the team — and
+    the supervisor's review — still runs on partial results."""
     results: list[dict[str, str]] = []
+    prior_steps: list[tuple[str, str]] = []
 
     for worker in workers:
+        worker_input = _compose_sequential_input(task_desc, prior_steps)
         _post_worker_status(
             kit,
             worker.channel_id,
             StatusLevel.PENDING,
-            detail=current_input,
+            detail=worker_input,
             metadata={"room_id": room_id, "strategy": "sequential"},
         )
         try:
-            delegated = await kit.delegate(
-                room_id,
-                worker.channel_id,
-                current_input,
-                wait=True,
-                share_channels=share_channels,
+            delegated = await asyncio.wait_for(
+                kit.delegate(
+                    room_id,
+                    worker.channel_id,
+                    worker_input,
+                    wait=True,
+                    share_channels=share_channels,
+                ),
+                timeout=task_timeout,
             )
+        except TimeoutError:
+            timeout_msg = f"Worker timed out after {task_timeout:.0f}s"
+            _post_worker_status(
+                kit,
+                worker.channel_id,
+                StatusLevel.FAILED,
+                detail=timeout_msg,
+                metadata={"room_id": room_id, "strategy": "sequential"},
+            )
+            results.append({"worker": worker.channel_id, "output": timeout_msg})
+            prior_steps.append((_worker_label(worker), timeout_msg))
+            continue
         except Exception as exc:
             _post_worker_status(
                 kit,
@@ -1064,7 +1166,7 @@ async def _run_sequential(
             },
         )
         results.append({"worker": worker.channel_id, "output": output})
-        current_input = output
+        prior_steps.append((_worker_label(worker), output))
 
     return json.dumps({"status": "completed", "results": results})
 
@@ -1076,8 +1178,11 @@ async def _run_parallel(
     task_desc: str,
     *,
     share_channels: list[str] | None = None,
+    task_timeout: float = _DEFAULT_TASK_TIMEOUT_SECONDS,
 ) -> str:
-    """Run all workers concurrently on the same task."""
+    """Run all workers concurrently on the same task. Each is bounded by
+    *task_timeout*; one that exceeds it is recorded as failed without aborting
+    its siblings."""
 
     async def _delegate_one(worker: Agent) -> dict[str, str]:
         _post_worker_status(
@@ -1088,13 +1193,26 @@ async def _run_parallel(
             metadata={"room_id": room_id, "strategy": "parallel"},
         )
         try:
-            delegated = await kit.delegate(
-                room_id,
-                worker.channel_id,
-                task_desc,
-                wait=True,
-                share_channels=share_channels,
+            delegated = await asyncio.wait_for(
+                kit.delegate(
+                    room_id,
+                    worker.channel_id,
+                    task_desc,
+                    wait=True,
+                    share_channels=share_channels,
+                ),
+                timeout=task_timeout,
             )
+        except TimeoutError:
+            timeout_msg = f"Worker timed out after {task_timeout:.0f}s"
+            _post_worker_status(
+                kit,
+                worker.channel_id,
+                StatusLevel.FAILED,
+                detail=timeout_msg,
+                metadata={"room_id": room_id, "strategy": "parallel"},
+            )
+            return {"worker": worker.channel_id, "output": timeout_msg}
         except Exception as exc:
             _post_worker_status(
                 kit,
