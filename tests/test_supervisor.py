@@ -701,19 +701,27 @@ class TestRunSequential:
 
 
 def _supervised_delegate_router(
-    supervisor_id: str, verdicts: list[dict[str, Any]], worker_output: str = "worker output"
+    supervisor_id: str,
+    verdicts: list[dict[str, Any]],
+    worker_output: str = "worker output",
+    dispatch: str = "framed task for the first worker",
 ) -> tuple[Any, list[tuple[str, str]]]:
-    """Mock kit.delegate for supervised runs: calls to the supervisor channel
-    return successive verdict JSONs; worker calls return a fixed output. Records
-    (channel_id, task) per call so tests can assert framing + rework."""
+    """Mock kit.delegate for supervised runs. The supervisor's FIRST call is the
+    dispatch (it frames the first worker's task → returns *dispatch*); subsequent
+    supervisor calls return successive verdict JSONs. Worker calls return a fixed
+    output. Records (channel_id, task) per call so tests can assert framing."""
     vit = iter(verdicts)
     calls: list[tuple[str, str]] = []
+    sup_calls = {"n": 0}
 
     async def _delegate(
         room_id: str, channel_id: str, task: str, *, wait: bool = False, **kw: Any
     ) -> Any:
         calls.append((channel_id, task))
         if channel_id == supervisor_id:
+            sup_calls["n"] += 1
+            if sup_calls["n"] == 1:
+                return _delegated_task_with_output(dispatch)  # the dispatch step
             return _delegated_task_with_output(json.dumps(next(vit)))
         return _delegated_task_with_output(worker_output)
 
@@ -730,17 +738,20 @@ class TestSupervisedSequential:
             {"approved": True, "feedback": "", "next_task": "Write a report from the research"},
             {"approved": True, "feedback": "", "next_task": ""},
         ]
-        delegate, calls = _supervised_delegate_router("boss", verdicts)
+        delegate, calls = _supervised_delegate_router(
+            "boss", verdicts, dispatch="Find the current facts on the topic"
+        )
         kit.delegate = AsyncMock(side_effect=delegate)
 
         steps = await _run_supervised_sequential(
             kit, "r1", boss, [w1, w2], "research the topic", max_revisions=3
         )
 
-        # First worker gets the raw goal; the second gets the supervisor-framed task
-        # WITH the prior worker's validated output embedded (the framing only
-        # references it — the data must travel, or the next worker has nothing).
-        assert [t for cid, t in calls if cid == "w1"] == ["research the topic"]
+        # The supervisor frames the FIRST worker's task (dispatch), not the raw user
+        # message; the second gets the supervisor-framed next_task WITH the prior
+        # worker's validated output embedded (the framing only references it — the
+        # data must travel, or the next worker has nothing).
+        assert [t for cid, t in calls if cid == "w1"] == ["Find the current facts on the topic"]
         w2_tasks = [t for cid, t in calls if cid == "w2"]
         assert len(w2_tasks) == 1
         assert w2_tasks[0].startswith("Write a report from the research")
@@ -788,6 +799,29 @@ class TestSupervisedSequential:
         assert len([t for cid, t in calls if cid == "w1"]) == 2  # bounded by max_revisions
         assert steps[0]["approved"] is False
 
+    async def test_chain_stops_when_a_step_fails(self) -> None:
+        # A step that fails after max_revisions STOPS the chain — the downstream
+        # worker must not run on unvalidated input; the supervisor reports the
+        # failure instead.
+        kit = _make_mock_kit(Room(id="r1"))
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1", role="Researcher")
+        w2 = _make_agent("w2", role="Writer")
+        verdicts = [
+            {"approved": False, "feedback": "no", "next_task": ""},
+            {"approved": False, "feedback": "no", "next_task": ""},
+        ]
+        delegate, calls = _supervised_delegate_router("boss", verdicts)
+        kit.delegate = AsyncMock(side_effect=delegate)
+
+        steps = await _run_supervised_sequential(
+            kit, "r1", boss, [w1, w2], "research", max_revisions=2
+        )
+
+        assert [t for cid, t in calls if cid == "w2"] == []  # downstream never ran
+        assert len(steps) == 1
+        assert steps[0]["approved"] is False
+
     async def test_worker_structured_payload_is_rendered_for_review(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
         boss = _make_agent("boss")
@@ -819,7 +853,9 @@ class TestSupervisedSequential:
         digest = _format_supervised_digest("the goal", steps, 3)
         assert "the goal" in digest
         assert "Researcher (validated)" in digest
-        assert "Writer (UNVALIDATED after 3 revisions)" in digest
+        assert "Writer (FAILED after 3 attempts)" in digest
+        # A failed final step makes the digest lead with the failure, honestly.
+        assert "could NOT complete" in digest
 
 
 class TestParseVerdict:
@@ -833,10 +869,13 @@ class TestParseVerdict:
         assert v["approved"] is False
         assert v["feedback"] == "fix it"
 
-    def test_unparseable_fails_open(self) -> None:
+    def test_unparseable_fails_closed(self) -> None:
+        # An unreadable verdict must NOT pass a step through unjudged — reject so
+        # the bounded rework loop can recover or end in an honest failure.
         v = _parse_verdict("I approve this, looks great!")
-        assert v["approved"] is True
+        assert v["approved"] is False
         assert v["next_task"] is None
+        assert v["feedback"]  # tells the supervisor to re-emit clean JSON
 
 
 class TestRenderResult:

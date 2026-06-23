@@ -1121,22 +1121,28 @@ _VERDICT_INSTRUCTIONS = (
 
 
 def _parse_verdict(raw: str) -> dict[str, Any]:
-    """Parse the supervisor's review JSON leniently.
+    """Parse the supervisor's review JSON.
 
-    Fails OPEN (``approved=True``) on a parse miss so a formatting slip from a
-    weaker model never deadlocks the pipeline — the miss is logged. A strict
-    block-forever would be worse than passing a step through unjudged.
+    Fails CLOSED (``approved=False``) on a parse miss: an unreadable verdict must
+    not pass a step through unjudged. The miss is logged and fed back as feedback
+    so the next attempt can correct itself; the surrounding rework loop is bounded
+    by ``max_revisions``, so a persistently malformed verdict ends in an honest
+    failure rather than a silent approval.
     """
     try:
         start = raw.index("{")
         end = raw.rindex("}")
         obj = json.loads(raw[start : end + 1])
     except (ValueError, json.JSONDecodeError):
-        logger.warning("Supervisor verdict unparseable; approving by default: %r", raw[:200])
-        return {"approved": True, "feedback": "", "next_task": None}
+        logger.warning("Supervisor verdict unparseable; rejecting by default: %r", raw[:200])
+        return {
+            "approved": False,
+            "feedback": "Your verdict was unreadable. Respond with ONLY the JSON verdict.",
+            "next_task": None,
+        }
     next_task = obj.get("next_task")
     return {
-        "approved": bool(obj.get("approved", True)),
+        "approved": bool(obj.get("approved", False)),
         "feedback": str(obj.get("feedback") or ""),
         "next_task": (str(next_task).strip() or None) if next_task else None,
     }
@@ -1205,6 +1211,39 @@ def _render_result(output: str) -> str:
     return "\n".join(parts)
 
 
+async def _supervisor_dispatch(
+    kit: RoomKit,
+    supervisor: Agent,
+    room_id: str,
+    *,
+    goal: str,
+    first_worker: Agent,
+    share_channels: list[str] | None,
+    task_timeout: float,
+) -> str:
+    """The supervisor takes the lead: it reads the user goal (bringing its own
+    instructions) and frames the FIRST worker's task, so the chain starts from a
+    supervisor-authored brief rather than the raw user message. Falls back to the
+    raw goal if the supervisor returns nothing."""
+    prompt = (
+        "You are the supervisor of a worker team. A user gave you the goal below. "
+        "Frame a clear, specific, self-contained task for your FIRST worker so it can "
+        "start — addressed to its role, stating exactly what to produce.\n\n"
+        f"User goal:\n{goal}\n\n"
+        f"First worker — {_worker_label(first_worker)}.\n\n"
+        "Respond with ONLY the task text for that worker — no preamble, no JSON."
+    )
+    framed, _ok = await _delegate_and_wait(
+        kit,
+        room_id,
+        supervisor.channel_id,
+        prompt,
+        share_channels=share_channels,
+        task_timeout=task_timeout,
+    )
+    return (framed or "").strip() or goal
+
+
 async def _supervisor_review(
     kit: RoomKit,
     supervisor: Agent,
@@ -1229,12 +1268,18 @@ async def _supervisor_review(
     else:
         next_clause = "This was the LAST worker; leave 'next_task' empty."
     prompt = (
-        "You are the supervisor reviewing ONE step of your team's work.\n\n"
+        "You are the supervisor reviewing ONE step of your team's work. Judge it "
+        "STRICTLY — the team's final answer is only as good as what you let through.\n\n"
         f"User goal:\n{goal}\n\n"
         f"Worker that just finished — {_worker_label(worker)}:\n{output}\n\n"
-        "Judge whether this output is correct, complete, and directly usable toward the "
-        "goal. REJECT vague work, a question asked back instead of a result, or anything "
-        f"that doesn't actually do the worker's job. {next_clause}\n\n"
+        "APPROVE only if the output genuinely fulfills the worker's part of the goal: "
+        "correct, complete, and directly usable. REJECT (approved=false) if the worker "
+        "gave up or claimed it couldn't find anything / that the subject doesn't exist / "
+        "that data is missing, asked a question back instead of delivering, returned "
+        "status=failed, or produced something vague, off-topic, or not actually answering "
+        "the user's intent. Well-formatted text that does not do the job is still a reject. "
+        "When you reject, give precise, actionable feedback on exactly what to fix. "
+        f"{next_clause}\n\n"
         f"{_VERDICT_INSTRUCTIONS}"
     )
     raw, _ok = await _delegate_and_wait(
@@ -1262,19 +1307,24 @@ def _compose_rework(task: str, output: str, feedback: str) -> str:
 def _format_supervised_digest(goal: str, steps: list[dict[str, Any]], max_revisions: int) -> str:
     """Brief handed back to the supervisor's own turn so it writes the final
     user-facing summary — each step's validated output + validation status."""
-    lines = [
-        "Your team has finished and you have reviewed each step. Deliver ONE final "
-        "summary to the user: what each step accomplished and the outcome. Reference any "
-        "deliverables (published reports/artifacts). Flag plainly any step marked UNVALIDATED.",
-        "",
-        f"User request:\n{goal}",
-        "",
-        "Reviewed work:",
-    ]
-    for step in steps:
-        status = (
-            "validated" if step["approved"] else f"UNVALIDATED after {max_revisions} revisions"
+    aborted = bool(steps) and not steps[-1]["approved"]
+    if aborted:
+        intro = (
+            "Your team could NOT complete the task. The final step below FAILED after "
+            f"{max_revisions} attempts, so the chain was STOPPED — later workers did not "
+            "run. Tell the user HONESTLY that the task could not be completed: name the "
+            "step that failed and why, and summarize what was accomplished before it. Do "
+            "NOT fabricate a finished result or a deliverable that does not exist."
         )
+    else:
+        intro = (
+            "Your team has finished and you have reviewed each step. Deliver ONE final "
+            "summary to the user: what each step accomplished and the outcome. Reference "
+            "any deliverables (published reports/artifacts) by their link."
+        )
+    lines = [intro, "", f"User request:\n{goal}", "", "Reviewed work:"]
+    for step in steps:
+        status = "validated" if step["approved"] else f"FAILED after {max_revisions} attempts"
         lines.append(f"\n--- {step['role']} ({status}) ---\n{step['output'] or '(no output)'}")
     return "\n".join(lines)
 
@@ -1313,12 +1363,26 @@ async def _run_supervised_sequential(
     next worker's task. Returns the reviewed steps
     (``{worker, role, output, approved}``) for the caller to present/summarize."""
     steps: list[dict[str, Any]] = []
-    task = task_desc  # first worker gets the goal; the supervisor frames the rest
+    # The supervisor leads: it reads the user goal + its own instructions and
+    # frames the FIRST worker's task, rather than forwarding the raw user message.
+    task = (
+        await _supervisor_dispatch(
+            kit,
+            supervisor,
+            room_id,
+            goal=task_desc,
+            first_worker=workers[0],
+            share_channels=share_channels,
+            task_timeout=task_timeout,
+        )
+        if workers
+        else task_desc
+    )
     for i, worker in enumerate(workers):
         next_worker = workers[i + 1] if i + 1 < len(workers) else None
         revisions = 0
         approved = False
-        output = ""
+        rendered = ""
         verdict: dict[str, Any] = {}
         while True:
             _post_worker_status(
@@ -1373,12 +1437,16 @@ async def _run_supervised_sequential(
                 "approved": approved,
             }
         )
-        # The supervisor framed the next worker's task on approval; otherwise fall
-        # back to the goal (the unvalidated step is flagged downstream). The team's
-        # validated work is embedded into that framing — the supervisor only
-        # *references* prior output ("use the analyst's data"), so without the
-        # actual content attached the next worker receives a task pointing at data
-        # it never sees and reports it as missing.
+        if not approved:
+            # Exhausted max_revisions without an accepted result. Continuing on
+            # unvalidated work would only propagate the failure, so the chain
+            # STOPS here — the supervisor reports the failure to the user in its
+            # final summary (see _format_supervised_digest) rather than handing
+            # broken input to the next worker.
+            break
+        # Approved: the supervisor frames the next worker's task, with the team's
+        # validated work embedded so the next worker receives the actual data, not
+        # just a prose reference to it ("use the analyst's data").
         framing = verdict.get("next_task") or task_desc
         task = _compose_supervised_handoff(framing, steps)
     return steps
