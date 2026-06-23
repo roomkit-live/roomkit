@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import json
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.delivery import ProviderResult
@@ -20,6 +21,12 @@ from roomkit.providers.utils import extract_event_text as _extract_event_text
 
 if TYPE_CHECKING:
     import httpx
+
+# Code blocks with fewer lines than this stay inline as a monospace block;
+# larger dumps are extracted to a file attachment by telegramify. Keeping the
+# threshold high means ordinary snippets in a reply render inline rather than
+# arriving as a download.
+_CODE_BLOCK_FILE_LINES = 40
 
 
 class TelegramBotProvider(TelegramProvider):
@@ -57,10 +64,7 @@ class TelegramBotProvider(TelegramProvider):
         text = self._extract_text(event)
         if not text:
             return ProviderResult(success=False, error="empty_message")
-        return await self._api_call(
-            "sendMessage",
-            {"chat_id": to, "text": text},
-        )
+        return await self._send_markdown(to, text)
 
     async def _send_rich(self, to: str, content: RichContent) -> ProviderResult:
         """Send rich text with an optional inline keyboard.
@@ -73,11 +77,94 @@ class TelegramBotProvider(TelegramProvider):
         text = content.plain_text or content.body
         if not text:
             return ProviderResult(success=False, error="empty_message")
-        payload: dict[str, Any] = {"chat_id": to, "text": text}
+        rendered, entities = self._render(text)
+        payload: dict[str, Any] = {"chat_id": to, "text": rendered}
+        if entities:
+            payload["entities"] = entities
         keyboard = self._inline_keyboard(content.buttons)
         if keyboard:
             payload["reply_markup"] = {"inline_keyboard": keyboard}
         return await self._api_call("sendMessage", payload)
+
+    async def _send_markdown(self, to: str, text: str) -> ProviderResult:
+        """Render Markdown to Telegram formatting, then send (splitting if long).
+
+        The model emits CommonMark — headings, tables, ``---`` — none of which
+        Telegram renders natively. ``telegramify`` translates them into message
+        entities (headings to bold, tables to a monospace ``pre`` block) and
+        splits past Telegram's 4096-character ceiling. Entities ride on the
+        rendered text, so Telegram never re-parses and can't reject on an
+        unescaped character. When the formatter is unavailable or conversion
+        fails, the raw text is sent unformatted so a message is never dropped.
+        """
+        boxes = await self._telegramify(text)
+        if not boxes:
+            return await self._api_call("sendMessage", {"chat_id": to, "text": text})
+        anchor = ""
+        result = ProviderResult(success=False, error="empty_message")
+        for box in boxes:
+            result = await self._send_box(to, box)
+            if not result.success:
+                return result
+            anchor = anchor or result.provider_message_id
+        return ProviderResult(success=True, provider_message_id=anchor)
+
+    @staticmethod
+    async def _telegramify(text: str) -> list[Any] | None:
+        """Convert Markdown into Telegram message boxes, or None if unavailable."""
+        try:
+            from telegramify_markdown import telegramify
+        except ImportError:
+            return None
+        try:
+            return await telegramify(
+                text, render_mermaid=False, min_file_lines=_CODE_BLOCK_FILE_LINES
+            )
+        except Exception:
+            return None
+
+    async def _send_box(self, to: str, box: Any) -> ProviderResult:
+        kind = getattr(box.content_type, "value", "text")
+        if kind == "photo":
+            return await self._send_box_media("sendPhoto", "photo", to, box)
+        if kind == "file":
+            return await self._send_box_media("sendDocument", "document", to, box)
+        payload: dict[str, Any] = {"chat_id": to, "text": box.text}
+        entities = self._dump_entities(box.entities)
+        if entities:
+            payload["entities"] = entities
+        return await self._api_call("sendMessage", payload)
+
+    async def _send_box_media(self, method: str, field: str, to: str, box: Any) -> ProviderResult:
+        data: dict[str, Any] = {"chat_id": to}
+        if box.caption_text:
+            data["caption"] = box.caption_text
+            entities = self._dump_entities(box.caption_entities)
+            if entities:
+                data["caption_entities"] = json.dumps(entities)
+        return await self._api_upload(method, data, {field: (box.file_name, box.file_data)})
+
+    @staticmethod
+    def _render(text: str) -> tuple[str, list[dict[str, Any]]]:
+        """Render Markdown to ``(text, entities)`` for one message, or passthrough.
+
+        Entities reference offsets in the *rendered* text, so callers must send
+        the returned text, not the original. Falls back to the raw text with no
+        entities when the formatter is unavailable or conversion fails.
+        """
+        try:
+            from telegramify_markdown import convert
+        except ImportError:
+            return text, []
+        try:
+            rendered, entities = convert(text)
+            return rendered, TelegramBotProvider._dump_entities(entities)
+        except Exception:
+            return text, []
+
+    @staticmethod
+    def _dump_entities(entities: Any) -> list[dict[str, Any]]:
+        return [e.to_dict() for e in entities or []]
 
     @staticmethod
     def _inline_keyboard(buttons: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
@@ -140,15 +227,31 @@ class TelegramBotProvider(TelegramProvider):
         return await self._api_call("sendAudio", payload)
 
     async def _api_call(self, method: str, payload: dict[str, Any]) -> ProviderResult:
+        return await self._request(method, json=payload)
+
+    async def _api_upload(
+        self, method: str, data: dict[str, Any], files: dict[str, Any]
+    ) -> ProviderResult:
+        """Multipart variant for sending file bytes (sendDocument/sendPhoto)."""
+        return await self._request(method, data=data, files=files)
+
+    async def _request(
+        self,
+        method: str,
+        *,
+        json: dict[str, Any] | None = None,
+        data: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
+    ) -> ProviderResult:
         url = f"{self._config.base_url}/{method}"
         try:
             import time
 
             t0 = time.monotonic()
-            resp = await self._client.post(url, json=payload)
+            resp = await self._client.post(url, json=json, data=data, files=files)
             resp.raise_for_status()
             send_ms = (time.monotonic() - t0) * 1000
-            data = resp.json()
+            body = resp.json()
 
             from roomkit.telemetry.noop import NoopTelemetryProvider
 
@@ -166,7 +269,7 @@ class TelegramBotProvider(TelegramProvider):
         except self._httpx.HTTPError as exc:
             return ProviderResult(success=False, error=str(exc))
 
-        result = data.get("result", {})
+        result = body.get("result", {})
         return ProviderResult(
             success=True,
             provider_message_id=str(result.get("message_id", "")),

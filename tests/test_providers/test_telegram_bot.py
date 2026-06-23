@@ -230,6 +230,127 @@ class TestTelegramBotProvider:
         # Should not raise
 
 
+class TestTelegramMarkdown:
+    """The model emits CommonMark; it must reach Telegram as formatting, not syntax."""
+
+    @pytest.mark.asyncio
+    async def test_markdown_renders_to_entities(self) -> None:
+        transport = _MockTransport(_ok_response(50))
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        md = "## Titre\n\n| A | B |\n|---|---|\n| x | y |\n\n**gras** et du texte."
+        result = await provider.send(make_event(body=md), to="999")
+
+        assert result.success is True
+        assert len(transport.requests) == 1
+        body = json.loads(transport.requests[0].content)
+        assert body["chat_id"] == "999"
+        # Markdown markers are gone — formatting rides on entities, not syntax.
+        assert "##" not in body["text"]
+        assert "**" not in body["text"]
+        # Entities (not parse_mode) carry the formatting, so Telegram never re-parses.
+        assert "parse_mode" not in body
+        types = {e["type"] for e in body["entities"]}
+        assert "pre" in types  # the table became a monospace block
+        assert types & {"bold", "underline"}  # the heading/bold became real formatting
+
+    @pytest.mark.asyncio
+    async def test_long_message_splits_into_chunks(self) -> None:
+        transport = _MockTransport(_ok_response(51))
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        long_body = "\n\n".join(f"Paragraphe {i} " + "mot " * 40 for i in range(120))
+        result = await provider.send(make_event(body=long_body), to="1")
+
+        assert result.success is True
+        assert result.provider_message_id == "51"
+        assert len(transport.requests) > 1
+        for req in transport.requests:
+            assert "/sendMessage" in str(req.url)
+            assert len(json.loads(req.content)["text"]) <= 4096
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_plain_when_formatter_unavailable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        transport = _MockTransport(_ok_response(52))
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        async def _unavailable(_text: str) -> None:
+            return None
+
+        monkeypatch.setattr(provider, "_telegramify", _unavailable)
+
+        md = "## Titre\n\nLe **corps**."
+        result = await provider.send(make_event(body=md), to="7")
+
+        assert result.success is True
+        body = json.loads(transport.requests[0].content)
+        assert body["text"] == md  # raw markdown preserved, nothing dropped
+        assert "entities" not in body
+
+    @pytest.mark.asyncio
+    async def test_short_code_block_stays_inline(self) -> None:
+        transport = _MockTransport(_ok_response(54))
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        md = "Exemple:\n```python\nprint('hi')\n```\nVoilà."
+        result = await provider.send(make_event(body=md), to="5")
+
+        assert result.success is True
+        # A small snippet renders inline, not as a file download.
+        assert len(transport.requests) == 1
+        req = transport.requests[0]
+        assert "/sendDocument" not in str(req.url)
+        body = json.loads(req.content)
+        assert any(e["type"] in {"pre", "code"} for e in body["entities"])
+
+    @pytest.mark.asyncio
+    async def test_large_code_block_sent_as_document(self) -> None:
+        transport = _MockTransport(_ok_response(55))
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        code = "\n".join(f"line_{i} = {i}" for i in range(80))
+        md = f"Code:\n```python\n{code}\n```\nFin."
+        result = await provider.send(make_event(body=md), to="6")
+
+        assert result.success is True
+        doc_reqs = [r for r in transport.requests if "/sendDocument" in str(r.url)]
+        assert len(doc_reqs) == 1
+        # A large dump is uploaded as multipart file bytes, not a JSON text body.
+        assert "multipart/form-data" in doc_reqs[0].headers.get("content-type", "")
+
+    @pytest.mark.asyncio
+    async def test_rich_content_renders_entities_with_keyboard(self) -> None:
+        from roomkit.models.enums import ChannelType
+        from roomkit.models.event import EventSource, RichContent, RoomEvent
+
+        transport = _MockTransport(_ok_response(53))
+        provider = TelegramBotProvider(_config())
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        event = RoomEvent(
+            room_id="r1",
+            source=EventSource(channel_id="ch1", channel_type=ChannelType.TELEGRAM),
+            content=RichContent(
+                body="**Approuver** la demande ?",
+                buttons=[{"text": "Oui", "callback_data": "ok"}],
+            ),
+        )
+        result = await provider.send(event, to="3")
+
+        assert result.success is True
+        body = json.loads(transport.requests[0].content)
+        assert "**" not in body["text"]
+        assert any(e["type"] == "bold" for e in body["entities"])
+        assert body["reply_markup"]["inline_keyboard"][0][0]["text"] == "Oui"
+
+
 class TestTelegramSignatureVerification:
     """Tests for TelegramBotProvider.verify_signature()."""
 
