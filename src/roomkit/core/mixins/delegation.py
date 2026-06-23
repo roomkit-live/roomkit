@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -572,6 +573,31 @@ class DelegationMixin(HelpersMixin):
                 require_structured_result=require_structured_result,
                 max_result_retries=max_result_retries,
             )
+        except asyncio.CancelledError:
+            # A caller cancelled this delegation (e.g. a supervisor's per-task
+            # timeout via asyncio.wait_for). CancelledError is a BaseException, so
+            # without handling it here the completion hook below never runs — and
+            # consumers that close a step on ON_TASK_COMPLETED (the orchestration
+            # timeline) leave it stuck on "running". Fire the completion as FAILED,
+            # then propagate the cancellation.
+            elapsed = (time.monotonic() - start) * 1000
+            cancelled = DelegatedTaskResult(
+                task_id=handle.id,
+                child_room_id=handle.child_room_id,
+                parent_room_id=handle.parent_room_id,
+                agent_id=handle.agent_id,
+                status=TaskStatus.FAILED,
+                output=None,
+                error="cancelled (timed out)",
+                duration_ms=elapsed,
+                metadata=context or {},
+            )
+            with contextlib.suppress(Exception):
+                await self._on_delegation_complete(
+                    cancelled, notify or handle.agent_id, deliver=False
+                )
+            handle._set_result(cancelled)
+            raise
         except Exception as exc:
             _tasks_logger.exception("Inline task %s failed: %s", handle.id, exc)
             error = str(exc)

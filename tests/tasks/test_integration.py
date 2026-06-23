@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import patch
 
 import pytest
 
@@ -105,6 +106,37 @@ class TestDelegateIntegration:
         assert "BACKGROUND TASK COMPLETED" in prompt
         assert "PR looks good" in prompt
 
+        await kit.close()
+
+    async def test_cancelled_inline_delegation_fires_completion_hook(self):
+        """A delegation cancelled by the caller's timeout (asyncio.wait_for) must
+        still fire ON_TASK_COMPLETED (failed) — otherwise a consumer that closes a
+        step on completion (the orchestration timeline) leaves it stuck 'running'."""
+        kit = RoomKit()
+        kit.register_channel(_make_agent("w1", "done"))
+        await kit.create_room(room_id="r1")
+
+        completed_hooks: list[object] = []
+
+        @kit.hook(HookTrigger.ON_TASK_COMPLETED, execution=HookExecution.ASYNC)
+        async def on_completed(event, ctx):
+            completed_hooks.append(event)
+
+        async def _hang(*_a, **_k):
+            await asyncio.sleep(30)
+
+        # Worker hangs → the caller's per-task timeout cancels the delegation.
+        with (
+            patch("roomkit.core.mixins.delegation.run_agent_in_child_room", side_effect=_hang),
+            pytest.raises((asyncio.TimeoutError, TimeoutError)),
+        ):
+            await asyncio.wait_for(
+                kit.delegate(room_id="r1", agent_id="w1", task="go", wait=True),
+                timeout=0.1,
+            )
+
+        await asyncio.sleep(0.1)  # let the ASYNC completion hook run
+        assert len(completed_hooks) == 1  # step closed despite the cancellation
         await kit.close()
 
     async def test_shared_channels_appear_in_child_room(self):
