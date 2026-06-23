@@ -966,12 +966,11 @@ async def _two_pass_delegate(
     )
 
     # Pass 2: inject worker results and generate final response
-    results_text = _format_worker_results(worker_results)
     results_event = RoomEvent(
         room_id=event.room_id,
         type=event.type,
         source=EventSource(channel_id="system", channel_type=_ChannelType.SYSTEM),
-        content=TextContent(body=f"Here are the results from your workers:\n\n{results_text}"),
+        content=TextContent(body=_present_worker_results(worker_results)),
     )
 
     # Ingest the results so the supervisor sees them in context
@@ -1024,7 +1023,6 @@ async def _one_pass_delegate(
     )
 
     # Inject results into context and let supervisor present
-    results_text = _format_worker_results(worker_results)
     results_event = RoomEvent(
         room_id=event.room_id,
         type=event.type,
@@ -1032,7 +1030,7 @@ async def _one_pass_delegate(
         content=TextContent(
             body=(
                 f"The user asked: {user_message}\n\n"
-                f"Here are the results from your workers:\n\n{results_text}"
+                f"{_present_worker_results(worker_results)}"
             )
         ),
     )
@@ -1733,3 +1731,25 @@ def _format_worker_results(results: list[dict[str, Any]]) -> str:
             suffix = " (validated)" if r["approved"] else " (UNVALIDATED)"
         parts.append(f"--- {label}{suffix} ---\n{output}")
     return "\n\n".join(parts)
+
+
+def _present_worker_results(worker_results: list[dict[str, Any]]) -> str:
+    """The system message handed to the supervisor for its final user-facing
+    summary. When every step passed it's a neutral hand-off; when any step FAILED
+    it leads with an unmissable directive so the supervisor reports the failure
+    instead of presenting the partial work as a finished answer (an LLM given rich
+    upstream data will otherwise just answer the question and bury the failure)."""
+    results_text = _format_worker_results(worker_results)
+    failed = [r for r in worker_results if "approved" in r and not r["approved"]]
+    if not failed:
+        return f"Here are the results from your workers:\n\n{results_text}"
+    names = ", ".join(str(r.get("role") or r.get("worker") or "a worker") for r in failed)
+    return (
+        f"⚠️ THE TASK DID NOT COMPLETE — this step FAILED: {names}.\n"
+        "OPEN your reply by telling the user plainly that the task could not be "
+        "completed, naming the step that failed and why (the failure detail is in the "
+        "results below). Do NOT present the partial work as a finished result, do NOT "
+        "imply the task succeeded, and do NOT silently answer the original question from "
+        "the partial data as if nothing went wrong.\n\n"
+        f"Worker results:\n{results_text}"
+    )

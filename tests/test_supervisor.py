@@ -32,6 +32,7 @@ from roomkit.orchestration.strategies.supervisor import (
     _format_worker_results,
     _one_pass_delegate,
     _parse_verdict,
+    _present_worker_results,
     _render_result,
     _run_parallel,
     _run_sequential,
@@ -1074,6 +1075,28 @@ class TestFormatWorkerResults:
         results = [{}]
         text = _format_worker_results(results)
         assert "--- unknown ---" in text
+
+
+class TestPresentWorkerResults:
+    def test_all_passed_is_a_neutral_handoff(self) -> None:
+        results = [{"role": "Researcher", "output": "found facts", "approved": True}]
+        text = _present_worker_results(results)
+        assert "Here are the results from your workers" in text
+        assert "FAILED" not in text
+        assert "found facts" in text
+
+    def test_a_failed_step_leads_with_an_unmissable_failure_directive(self) -> None:
+        # The supervisor must report the failure, not synthesize a clean answer
+        # from the partial upstream data.
+        results = [
+            {"role": "Researcher", "output": "found facts", "approved": True},
+            {"role": "Report", "output": "status: failed (no credit)", "approved": False},
+        ]
+        text = _present_worker_results(results)
+        assert text.startswith("⚠️")
+        assert "FAILED" in text
+        assert "Report" in text  # names the failed step
+        assert "found facts" in text  # still carries the partial work below the directive
 
 
 # -- Tests: _two_pass_delegate -----------------------------------------------
