@@ -1104,6 +1104,25 @@ def _worker_label(worker: Agent) -> str:
     )
 
 
+_PROFILE_CAP = 600
+
+
+def _worker_profile(worker: Agent) -> str:
+    """Role + the agent's own configured instructions, so the supervisor frames
+    tasks knowing each worker's real capabilities (e.g. that the report agent
+    publishes HTML to the website) rather than just a label. Prefers ``purpose``
+    (the agent's concise own instructions, set by the host) and falls back to
+    ``description``; the full runtime system prompt is far too large to inject."""
+    role = getattr(worker, "role", None) or worker.channel_id
+    detail = getattr(worker, "purpose", None) or getattr(worker, "description", None)
+    if detail and detail.strip() and detail.strip() != role.strip():
+        text = detail.strip()
+        if len(text) > _PROFILE_CAP:
+            text = text[:_PROFILE_CAP] + "…"
+        return f"{role} — {text}"
+    return role
+
+
 # --- Supervised sequential (hub & spoke) --------------------------------------
 #
 # Every worker's output returns to the supervisor, which judges it and frames the
@@ -1217,20 +1236,25 @@ async def _supervisor_dispatch(
     room_id: str,
     *,
     goal: str,
-    first_worker: Agent,
+    workers: list[Agent],
     share_channels: list[str] | None,
     task_timeout: float,
 ) -> str:
-    """The supervisor takes the lead: it reads the user goal (bringing its own
-    instructions) and frames the FIRST worker's task, so the chain starts from a
-    supervisor-authored brief rather than the raw user message. Falls back to the
-    raw goal if the supervisor returns nothing."""
+    """The supervisor takes the lead: knowing its full team (each worker's role +
+    description), it reads the user goal and frames the FIRST worker's task, so the
+    chain starts from a supervisor-authored brief rather than the raw user message.
+    Falls back to the raw goal if the supervisor returns nothing."""
+    roster = "\n".join(f"- {_worker_profile(w)}" for w in workers)
     prompt = (
-        "You are the supervisor of a worker team. A user gave you the goal below. "
-        "Frame a clear, specific, self-contained task for your FIRST worker so it can "
-        "start — addressed to its role, stating exactly what to produce.\n\n"
+        "You are the supervisor of a worker team that runs in this FIXED order. Know "
+        "your team and what each member does:\n"
+        f"{roster}\n\n"
+        "A user gave you the goal below. Frame a clear, specific, self-contained task "
+        "for your FIRST worker so it can start — addressed to its role, stating exactly "
+        "what to produce. Respect each worker's own job: do not strip a standing "
+        "responsibility such as publishing a report or sending a message.\n\n"
         f"User goal:\n{goal}\n\n"
-        f"First worker — {_worker_label(first_worker)}.\n\n"
+        f"First worker — {_worker_profile(workers[0])}.\n\n"
         "Respond with ONLY the task text for that worker — no preamble, no JSON."
     )
     framed, _ok = await _delegate_and_wait(
@@ -1371,7 +1395,7 @@ async def _run_supervised_sequential(
             supervisor,
             room_id,
             goal=task_desc,
-            first_worker=workers[0],
+            workers=workers,
             share_channels=share_channels,
             task_timeout=task_timeout,
         )

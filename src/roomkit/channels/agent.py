@@ -77,6 +77,7 @@ class Agent(AIChannel):
         provider: AIProvider | None = None,
         role: str | None = None,
         description: str | None = None,
+        purpose: str | None = None,
         scope: str | None = None,
         voice: str | None = None,
         greeting: str | None = None,
@@ -87,6 +88,11 @@ class Agent(AIChannel):
         super().__init__(channel_id, provider=provider or _NullAIProvider(), **kwargs)
         self.role = role
         self.description = description
+        # The agent's own configured instructions, in concise form — surfaced to
+        # an orchestrator (e.g. a Supervisor) so it can frame tasks knowing what
+        # this agent does and which tools it uses, without injecting the full
+        # runtime system prompt. Distinct from ``description`` (a short label).
+        self.purpose = purpose
         self.scope = scope
         self.voice = voice
         self.greeting = greeting
