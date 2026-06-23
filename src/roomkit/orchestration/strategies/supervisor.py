@@ -289,6 +289,7 @@ class Supervisor(Orchestration):
         refine = self._refine_task
         refine_instruction = self._refine_instruction
         share_channels = self._share_channels
+        max_revisions = self._max_revisions
         original_on_event = supervisor.on_event
 
         async def auto_delegate_on_event(
@@ -316,6 +317,7 @@ class Supervisor(Orchestration):
                     workers,
                     instruction=refine_instruction,
                     share_channels=share_channels,
+                    max_revisions=max_revisions,
                 )
             return await _one_pass_delegate(
                 kit,
@@ -328,6 +330,7 @@ class Supervisor(Orchestration):
                 strategy,
                 workers,
                 share_channels=share_channels,
+                max_revisions=max_revisions,
             )
 
         supervisor.on_event = auto_delegate_on_event  # ty: ignore[invalid-assignment]
@@ -590,7 +593,7 @@ class Supervisor(Orchestration):
                         # supervisor, which validates it (rework up to
                         # max_revisions) and frames the next worker's task.
                         # The digest goes back so the supervisor summarizes.
-                        review = await _run_supervised_sequential(
+                        steps = await _run_supervised_sequential(
                             kit,
                             rid,
                             supervisor,
@@ -600,6 +603,7 @@ class Supervisor(Orchestration):
                             share_channels=share_channels,
                             task_timeout=task_timeout,
                         )
+                        review = _format_supervised_digest(task_desc, steps, max_revisions)
                     else:
                         # Parallel: all workers run on the same task; the
                         # supervisor reviews the combined result and delivers.
@@ -915,8 +919,10 @@ async def _two_pass_delegate(
     *,
     instruction: str | None = None,
     share_channels: list[str] | None = None,
+    max_revisions: int = _DEFAULT_MAX_REVISIONS,
 ) -> ChannelOutput:
-    """Two-pass: supervisor formulates task → workers run → supervisor presents."""
+    """Two-pass: supervisor formulates task → workers run (validated between
+    steps by the supervisor in sequential mode) → supervisor presents."""
     # Pass 1: temporarily inject a task-formulation instruction
     pass1_instruction = instruction or _build_pass1_instruction(workers)
     original_prompt = supervisor._system_prompt
@@ -935,13 +941,15 @@ async def _two_pass_delegate(
     if not refined_task:
         return pass1_output
 
-    # Run workers with the refined task
+    # Run workers with the refined task — supervised between steps in sequential.
     worker_results = await _run_workers(
         kit,
         room_id,
         strategy,
         workers,
         refined_task,
+        supervisor=supervisor,
+        max_revisions=max_revisions,
         share_channels=share_channels,
     )
 
@@ -977,8 +985,10 @@ async def _one_pass_delegate(
     workers: list[Agent],
     *,
     share_channels: list[str] | None = None,
+    max_revisions: int = _DEFAULT_MAX_REVISIONS,
 ) -> ChannelOutput:
-    """One-pass: workers run on raw message → supervisor presents."""
+    """One-pass: workers run on raw message (validated between steps by the
+    supervisor in sequential mode) → supervisor presents."""
     # Extract user's raw message
     user_message = ""
     if isinstance(event.content, TextContent):
@@ -987,13 +997,15 @@ async def _one_pass_delegate(
     if not user_message:
         return await original_on_event(event, binding, context)
 
-    # Run workers with the raw user message
+    # Run workers with the raw user message — supervised between steps in sequential.
     worker_results = await _run_workers(
         kit,
         room_id,
         strategy,
         workers,
         user_message,
+        supervisor=supervisor,
+        max_revisions=max_revisions,
         share_channels=share_channels,
     )
 
@@ -1033,10 +1045,28 @@ async def _run_workers(
     workers: list[Agent],
     task_desc: str,
     *,
+    supervisor: Agent | None = None,
+    max_revisions: int = _DEFAULT_MAX_REVISIONS,
     share_channels: list[str] | None = None,
     task_timeout: float = _DEFAULT_TASK_TIMEOUT_SECONDS,
-) -> list[dict[str, str]]:
-    """Run workers according to strategy and return raw results."""
+) -> list[dict[str, Any]]:
+    """Run workers according to strategy and return their reviewed results.
+
+    Sequential goes through the supervised hub-&-spoke loop when a *supervisor*
+    is given (every output returns to the supervisor, which validates it and
+    frames the next worker's task); parallel runs all workers on the same task.
+    """
+    if strategy == WorkerStrategy.SEQUENTIAL and supervisor is not None:
+        return await _run_supervised_sequential(
+            kit,
+            room_id,
+            supervisor,
+            workers,
+            task_desc,
+            max_revisions=max_revisions,
+            share_channels=share_channels,
+            task_timeout=task_timeout,
+        )
     if strategy == WorkerStrategy.SEQUENTIAL:
         result_json = await _run_sequential(
             kit,
@@ -1213,10 +1243,11 @@ async def _run_supervised_sequential(
     max_revisions: int,
     share_channels: list[str] | None = None,
     task_timeout: float = _DEFAULT_TASK_TIMEOUT_SECONDS,
-) -> str:
+) -> list[dict[str, Any]]:
     """Hub & spoke sequential: fixed worker order, but every output returns to the
     supervisor, which validates it (rework up to *max_revisions*) and frames the
-    next worker's task. Returns a digest for the supervisor to summarize."""
+    next worker's task. Returns the reviewed steps
+    (``{worker, role, output, approved}``) for the caller to present/summarize."""
     steps: list[dict[str, Any]] = []
     task = task_desc  # first worker gets the goal; the supervisor frames the rest
     for i, worker in enumerate(workers):
@@ -1266,11 +1297,18 @@ async def _run_supervised_sequential(
             if revisions >= max_revisions:
                 break
             task = _compose_rework(task, output, verdict["feedback"])
-        steps.append({"role": _worker_label(worker), "output": output, "approved": approved})
+        steps.append(
+            {
+                "worker": worker.channel_id,
+                "role": _worker_label(worker),
+                "output": output,
+                "approved": approved,
+            }
+        )
         # The supervisor framed the next worker's task on approval; otherwise fall
-        # back to the goal (the unvalidated step is flagged in the digest).
+        # back to the goal (the unvalidated step is flagged downstream).
         task = verdict.get("next_task") or task_desc
-    return _format_supervised_digest(task_desc, steps, max_revisions)
+    return steps
 
 
 def _compose_sequential_input(task_desc: str, prior_steps: list[tuple[str, str]]) -> str:
@@ -1498,11 +1536,19 @@ async def _extract_output_text(output: ChannelOutput) -> str:
     return ""
 
 
-def _format_worker_results(results: list[dict[str, str]]) -> str:
-    """Format worker results as readable text for the supervisor."""
+def _format_worker_results(results: list[dict[str, Any]]) -> str:
+    """Format worker results as readable text for the supervisor's presentation.
+
+    Prefers the worker's role as the label and, when the step carries a
+    supervised verdict, surfaces its validation status so the supervisor's final
+    summary can flag anything it could not validate.
+    """
     parts: list[str] = []
     for r in results:
-        worker = r.get("worker", "unknown")
+        label = r.get("role") or r.get("worker", "unknown")
         output = r.get("output", "")
-        parts.append(f"--- {worker} ---\n{output}")
+        suffix = ""
+        if "approved" in r:
+            suffix = " (validated)" if r["approved"] else " (UNVALIDATED)"
+        parts.append(f"--- {label}{suffix} ---\n{output}")
     return "\n\n".join(parts)

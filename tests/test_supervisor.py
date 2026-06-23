@@ -27,6 +27,7 @@ from roomkit.orchestration.strategies.supervisor import (
     _async_run_and_deliver,
     _compose_sequential_input,
     _extract_output_text,
+    _format_supervised_digest,
     _format_supervisor_review,
     _format_worker_results,
     _one_pass_delegate,
@@ -731,16 +732,16 @@ class TestSupervisedSequential:
         delegate, calls = _supervised_delegate_router("boss", verdicts)
         kit.delegate = AsyncMock(side_effect=delegate)
 
-        digest = await _run_supervised_sequential(
+        steps = await _run_supervised_sequential(
             kit, "r1", boss, [w1, w2], "research the topic", max_revisions=3
         )
 
         # First worker gets the raw goal; the second gets the supervisor-framed task.
         assert [t for cid, t in calls if cid == "w1"] == ["research the topic"]
         assert [t for cid, t in calls if cid == "w2"] == ["Write a report from the research"]
-        # Digest marks both steps validated for the supervisor to summarize.
-        assert "Researcher (validated)" in digest
-        assert "Writer (validated)" in digest
+        # Both steps reviewed + approved, role-labeled, in order.
+        assert [s["role"] for s in steps] == ["Researcher", "Writer"]
+        assert [s["approved"] for s in steps] == [True, True]
 
     async def test_rework_on_rejection_then_approve(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
@@ -753,14 +754,14 @@ class TestSupervisedSequential:
         delegate, calls = _supervised_delegate_router("boss", verdicts)
         kit.delegate = AsyncMock(side_effect=delegate)
 
-        digest = await _run_supervised_sequential(
+        steps = await _run_supervised_sequential(
             kit, "r1", boss, [w1], "research", max_revisions=3
         )
 
         w1_tasks = [t for cid, t in calls if cid == "w1"]
         assert len(w1_tasks) == 2  # original + one rework
         assert "add sources" in w1_tasks[1]  # feedback carried into the rework
-        assert "Researcher (validated)" in digest
+        assert steps[0]["approved"] is True
 
     async def test_max_revisions_exhausted_flags_unvalidated(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
@@ -773,12 +774,22 @@ class TestSupervisedSequential:
         delegate, calls = _supervised_delegate_router("boss", verdicts)
         kit.delegate = AsyncMock(side_effect=delegate)
 
-        digest = await _run_supervised_sequential(
+        steps = await _run_supervised_sequential(
             kit, "r1", boss, [w1], "research", max_revisions=2
         )
 
         assert len([t for cid, t in calls if cid == "w1"]) == 2  # bounded by max_revisions
-        assert "UNVALIDATED" in digest
+        assert steps[0]["approved"] is False
+
+    def test_digest_flags_validation_status(self) -> None:
+        steps = [
+            {"worker": "w1", "role": "Researcher", "output": "found facts", "approved": True},
+            {"worker": "w2", "role": "Writer", "output": "the report", "approved": False},
+        ]
+        digest = _format_supervised_digest("the goal", steps, 3)
+        assert "the goal" in digest
+        assert "Researcher (validated)" in digest
+        assert "Writer (UNVALIDATED after 3 revisions)" in digest
 
 
 class TestParseVerdict:
@@ -1201,8 +1212,11 @@ class TestAutoDelegate:
         event = _make_event(body="Tell me about quantum computing")
         result = await boss.on_event(event, _make_binding(), _make_context())
         assert isinstance(result, ChannelOutput)
-        # Verify the custom instruction was used (pass 1 was called)
-        kit.delegate.assert_called_once()
+        # Supervised hub & spoke: the worker ran AND the supervisor reviewed it
+        # (the worker's output returns to the supervisor before the next step).
+        channels = [c.args[1] for c in kit.delegate.call_args_list]
+        assert "w1" in channels  # the worker ran
+        assert "boss" in channels  # the supervisor reviewed it
 
     async def test_sync_auto_delegate_custom_delegation_message(self) -> None:
         boss = _make_agent("boss", responses=["Topic", "Presentation"])
