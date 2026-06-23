@@ -15,6 +15,20 @@ from roomkit.providers.ai.base import AITool
 
 SUBMIT_RESULT_TOOL_NAME = "submit_result"
 
+
+def is_submit_result(tool_name: str) -> bool:
+    """Whether *tool_name* is a submit_result call.
+
+    A function-calling provider calls the injected tool by its bare name; a
+    claude_code worker calls the gateway-exposed tool, which the sandbox surfaces
+    with an MCP prefix (``mcp__luge-integrations__submit_result``). Match both so
+    the capture is delivery-agnostic.
+    """
+    return tool_name == SUBMIT_RESULT_TOOL_NAME or tool_name.endswith(
+        f"__{SUBMIT_RESULT_TOOL_NAME}"
+    )
+
+
 #: Injected into a delegated worker so it delivers its result through a tool
 #: call (forced structure) instead of a scraped free-text message.
 SUBMIT_RESULT_TOOL = AITool(

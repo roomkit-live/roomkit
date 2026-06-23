@@ -173,6 +173,33 @@ async def _broadcast_and_collect(
     return None
 
 
+#: A cursor larger than any real event index, so ``before_index`` returns the
+#: tail (most recent events) — where a worker's final submit_result call lives.
+_LATEST_TAIL_CURSOR = 1 << 62
+
+
+async def _scan_for_submitted_result(kit: RoomKit, child_room_id: str) -> dict[str, Any] | None:
+    """Find a ``submit_result`` call in the worker's persisted trace.
+
+    The function-calling path captures the payload through the wrapped
+    ``tool_handler``; a claude_code worker instead calls the gateway-exposed
+    tool, which never reaches that handler — but the call IS persisted as a
+    TOOL_CALL event (with an ``mcp__…`` prefix). Scanning the trace tail makes
+    the capture delivery-agnostic. Returns the normalized payload, or None.
+    """
+    from roomkit.orchestration.result import is_submit_result, normalize_result
+
+    events = await kit.store.list_events(
+        child_room_id, before_index=_LATEST_TAIL_CURSOR, limit=100
+    )
+    for ev in reversed(events):
+        if ev.type in (EventType.TOOL_CALL_END, EventType.TOOL_CALL_START):
+            name = getattr(ev.content, "tool_name", "") or ""
+            if is_submit_result(name):
+                return normalize_result(getattr(ev.content, "arguments", None) or {})
+    return None
+
+
 async def _run_with_structured_result(
     kit: RoomKit,
     child_room_id: str,
@@ -180,11 +207,15 @@ async def _run_with_structured_result(
     max_result_retries: int,
 ) -> str:
     """Run a delegated agent that must hand its work back via the ``submit_result``
-    tool. Injects the tool, runs the agent, and a deterministic completion guard:
-    if the agent ends a turn without calling ``submit_result``, it is re-prompted
-    to use the tool (up to *max_result_retries* times); if it still hasn't, the
-    orchestration submits a fail on its behalf. Returns the structured payload as
-    a JSON string (an orchestration fail when exhausted)."""
+    tool. Injects the tool (for function-calling providers), runs the agent, and a
+    deterministic completion guard: if the agent ends a turn without calling
+    ``submit_result``, it is re-prompted to use the tool (up to *max_result_retries*
+    times); if it still hasn't, the orchestration submits a fail on its behalf.
+
+    Capture is delivery-agnostic: a function-calling provider's call is caught by
+    the wrapped ``tool_handler``; a claude_code worker calls the gateway-exposed
+    tool, which is caught by scanning its persisted trace. Returns the structured
+    payload as a JSON string (an orchestration fail when exhausted)."""
     from roomkit.orchestration.result import (
         SUBMIT_RESULT_TOOL,
         SUBMIT_RESULT_TOOL_NAME,
@@ -221,6 +252,9 @@ async def _run_with_structured_result(
             text = await _broadcast_and_collect(kit, child_room_id, message)
             if "payload" in captured:
                 return json.dumps(captured["payload"])
+            scanned = await _scan_for_submitted_result(kit, child_room_id)
+            if scanned is not None:
+                return json.dumps(scanned)
             last_text = text or last_text
             message = (
                 "You did not submit a result. You MUST now call the `submit_result` "

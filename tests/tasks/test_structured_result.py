@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 from roomkit.core.mixins.delegation import _run_with_structured_result
 from roomkit.models.enums import ChannelType, EventType
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.room import Room
-from roomkit.orchestration.result import normalize_result, orchestration_fail
+from roomkit.orchestration.result import is_submit_result, normalize_result, orchestration_fail
 
 
 def _text_event(body: str) -> RoomEvent:
@@ -94,7 +94,81 @@ class TestStructuredResultGuard:
         assert counter["n"] == 3  # initial + 2 retries
 
 
+def _make_cc_kit(events: list[RoomEvent]):
+    """Mock kit for a claude_code worker: it calls the gateway-exposed
+    submit_result (so the wrapped tool_handler is NEVER invoked), and the call is
+    persisted as a TOOL_CALL event that the scan must pick up."""
+    kit = MagicMock()
+    kit.get_room = AsyncMock(
+        return_value=Room(id="parent::task-1", metadata={"task_agent_id": "agent:w1"})
+    )
+    kit.store.list_bindings = AsyncMock(return_value=[])
+    kit.store.list_events = AsyncMock(return_value=events)
+    kit.store.add_event_auto_index = AsyncMock(side_effect=lambda _rid, ev: ev)
+    channel = SimpleNamespace(_injected_tools=[], tool_handler=None, role="Researcher")
+    kit.channels = {"agent:w1": channel}
+
+    async def _broadcast(_event, _binding, _context):
+        # The gateway handled submit_result; tool_handler is not called here.
+        out = SimpleNamespace(responded=True, response_events=[_text_event("done")])
+        return SimpleNamespace(outputs={"w1": out}, streaming_responses=[])
+
+    kit._get_router = MagicMock(
+        return_value=SimpleNamespace(broadcast=AsyncMock(side_effect=_broadcast))
+    )
+    return kit
+
+
+def _tool_call_event(tool_name: str, arguments: dict[str, Any]) -> RoomEvent:
+    return RoomEvent(
+        room_id="parent::task-1",
+        source=EventSource(channel_id="agent:w1", channel_type=ChannelType.AI),
+        type=EventType.TOOL_CALL_END,
+        content=ToolCallContent(
+            tool_name=tool_name, tool_id="tc-1", arguments=arguments, status="completed"
+        ),
+    )
+
+
+class TestStructuredResultViaTrace:
+    """The claude_code path: submit_result arrives as a persisted tool call
+    (prefixed by the gateway), captured by scanning the trace — not via the
+    wrapped tool_handler."""
+
+    async def test_captures_prefixed_gateway_call_from_trace(self) -> None:
+        events = [
+            _tool_call_event(
+                "mcp__luge-integrations__submit_result",
+                {"status": "completed", "summary": "shipped", "data": {"y": 2}},
+            )
+        ]
+        kit = _make_cc_kit(events)
+        out = await _run_with_structured_result(
+            kit, "parent::task-1", "do it", max_result_retries=3
+        )
+        payload = json.loads(out)
+        assert payload["status"] == "completed"
+        assert payload["summary"] == "shipped"
+        assert payload["data"] == {"y": 2}
+
+    async def test_fails_when_trace_has_no_submit_result(self) -> None:
+        events = [_tool_call_event("mcp__luge-integrations__web_search", {"q": "x"})]
+        kit = _make_cc_kit(events)
+        out = await _run_with_structured_result(
+            kit, "parent::task-1", "do it", max_result_retries=1
+        )
+        payload = json.loads(out)
+        assert payload["status"] == "failed"
+        assert payload["by"] == "orchestration"
+
+
 class TestResultHelpers:
+    def test_is_submit_result_matches_bare_and_prefixed(self) -> None:
+        assert is_submit_result("submit_result")
+        assert is_submit_result("mcp__luge-integrations__submit_result")
+        assert not is_submit_result("web_search")
+        assert not is_submit_result("submit_result_extra")
+
     def test_normalize_fills_defaults(self) -> None:
         r = normalize_result({"status": "completed", "summary": "s"})
         assert r == {
