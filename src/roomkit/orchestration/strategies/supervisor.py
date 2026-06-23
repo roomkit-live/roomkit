@@ -290,6 +290,7 @@ class Supervisor(Orchestration):
         refine_instruction = self._refine_instruction
         share_channels = self._share_channels
         max_revisions = self._max_revisions
+        task_timeout = self._task_timeout
         original_on_event = supervisor.on_event
 
         async def auto_delegate_on_event(
@@ -325,6 +326,7 @@ class Supervisor(Orchestration):
                     instruction=refine_instruction,
                     share_channels=share_channels,
                     max_revisions=max_revisions,
+                    task_timeout=task_timeout,
                 )
             return await _one_pass_delegate(
                 kit,
@@ -338,6 +340,7 @@ class Supervisor(Orchestration):
                 workers,
                 share_channels=share_channels,
                 max_revisions=max_revisions,
+                task_timeout=task_timeout,
             )
 
         supervisor.on_event = auto_delegate_on_event  # ty: ignore[invalid-assignment]
@@ -927,6 +930,7 @@ async def _two_pass_delegate(
     instruction: str | None = None,
     share_channels: list[str] | None = None,
     max_revisions: int = _DEFAULT_MAX_REVISIONS,
+    task_timeout: float = _DEFAULT_TASK_TIMEOUT_SECONDS,
 ) -> ChannelOutput:
     """Two-pass: supervisor formulates task → workers run (validated between
     steps by the supervisor in sequential mode) → supervisor presents."""
@@ -958,6 +962,7 @@ async def _two_pass_delegate(
         supervisor=supervisor,
         max_revisions=max_revisions,
         share_channels=share_channels,
+        task_timeout=task_timeout,
     )
 
     # Pass 2: inject worker results and generate final response
@@ -993,6 +998,7 @@ async def _one_pass_delegate(
     *,
     share_channels: list[str] | None = None,
     max_revisions: int = _DEFAULT_MAX_REVISIONS,
+    task_timeout: float = _DEFAULT_TASK_TIMEOUT_SECONDS,
 ) -> ChannelOutput:
     """One-pass: workers run on raw message (validated between steps by the
     supervisor in sequential mode) → supervisor presents."""
@@ -1014,6 +1020,7 @@ async def _one_pass_delegate(
         supervisor=supervisor,
         max_revisions=max_revisions,
         share_channels=share_channels,
+        task_timeout=task_timeout,
     )
 
     # Inject results into context and let supervisor present

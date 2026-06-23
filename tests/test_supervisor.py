@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -1071,6 +1071,42 @@ class TestTwoPassDelegate:
         # Should have called delegate for the worker
         assert kit.delegate.called
         assert isinstance(result, ChannelOutput)
+
+    async def test_two_pass_threads_task_timeout(self) -> None:
+        # Regression: the auto_delegate path must thread the configured task_timeout
+        # to every worker/supervisor delegation — it previously dropped it and the
+        # default 120s was always used regardless of the Supervisor's setting.
+        seen: list[float] = []
+
+        async def _fake_delegate_and_wait(
+            kit, room_id, channel_id, task, *, share_channels, task_timeout, **kw
+        ):
+            seen.append(task_timeout)
+            if channel_id == "boss":
+                return (json.dumps({"approved": True, "feedback": "", "next_task": ""}), True)
+            return (json.dumps({"status": "completed", "summary": "ok"}), True)
+
+        kit = _make_mock_kit(Room(id="r1"))
+        supervisor = _make_agent("boss", responses=["refined"])
+        w1 = _make_agent("w1", role="W")
+        with patch(
+            "roomkit.orchestration.strategies.supervisor._delegate_and_wait",
+            side_effect=_fake_delegate_and_wait,
+        ):
+            await _two_pass_delegate(
+                kit,
+                "r1",
+                supervisor,
+                supervisor.on_event,
+                _make_event(body="go"),
+                _make_binding(),
+                _make_context(),
+                WorkerStrategy.SEQUENTIAL,
+                [w1],
+                task_timeout=77.0,
+            )
+        assert seen  # dispatch + worker + review all delegated
+        assert all(t == 77.0 for t in seen)  # never the hardcoded default
 
     async def test_two_pass_custom_instruction(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
