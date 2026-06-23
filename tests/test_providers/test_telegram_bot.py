@@ -56,6 +56,21 @@ class _TimeoutTransport(httpx.AsyncBaseTransport):
         raise httpx.ReadTimeout("timed out")
 
 
+class _MethodTransport(httpx.AsyncBaseTransport):
+    """Succeeds for every Bot API method except those named in ``errors``."""
+
+    def __init__(self, errors: dict[str, int] | None = None) -> None:
+        self._errors = errors or {}
+        self.requests: list[httpx.Request] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        for method, code in self._errors.items():
+            if f"/{method}" in str(request.url):
+                return httpx.Response(code, json=_error_response(code), request=request)
+        return httpx.Response(200, json=_ok_response(70), request=request)
+
+
 class TestTelegramConfig:
     def test_defaults(self) -> None:
         cfg = _config()
@@ -349,6 +364,71 @@ class TestTelegramMarkdown:
         assert "**" not in body["text"]
         assert any(e["type"] == "bold" for e in body["entities"])
         assert body["reply_markup"]["inline_keyboard"][0][0]["text"] == "Oui"
+
+
+class TestTelegramRichMessages:
+    """Opt-in Bot API 10.1 Rich Messages, with fallback to entity formatting."""
+
+    TABLE_MD = "## T\n\n| A | B |\n|---|---|\n| 1 | 2 |"
+
+    @pytest.mark.asyncio
+    async def test_uses_send_rich_message_when_enabled(self) -> None:
+        transport = _MethodTransport()
+        provider = TelegramBotProvider(_config(rich_messages=True))
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        result = await provider.send(make_event(body=self.TABLE_MD), to="9")
+
+        assert result.success is True
+        urls = [str(r.url) for r in transport.requests]
+        assert any("/sendRichMessage" in u for u in urls)
+        assert not any("/sendMessage" in u for u in urls)
+        body = json.loads(transport.requests[0].content)
+        # The table reaches Telegram as a native rich block, not monospace text.
+        assert "<table>" in body["rich_message"]["html"]
+
+    @pytest.mark.asyncio
+    async def test_default_does_not_use_rich_messages(self) -> None:
+        transport = _MethodTransport()
+        provider = TelegramBotProvider(_config())  # rich_messages defaults False
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        result = await provider.send(make_event(body=self.TABLE_MD), to="9")
+
+        assert result.success is True
+        assert not any("/sendRichMessage" in str(r.url) for r in transport.requests)
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_entities_on_api_error(self) -> None:
+        transport = _MethodTransport(errors={"sendRichMessage": 400})
+        provider = TelegramBotProvider(_config(rich_messages=True))
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        result = await provider.send(make_event(body=self.TABLE_MD), to="9")
+
+        assert result.success is True
+        urls = [str(r.url) for r in transport.requests]
+        assert any("/sendRichMessage" in u for u in urls)  # tried rich first
+        assert any("/sendMessage" in u for u in urls)  # then fell back, nothing lost
+
+    @pytest.mark.asyncio
+    async def test_falls_back_when_converter_errors(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import telegramify_markdown
+
+        def _boom(_text: str, **_kw: Any) -> list[Any]:
+            raise RuntimeError("converter down")
+
+        monkeypatch.setattr(telegramify_markdown, "telegramify_rich", _boom)
+        transport = _MethodTransport()
+        provider = TelegramBotProvider(_config(rich_messages=True))
+        provider._client = httpx.AsyncClient(transport=transport)
+
+        result = await provider.send(make_event(body=self.TABLE_MD), to="9")
+
+        assert result.success is True
+        urls = [str(r.url) for r in transport.requests]
+        assert not any("/sendRichMessage" in u for u in urls)
+        assert any("/sendMessage" in u for u in urls)
 
 
 class TestTelegramSignatureVerification:

@@ -96,7 +96,15 @@ class TelegramBotProvider(TelegramProvider):
         rendered text, so Telegram never re-parses and can't reject on an
         unescaped character. When the formatter is unavailable or conversion
         fails, the raw text is sent unformatted so a message is never dropped.
+
+        With ``config.rich_messages`` the send is attempted as a Bot API 10.1
+        Rich Message first (native tables/headings); any failure before a
+        message goes out falls through to the entity path below.
         """
+        if self._config.rich_messages:
+            rich = await self._send_rich_message(to, text)
+            if rich is not None:
+                return rich
         boxes = await self._telegramify(text)
         if not boxes:
             return await self._api_call("sendMessage", {"chat_id": to, "text": text})
@@ -106,6 +114,35 @@ class TelegramBotProvider(TelegramProvider):
             result = await self._send_box(to, box)
             if not result.success:
                 return result
+            anchor = anchor or result.provider_message_id
+        return ProviderResult(success=True, provider_message_id=anchor)
+
+    async def _send_rich_message(self, to: str, text: str) -> ProviderResult | None:
+        """Send via Bot API 10.1 ``sendRichMessage`` (native tables/headings).
+
+        Returns ``None`` to signal the caller should fall back to entity
+        formatting — when the converter is unavailable, conversion fails, or
+        the very first send fails (nothing went out). If a later chunk fails
+        mid-stream the failure is surfaced instead, so the fallback never
+        re-sends content that already reached the chat.
+        """
+        try:
+            from telegramify_markdown import telegramify_rich
+        except ImportError:
+            return None
+        try:
+            messages = telegramify_rich(text)
+        except Exception:
+            return None
+        if not messages:
+            return None
+        anchor = ""
+        for index, message in enumerate(messages):
+            result = await self._api_call(
+                "sendRichMessage", {"chat_id": to, "rich_message": message.to_dict()}
+            )
+            if not result.success:
+                return None if index == 0 else result
             anchor = anchor or result.provider_message_id
         return ProviderResult(success=True, provider_message_id=anchor)
 
