@@ -303,6 +303,13 @@ class Supervisor(Orchestration):
                 return ChannelOutput.empty()
 
             rid = context.room.id if context.room else room_id
+            # Only the parent room drives delegation. Inside a child task room
+            # (e.g. a supervisor review room created by the supervised loop, or
+            # any delegated worker room), the supervisor must run NORMALLY —
+            # otherwise the review prompt would be treated as a fresh user task
+            # and re-trigger delegation, recursing without bound.
+            if "::task-" in rid:
+                return await original_on_event(event, binding, context)
 
             if refine:
                 return await _two_pass_delegate(
