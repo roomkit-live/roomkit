@@ -737,9 +737,15 @@ class TestSupervisedSequential:
             kit, "r1", boss, [w1, w2], "research the topic", max_revisions=3
         )
 
-        # First worker gets the raw goal; the second gets the supervisor-framed task.
+        # First worker gets the raw goal; the second gets the supervisor-framed task
+        # WITH the prior worker's validated output embedded (the framing only
+        # references it — the data must travel, or the next worker has nothing).
         assert [t for cid, t in calls if cid == "w1"] == ["research the topic"]
-        assert [t for cid, t in calls if cid == "w2"] == ["Write a report from the research"]
+        w2_tasks = [t for cid, t in calls if cid == "w2"]
+        assert len(w2_tasks) == 1
+        assert w2_tasks[0].startswith("Write a report from the research")
+        assert "[Researcher]:" in w2_tasks[0]
+        assert "worker output" in w2_tasks[0]  # prior data embedded, not just referenced
         # Both steps reviewed + approved, role-labeled, in order.
         assert [s["role"] for s in steps] == ["Researcher", "Writer"]
         assert [s["approved"] for s in steps] == [True, True]

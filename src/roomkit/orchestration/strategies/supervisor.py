@@ -1279,6 +1279,24 @@ def _format_supervised_digest(goal: str, steps: list[dict[str, Any]], max_revisi
     return "\n".join(lines)
 
 
+def _compose_supervised_handoff(framing: str, prior_steps: list[dict[str, Any]]) -> str:
+    """Build the next worker's task: the supervisor's framing PLUS the team's
+    validated work embedded verbatim.
+
+    The supervisor's ``next_task`` says WHAT the next worker must do, but it
+    references prior results in prose ("build the report from the analyst's
+    data") — an LLM won't reliably paste the content. So the supervisor curates
+    the instruction and the code carries the data: each prior worker's rendered
+    result is attached. Without this the next worker gets a task pointing at data
+    it never sees and reports it as missing."""
+    if not prior_steps:
+        return framing
+    blocks = [framing, "", "--- Work already completed by the team (build on this) ---"]
+    for step in prior_steps:
+        blocks.append(f"\n[{step['role']}]:\n{step['output'] or '(no output)'}")
+    return "\n".join(blocks)
+
+
 async def _run_supervised_sequential(
     kit: RoomKit,
     room_id: str,
@@ -1356,8 +1374,13 @@ async def _run_supervised_sequential(
             }
         )
         # The supervisor framed the next worker's task on approval; otherwise fall
-        # back to the goal (the unvalidated step is flagged downstream).
-        task = verdict.get("next_task") or task_desc
+        # back to the goal (the unvalidated step is flagged downstream). The team's
+        # validated work is embedded into that framing — the supervisor only
+        # *references* prior output ("use the analyst's data"), so without the
+        # actual content attached the next worker receives a task pointing at data
+        # it never sees and reports it as missing.
+        framing = verdict.get("next_task") or task_desc
+        task = _compose_supervised_handoff(framing, steps)
     return steps
 
 
