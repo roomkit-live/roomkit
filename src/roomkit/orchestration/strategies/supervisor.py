@@ -1442,6 +1442,15 @@ async def _run_supervised_sequential(
                 detail=rendered,
                 metadata={"room_id": room_id, "strategy": "supervised"},
             )
+            if not ok:
+                # The delegation itself FAILED — a timeout, or a provider error
+                # like an exhausted credit balance. This is infrastructure, not
+                # content quality: re-running the same task won't fix it, and it
+                # must NEVER be waved through the supervisor's review (which can't
+                # repair infra and might approve the error blob, making the run
+                # look successful). Leave the step unapproved and stop the chain;
+                # the supervisor reports the failure in its final summary.
+                break
             verdict = await _supervisor_review(
                 kit,
                 supervisor,

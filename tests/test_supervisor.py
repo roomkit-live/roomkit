@@ -822,6 +822,41 @@ class TestSupervisedSequential:
         assert len(steps) == 1
         assert steps[0]["approved"] is False
 
+    async def test_infra_failure_aborts_without_review(self) -> None:
+        # A worker whose delegation FAILS (timeout / provider error like no
+        # credit) must NOT be sent to the supervisor's review (it can't fix infra
+        # and might wave the error blob through, making the run look successful)
+        # and must stop the chain immediately.
+        kit = _make_mock_kit(Room(id="r1"))
+        boss = _make_agent("boss", role="Supervisor")
+        w1 = _make_agent("w1", role="Researcher")
+        w2 = _make_agent("w2", role="Writer")
+        calls: list[str] = []
+
+        async def _delegate(room_id: str, channel_id: str, task: str, *, wait: bool = False, **kw):
+            calls.append(channel_id)
+            if channel_id == "boss":
+                return _delegated_task_with_output("framed task")  # dispatch
+            t = MagicMock()
+            t.result = DelegatedTaskResult(
+                task_id="t",
+                child_room_id="c",
+                parent_room_id="r1",
+                agent_id="a",
+                output=None,
+                error="credit balance too low",
+                status="failed",
+            )
+            return t
+
+        kit.delegate = AsyncMock(side_effect=_delegate)
+        steps = await _run_supervised_sequential(kit, "r1", boss, [w1, w2], "go", max_revisions=3)
+
+        assert calls.count("w1") == 1  # tried once, NOT reworked
+        assert "w2" not in calls  # downstream never ran
+        assert calls.count("boss") == 1  # only the dispatch — no review of an infra failure
+        assert len(steps) == 1 and steps[0]["approved"] is False
+
     async def test_worker_structured_payload_is_rendered_for_review(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
         boss = _make_agent("boss")
