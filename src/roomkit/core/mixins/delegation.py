@@ -19,7 +19,8 @@ from roomkit.models.enums import (
     TaskStatus,
     Visibility,
 )
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
+from roomkit.models.streaming import ToolCallEndMarker, ToolCallStartMarker
 from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
 
 if TYPE_CHECKING:
@@ -39,6 +40,86 @@ _tasks_logger = logging.getLogger("roomkit.tasks")
 # ---------------------------------------------------------------------------
 
 
+async def _persist_child_stream(
+    kit: RoomKit,
+    child_room_id: str,
+    sr: Any,
+    chain_depth: int,
+) -> str:
+    """Drain a streaming response into the child room, persisting tool calls.
+
+    Mirrors the main inbound streaming path: text deltas accumulate into
+    MESSAGE segments split at tool-call boundaries, and each
+    ``ToolCall{Start,End}Marker`` is persisted as a TOOL_CALL_{START,END}
+    event — so the child room holds the worker's full trace (what it
+    searched/ran, with arguments and results), not just its final answer.
+    Returns the full concatenated text (the worker's output for the caller).
+    """
+    source = EventSource(channel_id=sr.source_channel_id, channel_type=sr.source_channel_type)
+    text_parts: list[str] = []
+    segment: list[str] = []
+
+    async def _flush_segment() -> None:
+        if not segment:
+            return
+        body = "".join(segment)
+        segment.clear()
+        await kit.store.add_event_auto_index(
+            child_room_id,
+            RoomEvent(
+                room_id=child_room_id,
+                source=source,
+                type=EventType.MESSAGE,
+                content=TextContent(body=body),
+                chain_depth=chain_depth,
+            ),
+        )
+
+    async for delta in sr.stream:
+        if isinstance(delta, str):
+            text_parts.append(delta)
+            segment.append(delta)
+        elif isinstance(delta, ToolCallStartMarker):
+            await _flush_segment()
+            await kit.store.add_event_auto_index(
+                child_room_id,
+                RoomEvent(
+                    room_id=child_room_id,
+                    source=source,
+                    type=EventType.TOOL_CALL_START,
+                    content=ToolCallContent(
+                        tool_name=delta.tool_name,
+                        tool_id=delta.tool_id,
+                        arguments=delta.arguments,
+                        status="pending",
+                    ),
+                    chain_depth=chain_depth,
+                ),
+            )
+        elif isinstance(delta, ToolCallEndMarker):
+            await kit.store.add_event_auto_index(
+                child_room_id,
+                RoomEvent(
+                    room_id=child_room_id,
+                    source=source,
+                    type=EventType.TOOL_CALL_END,
+                    content=ToolCallContent(
+                        tool_name=delta.tool_name,
+                        tool_id=delta.tool_id,
+                        arguments=delta.arguments,
+                        result=delta.result,
+                        status=delta.status,
+                        duration_ms=delta.duration_ms,
+                        error=delta.error,
+                    ),
+                    chain_depth=chain_depth,
+                ),
+            )
+        # ThinkingDeltaMarker (and any other marker): transient, not persisted.
+    await _flush_segment()
+    return "".join(text_parts)
+
+
 async def run_agent_in_child_room(
     kit: RoomKit,
     child_room_id: str,
@@ -52,7 +133,12 @@ async def run_agent_in_child_room(
 
     1. Stores *task_desc* as a system message in the child room.
     2. Broadcasts the event — the attached agent picks it up.
-    3. Collects the response (sync or streaming) and returns it.
+    3. Persists the agent's full trace (tool calls + messages) in the child
+       room and returns its text response.
+
+    The child room records its parent via ``metadata.parent_room_id`` (set
+    at creation in :meth:`delegate`), so the parent↔child link is rebuildable
+    from persistence alone.
     """
     room = await kit.get_room(child_room_id)
     bindings = await kit.store.list_bindings(child_room_id)
@@ -79,33 +165,24 @@ async def run_agent_in_child_room(
         channel_type=ChannelType.SYSTEM,
     )
     result = await router.broadcast(task_event, source_binding, context)
+    child_depth = task_event.chain_depth + 1
 
-    # Collect response: synchronous output first, then streaming
+    # Non-streaming: response_events already include the tool-call events —
+    # persist them all (not just the final text) so the trace survives.
     for output in result.outputs.values():
         if output.responded and output.response_events:
+            final_text: str | None = None
             for resp in output.response_events:
+                await kit.store.add_event_auto_index(child_room_id, resp)
                 if isinstance(resp.content, TextContent) and resp.content.body:
-                    await kit.store.add_event_auto_index(child_room_id, resp)
-                    return resp.content.body
+                    final_text = resp.content.body
+            if final_text is not None:
+                return final_text
 
+    # Streaming: drain the marker stream, persisting tool calls + text segments.
     for sr in result.streaming_responses:
-        parts: list[str] = []
-        async for delta in sr.stream:
-            if isinstance(delta, str):
-                parts.append(delta)
-        text = "".join(parts)
+        text = await _persist_child_stream(kit, child_room_id, sr, child_depth)
         if text:
-            resp_event = RoomEvent(
-                room_id=child_room_id,
-                type=EventType.MESSAGE,
-                source=EventSource(
-                    channel_id=sr.source_channel_id,
-                    channel_type=sr.source_channel_type,
-                ),
-                content=TextContent(body=text),
-                chain_depth=task_event.chain_depth + 1,
-            )
-            await kit.store.add_event_auto_index(child_room_id, resp_event)
             return text
 
     return None
