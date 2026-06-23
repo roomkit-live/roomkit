@@ -1150,12 +1150,23 @@ async def _delegate_and_wait(
     *,
     share_channels: list[str] | None,
     task_timeout: float,
+    require_structured_result: bool = False,
 ) -> tuple[str, bool]:
     """Delegate *task* to an agent and wait for its result, bounded by
-    *task_timeout*. Returns ``(output_text, completed_ok)``."""
+    *task_timeout*. Returns ``(output, completed_ok)``. When
+    *require_structured_result* is set, ``output`` is the JSON-encoded
+    ``submit_result`` payload (the worker is forced to hand its work back via
+    the tool); otherwise it is the agent's free text."""
     try:
         delegated = await asyncio.wait_for(
-            kit.delegate(room_id, channel_id, task, wait=True, share_channels=share_channels),
+            kit.delegate(
+                room_id,
+                channel_id,
+                task,
+                wait=True,
+                share_channels=share_channels,
+                require_structured_result=require_structured_result,
+            ),
             timeout=task_timeout,
         )
     except TimeoutError:
@@ -1164,6 +1175,34 @@ async def _delegate_and_wait(
     if not result:
         return ("", False)
     return (result.output or result.error or "", result.status == "completed")
+
+
+def _render_result(output: str) -> str:
+    """Render a worker's structured ``submit_result`` payload (JSON) as readable
+    text for the supervisor's review and the final digest. Falls back to the raw
+    string when it isn't a structured payload."""
+    try:
+        payload = json.loads(output)
+    except (ValueError, TypeError):
+        return output
+    if not isinstance(payload, dict) or "status" not in payload:
+        return output
+    if payload.get("by") == "orchestration":
+        last = str(payload.get("last_output") or "")[:500]
+        return (
+            f"status: failed (orchestration: {payload.get('reason')})\n"
+            f"the worker never returned a structured result; its last raw output:\n{last}"
+        )
+    parts = [f"status: {payload.get('status')}"]
+    if payload.get("summary"):
+        parts.append(f"summary: {payload['summary']}")
+    if payload.get("data"):
+        parts.append(f"data: {json.dumps(payload['data'], ensure_ascii=False)}")
+    if payload.get("deliverables"):
+        parts.append(f"deliverables: {json.dumps(payload['deliverables'], ensure_ascii=False)}")
+    if payload.get("reason"):
+        parts.append(f"reason: {payload['reason']}")
+    return "\n".join(parts)
 
 
 async def _supervisor_review(
@@ -1271,6 +1310,8 @@ async def _run_supervised_sequential(
                 detail=task,
                 metadata={"room_id": room_id, "strategy": "supervised"},
             )
+            # The worker MUST hand its work back via submit_result (forced
+            # structure + a guaranteed result); ``output`` is the JSON payload.
             output, ok = await _delegate_and_wait(
                 kit,
                 room_id,
@@ -1278,12 +1319,14 @@ async def _run_supervised_sequential(
                 task,
                 share_channels=share_channels,
                 task_timeout=task_timeout,
+                require_structured_result=True,
             )
+            rendered = _render_result(output)
             _post_worker_status(
                 kit,
                 worker.channel_id,
                 StatusLevel.COMPLETED if ok else StatusLevel.FAILED,
-                detail=output,
+                detail=rendered,
                 metadata={"room_id": room_id, "strategy": "supervised"},
             )
             verdict = await _supervisor_review(
@@ -1292,7 +1335,7 @@ async def _run_supervised_sequential(
                 room_id,
                 goal=task_desc,
                 worker=worker,
-                output=output,
+                output=rendered,
                 next_worker=next_worker,
                 share_channels=share_channels,
                 task_timeout=task_timeout,
@@ -1303,12 +1346,12 @@ async def _run_supervised_sequential(
             revisions += 1
             if revisions >= max_revisions:
                 break
-            task = _compose_rework(task, output, verdict["feedback"])
+            task = _compose_rework(task, rendered, verdict["feedback"])
         steps.append(
             {
                 "worker": worker.channel_id,
                 "role": _worker_label(worker),
-                "output": output,
+                "output": rendered,
                 "approved": approved,
             }
         )

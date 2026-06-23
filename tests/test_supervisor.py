@@ -32,6 +32,7 @@ from roomkit.orchestration.strategies.supervisor import (
     _format_worker_results,
     _one_pass_delegate,
     _parse_verdict,
+    _render_result,
     _run_parallel,
     _run_sequential,
     _run_supervised_sequential,
@@ -781,6 +782,29 @@ class TestSupervisedSequential:
         assert len([t for cid, t in calls if cid == "w1"]) == 2  # bounded by max_revisions
         assert steps[0]["approved"] is False
 
+    async def test_worker_structured_payload_is_rendered_for_review(self) -> None:
+        kit = _make_mock_kit(Room(id="r1"))
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1", role="Researcher")
+        # The worker returns a submit_result payload (JSON); the supervisor approves.
+        worker_payload = json.dumps(
+            {"status": "completed", "summary": "found 3 facts", "data": {"facts": [1, 2, 3]}}
+        )
+        verdicts = [{"approved": True, "feedback": "", "next_task": ""}]
+        delegate, _calls = _supervised_delegate_router(
+            "boss", verdicts, worker_output=worker_payload
+        )
+        kit.delegate = AsyncMock(side_effect=delegate)
+
+        steps = await _run_supervised_sequential(
+            kit, "r1", boss, [w1], "research", max_revisions=3
+        )
+
+        # The step carries the rendered (readable) form of the structured payload.
+        assert "found 3 facts" in steps[0]["output"]
+        assert "facts" in steps[0]["output"]
+        assert steps[0]["approved"] is True
+
     def test_digest_flags_validation_status(self) -> None:
         steps = [
             {"worker": "w1", "role": "Researcher", "output": "found facts", "approved": True},
@@ -807,6 +831,42 @@ class TestParseVerdict:
         v = _parse_verdict("I approve this, looks great!")
         assert v["approved"] is True
         assert v["next_task"] is None
+
+
+class TestRenderResult:
+    def test_renders_structured_payload(self) -> None:
+        out = _render_result(
+            json.dumps(
+                {
+                    "status": "completed",
+                    "summary": "did the thing",
+                    "data": {"k": "v"},
+                    "deliverables": [{"title": "Report", "url": "http://x"}],
+                }
+            )
+        )
+        assert "summary: did the thing" in out
+        assert '"k": "v"' in out
+        assert "Report" in out
+
+    def test_renders_orchestration_fail_readably(self) -> None:
+        out = _render_result(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "by": "orchestration",
+                    "reason": "no_structured_result_after_3_attempts",
+                    "role": "Researcher",
+                    "last_output": "some half-baked text",
+                }
+            )
+        )
+        assert "orchestration" in out
+        assert "some half-baked text" in out
+
+    def test_passthrough_when_not_a_payload(self) -> None:
+        assert _render_result("just plain text") == "just plain text"
+        assert _render_result('{"foo": 1}') == '{"foo": 1}'  # JSON but not a result payload
 
 
 class TestRunParallel:
