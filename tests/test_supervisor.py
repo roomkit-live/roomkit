@@ -30,8 +30,10 @@ from roomkit.orchestration.strategies.supervisor import (
     _format_supervisor_review,
     _format_worker_results,
     _one_pass_delegate,
+    _parse_verdict,
     _run_parallel,
     _run_sequential,
+    _run_supervised_sequential,
     _run_workers,
     _two_pass_delegate,
     _worker_label,
@@ -567,12 +569,15 @@ class TestStrategyToolHandler:
         await s.install(kit, "r1")
 
         result1 = await boss.tool_handler("delegate_workers", {"task": "analyze"})
+        calls_after_first = kit.delegate.call_count
         result2 = await boss.tool_handler("delegate_workers", {"task": "analyze again"})
 
         # Both should return the same cached result
         assert result1 == result2
-        # delegate should only be called once
-        assert kit.delegate.call_count == 1
+        # The second call is served from the dedup cache — no further delegations
+        # (the first run made several: each worker + its supervisor review).
+        assert calls_after_first > 0
+        assert kit.delegate.call_count == calls_after_first
 
 
 # -- Tests: _run_workers ------------------------------------------------------
@@ -691,6 +696,106 @@ class TestRunSequential:
         parsed = json.loads(result)
         assert "timed out" in parsed["results"][0]["output"].lower()
         assert parsed["results"][1]["output"] == "fast output"
+
+
+def _supervised_delegate_router(
+    supervisor_id: str, verdicts: list[dict[str, Any]], worker_output: str = "worker output"
+) -> tuple[Any, list[tuple[str, str]]]:
+    """Mock kit.delegate for supervised runs: calls to the supervisor channel
+    return successive verdict JSONs; worker calls return a fixed output. Records
+    (channel_id, task) per call so tests can assert framing + rework."""
+    vit = iter(verdicts)
+    calls: list[tuple[str, str]] = []
+
+    async def _delegate(
+        room_id: str, channel_id: str, task: str, *, wait: bool = False, **kw: Any
+    ) -> Any:
+        calls.append((channel_id, task))
+        if channel_id == supervisor_id:
+            return _delegated_task_with_output(json.dumps(next(vit)))
+        return _delegated_task_with_output(worker_output)
+
+    return _delegate, calls
+
+
+class TestSupervisedSequential:
+    async def test_validates_and_frames_each_step(self) -> None:
+        kit = _make_mock_kit(Room(id="r1"))
+        boss = _make_agent("boss", role="Supervisor")
+        w1 = _make_agent("w1", role="Researcher")
+        w2 = _make_agent("w2", role="Writer")
+        verdicts = [
+            {"approved": True, "feedback": "", "next_task": "Write a report from the research"},
+            {"approved": True, "feedback": "", "next_task": ""},
+        ]
+        delegate, calls = _supervised_delegate_router("boss", verdicts)
+        kit.delegate = AsyncMock(side_effect=delegate)
+
+        digest = await _run_supervised_sequential(
+            kit, "r1", boss, [w1, w2], "research the topic", max_revisions=3
+        )
+
+        # First worker gets the raw goal; the second gets the supervisor-framed task.
+        assert [t for cid, t in calls if cid == "w1"] == ["research the topic"]
+        assert [t for cid, t in calls if cid == "w2"] == ["Write a report from the research"]
+        # Digest marks both steps validated for the supervisor to summarize.
+        assert "Researcher (validated)" in digest
+        assert "Writer (validated)" in digest
+
+    async def test_rework_on_rejection_then_approve(self) -> None:
+        kit = _make_mock_kit(Room(id="r1"))
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1", role="Researcher")
+        verdicts = [
+            {"approved": False, "feedback": "too vague, add sources", "next_task": ""},
+            {"approved": True, "feedback": "", "next_task": ""},
+        ]
+        delegate, calls = _supervised_delegate_router("boss", verdicts)
+        kit.delegate = AsyncMock(side_effect=delegate)
+
+        digest = await _run_supervised_sequential(
+            kit, "r1", boss, [w1], "research", max_revisions=3
+        )
+
+        w1_tasks = [t for cid, t in calls if cid == "w1"]
+        assert len(w1_tasks) == 2  # original + one rework
+        assert "add sources" in w1_tasks[1]  # feedback carried into the rework
+        assert "Researcher (validated)" in digest
+
+    async def test_max_revisions_exhausted_flags_unvalidated(self) -> None:
+        kit = _make_mock_kit(Room(id="r1"))
+        boss = _make_agent("boss")
+        w1 = _make_agent("w1", role="Researcher")
+        verdicts = [
+            {"approved": False, "feedback": "no", "next_task": ""},
+            {"approved": False, "feedback": "no", "next_task": ""},
+        ]
+        delegate, calls = _supervised_delegate_router("boss", verdicts)
+        kit.delegate = AsyncMock(side_effect=delegate)
+
+        digest = await _run_supervised_sequential(
+            kit, "r1", boss, [w1], "research", max_revisions=2
+        )
+
+        assert len([t for cid, t in calls if cid == "w1"]) == 2  # bounded by max_revisions
+        assert "UNVALIDATED" in digest
+
+
+class TestParseVerdict:
+    def test_plain_json(self) -> None:
+        v = _parse_verdict('{"approved": true, "feedback": "", "next_task": "go"}')
+        assert v["approved"] is True
+        assert v["next_task"] == "go"
+
+    def test_json_embedded_in_prose(self) -> None:
+        v = _parse_verdict('Sure: {"approved": false, "feedback": "fix it"} done')
+        assert v["approved"] is False
+        assert v["feedback"] == "fix it"
+
+    def test_unparseable_fails_open(self) -> None:
+        v = _parse_verdict("I approve this, looks great!")
+        assert v["approved"] is True
+        assert v["next_task"] is None
 
 
 class TestRunParallel:

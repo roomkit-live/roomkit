@@ -56,6 +56,12 @@ class WorkerStrategy(StrEnum):
 # this fails on its own budget and the chain keeps going.
 _DEFAULT_TASK_TIMEOUT_SECONDS = 120.0
 
+# Max supervisor→worker round-trips per step in supervised mode: the supervisor
+# validates each worker's output and, if it's not acceptable, sends it back with
+# feedback for a rework. Bounded so a worker that can't satisfy the supervisor
+# doesn't loop forever — on exhaustion the step is delivered flagged unvalidated.
+_DEFAULT_MAX_REVISIONS = 3
+
 
 class Supervisor(Orchestration):
     """Supervisor orchestration strategy.
@@ -111,6 +117,7 @@ class Supervisor(Orchestration):
         wait_for_result: bool = True,
         share_channels: list[str] | None = None,
         task_timeout: float = _DEFAULT_TASK_TIMEOUT_SECONDS,
+        max_revisions: int = _DEFAULT_MAX_REVISIONS,
     ) -> None:
         """Initialise the supervisor strategy.
 
@@ -183,6 +190,13 @@ class Supervisor(Orchestration):
                 than by a single global timeout that can never be
                 coherent across team sizes. A worker that exceeds it is
                 recorded as failed and the run continues.
+
+            max_revisions: In supervised sequential mode, the maximum
+                number of supervisor→worker rework round-trips per step
+                (default 3). The supervisor validates each worker's
+                output; if unacceptable it sends feedback for a rework,
+                up to this many times. On exhaustion the step is
+                delivered flagged as unvalidated rather than looping.
         """
         self._supervisor = supervisor
         self._workers = list(workers)
@@ -195,6 +209,7 @@ class Supervisor(Orchestration):
         self._wait_for_result = wait_for_result
         self._share_channels = list(share_channels) if share_channels else []
         self._task_timeout = task_timeout
+        self._max_revisions = max_revisions
 
         if auto_delegate and self._strategy is None:
             msg = "auto_delegate=True requires strategy to be set"
@@ -466,10 +481,12 @@ class Supervisor(Orchestration):
 
         original = self._supervisor.tool_handler
         strategy = self._strategy
+        supervisor = self._supervisor
         workers = self._workers
         share_channels = self._share_channels
         async_delivery = self._async_delivery
         task_timeout = self._task_timeout
+        max_revisions = self._max_revisions
         _lock = asyncio.Lock()
         # Per-room dedup: prevents duplicate calls within the same turn
         _dedup_cache: dict[str, tuple[str, float]] = {}  # room_id → (result, timestamp)
@@ -569,16 +586,24 @@ class Supervisor(Orchestration):
 
                 try:
                     if strategy == WorkerStrategy.SEQUENTIAL:
-                        result = await _run_sequential(
+                        # Hub & spoke: every worker output returns to the
+                        # supervisor, which validates it (rework up to
+                        # max_revisions) and frames the next worker's task.
+                        # The digest goes back so the supervisor summarizes.
+                        review = await _run_supervised_sequential(
                             kit,
                             rid,
+                            supervisor,
                             workers,
                             task_desc,
+                            max_revisions=max_revisions,
                             share_channels=share_channels,
                             task_timeout=task_timeout,
                         )
                     else:
-                        result = await _run_parallel(
+                        # Parallel: all workers run on the same task; the
+                        # supervisor reviews the combined result and delivers.
+                        raw = await _run_parallel(
                             kit,
                             rid,
                             workers,
@@ -586,10 +611,7 @@ class Supervisor(Orchestration):
                             share_channels=share_channels,
                             task_timeout=task_timeout,
                         )
-                    # Hand the supervisor a review brief, not the raw payload:
-                    # it verifies the team's work against the request and
-                    # delivers the final answer in its next turn.
-                    review = _format_supervisor_review(task_desc, result, workers)
+                        review = _format_supervisor_review(task_desc, raw, workers)
                     now = time.monotonic()
                     _dedup_cache[rid] = (review, now)
                     # Evict expired entries to prevent unbounded growth
@@ -1043,6 +1065,212 @@ def _worker_label(worker: Agent) -> str:
     return (
         getattr(worker, "role", None) or getattr(worker, "description", None) or worker.channel_id
     )
+
+
+# --- Supervised sequential (hub & spoke) --------------------------------------
+#
+# Every worker's output returns to the supervisor, which judges it and frames the
+# next worker's task — workers never hand off to each other directly. Order is
+# fixed; the supervisor owns each transition (validate + frame + rework). The
+# supervisor runs in its own child rooms (visible in the timeline) for each
+# review; the final user-facing summary is left to the supervisor's own turn
+# (the digest below is returned as the ``delegate_workers`` tool result).
+
+_VERDICT_INSTRUCTIONS = (
+    "Respond with ONLY a JSON object, no other text, of exactly this shape:\n"
+    '{"approved": true_or_false, "feedback": "what to fix if not approved, else empty", '
+    '"next_task": "task for the next worker if approved and one exists, else empty"}'
+)
+
+
+def _parse_verdict(raw: str) -> dict[str, Any]:
+    """Parse the supervisor's review JSON leniently.
+
+    Fails OPEN (``approved=True``) on a parse miss so a formatting slip from a
+    weaker model never deadlocks the pipeline — the miss is logged. A strict
+    block-forever would be worse than passing a step through unjudged.
+    """
+    try:
+        start = raw.index("{")
+        end = raw.rindex("}")
+        obj = json.loads(raw[start : end + 1])
+    except (ValueError, json.JSONDecodeError):
+        logger.warning("Supervisor verdict unparseable; approving by default: %r", raw[:200])
+        return {"approved": True, "feedback": "", "next_task": None}
+    next_task = obj.get("next_task")
+    return {
+        "approved": bool(obj.get("approved", True)),
+        "feedback": str(obj.get("feedback") or ""),
+        "next_task": (str(next_task).strip() or None) if next_task else None,
+    }
+
+
+async def _delegate_and_wait(
+    kit: RoomKit,
+    room_id: str,
+    channel_id: str,
+    task: str,
+    *,
+    share_channels: list[str] | None,
+    task_timeout: float,
+) -> tuple[str, bool]:
+    """Delegate *task* to an agent and wait for its result, bounded by
+    *task_timeout*. Returns ``(output_text, completed_ok)``."""
+    try:
+        delegated = await asyncio.wait_for(
+            kit.delegate(room_id, channel_id, task, wait=True, share_channels=share_channels),
+            timeout=task_timeout,
+        )
+    except TimeoutError:
+        return (f"(timed out after {task_timeout:.0f}s)", False)
+    result = delegated.result
+    if not result:
+        return ("", False)
+    return (result.output or result.error or "", result.status == "completed")
+
+
+async def _supervisor_review(
+    kit: RoomKit,
+    supervisor: Agent,
+    room_id: str,
+    *,
+    goal: str,
+    worker: Agent,
+    output: str,
+    next_worker: Agent | None,
+    share_channels: list[str] | None,
+    task_timeout: float,
+) -> dict[str, Any]:
+    """Run the supervisor (in its own child room) to judge a worker's output and,
+    if approved, frame the next worker's task — in one call. Returns the parsed
+    verdict ``{approved, feedback, next_task}``."""
+    if next_worker is not None:
+        next_clause = (
+            "If you APPROVE, write 'next_task' as a clear, self-contained task for the "
+            f"next worker — {_worker_label(next_worker)} — framed for ITS role, carrying "
+            "whatever of this output it needs as input."
+        )
+    else:
+        next_clause = "This was the LAST worker; leave 'next_task' empty."
+    prompt = (
+        "You are the supervisor reviewing ONE step of your team's work.\n\n"
+        f"User goal:\n{goal}\n\n"
+        f"Worker that just finished — {_worker_label(worker)}:\n{output}\n\n"
+        "Judge whether this output is correct, complete, and directly usable toward the "
+        "goal. REJECT vague work, a question asked back instead of a result, or anything "
+        f"that doesn't actually do the worker's job. {next_clause}\n\n"
+        f"{_VERDICT_INSTRUCTIONS}"
+    )
+    raw, _ok = await _delegate_and_wait(
+        kit,
+        room_id,
+        supervisor.channel_id,
+        prompt,
+        share_channels=share_channels,
+        task_timeout=task_timeout,
+    )
+    return _parse_verdict(raw)
+
+
+def _compose_rework(task: str, output: str, feedback: str) -> str:
+    """Re-frame a worker's task after the supervisor rejected its output."""
+    return (
+        f"{task}\n\n"
+        "--- Revision requested by the supervisor ---\n"
+        f"Your previous attempt was NOT accepted. Feedback:\n{feedback}\n\n"
+        f"Your previous output (for reference):\n{output}\n\n"
+        "Produce a corrected, complete result that addresses the feedback."
+    )
+
+
+def _format_supervised_digest(goal: str, steps: list[dict[str, Any]], max_revisions: int) -> str:
+    """Brief handed back to the supervisor's own turn so it writes the final
+    user-facing summary — each step's validated output + validation status."""
+    lines = [
+        "Your team has finished and you have reviewed each step. Deliver ONE final "
+        "summary to the user: what each step accomplished and the outcome. Reference any "
+        "deliverables (published reports/artifacts). Flag plainly any step marked UNVALIDATED.",
+        "",
+        f"User request:\n{goal}",
+        "",
+        "Reviewed work:",
+    ]
+    for step in steps:
+        status = (
+            "validated" if step["approved"] else f"UNVALIDATED after {max_revisions} revisions"
+        )
+        lines.append(f"\n--- {step['role']} ({status}) ---\n{step['output'] or '(no output)'}")
+    return "\n".join(lines)
+
+
+async def _run_supervised_sequential(
+    kit: RoomKit,
+    room_id: str,
+    supervisor: Agent,
+    workers: list[Agent],
+    task_desc: str,
+    *,
+    max_revisions: int,
+    share_channels: list[str] | None = None,
+    task_timeout: float = _DEFAULT_TASK_TIMEOUT_SECONDS,
+) -> str:
+    """Hub & spoke sequential: fixed worker order, but every output returns to the
+    supervisor, which validates it (rework up to *max_revisions*) and frames the
+    next worker's task. Returns a digest for the supervisor to summarize."""
+    steps: list[dict[str, Any]] = []
+    task = task_desc  # first worker gets the goal; the supervisor frames the rest
+    for i, worker in enumerate(workers):
+        next_worker = workers[i + 1] if i + 1 < len(workers) else None
+        revisions = 0
+        approved = False
+        output = ""
+        verdict: dict[str, Any] = {}
+        while True:
+            _post_worker_status(
+                kit,
+                worker.channel_id,
+                StatusLevel.PENDING,
+                detail=task,
+                metadata={"room_id": room_id, "strategy": "supervised"},
+            )
+            output, ok = await _delegate_and_wait(
+                kit,
+                room_id,
+                worker.channel_id,
+                task,
+                share_channels=share_channels,
+                task_timeout=task_timeout,
+            )
+            _post_worker_status(
+                kit,
+                worker.channel_id,
+                StatusLevel.COMPLETED if ok else StatusLevel.FAILED,
+                detail=output,
+                metadata={"room_id": room_id, "strategy": "supervised"},
+            )
+            verdict = await _supervisor_review(
+                kit,
+                supervisor,
+                room_id,
+                goal=task_desc,
+                worker=worker,
+                output=output,
+                next_worker=next_worker,
+                share_channels=share_channels,
+                task_timeout=task_timeout,
+            )
+            if verdict["approved"]:
+                approved = True
+                break
+            revisions += 1
+            if revisions >= max_revisions:
+                break
+            task = _compose_rework(task, output, verdict["feedback"])
+        steps.append({"role": _worker_label(worker), "output": output, "approved": approved})
+        # The supervisor framed the next worker's task on approval; otherwise fall
+        # back to the goal (the unvalidated step is flagged in the digest).
+        task = verdict.get("next_task") or task_desc
+    return _format_supervised_digest(task_desc, steps, max_revisions)
 
 
 def _compose_sequential_input(task_desc: str, prior_steps: list[tuple[str, str]]) -> str:
