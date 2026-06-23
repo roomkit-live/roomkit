@@ -175,7 +175,8 @@ async def _broadcast_and_collect(
 
 #: A cursor larger than any real event index, so ``before_index`` returns the
 #: tail (most recent events) — where a worker's final submit_result call lives.
-_LATEST_TAIL_CURSOR = 1 << 62
+#: Capped at max int32: the postgres store binds ``before_index`` as int4.
+_LATEST_TAIL_CURSOR = 2**31 - 1
 
 
 async def _scan_for_submitted_result(kit: RoomKit, child_room_id: str) -> dict[str, Any] | None:
