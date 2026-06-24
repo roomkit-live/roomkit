@@ -288,6 +288,35 @@ class TestOllamaAIProviderGenerate:
         }
 
     @pytest.mark.asyncio
+    async def test_generate_maps_sampling_options(self) -> None:
+        provider, mod = _provider(num_ctx=8192, top_p=0.95, top_k=40, min_p=0.2)
+        mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
+
+        await provider.generate(_context(max_tokens=512, temperature=0.2))
+
+        kwargs = mod.AsyncClient.return_value.chat.await_args.kwargs
+        assert kwargs["options"] == {
+            "temperature": 0.2,
+            "num_predict": 512,
+            "num_ctx": 8192,
+            "top_p": 0.95,
+            "top_k": 40,
+            "min_p": 0.2,
+        }
+
+    @pytest.mark.asyncio
+    async def test_generate_omits_unset_sampling_options(self) -> None:
+        provider, mod = _provider(num_ctx=8192)
+        mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
+
+        await provider.generate(_context(max_tokens=512, temperature=0.2))
+
+        kwargs = mod.AsyncClient.return_value.chat.await_args.kwargs
+        assert "top_p" not in kwargs["options"]
+        assert "top_k" not in kwargs["options"]
+        assert "min_p" not in kwargs["options"]
+
+    @pytest.mark.asyncio
     async def test_generate_passes_keep_alive(self) -> None:
         provider, mod = _provider(keep_alive="10m")
         mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
@@ -656,8 +685,27 @@ class TestOllamaConfig:
         assert config.think is None
         assert config.keep_alive is None
         assert config.num_ctx is None
+        assert config.top_p is None
+        assert config.top_k is None
+        assert config.min_p is None
         assert config.api_key is None
         assert config.headers is None
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("-1", -1), ("0", 0), ("300", 300), (" -1 ", -1), (-1, -1), (5, 5)],
+    )
+    def test_numeric_keep_alive_coerced_to_int(self, raw: object, expected: int) -> None:
+        # A unit-less integer must reach Ollama as an int — "-1"/"0" as a string
+        # fail the server's Go-duration parser and are silently ignored.
+        config = OllamaConfig(keep_alive=raw)  # type: ignore[arg-type]
+        assert config.keep_alive == expected
+        assert isinstance(config.keep_alive, int)
+
+    @pytest.mark.parametrize("raw", ["5m", "30s", "1h", "1h30m"])
+    def test_duration_string_keep_alive_passes_through(self, raw: str) -> None:
+        config = OllamaConfig(keep_alive=raw)
+        assert config.keep_alive == raw
 
     def test_api_key_is_secret(self) -> None:
         config = OllamaConfig(api_key="super-secret-xyz")
@@ -672,12 +720,18 @@ class TestOllamaConfig:
             model="qwen3:8b",
             think=True,
             num_ctx=4096,
+            top_p=0.95,
+            top_k=40,
+            min_p=0.2,
             keep_alive="5m",
         )
         assert config.host == "http://example:11434"
         assert config.model == "qwen3:8b"
         assert config.think is True
         assert config.num_ctx == 4096
+        assert config.top_p == 0.95
+        assert config.top_k == 40
+        assert config.min_p == 0.2
         assert config.keep_alive == "5m"
 
 

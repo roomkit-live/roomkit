@@ -258,6 +258,12 @@ class OllamaAIProvider(AIProvider):
             options["num_predict"] = num_predict
         if self._config.num_ctx is not None:
             options["num_ctx"] = self._config.num_ctx
+        if self._config.top_p is not None:
+            options["top_p"] = self._config.top_p
+        if self._config.top_k is not None:
+            options["top_k"] = self._config.top_k
+        if self._config.min_p is not None:
+            options["min_p"] = self._config.min_p
         return options
 
     def _resolve_think(self, context: AIContext) -> bool | str | None:

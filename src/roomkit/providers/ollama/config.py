@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, field_validator
 
 #: Effort levels accepted by Ollama's ``think`` parameter for reasoning models.
 ThinkEffort = Literal["low", "medium", "high"]
@@ -52,11 +52,22 @@ class OllamaConfig(BaseModel):
             ``think=True``.
         keep_alive: How long the model stays loaded in memory after
             the request. Maps to Ollama's ``keep_alive`` parameter.
-            Strings like ``"5m"`` or integer seconds. ``None`` uses
-            the server default (5 minutes).
+            A duration string with a unit (``"5m"``, ``"30s"``) or an
+            integer number of seconds — ``-1`` keeps the model loaded
+            indefinitely, ``0`` unloads it immediately. A unit-less
+            numeric string (e.g. ``"-1"`` from a text field) is coerced
+            to an int, because Ollama parses a *string* as a Go duration
+            and rejects one without a unit. ``None`` uses the server
+            default (5 minutes).
         num_ctx: Context window size. Maps to ``options.num_ctx``.
             ``None`` uses the model's default (typically 2048 — bump
             for long contexts).
+        top_p: Nucleus sampling cutoff. Maps to ``options.top_p``.
+            ``None`` uses the model's default.
+        top_k: Top-k sampling cutoff. Maps to ``options.top_k``.
+            ``None`` uses the model's default.
+        min_p: Minimum-probability sampling cutoff. Maps to
+            ``options.min_p``. ``None`` uses the model's default.
         api_key: Bearer token for a protected Ollama endpoint — Ollama
             Cloud/Turbo, or a self-hosted server behind a reverse proxy
             that checks ``Authorization: Bearer``. Sent as the
@@ -81,5 +92,26 @@ class OllamaConfig(BaseModel):
     think: bool | ThinkEffort | None = None
     keep_alive: str | int | None = None
     num_ctx: int | None = None
+    top_p: float | None = None
+    top_k: int | None = None
+    min_p: float | None = None
     api_key: SecretStr | None = None
     headers: dict[str, str] | None = None
+
+    @field_validator("keep_alive", mode="before")
+    @classmethod
+    def _coerce_numeric_keep_alive(cls, value: object) -> object:
+        """Turn a unit-less integer string into an int (seconds).
+
+        Ollama reads a *string* ``keep_alive`` as a Go duration, which needs a
+        unit — ``"-1"`` / ``"0"`` fail to parse and are silently ignored. The
+        same values as integers mean "load forever" / "unload now", so coerce a
+        bare integer string to int. A duration string (``"5m"``) is left alone.
+        """
+        if isinstance(value, str):
+            text = value.strip()
+            try:
+                return int(text)
+            except ValueError:
+                return value
+        return value
