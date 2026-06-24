@@ -174,6 +174,56 @@ class TestOpenAIRealtimeProvider:
         assert result["interrupt_response"] is False
         assert result["create_response"] is True
 
+    # ── _build_session_config tools projection ──────────────────
+
+    def test_session_config_strips_unknown_tool_keys(self):
+        """Tool dicts carry extra keys (e.g. ``tags`` for cross-lingual Tool
+        Search) that the Realtime API rejects as unknown parameters — they
+        must not reach ``session.tools``."""
+        mod = _load_provider()
+        provider = mod.OpenAIRealtimeProvider(api_key="sk-test")
+        tools = [
+            {
+                "name": "lookup",
+                "description": "Look something up",
+                "parameters": {"type": "object", "properties": {}},
+                "tags": ["search", "recherche"],
+            }
+        ]
+        config = provider._build_session_config(
+            system_prompt=None,
+            voice=None,
+            tools=tools,
+            temperature=None,
+            input_sample_rate=8000,
+            output_sample_rate=8000,
+            server_vad=True,
+            pc={},
+        )
+        assert config["tools"] == [
+            {
+                "type": "function",
+                "name": "lookup",
+                "description": "Look something up",
+                "parameters": {"type": "object", "properties": {}},
+            }
+        ]
+
+    def test_format_session_tools_defaults_type_and_passes_native(self):
+        """Function tools default to ``type: function``; non-function native
+        tools (xAI ``web_search``) pass through unchanged."""
+        mod = _load_provider()
+        result = mod.OpenAIRealtimeProvider._format_session_tools(
+            [
+                {"name": "fn", "tags": ["x"]},
+                {"type": "web_search", "max_results": 5},
+            ]
+        )
+        assert result == [
+            {"type": "function", "name": "fn"},
+            {"type": "web_search", "max_results": 5},
+        ]
+
     # ── connect() ───────────────────────────────────────────────
 
     async def test_connect_success(self):

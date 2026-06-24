@@ -151,9 +151,10 @@ class XAIRealtimeProvider(OpenAIRealtimeBase):
         session_config["input_audio_transcription"] = {"model": transcription_model}
 
         # Tools — xAI supports both function tools and native tools
-        # (web_search, x_search).
+        # (web_search, x_search). Function tools are projected to the
+        # API-accepted fields; native tools pass through unchanged.
         if tools:
-            session_config["tools"] = [{**t, "type": t.get("type", "function")} for t in tools]
+            session_config["tools"] = self._format_session_tools(tools)
 
         # Audio format — xAI uses nested structure
         input_rate = pc.get("input_audio_rate", input_sample_rate)

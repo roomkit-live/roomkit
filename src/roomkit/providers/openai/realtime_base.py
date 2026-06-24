@@ -47,6 +47,30 @@ class OpenAIRealtimeBase(OpenAIRealtimeEventHandlersMixin):
     def is_responding(self, session_id: str) -> bool:
         return session_id in self._responding
 
+    @staticmethod
+    def _format_session_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Project tool dicts to the realtime ``session.tools`` shape.
+
+        A function tool is reduced to the fields the API accepts
+        (``type``/``name``/``description``/``parameters``), defaulting
+        ``type`` to ``"function"``. Tool dicts may carry extra keys the
+        caller uses elsewhere (e.g. ``tags`` for cross-lingual Tool
+        Search); the API rejects those as unknown parameters, so they are
+        dropped here. Native tools (xAI ``web_search``/``x_search``) carry
+        a non-function ``type`` and pass through unchanged.
+        """
+        formatted: list[dict[str, Any]] = []
+        for t in tools:
+            if t.get("type", "function") != "function":
+                formatted.append(dict(t))
+                continue
+            tool = {"type": "function"}
+            for field in ("name", "description", "parameters"):
+                if field in t:
+                    tool[field] = t[field]
+            formatted.append(tool)
+        return formatted
+
     # -- Provider-specific extension points ---------------------------------
 
     @property

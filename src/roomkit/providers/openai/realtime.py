@@ -153,9 +153,7 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
         if system_prompt:
             session_config["instructions"] = system_prompt
         if tools:
-            # OpenAI Realtime requires "type": "function" on each tool.
-            # Normalize tools that omit it (e.g. from DescribeScreenTool).
-            session_config["tools"] = [{**t, "type": t.get("type", "function")} for t in tools]
+            session_config["tools"] = self._format_session_tools(tools)
 
         logger.info("Sending session.update: turn_detection=%s, voice=%s", turn_detection, voice)
         return session_config
