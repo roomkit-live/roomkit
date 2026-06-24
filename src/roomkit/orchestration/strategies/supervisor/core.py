@@ -1,8 +1,8 @@
 """The ``Supervisor`` orchestration strategy class.
 
 Wires supervisor routing and one of three delegation modes. The install
-helpers live in the ``_install_auto`` / ``_inject_tools`` mixins; the execution
-helpers in the sibling modules of this package.
+helpers live in the ``_install_auto`` / ``_inject_strategy`` / ``_inject_per_worker``
+mixins; the execution helpers in the sibling modules of this package.
 """
 
 from __future__ import annotations
@@ -19,8 +19,11 @@ from roomkit.orchestration.strategies.supervisor._common import (
     _DEFAULT_TASK_TIMEOUT_SECONDS,
     WorkerStrategy,
 )
-from roomkit.orchestration.strategies.supervisor._inject_tools import (
-    _ToolInjectionMixin,
+from roomkit.orchestration.strategies.supervisor._inject_per_worker import (
+    _PerWorkerToolMixin,
+)
+from roomkit.orchestration.strategies.supervisor._inject_strategy import (
+    _StrategyToolMixin,
 )
 from roomkit.orchestration.strategies.supervisor._install_auto import (
     _AutoDelegateInstallMixin,
@@ -31,7 +34,9 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
 
 
-class Supervisor(_AutoDelegateInstallMixin, _ToolInjectionMixin, Orchestration):
+class Supervisor(
+    _AutoDelegateInstallMixin, _StrategyToolMixin, _PerWorkerToolMixin, Orchestration
+):
     """Supervisor orchestration strategy.
 
     The supervisor handles all user interaction. Workers are registered
