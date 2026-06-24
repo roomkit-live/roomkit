@@ -850,7 +850,7 @@ async def _async_run_and_deliver(
     that need to distinguish success from failure can accept the
     ``success`` keyword argument — e.g. to evict cached dispatch
     responses that should not be re-served after a failed pipeline.
-    Callers that don't care simply accept no arguments (legacy shape).
+    Callers that don't care simply accept no arguments.
     """
     pipeline_meta = {
         "room_id": room_id,
