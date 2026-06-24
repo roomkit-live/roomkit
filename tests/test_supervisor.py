@@ -762,6 +762,45 @@ class TestSupervisedSequential:
         assert [s["role"] for s in steps] == ["Researcher", "Writer"]
         assert [s["approved"] for s in steps] == [True, True]
 
+    async def test_strategy_tool_stripped_during_dispatch_review(self) -> None:
+        """Regression: in strategy-tool mode the supervisor owns delegate_workers.
+        It must NOT carry that tool into its own dispatch/review sub-runs — else it
+        re-delegates (delegate_workers within delegate_workers) and the run stalls.
+        The tool is stripped while the supervisor runs, and restored afterwards."""
+        from roomkit.providers.ai.base import AITool
+
+        kit = _make_mock_kit(Room(id="r1"))
+        boss = _make_agent("boss", role="Supervisor")
+        boss._injected_tools.append(
+            AITool(
+                name="delegate_workers",
+                description="dispatch the team",
+                parameters={"type": "object", "properties": {}},
+            )
+        )
+        w1 = _make_agent("w1", role="Researcher")
+        verdicts = [{"approved": True, "feedback": "", "next_task": ""}]
+        router, _calls = _supervised_delegate_router("boss", verdicts, dispatch="framed")
+
+        tools_seen_by_boss: list[list[str]] = []
+
+        async def recording(
+            room_id: str, channel_id: str, task: str, *, wait: bool = False, **kw: Any
+        ) -> Any:
+            if channel_id == "boss":
+                tools_seen_by_boss.append([t.name for t in boss._injected_tools])
+            return await router(room_id, channel_id, task, wait=wait, **kw)
+
+        kit.delegate = AsyncMock(side_effect=recording)
+
+        await _run_supervised_sequential(kit, "r1", boss, [w1], "research", max_revisions=3)
+
+        # The supervisor was invoked (dispatch + review) and never saw delegate_workers.
+        assert tools_seen_by_boss
+        assert all("delegate_workers" not in names for names in tools_seen_by_boss)
+        # Restored after the run so the supervisor can delegate again on its next turn.
+        assert "delegate_workers" in [t.name for t in boss._injected_tools]
+
     async def test_rework_on_rejection_then_approve(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
         boss = _make_agent("boss")

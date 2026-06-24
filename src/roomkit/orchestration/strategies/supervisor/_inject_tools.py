@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.core.task_utils import log_task_exception
 from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.orchestration.strategies.supervisor._common import (
+    _STRATEGY_TOOL_NAME,
     WorkerStrategy,
     _post_worker_status,
     logger,
@@ -50,7 +51,7 @@ class _ToolInjectionMixin:
         """Inject a single ``delegate_workers`` tool for deterministic execution."""
         from roomkit.orchestration.handoff import _room_id_var
 
-        tool_name = "delegate_workers"
+        tool_name = _STRATEGY_TOOL_NAME
 
         if any(t.name == tool_name for t in self._supervisor._injected_tools):
             return

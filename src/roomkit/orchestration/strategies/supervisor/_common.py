@@ -21,6 +21,13 @@ logger = logging.getLogger("roomkit.orchestration.strategies.supervisor")
 _post_worker_status = post_agent_lifecycle
 
 
+#: Name of the single tool injected on the supervisor in strategy-tool mode.
+#: The supervisor calls it (in the parent room) to dispatch its whole team. The
+#: supervised flow strips it while running the supervisor for dispatch/review so
+#: it can't re-delegate from inside its own sub-tasks.
+_STRATEGY_TOOL_NAME = "delegate_workers"
+
+
 class WorkerStrategy(StrEnum):
     """How workers are executed when delegated to."""
 

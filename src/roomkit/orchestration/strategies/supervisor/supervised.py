@@ -14,11 +14,14 @@ single test seam over ``_delegate_and_wait`` covers the whole flow.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
 from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.orchestration.strategies.supervisor._common import (
     _DEFAULT_TASK_TIMEOUT_SECONDS,
+    _STRATEGY_TOOL_NAME,
     _post_worker_status,
 )
 from roomkit.orchestration.strategies.supervisor.prompts import (
@@ -73,6 +76,25 @@ async def _delegate_and_wait(
     return (result.output or result.error or "", result.status == "completed")
 
 
+@contextlib.contextmanager
+def _supervisor_without_strategy_tool(supervisor: Agent) -> Iterator[None]:
+    """Run the supervisor for dispatch/review WITHOUT its ``delegate_workers`` tool.
+
+    In strategy-tool mode the supervisor owns ``delegate_workers``. If it carried
+    that tool into its own dispatch/review sub-runs it would try to delegate again
+    instead of framing the task or judging the output — re-entering the pipeline
+    (delegate_workers within delegate_workers) and stalling. The orchestrator has
+    already decided to delegate; here the supervisor only frames and judges. A
+    no-op in auto-delegate mode, where the supervisor has no such tool.
+    """
+    saved = supervisor._injected_tools
+    supervisor._injected_tools = [t for t in saved if t.name != _STRATEGY_TOOL_NAME]
+    try:
+        yield
+    finally:
+        supervisor._injected_tools = saved
+
+
 async def _supervisor_dispatch(
     kit: RoomKit,
     supervisor: Agent,
@@ -100,14 +122,15 @@ async def _supervisor_dispatch(
         f"First worker — {_worker_profile(workers[0])}.\n\n"
         "Respond with ONLY the task text for that worker — no preamble, no JSON."
     )
-    framed, _ok = await _delegate_and_wait(
-        kit,
-        room_id,
-        supervisor.channel_id,
-        prompt,
-        share_channels=share_channels,
-        task_timeout=task_timeout,
-    )
+    with _supervisor_without_strategy_tool(supervisor):
+        framed, _ok = await _delegate_and_wait(
+            kit,
+            room_id,
+            supervisor.channel_id,
+            prompt,
+            share_channels=share_channels,
+            task_timeout=task_timeout,
+        )
     return (framed or "").strip() or goal
 
 
@@ -149,14 +172,15 @@ async def _supervisor_review(
         f"{next_clause}\n\n"
         f"{_VERDICT_INSTRUCTIONS}"
     )
-    raw, _ok = await _delegate_and_wait(
-        kit,
-        room_id,
-        supervisor.channel_id,
-        prompt,
-        share_channels=share_channels,
-        task_timeout=task_timeout,
-    )
+    with _supervisor_without_strategy_tool(supervisor):
+        raw, _ok = await _delegate_and_wait(
+            kit,
+            room_id,
+            supervisor.channel_id,
+            prompt,
+            share_channels=share_channels,
+            task_timeout=task_timeout,
+        )
     return _parse_verdict(raw)
 
 
