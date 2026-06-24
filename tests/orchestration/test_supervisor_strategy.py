@@ -2,6 +2,11 @@
 
 Exercises framework-controlled execution via delegate_workers tool
 using MockAIProvider — no real API calls.
+
+The deterministic runners and the supervised hub-&-spoke flow are tested
+directly in tests/test_supervisor.py; this file covers the tool wiring:
+injection, dedup, hook firing, error propagation, and the parallel path's
+review-brief contract.
 """
 
 from __future__ import annotations
@@ -82,82 +87,13 @@ class TestStrategyToolInjection:
         assert WorkerStrategy.PARALLEL == "parallel"
 
 
-# -- Sequential strategy ------------------------------------------------------
-
-
-class TestSequentialStrategy:
-    async def test_runs_workers_in_order(self) -> None:
-        """Workers execute sequentially, each receiving previous output."""
-        kit, supervisor = await _setup(
-            "sequential",
-            [_agent("researcher", "Research findings."), _agent("writer", "Final article.")],
-        )
-
-        from roomkit.orchestration.handoff import _room_id_var
-
-        _room_id_var.set("room")
-        result = json.loads(
-            await supervisor.tool_handler("delegate_workers", {"task": "Write about AI"})
-        )
-
-        assert result["status"] == "completed"
-        assert len(result["results"]) == 2
-        assert result["results"][0]["worker"] == "researcher"
-        assert "Research findings." in result["results"][0]["output"]
-        assert result["results"][1]["worker"] == "writer"
-        assert "Final article." in result["results"][1]["output"]
-        await kit.close()
-
-    async def test_sequential_chains_output(self) -> None:
-        """Second worker receives first worker's output as its task."""
-        received_tasks: list[str] = []
-        original_delegate = None
-
-        kit, supervisor = await _setup(
-            "sequential",
-            [_agent("step1", "Step 1 output."), _agent("step2", "Step 2 output.")],
-        )
-
-        # Wrap delegate to capture task descriptions
-        original_delegate = kit.delegate
-
-        async def tracking_delegate(*args, **kwargs):  # type: ignore[no-untyped-def]
-            received_tasks.append(args[2])  # task is 3rd positional arg
-            return await original_delegate(*args, **kwargs)
-
-        kit.delegate = tracking_delegate  # type: ignore[assignment]
-
-        from roomkit.orchestration.handoff import _room_id_var
-
-        _room_id_var.set("room")
-        await supervisor.tool_handler("delegate_workers", {"task": "Initial task"})
-
-        # First worker gets the user's task
-        assert received_tasks[0] == "Initial task"
-        # Second worker gets first worker's output
-        assert received_tasks[1] == "Step 1 output."
-        await kit.close()
-
-    async def test_sequential_single_worker(self) -> None:
-        kit, supervisor = await _setup("sequential", [_agent("solo", "Done.")])
-
-        from roomkit.orchestration.handoff import _room_id_var
-
-        _room_id_var.set("room")
-        result = json.loads(await supervisor.tool_handler("delegate_workers", {"task": "Do it"}))
-
-        assert result["status"] == "completed"
-        assert len(result["results"]) == 1
-        assert "Done." in result["results"][0]["output"]
-        await kit.close()
-
-
 # -- Parallel strategy --------------------------------------------------------
 
 
 class TestParallelStrategy:
     async def test_runs_all_workers_concurrently(self) -> None:
-        """All workers run and results are collected."""
+        """All workers run; the tool returns a review brief surfacing each
+        worker's output for the supervisor's final summary."""
         kit, supervisor = await _setup(
             "parallel",
             [_agent("tech", "Tech analysis."), _agent("biz", "Biz analysis.")],
@@ -166,14 +102,13 @@ class TestParallelStrategy:
         from roomkit.orchestration.handoff import _room_id_var
 
         _room_id_var.set("room")
-        result = json.loads(
-            await supervisor.tool_handler("delegate_workers", {"task": "Analyze X"})
-        )
+        review = await supervisor.tool_handler("delegate_workers", {"task": "Analyze X"})
 
-        assert result["status"] == "completed"
-        assert len(result["results"]) == 2
-        workers = {r["worker"] for r in result["results"]}
-        assert workers == {"tech", "biz"}
+        # Both workers ran and their outputs are surfaced in the review brief.
+        assert "tech" in review
+        assert "biz" in review
+        assert "Tech analysis." in review
+        assert "Biz analysis." in review
         await kit.close()
 
     async def test_parallel_all_receive_same_task(self) -> None:
@@ -208,10 +143,9 @@ class TestParallelStrategy:
         from roomkit.orchestration.handoff import _room_id_var
 
         _room_id_var.set("room")
-        result = json.loads(await supervisor.tool_handler("delegate_workers", {"task": "Do it"}))
+        review = await supervisor.tool_handler("delegate_workers", {"task": "Do it"})
 
-        assert result["status"] == "completed"
-        assert len(result["results"]) == 1
+        assert "Result." in review
         await kit.close()
 
 
@@ -286,25 +220,6 @@ class TestStrategyDedup:
 
 
 class TestSequentialWorkerFailure:
-    async def test_sequential_continues_on_empty_output(self) -> None:
-        """If a worker returns empty, the chain continues with empty input."""
-        kit, supervisor = await _setup(
-            "sequential",
-            # First worker returns empty string — second still runs
-            [_agent("step1", ""), _agent("step2", "Step 2 done.")],
-        )
-
-        from roomkit.orchestration.handoff import _room_id_var
-
-        _room_id_var.set("room")
-        result = json.loads(await supervisor.tool_handler("delegate_workers", {"task": "Go"}))
-
-        assert result["status"] == "completed"
-        assert len(result["results"]) == 2
-        # Second worker still ran
-        assert result["results"][1]["worker"] == "step2"
-        await kit.close()
-
     async def test_sequential_propagates_error_in_result(self) -> None:
         """If delegation raises, the strategy handler returns an error JSON."""
         kit, supervisor = await _setup("sequential", [_agent("w1", "ok")])

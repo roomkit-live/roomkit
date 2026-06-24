@@ -202,6 +202,19 @@ async def _scan_for_submitted_result(kit: RoomKit, child_room_id: str) -> dict[s
     return None
 
 
+@runtime_checkable
+class _InjectableToolChannel(Protocol):
+    """A channel that can host an injected tool and a swappable tool handler.
+
+    ``_run_with_structured_result`` matches by structure, not by class, so
+    duck-typed agent channels (and test doubles) qualify as long as they expose
+    both members.
+    """
+
+    _injected_tools: list[Any]
+    tool_handler: Any
+
+
 async def _run_with_structured_result(
     kit: RoomKit,
     child_room_id: str,
@@ -228,7 +241,7 @@ async def _run_with_structured_result(
     room = await kit.get_room(child_room_id)
     agent_id = (room.metadata or {}).get("task_agent_id")
     channel = kit.channels.get(agent_id) if agent_id else None
-    if channel is None or not hasattr(channel, "_injected_tools"):
+    if not isinstance(channel, _InjectableToolChannel):
         # No injectable agent channel — fall back to plain text collection.
         text = await _broadcast_and_collect(kit, child_room_id, task_desc)
         return text or ""
