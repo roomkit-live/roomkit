@@ -140,5 +140,26 @@ gh release create "v${VERSION}" \
     --notes "${NOTES}"
 echo "    GitHub Release created."
 
+# --- Open the next development cycle ---
+# Leaving main on the released version makes _version.py / `git describe` lie
+# about every commit after a release (they look like the release). Move main onto
+# a dev marker of the next minor (e.g. 0.18.0 -> 0.19.0.dev0) so builds from main
+# are identifiable as pre-release. The release artifact published above already
+# carries the real version; this only affects the source tree going forward.
+# Prereleases (alpha/beta/rc) leave main as-is.
+if [[ ! "$VERSION" =~ [a-zA-Z] ]]; then
+    DEV_VERSION=$(python3 -c "p='${VERSION}'.split('.'); print(f'{p[0]}.{int(p[1]) + 1}.0.dev0')")
+    echo "==> Opening development of ${DEV_VERSION}..."
+    if [[ "$(uname)" == "Darwin" ]]; then
+        sed -i '' "s/^__version__ = .*/__version__ = \"${DEV_VERSION}\"/" src/roomkit/_version.py
+    else
+        sed -i "s/^__version__ = .*/__version__ = \"${DEV_VERSION}\"/" src/roomkit/_version.py
+    fi
+    git add src/roomkit/_version.py
+    git commit -m "Begin ${DEV_VERSION} development"
+    git push
+    echo "    main now on ${DEV_VERSION}."
+fi
+
 echo ""
 echo "==> Release v${VERSION} complete!"
