@@ -1148,7 +1148,7 @@ class TestTwoPassDelegate:
         supervisor = _make_agent("boss", responses=["refined"])
         w1 = _make_agent("w1", role="W")
         with patch(
-            "roomkit.orchestration.strategies.supervisor._delegate_and_wait",
+            "roomkit.orchestration.strategies.supervisor.supervised._delegate_and_wait",
             side_effect=_fake_delegate_and_wait,
         ):
             await _two_pass_delegate(
