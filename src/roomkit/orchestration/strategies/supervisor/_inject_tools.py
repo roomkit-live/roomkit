@@ -100,6 +100,21 @@ class _ToolInjectionMixin:
                 return json.dumps({"error": f"Unknown tool: {name}"})
 
             rid = _room_id_var.get() or room_id
+            # The supervisor owns this tool, but the supervised flow re-invokes the
+            # SAME supervisor for dispatch/review inside its own ``::task-`` child
+            # rooms. There it must answer the dispatch/review prompt directly —
+            # calling delegate_workers again recurses the whole pipeline
+            # (delegate_workers within delegate_workers). Refuse from a sub-task room.
+            if "::task-" in rid:
+                return json.dumps(
+                    {
+                        "error": (
+                            "delegate_workers is unavailable here: you are already running "
+                            "inside a delegated step. Respond directly to the instruction "
+                            "with the requested text — do not call delegate_workers."
+                        )
+                    }
+                )
             task_desc = arguments.get("task", "")
 
             async with _lock:

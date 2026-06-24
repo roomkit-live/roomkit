@@ -216,6 +216,40 @@ class TestStrategyDedup:
         await kit.close()
 
 
+# -- Recursion guard ----------------------------------------------------------
+
+
+class TestSubTaskRecursionGuard:
+    async def test_delegate_workers_refuses_inside_subtask_room(self) -> None:
+        """The supervisor owns delegate_workers, and the supervised flow re-invokes
+        it for dispatch/review inside ``::task-`` child rooms. Calling the tool from
+        such a room must refuse (no re-delegation) — otherwise delegate_workers
+        recurses within delegate_workers."""
+        kit, supervisor = await _setup("sequential", [_agent("w1", "r1")])
+
+        call_count = 0
+        original_delegate = kit.delegate
+
+        async def counting_delegate(*args, **kwargs):  # type: ignore[no-untyped-def]
+            nonlocal call_count
+            call_count += 1
+            return await original_delegate(*args, **kwargs)
+
+        kit.delegate = counting_delegate  # type: ignore[assignment]
+
+        from roomkit.orchestration.handoff import _room_id_var
+
+        # Simulate the handler firing while the supervisor runs in a dispatch/review
+        # child room of the supervised flow.
+        _room_id_var.set("room::task-abc123")
+        result = json.loads(await supervisor.tool_handler("delegate_workers", {"task": "go"}))
+
+        assert "error" in result
+        # The pipeline never ran — no delegation happened, recursion prevented.
+        assert call_count == 0
+        await kit.close()
+
+
 # -- Error handling -----------------------------------------------------------
 
 
