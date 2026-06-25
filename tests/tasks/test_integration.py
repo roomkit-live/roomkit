@@ -170,6 +170,50 @@ class TestDelegateIntegration:
 
         await kit.close()
 
+    async def test_child_metadata_envelope_copied_to_child_room(self):
+        """A ``_child_metadata`` envelope on the parent room is copied verbatim
+        onto each child room, cascades to nested delegations, and never
+        overwrites delegation bookkeeping keys."""
+        kit = RoomKit()
+        kit.register_channel(_make_agent("agent-a", "done"))
+
+        await kit.create_room(
+            room_id="parent",
+            metadata={"_child_metadata": {"user_id": "u-42", "organization_id": "t-7"}},
+        )
+
+        task = await kit.delegate(room_id="parent", agent_id="agent-a", task="do work")
+        await task.wait(timeout=5.0)
+
+        child = await kit.get_room(task.child_room_id)
+        # Caller's identity rode the envelope onto the child.
+        assert child.metadata["user_id"] == "u-42"
+        assert child.metadata["organization_id"] == "t-7"
+        # Bookkeeping keys are intact (envelope applied first, then overwritten).
+        assert child.metadata["parent_room_id"] == "parent"
+        assert child.metadata["task_agent_id"] == "agent-a"
+        # Envelope re-stamped so a grandchild delegation inherits it too.
+        assert child.metadata["_child_metadata"] == {"user_id": "u-42", "organization_id": "t-7"}
+
+        await kit.close()
+
+    async def test_delegate_without_envelope_leaves_child_metadata_minimal(self):
+        """No envelope on the parent → child carries only delegation bookkeeping
+        (no synthesized identity keys)."""
+        kit = RoomKit()
+        kit.register_channel(_make_agent("agent-a", "done"))
+        await kit.create_room(room_id="parent")
+
+        task = await kit.delegate(room_id="parent", agent_id="agent-a", task="do work")
+        await task.wait(timeout=5.0)
+
+        child = await kit.get_room(task.child_room_id)
+        assert child.metadata["parent_room_id"] == "parent"
+        assert "user_id" not in child.metadata
+        assert child.metadata["_child_metadata"] == {}
+
+        await kit.close()
+
     async def test_parallel_delegation(self):
         kit = RoomKit()
 

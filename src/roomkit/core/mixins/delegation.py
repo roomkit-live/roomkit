@@ -448,7 +448,7 @@ class DelegationMixin(HelpersMixin):
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
         # Validate
-        await self.get_room(room_id)
+        parent_room = await self.get_room(room_id)
         if agent_id not in self._channels:
             raise ChannelNotRegisteredError(f"Agent channel '{agent_id}' not registered")
 
@@ -475,9 +475,20 @@ class DelegationMixin(HelpersMixin):
 
         # Create child room — no orchestration so the parent's strategy
         # doesn't leak (e.g. Supervisor attaching itself to the child).
+        # The caller may stamp a ``_child_metadata`` envelope on the parent
+        # room (e.g. its owning user / tenant); copy it verbatim onto the
+        # child so the delegated agent resolves the same ambient context as a
+        # turn in the parent room. RoomKit chooses no keys of its own — the
+        # envelope's contents are entirely the caller's. Re-stamping the
+        # envelope itself lets the context cascade to nested delegations.
+        # Delegation bookkeeping keys are applied last so the envelope can
+        # never overwrite them.
+        inherited_metadata = parent_room.metadata.get("_child_metadata") or {}
         await self.create_room(
             room_id=child_room_id,
             metadata={
+                **inherited_metadata,
+                "_child_metadata": inherited_metadata,
                 "parent_room_id": room_id,
                 "task_agent_id": agent_id,
                 "task_input": task,
