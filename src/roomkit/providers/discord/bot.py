@@ -49,7 +49,9 @@ class DiscordBotProvider(DiscordProvider):
         client = self._connected_client()
         if client is None:
             return ProviderResult(success=False, error="discord_not_connected")
-        channel = client.get_channel(int(to)) or await client.fetch_channel(int(to))
+        import discord
+
+        channel = await self._channel(client, int(to))
         if channel is None:
             return ProviderResult(success=False, error="channel_not_found")
 
@@ -61,7 +63,7 @@ class DiscordBotProvider(DiscordProvider):
         t0 = time.monotonic()
         try:
             sent = await channel.send(**kwargs)
-        except Exception as exc:  # discord.HTTPException / Forbidden / etc.
+        except discord.DiscordException as exc:
             logger.warning("Discord send failed: %s", exc)
             return ProviderResult(success=False, error=str(exc))
         self._record_send_ms((time.monotonic() - t0) * 1000)
@@ -71,8 +73,7 @@ class DiscordBotProvider(DiscordProvider):
         client = self._connected_client()
         if client is None:
             return
-        cid = int(channel_id)
-        channel = client.get_channel(cid) or await client.fetch_channel(cid)
+        channel = await self._channel(client, int(channel_id))
         if channel is None:
             return
         message = await channel.fetch_message(int(message_id))
@@ -86,6 +87,11 @@ class DiscordBotProvider(DiscordProvider):
         if client is None or self._source.status != SourceStatus.CONNECTED:
             return None
         return client
+
+    @staticmethod
+    async def _channel(client: Any, channel_id: int) -> Any:
+        """Resolve a channel from the gateway cache, else fetch it over REST."""
+        return client.get_channel(channel_id) or await client.fetch_channel(channel_id)
 
     def _build_kwargs(self, event: RoomEvent) -> dict[str, Any] | None:
         """Map ``event.content`` to ``channel.send`` keyword arguments.
