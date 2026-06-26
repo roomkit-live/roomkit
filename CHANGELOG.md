@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-06-26
+
+### Added
+
+- **Discord bot channel.** A first-class Discord integration over the gateway
+  (`discord.py`), wired as a source + REST provider sharing one `discord.Client`.
+  Inbound messages (text, attachments, replies) and reactions arrive through the
+  gateway; outbound supports text, embeds (`RichContent`), media uploads, and
+  replies. `pip install roomkit[discord]`.
+- **Supervised orchestration (hub-and-spoke).** In synchronous sequential mode
+  the supervisor acts as a reviewer between every worker: it frames each task,
+  reviews the worker's output with a strict APPROVE/REJECT verdict, sends rework
+  with feedback up to `max_revisions`, and carries the validated result into the
+  next worker's brief. On exhaustion the chain stops and reports an honest
+  failure rather than presenting unreviewed work. New `Supervisor` parameters
+  `task_timeout` (per-worker budget, default 120s) and `max_revisions` (default 3).
+- **Structured-result handoff.** `kit.delegate(require_structured_result=True)`
+  forces a delegated worker to return its work by calling a `submit_result`
+  tool — a structured, parseable handoff and a guaranteed result (the worker
+  can't punt with a question). A completion guard re-prompts the worker and, on
+  exhaustion, submits an orchestration-level failure carrying its last output.
+  Capture is delivery-agnostic (a function-calling tool call, or a `claude_code`
+  worker's persisted trace).
+- **Per-conversation tool memory.** `AIChannel` keeps a per-room record of tool
+  usage and uses it two ways: a compact "what you did" digest injected into the
+  system prompt, and sticky re-exposure of recently-used tool names so a tool
+  used once stays callable while Tool Search hides the rest of the catalogue.
+- **Parent → child delegation context.** A delegated child room inherits the
+  parent room's context envelope, cascading verbatim through nested delegations.
+  The worker's full trace (tool calls + messages) is persisted in its child room.
+- **Worker capabilities for the supervisor.** The supervisor is given each
+  worker's role and concise purpose, so it frames tasks knowing what each worker
+  does rather than from a bare label.
+- **Telegram Rich Messages.** Opt-in `TelegramConfig(rich_messages=True)` for Bot
+  API 10.1 native tables and headings, with automatic fallback to entity
+  formatting. Outbound Markdown is rendered into Telegram entities via
+  telegramify-markdown (bundled in `roomkit[telegram]`).
+- **Ollama sampling options.** `OllamaConfig` gains `temperature`, `num_ctx`,
+  `top_p`, `top_k`, `min_p`, and `keep_alive` — with numeric-string coercion so a
+  unit-less `"-1"` / `"0"` isn't rejected as a malformed Go duration.
+- **Agent display name.** Optional `Agent(name=...)` — a human-readable label,
+  distinct from `channel_id` and `role`, for attributing a step in orchestration
+  timelines.
+
+### Fixed
+
+- **Realtime tool schema.** Strip non-API tool keys (e.g. Tool Search `tags`)
+  from the OpenAI / xAI realtime `session.tools` payload, which the API rejects
+  as unknown parameters.
+- **Supervisor recursion.** `delegate_workers` no longer re-fires from inside a
+  delegated sub-task room (delegate-within-delegate), in both strategy-tool and
+  supervised-review paths.
+- **Supervisor stuck / hang.** The supervisor runs dispatch/review without its
+  own `delegate_workers` tool; a worker infra failure aborts the chain instead of
+  waiting forever; and the completion hook fires when a delegation is cancelled
+  or times out, so a consumer's step doesn't stay stuck on "running".
+- **`submit_result` trace scan** caps its cursor to the int32 range (the Postgres
+  store binds `before_index` as int4).
+
 ## [0.18.0] — 2026-06-21
 
 ### Fixed
@@ -1554,7 +1613,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/roomkit-live/roomkit/compare/v0.18.0...v0.19.0
 [0.10.0]: https://github.com/roomkit-live/roomkit/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/roomkit-live/roomkit/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/roomkit-live/roomkit/compare/v0.8.0...v0.9.0
