@@ -71,6 +71,7 @@ pyroscope = ["pyroscope-io>=1.0"]
 smart-turn = ["numpy>=1.26", "onnxruntime", "transformers"]
 telegram = ["httpx>=0.27", "telegramify-markdown>=1.2.0"]
 teams = ["botbuilder-core>=4.14"]
+discord = ["discord.py>=2.4"]
 whatsapp-personal = ["neonize>=0.3.14"]
 postgres = ["asyncpg>=0.29"]
 redis = ["redis>=5.0"]
@@ -94,6 +95,7 @@ providers = [
     "roomkit[twilio]",
     "roomkit[telegram]",
     "roomkit[teams]",
+    "roomkit[discord]",
     "roomkit[gradium]",
 ]
 docs = [

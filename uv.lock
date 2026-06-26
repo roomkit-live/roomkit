@@ -1231,6 +1231,19 @@ wheels = [
 ]
 
 [[package]]
+name = "discord-py"
+version = "2.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "audioop-lts", marker = "python_full_version >= '3.13' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ef/57/9a2d9abdabdc9db8ef28ce0cf4129669e1c8717ba28d607b5ba357c4de3b/discord_py-2.7.1.tar.gz", hash = "sha256:24d5e6a45535152e4b98148a9dd6b550d25dc2c9fb41b6d670319411641249da", size = 1106326, upload-time = "2026-03-03T18:40:46.24Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/a7/17208c3b3f92319e7fad259f1c6d5a5baf8fd0654c54846ced329f83c3eb/discord_py-2.7.1-py3-none-any.whl", hash = "sha256:849dca2c63b171146f3a7f3f8acc04248098e9e6203412ce3cf2745f284f7439", size = 1227550, upload-time = "2026-03-03T18:40:44.492Z" },
+]
+
+[[package]]
 name = "distlib"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -5044,6 +5057,7 @@ all = [
     { name = "av" },
     { name = "botbuilder-core" },
     { name = "deepgram-sdk" },
+    { name = "discord-py" },
     { name = "elevenlabs" },
     { name = "fastrtc" },
     { name = "google-genai" },
@@ -5097,6 +5111,7 @@ dev = [
     { name = "asyncpg" },
     { name = "bandit" },
     { name = "botbuilder-core" },
+    { name = "discord-py" },
     { name = "google-genai" },
     { name = "gradium" },
     { name = "httpx" },
@@ -5122,6 +5137,9 @@ dev = [
     { name = "twilio" },
     { name = "ty" },
     { name = "websockets" },
+]
+discord = [
+    { name = "discord-py" },
 ]
 docs = [
     { name = "mkdocs" },
@@ -5190,6 +5208,7 @@ postgres = [
 providers = [
     { name = "anthropic" },
     { name = "botbuilder-core" },
+    { name = "discord-py" },
     { name = "google-genai" },
     { name = "gradium" },
     { name = "httpx" },
@@ -5329,6 +5348,10 @@ requires-dist = [
     { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.14" },
     { name = "deepgram-sdk", marker = "extra == 'all'", specifier = ">=6.0.0" },
     { name = "deepgram-sdk", marker = "extra == 'deepgram'", specifier = ">=6.0.0" },
+    { name = "discord-py", marker = "extra == 'all'", specifier = ">=2.4" },
+    { name = "discord-py", marker = "extra == 'dev'", specifier = ">=2.4" },
+    { name = "discord-py", marker = "extra == 'discord'", specifier = ">=2.4" },
+    { name = "discord-py", marker = "extra == 'providers'", specifier = ">=2.4" },
     { name = "elevenlabs", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "elevenlabs", marker = "extra == 'all'", specifier = ">=2.40" },
     { name = "elevenlabs", marker = "extra == 'elevenlabs'", specifier = ">=1.0" },
@@ -5448,7 +5471,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=14.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=14.0" },
 ]
-provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "console", "deepgram", "dev", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "openrouter", "opentelemetry", "phonenumbers", "polargrid", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
+provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "console", "deepgram", "dev", "discord", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "openrouter", "opentelemetry", "phonenumbers", "polargrid", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<81" }]

@@ -119,6 +119,19 @@ TEAMS_CAPABILITIES = ChannelCapabilities(
     supports_rich_text=True,
 )
 
+DISCORD_CAPABILITIES = ChannelCapabilities(
+    media_types=[
+        ChannelMediaType.TEXT,
+        ChannelMediaType.RICH,
+        ChannelMediaType.MEDIA,
+    ],
+    max_length=2000,
+    supports_threading=True,
+    supports_reactions=True,
+    supports_rich_text=True,
+    supports_media=True,
+)
+
 HTTP_CAPABILITIES = ChannelCapabilities(
     media_types=[ChannelMediaType.TEXT, ChannelMediaType.RICH],
 )
@@ -250,6 +263,25 @@ def TeamsChannel(
         provider=provider,
         capabilities=TEAMS_CAPABILITIES,
         recipient_key="teams_conversation_id",
+    )
+
+
+def DiscordChannel(
+    channel_id: str,
+    *,
+    provider: Any = None,
+) -> TransportChannel:
+    """Create a Discord bot transport channel.
+
+    The recipient key ``discord_channel_id`` resolves to the target Discord
+    channel snowflake at delivery time.
+    """
+    return TransportChannel(
+        channel_id,
+        ChannelType.DISCORD,
+        provider=provider,
+        capabilities=DISCORD_CAPABILITIES,
+        recipient_key="discord_channel_id",
     )
 
 

@@ -20,6 +20,7 @@ __all__ = [
     "WebSocketSource",
     "SSESource",
     "WhatsAppPersonalSourceProvider",
+    "DiscordGatewaySource",
 ]
 
 
@@ -37,4 +38,8 @@ def __getattr__(name: str) -> Any:
         from roomkit.sources.neonize import WhatsAppPersonalSourceProvider
 
         return WhatsAppPersonalSourceProvider
+    if name == "DiscordGatewaySource":
+        from roomkit.sources.discord import DiscordGatewaySource
+
+        return DiscordGatewaySource
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

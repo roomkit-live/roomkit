@@ -4,6 +4,7 @@ import contextlib
 
 from roomkit._version import __version__
 from roomkit.channels import (
+    DiscordChannel,
     EmailChannel,
     HTTPChannel,
     MessengerChannel,
@@ -186,6 +187,7 @@ __all__ = [
     "AudioVideoChannel",
     "Channel",
     "CLIChannel",
+    "DiscordChannel",
     "EmailChannel",
     "HTTPChannel",
     "MessengerChannel",
