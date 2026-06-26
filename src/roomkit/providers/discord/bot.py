@@ -117,13 +117,16 @@ class DiscordBotProvider(DiscordProvider):
     def _media_kwargs(content: MediaContent) -> dict[str, Any]:
         """Send media: http(s) URLs ride in content (Discord auto-embeds);
         ``data:`` URIs are decoded and uploaded as a file."""
-        if content.url.startswith("data:"):
-            file = _decode_data_uri(content.url, content.filename)
-            if file is not None:
-                kwargs: dict[str, Any] = {"file": file}
-                if content.caption:
-                    kwargs["content"] = content.caption
-                return kwargs
+        file = (
+            _decode_data_uri(content.url, content.filename)
+            if content.url.startswith("data:")
+            else None
+        )
+        if file is not None:
+            kwargs: dict[str, Any] = {"file": file}
+            if content.caption:
+                kwargs["content"] = content.caption
+            return kwargs
         body = content.url if not content.caption else f"{content.caption}\n{content.url}"
         return {"content": body}
 

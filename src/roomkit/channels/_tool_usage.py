@@ -20,8 +20,7 @@ gaps, which have DIFFERENT shapes and costs, so each is bounded on its own axis:
 Scoped per room on a channel object shared by every room it serves — same shape
 and lifetime as :class:`ToolEviction`. In-memory only: a process restart clears
 it (the model simply rediscovers tools on next use), which is fine for
-continuity within a live conversation. A durable, store-backed variant can come
-later if cross-restart memory is needed.
+continuity within a live conversation.
 """
 
 from __future__ import annotations

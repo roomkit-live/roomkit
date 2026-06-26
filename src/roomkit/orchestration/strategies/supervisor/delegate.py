@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
 
 
-def _build_pass1_instruction(workers: list[Agent]) -> str:
+def _build_pass1_instruction() -> str:
     """Build the default pass-1 instruction."""
     return (
         "Extract the core topic or subject from the user's request. "
@@ -67,11 +67,10 @@ async def _async_run_and_deliver(
     one additional terminal entry under ``agent_id="orchestration"``
     so subscribers can observe the pipeline as a whole.
 
-    ``on_done`` is called in ``finally`` regardless of outcome. Callers
-    that need to distinguish success from failure can accept the
-    ``success`` keyword argument — e.g. to evict cached dispatch
-    responses that should not be re-served after a failed pipeline.
-    Callers that don't care simply accept no arguments.
+    ``on_done`` is called in ``finally`` with ``success=<bool>`` regardless
+    of outcome, so callers can distinguish success from failure — e.g. to
+    evict cached dispatch responses that should not be re-served after a
+    failed pipeline.
     """
     pipeline_meta = {
         "room_id": room_id,
@@ -115,12 +114,7 @@ async def _async_run_and_deliver(
             metadata=pipeline_meta,
         )
     finally:
-        # Pass success through when the callback accepts it; older
-        # voice-path callbacks take no args and are called plain.
-        try:
-            on_done(success=pipeline_success)
-        except TypeError:
-            on_done()
+        on_done(success=pipeline_success)
 
 
 async def _run_workers(
@@ -193,7 +187,7 @@ async def _two_pass_delegate(
     """Two-pass: supervisor formulates task → workers run (validated between
     steps by the supervisor in sequential mode) → supervisor presents."""
     # Pass 1: temporarily inject a task-formulation instruction
-    pass1_instruction = instruction or _build_pass1_instruction(workers)
+    pass1_instruction = instruction or _build_pass1_instruction()
     original_prompt = supervisor._system_prompt
     supervisor._system_prompt = (
         f"{original_prompt}\n\n{pass1_instruction}" if original_prompt else pass1_instruction
