@@ -16,7 +16,11 @@ from roomkit.orchestration.strategies.supervisor._common import (
     _DEFAULT_TASK_TIMEOUT_SECONDS,
     _post_worker_status,
 )
-from roomkit.orchestration.strategies.supervisor.results import _worker_label
+from roomkit.orchestration.strategies.supervisor.results import (
+    _result_completed,
+    _result_output,
+    _worker_label,
+)
 
 if TYPE_CHECKING:
     from roomkit.channels.agent import Agent
@@ -99,11 +103,8 @@ async def _run_sequential(
                 metadata={"room_id": room_id, "strategy": "sequential"},
             )
             raise
-        output = ""
-        status_ok = False
-        if delegated.result:
-            output = delegated.result.output or delegated.result.error or ""
-            status_ok = delegated.result.status == "completed"
+        output = _result_output(delegated.result)
+        status_ok = _result_completed(delegated.result)
         _post_worker_status(
             kit,
             worker.channel_id,
@@ -172,11 +173,8 @@ async def _run_parallel(
                 metadata={"room_id": room_id, "strategy": "parallel"},
             )
             raise
-        output = ""
-        status_ok = False
-        if delegated.result:
-            output = delegated.result.output or delegated.result.error or ""
-            status_ok = delegated.result.status == "completed"
+        output = _result_output(delegated.result)
+        status_ok = _result_completed(delegated.result)
         _post_worker_status(
             kit,
             worker.channel_id,

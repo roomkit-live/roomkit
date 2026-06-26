@@ -25,6 +25,26 @@ def _worker_label(worker: Agent) -> str:
     )
 
 
+def _worker_roles_csv(workers: list[Agent]) -> str:
+    """Comma-separated worker roles (falling back to ``channel_id``), for the
+    ``delegate_workers`` tool description listing the team."""
+    return ", ".join(getattr(w, "role", None) or w.channel_id for w in workers)
+
+
+def _result_output(result: Any) -> str:
+    """The best human-readable text from a delegated task result: ``output``,
+    else ``error``, else empty. Accepts a real result, a duck-typed object, or
+    ``None``."""
+    if result is None:
+        return ""
+    return getattr(result, "output", None) or getattr(result, "error", None) or ""
+
+
+def _result_completed(result: Any) -> bool:
+    """Whether a delegated task result reports ``completed`` status."""
+    return getattr(result, "status", None) == "completed"
+
+
 _PROFILE_CAP = 600
 
 

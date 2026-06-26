@@ -17,12 +17,17 @@ from roomkit.core.task_utils import log_task_exception
 from roomkit.orchestration.strategies.supervisor._common import (
     _STRATEGY_TOOL_NAME,
     WorkerStrategy,
+    _fallthrough,
+    _is_subtask_room,
     logger,
 )
 from roomkit.orchestration.strategies.supervisor.delegate import _async_run_and_deliver
 from roomkit.orchestration.strategies.supervisor.execution import _run_parallel
 from roomkit.orchestration.strategies.supervisor.prompts import _format_supervised_digest
-from roomkit.orchestration.strategies.supervisor.results import _format_supervisor_review
+from roomkit.orchestration.strategies.supervisor.results import (
+    _format_supervisor_review,
+    _worker_roles_csv,
+)
 from roomkit.orchestration.strategies.supervisor.supervised import (
     _run_supervised_sequential,
 )
@@ -53,7 +58,7 @@ class _StrategyToolMixin:
         if any(t.name == tool_name for t in self._supervisor._injected_tools):
             return
 
-        worker_roles = ", ".join(getattr(w, "role", None) or w.channel_id for w in self._workers)
+        worker_roles = _worker_roles_csv(self._workers)
         tool = AITool(
             name=tool_name,
             description=(
@@ -93,9 +98,7 @@ class _StrategyToolMixin:
 
         async def strategy_handler(name: str, arguments: dict[str, Any]) -> str:
             if name != tool_name:
-                if original:
-                    return await original(name, arguments)
-                return json.dumps({"error": f"Unknown tool: {name}"})
+                return await _fallthrough(original, name, arguments)
 
             rid = _room_id_var.get() or room_id
             # The supervisor owns this tool, but the supervised flow re-invokes the
@@ -103,7 +106,7 @@ class _StrategyToolMixin:
             # rooms. There it must answer the dispatch/review prompt directly —
             # calling delegate_workers again recurses the whole pipeline
             # (delegate_workers within delegate_workers). Refuse from a sub-task room.
-            if "::task-" in rid:
+            if _is_subtask_room(rid):
                 return json.dumps(
                     {
                         "error": (

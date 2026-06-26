@@ -32,6 +32,8 @@ from roomkit.orchestration.strategies.supervisor.prompts import (
 )
 from roomkit.orchestration.strategies.supervisor.results import (
     _render_result,
+    _result_completed,
+    _result_output,
     _worker_label,
     _worker_profile,
 )
@@ -71,9 +73,7 @@ async def _delegate_and_wait(
     except TimeoutError:
         return (f"(timed out after {task_timeout:.0f}s)", False)
     result = delegated.result
-    if not result:
-        return ("", False)
-    return (result.output or result.error or "", result.status == "completed")
+    return (_result_output(result), _result_completed(result))
 
 
 @contextlib.contextmanager

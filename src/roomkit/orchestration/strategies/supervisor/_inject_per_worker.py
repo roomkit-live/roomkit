@@ -12,8 +12,13 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.orchestration.strategies.supervisor._common import (
+    _fallthrough,
     _post_worker_status,
     logger,
+)
+from roomkit.orchestration.strategies.supervisor.results import (
+    _result_completed,
+    _result_output,
 )
 from roomkit.providers.ai.base import AITool
 
@@ -102,12 +107,12 @@ class _PerWorkerToolMixin:
                             raise
                         result = delegated.result
                         result_status = result.status if result else "failed"
-                        result_output = (result.output or result.error or "") if result else ""
+                        result_output = _result_output(result)
                         _post_worker_status(
                             kit,
                             worker_id,
                             StatusLevel.COMPLETED
-                            if result_status == "completed"
+                            if _result_completed(result)
                             else StatusLevel.FAILED,
                             detail=result_output,
                             metadata={
@@ -164,11 +169,8 @@ class _PerWorkerToolMixin:
 
                     def _patched_set(r: Any, *, _wid: str = worker_id or "") -> None:
                         pending.discard(_wid)
-                        output = ""
-                        ok = False
-                        if r is not None:
-                            output = getattr(r, "output", None) or getattr(r, "error", None) or ""
-                            ok = getattr(r, "status", None) == "completed"
+                        output = _result_output(r)
+                        ok = _result_completed(r)
                         _post_worker_status(
                             _bus_kit,
                             _wid,
@@ -201,8 +203,6 @@ class _PerWorkerToolMixin:
                 except Exception as exc:
                     logger.exception("Delegation to %s failed", worker_id)
                     return json.dumps({"error": str(exc)})
-            if original:
-                return await original(name, arguments)
-            return json.dumps({"error": f"Unknown tool: {name}"})
+            return await _fallthrough(original, name, arguments)
 
         self._supervisor.tool_handler = delegation_handler

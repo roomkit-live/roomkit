@@ -17,12 +17,18 @@ from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType as _ChannelType
 from roomkit.models.event import RoomEvent
-from roomkit.orchestration.strategies.supervisor._common import WorkerStrategy, logger
+from roomkit.orchestration.strategies.supervisor._common import (
+    WorkerStrategy,
+    _fallthrough,
+    _is_subtask_room,
+    logger,
+)
 from roomkit.orchestration.strategies.supervisor.delegate import (
     _async_run_and_deliver,
     _one_pass_delegate,
     _two_pass_delegate,
 )
+from roomkit.orchestration.strategies.supervisor.results import _worker_roles_csv
 
 if TYPE_CHECKING:
     from roomkit.channels.agent import Agent
@@ -77,7 +83,7 @@ class _AutoDelegateInstallMixin:
             # any delegated worker room), the supervisor must run NORMALLY —
             # otherwise the review prompt would be treated as a fresh user task
             # and re-trigger delegation, recursing without bound.
-            if "::task-" in rid:
+            if _is_subtask_room(rid):
                 return await original_on_event(event, binding, context)
 
             if refine:
@@ -137,7 +143,7 @@ class _AutoDelegateInstallMixin:
             return
 
         # Build tool definition
-        worker_roles = ", ".join(getattr(w, "role", None) or w.channel_id for w in workers)
+        worker_roles = _worker_roles_csv(workers)
         tool_def = {
             "name": "delegate_workers",
             "description": (
@@ -171,9 +177,7 @@ class _AutoDelegateInstallMixin:
             nonlocal _running
 
             if name != "delegate_workers":
-                if original_handler:
-                    return await original_handler(name, arguments)
-                return json.dumps({"error": f"Unknown tool: {name}"})
+                return await _fallthrough(original_handler, name, arguments)
 
             async with _lock:
                 if _running:
