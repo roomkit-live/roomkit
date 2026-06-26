@@ -30,6 +30,7 @@ from roomkit.sandbox.tools import SANDBOX_PREAMBLE as _SANDBOX_PREAMBLE
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX as _SANDBOX_TOOL_PREFIX
 
 if TYPE_CHECKING:
+    from roomkit.channels._tool_usage import ToolUsageMemory
     from roomkit.channels.ai import _ContentPart, _ToolLoopContext
     from roomkit.memory.base import MemoryProvider
     from roomkit.models.channel import ChannelBinding
@@ -84,6 +85,7 @@ class AIContextHost(Protocol):
     _human_input_handler: HumanInputToolHandler | None
     _memory: MemoryProvider
     _eviction: ToolEviction
+    _tool_usage: ToolUsageMemory
     _planner: TaskPlanner | None
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
@@ -119,6 +121,7 @@ class AIContextMixin:
     _human_input_handler: HumanInputToolHandler | None
     _memory: MemoryProvider
     _eviction: ToolEviction
+    _tool_usage: ToolUsageMemory
     _planner: TaskPlanner | None
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
@@ -245,6 +248,14 @@ class AIContextMixin:
                     self._planner.current_plan
                 )
 
+        # "Tools you've already used" digest — the rebuilt context drops
+        # tool-call events, so without this the model forgets, across turns,
+        # which tools/source it used (it would re-ask the user). Injected for
+        # every model, not just small ones — the loss is provider-agnostic.
+        usage_digest = self._tool_usage.render_digest(event.room_id)
+        if usage_digest:
+            system_prompt = (system_prompt or "") + f"\n\n{usage_digest}"
+
         # Tool Search — when the catalogue is large, hide it behind the two
         # discovery tools and let the model reveal what it needs via find_tools.
         # Decided once here on the REAL catalogue (before the infra tools are
@@ -274,6 +285,15 @@ class AIContextMixin:
             )
             tools.extend(t for t in search_tool_defs() if t.name not in catalogue_names)
             system_prompt = (system_prompt or "") + f"\n\n{TOOL_SEARCH_PREAMBLE}"
+            # Re-reveal tools the agent already called this conversation so one it
+            # used once stays callable even though Tool Search re-hides the
+            # catalogue each turn. Seeded on ``sticky_tools`` (NOT ``revealed_tools``)
+            # because the per-round re-filter runs under the for_loop CHILD ctx,
+            # which inherits sticky_tools but resets revealed_tools — seeding the
+            # latter here would be dropped at round 0. Intersected with the live
+            # catalogue so a tool that has since disappeared (e.g. an edge device
+            # unbound) is never surfaced as a phantom.
+            loop_ctx.sticky_tools |= self._tool_usage.tool_names(event.room_id) & catalogue_names
 
         # Store unfiltered tool list for re-application after skill activation
         loop_ctx.all_context_tools = list(tools)

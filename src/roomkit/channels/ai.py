@@ -36,6 +36,7 @@ from roomkit.channels._tool_search_constants import (
     DEFAULT_TOOL_SEARCH_THRESHOLD,
     DEFAULT_TOOL_SEARCH_THRESHOLD_PCT,
 )
+from roomkit.channels._tool_usage import ToolUsageMemory
 from roomkit.channels._turn_config import ConfigProvider
 from roomkit.channels.base import Channel
 from roomkit.memory.base import MemoryProvider
@@ -96,6 +97,12 @@ class _ToolLoopContext:
     # — round 0 starts empty, a find_tools call reveals matches, and the next
     # round's tool re-filter shows them.
     revealed_tools: set[str] = field(default_factory=set)
+    # Tools the agent already CALLED this conversation, seeded once per turn in
+    # ``_build_context`` from ToolUsageMemory. Unlike ``revealed_tools`` (per-loop
+    # find_tools discovery, starts empty), these are INHERITED across for_loop and
+    # unioned into the Tool Search keep-set by ``_apply_tool_filters`` — so a tool
+    # used once stays callable without the model having to re-run find_tools.
+    sticky_tools: set[str] = field(default_factory=set)
     all_context_tools: list[Any] = field(default_factory=list)
     # Whether Tool Search is active for this turn (catalogue over threshold).
     # Decided once in ``_build_context`` and read by ``_apply_tool_filters`` on
@@ -122,6 +129,10 @@ class _ToolLoopContext:
             ctx.current_participant_role = parent.current_participant_role
             ctx.all_context_tools = parent.all_context_tools
             ctx.tool_search_active = parent.tool_search_active
+            # Carry the used-tools re-exposition seeded in _build_context into the
+            # loop: the per-round re-filter runs under THIS child ctx, so without
+            # this the seed is dropped at round 0 and the model must re-find_tools.
+            ctx.sticky_tools = set(parent.sticky_tools)
         ctx.room_id = room_id or (parent.room_id if parent else None)
         return ctx
 
@@ -227,6 +238,10 @@ class AIChannel(
         self._memory = memory or SlidingWindowMemory(max_events=max_context_events)
         self._tool_policy = tool_policy
         self._eviction = ToolEviction(threshold_tokens=evict_threshold_tokens)
+        # Per-conversation record of tools the agent has called — feeds the
+        # "tools you've already used" digest and re-reveals used tools each turn
+        # so a tool used once stays callable under Tool Search. See _tool_usage.
+        self._tool_usage = ToolUsageMemory()
         self._planner = TaskPlanner() if enable_planning else None
         # Tool Search — progressive tool disclosure for large catalogues.
         # ``None`` auto-enables when the deferrable tools would exceed

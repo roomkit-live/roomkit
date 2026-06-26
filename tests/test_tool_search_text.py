@@ -20,6 +20,7 @@ from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.room import Room
 from roomkit.providers.ai.base import AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.sandbox.executor import SandboxExecutor
 from roomkit.tools.policy import ToolPolicy
 from tests.conftest import make_event
 
@@ -289,3 +290,102 @@ class TestPolicyExemption:
         assert [m["name"] for m in result["matches"]] == ["send_sms"]
         # send_sms is both revealed and policy-allowed → visible round 1.
         assert "send_sms" in _tool_names(provider.calls[1])
+
+
+# ---------------------------------------------------------------------------
+# Sandbox tools defer behind Tool Search (but skip the user policy / gating)
+# ---------------------------------------------------------------------------
+
+
+class _FakeSandbox(SandboxExecutor):
+    """Declares two ``sandbox_*`` tools without a real container.
+
+    ``execute`` is never reached here — the model calls find_tools and the
+    reveal round ends with a plain text response, so no sandbox tool runs.
+    """
+
+    def __init__(self, names: tuple[str, ...] = ("sandbox_read", "sandbox_grep")) -> None:
+        self._names = names
+
+    async def execute(self, command: str, arguments: dict | None = None):
+        raise AssertionError("sandbox execute must not run in these tests")
+
+    def tool_definitions(self) -> list[dict]:
+        descriptions = {
+            "sandbox_read": "Read file contents from the sandbox.",
+            "sandbox_grep": "Run a regex pattern match across the workspace.",
+        }
+        return [
+            {
+                "name": n,
+                "description": descriptions.get(n, f"Sandbox {n} tool."),
+                "parameters": {"type": "object", "properties": {}},
+            }
+            for n in self._names
+        ]
+
+
+class TestSandboxToolSearch:
+    async def test_sandbox_tools_deferred_then_revealed_under_policy(self) -> None:
+        """Sandbox tools defer behind find_tools AND skip a whitelist policy.
+
+        With Tool Search active they are hidden round 0 (not pinned), even
+        though a sandbox is attached. find_tools surfaces the match, and round 1
+        exposes it — the restrictive tool policy (which omits every sandbox
+        tool) never blocks it, because sandbox tools are policy-exempt.
+        """
+        provider = MockAIProvider(
+            ai_responses=[
+                AIResponse(
+                    content="",
+                    finish_reason="tool_calls",
+                    tool_calls=[
+                        AIToolCall(
+                            id="t1", name="find_tools", arguments={"query": "read file contents"}
+                        )
+                    ],
+                ),
+                AIResponse(content="done", finish_reason="stop"),
+            ],
+        )
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_search=True,
+            tool_policy=ToolPolicy(allow=["send_sms"]),  # omits every sandbox tool
+            sandbox=_FakeSandbox(),
+            tool_handler=_noop_handler,
+        )
+        await _run(ch, _binding())
+
+        # Round 0: sandbox tools deferred behind the discovery tools.
+        round0 = _tool_names(provider.calls[0])
+        assert round0 == {"find_tools", "list_tools"}
+
+        # find_tools surfaced sandbox_read — not a policy-denied error.
+        result = _tool_result(provider.calls[1])
+        assert "error" not in result
+        assert [m["name"] for m in result["matches"]] == ["sandbox_read"]
+
+        # Round 1: revealed + visible despite the whitelist policy; the
+        # unmatched sandbox tool stays deferred.
+        round1 = _tool_names(provider.calls[1])
+        assert "sandbox_read" in round1
+        assert "sandbox_grep" not in round1
+
+    async def test_sandbox_tools_visible_when_search_off(self) -> None:
+        """Tool Search off → sandbox tools stay visible AND policy-exempt."""
+        provider = MockAIProvider(responses=["hi"])
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_search=False,
+            tool_policy=ToolPolicy(allow=["send_sms"]),  # omits every sandbox tool
+            sandbox=_FakeSandbox(),
+            tool_handler=_noop_handler,
+        )
+        await _run(ch, _binding())
+
+        names = _tool_names(provider.calls[0])
+        assert {"sandbox_read", "sandbox_grep"} <= names
+        assert "find_tools" not in names

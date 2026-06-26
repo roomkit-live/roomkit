@@ -88,10 +88,19 @@ class AIToolPolicyMixin:
     def _apply_tool_filters(self, tools: list[AITool]) -> list[AITool]:
         """Apply tool policy, skill gating, and Tool Search to a list of tools.
 
-        Skill infrastructure tools, Tool Search discovery tools, and sandbox
-        tools are *never* filtered — they must always remain visible when
-        configured (e.g. the model still needs ``activate_skill`` and
-        ``find_tools`` while the discretionary catalogue is hidden).
+        Skill infrastructure tools and Tool Search discovery tools are *never*
+        filtered — they ARE the skill/discovery mechanism and must stay
+        reachable while the discretionary catalogue is hidden (the model still
+        needs ``activate_skill`` and ``find_tools``).
+
+        Sandbox tools are channel-attached rather than user-selected, so they
+        are exempt from the user **tool policy** and skill **gating** — but they
+        still participate in **Tool Search**. A sandbox can expose ~10 tools
+        (read/write/edit/ls/grep/find/git/diff/delete/bash); on a small model
+        those would otherwise crowd the context window, so they are deferred
+        behind ``find_tools`` like any other discretionary tool and revealed on
+        demand. A host that wants an always-visible entry point pins specific
+        sandbox tool names via ``tool_search_pinned``.
 
         When Tool Search is active for the turn (``loop_ctx.tool_search_active``,
         set in ``_build_context``), the discretionary catalogue is collapsed to
@@ -108,26 +117,30 @@ class AIToolPolicyMixin:
         # discretionary tool names that stay visible this round.
         keep: set[str] | None = None
         if loop_ctx.tool_search_active:
-            keep = self._tool_search_pinned | loop_ctx.revealed_tools
+            # pinned (config) + revealed (find_tools this loop) + sticky (tools
+            # already used this conversation, re-exposed so they stay callable).
+            keep = self._tool_search_pinned | loop_ctx.revealed_tools | loop_ctx.sticky_tools
         result: list[AITool] = []
         for tool in tools:
+            name = tool.name
             # Skill infra + Tool Search discovery tools always pass
-            if tool.name in self._SKILL_INFRA_TOOLS or tool.name in TOOL_SEARCH_INFRA_TOOL_NAMES:
+            if name in self._SKILL_INFRA_TOOLS or name in TOOL_SEARCH_INFRA_TOOL_NAMES:
                 result.append(tool)
                 continue
-            # Sandbox tools always pass (attached by the channel, not user-managed)
-            if tool.name.startswith(SANDBOX_TOOL_PREFIX):
-                result.append(tool)
-                continue
-            # Tool policy filter (role-aware)
-            if policy and not policy.is_allowed(tool.name):
-                continue
-            # Skill gating filter
-            if tool.name in gated:
-                continue
-            # Tool Search: hide the discretionary catalogue behind find_tools,
-            # exposing only pinned + already-revealed tools.
-            if keep is not None and tool.name not in keep:
+            # Sandbox tools are channel-attached, not user-managed: skip the
+            # user tool policy + skill gating. They still flow through the Tool
+            # Search ``keep`` filter below so a large sandbox toolset can be
+            # deferred behind find_tools on small models.
+            if not name.startswith(SANDBOX_TOOL_PREFIX):
+                # Tool policy filter (role-aware)
+                if policy and not policy.is_allowed(name):
+                    continue
+                # Skill gating filter
+                if name in gated:
+                    continue
+            # Tool Search: hide the discretionary catalogue (sandbox included)
+            # behind find_tools, exposing only pinned + already-revealed tools.
+            if keep is not None and name not in keep:
                 continue
             result.append(tool)
         return result

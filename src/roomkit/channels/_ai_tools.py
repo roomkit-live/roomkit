@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 
     from roomkit.channels._task_planner import TaskPlanner
     from roomkit.channels._tool_eviction import ToolEviction
+    from roomkit.channels._tool_usage import ToolUsageMemory
     from roomkit.channels.ai import _ContentPart, _ToolLoopContext
     from roomkit.models.tool_call import ToolCallCallback
     from roomkit.realtime.base import RealtimeBackend
@@ -87,6 +88,7 @@ class AIToolsHost(Protocol):
     _script_executor: ScriptExecutor | None
     _sandbox: SandboxExecutor | None
     _eviction: ToolEviction
+    _tool_usage: ToolUsageMemory
     _planner: TaskPlanner | None
     _realtime: RealtimeBackend | None
     _current_room_id: str | None
@@ -120,6 +122,7 @@ class AIToolsMixin:
     _script_executor: ScriptExecutor | None
     _sandbox: SandboxExecutor | None
     _eviction: ToolEviction
+    _tool_usage: ToolUsageMemory
     _planner: TaskPlanner | None
     _realtime: RealtimeBackend | None
     _current_room_id: str | None
@@ -254,6 +257,10 @@ class AIToolsMixin:
                 telemetry.end_span(tool_span_id, status="error", error_message=str(exc))
                 logger.warning("Tool %s raised %s: %s", tc.name, type(exc).__name__, exc)
                 result = f"Error executing tool '{tc.name}': {exc}"
+            # Remember this call (final result, success or error) so later turns
+            # can show "tools you've already used" and re-reveal it under Tool
+            # Search. Infra/discovery tools are filtered inside record().
+            self._tool_usage.record(self._current_room_id, tc.name, tc.arguments, result)
             return AIToolResultPart(
                 tool_call_id=tc.id,
                 name=tc.name,
