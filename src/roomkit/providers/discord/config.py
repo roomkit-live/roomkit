@@ -20,4 +20,3 @@ class DiscordConfig(BaseModel):
     # Drop inbound messages authored by other bots (the bot's own messages are
     # always dropped by the parser to avoid echo loops).
     ignore_bots: bool = True
-    timeout: float = 30.0
