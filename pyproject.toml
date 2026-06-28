@@ -42,7 +42,17 @@ elevenlabs = ["elevenlabs>=1.0"]
 qwen-tts = ["qwen-tts>=0.1"]
 qwen-asr = ["qwen-asr>=0.0.4"]
 neutts = ["neutts>=0.1"]
-fastrtc = ["fastrtc>=0.0.18", "numpy>=1.26"]
+# WebRTC realtime transport. Vendored gradio-free under roomkit.webrtc
+# (src/roomkit/webrtc/), so this pulls the transport's own runtime deps instead
+# of the upstream fastrtc package — which forced gradio<6 (CVEs) and pillow<12.
+fastrtc = [
+    "aiortc>=1.6",
+    "av>=12.0.0",
+    "librosa>=0.10",
+    "numpy>=1.26",
+    "pydub>=0.25",
+    "anyio>=4.0",
+]
 aicoustics = ["aic-sdk>=2.1"]
 webrtc-aec = ["aec-audio-processing>=0.1"]
 local-audio = ["sounddevice>=0.4", "numpy>=1.26"]
@@ -228,6 +238,9 @@ conflicts = [
 target-version = "py312"
 line-length = 99
 src = ["src", "tests"]
+# Vendored, gradio-free WebRTC transport (see src/roomkit/webrtc/LICENSE) — kept
+# close to upstream fastrtc 0.0.34, not restyled to roomkit conventions.
+extend-exclude = ["src/roomkit/webrtc/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "PT", "ASYNC"]

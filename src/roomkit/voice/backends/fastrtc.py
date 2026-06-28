@@ -544,7 +544,7 @@ def mount_fastrtc_voice(
             ``None`` for unlimited connections (e.g. multi-participant calls).
             Defaults to 1.
     """
-    from fastrtc import AsyncStreamHandler, Stream
+    from roomkit.webrtc import AsyncStreamHandler, Stream
 
     backend._session_factory = session_factory  # ty: ignore[unresolved-attribute]
 
@@ -587,7 +587,7 @@ def mount_fastrtc_voice(
 
         async def start_up(self) -> None:
             """Called once per connection — run auth and detect transport."""
-            from fastrtc.utils import current_context
+            from roomkit.webrtc.utils import current_context
 
             ctx = current_context.get()
             if not ctx:
@@ -610,7 +610,7 @@ def mount_fastrtc_voice(
                     return
 
         async def receive(self, frame: tuple[int, Any]) -> None:
-            from fastrtc.utils import current_context
+            from roomkit.webrtc.utils import current_context
 
             if self._rejected:
                 return

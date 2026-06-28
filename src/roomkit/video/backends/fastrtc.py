@@ -333,7 +333,7 @@ def mount_fastrtc_av(
         auth: Optional async auth callback.
         concurrency_limit: Max concurrent connections (None for unlimited).
     """
-    from fastrtc import AsyncAudioVideoStreamHandler, Stream
+    from roomkit.webrtc import AsyncAudioVideoStreamHandler, Stream
 
     backend._session_factory = session_factory  # ty: ignore[unresolved-attribute]
 
@@ -377,7 +377,7 @@ def mount_fastrtc_av(
 
         async def start_up(self) -> None:
             """Called once per connection — run auth and detect transport."""
-            from fastrtc.utils import current_context
+            from roomkit.webrtc.utils import current_context
 
             ctx = current_context.get()
             if not ctx:
@@ -405,7 +405,7 @@ def mount_fastrtc_av(
 
         async def receive(self, frame: tuple[int, Any]) -> None:
             """Handle inbound audio frames."""
-            from fastrtc.utils import current_context
+            from roomkit.webrtc.utils import current_context
 
             if self._rejected:
                 return

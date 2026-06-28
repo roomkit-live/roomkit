@@ -36,8 +36,6 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
-from fastrtc import AsyncStreamHandler
-
 from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.auth import AuthCallback
 from roomkit.voice.backends.base import (
@@ -46,11 +44,13 @@ from roomkit.voice.backends.base import (
     VoiceBackend,
 )
 from roomkit.voice.base import AudioChunk, VoiceSession
+from roomkit.webrtc import AsyncStreamHandler
 
 if TYPE_CHECKING:
     import numpy as np
     from fastapi import FastAPI
-    from fastrtc import Stream
+
+    from roomkit.webrtc import Stream
 
 logger = logging.getLogger("roomkit.voice.realtime.fastrtc_transport")
 
@@ -105,7 +105,7 @@ class _PassthroughHandler(AsyncStreamHandler):
 
     async def start_up(self) -> None:
         """Called by FastRTC when the WebRTC connection is established."""
-        from fastrtc.utils import current_context
+        from roomkit.webrtc.utils import current_context
 
         ctx = current_context.get()
         if ctx:
@@ -454,7 +454,7 @@ def mount_fastrtc_realtime(
             once the limit is reached. Raise it to host several simultaneous
             voice sessions on one transport.
     """
-    from fastrtc import Stream
+    from roomkit.webrtc import Stream
 
     handler = _PassthroughHandler(
         transport,

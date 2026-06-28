@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-pytest.importorskip("fastrtc", reason="fastrtc not installed")
+pytest.importorskip("roomkit.webrtc", reason="roomkit[fastrtc] transport deps not installed")
 
 from roomkit.voice.base import VoiceSession
 
@@ -364,7 +364,7 @@ class TestMountConcurrencyLimit:
         from roomkit.voice.realtime import fastrtc_transport as mod
 
         app = MagicMock()
-        with patch("fastrtc.Stream") as mock_stream:
+        with patch("roomkit.webrtc.Stream") as mock_stream:
             mod.mount_fastrtc_realtime(app, transport, **kwargs)
         return mock_stream
 

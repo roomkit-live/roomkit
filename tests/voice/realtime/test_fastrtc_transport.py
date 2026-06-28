@@ -20,7 +20,7 @@ def _make_session(sid: str = "s1") -> VoiceSession:
 
 
 def _load_module():
-    """Import the transport module with fastrtc and numpy mocked."""
+    """Import the transport module with the WebRTC transport and numpy mocked."""
     fake_np = SimpleNamespace(
         int16="int16",
         ndarray=type("ndarray", (), {}),
@@ -34,19 +34,19 @@ def _load_module():
             self.input_sample_rate = kwargs.get("input_sample_rate", 16000)
             self.channel = None
 
-    fake_fastrtc = SimpleNamespace(
+    fake_webrtc = SimpleNamespace(
         AsyncStreamHandler=FakeAsyncStreamHandler,
         Stream=lambda **kw: SimpleNamespace(mount=lambda app, path: None),
     )
 
-    fake_fastrtc_utils = SimpleNamespace(
+    fake_webrtc_utils = SimpleNamespace(
         current_context=SimpleNamespace(get=lambda: None),
     )
 
     mods = {
         "numpy": fake_np,
-        "fastrtc": fake_fastrtc,
-        "fastrtc.utils": fake_fastrtc_utils,
+        "roomkit.webrtc": fake_webrtc,
+        "roomkit.webrtc.utils": fake_webrtc_utils,
     }
     with patch.dict(sys.modules, mods):
         import roomkit.voice.realtime.fastrtc_transport as mod
