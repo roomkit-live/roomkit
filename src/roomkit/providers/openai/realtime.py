@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -157,6 +158,66 @@ class OpenAIRealtimeProvider(OpenAIRealtimeBase):
 
         logger.info("Sending session.update: turn_detection=%s, voice=%s", turn_detection, voice)
         return session_config
+
+    # -- Mid-session reconfigure --------------------------------------------
+
+    async def reconfigure(
+        self,
+        session: VoiceSession,
+        *,
+        system_prompt: str | None = None,
+        voice: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float | None = None,
+        provider_config: dict[str, Any] | None = None,
+    ) -> None:
+        """Apply a partial, in-band ``session.update`` — never reconnect.
+
+        Tool Search and skill activation call ``reconfigure`` mid-conversation
+        to expose newly matched tools. The inherited base implementation
+        disconnects and reconnects the socket, which on the OpenAI Realtime
+        wire throws away the conversation *and* the in-flight tool call (its
+        ``call_id`` is connection-scoped), so discovery silently breaks. The
+        Realtime API accepts partial ``session.update`` events at any time, so
+        we patch only the changed fields in place and leave the live session
+        (audio format, turn detection, history) untouched.
+
+        Fields left at ``None`` are omitted from the payload and stay
+        unchanged (passing an empty list for ``tools`` does clear them).
+        ``temperature`` is ignored (the GA API rejects it). ``voice`` is
+        best-effort: the GA API refuses a voice change once the model has
+        produced audio.
+        """
+        ws = self._connections.get(session.id)
+        if ws is None:
+            logger.debug("reconfigure skipped — no live connection (session %s)", session.id)
+            return
+
+        session_patch: dict[str, Any] = {"type": "realtime"}
+        if system_prompt is not None:
+            session_patch["instructions"] = system_prompt
+        if tools is not None:
+            session_patch["tools"] = self._format_session_tools(tools)
+        if voice is not None:
+            session_patch["audio"] = {"output": {"voice": voice}}
+        if temperature is not None:
+            logger.warning(
+                "OpenAI Realtime GA API does not support temperature; ignoring on reconfigure"
+            )
+
+        # Only the "type" anchor present → nothing actually changed.
+        if len(session_patch) == 1:
+            return
+
+        logger.info(
+            "[OpenAI →] session.update (reconfigure): instructions=%s tools=%s voice=%s "
+            "(session %s)",
+            system_prompt is not None,
+            len(session_patch["tools"]) if "tools" in session_patch else "unchanged",
+            voice,
+            session.id,
+        )
+        await ws.send(json.dumps({"type": "session.update", "session": session_patch}))
 
     # -- Builders ------------------------------------------------------------
 
