@@ -218,7 +218,11 @@ class TestAnthropicAIProvider:
             await provider.generate(ctx)
 
             call_kwargs = provider._client.messages.stream.call_args[1]
-            assert call_kwargs["system"] == "You are helpful."
+            # Prompt caching (on by default) lifts the system prompt into a
+            # cache-marked block.
+            assert call_kwargs["system"] == [
+                {"type": "text", "text": "You are helpful.", "cache_control": {"type": "ephemeral"}}
+            ]
 
     @pytest.mark.asyncio
     async def test_generate_maps_usage(self) -> None:

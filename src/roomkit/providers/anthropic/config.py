@@ -18,6 +18,13 @@ class AnthropicConfig(BaseModel):
     """Override the base URL (e.g., for Claude Code sandbox proxy)."""
     extra_headers: dict[str, str] | None = None
     """Extra headers sent with every request (e.g., X-Tenant-ID)."""
+    enable_prompt_caching: bool = True
+    """Apply Anthropic prompt caching (explicit ``cache_control`` markers) to
+    the stable request prefix — tools, system prompt, and the conversation
+    suffix. Every tool-loop round re-sends the full context; without markers
+    it is billed at the full input rate on every round, with them the prefix
+    re-reads at the cached rate (10%). Disable for proxies that reject
+    ``cache_control`` blocks."""
     use_adaptive_thinking: bool = False
     """Send extended thinking as ``{"type": "adaptive"}`` instead of the
     deprecated ``{"type": "enabled", "budget_tokens": N}``. Anthropic's newer

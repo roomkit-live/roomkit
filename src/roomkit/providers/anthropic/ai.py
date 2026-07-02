@@ -210,7 +210,49 @@ class AnthropicAIProvider(AIProvider):
                 }
                 for t in context.tools
             ]
+        if self._config.enable_prompt_caching:
+            self._apply_cache_control(kwargs)
         return kwargs
+
+    # Block types that accept a cache_control marker — notably NOT
+    # ``thinking`` blocks, which the API rejects as cache targets.
+    _CACHEABLE_BLOCK_TYPES = ("text", "tool_result", "tool_use", "image")
+
+    def _apply_cache_control(self, kwargs: dict[str, Any]) -> None:
+        """Mark the stable request prefix for Anthropic prompt caching.
+
+        Layout (the API allows at most 4 markers): the tools array, the
+        system prompt, and the last two eligible messages — the incremental-
+        suffix pattern: on round N everything up to round N-1's marker is a
+        prefix hit re-read at the cached rate instead of full price. Content
+        below the provider's cacheable minimum is silently uncached by the
+        API; markers there are harmless.
+        """
+        marker = {"type": "ephemeral"}
+        tools = kwargs.get("tools")
+        if isinstance(tools, list) and tools:
+            tools[-1]["cache_control"] = marker
+        system = kwargs.get("system")
+        if isinstance(system, str) and system:
+            kwargs["system"] = [{"type": "text", "text": system, "cache_control": marker}]
+        marked = 0
+        for msg in reversed(kwargs.get("messages", [])):
+            if marked >= 2:
+                break
+            content = msg.get("content")
+            if isinstance(content, str):
+                if not content:
+                    continue
+                msg["content"] = [{"type": "text", "text": content, "cache_control": marker}]
+                marked += 1
+                continue
+            if isinstance(content, list):
+                for block in reversed(content):
+                    if isinstance(block, dict) and block.get("type") in self._CACHEABLE_BLOCK_TYPES:
+                        block["cache_control"] = marker
+                        marked += 1
+                        break
+        return
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """Yield structured events from the Anthropic Messages streaming API.
