@@ -126,20 +126,33 @@ class GeminiAIProvider(AIProvider):
             ):
                 # Model message with function calls
                 parts = []
+                # Track the round's signature so parallel calls Gemini left
+                # unsigned replay signed anyway: the API emits the
+                # thought_signature on the FIRST functionCall part of a
+                # parallel group only, but its validator rejects any history
+                # functionCall part without one ("Function call is missing a
+                # thought_signature", observed live on gemini-3.5-flash with
+                # a 2-call round). Reusing the group's signature satisfies it.
+                round_sig: bytes | None = None
                 for p in msg.content:
                     if isinstance(p, AITextPart):
                         parts.append(self._types.Part.from_text(text=p.text))
                     elif isinstance(p, AIToolCallPart):
                         sig = p.metadata.get("thought_signature")
                         if sig:
+                            round_sig = base64.b64decode(sig)
+                        if round_sig is not None:
+                            # No ``thought=True`` here — a signed functionCall
+                            # part is NOT a thought part, and flagging it as
+                            # one desyncs Google's validator from the shape it
+                            # originally streamed.
                             parts.append(
                                 self._types.Part(
                                     function_call=self._types.FunctionCall(
                                         name=p.name,
                                         args=p.arguments,
                                     ),
-                                    thought=True,
-                                    thought_signature=base64.b64decode(sig),
+                                    thought_signature=round_sig,
                                 )
                             )
                         else:
