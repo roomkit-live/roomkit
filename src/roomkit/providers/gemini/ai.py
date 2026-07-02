@@ -318,9 +318,16 @@ class GeminiAIProvider(AIProvider):
                     # Canonical key names (input_tokens / output_tokens) so the
                     # downstream usage tracker records Gemini like every other
                     # provider — the SDK calls them prompt/candidates counts.
+                    # Gemini's prompt count INCLUDES implicitly-cached tokens;
+                    # report them separately (Anthropic-style accounting, where
+                    # input excludes cache reads) so cost math doesn't double-
+                    # charge the cached prefix and cache rates can apply.
+                    prompt = chunk.usage_metadata.prompt_token_count or 0
+                    cached = chunk.usage_metadata.cached_content_token_count or 0
                     usage = {
-                        "input_tokens": chunk.usage_metadata.prompt_token_count or 0,
+                        "input_tokens": max(prompt - cached, 0),
                         "output_tokens": chunk.usage_metadata.candidates_token_count or 0,
+                        "cache_read_input_tokens": cached,
                     }
 
                 if not chunk.candidates or not chunk.candidates[0].content:
