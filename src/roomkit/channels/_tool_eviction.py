@@ -13,6 +13,11 @@ logger = logging.getLogger("roomkit.channels.ai")
 
 _MAX_EVICTED = 50
 
+# Chars reserved per read_stored_result page for the JSON envelope plus a
+# margin, so worst-case escaping of the content still leaves the page under
+# the re-eviction bound (4 * threshold_tokens chars). See handle_read.
+_PAGE_ENVELOPE_CHARS = 128
+
 
 class ToolEviction:
     """Stores large tool results and provides paginated re-reading.
@@ -92,13 +97,17 @@ class ToolEviction:
             available = [rid for scope, rid in self._store if scope == room]
             return json.dumps({"error": f"Result '{result_id}' not found", "available": available})
 
-        # Char budget per page: just under the eviction threshold so a page
-        # can never be re-evicted on return. threshold_tokens is in TOKENS
-        # (~4 chars each); the previous budget of threshold_tokens CHARS made
-        # pages 4x smaller than allowed — a 50k-char result took ~11 paging
-        # rounds, each re-sending the whole conversation context. 3 chars per
-        # threshold token keeps ~25% headroom for JSON escaping + envelope.
-        budget = max(1, self.threshold_tokens * 3)
+        # Char budget per page. The page returns as a JSON string (the content
+        # re-escaped, wrapped in an envelope) and is re-measured against
+        # threshold_tokens on the way back, so it must never itself be evicted
+        # — else the agent chases evicted results forever. The estimator is
+        # len // 4 tokens, so the page must stay under 4 * threshold_tokens
+        # chars. JSON escaping can double the content (already-escaped tool
+        # output re-escapes worst-case ~2x) and the envelope adds a fixed
+        # overhead, so bound the raw content at 2 * threshold_tokens minus an
+        # envelope allowance: worst case 2*budget + envelope stays under
+        # 4 * threshold_tokens.
+        budget = max(1, self.threshold_tokens * 2 - _PAGE_ENVELOPE_CHARS)
         lines = self._paginable_lines(full_result, budget)
         total_lines = len(lines)
 
