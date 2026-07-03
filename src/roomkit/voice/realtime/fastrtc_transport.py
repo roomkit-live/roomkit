@@ -171,7 +171,9 @@ class _PassthroughHandler(AsyncStreamHandler):
         channel = self.channel
         if channel is None:
             return
-        if channel.readyState == "open":
+        # getattr: readyState exists on aiortc's RTCDataChannel at runtime but
+        # the vendored FastRTC DataChannel type stub doesn't declare it.
+        if getattr(channel, "readyState", None) == "open":
             channel.send(message)
 
     def send_audio_direct(self, audio: bytes) -> None:
@@ -183,7 +185,7 @@ class _PassthroughHandler(AsyncStreamHandler):
         # Skip once the peer has closed the channel — sending on a non-"open"
         # RTCDataChannel raises aiortc's InvalidStateError.
         channel = self.channel
-        if channel is None or channel.readyState != "open":
+        if channel is None or getattr(channel, "readyState", None) != "open":
             return
 
         from roomkit.voice.backends._mulaw import pcm16_to_mulaw

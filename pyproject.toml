@@ -207,6 +207,11 @@ filterwarnings = [
 [tool.ty.environment]
 python-version = "3.12"
 
+[tool.ty.src]
+# Vendored WebRTC transport is kept close to upstream fastrtc 0.0.34, not
+# restyled to roomkit conventions — excluded from type checking like ruff.
+exclude = ["src/roomkit/webrtc/"]
+
 [tool.ty.rules]
 # Optional dependencies not installed in the dev environment
 "unresolved-import" = "ignore"
@@ -214,12 +219,14 @@ python-version = "3.12"
 "empty-body" = "ignore"
 
 [[tool.ty.overrides]]
-# Realtime provider and video backend implementations intentionally
-# override ABC callback signatures (accept provider-specific arguments).
+# Realtime provider/transport and video backend implementations intentionally
+# override ABC callback signatures (provider-specific args, or the sync
+# override of FastRTC's async send_message in the voice realtime transport).
 include = [
     "src/roomkit/providers/*/realtime.py",
     "src/roomkit/providers/*/*/realtime.py",
     "src/roomkit/video/backends/*.py",
+    "src/roomkit/voice/realtime/*.py",
 ]
 [tool.ty.overrides.rules]
 "invalid-method-override" = "ignore"

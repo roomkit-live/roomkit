@@ -221,7 +221,11 @@ class TestAnthropicAIProvider:
             # Prompt caching (on by default) lifts the system prompt into a
             # cache-marked block.
             assert call_kwargs["system"] == [
-                {"type": "text", "text": "You are helpful.", "cache_control": {"type": "ephemeral"}}
+                {
+                    "type": "text",
+                    "text": "You are helpful.",
+                    "cache_control": {"type": "ephemeral"},
+                }
             ]
 
     @pytest.mark.asyncio

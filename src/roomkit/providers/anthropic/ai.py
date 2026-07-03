@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 from roomkit.providers.ai.base import (
     RETRYABLE_STATUS_CODES,
@@ -247,8 +247,11 @@ class AnthropicAIProvider(AIProvider):
                 marked += 1
                 continue
             if isinstance(content, list):
-                for block in reversed(content):
-                    if isinstance(block, dict) and block.get("type") in self._CACHEABLE_BLOCK_TYPES:
+                for raw in reversed(content):
+                    if not isinstance(raw, dict):
+                        continue
+                    block = cast(dict[str, Any], raw)
+                    if block.get("type") in self._CACHEABLE_BLOCK_TYPES:
                         block["cache_control"] = marker
                         marked += 1
                         break
