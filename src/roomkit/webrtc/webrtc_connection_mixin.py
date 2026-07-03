@@ -461,7 +461,11 @@ class WebRTCConnectionMixin:
 
         # handle offer
         await pc.setRemoteDescription(offer)
-        asyncio.create_task(self.connection_timeout(pc, body["webrtc_id"], 30))
+        # 60s, not 30s: a client behind a strict NAT reaches us only over a TURN
+        # relay, and relay allocation (e.g. Cloudflare TURN on K8s) can take tens
+        # of seconds — a 30s cap closed the connection before the relay pair was
+        # ever gathered, so those clients could never connect.
+        asyncio.create_task(self.connection_timeout(pc, body["webrtc_id"], 60))
         # send answer
         answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)  # type: ignore
