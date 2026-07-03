@@ -37,31 +37,35 @@ class AIEventsMixin:
         """Publish a tool call ephemeral event. Best-effort, never breaks the loop."""
         if self._realtime is None or not room_id:
             return
-        result_preview = 500
-        if event_type == EphemeralEventType.TOOL_CALL_START:
-            tc_data = [
-                {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in tool_calls
-            ]
-        else:  # TOOL_CALL_END — tool_calls are AIToolResultPart
-            tc_data = [
-                {
-                    "id": tc.tool_call_id,
-                    "name": tc.name,
-                    "result": tc.result[:result_preview]
-                    if len(tc.result) > result_preview
-                    else tc.result,
-                }
-                for tc in tool_calls
-                if isinstance(tc, AIToolResultPart)
-            ]
-        data: dict[str, Any] = {
-            "tool_calls": tc_data,
-            "round": round_idx,
-            "channel_id": self.channel_id,
-        }
-        if duration_ms is not None:
-            data["duration_ms"] = duration_ms
+        # Payload build is inside the try: an external proxy can put a non-str
+        # into AIToolResultPart.result, and len()/slice on it would raise
+        # outside the guard and break the tool loop — the opposite of the
+        # best-effort contract in this method's docstring.
         try:
+            result_preview = 500
+            if event_type == EphemeralEventType.TOOL_CALL_START:
+                tc_data = [
+                    {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in tool_calls
+                ]
+            else:  # TOOL_CALL_END — tool_calls are AIToolResultPart
+                tc_data = [
+                    {
+                        "id": tc.tool_call_id,
+                        "name": tc.name,
+                        "result": tc.result[:result_preview]
+                        if len(tc.result) > result_preview
+                        else tc.result,
+                    }
+                    for tc in tool_calls
+                    if isinstance(tc, AIToolResultPart)
+                ]
+            data: dict[str, Any] = {
+                "tool_calls": tc_data,
+                "round": round_idx,
+                "channel_id": self.channel_id,
+            }
+            if duration_ms is not None:
+                data["duration_ms"] = duration_ms
             await self._realtime.publish_to_room(
                 room_id,
                 EphemeralEvent(
