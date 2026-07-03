@@ -35,7 +35,9 @@ SKILLS_NO_SCRIPTS_NOTE = " Note: Script execution is not available in this envir
 ACTIVATE_SKILL_SCHEMA: dict[str, Any] = {
     "name": TOOL_ACTIVATE_SKILL,
     "description": (
-        "Activate a skill to get its full instructions, available scripts, and reference files."
+        "Activate a skill to get its full instructions, available scripts, "
+        "and reference files. This is THE way to load a skill for use — do "
+        "not fetch skill content through management/listing tools."
     ),
     "parameters": {
         "type": "object",
@@ -51,7 +53,13 @@ ACTIVATE_SKILL_SCHEMA: dict[str, Any] = {
 
 READ_REFERENCE_SCHEMA: dict[str, Any] = {
     "name": TOOL_READ_REFERENCE,
-    "description": "Read a reference file from a skill.",
+    "description": (
+        "Read ONE supplementary reference file bundled inside a skill "
+        "(listed by activate_skill under 'references'). Only for those "
+        "files: NOT for the skill's own instructions (activate_skill "
+        "already loads them) and NOT for stored tool results "
+        "(read_stored_result)."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
