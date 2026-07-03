@@ -145,7 +145,7 @@ def search_catalogue(
     return [tool for s, tool in scored if s >= cutoff][:max_results]
 
 
-def render_find_payload(matches: list[dict[str, Any]]) -> str:
+def render_find_payload(matches: list[dict[str, Any]], *, miss_hint: str | None = None) -> str:
     """JSON result for a ``find_tools`` call — compact: name + truncated
     description per match.
 
@@ -173,10 +173,17 @@ def render_find_payload(matches: list[dict[str, Any]]) -> str:
         ),
     }
     if not matches:
-        payload["_note"] = (
+        note = (
             "No tools matched. Try a different query, or call list_tools "
             "to see all available tools."
         )
+        if miss_hint:
+            # Host-provided steering for the no-match case — e.g. pointing at a
+            # pinned inventory tool that this search deliberately excludes
+            # (pinned tools never appear in matches, so a query that ONLY they
+            # would satisfy comes back empty without this).
+            note = f"{note} {miss_hint}"
+        payload["_note"] = note
     return json.dumps(payload)
 
 

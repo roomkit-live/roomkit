@@ -97,6 +97,7 @@ class AIToolsHost(Protocol):
     _tool_search: bool | None
     _tool_search_pinned: set[str]
     _tool_search_threshold: int
+    _tool_search_miss_hint: str | None
     channel_id: str
 
     @property
@@ -131,6 +132,7 @@ class AIToolsMixin:
     _tool_search: bool | None
     _tool_search_pinned: set[str]
     _tool_search_threshold: int
+    _tool_search_miss_hint: str | None
     channel_id: str
 
     # Cross-mixin methods — Any annotations avoid MRO shadowing
@@ -305,8 +307,57 @@ class AIToolsMixin:
             dispatch[TOOL_LIST_TOOLS] = self._handle_list_tools
         return dispatch
 
+    # Identical-call ceiling for regular tools: the 3rd repeat short-circuits.
+    # Two identical executions can be legitimate (retry after a transient
+    # failure); a model issuing the same call a third time is looping — the
+    # observed failure mode is a small model re-running one find_tools query
+    # for an entire turn and never answering.
+    _REPEAT_CALL_LIMIT = 3
+    # Pure within a turn (they read the fixed catalogue, mutate nothing): an
+    # identical repeat can never say anything new, so it short-circuits at 2.
+    _REPEAT_PURE_TOOLS = frozenset({TOOL_FIND_TOOLS, TOOL_LIST_TOOLS})
+    # After the guard has BLOCKED the same call this many extra times and the
+    # model still re-issues it, the advisory clearly isn't landing — force-stop
+    # the loop. Small models otherwise ignore the error and hammer the same
+    # call to the round limit (observed: sandbox_bash({}) called 37×).
+    _REPEAT_FORCE_STOP_AT = 3
+
+    def _repeated_call_guard(self, name: str, arguments: dict[str, Any]) -> str | None:
+        """Short-circuit a tool call repeated with identical arguments this turn."""
+        try:
+            key = (name, json.dumps(arguments or {}, sort_keys=True, default=str))
+        except (TypeError, ValueError):
+            return None
+        loop_ctx = self._get_loop_ctx()
+        counts = loop_ctx.repeated_calls
+        counts[key] = count = counts.get(key, 0) + 1
+        limit = 2 if name in self._REPEAT_PURE_TOOLS else self._REPEAT_CALL_LIMIT
+        if count < limit:
+            return None
+        # The model is ignoring the advisory and re-issuing anyway — pull the
+        # ripcord so the loop force-ends with a plain-text answer.
+        if count >= limit + self._REPEAT_FORCE_STOP_AT:
+            loop_ctx.force_stop = True
+        return json.dumps(
+            {
+                "error": (
+                    f"You already called '{name}' with these EXACT arguments "
+                    f"{count - 1} time(s) this turn — repeating it cannot yield "
+                    "anything new."
+                ),
+                "hint": (
+                    "STOP repeating this call. Use the results you already "
+                    "have, try genuinely different arguments, or answer the "
+                    "user now with what you know."
+                ),
+            }
+        )
+
     async def _channel_tool_handler(self, name: str, arguments: dict[str, Any]) -> str:
         """Unified tool dispatcher: channel-managed -> sandbox -> skill -> user tools."""
+        guard = self._repeated_call_guard(name, arguments)
+        if guard is not None:
+            return guard
         handler = self._channel_tool_dispatch.get(name)
         if handler is not None:
             result = handler(arguments)
@@ -326,8 +377,29 @@ class AIToolsMixin:
         if not self._skills:
             return json.dumps({"error": "No skills registry configured"})
         result_str, skill_name = await handle_activate_skill(arguments, self._skills)
+        loop_ctx = self._get_loop_ctx()
+        if skill_name and self._skills.get_skill(skill_name) is None:
+            # Small models routinely confuse skills with TOOLS ("activate the
+            # Spotify skill" when SpotifySearch/... are tools). Turn the dead
+            # end into the right outcome: reveal the matching tools and say so.
+            wanted = skill_name.lower()
+            matching = sorted(
+                t.name
+                for t in loop_ctx.all_context_tools
+                if wanted in t.name.lower()
+            )
+            if matching:
+                loop_ctx.revealed_tools.update(matching)
+                data = json.loads(result_str)
+                data["tools_hint"] = (
+                    f"{skill_name!r} is not a skill, but these TOOLS match and are "
+                    f"now in your tool list — call one directly instead: "
+                    f"{', '.join(matching[:8])}."
+                )
+                result_str = json.dumps(data)
+            return result_str
         # Track activation so gated tools become visible on next round
-        self._get_loop_ctx().activated_skills.add(skill_name)
+        loop_ctx.activated_skills.add(skill_name)
         return result_str
 
     async def _handle_read_reference(self, arguments: dict[str, Any]) -> str:
@@ -381,7 +453,7 @@ class AIToolsMixin:
         # schemas reach the model via the next round's re-filtered tool list
         # (loop_ctx.revealed_tools), so inlining them here would only risk
         # overflowing the tool-result size limit on verbose tools.
-        return render_find_payload(matches)
+        return render_find_payload(matches, miss_hint=self._tool_search_miss_hint)
 
     async def _handle_list_tools(self, arguments: dict[str, Any]) -> str:
         """List the turn's catalogue (name + short description). Reveals nothing."""

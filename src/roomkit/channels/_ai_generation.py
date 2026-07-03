@@ -433,6 +433,7 @@ class AIGenerationMixin:
         """Generate -> execute tools -> re-generate until a text response."""
         from roomkit.channels.ai import (
             _EMPTY_RETRY_NUDGE,
+            _FORCE_STOP_NUDGE,
             _current_loop_ctx,
             _ToolLoopContext,
         )
@@ -570,6 +571,17 @@ class AIGenerationMixin:
                 context, should_cancel = self._drain_steering_queue(context, loop_ctx)
                 if should_cancel:
                     logger.info("Tool loop cancelled after round %d", round_idx)
+                    break
+
+                # Anti-loop ripcord: the model keeps re-issuing a blocked
+                # identical call. Strip tools and do one final generation so it
+                # must answer in plain text, then stop.
+                if loop_ctx.force_stop:
+                    logger.warning("Anti-loop force-stop after round %d", round_idx)
+                    context.messages.append(AIMessage(role="user", content=_FORCE_STOP_NUDGE))
+                    response = await self._generate_with_retry(
+                        context.model_copy(update={"tools": []})
+                    )
                     break
 
                 if loop_ctx.all_context_tools:

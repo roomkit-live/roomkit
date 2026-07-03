@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Anti-loop guard in the tool loop.** A model that re-issues the *same*
+  tool call with identical arguments is short-circuited: `find_tools` /
+  `list_tools` (pure within a turn) on the 2nd identical call, other tools on
+  the 3rd, with an explicit "stop repeating" result. When the model ignores
+  the advisory and keeps hammering the same call, the guard pulls the
+  ripcord — tools are stripped and a final plain-text answer is forced, so the
+  turn ends instead of burning rounds (observed: `sandbox_bash({})` called
+  37×). Small local models were the main offender.
+- **`activate_skill` on an unknown skill that names TOOLS redirects.** Small
+  models confuse skills with tools ("activate the Spotify skill" when
+  `SpotifySearch`/… are tools). Instead of a dead-end "not found", the
+  matching tools are revealed into the tool list with a hint to call one
+  directly.
+- **`tool_search_miss_hint`** on `AIChannel` — host-supplied steering appended
+  to a `find_tools` no-match result, so a query only a *pinned* tool would
+  satisfy (pinned tools are excluded from search results by design) points the
+  model at the right pinned entry point instead of a dead end.
+
 ## [0.20.0] — 2026-07-03
 
 ### Added

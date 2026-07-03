@@ -97,6 +97,15 @@ class _ToolLoopContext:
     # — round 0 starts empty, a find_tools call reveals matches, and the next
     # round's tool re-filter shows them.
     revealed_tools: set[str] = field(default_factory=set)
+    # Anti-loop guard: count of identical (tool, canonical-args) calls this
+    # turn. Read by ``_repeated_call_guard`` to short-circuit a model stuck
+    # re-issuing the same call instead of answering.
+    repeated_calls: dict[tuple[str, str], int] = field(default_factory=dict)
+    # Set by ``_repeated_call_guard`` once a model keeps re-issuing an
+    # identical blocked call (it ignores the advisory error). The tool loop
+    # reads it and force-ends the turn with a plain-text answer instead of
+    # letting the model hammer the same call to the round limit.
+    force_stop: bool = False
     # Tools the agent already CALLED this conversation, seeded once per turn in
     # ``_build_context`` from ToolUsageMemory. Unlike ``revealed_tools`` (per-loop
     # find_tools discovery, starts empty), these are INHERITED across for_loop and
@@ -151,6 +160,15 @@ _EMPTY_RETRY_NUDGE = (
     "final answer to the user in plain text. Do not call any more tools."
 )
 
+# Injected when the anti-loop guard force-stops a stuck model. Tools are
+# stripped from the next (final) generation so it cannot keep looping.
+_FORCE_STOP_NUDGE = (
+    "You have repeated the same tool call with identical arguments several "
+    "times; it cannot produce anything new and further tool calls are "
+    "disabled. Stop now and reply to the user in plain text with a summary of "
+    "what you found and what remains, using the results already above."
+)
+
 
 class AIChannel(
     AIStreamingMixin,
@@ -203,6 +221,7 @@ class AIChannel(
         tool_search_pinned: list[str] | None = None,
         tool_search_threshold: int = DEFAULT_TOOL_SEARCH_THRESHOLD,
         tool_search_threshold_pct: float = DEFAULT_TOOL_SEARCH_THRESHOLD_PCT,
+        tool_search_miss_hint: str | None = None,
     ) -> None:
         super().__init__(channel_id)
         self._provider = provider
@@ -257,6 +276,7 @@ class AIChannel(
         self._tool_search_pinned: set[str] = set(tool_search_pinned or [])
         self._tool_search_threshold = tool_search_threshold
         self._tool_search_threshold_pct = tool_search_threshold_pct
+        self._tool_search_miss_hint = tool_search_miss_hint
 
         # Extract Tool objects: split into AITool definitions + composed handler
         from roomkit.tools.compose import extract_tools
