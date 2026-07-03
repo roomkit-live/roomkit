@@ -1392,26 +1392,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fastrtc"
-version = "0.0.34"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aioice" },
-    { name = "aiortc" },
-    { name = "audioop-lts", marker = "python_full_version >= '3.13' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
-    { name = "gradio" },
-    { name = "librosa" },
-    { name = "numba" },
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
-    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts' or extra != 'extra-7-roomkit-neutts'" },
-    { name = "standard-aifc", marker = "python_full_version >= '3.13' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
-    { name = "standard-sunau", marker = "python_full_version >= '3.13' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/e1/ea3968b064a183d9ac595dcbde0e6c67033afe01852d5854a0001f7c9faa/fastrtc-0.0.34-py3-none-any.whl", hash = "sha256:6da3831da9c2257810b6c5e5fd7cdd4f1636d716f47ab49d8bb3f2d5d9e499ac", size = 2806078, upload-time = "2025-11-24T17:14:12.68Z" },
-]
-
-[[package]]
 name = "ffmpy"
 version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1688,7 +1668,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiofiles" },
     { name = "anyio" },
-    { name = "audioop-lts", marker = "python_full_version >= '3.13' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "audioop-lts", marker = "python_full_version >= '3.13'" },
     { name = "brotli" },
     { name = "fastapi" },
     { name = "ffmpy" },
@@ -1698,8 +1678,7 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "jinja2" },
     { name = "markupsafe" },
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
-    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts' or extra != 'extra-7-roomkit-neutts'" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" } },
     { name = "orjson" },
     { name = "packaging" },
     { name = "pandas" },
@@ -3669,7 +3648,7 @@ version = "2.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
-    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts' or extra != 'extra-7-roomkit-neutts'" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts'" },
     { name = "python-dateutil" },
     { name = "pytz" },
     { name = "tzdata" },
@@ -5050,20 +5029,22 @@ aicoustics = [
     { name = "aic-sdk" },
 ]
 all = [
+    { name = "aiortc" },
     { name = "aiortp" },
     { name = "aiosipua", extra = ["rtp"] },
     { name = "anthropic" },
+    { name = "anyio" },
     { name = "asyncpg" },
     { name = "av" },
     { name = "botbuilder-core" },
     { name = "deepgram-sdk" },
     { name = "discord-py" },
     { name = "elevenlabs" },
-    { name = "fastrtc" },
     { name = "google-genai" },
     { name = "gradium" },
     { name = "httpx" },
     { name = "httpx-sse" },
+    { name = "librosa" },
     { name = "mcp" },
     { name = "mistralai" },
     { name = "neonize" },
@@ -5077,6 +5058,7 @@ all = [
     { name = "opentelemetry-sdk" },
     { name = "phonenumbers" },
     { name = "polargrid-sdk" },
+    { name = "pydub" },
     { name = "redis" },
     { name = "rich" },
     { name = "sherpa-onnx" },
@@ -5150,9 +5132,13 @@ elevenlabs = [
     { name = "elevenlabs" },
 ]
 fastrtc = [
-    { name = "fastrtc" },
+    { name = "aiortc" },
+    { name = "anyio" },
+    { name = "av" },
+    { name = "librosa" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts' or extra != 'extra-7-roomkit-neutts'" },
+    { name = "pydub" },
 ]
 gemini = [
     { name = "google-genai" },
@@ -5325,6 +5311,8 @@ requires-dist = [
     { name = "aec-audio-processing", marker = "extra == 'webrtc-aec'", specifier = ">=0.1" },
     { name = "aic-sdk", marker = "extra == 'aicoustics'", specifier = ">=2.1" },
     { name = "aioquic", marker = "extra == 'webtransport'", specifier = ">=1.0" },
+    { name = "aiortc", marker = "extra == 'all'", specifier = ">=1.6" },
+    { name = "aiortc", marker = "extra == 'fastrtc'", specifier = ">=1.6" },
     { name = "aiortp", marker = "extra == 'all'", specifier = ">=0.7.0" },
     { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.7.0" },
     { name = "aiortp", marker = "extra == 'sip'", specifier = ">=0.7.0" },
@@ -5335,11 +5323,14 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'dev'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'providers'", specifier = ">=0.30" },
+    { name = "anyio", marker = "extra == 'all'", specifier = ">=4.0" },
+    { name = "anyio", marker = "extra == 'fastrtc'", specifier = ">=4.0" },
     { name = "asyncpg", marker = "extra == 'all'", specifier = ">=0.29" },
     { name = "asyncpg", marker = "extra == 'dev'", specifier = ">=0.29" },
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.29" },
     { name = "av", marker = "extra == 'all'", specifier = ">=12.0.0" },
     { name = "av", marker = "extra == 'anam'", specifier = ">=12.0.0" },
+    { name = "av", marker = "extra == 'fastrtc'", specifier = ">=12.0.0" },
     { name = "av", marker = "extra == 'video'", specifier = ">=12.0.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7" },
     { name = "botbuilder-core", marker = "extra == 'all'", specifier = ">=4.14" },
@@ -5356,8 +5347,6 @@ requires-dist = [
     { name = "elevenlabs", marker = "extra == 'all'", specifier = ">=2.40" },
     { name = "elevenlabs", marker = "extra == 'elevenlabs'", specifier = ">=1.0" },
     { name = "elevenlabs", marker = "extra == 'realtime-elevenlabs'", specifier = ">=2.40" },
-    { name = "fastrtc", marker = "extra == 'all'", specifier = ">=0.0.18" },
-    { name = "fastrtc", marker = "extra == 'fastrtc'", specifier = ">=0.0.18" },
     { name = "google-genai", marker = "extra == 'all'", specifier = ">=2.0.0" },
     { name = "google-genai", marker = "extra == 'dev'", specifier = ">=2.0.0" },
     { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=2.0.0" },
@@ -5378,6 +5367,8 @@ requires-dist = [
     { name = "httpx-sse", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "httpx-sse", marker = "extra == 'sources'", specifier = ">=0.4" },
     { name = "httpx-sse", marker = "extra == 'sse'", specifier = ">=0.4" },
+    { name = "librosa", marker = "extra == 'all'", specifier = ">=0.10" },
+    { name = "librosa", marker = "extra == 'fastrtc'", specifier = ">=0.10" },
     { name = "mcp", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
     { name = "mediapipe", marker = "extra == 'mediapipe'", specifier = ">=0.10" },
@@ -5436,6 +5427,8 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.8" },
     { name = "pyautogui", marker = "extra == 'screen-input'", specifier = ">=0.9" },
     { name = "pydantic", specifier = ">=2.9" },
+    { name = "pydub", marker = "extra == 'all'", specifier = ">=0.25" },
+    { name = "pydub", marker = "extra == 'fastrtc'", specifier = ">=0.25" },
     { name = "pynacl", marker = "extra == 'dev'", specifier = ">=1.5" },
     { name = "pynacl", marker = "extra == 'pynacl'", specifier = ">=1.5" },
     { name = "pyroscope-io", marker = "extra == 'pyroscope'", specifier = ">=1.0" },
@@ -6645,8 +6638,8 @@ name = "uvicorn"
 version = "0.40.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "click" },
-    { name = "h11" },
+    { name = "click", marker = "sys_platform != 'emscripten' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "h11", marker = "sys_platform != 'emscripten' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c3/d1/8f3c683c9561a4e6689dd3b1d345c815f10f86acd044ee1fb9a4dcd0b8c5/uvicorn-0.40.0.tar.gz", hash = "sha256:839676675e87e73694518b5574fd0f24c9d97b46bea16df7b8c05ea1a51071ea", size = 81761, upload-time = "2025-12-21T14:16:22.45Z" }
 wheels = [
