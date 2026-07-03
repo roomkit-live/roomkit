@@ -24,6 +24,7 @@ from roomkit.providers.ai.base import (
     AITextPart,
     AIThinkingPart,
     AIToolCallPart,
+    AIToolResultPart,
     StreamDone,
     StreamTextDelta,
     StreamThinkingDelta,
@@ -496,6 +497,13 @@ class AIStreamingMixin:
                                 tool_id=event.id,
                                 arguments=args,
                             )
+                            if room_id:
+                                await self._publish_tool_event(
+                                    EphemeralEventType.TOOL_CALL_START,
+                                    room_id,
+                                    [event.model_copy(update={"arguments": args})],
+                                    _round_idx,
+                                )
 
                             t0_ext = time.monotonic()
                             decision = await handler.process_tool_call(
@@ -532,6 +540,20 @@ class AIStreamingMixin:
                                 duration_ms=ext_duration_ms,
                                 error=effective_result if tool_is_error else None,
                             )
+                            if room_id:
+                                await self._publish_tool_event(
+                                    EphemeralEventType.TOOL_CALL_END,
+                                    room_id,
+                                    [
+                                        AIToolResultPart(
+                                            tool_call_id=event.id,
+                                            name=event.name,
+                                            result=effective_result,
+                                        )
+                                    ],
+                                    _round_idx,
+                                    duration_ms=ext_duration_ms,
+                                )
                     elif isinstance(event, StreamDone):
                         if event.usage:
                             _round_usage = event.usage
@@ -671,6 +693,13 @@ class AIStreamingMixin:
                         tool_id=tc.id,
                         arguments=tc.arguments,
                     )
+                if room_id:
+                    await self._publish_tool_event(
+                        EphemeralEventType.TOOL_CALL_START,
+                        room_id,
+                        tool_calls,
+                        _round_idx,
+                    )
 
                 t0 = time.monotonic()
                 result_parts = await self._execute_tools_parallel(tool_calls, telemetry)
@@ -691,6 +720,14 @@ class AIStreamingMixin:
                         status="failed" if is_error else "completed",
                         duration_ms=duration_ms,
                         error=result_val if is_error else None,
+                    )
+                if room_id:
+                    await self._publish_tool_event(
+                        EphemeralEventType.TOOL_CALL_END,
+                        room_id,
+                        result_parts,
+                        _round_idx,
+                        duration_ms=duration_ms,
                     )
 
                 context, should_cancel = self._drain_steering_queue(context, loop_ctx)

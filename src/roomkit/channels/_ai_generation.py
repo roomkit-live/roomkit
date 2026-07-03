@@ -533,12 +533,29 @@ class AIGenerationMixin:
                     )
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
+                if room_id:
+                    await self._publish_tool_event(
+                        EphemeralEventType.TOOL_CALL_START,
+                        room_id,
+                        response.tool_calls,
+                        round_idx,
+                    )
+
                 t0 = time.monotonic()
                 result_parts = await self._execute_tools_parallel(
                     response.tool_calls, telemetry, parent_span_id=parent_span_id
                 )
                 duration_ms = int((time.monotonic() - t0) * 1000)
                 context.messages.append(AIMessage(role="tool", content=result_parts))
+
+                if room_id:
+                    await self._publish_tool_event(
+                        EphemeralEventType.TOOL_CALL_END,
+                        room_id,
+                        result_parts,
+                        round_idx,
+                        duration_ms=duration_ms,
+                    )
 
                 # Track the round for persistence
                 rounds.append(
