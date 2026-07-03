@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Ephemeral tool-call events.** The tool loops publish `TOOL_CALL_START` /
+  `TOOL_CALL_END` events so callers can surface tool activity live.
+- **Anthropic prompt caching.** Explicit cache breakpoints on the stable
+  request prefix cut input-token cost on multi-turn conversations.
+- **Gemini cached-token usage.** Implicitly-cached input tokens are now
+  reported in usage.
+
+### Changed
+
+- **Vendored, gradio-free WebRTC transport.** The WebRTC transport is
+  vendored under `roomkit.webrtc` (extracted from fastrtc 0.0.34); the
+  `fastrtc` extra now pulls the transport's own deps (aiortc, av, librosa,
+  pydub, anyio) instead of the upstream `fastrtc` package and its gradio 5.x
+  / pillow<12 constraints, so the default install is gradio-free.
+
+### Fixed
+
+- **OpenAI Realtime reconfigure is in-band.** `reconfigure` sends a partial
+  `session.update` instead of tearing down and reconnecting, so the
+  conversation and the in-flight tool call survive — Tool Search and skill
+  activation work over OpenAI Realtime.
+- **Gemini parallel tool calls** are replayed signed, never as thought parts.
+- **ICE connection timeout** raised 30s → 60s so a client reachable only over
+  a slow TURN relay (strict NAT) can connect before the timeout fires.
+- **`read_stored_result` paging.** Pages carry more content per round while
+  staying under the re-eviction bound even for worst-case JSON escaping, so a
+  large evicted result reads back in a few rounds without looping.
+
 ## [0.19.0] — 2026-06-26
 
 ### Added
