@@ -84,7 +84,7 @@ class ToolEviction:
         """
         result_id = arguments.get("result_id", "")
         offset = arguments.get("offset", 0)
-        limit = arguments.get("limit", 200)
+        limit = arguments.get("limit", 800)
 
         room = self._room_scope()
         full_result = self._store.get((room, result_id))
@@ -92,10 +92,13 @@ class ToolEviction:
             available = [rid for scope, rid in self._store if scope == room]
             return json.dumps({"error": f"Result '{result_id}' not found", "available": available})
 
-        # Char budget per page: threshold_tokens chars ≈ threshold/4 tokens of
-        # content, leaving ample headroom for JSON escaping (worst case 2×)
-        # plus the response envelope.
-        budget = max(1, self.threshold_tokens)
+        # Char budget per page: just under the eviction threshold so a page
+        # can never be re-evicted on return. threshold_tokens is in TOKENS
+        # (~4 chars each); the previous budget of threshold_tokens CHARS made
+        # pages 4x smaller than allowed — a 50k-char result took ~11 paging
+        # rounds, each re-sending the whole conversation context. 3 chars per
+        # threshold token keeps ~25% headroom for JSON escaping + envelope.
+        budget = max(1, self.threshold_tokens * 3)
         lines = self._paginable_lines(full_result, budget)
         total_lines = len(lines)
 
