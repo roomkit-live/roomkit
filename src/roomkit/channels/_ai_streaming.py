@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._ai_events import THINKING_PREVIEW_LIMIT
+from roomkit.channels._ai_loop_rules import AIToolLoopRulesMixin
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
@@ -21,9 +21,6 @@ from roomkit.models.streaming import (
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
-    AITextPart,
-    AIThinkingPart,
-    AIToolCallPart,
     AIToolResultPart,
     StreamDone,
     StreamTextDelta,
@@ -34,7 +31,7 @@ from roomkit.realtime.base import EphemeralEventType
 from roomkit.telemetry.base import Attr, SpanKind
 
 if TYPE_CHECKING:
-    from roomkit.channels.ai import _ContentPart, _ToolLoopContext
+    from roomkit.channels.ai import _ToolLoopContext
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.providers.ai.base import StreamEvent
@@ -124,11 +121,13 @@ class AIStreamingHost(Protocol):
         _build_context: ``AIContextMixin`` — builds AI context from room state.
         _drain_steering_queue: ``AISteeringMixin`` — drains pending directives.
         _generate_stream_with_retry: ``AIResilienceMixin`` — stream with retry.
-        _execute_tools_parallel: ``AIToolsMixin`` — execute tool calls concurrently.
-        _apply_tool_filters: ``AIToolPolicyMixin`` — apply policy + gating filters.
         _publish_thinking_event: ``AIEventsMixin`` — publish thinking events.
         _publish_tool_event: ``AIEventsMixin`` — publish tool call events.
         _telemetry_provider: ``AIGenerationMixin`` property — telemetry provider.
+
+    The shared per-round loop rules (force-stop, empty-retry, budget, parts
+    assembly, tool execution) come from :class:`AIToolLoopRulesMixin`, the
+    mixin's own base — see :class:`AIToolLoopRulesHost` for that contract.
     """
 
     _provider: Any
@@ -156,14 +155,6 @@ class AIStreamingHost(Protocol):
     async def _generate_stream_with_retry(
         self, context: AIContext
     ) -> AsyncIterator[StreamEvent]: ...
-    async def _execute_tools_parallel(
-        self,
-        tool_calls: list[Any],
-        telemetry: Any,
-        *,
-        parent_span_id: str | None = ...,
-    ) -> list[_ContentPart]: ...
-    def _apply_tool_filters(self, tools: list[Any]) -> list[Any]: ...
     async def _publish_thinking_event(
         self,
         event_type: EphemeralEventType,
@@ -184,7 +175,7 @@ class AIStreamingHost(Protocol):
     def _telemetry_provider(self) -> NoopTelemetryProvider: ...
 
 
-class AIStreamingMixin:
+class AIStreamingMixin(AIToolLoopRulesMixin):
     """Streaming AI response generation with tool loop and deduplication.
 
     Host contract: :class:`AIStreamingHost`.
@@ -212,8 +203,6 @@ class AIStreamingMixin:
     # (Agent.super()._build_context()). Call sites use type: ignore instead.
     _drain_steering_queue: Any  # see AIStreamingHost
     _generate_stream_with_retry: Any  # see AIStreamingHost
-    _execute_tools_parallel: Any  # see AIStreamingHost
-    _apply_tool_filters: Any  # see AIStreamingHost
     _publish_thinking_event: Any  # see AIStreamingHost
     _publish_tool_event: Any  # see AIStreamingHost
     _telemetry_provider: Any  # see AIStreamingHost
@@ -339,8 +328,6 @@ class AIStreamingMixin:
     ) -> AsyncIterator[StreamDelta]:
         """Stream text deltas, executing tool calls between generation rounds."""
         from roomkit.channels.ai import (
-            _EMPTY_RETRY_NUDGE,
-            _FORCE_STOP_NUDGE,
             _current_loop_ctx,
             _ToolLoopContext,
         )
@@ -378,38 +365,20 @@ class AIStreamingMixin:
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
                 return
-            deadline = (
-                asyncio.get_running_loop().time() + self._tool_loop_timeout_seconds
-                if self._tool_loop_timeout_seconds
-                else None
-            )
+            state = self._new_loop_state("Streaming tool loop")
 
             _dedup_prefix = ""
             _saw_tool_call_any = False
-            _empty_retries = 0
-            _force_stop_nudged = False
 
             for _round_idx in range(self._max_tool_rounds + 1):
                 if loop_ctx.cancel_event.is_set():
                     logger.info("Streaming tool loop cancelled before round %d", _round_idx)
                     return
 
-                # Anti-loop ripcord: the guard set force_stop because the model
-                # keeps re-issuing a blocked identical call. Strip tools (and
-                # nudge once) so this round must produce a plain-text answer
-                # instead of hammering the same call to the round limit.
-                if loop_ctx.force_stop:
-                    if not _force_stop_nudged:
-                        logger.warning("Streaming anti-loop force-stop at round %d", _round_idx)
-                        context.messages.append(
-                            AIMessage(role="user", content=_FORCE_STOP_NUDGE)
-                        )
-                        _force_stop_nudged = True
-                    context = context.model_copy(update={"tools": []})
-                elif loop_ctx.all_context_tools:
-                    context = context.model_copy(
-                        update={"tools": self._apply_tool_filters(loop_ctx.all_context_tools)}
-                    )
+                # Anti-loop ripcord (force_stop): strip tools + nudge once so
+                # this round must produce a plain-text answer instead of
+                # hammering the same call to the round limit.
+                context = self._prepare_round_context(context, loop_ctx, state, _round_idx)
 
                 thinking_parts: list[str] = []
                 thinking_signature: str | None = None
@@ -606,20 +575,13 @@ class AIStreamingMixin:
                     # Final answer round. If it produced no text *after* a tool
                     # round, the model skipped verbalizing the result — re-prompt
                     # once (bounded) for the final answer instead of ending empty.
-                    if (
-                        _saw_tool_call_any
-                        and not "".join(text_parts).strip()
-                        and _empty_retries < self._max_empty_retries
-                        and not (deadline and asyncio.get_running_loop().time() >= deadline)
+                    if self._try_empty_retry(
+                        context,
+                        loop_ctx,
+                        state,
+                        had_tool_round=_saw_tool_call_any,
+                        final_text="".join(text_parts),
                     ):
-                        _empty_retries += 1
-                        logger.warning(
-                            "Streaming empty response after tools; re-prompting for "
-                            "final answer (retry %d/%d)",
-                            _empty_retries,
-                            self._max_empty_retries,
-                        )
-                        context.messages.append(AIMessage(role="user", content=_EMPTY_RETRY_NUDGE))
                         continue
                     return
 
@@ -658,7 +620,7 @@ class AIStreamingMixin:
                     )
                     return
 
-                if deadline and asyncio.get_running_loop().time() >= deadline:
+                if state.deadline_exceeded():
                     logger.warning(
                         "Streaming tool loop timeout after %d rounds (%.0fs)",
                         _round_idx,
@@ -666,10 +628,7 @@ class AIStreamingMixin:
                     )
                     return
 
-                if _round_idx == self._tool_loop_warn_after:
-                    logger.warning(
-                        "Streaming tool loop reached %d rounds, still running", _round_idx
-                    )
+                state.warn_if_needed(_round_idx)
 
                 logger.info(
                     "Streaming tool round %d: %d call(s)",
@@ -677,27 +636,15 @@ class AIStreamingMixin:
                     len(tool_calls),
                 )
 
-                parts: list[_ContentPart] = []
-                if thinking_parts or thinking_signature:
-                    parts.append(
-                        AIThinkingPart(
-                            thinking="".join(thinking_parts),
-                            signature=thinking_signature,
-                        )
-                    )
                 accumulated_text = "".join(text_parts)
+                parts = self._build_assistant_parts(
+                    "".join(thinking_parts),
+                    thinking_signature,
+                    accumulated_text,
+                    tool_calls,
+                )
                 if accumulated_text:
-                    parts.append(AITextPart(text=accumulated_text))
                     _dedup_prefix = accumulated_text
-                for tc in tool_calls:
-                    parts.append(
-                        AIToolCallPart(
-                            id=tc.id,
-                            name=tc.name,
-                            arguments=tc.arguments,
-                            metadata=tc.metadata,
-                        )
-                    )
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
                 # Yield start markers for each tool call (persistence boundary)
@@ -707,18 +654,13 @@ class AIStreamingMixin:
                         tool_id=tc.id,
                         arguments=tc.arguments,
                     )
-                if room_id:
-                    await self._publish_tool_event(
-                        EphemeralEventType.TOOL_CALL_START,
-                        room_id,
-                        tool_calls,
-                        _round_idx,
-                    )
-
-                t0 = time.monotonic()
-                result_parts = await self._execute_tools_parallel(tool_calls, telemetry)
-                duration_ms = int((time.monotonic() - t0) * 1000)
-                context.messages.append(AIMessage(role="tool", content=result_parts))
+                result_parts, duration_ms = await self._execute_round_tools(
+                    context,
+                    tool_calls,
+                    telemetry,
+                    room_id,
+                    _round_idx,
+                )
 
                 # Yield end markers with results (persistence boundary)
                 for tc, rp in zip(tool_calls, result_parts, strict=False):

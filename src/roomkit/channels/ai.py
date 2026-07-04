@@ -25,6 +25,12 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels._ai_context import AIContextMixin
 from roomkit.channels._ai_events import AIEventsMixin
 from roomkit.channels._ai_generation import AIGenerationMixin
+from roomkit.channels._ai_loop_rules import (
+    _EMPTY_RETRY_NUDGE as _EMPTY_RETRY_NUDGE,
+)
+from roomkit.channels._ai_loop_rules import (
+    _FORCE_STOP_NUDGE as _FORCE_STOP_NUDGE,
+)
 from roomkit.channels._ai_policy import AIToolPolicyMixin
 from roomkit.channels._ai_resilience import AIResilienceMixin
 from roomkit.channels._ai_steering import AISteeringMixin
@@ -148,25 +154,6 @@ class _ToolLoopContext:
 
 _current_loop_ctx: contextvars.ContextVar[_ToolLoopContext | None] = contextvars.ContextVar(
     "_current_loop_ctx", default=None
-)
-
-
-# Corrective nudge re-injected when a generation round ends after tool calls
-# without any final text (common with small local models): the tool results
-# are in context, the model just failed to verbalize the answer. Re-prompting
-# for the final answer recovers it. Bounded by ``max_empty_retries``.
-_EMPTY_RETRY_NUDGE = (
-    "You called tools and already have their results above. Now write your "
-    "final answer to the user in plain text. Do not call any more tools."
-)
-
-# Injected when the anti-loop guard force-stops a stuck model. Tools are
-# stripped from the next (final) generation so it cannot keep looping.
-_FORCE_STOP_NUDGE = (
-    "You have repeated the same tool call with identical arguments several "
-    "times; it cannot produce anything new and further tool calls are "
-    "disabled. Stop now and reply to the user in plain text with a summary of "
-    "what you found and what remains, using the results already above."
 )
 
 

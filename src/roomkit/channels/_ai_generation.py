@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.channels._ai_loop_rules import AIToolLoopRulesMixin
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import EventType
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
@@ -16,9 +16,6 @@ from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
     AIResponse,
-    AITextPart,
-    AIThinkingPart,
-    AIToolCallPart,
     ProviderError,
 )
 from roomkit.realtime.base import EphemeralEventType
@@ -26,7 +23,7 @@ from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.noop import NoopTelemetryProvider
 
 if TYPE_CHECKING:
-    from roomkit.channels.ai import _ContentPart, _ToolLoopContext
+    from roomkit.channels.ai import _ToolLoopContext
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.models.enums import ChannelType
@@ -74,13 +71,15 @@ class AIGenerationHost(Protocol):
         _build_context: ``AIContextMixin`` — builds AI context from room state.
         _drain_steering_queue: ``AISteeringMixin`` — drains pending directives.
         _generate_with_retry: ``AIResilienceMixin`` — generate with retry/fallback.
-        _execute_tools_parallel: ``AIToolsMixin`` — execute tool calls concurrently.
-        _apply_tool_filters: ``AIToolPolicyMixin`` — apply policy + gating filters.
         _publish_thinking_event: ``AIEventsMixin`` — publish thinking events.
         _publish_tool_event: ``AIEventsMixin`` — publish tool call events.
         _is_context_overflow: ``AIResilienceMixin`` static — detect overflow errors.
         _compact_context: ``AIResilienceMixin`` — emergency context compaction.
         _extract_accumulated_text: ``AIResilienceMixin`` static — extract text.
+
+    The shared per-round loop rules (force-stop, empty-retry, budget, parts
+    assembly, tool execution) come from :class:`AIToolLoopRulesMixin`, the
+    mixin's own base — see :class:`AIToolLoopRulesHost` for that contract.
     """
 
     _provider: AIProvider
@@ -103,14 +102,6 @@ class AIGenerationHost(Protocol):
         self, context: AIContext, loop_ctx: _ToolLoopContext
     ) -> tuple[AIContext, bool]: ...
     async def _generate_with_retry(self, context: AIContext) -> AIResponse: ...
-    async def _execute_tools_parallel(
-        self,
-        tool_calls: list[Any],
-        telemetry: Any,
-        *,
-        parent_span_id: str | None = ...,
-    ) -> list[_ContentPart]: ...
-    def _apply_tool_filters(self, tools: list[Any]) -> list[Any]: ...
     async def _publish_thinking_event(
         self,
         event_type: EphemeralEventType,
@@ -134,7 +125,7 @@ class AIGenerationHost(Protocol):
     def _extract_accumulated_text(messages: list[AIMessage]) -> str: ...
 
 
-class AIGenerationMixin:
+class AIGenerationMixin(AIToolLoopRulesMixin):
     """Non-streaming AI response generation with tool loop.
 
     Host contract: :class:`AIGenerationHost`.
@@ -159,8 +150,6 @@ class AIGenerationMixin:
     # (Agent.super()._build_context()). Call sites use type: ignore instead.
     _drain_steering_queue: Any  # see AIGenerationHost
     _generate_with_retry: Any  # see AIGenerationHost
-    _execute_tools_parallel: Any  # see AIGenerationHost
-    _apply_tool_filters: Any  # see AIGenerationHost
     _publish_thinking_event: Any  # see AIGenerationHost
     _publish_tool_event: Any  # see AIGenerationHost
     _is_context_overflow: Any  # see AIGenerationHost
@@ -432,8 +421,6 @@ class AIGenerationMixin:
     ) -> ToolLoopResult:
         """Generate -> execute tools -> re-generate until a text response."""
         from roomkit.channels.ai import (
-            _EMPTY_RETRY_NUDGE,
-            _FORCE_STOP_NUDGE,
             _current_loop_ctx,
             _ToolLoopContext,
         )
@@ -444,7 +431,6 @@ class AIGenerationMixin:
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx
         rounds: list[ToolRound] = []
-        empty_retries = 0
         try:
             context, should_cancel = self._drain_steering_queue(context, loop_ctx)
             if should_cancel:
@@ -452,11 +438,7 @@ class AIGenerationMixin:
             response: AIResponse = await self._generate_with_retry(context)
             telemetry = self._telemetry_provider
             room_id = context.room.room.id if context.room else None
-            deadline = (
-                asyncio.get_running_loop().time() + self._tool_loop_timeout_seconds
-                if self._tool_loop_timeout_seconds
-                else None
-            )
+            state = self._new_loop_state("Tool loop")
 
             if response.thinking and room_id:
                 await self._publish_thinking_event(
@@ -471,23 +453,13 @@ class AIGenerationMixin:
                     # Final answer reached. If it is empty *after* we ran tools,
                     # the model skipped verbalizing the result — re-prompt once
                     # (bounded) for the final answer instead of returning nothing.
-                    if (
-                        self._tool_handler is not None
-                        and rounds
-                        and not (response.content or "").strip()
-                        and empty_retries < self._max_empty_retries
-                        and not loop_ctx.cancel_event.is_set()
-                        and not (deadline and asyncio.get_running_loop().time() >= deadline)
+                    if self._try_empty_retry(
+                        context,
+                        loop_ctx,
+                        state,
+                        had_tool_round=bool(rounds),
+                        final_text=response.content or "",
                     ):
-                        empty_retries += 1
-                        logger.warning(
-                            "Empty response after %d tool round(s); re-prompting for "
-                            "final answer (retry %d/%d)",
-                            len(rounds),
-                            empty_retries,
-                            self._max_empty_retries,
-                        )
-                        context.messages.append(AIMessage(role="user", content=_EMPTY_RETRY_NUDGE))
                         response = await self._generate_with_retry(context)
                         continue
                     break
@@ -496,7 +468,7 @@ class AIGenerationMixin:
                     logger.info("Tool loop cancelled before round %d", round_idx)
                     break
 
-                if deadline and asyncio.get_running_loop().time() >= deadline:
+                if state.deadline_exceeded():
                     logger.warning(
                         "Tool loop timeout after %d rounds (%.0fs)",
                         round_idx,
@@ -504,8 +476,7 @@ class AIGenerationMixin:
                     )
                     break
 
-                if round_idx == self._tool_loop_warn_after:
-                    logger.warning("Tool loop reached %d rounds, still running", round_idx)
+                state.warn_if_needed(round_idx)
 
                 logger.info(
                     "Tool round %d: %d call(s)",
@@ -513,41 +484,22 @@ class AIGenerationMixin:
                     len(response.tool_calls),
                 )
 
-                parts: list[_ContentPart] = []
-                if response.thinking:
-                    parts.append(
-                        AIThinkingPart(
-                            thinking=response.thinking,
-                            signature=response.thinking_signature,
-                        )
-                    )
-                if response.content:
-                    parts.append(AITextPart(text=response.content))
-                for tc in response.tool_calls:
-                    parts.append(
-                        AIToolCallPart(
-                            id=tc.id,
-                            name=tc.name,
-                            arguments=tc.arguments,
-                            metadata=tc.metadata,
-                        )
-                    )
+                parts = self._build_assistant_parts(
+                    response.thinking or "",
+                    response.thinking_signature,
+                    response.content or "",
+                    response.tool_calls,
+                )
                 context.messages.append(AIMessage(role="assistant", content=parts))
 
-                if room_id:
-                    await self._publish_tool_event(
-                        EphemeralEventType.TOOL_CALL_START,
-                        room_id,
-                        response.tool_calls,
-                        round_idx,
-                    )
-
-                t0 = time.monotonic()
-                result_parts = await self._execute_tools_parallel(
-                    response.tool_calls, telemetry, parent_span_id=parent_span_id
+                result_parts, duration_ms = await self._execute_round_tools(
+                    context,
+                    response.tool_calls,
+                    telemetry,
+                    room_id,
+                    round_idx,
+                    parent_span_id=parent_span_id,
                 )
-                duration_ms = int((time.monotonic() - t0) * 1000)
-                context.messages.append(AIMessage(role="tool", content=result_parts))
 
                 if room_id:
                     await self._publish_tool_event(
@@ -573,21 +525,12 @@ class AIGenerationMixin:
                     logger.info("Tool loop cancelled after round %d", round_idx)
                     break
 
-                # Anti-loop ripcord: the model keeps re-issuing a blocked
-                # identical call. Strip tools and do one final generation so it
-                # must answer in plain text, then stop.
+                # Anti-loop ripcord (force_stop): strip tools and do one final
+                # generation so the model must answer in plain text, then stop.
+                context = self._prepare_round_context(context, loop_ctx, state, round_idx)
                 if loop_ctx.force_stop:
-                    logger.warning("Anti-loop force-stop after round %d", round_idx)
-                    context.messages.append(AIMessage(role="user", content=_FORCE_STOP_NUDGE))
-                    response = await self._generate_with_retry(
-                        context.model_copy(update={"tools": []})
-                    )
+                    response = await self._generate_with_retry(context)
                     break
-
-                if loop_ctx.all_context_tools:
-                    context = context.model_copy(
-                        update={"tools": self._apply_tool_filters(loop_ctx.all_context_tools)}
-                    )
 
                 try:
                     response = await self._generate_with_retry(context)
