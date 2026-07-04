@@ -6,9 +6,9 @@ same business rules per round — force-stop ripcord, bounded empty-retry,
 deadline/warn budget, assistant-message assembly, tool execution — but
 differ in how a round is *generated* (blocking response vs streamed
 deltas). Keeping the rules here, as the single base of both loop mixins,
-makes it impossible to add a loop rule to one path and forget the other
-(that bug shipped once: force_stop was honored only by the non-streaming
-loop until commit bdd02fe).
+guarantees a loop rule cannot exist in one path and be missing from the
+other — a rule enforced by only one loop would silently cover only the
+providers that use that generation mode.
 """
 
 from __future__ import annotations

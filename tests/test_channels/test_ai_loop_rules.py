@@ -4,9 +4,8 @@ The non-streaming (``_run_tool_loop``) and streaming
 (``_run_streaming_tool_loop``) tool loops share their per-round business
 rules via ``AIToolLoopRulesMixin`` (``channels/_ai_loop_rules.py``). These
 tests patch a shared rule and assert BOTH paths reflect the patch — they
-fail if someone re-inlines a rule into one loop only (the force_stop
-regression fixed in bdd02fe was exactly that: a rule present in one path
-and absent from the other).
+fail if a rule is re-inlined into one loop only, which would leave the
+other generation mode without it.
 """
 
 from __future__ import annotations
