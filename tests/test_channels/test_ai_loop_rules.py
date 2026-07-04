@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from roomkit.channels.ai import _EMPTY_RETRY_NUDGE, AIChannel
-from roomkit.models.channel import ChannelBinding
+from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.room import Room
@@ -53,7 +53,7 @@ def _tool(i: int = 0) -> AIResponse:
     )
 
 
-async def _drain(output) -> None:
+async def _drain(output: ChannelOutput) -> None:
     if output.response_stream is not None:
         async for _ in output.response_stream:
             pass
@@ -65,7 +65,7 @@ async def test_prepare_round_context_drives_both_paths(monkeypatch, streaming: b
     invocations = {"n": 0}
     original = AIChannel._prepare_round_context
 
-    def stripping(self, context, loop_ctx, state, round_idx):  # noqa: ANN001
+    def stripping(self, context, loop_ctx, state, round_idx):
         invocations["n"] += 1
         prepared = original(self, context, loop_ctx, state, round_idx)
         return prepared.model_copy(update={"tools": []})
