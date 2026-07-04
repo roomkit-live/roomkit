@@ -210,3 +210,33 @@ async def test_force_stop_ends_loop_when_model_ignores_guard() -> None:
     # The final generation ran WITHOUT tools (force-stop strips them).
     last_call = provider.calls[-1]
     assert not last_call.tools
+
+
+async def test_force_stop_also_ends_the_STREAMING_loop() -> None:
+    """The streaming loop (ollama and other streaming providers) must honor
+    force_stop too — it re-filters tools every round, so without an explicit
+    check the guard flag is set but never acted on and the model keeps
+    hammering the blocked call (observed live: a find repeated ~10x)."""
+    executions = 0
+
+    async def handler(name: str, arguments: dict) -> str:
+        nonlocal executions
+        executions += 1
+        return json.dumps({"ok": True})
+
+    args = {"command": "find . -type f"}
+    provider = MockAIProvider(
+        ai_responses=[*[_same_call_response(f"t{i}", args) for i in range(10)], AIResponse(content="done")],
+        streaming=True,
+    )
+    ch = AIChannel("ai1", provider=provider, tool_handler=handler)
+    output = await ch.on_event(
+        make_event(body="go", channel_id="sms1"),
+        _binding([_ECHO_TOOL]),
+        RoomContext(room=Room(id="r1")),
+    )
+    if output.response_stream is not None:
+        async for _ in output.response_stream:
+            pass
+    # Blocked + force-stopped well before the 10 scripted repeats.
+    assert executions <= 2

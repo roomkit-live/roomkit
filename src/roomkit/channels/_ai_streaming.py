@@ -340,6 +340,7 @@ class AIStreamingMixin:
         """Stream text deltas, executing tool calls between generation rounds."""
         from roomkit.channels.ai import (
             _EMPTY_RETRY_NUDGE,
+            _FORCE_STOP_NUDGE,
             _current_loop_ctx,
             _ToolLoopContext,
         )
@@ -386,13 +387,26 @@ class AIStreamingMixin:
             _dedup_prefix = ""
             _saw_tool_call_any = False
             _empty_retries = 0
+            _force_stop_nudged = False
 
             for _round_idx in range(self._max_tool_rounds + 1):
                 if loop_ctx.cancel_event.is_set():
                     logger.info("Streaming tool loop cancelled before round %d", _round_idx)
                     return
 
-                if loop_ctx.all_context_tools:
+                # Anti-loop ripcord: the guard set force_stop because the model
+                # keeps re-issuing a blocked identical call. Strip tools (and
+                # nudge once) so this round must produce a plain-text answer
+                # instead of hammering the same call to the round limit.
+                if loop_ctx.force_stop:
+                    if not _force_stop_nudged:
+                        logger.warning("Streaming anti-loop force-stop at round %d", _round_idx)
+                        context.messages.append(
+                            AIMessage(role="user", content=_FORCE_STOP_NUDGE)
+                        )
+                        _force_stop_nudged = True
+                    context = context.model_copy(update={"tools": []})
+                elif loop_ctx.all_context_tools:
                     context = context.model_copy(
                         update={"tools": self._apply_tool_filters(loop_ctx.all_context_tools)}
                     )
