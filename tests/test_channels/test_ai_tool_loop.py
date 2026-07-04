@@ -200,7 +200,19 @@ class TestToolLoopWarning:
     async def test_hard_cap_terminates_loop(self) -> None:
         """Loop stops at max_tool_rounds even if model keeps requesting tools."""
         max_rounds = 3
-        provider = MockAIProvider(ai_responses=[_tool_response()] * (max_rounds + 5))
+        # Distinct arguments per round: identical repeats would trip the
+        # anti-loop repeat guard before the round cap under test is reached.
+        provider = MockAIProvider(
+            ai_responses=[
+                AIResponse(
+                    content="",
+                    tool_calls=[
+                        AIToolCall(id=f"tc{i}", name="search", arguments={"q": f"test {i}"})
+                    ],
+                )
+                for i in range(max_rounds + 5)
+            ]
+        )
         handler = AsyncMock(return_value="ok")
         ch = AIChannel(
             "ai1",

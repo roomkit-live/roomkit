@@ -194,12 +194,11 @@ async def test_force_stop_ends_loop_when_model_ignores_guard() -> None:
     args = {"command": ""}
     # The model insists on the same call far more than the guard tolerates;
     # after force-stop it must produce the final answer.
-    provider = MockAIProvider(
-        ai_responses=[*[_same_call_response(f"t{i}", args) for i in range(10)], AIResponse(content="done")],
-    )
+    repeats = [_same_call_response(f"t{i}", args) for i in range(10)]
+    provider = MockAIProvider(ai_responses=[*repeats, AIResponse(content="done")])
     # Rename the echo tool call to a plain tool so it's not a pure discovery tool.
     ch = AIChannel("ai1", provider=provider, tool_handler=handler)
-    output = await ch.on_event(
+    await ch.on_event(
         make_event(body="go", channel_id="sms1"),
         _binding([_ECHO_TOOL]),
         RoomContext(room=Room(id="r1")),
@@ -212,7 +211,7 @@ async def test_force_stop_ends_loop_when_model_ignores_guard() -> None:
     assert not last_call.tools
 
 
-async def test_force_stop_also_ends_the_STREAMING_loop() -> None:
+async def test_force_stop_also_ends_the_streaming_loop() -> None:
     """The streaming loop (ollama and other streaming providers) must honor
     force_stop too — it re-filters tools every round, so without an explicit
     check the guard flag is set but never acted on and the model keeps
@@ -225,8 +224,9 @@ async def test_force_stop_also_ends_the_STREAMING_loop() -> None:
         return json.dumps({"ok": True})
 
     args = {"command": "find . -type f"}
+    repeats = [_same_call_response(f"t{i}", args) for i in range(10)]
     provider = MockAIProvider(
-        ai_responses=[*[_same_call_response(f"t{i}", args) for i in range(10)], AIResponse(content="done")],
+        ai_responses=[*repeats, AIResponse(content="done")],
         streaming=True,
     )
     ch = AIChannel("ai1", provider=provider, tool_handler=handler)

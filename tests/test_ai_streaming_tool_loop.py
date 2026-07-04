@@ -205,15 +205,21 @@ class TestStreamingToolLoop:
             tool_executions += 1
             return "ok"
 
-        # Every call returns a tool call
-        always_tool = AIResponse(
-            content="",
-            finish_reason="tool_calls",
-            usage={"prompt_tokens": 10, "completion_tokens": 5},
-            tool_calls=[AIToolCall(id="tc1", name="search", arguments={})],
+        # Every call returns a tool call, each with distinct arguments:
+        # identical repeats would trip the anti-loop repeat guard before
+        # the round cap under test is reached.
+        provider = MockAIProvider(
+            ai_responses=[
+                AIResponse(
+                    content="",
+                    finish_reason="tool_calls",
+                    usage={"prompt_tokens": 10, "completion_tokens": 5},
+                    tool_calls=[AIToolCall(id=f"tc{i}", name="search", arguments={"q": str(i)})],
+                )
+                for i in range(10)
+            ],
+            streaming=True,
         )
-
-        provider = MockAIProvider(ai_responses=[always_tool], streaming=True)
         ch = AIChannel(
             "ai1",
             provider=provider,

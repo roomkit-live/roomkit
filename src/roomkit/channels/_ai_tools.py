@@ -384,9 +384,7 @@ class AIToolsMixin:
             # end into the right outcome: reveal the matching tools and say so.
             wanted = skill_name.lower()
             matching = sorted(
-                t.name
-                for t in loop_ctx.all_context_tools
-                if wanted in t.name.lower()
+                t.name for t in loop_ctx.all_context_tools if wanted in t.name.lower()
             )
             if matching:
                 loop_ctx.revealed_tools.update(matching)
