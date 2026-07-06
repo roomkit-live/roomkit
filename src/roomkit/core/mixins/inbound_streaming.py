@@ -136,6 +136,12 @@ class InboundStreamingMixin(HelpersMixin):
             # reach by construction; this lands any hook modification (e.g. PII
             # de-anonymisation) on the persisted row and the re-broadcast to
             # non-streaming channels, and drops a segment a hook blocks.
+            #
+            # Scope: only the allow/modify/block decision is honoured here. The
+            # hook side effects the locked path also applies — injected_events,
+            # tasks, observations — are not yet replayed on the streaming path.
+            # No streaming hook uses them today; wiring full parity is a
+            # follow-up if one ever does.
             sync_result = await self._hook_engine.run_sync_hooks(
                 room_id, HookTrigger.BEFORE_BROADCAST, event, context
             )
