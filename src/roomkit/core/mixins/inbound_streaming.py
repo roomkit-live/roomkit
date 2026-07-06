@@ -130,6 +130,29 @@ class InboundStreamingMixin(HelpersMixin):
                 correlation_id=correlation_id,
                 metadata=dict(sr.response_metadata or {}),
             )
+            # Run BEFORE_BROADCAST sync hooks on the assembled segment before it
+            # is stored and re-broadcast, mirroring the locked path. The live
+            # chunks already piped to streaming channels are outside a hook's
+            # reach by construction; this lands any hook modification (e.g. PII
+            # de-anonymisation) on the persisted row and the re-broadcast to
+            # non-streaming channels, and drops a segment a hook blocks.
+            sync_result = await self._hook_engine.run_sync_hooks(
+                room_id, HookTrigger.BEFORE_BROADCAST, event, context
+            )
+            if sync_result.hook_errors:
+                logger.warning(
+                    "BEFORE_BROADCAST hook error on streamed segment (room %s): %s",
+                    room_id,
+                    sync_result.hook_errors,
+                )
+            if not sync_result.allowed:
+                logger.info(
+                    "Streamed segment blocked by BEFORE_BROADCAST hook (room %s): %s",
+                    room_id,
+                    sync_result.reason,
+                )
+                return
+            event = sync_result.event or event
             stored = await self._persist_event_auto_index(room_id, event)
             if stored is not None:
                 persisted_events.append(stored)
