@@ -36,6 +36,13 @@ MODELS: list[ModelInfo] = [
         capabilities=["thinking"],
     ),
     ModelInfo(
+        id="claude-sonnet-5",
+        display_name="Claude Sonnet 5",
+        context_window=1_000_000,
+        supports_vision=True,
+        capabilities=["thinking"],
+    ),
+    ModelInfo(
         id="claude-sonnet-4-6",
         display_name="Claude Sonnet 4.6",
         context_window=1_000_000,
