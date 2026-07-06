@@ -344,7 +344,7 @@ class PostgresStore(ConversationStore):
             async with self._acquire() as conn:
                 await conn.execute(
                     "UPDATE events SET content=$2, status=$3, visibility=$4,"
-                    " metadata=$5, idempotency_key=$6"
+                    " metadata=$5, idempotency_key=$6, blocked_by=$7"
                     " WHERE id=$1",
                     event.id,
                     event.content.model_dump(mode="json"),
@@ -352,6 +352,7 @@ class PostgresStore(ConversationStore):
                     event.visibility,
                     event.metadata,
                     event.idempotency_key,
+                    event.blocked_by,
                 )
         return event
 

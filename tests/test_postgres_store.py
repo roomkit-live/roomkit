@@ -581,6 +581,17 @@ class TestPostgresStore:
         call_args = mock_conn.execute.call_args
         assert "UPDATE events" in call_args[0][0]
 
+    async def test_update_event_persists_blocked_by(self) -> None:
+        # Regression: a blocked reentry event sets ``blocked_by``, but the
+        # Postgres UPDATE omitted the column, dropping attribution in prod
+        # (the in-memory store, which replaces the whole object, hid it).
+        store, mock_conn = _make_store_with_pool()
+        event = _make_event().model_copy(update={"blocked_by": "agent:sup"})
+        await store.update_event(event)
+        sql, *params = mock_conn.execute.call_args[0]
+        assert "blocked_by" in sql
+        assert params[-1] == "agent:sup"
+
     async def test_list_events_basic(self) -> None:
         store, mock_conn = _make_store_with_pool()
         event = _make_event()
