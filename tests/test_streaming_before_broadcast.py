@@ -18,7 +18,6 @@ from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.hook import HookResult
 from roomkit.providers.ai.base import AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
-
 from tests.test_framework import SimpleChannel
 
 
@@ -35,9 +34,7 @@ async def _wire(kit: RoomKit, content: str) -> None:
 
 
 def _ai_messages(events: list[RoomEvent]) -> list[RoomEvent]:
-    return [
-        e for e in events if e.type == EventType.MESSAGE and e.source.channel_id == "ai1"
-    ]
+    return [e for e in events if e.type == EventType.MESSAGE and e.source.channel_id == "ai1"]
 
 
 async def test_streamed_segment_applies_before_broadcast_modification() -> None:
