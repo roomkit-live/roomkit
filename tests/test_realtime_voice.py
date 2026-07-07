@@ -203,6 +203,43 @@ class TestTranscriptions:
         ]
         assert len(transcription_msgs) == 1
 
+    async def test_final_transcription_after_detach_dropped_quietly(
+        self,
+        kit: RoomKit,
+        channel: RealtimeVoiceChannel,
+        provider: MockRealtimeProvider,
+        room_id: str,
+        caplog,
+    ) -> None:
+        """A final transcript that finalizes after the channel is detached must
+        be dropped without an ERROR traceback.
+
+        Reproduces the teardown race where the assistant's closing utterance is
+        the one that ends the session: its transcript is finalized by the
+        provider after ``end_session`` has already detached the channel, so the
+        trailing RoomEvent has nowhere to land. That is an expected condition,
+        not a failure.
+        """
+        session = await channel.start_session(room_id, "user-1", "fake-ws")
+
+        # Simulate teardown detaching the channel binding out from under the
+        # in-flight transcription (Luge's end_session calls detach_channel).
+        await kit.detach_channel(room_id, "rt-voice-1")
+
+        with caplog.at_level(logging.DEBUG, logger="roomkit.channels.realtime_voice"):
+            await provider.simulate_transcription(
+                session, "D'accord, je termine la session.", "assistant", True
+            )
+            await asyncio.sleep(0.1)
+
+        # No RoomEvent could be emitted — the channel is gone.
+        events = await kit.get_timeline(room_id)
+        assert not [e for e in events if isinstance(e.content, TextContent)]
+
+        # The race is logged at DEBUG, never ERROR (no traceback noise).
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert any("Channel detached during teardown" in r.getMessage() for r in caplog.records)
+
 
 class TestTextInjection:
     async def test_text_injection_from_other_channel(

@@ -7,6 +7,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.core.exceptions import ChannelNotFoundError
 from roomkit.models.enums import HookTrigger
 from roomkit.models.event import TextContent
 
@@ -248,6 +249,19 @@ class RealtimeTranscriptionMixin:
                     created_at=created_at,
                 )
 
+        except ChannelNotFoundError:
+            # Benign teardown race: the channel was detached from the room
+            # between reading the binding and emitting the event. Expected when
+            # the assistant's final utterance is the one that ends the session —
+            # its transcript finalizes after end_session has torn the channel
+            # down, so this trailing event has nowhere to land. Drop it quietly;
+            # a full ERROR traceback here is noise, not a failure.
+            logger.debug(
+                "Channel detached during teardown; dropped trailing transcription "
+                "for session %s (room=%s)",
+                session.id,
+                room_id,
+            )
         except Exception:
             logger.exception(
                 "Error processing transcription for session %s (room=%s, is_final=%s)",
