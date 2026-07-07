@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-07-07
+
+### Fixed
+
+- **Turn errors now surface on the no-streaming-targets path.** When an agent's
+  streaming send fn is withheld — a PII-locked or edge agent driven through the
+  hooked "locked" delivery path — a failure during the turn (a context-window
+  overflow, a provider error) used to propagate raw and vanish: the branch
+  consumed the segment stream with a bare `async for`, so `ON_ERROR` never
+  fired, the error hooks that classify and surface it never ran, and the user
+  saw only a typing indicator that stopped. That branch now runs the same error
+  contract as the streaming branch above — persist partial text, build the
+  error event, fire `ON_ERROR`.
+- **polargrid: an unknown pinned region is rejected at config construction**
+  instead of surfacing later.
+
+## [0.22.0] — 2026-07-06
+
 ### Added
 
 - **Anti-loop guard in the tool loop.** A model that re-issues the *same*
