@@ -279,9 +279,35 @@ class InboundStreamingMixin(HelpersMixin):
                     room_id, HookTrigger.ON_ERROR, error_event, context
                 )
         else:
-            # No streaming targets — consume stream (triggers persistence via markers)
-            async for _ in segment_stream():
-                pass
+            # No streaming targets (e.g. a PII-locked / edge agent whose stream
+            # send fn was withheld) — still consume the stream to drive
+            # persistence via markers. Under the SAME error contract as the
+            # streaming branch above: a failure (context overflow, provider
+            # error) must fire ON_ERROR so the error reaches the ON_ERROR hooks
+            # (which classify + surface it), instead of propagating raw and
+            # vanishing with no card.
+            try:
+                async for _ in segment_stream():
+                    pass
+            except Exception as exc:
+                logger.exception("Stream consumption (no targets) failed for room %s", room_id)
+                await _persist_text_segment()
+                error_event = RoomEvent(
+                    room_id=room_id,
+                    source=_make_source(),
+                    content=TextContent(body=str(exc)),
+                    metadata={
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                        "error_category": "streaming",
+                    },
+                    chain_depth=chain_depth,
+                    visibility=visibility,
+                    correlation_id=correlation_id,
+                )
+                await self._hook_engine.run_async_hooks(
+                    room_id, HookTrigger.ON_ERROR, error_event, context
+                )
 
         if not persisted_events:
             return None

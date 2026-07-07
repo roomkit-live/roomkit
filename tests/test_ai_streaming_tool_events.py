@@ -202,3 +202,52 @@ async def test_external_handler_streaming_publishes_tool_events() -> None:
     assert ends[0].data["tool_calls"] == [{"id": "tc1", "name": "Bash", "result": "file.txt"}]
 
     await kit.close()
+
+
+async def test_no_streaming_target_error_fires_on_error() -> None:
+    """A provider failure on the no-streaming-targets path (a PII-locked / edge
+    agent whose stream send fn was withheld) must still fire ON_ERROR so the
+    error reaches the ON_ERROR hooks that classify + surface it — not propagate
+    raw and vanish. Mirrors the streaming branch's error contract."""
+    from collections.abc import AsyncIterator
+
+    from roomkit.core.hooks import HookRegistration
+    from roomkit.models.context import RoomContext
+    from roomkit.models.enums import HookExecution, HookTrigger
+    from roomkit.models.event import RoomEvent
+    from roomkit.providers.ai.base import AIContext, StreamEvent
+
+    class _RaisingProvider(MockAIProvider):
+        async def generate_structured_stream(
+            self, context: AIContext
+        ) -> AsyncIterator[StreamEvent]:
+            raise RuntimeError("exceeds the available context size")
+            yield  # pragma: no cover - keep this an async generator
+
+    kit = RoomKit()
+    ai = AIChannel("ai1", provider=_RaisingProvider(streaming=True))
+
+    errors: list[RoomEvent] = []
+
+    async def on_error(event: RoomEvent, _ctx: RoomContext) -> None:
+        errors.append(event)
+
+    kit.hook_engine.register(
+        HookRegistration(
+            trigger=HookTrigger.ON_ERROR,
+            execution=HookExecution.ASYNC,
+            fn=on_error,
+            name="test_capture_error",
+        )
+    )
+
+    # With the fix the turn completes (the else branch catches + surfaces);
+    # without it, process_inbound would propagate the raw error and this raises.
+    await _run_turn(kit, ai)
+
+    assert len(errors) == 1
+    meta = errors[0].metadata or {}
+    assert meta.get("error_category") == "streaming"
+    assert "exceeds the available context size" in str(meta.get("error", ""))
+
+    await kit.close()
