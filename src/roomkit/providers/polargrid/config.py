@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, field_validator
+
+from roomkit.providers.polargrid.models import region_choices, resolve_region_id
 
 
 class PolarGridConfig(BaseModel):
@@ -54,3 +56,17 @@ class PolarGridConfig(BaseModel):
     timeout: float = 30.0
     max_retries: int = 0
     debug: bool = False
+
+    @field_validator("region")
+    @classmethod
+    def _validate_region(cls, value: str | None) -> str | None:
+        """Reject an unknown pinned region at construction.
+
+        The SDK does not validate ``region``: an unknown value is interpolated
+        straight into ``https://api.<region>.edge.polargrid.ai``, so a typo
+        like ``"yul-2"`` silently yields an unroutable host that only fails
+        much later with an opaque DNS error. Fail here instead, loudly.
+        """
+        if value is None or resolve_region_id(value) is not None:
+            return value
+        raise ValueError(f"unknown PolarGrid region {value!r}. Valid: {region_choices()}")

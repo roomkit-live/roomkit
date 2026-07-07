@@ -864,6 +864,18 @@ class TestPolarGridConfig:
         assert config.temperature == 0.1
         assert config.debug is True
 
+    @pytest.mark.parametrize("region", ["yul-02", "toronto", "MONTREAL", "sf", None])
+    def test_valid_region_accepted(self, region: str | None) -> None:
+        # Edge ids, friendly aliases (case-insensitive), and None all pass.
+        assert PolarGridConfig(api_key="pg_test", region=region).region == region
+
+    @pytest.mark.parametrize("region", ["yul-2", "quebec", "yto-99", ""])
+    def test_unknown_region_rejected(self, region: str) -> None:
+        # A typo like "yul-2" must fail loudly at construction, not later with
+        # an opaque DNS error from an unroutable host.
+        with pytest.raises(ValueError, match=rf"unknown PolarGrid region {region!r}"):
+            PolarGridConfig(api_key="pg_test", region=region)
+
 
 class TestPolarGridLazyImport:
     def test_import_error_message(self) -> None:

@@ -63,6 +63,53 @@ REGIONS: list[PolarGridRegion] = [
     PolarGridRegion(id="sfo-01", name="San Francisco", location="US West"),
 ]
 
+_REGION_IDS: frozenset[str] = frozenset(r.id for r in REGIONS if r.id)
+
+# Friendly region aliases → canonical edge id. Mirrors the PolarGrid SDK's
+# own resolution table (``polargrid.client.REGION_ALIASES``, verified against
+# polargrid-sdk 0.8.5 on 2026-07-06) so a region roomkit accepts is one the
+# SDK can actually route. The SDK publishes no live region list — hence this
+# offline mirror, same rationale as REGIONS above. If the SDK adds an alias,
+# add it here too.
+REGION_ALIASES: dict[str, str] = {
+    "toronto": "yto-01",
+    "yto": "yto-01",
+    "vancouver": "yvr-02",
+    "yvr": "yvr-02",
+    "montreal": "yul-01",
+    "yul": "yul-01",
+    "new-york": "nyc-01",
+    "newyork": "nyc-01",
+    "nyc": "nyc-01",
+    "dallas": "dfw-01",
+    "dfw": "dfw-01",
+    "san-francisco": "sfo-01",
+    "sanfrancisco": "sfo-01",
+    "sf": "sfo-01",
+    "sfo": "sfo-01",
+}
+
+
+def resolve_region_id(region: str) -> str | None:
+    """Resolve a pinned region string (edge id or friendly alias) to a canonical
+    edge id, or ``None`` if it is neither.
+
+    Case-insensitive, mirroring the SDK. Lets callers reject a typo like
+    ``"yul-2"`` up front instead of letting the SDK build an unroutable host
+    (``https://api.yul-2.edge.polargrid.ai``) that fails later with an opaque
+    DNS error.
+    """
+    normalized = region.lower()
+    resolved = REGION_ALIASES.get(normalized, normalized)
+    return resolved if resolved in _REGION_IDS else None
+
+
+def region_choices() -> str:
+    """Human-readable list of accepted region ids and aliases, for error text."""
+    ids = ", ".join(r.id for r in REGIONS if r.id)
+    aliases = ", ".join(sorted(REGION_ALIASES))
+    return f"ids ({ids}) or aliases ({aliases})"
+
 
 MODELS: list[ModelInfo] = [
     ModelInfo(
