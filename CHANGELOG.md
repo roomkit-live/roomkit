@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] — 2026-07-08
+
+### Added
+
+- **Public provider-lifecycle control on `VoiceChannel`.** New keyword-only
+  constructor flag `close_providers` (default `True`, backward compatible).
+  When `False`, `close()` leaves the injected STT/TTS providers open so the
+  caller owns their lifecycle — reusing cached models across sessions, or
+  closing them itself to avoid a double-`aclose` hang (e.g. ElevenLabs's httpx
+  client). The backend is always closed by `close()`. Replaces callers reaching
+  into `channel._stt` / `channel._tts` to null them before teardown.
+- **`AIChannel.set_system_prompt(prompt)` + `system_prompt` property.** The
+  supported way to swap the system prompt (persona/attitude) mid-conversation:
+  the channel rebuilds request context from it each turn, so the change takes
+  effect next turn with no reconnect and no loss of memory or tool state.
+  (When a `config_provider` is set it still wins per turn.) Replaces writing to
+  the private `AIChannel._system_prompt` slot.
+- **`DiarizationProvider.clear_speakers()`.** Forgets every enrolled speaker
+  (distinct from `reset()`, which only clears transient clustering state), so a
+  provider reused across sessions doesn't carry speakers between conversations.
+  Implemented for `SherpaOnnxDiarizationProvider` (clears the embedding manager
+  and the debug-scoring cache); a documented no-op default on the base class.
+  Replaces callers reaching into `_manager` / `_enrolled_embeddings`.
+- **Image content in tool results.** `AIToolResultPart.result` now accepts a
+  list of content parts (`AITextPart` / `AIImagePart`) alongside a plain string,
+  so a tool can return an image (e.g. a screenshot) to the model. The Anthropic
+  provider renders these as `tool_result` content blocks — the Messages API
+  accepts `image` blocks inside a `tool_result` — while the other providers
+  flatten to text via the new `AIToolResultPart.as_text()`. Tool handlers may
+  now return `str | list[AITextPart | AIImagePart]`. Fully backward compatible:
+  string results are unchanged everywhere.
+
 ## [0.23.0] — 2026-07-07
 
 ### Fixed
