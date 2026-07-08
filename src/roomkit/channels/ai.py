@@ -346,6 +346,24 @@ class AIChannel(
         self._tool_handler = value
 
     @property
+    def system_prompt(self) -> str | None:
+        """The system prompt used to build request context each turn."""
+        return self._system_prompt
+
+    def set_system_prompt(self, prompt: str | None) -> None:
+        """Replace the system prompt for subsequent turns.
+
+        ``AIChannel`` rebuilds its request context from ``self._system_prompt``
+        at the start of every turn, so the new prompt takes effect on the next
+        turn with no reconnect and no loss of memory or tool state — the
+        supported way to swap personas/attitudes mid-conversation.
+
+        Note: when a ``config_provider`` is set the system prompt is resolved
+        fresh per turn, so this value is overridden on the next turn.
+        """
+        self._system_prompt = prompt
+
+    @property
     def extra_tools(self) -> list[AITool]:
         """All extra tools (user-provided + orchestration-injected)."""
         return self._user_tools + self._injected_tools

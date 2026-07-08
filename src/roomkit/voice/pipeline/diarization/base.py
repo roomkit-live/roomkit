@@ -48,5 +48,14 @@ class DiarizationProvider(ABC):
     def reset(self) -> None:  # noqa: B027
         """Reset internal state."""
 
+    def clear_speakers(self) -> None:  # noqa: B027
+        """Forget every enrolled speaker.
+
+        Unlike :meth:`reset` (which clears transient clustering state), this
+        drops the enrollment set so a provider reused across sessions does not
+        carry speakers from a previous conversation into the next one.
+        Providers with no enrollment concept may leave this as a no-op.
+        """
+
     def close(self) -> None:  # noqa: B027
         """Release resources."""

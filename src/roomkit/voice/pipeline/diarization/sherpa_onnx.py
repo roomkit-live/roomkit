@@ -171,6 +171,12 @@ class SherpaOnnxDiarizationProvider(DiarizationProvider):
         result: bool = self._manager.remove(name)
         return result
 
+    def clear_speakers(self) -> None:
+        """Forget every enrolled speaker (embedding manager + debug cache)."""
+        for name in list(self._manager.all_speakers):
+            self._manager.remove(name)
+        self._enrolled_embeddings.clear()
+
     def extract_embedding(self, pcm_bytes: bytes, sample_rate: int) -> list[float]:
         """Extract a speaker embedding from raw PCM audio."""
         import array

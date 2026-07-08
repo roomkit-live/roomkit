@@ -64,6 +64,14 @@ class TestAIChannel:
         assert len(provider.calls) == 1
         assert provider.calls[0].system_prompt == "test"
 
+    def test_set_system_prompt_updates_live(self) -> None:
+        provider = MockAIProvider(responses=["ok"])
+        ch = AIChannel("ai1", provider=provider, system_prompt="original")
+        assert ch.system_prompt == "original"
+        ch.set_system_prompt("swapped persona")
+        assert ch.system_prompt == "swapped persona"
+        assert ch._system_prompt == "swapped persona"
+
     async def test_deliver_is_noop(self) -> None:
         """Intelligence channels are not called via deliver by the router."""
         provider = MockAIProvider(responses=["should not reach"])

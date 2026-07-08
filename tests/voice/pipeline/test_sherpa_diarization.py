@@ -114,3 +114,18 @@ class TestSherpaOnnxDiarizationProviderClose:
         provider._speech_buffer.extend(b"\x00" * 200)
         provider.close()
         assert len(provider._speech_buffer) == 0
+
+
+class TestSherpaOnnxDiarizationProviderClearSpeakers:
+    def test_clear_speakers_forgets_all_enrollments(self):
+        mock_mod, _, manager = _make_mock_sherpa_onnx()
+        manager.all_speakers = ["alice", "bob"]
+        provider, _ = _make_provider(mock_mod)
+        provider._enrolled_embeddings = {"alice": [0.1] * 192, "bob": [0.2] * 192}
+
+        provider.clear_speakers()
+
+        assert manager.remove.call_count == 2
+        manager.remove.assert_any_call("alice")
+        manager.remove.assert_any_call("bob")
+        assert provider._enrolled_embeddings == {}

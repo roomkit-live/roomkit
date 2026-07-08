@@ -158,11 +158,18 @@ class VoiceChannel(
         tts_filter: Callable[[str], str] | None = None,
         bridge: bool | AudioBridgeConfig | None = None,
         recording: ChannelRecordingConfig | None = None,
+        close_providers: bool = True,
     ) -> None:
         super().__init__(channel_id)
         self._stt = stt
         self._tts = tts
         self._backend = backend
+        # When False, close() leaves the injected STT/TTS providers open —
+        # the caller owns their lifecycle (e.g. reuses cached models across
+        # sessions, or closes them itself to avoid a double-close hang). The
+        # backend is always closed by close(). Defaults to True: the channel
+        # owns the providers it was given, matching the simple single-use case.
+        self._close_providers = close_providers
         self._pipeline_config = pipeline
         self._recording = recording
         self._streaming = streaming
@@ -1306,11 +1313,12 @@ class VoiceChannel(
         # 3b. Close audio bridge
         if self._bridge is not None:
             self._bridge.close()
-        # 4. Close STT/TTS providers
-        if self._stt:
-            await self._stt.close()
-        if self._tts:
-            await self._tts.close()
+        # 4. Close STT/TTS providers (unless the caller owns their lifecycle)
+        if self._close_providers:
+            if self._stt:
+                await self._stt.close()
+            if self._tts:
+                await self._tts.close()
         # 5. Close backend last (transport layer)
         if self._backend:
             await self._backend.close()
