@@ -18,6 +18,8 @@ RoomKit gives you one abstraction — the **room** — to wire together any comb
 
 Every channel implements the same interface: `handle_inbound()` converts a provider message into a `RoomEvent`, and `deliver()` pushes events out. Channels have two categories: **transport** (delivers to external systems) and **intelligence** (generates content, like AI agents).
 
+> **Provider-agnostic — with one multimodal caveat.** Intelligence providers are pluggable (Anthropic, OpenAI, Gemini, Mistral, Ollama, …) — pick any; nothing assumes a single vendor. One gap to know: an **image tool result** (`AIToolResultPart.result` carrying an `AIImagePart` — e.g. a screenshot tool) is rendered as a real image content block **only by the Anthropic provider** today. Every other provider flattens it to a `[image]` text placeholder via `AIToolResultPart.as_text()`, so a non-Anthropic (or edge/local) model receives no image and can't actually see it. Extending image tool results to the other vision-capable providers (OpenAI, Gemini, Ollama vision models) is a follow-up.
+
 ### Message flow
 
 ![Message flow through a room](docs/diagrams/message-flow.svg)
