@@ -44,8 +44,13 @@ class ToolCallEvent:
     arguments: dict[str, Any]
     """Parsed arguments for the function call."""
 
-    result: str | None = None
-    """Handler result (None = hook must provide)."""
+    result: str | list[Any] | None = None
+    """Handler result (None = hook must provide).
+
+    Usually a string; a list of content parts when a tool returns multimodal
+    output (e.g. an image). Typed ``list[Any]`` to avoid a models→providers
+    import cycle — the concrete part types live in ``providers.ai.base``.
+    """
 
     room_id: str | None = None
     """Room where the tool call originated."""
@@ -58,8 +63,8 @@ class ToolCallEvent:
 
 
 # Callback type injected into AIChannel by the framework.
-# Returns str to override the result, None to keep the original.
-ToolCallCallback = Callable[[ToolCallEvent], Awaitable[str | None]]
+# Returns a result (str or content parts) to override, None to keep the original.
+ToolCallCallback = Callable[[ToolCallEvent], Awaitable[str | list[Any] | None]]
 
 
 @dataclass(frozen=True)

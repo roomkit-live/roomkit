@@ -653,3 +653,99 @@ class TestAnthropicAIProvider:
 
             tool_block = content_blocks[1]
             assert tool_block["type"] == "tool_use"
+
+
+class TestAnthropicToolResultImages:
+    """Image content blocks inside a tool_result (screenshot-style tool output)."""
+
+    def test_tool_result_string_passes_through(self) -> None:
+        # A plain string result renders as a text tool_result — unchanged
+        # behaviour for every existing (text-only) tool.
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import AIToolResultPart
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            block = provider._format_content(
+                [AIToolResultPart(tool_call_id="t1", name="foo", result="hello")]
+            )[0]
+            assert block == {
+                "type": "tool_result",
+                "tool_use_id": "t1",
+                "content": "hello",
+            }
+
+    def test_tool_result_image_renders_content_blocks(self) -> None:
+        # A multimodal result (text + base64 image) becomes a content-block
+        # list — this is what lets a screenshot tool reach the model.
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import (
+                AIImagePart,
+                AITextPart,
+                AIToolResultPart,
+            )
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            block = provider._format_content(
+                [
+                    AIToolResultPart(
+                        tool_call_id="t1",
+                        name="screenshot",
+                        result=[
+                            AITextPart(text="the screen"),
+                            AIImagePart(url="data:image/png;base64,IMGDATA"),
+                        ],
+                    )
+                ]
+            )[0]
+            assert block == {
+                "type": "tool_result",
+                "tool_use_id": "t1",
+                "content": [
+                    {"type": "text", "text": "the screen"},
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": "IMGDATA",
+                        },
+                    },
+                ],
+            }
+
+    def test_image_message_part_still_renders_base64(self) -> None:
+        # Guard the _image_block refactor: an image in ordinary message content
+        # keeps producing the base64 source block.
+        with patch.dict("sys.modules", {"anthropic": _mock_anthropic_module()}):
+            from roomkit.providers.ai.base import AIImagePart
+            from roomkit.providers.anthropic.ai import AnthropicAIProvider
+
+            provider = AnthropicAIProvider(_config())
+            block = provider._format_content([AIImagePart(url="data:image/jpeg;base64,ABC123")])[0]
+            assert block == {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": "ABC123",
+                },
+            }
+
+    def test_as_text_flattens_parts(self) -> None:
+        # as_text() is the fallback used by non-Anthropic providers: text parts
+        # concatenated, images replaced by a [image] placeholder.
+        from roomkit.providers.ai.base import (
+            AIImagePart,
+            AITextPart,
+            AIToolResultPart,
+        )
+
+        assert AIToolResultPart(tool_call_id="t", name="f", result="plain").as_text() == "plain"
+        flattened = AIToolResultPart(
+            tool_call_id="t",
+            name="f",
+            result=[AITextPart(text="a"), AIImagePart(url="data:image/png;base64,X")],
+        ).as_text()
+        assert flattened == "a\n[image]"

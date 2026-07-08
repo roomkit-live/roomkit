@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from roomkit.models.channel import RetryPolicy
 from roomkit.providers.ai.base import (
     AIContext,
+    AIImagePart,
     AIMessage,
     AIProvider,
     AIResponse,
@@ -203,6 +204,14 @@ class AIResilienceMixin:
                         parts.append(p.text)
         return "\n".join(parts)
 
-    def _maybe_truncate_result(self, result: str, tool_call_id: str = "") -> str:
-        """Delegate to ToolEviction for large result handling."""
+    def _maybe_truncate_result(
+        self, result: str | list[AITextPart | AIImagePart], tool_call_id: str = ""
+    ) -> str | list[AITextPart | AIImagePart]:
+        """Delegate to ToolEviction for large (string) result handling.
+
+        Multimodal results (a list of parts — e.g. a tool that returned an
+        image) are passed through untouched; only string results are evicted.
+        """
+        if not isinstance(result, str):
+            return result
         return str(self._eviction.maybe_evict(result, tool_call_id))

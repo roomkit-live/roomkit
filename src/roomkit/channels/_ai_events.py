@@ -37,10 +37,10 @@ class AIEventsMixin:
         """Publish a tool call ephemeral event. Best-effort, never breaks the loop."""
         if self._realtime is None or not room_id:
             return
-        # Payload build is inside the try: an external proxy can put a non-str
-        # into AIToolResultPart.result, and len()/slice on it would raise
-        # outside the guard and break the tool loop — the opposite of the
-        # best-effort contract in this method's docstring.
+        # Payload build is inside the try to honour the best-effort contract in
+        # this method's docstring. ``as_text()`` flattens a multimodal result
+        # (a list of parts — e.g. a screenshot) to a plain string, so the UI
+        # preview never carries raw base64 image data and the slice can't fail.
         try:
             result_preview = 500
             if event_type == EphemeralEventType.TOOL_CALL_START:
@@ -52,9 +52,7 @@ class AIEventsMixin:
                     {
                         "id": tc.tool_call_id,
                         "name": tc.name,
-                        "result": tc.result[:result_preview]
-                        if len(tc.result) > result_preview
-                        else tc.result,
+                        "result": tc.as_text()[:result_preview],
                     }
                     for tc in tool_calls
                     if isinstance(tc, AIToolResultPart)

@@ -193,7 +193,7 @@ class OllamaAIProvider(AIProvider):
                     result.append(
                         {
                             "role": "tool",
-                            "content": r.result,
+                            "content": r.as_text(),
                             "tool_name": r.name,
                         }
                     )

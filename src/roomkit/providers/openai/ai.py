@@ -254,7 +254,7 @@ class OpenAIAIProvider(AIProvider):
                             {
                                 "role": "tool",
                                 "tool_call_id": p.tool_call_id,
-                                "content": p.result,
+                                "content": p.as_text(),
                             }
                         )
             else:

@@ -33,7 +33,12 @@ from roomkit.channels._tool_search_constants import (
     TOOL_SEARCH_INFRA_TOOL_NAMES,
 )
 from roomkit.models.enums import ChannelType
-from roomkit.providers.ai.base import AITool, AIToolResultPart
+from roomkit.providers.ai.base import (
+    AIImagePart,
+    AITextPart,
+    AITool,
+    AIToolResultPart,
+)
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
 from roomkit.telemetry.base import SpanKind
 from roomkit.tools.human_input import ToolCallContext, _current_tool_call
@@ -52,7 +57,8 @@ if TYPE_CHECKING:
     from roomkit.skills.registry import SkillRegistry
     from roomkit.tools.policy import ToolPolicy
 
-    ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
+    ToolResult = str | list[AITextPart | AIImagePart]
+    ToolHandler = Callable[[str, dict[str, Any]], Awaitable[ToolResult]]
 
 logger = logging.getLogger("roomkit.channels.ai")
 
@@ -107,7 +113,11 @@ class AIToolsHost(Protocol):
 
     _SKILL_INFRA_TOOLS: frozenset[str]
 
-    def _maybe_truncate_result(self, result: str, tool_call_id: str = ...) -> str: ...
+    def _maybe_truncate_result(
+        self,
+        result: str | list[AITextPart | AIImagePart],
+        tool_call_id: str = ...,
+    ) -> str | list[AITextPart | AIImagePart]: ...
     def _get_loop_ctx(self) -> _ToolLoopContext: ...
 
 

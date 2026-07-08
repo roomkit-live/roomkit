@@ -63,12 +63,29 @@ class AIToolCallPart(BaseModel):
 
 
 class AIToolResultPart(BaseModel):
-    """Tool execution result in conversation history."""
+    """Tool execution result in conversation history.
+
+    ``result`` is a plain string for text results, or a list of content parts
+    (text and/or image) when a tool returns multimodal output — e.g. an edge
+    tool that returns a screenshot. Providers that support image tool results
+    (Anthropic) render the parts as content blocks; the rest flatten via
+    ``as_text()``.
+    """
 
     type: Literal["tool_result"] = "tool_result"
     tool_call_id: str
     name: str
-    result: str
+    result: str | list[AITextPart | AIImagePart]
+
+    def as_text(self) -> str:
+        """Flatten the result to plain text for providers without image support.
+
+        A string result is returned unchanged; a list concatenates its text
+        parts and substitutes a ``[image]`` placeholder for each image part.
+        """
+        if isinstance(self.result, str):
+            return self.result
+        return "\n".join(p.text if isinstance(p, AITextPart) else "[image]" for p in self.result)
 
 
 class AIThinkingPart(BaseModel):

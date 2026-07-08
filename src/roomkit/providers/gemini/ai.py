@@ -173,7 +173,7 @@ class GeminiAIProvider(AIProvider):
                         parts.append(
                             self._types.Part.from_function_response(
                                 name=p.name,
-                                response={"result": p.result},
+                                response={"result": p.as_text()},
                             )
                         )
                 contents.append(self._types.Content(role="user", parts=parts))

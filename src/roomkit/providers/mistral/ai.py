@@ -169,7 +169,7 @@ class MistralAIProvider(AIProvider):
                                 "role": "tool",
                                 "tool_call_id": p.tool_call_id,
                                 "name": p.name,
-                                "content": p.result,
+                                "content": p.as_text(),
                             }
                         )
             else:

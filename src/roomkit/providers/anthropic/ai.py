@@ -110,31 +110,7 @@ class AnthropicAIProvider(AIProvider):
             if isinstance(part, AITextPart):
                 parts.append({"type": "text", "text": part.text})
             elif isinstance(part, AIImagePart):
-                url = part.url
-                if url.startswith("data:"):
-                    # data:<media_type>;base64,<data>
-                    header, _, b64data = url.partition(",")
-                    media_type = header.split(":", 1)[1].split(";", 1)[0]
-                    parts.append(
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": b64data,
-                            },
-                        }
-                    )
-                else:
-                    parts.append(
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "url",
-                                "url": url,
-                            },
-                        }
-                    )
+                parts.append(self._image_block(part.url))
             elif isinstance(part, AIToolCallPart):
                 parts.append(
                     {
@@ -149,7 +125,7 @@ class AnthropicAIProvider(AIProvider):
                     {
                         "type": "tool_result",
                         "tool_use_id": part.tool_call_id,
-                        "content": part.result,
+                        "content": self._tool_result_content(part.result),
                     }
                 )
             elif isinstance(part, AIThinkingPart):
@@ -163,6 +139,43 @@ class AnthropicAIProvider(AIProvider):
                     block["signature"] = part.signature
                 parts.append(block)
         return parts
+
+    @staticmethod
+    def _image_block(url: str) -> dict[str, Any]:
+        """Anthropic image content block from a data: URI or a plain URL."""
+        if url.startswith("data:"):
+            # data:<media_type>;base64,<data>
+            header, _, b64data = url.partition(",")
+            media_type = header.split(":", 1)[1].split(";", 1)[0]
+            return {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": b64data,
+                },
+            }
+        return {"type": "image", "source": {"type": "url", "url": url}}
+
+    @classmethod
+    def _tool_result_content(
+        cls, result: str | list[AITextPart | AIImagePart]
+    ) -> str | list[dict[str, Any]]:
+        """Render a tool result as Anthropic ``tool_result`` content.
+
+        A string passes through unchanged; a list of parts becomes text and
+        image content blocks — the Messages API accepts image blocks inside a
+        ``tool_result``, which is how a screenshot tool reaches the model.
+        """
+        if isinstance(result, str):
+            return result
+        blocks: list[dict[str, Any]] = []
+        for part in result:
+            if isinstance(part, AITextPart):
+                blocks.append({"type": "text", "text": part.text})
+            elif isinstance(part, AIImagePart):
+                blocks.append(cls._image_block(part.url))
+        return blocks
 
     def _build_messages(
         self,

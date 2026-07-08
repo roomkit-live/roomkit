@@ -279,7 +279,7 @@ class PolarGridAIProvider(AIProvider):
             return [
                 {
                     "role": "tool",
-                    "content": r.result,
+                    "content": r.as_text(),
                     "tool_call_id": r.tool_call_id,
                     "name": r.name,
                 }
