@@ -276,15 +276,35 @@ class PolarGridAIProvider(AIProvider):
 
         tool_results = [p for p in parts if isinstance(p, AIToolResultPart)]
         if tool_results:
-            return [
-                {
-                    "role": "tool",
-                    "content": r.as_text(),
-                    "tool_call_id": r.tool_call_id,
-                    "name": r.name,
-                }
-                for r in tool_results
-            ]
+            # Forward-compat: PolarGrid's chat endpoint is string-content-only
+            # today and no PolarGrid model exposes vision, so this image path
+            # only activates once an image tool result meets a vision model.
+            # Mirrors the OpenAI shape — tool messages stay text-only and the
+            # image rides on a synthetic user message. Text results unchanged.
+            rendered: list[dict[str, Any]] = []
+            pending_images: list[AIImagePart] = []
+            for r in tool_results:
+                text, images = r.split_for_message()
+                rendered.append(
+                    {
+                        "role": "tool",
+                        "content": text,
+                        "tool_call_id": r.tool_call_id,
+                        "name": r.name,
+                    }
+                )
+                pending_images.extend(images)
+            if pending_images:
+                rendered.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": img.url}}
+                            for img in pending_images
+                        ],
+                    }
+                )
+            return rendered
 
         text = self._format_content(parts)
         return [{"role": m.role, "content": text}] if text else []

@@ -12,6 +12,7 @@ import pytest
 
 from roomkit.providers.ai.base import (
     AIContext,
+    AIImagePart,
     AIMessage,
     AITextPart,
     AIThinkingPart,
@@ -691,6 +692,44 @@ class TestPolarGridToolMessages:
         assert tool_msg["content"] == "12C, sunny"
         assert tool_msg["tool_call_id"] == "call_1"
         assert tool_msg["name"] == "get_weather"
+
+    def test_image_tool_result_splits_to_user_message(self) -> None:
+        # Forward-compat: PolarGrid has no vision model today, but an image
+        # tool result must not be dropped — it keeps the tool message text-only
+        # and rides on a synthetic user message (OpenAI-shaped image_url).
+        provider, _ = _provider()
+        messages = provider._build_messages(
+            [
+                AIMessage(
+                    role="tool",
+                    content=[
+                        AIToolResultPart(
+                            tool_call_id="call_1",
+                            name="screenshot",
+                            result=[
+                                AITextPart(text="the screen"),
+                                AIImagePart(url="data:image/png;base64,IMGDATA"),
+                            ],
+                        )
+                    ],
+                )
+            ],
+            None,
+        )
+        assert messages == [
+            {
+                "role": "tool",
+                "content": "the screen",
+                "tool_call_id": "call_1",
+                "name": "screenshot",
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,IMGDATA"}}
+                ],
+            },
+        ]
 
 
 # ---------------------------------------------------------------------------
