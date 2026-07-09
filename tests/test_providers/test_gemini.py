@@ -253,6 +253,78 @@ class TestGeminiAIProvider:
             assert parts[-1].uri == "https://example.com/cat.png"
 
     @pytest.mark.asyncio
+    async def test_tool_result_string_is_single_function_response(self) -> None:
+        """A string tool result stays a single text function response — the
+        unchanged path for every existing text tool."""
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.ai.base import AIToolResultPart
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            contents = provider._format_messages(
+                [
+                    AIMessage(
+                        role="tool",
+                        content=[AIToolResultPart(tool_call_id="t1", name="foo", result="hello")],
+                    )
+                ]
+            )
+
+            assert len(contents) == 1
+            assert contents[0].role == "user"
+            mock_genai.types.Part.from_function_response.assert_called_once_with(
+                name="foo", response={"result": "hello"}
+            )
+            mock_genai.types.Part.from_bytes.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_tool_result_image_appended_as_user_content(self) -> None:
+        """An image tool result keeps the function response text-only and puts
+        the decoded image on a following user Content (inline bytes)."""
+        import base64
+
+        mock_genai = _mock_genai_module()
+        with patch.dict("sys.modules", _genai_modules(mock_genai)):
+            from roomkit.providers.ai.base import AIToolResultPart
+            from roomkit.providers.gemini.ai import GeminiAIProvider
+
+            provider = GeminiAIProvider(_config())
+            raw = b"\x89PNG\r\n\x1a\n screenshot bytes"
+            b64 = base64.b64encode(raw).decode()
+            contents = provider._format_messages(
+                [
+                    AIMessage(
+                        role="tool",
+                        content=[
+                            AIToolResultPart(
+                                tool_call_id="t1",
+                                name="screenshot",
+                                result=[
+                                    AITextPart(text="the screen"),
+                                    AIImagePart(
+                                        url=f"data:image/png;base64,{b64}", mime_type="image/png"
+                                    ),
+                                ],
+                            )
+                        ],
+                    )
+                ]
+            )
+
+            # Function response carries the text only; image is a second user
+            # Content built from inline bytes (from_bytes, not from_uri).
+            mock_genai.types.Part.from_function_response.assert_called_once_with(
+                name="screenshot", response={"result": "the screen"}
+            )
+            mock_genai.types.Part.from_bytes.assert_called_once_with(
+                data=raw, mime_type="image/png"
+            )
+            assert len(contents) == 2
+            assert contents[1].role == "user"
+            assert contents[1].parts[-1].data == raw
+
+    @pytest.mark.asyncio
     async def test_generate_with_system_prompt(self) -> None:
         mock_genai = _mock_genai_module()
         with patch.dict("sys.modules", _genai_modules(mock_genai)):

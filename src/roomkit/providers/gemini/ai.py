@@ -166,17 +166,26 @@ class GeminiAIProvider(AIProvider):
             elif isinstance(msg.content, list) and any(
                 isinstance(p, AIToolResultPart) for p in msg.content
             ):
-                # Function responses
+                # Function responses. A FunctionResponse.response is a JSON
+                # Struct — it can't carry image bytes, so an image tool result
+                # keeps the function response text-only and the image is decoded
+                # onto a following user Content via _image_part (inline bytes the
+                # model can actually see). Text results are unchanged.
                 parts = []
+                image_parts: list[Any] = []
                 for p in msg.content:
                     if isinstance(p, AIToolResultPart):
+                        text, images = p.split_for_message()
                         parts.append(
                             self._types.Part.from_function_response(
                                 name=p.name,
-                                response={"result": p.as_text()},
+                                response={"result": text},
                             )
                         )
+                        image_parts.extend(self._image_part(img) for img in images)
                 contents.append(self._types.Content(role="user", parts=parts))
+                if image_parts:
+                    contents.append(self._types.Content(role="user", parts=image_parts))
             else:
                 role = "model" if msg.role == "assistant" else "user"
                 parts = self._format_content(msg.content)
