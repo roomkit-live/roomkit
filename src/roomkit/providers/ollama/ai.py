@@ -186,17 +186,27 @@ class OllamaAIProvider(AIProvider):
 
             # Tool results split into their own message(s) — Ollama uses
             # role="tool" with a tool_name field. One result per message
-            # so the model sees them paired with their calls in order.
+            # so the model sees them paired with their calls in order. An
+            # image result (screenshot tool) can't ride on the tool message:
+            # Ollama honors the ``images`` field on user messages, not tool
+            # ones, so the image is split onto a synthetic user message right
+            # after the tool result(s) — the tool message stays text-only and
+            # the call/result pairing valid. Text results are unchanged.
             tool_results = [p for p in m.content if isinstance(p, AIToolResultPart)]
             if tool_results:
+                pending_images: list[str] = []
                 for r in tool_results:
+                    text, images = r.split_for_message()
                     result.append(
                         {
                             "role": "tool",
-                            "content": r.as_text(),
+                            "content": text,
                             "tool_name": r.name,
                         }
                     )
+                    pending_images.extend(_ollama_image_payload(img.url) for img in images)
+                if pending_images:
+                    result.append({"role": "user", "content": "", "images": pending_images})
                 continue
 
             # Anything else is reassembled into a single message.

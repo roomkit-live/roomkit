@@ -87,6 +87,29 @@ class AIToolResultPart(BaseModel):
             return self.result
         return "\n".join(p.text if isinstance(p, AITextPart) else "[image]" for p in self.result)
 
+    def split_for_message(self) -> tuple[str, list[AIImagePart]]:
+        """Split the result into the tool-message text and its image parts.
+
+        Unlike Anthropic — whose Messages API accepts image blocks *inside* a
+        ``tool_result`` — most providers reject image content in a tool /
+        function-response message; the image has to ride on a following ``user``
+        message instead. This returns the text to keep on the tool message
+        (text parts joined, or a ``"[see image below]"`` placeholder when the
+        result was image-only, so the tool-call/result pairing stays non-empty
+        and valid) together with the image parts to render natively elsewhere.
+
+        A string result yields ``(result, [])`` and a text-only list yields
+        ``(joined_text, [])`` — the no-op path that keeps every existing text
+        tool byte-for-byte unchanged. Only a list carrying an image populates
+        the second element and triggers a provider's synthetic-image path.
+        """
+        if isinstance(self.result, str):
+            return self.result, []
+        texts = [p.text for p in self.result if isinstance(p, AITextPart)]
+        images = [p for p in self.result if isinstance(p, AIImagePart)]
+        text = "\n".join(texts) if texts else ("[see image below]" if images else "")
+        return text, images
+
 
 class AIThinkingPart(BaseModel):
     """AI reasoning/thinking block in conversation history.

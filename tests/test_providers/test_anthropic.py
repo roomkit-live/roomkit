@@ -749,3 +749,40 @@ class TestAnthropicToolResultImages:
             result=[AITextPart(text="a"), AIImagePart(url="data:image/png;base64,X")],
         ).as_text()
         assert flattened == "a\n[image]"
+
+    def test_split_for_message_separates_text_and_images(self) -> None:
+        # split_for_message() is the shared helper the non-Anthropic providers
+        # use: it keeps the tool message text-only and hands back the image
+        # parts to render on a following user message.
+        from roomkit.providers.ai.base import (
+            AIImagePart,
+            AITextPart,
+            AIToolResultPart,
+        )
+
+        # String result → unchanged text, no images (the no-op path).
+        assert AIToolResultPart(
+            tool_call_id="t", name="f", result="plain"
+        ).split_for_message() == ("plain", [])
+
+        # Text-only list → joined text, no images.
+        assert AIToolResultPart(
+            tool_call_id="t",
+            name="f",
+            result=[AITextPart(text="a"), AITextPart(text="b")],
+        ).split_for_message() == ("a\nb", [])
+
+        # Text + image → text kept, image split out.
+        img = AIImagePart(url="data:image/png;base64,X")
+        text, images = AIToolResultPart(
+            tool_call_id="t", name="f", result=[AITextPart(text="the screen"), img]
+        ).split_for_message()
+        assert text == "the screen"
+        assert images == [img]
+
+        # Image-only → placeholder text so the tool message stays non-empty.
+        text, images = AIToolResultPart(
+            tool_call_id="t", name="f", result=[img]
+        ).split_for_message()
+        assert text == "[see image below]"
+        assert images == [img]

@@ -587,6 +587,67 @@ class TestOllamaMessageBuilding:
         sent = mod.AsyncClient.return_value.chat.await_args.kwargs["messages"]
         assert sent[-1]["images"] == ["/tmp/cat.png"]
 
+    @pytest.mark.asyncio
+    async def test_tool_result_image_rides_on_synthetic_user_message(self) -> None:
+        """An image tool result reaches the model on a following user message.
+
+        Ollama honors ``images`` on user messages, not tool ones, so the tool
+        message stays text-only and the image is split onto a synthetic user
+        message right after it (data URI stripped to raw base64).
+        """
+        provider, mod = _provider()
+        mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
+
+        b64 = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+            "AAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        tool_result_msg = AIMessage(
+            role="tool",
+            content=[
+                AIToolResultPart(
+                    tool_call_id="call_1",
+                    name="screenshot",
+                    result=[
+                        AITextPart(text="the screen"),
+                        AIImagePart(url=f"data:image/png;base64,{b64}", mime_type="image/png"),
+                    ],
+                )
+            ],
+        )
+        await provider.generate(_context(messages=[tool_result_msg]))
+
+        sent = mod.AsyncClient.return_value.chat.await_args.kwargs["messages"]
+        assert sent[-2] == {"role": "tool", "content": "the screen", "tool_name": "screenshot"}
+        assert sent[-1] == {"role": "user", "content": "", "images": [b64]}
+
+    @pytest.mark.asyncio
+    async def test_image_only_tool_result_keeps_placeholder(self) -> None:
+        """An image-only result keeps a placeholder on the tool message so the
+        tool-call/result pairing stays non-empty and valid."""
+        provider, mod = _provider()
+        mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")
+
+        tool_result_msg = AIMessage(
+            role="tool",
+            content=[
+                AIToolResultPart(
+                    tool_call_id="call_1",
+                    name="screenshot",
+                    result=[AIImagePart(url="data:image/png;base64,ABC")],
+                )
+            ],
+        )
+        await provider.generate(_context(messages=[tool_result_msg]))
+
+        sent = mod.AsyncClient.return_value.chat.await_args.kwargs["messages"]
+        assert sent[-2] == {
+            "role": "tool",
+            "content": "[see image below]",
+            "tool_name": "screenshot",
+        }
+        assert sent[-1] == {"role": "user", "content": "", "images": ["ABC"]}
+
 
 class TestOllamaErrors:
     @pytest.mark.asyncio
