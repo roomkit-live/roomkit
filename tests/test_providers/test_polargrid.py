@@ -693,10 +693,10 @@ class TestPolarGridToolMessages:
         assert tool_msg["tool_call_id"] == "call_1"
         assert tool_msg["name"] == "get_weather"
 
-    def test_image_tool_result_splits_to_user_message(self) -> None:
-        # Forward-compat: PolarGrid has no vision model today, but an image
-        # tool result must not be dropped — it keeps the tool message text-only
-        # and rides on a synthetic user message (OpenAI-shaped image_url).
+    def test_image_tool_result_flattens_to_text(self) -> None:
+        # polargrid-sdk 0.8.7 validates chat Message.content as str | None, so
+        # image tool results remain text-only until the SDK/API exposes a
+        # multimodal chat request shape.
         provider, _ = _provider()
         messages = provider._build_messages(
             [
@@ -719,16 +719,10 @@ class TestPolarGridToolMessages:
         assert messages == [
             {
                 "role": "tool",
-                "content": "the screen",
+                "content": "the screen\n[image]",
                 "tool_call_id": "call_1",
                 "name": "screenshot",
-            },
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,IMGDATA"}}
-                ],
-            },
+            }
         ]
 
 

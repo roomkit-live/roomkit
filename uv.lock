@@ -3810,16 +3810,16 @@ wheels = [
 
 [[package]]
 name = "polargrid-sdk"
-version = "0.8.5"
+version = "0.8.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "httpx" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ed/8e/da66d002e79f655862e5204d0b0f33f502ca264b9fbdc5a304bb94745d26/polargrid_sdk-0.8.5.tar.gz", hash = "sha256:0777062df455915a6cdee93d2b2379517a845c32325c46f8dee24b4669ddcb5d", size = 40503, upload-time = "2026-06-17T18:33:47.656Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b0/ff/4bc3558ccdb20daa7a038def1facabf93bf69978feed2264f0c9b19326f9/polargrid_sdk-0.8.7.tar.gz", hash = "sha256:585c0265d6406a95a992892f3af47658b31dc55c0849b510965ec8bb63b4106d", size = 41069, upload-time = "2026-06-23T21:12:46.363Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/14/8b/3eb8baa5a9c686a3091cfdca2845d4dc1554a9c01934e5f294b029935227/polargrid_sdk-0.8.5-py3-none-any.whl", hash = "sha256:a6e603a86aa09c77f20e0e097fbaea91f6c68190232230bfaa2805c4947bc291", size = 35169, upload-time = "2026-06-17T18:33:46.305Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/1d/aefde8715e16b32e5cef3b0784c0279285a1534bc20ed2da4a6aca26383e/polargrid_sdk-0.8.7-py3-none-any.whl", hash = "sha256:269123851f695b6f9a9ccc829a0012abba4e0c476a0891929d7ed9c396658575", size = 35214, upload-time = "2026-06-23T21:12:45.367Z" },
 ]
 
 [[package]]
@@ -5420,10 +5420,10 @@ requires-dist = [
     { name = "phonenumbers", marker = "extra == 'dev'", specifier = ">=8.13" },
     { name = "phonenumbers", marker = "extra == 'phonenumbers'", specifier = ">=8.13" },
     { name = "pillow", marker = "extra == 'video-overlay'", specifier = ">=10.0" },
-    { name = "polargrid-sdk", marker = "extra == 'all'", specifier = ">=0.8.5" },
-    { name = "polargrid-sdk", marker = "extra == 'dev'", specifier = ">=0.8.5" },
-    { name = "polargrid-sdk", marker = "extra == 'polargrid'", specifier = ">=0.8.5" },
-    { name = "polargrid-sdk", marker = "extra == 'providers'", specifier = ">=0.8.5" },
+    { name = "polargrid-sdk", marker = "extra == 'all'", specifier = ">=0.8.7" },
+    { name = "polargrid-sdk", marker = "extra == 'dev'", specifier = ">=0.8.7" },
+    { name = "polargrid-sdk", marker = "extra == 'polargrid'", specifier = ">=0.8.7" },
+    { name = "polargrid-sdk", marker = "extra == 'providers'", specifier = ">=0.8.7" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.8" },
     { name = "pyautogui", marker = "extra == 'screen-input'", specifier = ">=0.9" },
     { name = "pydantic", specifier = ">=2.9" },

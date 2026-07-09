@@ -92,8 +92,10 @@ class PolarGridAIProvider(AIProvider):
 
     @property
     def supports_vision(self) -> bool:
-        # No model in PolarGrid's catalog (qwen-3.5-27b, qwen-3.6-35b-a3b,
-        # kokoro, whisper-large-v3-turbo) exposes vision on the chat endpoint.
+        # polargrid-sdk 0.8.7 still validates chat Message.content as
+        # ``str | None``. Even if future models expose vision, RoomKit can't
+        # deliver images through this provider until the SDK/API accepts
+        # multimodal chat message content.
         return False
 
     @property
@@ -276,35 +278,18 @@ class PolarGridAIProvider(AIProvider):
 
         tool_results = [p for p in parts if isinstance(p, AIToolResultPart)]
         if tool_results:
-            # Forward-compat: PolarGrid's chat endpoint is string-content-only
-            # today and no PolarGrid model exposes vision, so this image path
-            # only activates once an image tool result meets a vision model.
-            # Mirrors the OpenAI shape — tool messages stay text-only and the
-            # image rides on a synthetic user message. Text results unchanged.
-            rendered: list[dict[str, Any]] = []
-            pending_images: list[AIImagePart] = []
-            for r in tool_results:
-                text, images = r.split_for_message()
-                rendered.append(
-                    {
-                        "role": "tool",
-                        "content": text,
-                        "tool_call_id": r.tool_call_id,
-                        "name": r.name,
-                    }
-                )
-                pending_images.extend(images)
-            if pending_images:
-                rendered.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "image_url", "image_url": {"url": img.url}}
-                            for img in pending_images
-                        ],
-                    }
-                )
-            return rendered
+            # polargrid-sdk 0.8.7 rejects list-based ``content`` before the
+            # HTTP call, so image tool results stay flattened until PolarGrid
+            # exposes a multimodal chat request shape.
+            return [
+                {
+                    "role": "tool",
+                    "content": r.as_text(),
+                    "tool_call_id": r.tool_call_id,
+                    "name": r.name,
+                }
+                for r in tool_results
+            ]
 
         text = self._format_content(parts)
         return [{"role": m.role, "content": text}] if text else []
