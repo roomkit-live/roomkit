@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Image tool results across every vision-capable provider.** An image tool
+  result (`AIToolResultPart.result` carrying an `AIImagePart` — e.g. a screenshot
+  tool) now reaches the model as a real image on **Ollama, OpenAI, Gemini,
+  Mistral, and PolarGrid**, not just Anthropic. Unlike Anthropic — whose Messages
+  API accepts image blocks inside a `tool_result` — these providers reject images
+  in a tool/function-response message, so the tool message is kept text-only and
+  the image is split onto a synthetic `user` message right after it, in each
+  provider's native shape (Ollama `images`, OpenAI/Mistral/PolarGrid `image_url`,
+  Gemini inline-bytes `Part`). A new `AIToolResultPart.split_for_message()` (a
+  format-agnostic peer to `as_text()`) does the text/image split; each provider
+  renders the images itself. PolarGrid is forward-compat (its endpoint is
+  string-only and no PolarGrid model exposes vision yet). Fully backward
+  compatible: string and text-only-list results render exactly as before, and a
+  non-vision model still can't see the image (vision is the model's capability,
+  not RoomKit's — the image is simply no longer dropped before it gets there).
+
 ## [0.24.0] — 2026-07-08
 
 ### Added
