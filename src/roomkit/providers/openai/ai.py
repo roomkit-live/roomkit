@@ -247,16 +247,34 @@ class OpenAIAIProvider(AIProvider):
             elif isinstance(m.content, list) and any(
                 isinstance(p, AIToolResultPart) for p in m.content
             ):
-                # Tool results → separate messages with role="tool"
+                # Tool results → separate messages with role="tool". Chat
+                # Completions accepts only text on a tool message (image_url
+                # parts are user-only), so an image result keeps the tool
+                # message text-only and the image is split onto a synthetic
+                # user message emitted after every tool message — the
+                # call/result pairing stays valid. Text results are unchanged.
+                pending_images: list[AIImagePart] = []
                 for p in m.content:
                     if isinstance(p, AIToolResultPart):
+                        text, images = p.split_for_message()
                         result.append(
                             {
                                 "role": "tool",
                                 "tool_call_id": p.tool_call_id,
-                                "content": p.as_text(),
+                                "content": text,
                             }
                         )
+                        pending_images.extend(images)
+                if pending_images:
+                    result.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "image_url", "image_url": {"url": img.url}}
+                                for img in pending_images
+                            ],
+                        }
+                    )
             else:
                 result.append(
                     {

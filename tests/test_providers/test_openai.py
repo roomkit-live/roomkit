@@ -593,6 +593,68 @@ class TestOpenAIAIProvider:
             assert tool_events[0].id == "call_1"
 
 
+class TestOpenAIToolResultImages:
+    """Image tool results (screenshot-style output) reach the model as a real
+    image on a synthetic user message — Chat Completions keeps tool messages
+    text-only."""
+
+    def test_tool_result_string_passes_through(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.ai.base import AIToolResultPart
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            messages = provider._build_messages(
+                [
+                    AIMessage(
+                        role="tool",
+                        content=[AIToolResultPart(tool_call_id="t1", name="foo", result="hello")],
+                    )
+                ]
+            )
+            assert messages == [{"role": "tool", "tool_call_id": "t1", "content": "hello"}]
+
+    def test_tool_result_image_splits_to_user_message(self) -> None:
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.ai.base import (
+                AIImagePart,
+                AITextPart,
+                AIToolResultPart,
+            )
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            messages = provider._build_messages(
+                [
+                    AIMessage(
+                        role="tool",
+                        content=[
+                            AIToolResultPart(
+                                tool_call_id="t1",
+                                name="screenshot",
+                                result=[
+                                    AITextPart(text="the screen"),
+                                    AIImagePart(url="data:image/png;base64,IMGDATA"),
+                                ],
+                            )
+                        ],
+                    )
+                ]
+            )
+            assert messages == [
+                {"role": "tool", "tool_call_id": "t1", "content": "the screen"},
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "data:image/png;base64,IMGDATA"},
+                        }
+                    ],
+                },
+            ]
+
+
 class TestThinkTagParser:
     """Unit tests for the streaming <think> tag parser."""
 
