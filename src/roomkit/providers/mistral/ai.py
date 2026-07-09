@@ -162,16 +162,33 @@ class MistralAIProvider(AIProvider):
             elif isinstance(m.content, list) and any(
                 isinstance(p, AIToolResultPart) for p in m.content
             ):
+                # Mistral tool messages are text-only; image_url parts are
+                # user-only. So an image result keeps the tool message
+                # text-only and the image is split onto a synthetic user
+                # message after every tool message. Text results are unchanged.
+                pending_images: list[AIImagePart] = []
                 for p in m.content:
                     if isinstance(p, AIToolResultPart):
+                        text, images = p.split_for_message()
                         result.append(
                             {
                                 "role": "tool",
                                 "tool_call_id": p.tool_call_id,
                                 "name": p.name,
-                                "content": p.as_text(),
+                                "content": text,
                             }
                         )
+                        pending_images.extend(images)
+                if pending_images:
+                    result.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "image_url", "image_url": {"url": img.url}}
+                                for img in pending_images
+                            ],
+                        }
+                    )
             else:
                 result.append(
                     {

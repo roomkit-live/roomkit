@@ -509,3 +509,71 @@ class TestMistralAIProvider:
 
             assert "Stream error" in str(exc_info.value)
             assert exc_info.value.provider == "mistral"
+
+
+class TestMistralToolResultImages:
+    """Image tool results reach the model on a synthetic user message —
+    Mistral tool messages are text-only (image_url is user-only)."""
+
+    def test_tool_result_string_passes_through(self) -> None:
+        with patch.dict("sys.modules", _mistral_modules()):
+            from roomkit.providers.ai.base import AIToolResultPart
+            from roomkit.providers.mistral.ai import MistralAIProvider
+
+            provider = MistralAIProvider(_config())
+            messages = provider._build_messages(
+                [
+                    AIMessage(
+                        role="tool",
+                        content=[AIToolResultPart(tool_call_id="t1", name="foo", result="hello")],
+                    )
+                ]
+            )
+            assert messages == [
+                {"role": "tool", "tool_call_id": "t1", "name": "foo", "content": "hello"}
+            ]
+
+    def test_tool_result_image_splits_to_user_message(self) -> None:
+        with patch.dict("sys.modules", _mistral_modules()):
+            from roomkit.providers.ai.base import (
+                AIImagePart,
+                AITextPart,
+                AIToolResultPart,
+            )
+            from roomkit.providers.mistral.ai import MistralAIProvider
+
+            provider = MistralAIProvider(_config())
+            messages = provider._build_messages(
+                [
+                    AIMessage(
+                        role="tool",
+                        content=[
+                            AIToolResultPart(
+                                tool_call_id="t1",
+                                name="screenshot",
+                                result=[
+                                    AITextPart(text="the screen"),
+                                    AIImagePart(url="data:image/png;base64,IMGDATA"),
+                                ],
+                            )
+                        ],
+                    )
+                ]
+            )
+            assert messages == [
+                {
+                    "role": "tool",
+                    "tool_call_id": "t1",
+                    "name": "screenshot",
+                    "content": "the screen",
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "data:image/png;base64,IMGDATA"},
+                        }
+                    ],
+                },
+            ]
