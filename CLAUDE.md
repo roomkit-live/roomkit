@@ -21,7 +21,7 @@ The RFC at `../roomkit-specs/roomkit-rfc.md` is the **normative specification** 
 - **Event indexing invariants** — sequential, atomic, monotonically increasing per room
 - **Chain depth limits** — default max=5, prevents AI-to-AI infinite loops
 - **Voice pipeline stage ordering and constraints** (Section 12) — AEC/DTMF/recording rules
-- **27 hook triggers** with sync/async execution semantics (Section 9)
+- **65 hook triggers** with sync/async execution semantics (Section 9)
 - **4 conformance levels**: Level 0 (Core, REQUIRED), Level 1 (Transport, RECOMMENDED), Level 2 (Rich, OPTIONAL), Level 3 (Voice, OPTIONAL)
 
 Before implementing new features or changing core behavior, read the relevant RFC section. If a proposed change conflicts with the RFC, the RFC must be updated first (in `roomkit-specs`), then the code follows.

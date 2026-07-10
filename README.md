@@ -289,7 +289,7 @@ async def check(event: RoomEvent, ctx: RoomContext) -> HookResult:
     return HookResult.allow()
 ```
 
-**35 hook triggers** across the full lifecycle: event pipeline (`BEFORE_BROADCAST`, `AFTER_BROADCAST`), room lifecycle, channel lifecycle, identity resolution, voice events (speech start/end, transcription, barge-in, VAD, DTMF, speaker change), TTS events, tool execution, orchestration (phase transitions, handoffs), and side effects (delivery status, errors, protocol traces).
+**65 hook triggers** across the full lifecycle: event pipeline (`BEFORE_BROADCAST`, `AFTER_BROADCAST`), room lifecycle, channel lifecycle, identity resolution and membership (join/leave), voice events (speech start/end, transcription, barge-in, VAD, DTMF, speaker change), TTS events, tool execution, video, orchestration (phase transitions, handoffs), and side effects (delivery status, errors, protocol traces).
 
 Hooks support filtering by channel type, channel ID, and direction.
 

@@ -780,7 +780,8 @@ SystemContent       # System notifications with code & data
 Event Pipeline:      BEFORE_BROADCAST, AFTER_BROADCAST
 Channel Lifecycle:   ON_CHANNEL_ATTACHED, ON_CHANNEL_DETACHED, ON_CHANNEL_MUTED, ON_CHANNEL_UNMUTED
 Room Lifecycle:      ON_ROOM_CREATED, ON_ROOM_PAUSED, ON_ROOM_CLOSED
-Identity:            ON_IDENTITY_AMBIGUOUS, ON_IDENTITY_UNKNOWN, ON_PARTICIPANT_IDENTIFIED
+Identity & Members:  ON_IDENTITY_AMBIGUOUS, ON_IDENTITY_UNKNOWN, ON_PARTICIPANT_IDENTIFIED,
+                     ON_PARTICIPANT_JOINED, ON_PARTICIPANT_LEFT
 Delivery:            ON_DELIVERY_STATUS
 Side Effects:        ON_TASK_CREATED, ON_ERROR
 Voice:               ON_SPEECH_START, ON_SPEECH_END, ON_TRANSCRIPTION, BEFORE_TTS, AFTER_TTS
@@ -788,7 +789,10 @@ Voice Pipeline:      ON_VAD_SILENCE, ON_VAD_AUDIO_LEVEL, ON_SPEAKER_CHANGE, ON_B
                      ON_DTMF, ON_TURN_COMPLETE, ON_TURN_INCOMPLETE, ON_BACKCHANNEL,
                      ON_RECORDING_STARTED, ON_RECORDING_STOPPED
 Audio Levels:        ON_INPUT_AUDIO_LEVEL, ON_OUTPUT_AUDIO_LEVEL
-Tool Execution:      ON_TOOL_CALL (unified — fires from AIChannel and RealtimeVoiceChannel)
+Tool Execution:      BEFORE_TOOL_USE, ON_TOOL_CALL (unified — fires from AIChannel and RealtimeVoiceChannel),
+                     ON_USER_INPUT_REQUIRED
 Realtime Voice:      ON_REALTIME_TEXT_INJECTED
-Observability:       ON_OBSERVATION
 ```
+
+Common triggers grouped for quick reference; RFC §9.2 lists the complete,
+authoritative set (65 implemented) with per-trigger execution mode and status.
