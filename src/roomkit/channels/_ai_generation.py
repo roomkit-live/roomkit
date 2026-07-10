@@ -259,6 +259,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
             event.chain_depth + 1,
             response.usage,
             response_metadata=ai_context.response_metadata,
+            parent_event_id=event.parent_event_id,
         )
 
         if self._after_response_hook:
@@ -291,6 +292,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
         chain_depth: int,
         usage: dict[str, Any] | None,
         response_metadata: dict[str, Any] | None = None,
+        parent_event_id: str | None = None,
     ) -> list[RoomEvent]:
         """Build interleaved text + tool call events from tool loop result.
 
@@ -302,6 +304,10 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
         into every MESSAGE event's metadata — turn-level attribution set
         by the host travels with the reply from creation, so it is
         persisted and broadcast without any post-hoc rewrite.
+
+        ``parent_event_id`` is the trigger's thread root (already normalised
+        by the locked pipeline); every response event inherits it so the
+        reply lands in the same thread. ``None`` keeps the reply top-level.
         """
         from uuid import uuid4
 
@@ -321,6 +327,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                     source=source,
                     content=TextContent(body=response.content),
                     chain_depth=chain_depth,
+                    parent_event_id=parent_event_id,
                     metadata=message_metadata,
                 )
             ]
@@ -340,6 +347,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                         content=TextContent(body=rnd.text_before),
                         chain_depth=chain_depth,
                         correlation_id=correlation_id,
+                        parent_event_id=parent_event_id,
                         metadata=dict(response_metadata or {}),
                     )
                 )
@@ -363,6 +371,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                         ),
                         chain_depth=chain_depth,
                         correlation_id=correlation_id,
+                        parent_event_id=parent_event_id,
                     )
                 )
                 events.append(
@@ -381,6 +390,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                         ),
                         chain_depth=chain_depth,
                         correlation_id=correlation_id,
+                        parent_event_id=parent_event_id,
                     )
                 )
 
@@ -394,6 +404,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                     content=TextContent(body=response.content),
                     chain_depth=chain_depth,
                     correlation_id=correlation_id,
+                    parent_event_id=parent_event_id,
                     metadata=message_metadata,
                 )
             )
@@ -410,6 +421,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                     content=TextContent(body=""),
                     chain_depth=chain_depth,
                     correlation_id=correlation_id,
+                    parent_event_id=parent_event_id,
                     metadata=message_metadata,
                 )
             )

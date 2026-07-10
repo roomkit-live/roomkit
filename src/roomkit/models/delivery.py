@@ -34,7 +34,14 @@ class InboundMessage(BaseModel):
     content: EventContent
     event_type: EventType = EventType.MESSAGE
     external_id: str | None = None
+    # Provider-native thread reference (Slack ``thread_ts``, Discord message
+    # snowflake, Teams ``replyToId``) — opaque, passed straight through to the
+    # provider. NOT the in-app threading key; see ``parent_event_id``.
     thread_id: str | None = None
+    # In-app threading: the event this message replies to. RoomKit normalises it
+    # to the thread ROOT (flat two-level model) and the AI's reply inherits it,
+    # so the response lands in the same thread. See ``RoomEvent.parent_event_id``.
+    parent_event_id: str | None = None
     idempotency_key: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     session: Any | None = None

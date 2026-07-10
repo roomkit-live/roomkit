@@ -98,6 +98,7 @@ class WebSocketChannel(Channel):
             supports_reactions=True,
             supports_edit=True,
             supports_delete=True,
+            supports_threading=True,
             supports_rich_text=True,
             supports_media=True,
             supports_buttons=True,

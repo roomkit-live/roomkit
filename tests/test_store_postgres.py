@@ -494,3 +494,65 @@ class TestContextManager:
             await s.create_room(room)
             result = await s.get_room("ctx-test")
             assert result is not None
+
+
+class TestThreadQueries:
+    """Flat two-level threading — the ``parent_event_id`` filters + summaries."""
+
+    async def test_top_level_only_excludes_replies(self, store) -> None:
+        from roomkit.models.store_filter import EventFilter
+
+        await store.create_room(Room(id="r1"))
+        root = _make_event(body="root")
+        await store.add_event(root)
+        await store.add_event(_make_event(body="standalone"))
+        await store.add_event(_make_event(body="reply1", parent_event_id=root.id))
+        await store.add_event(_make_event(body="reply2", parent_event_id=root.id))
+
+        top = await store.list_events("r1", event_filter=EventFilter(top_level_only=True))
+        assert {e.content.body for e in top} == {"root", "standalone"}
+
+    async def test_parent_event_id_returns_only_that_thread(self, store) -> None:
+        from roomkit.models.store_filter import EventFilter
+
+        await store.create_room(Room(id="r1"))
+        root = _make_event(body="root")
+        await store.add_event(root)
+        await store.add_event(_make_event(body="reply1", parent_event_id=root.id))
+        await store.add_event(_make_event(body="reply2", parent_event_id=root.id))
+
+        replies = await store.list_events("r1", event_filter=EventFilter(parent_event_id=root.id))
+        assert {e.content.body for e in replies} == {"reply1", "reply2"}
+        assert all(e.parent_event_id == root.id for e in replies)
+
+    async def test_thread_summaries_counts_and_last_reply(self, store) -> None:
+        from datetime import UTC, datetime
+
+        await store.create_room(Room(id="r1"))
+        root = _make_event(body="root")
+        await store.add_event(root)
+        await store.add_event(
+            _make_event(
+                body="r1",
+                parent_event_id=root.id,
+                created_at=datetime(2026, 1, 1, 12, 0, 1, tzinfo=UTC),
+            )
+        )
+        last = _make_event(
+            body="r2",
+            parent_event_id=root.id,
+            created_at=datetime(2026, 1, 1, 12, 0, 2, tzinfo=UTC),
+        )
+        await store.add_event(last)
+
+        summaries = await store.get_thread_summaries("r1", [root.id])
+        assert set(summaries) == {root.id}
+        assert summaries[root.id].reply_count == 2
+        assert summaries[root.id].last_reply_at == last.created_at
+
+    async def test_thread_summaries_empty_cases(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        root = _make_event(body="root")
+        await store.add_event(root)
+        assert await store.get_thread_summaries("r1", [root.id]) == {}
+        assert await store.get_thread_summaries("r1", []) == {}

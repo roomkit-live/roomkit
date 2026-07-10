@@ -6,7 +6,7 @@ import asyncio
 from typing import Any
 
 from roomkit.models.channel import ChannelBinding
-from roomkit.models.event import RoomEvent
+from roomkit.models.event import RoomEvent, ThreadSummary
 from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
@@ -227,11 +227,33 @@ class InMemoryStore(ConversationStore):
             events = [e for e in events if e.correlation_id == ef.correlation_id]
         if ef.participant_id is not None:
             events = [e for e in events if e.source.participant_id == ef.participant_id]
+        if ef.parent_event_id is not None:
+            events = [e for e in events if e.parent_event_id == ef.parent_event_id]
+        if ef.top_level_only:
+            events = [e for e in events if e.parent_event_id is None]
         if ef.after_time is not None:
             events = [e for e in events if e.created_at > ef.after_time]
         if ef.before_time is not None:
             events = [e for e in events if e.created_at < ef.before_time]
         return events
+
+    async def get_thread_summaries(
+        self, room_id: str, root_event_ids: list[str]
+    ) -> dict[str, ThreadSummary]:
+        roots = set(root_event_ids)
+        summaries: dict[str, ThreadSummary] = {}
+        for eid in self._room_events.get(room_id, []):
+            event = self._events.get(eid)
+            if event is None or event.parent_event_id not in roots:
+                continue
+            summary = summaries.get(event.parent_event_id)
+            if summary is None:
+                summary = ThreadSummary(root_event_id=event.parent_event_id)
+                summaries[event.parent_event_id] = summary
+            summary.reply_count += 1
+            if summary.last_reply_at is None or event.created_at > summary.last_reply_at:
+                summary.last_reply_at = event.created_at
+        return summaries
 
     async def check_idempotency(self, room_id: str, key: str) -> bool:
         return key in self._idempotency.get(room_id, set())

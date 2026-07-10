@@ -7,7 +7,7 @@ from typing import Any
 
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import EventType
-from roomkit.models.event import RoomEvent
+from roomkit.models.event import RoomEvent, ThreadSummary
 from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
@@ -141,6 +141,19 @@ class ConversationStore(ABC):
                 ``index < before_index``, in ascending order.
             event_filter: Rich filter criteria (event types, source, time range,
                 correlation ID). See :class:`EventFilter`.
+        """
+        ...
+
+    @abstractmethod
+    async def get_thread_summaries(
+        self, room_id: str, root_event_ids: list[str]
+    ) -> dict[str, ThreadSummary]:
+        """Return reply aggregates for the given thread roots.
+
+        For each root that has replies, the result maps its id to a
+        :class:`ThreadSummary` (reply count + last-reply timestamp). Roots with
+        no replies are absent from the mapping. Used to render a "N replies"
+        affordance without fetching every reply.
         """
         ...
 

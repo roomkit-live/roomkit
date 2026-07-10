@@ -460,6 +460,7 @@ class RoomKit(
         provider: str | None = None,
         response_visibility: str | None = None,
         created_at: datetime | None = None,
+        parent_event_id: str | None = None,
     ) -> RoomEvent:
         """Send an event directly into a room from a channel.
 
@@ -475,6 +476,9 @@ class RoomKit(
             provider: Optional provider/backend name for event attribution
             response_visibility: Controls where the AI's response is delivered.
                 Uses the same vocabulary as visibility. None means no restriction.
+            parent_event_id: In-app thread parent. The locked pipeline normalises
+                it to the thread root (flat two-level model); see
+                :meth:`_resolve_thread_root`.
         """
         from roomkit.telemetry.base import SpanKind
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
@@ -494,6 +498,7 @@ class RoomKit(
             ),
             content=content,
             chain_depth=chain_depth,
+            parent_event_id=parent_event_id,
             status=EventStatus.DELIVERED,
             metadata=metadata or {},
             visibility=visibility,

@@ -235,6 +235,10 @@ class RoomEvent(BaseModel):
     response_visibility: str | None = None
     index: int = Field(default=0, ge=0)
     chain_depth: int = Field(default=0, ge=0)
+    # In-app thread root (flat two-level model): a reply points at its thread
+    # root; a root or non-threaded message is ``None``. The locked pipeline
+    # normalises any parent reference to the root, so this is always a root id.
+    # Distinct from ``channel_data.thread_id`` (provider-native reference).
     parent_event_id: str | None = None
     correlation_id: str | None = None
     idempotency_key: str | None = None
@@ -242,3 +246,16 @@ class RoomEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     channel_data: ChannelData = Field(default_factory=ChannelData)
     delivery_results: dict[str, Any] = Field(default_factory=dict)
+
+
+class ThreadSummary(BaseModel):
+    """Aggregate view of a thread, keyed by its root event.
+
+    Returned by :meth:`ConversationStore.get_thread_summaries` so a client can
+    render a "N replies · last reply at" affordance on a root message without
+    fetching every reply.
+    """
+
+    root_event_id: str
+    reply_count: int = 0
+    last_reply_at: datetime | None = None

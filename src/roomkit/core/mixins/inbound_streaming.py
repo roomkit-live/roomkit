@@ -101,6 +101,10 @@ class InboundStreamingMixin(HelpersMixin):
         correlation_id = uuid4().hex
         chain_depth = sr.trigger_event.chain_depth + 1
         visibility = response_vis or "all"
+        # Inherit the trigger's thread root so the AI reply lands in the same
+        # thread (already normalised to a root by the locked pipeline). None
+        # when the trigger is top-level — the reply stays top-level too.
+        parent_event_id = sr.trigger_event.parent_event_id
 
         def _make_source() -> EventSource:
             return EventSource(
@@ -128,6 +132,7 @@ class InboundStreamingMixin(HelpersMixin):
                 chain_depth=chain_depth,
                 visibility=visibility,
                 correlation_id=correlation_id,
+                parent_event_id=parent_event_id,
                 metadata=dict(sr.response_metadata or {}),
             )
             # Run BEFORE_BROADCAST sync hooks on the assembled segment before it
@@ -177,6 +182,7 @@ class InboundStreamingMixin(HelpersMixin):
                 chain_depth=chain_depth,
                 visibility=visibility,
                 correlation_id=correlation_id,
+                parent_event_id=parent_event_id,
             )
             stored = await self._persist_event_auto_index(room_id, event)
             if stored is not None:
@@ -199,6 +205,7 @@ class InboundStreamingMixin(HelpersMixin):
                 chain_depth=chain_depth,
                 visibility=visibility,
                 correlation_id=correlation_id,
+                parent_event_id=parent_event_id,
             )
             stored = await self._persist_event_auto_index(room_id, event)
             if stored is not None:
@@ -254,6 +261,7 @@ class InboundStreamingMixin(HelpersMixin):
                 chain_depth=chain_depth,
                 visibility=visibility,
                 correlation_id=correlation_id,
+                parent_event_id=parent_event_id,
             )
             try:
                 await channel.deliver_stream(segment_stream(), placeholder, binding, context)
@@ -274,6 +282,7 @@ class InboundStreamingMixin(HelpersMixin):
                     chain_depth=chain_depth,
                     visibility=visibility,
                     correlation_id=correlation_id,
+                    parent_event_id=parent_event_id,
                 )
                 await self._hook_engine.run_async_hooks(
                     room_id, HookTrigger.ON_ERROR, error_event, context
@@ -304,6 +313,7 @@ class InboundStreamingMixin(HelpersMixin):
                     chain_depth=chain_depth,
                     visibility=visibility,
                     correlation_id=correlation_id,
+                    parent_event_id=parent_event_id,
                 )
                 await self._hook_engine.run_async_hooks(
                     room_id, HookTrigger.ON_ERROR, error_event, context

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Message threading (flat two-level, Slack/Teams style).** Replies now form
+  threads on the existing `RoomEvent.parent_event_id` field. A reply carries the
+  id of its thread **root**; a root or non-threaded message is `None`. Set it via
+  `InboundMessage.parent_event_id` or the new `send_event(..., parent_event_id=)`
+  argument. The locked pipeline **normalises** any parent reference to the thread
+  root (replying to a reply collapses to the same thread; a dangling/cross-room
+  parent drops to top level with a warning), so the invariant "`parent_event_id`
+  is always a root" is enforced by the framework rather than the caller. The
+  parent is applied **centrally** in the inbound pipeline, so every channel
+  (WebSocket, SMS, email, …) threads without per-channel wiring. An AI channel's
+  response **inherits the trigger's thread root** on both the streaming and
+  non-streaming paths, so an `@`-mention inside a thread is answered in-thread.
+  New reads: `EventFilter.top_level_only` (roots + standalone, replies excluded),
+  `EventFilter.parent_event_id` (one thread's replies), and
+  `ConversationStore.get_thread_summaries()` (per-root reply count + last-reply
+  time, returning `ThreadSummary`). The PostgreSQL store adds a partial index on
+  `events(parent_event_id)`. Distinct from `ChannelData.thread_id`, which remains
+  the provider-native thread reference. The in-app WebSocket channel now
+  advertises `supports_threading`. See `examples/message_threading.py`.
+
 ## [0.25.0] — 2026-07-09
 
 ### Added

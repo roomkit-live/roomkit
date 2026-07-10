@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from roomkit.models.channel import ChannelBinding
-from roomkit.models.event import RoomEvent
+from roomkit.models.event import RoomEvent, ThreadSummary
 from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
@@ -464,6 +464,12 @@ class PostgresStore(ConversationStore):
             conditions.append(f"source_participant_id = ${idx}")
             params.append(ef.participant_id)
             idx += 1
+        if ef.parent_event_id is not None:
+            conditions.append(f"parent_event_id = ${idx}")
+            params.append(ef.parent_event_id)
+            idx += 1
+        if ef.top_level_only:
+            conditions.append("parent_event_id IS NULL")
         if ef.after_time is not None:
             conditions.append(f"created_at > ${idx}")
             params.append(ef.after_time)
@@ -473,6 +479,30 @@ class PostgresStore(ConversationStore):
             params.append(ef.before_time)
             idx += 1
         return idx
+
+    async def get_thread_summaries(
+        self, room_id: str, root_event_ids: list[str]
+    ) -> dict[str, ThreadSummary]:
+        if not root_event_ids:
+            return {}
+        query = (
+            "SELECT parent_event_id, count(*) AS reply_count, "  # nosec B608
+            "max(created_at) AS last_reply_at "
+            "FROM events "
+            "WHERE room_id = $1 AND parent_event_id = ANY($2) "
+            "GROUP BY parent_event_id"
+        )
+        with self._query_span("get_thread_summaries", "events"):
+            async with self._acquire() as conn:
+                rows = await conn.fetch(query, room_id, root_event_ids)
+        return {
+            row["parent_event_id"]: ThreadSummary(
+                root_event_id=row["parent_event_id"],
+                reply_count=row["reply_count"],
+                last_reply_at=row["last_reply_at"],
+            )
+            for row in rows
+        }
 
     async def check_idempotency(self, room_id: str, key: str) -> bool:
         async with self._acquire() as conn:

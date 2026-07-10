@@ -191,6 +191,13 @@ class InboundMixin(HelpersMixin):
         if message.visibility != Visibility.ALL and event.visibility == Visibility.ALL:
             event = event.model_copy(update={"visibility": message.visibility})
 
+        # In-app thread parent, applied centrally so every channel's
+        # handle_inbound carries it (each builds its own RoomEvent and would
+        # otherwise have to remember to copy it). The locked pipeline then
+        # normalises it to the thread root.
+        if message.parent_event_id is not None and event.parent_event_id is None:
+            event = event.model_copy(update={"parent_event_id": message.parent_event_id})
+
         # Identity resolution pipeline (RFC §7)
         try:
             event, resolved_identity, pending_id_result = await self._resolve_identity(

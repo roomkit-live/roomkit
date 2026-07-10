@@ -37,6 +37,15 @@ class EventFilter(BaseModel):
     participant_id: str | None = None
     """Filter by participant ID in the event source."""
 
+    parent_event_id: str | None = None
+    """Return the replies of this thread root — events whose
+    ``parent_event_id`` equals this id (flat two-level threading)."""
+
+    top_level_only: bool = False
+    """Return only top-level events (``parent_event_id IS NULL``): thread roots
+    and non-threaded messages, excluding replies. Mutually exclusive with
+    *parent_event_id*."""
+
     after_time: datetime | None = None
     """Return events created after this timestamp (exclusive)."""
 
@@ -51,6 +60,13 @@ class EventFilter(BaseModel):
             and self.after_time >= self.before_time
         ):
             msg = "after_time must be before before_time"
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_thread_filters(self) -> EventFilter:
+        if self.top_level_only and self.parent_event_id is not None:
+            msg = "top_level_only and parent_event_id are mutually exclusive"
             raise ValueError(msg)
         return self
 
