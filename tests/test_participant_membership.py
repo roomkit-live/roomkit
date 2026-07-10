@@ -45,9 +45,7 @@ def _async_hook(trigger: HookTrigger, fn: object) -> HookRegistration:
 class TestMembership:
     async def test_add_member_creates_active_participant(self, kit: RoomKit) -> None:
         await kit.create_room(room_id="r1")
-        p = await kit.add_member(
-            "r1", "ws:u1:r1", "u1", identity_id="u1", display_name="Alice"
-        )
+        p = await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1", display_name="Alice")
         assert p.status == ParticipantStatus.ACTIVE
         assert p.role == ParticipantRole.MEMBER
         assert p.identity_id == "u1"
