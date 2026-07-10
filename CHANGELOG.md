@@ -12,25 +12,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Image tool results across every vision-capable provider.** An image tool
   result (`AIToolResultPart.result` carrying an `AIImagePart` — e.g. a screenshot
   tool) now reaches the model as a real image on **Ollama, OpenAI, Gemini,
-  and Mistral**, not just Anthropic. Unlike Anthropic — whose Messages
+  Mistral, and PolarGrid**, not just Anthropic. Unlike Anthropic — whose Messages
   API accepts image blocks inside a `tool_result` — these providers reject images
   in a tool/function-response message, so the tool message is kept text-only and
   the image is split onto a synthetic `user` message right after it, in each
-  provider's native shape (Ollama `images`, OpenAI/Mistral `image_url`,
+  provider's native shape (Ollama `images`, OpenAI/Mistral/PolarGrid `image_url`,
   Gemini inline-bytes `Part`). A new `AIToolResultPart.split_for_message()` (a
   format-agnostic peer to `as_text()`) does the text/image split; each provider
-  renders the images itself. PolarGrid remains text-only for now:
-  `polargrid-sdk` 0.8.7 still validates chat message `content` as text, so image
-  tool results flatten to text there until PolarGrid exposes a multimodal chat
-  request shape. Fully backward compatible: string and text-only-list results
-  render exactly as before, and a non-vision model still can't see the image
-  (vision is the model's capability, not RoomKit's — the image is simply no
+  renders the images itself. Fully backward compatible: string and text-only-list
+  results render exactly as before, and a non-vision model still can't see the
+  image (vision is the model's capability, not RoomKit's — the image is simply no
   longer dropped before it gets there).
+- **PolarGrid image input (vision).** `polargrid-sdk` 0.9.0 added multimodal chat
+  (`Message.content` accepts OpenAI-shaped `image_url` parts), so an `AIImagePart`
+  in a user turn now crosses the wire to PolarGrid instead of being dropped.
+  `PolarGridAIProvider.supports_vision` is model-driven from the curated catalog:
+  `qwen-3.6-35b-a3b` (yul-02) reads images (verified live), while `qwen-3.5-27b`
+  accepts the request but does not — so only the former is flagged vision-capable.
+  Vision is the deployed model's capability, not the SDK's.
+- **`CLIChannel.run(content_factory=…)`.** Optional hook mapping a raw input line
+  to inbound content (default `TextContent`); returning `None` skips the line.
+  Lets an example accept richer input — the PolarGrid example uses it for an
+  `/image <path> [question]` command — without reimplementing the input loop.
 
 ### Changed
 
 - Updated the PolarGrid optional dependency from `polargrid-sdk>=0.8.5` to
-  `polargrid-sdk>=0.8.7`.
+  `polargrid-sdk>=0.9.0` (multimodal chat / image input).
 
 ## [0.24.0] — 2026-07-08
 

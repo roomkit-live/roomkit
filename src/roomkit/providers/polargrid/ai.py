@@ -20,6 +20,16 @@ tags out and surface them as ``AIResponse.thinking`` (non-streaming) and
 ``StreamThinkingDelta`` (streaming), leaving the answer text clean —
 reusing the OpenAI provider's tag parser. Thinking responses are larger
 and slower (the reasoning counts toward latency and ``max_tokens``).
+
+polargrid-sdk 0.9.0 added multimodal chat: ``Message.content`` accepts a
+list of OpenAI-shaped parts (``{"type":"image_url","image_url":{"url":...}}``),
+so images now cross the wire instead of being flattened to text.
+``supports_vision`` is model-driven (from the curated catalog); an
+``AIImagePart`` in a user turn renders as an ``image_url`` part, and an image
+tool result keeps the tool message text-only and rides on a synthetic ``user``
+message (tool/function-response messages reject images, same as OpenAI). The
+image ``url`` may be a remote URL or a ``data:`` URI. Whether the model
+actually *sees* the image is the deployed model's capability, not the SDK's.
 """
 
 from __future__ import annotations
@@ -52,7 +62,12 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.openai.ai import _extract_think_tags, _ThinkTagParser
 from roomkit.providers.polargrid.config import PolarGridConfig
-from roomkit.providers.polargrid.models import MODELS, REGIONS, PolarGridRegion
+from roomkit.providers.polargrid.models import (
+    MODELS,
+    MODELS_BY_ID,
+    REGIONS,
+    PolarGridRegion,
+)
 
 logger = logging.getLogger("roomkit.providers.polargrid")
 
@@ -92,11 +107,11 @@ class PolarGridAIProvider(AIProvider):
 
     @property
     def supports_vision(self) -> bool:
-        # polargrid-sdk 0.8.7 still validates chat Message.content as
-        # ``str | None``. Even if future models expose vision, RoomKit can't
-        # deliver images through this provider until the SDK/API accepts
-        # multimodal chat message content.
-        return False
+        # Model-driven: polargrid-sdk 0.9.0 lets the chat endpoint carry
+        # images, but seeing them is the deployed model's capability. Read it
+        # from the curated catalog; an unknown model is treated as text-only.
+        info = MODELS_BY_ID.get(self._config.model)
+        return bool(info and info.supports_vision)
 
     @property
     def supports_streaming(self) -> bool:
@@ -213,34 +228,32 @@ class PolarGridAIProvider(AIProvider):
             str
             | list[AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart | AIThinkingPart]
         ),
-    ) -> str:
-        """Flatten message content to plain text.
+    ) -> str | list[dict[str, Any]]:
+        """Format message content for the PolarGrid chat request.
 
-        PolarGrid's chat endpoint takes string content only — no image
-        parts. Tool-call and tool-result parts are handled structurally
-        in :meth:`_render_message` and skipped here; images are dropped
-        (``supports_vision`` is False).
+        A plain string passes through. A part list flattens to text unless it
+        carries an :class:`AIImagePart` — then it renders as an OpenAI-shaped
+        multimodal block list (``text`` + ``image_url`` parts, order preserved),
+        which polargrid-sdk 0.9.0 accepts.
+
+        Thinking is NOT round-tripped: qwen regenerates its reasoning each turn
+        and echoes any wrapper we feed back (qwen multi-turn guidance is to strip
+        ``<think>`` from history). Tool call/result parts are rendered as
+        structured messages by :meth:`_render_message`, not inline here.
         """
         if isinstance(content, str):
             return content
 
-        parts: list[str] = []
-        dropped: list[str] = []
-        for part in content:
-            if isinstance(part, AITextPart):
-                parts.append(part.text)
-            elif isinstance(part, (AIThinkingPart, AIToolCallPart, AIToolResultPart)):
-                # Thinking is NOT round-tripped: qwen regenerates its
-                # reasoning each turn and echoes any wrapper we feed back
-                # (qwen multi-turn guidance is to strip <think> from
-                # history). Tool calls/results are rendered as structured
-                # messages by _build_messages, not inline text.
-                continue
-            else:
-                dropped.append(type(part).__name__)
-        if dropped:
-            logger.debug("Dropped unsupported content parts: %s", ", ".join(dropped))
-        return "".join(parts)
+        if any(isinstance(p, AIImagePart) for p in content):
+            blocks: list[dict[str, Any]] = []
+            for part in content:
+                if isinstance(part, AITextPart):
+                    blocks.append({"type": "text", "text": part.text})
+                elif isinstance(part, AIImagePart):
+                    blocks.append({"type": "image_url", "image_url": {"url": part.url}})
+            return blocks
+
+        return "".join(p.text for p in content if isinstance(p, AITextPart))
 
     def _render_message(self, m: AIMessage) -> list[dict[str, Any]]:
         """Render one RoomKit message into PolarGrid chat message(s).
@@ -248,8 +261,10 @@ class PolarGridAIProvider(AIProvider):
         Tool calls become an assistant message carrying ``tool_calls``
         (OpenAI-shaped, ``arguments`` as a JSON string). Tool results
         become one ``role="tool"`` message each, paired back to their
-        call via ``tool_call_id``. Everything else flattens to a single
-        string-content message (empty ones are skipped).
+        call via ``tool_call_id``, with any image split onto a synthetic
+        ``user`` message. Everything else renders to a single message whose
+        content is a string, or an ``image_url`` block list when it carries an
+        image (empty ones are skipped).
         """
         if isinstance(m.content, str):
             return [{"role": m.role, "content": m.content}] if m.content else []
@@ -278,18 +293,34 @@ class PolarGridAIProvider(AIProvider):
 
         tool_results = [p for p in parts if isinstance(p, AIToolResultPart)]
         if tool_results:
-            # polargrid-sdk 0.8.7 rejects list-based ``content`` before the
-            # HTTP call, so image tool results stay flattened until PolarGrid
-            # exposes a multimodal chat request shape.
-            return [
-                {
-                    "role": "tool",
-                    "content": r.as_text(),
-                    "tool_call_id": r.tool_call_id,
-                    "name": r.name,
-                }
-                for r in tool_results
-            ]
+            # A tool/function-response message rejects image content, so keep it
+            # text-only and carry any image on a synthetic ``user`` message right
+            # after (OpenAI-shaped ``image_url``, accepted since polargrid-sdk
+            # 0.9.0). Text-only results are unchanged — no user message emitted.
+            rendered: list[dict[str, Any]] = []
+            pending_images: list[AIImagePart] = []
+            for r in tool_results:
+                text, images = r.split_for_message()
+                rendered.append(
+                    {
+                        "role": "tool",
+                        "content": text,
+                        "tool_call_id": r.tool_call_id,
+                        "name": r.name,
+                    }
+                )
+                pending_images.extend(images)
+            if pending_images:
+                rendered.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": img.url}}
+                            for img in pending_images
+                        ],
+                    }
+                )
+            return rendered
 
         text = self._format_content(parts)
         return [{"role": m.role, "content": text}] if text else []

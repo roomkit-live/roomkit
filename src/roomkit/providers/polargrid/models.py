@@ -111,6 +111,11 @@ def region_choices() -> str:
     return f"ids ({ids}) or aliases ({aliases})"
 
 
+# Vision: PolarGrid rolled out multimodal chat with polargrid-sdk 0.9.0 (the
+# chat endpoint now accepts OpenAI-shaped image_url content), but vision is the
+# deployed model's capability, not the SDK's. Only qwen-3.6-35b-a3b (yul-02)
+# actually reads the image — verified live 2026-07-09; qwen-3.5-27b accepts the
+# request but answers as if no image was sent, so it stays text-only.
 MODELS: list[ModelInfo] = [
     ModelInfo(
         id="qwen-3.5-27b",
@@ -121,8 +126,11 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="qwen-3.6-35b-a3b",
         display_name="Qwen 3.6 35B-A3B",
-        supports_vision=False,
-        # enable_thinking validated end-to-end on yul-02.
-        capabilities=["completion", "tools", "thinking"],
+        supports_vision=True,
+        # enable_thinking + vision validated end-to-end on yul-02.
+        capabilities=["completion", "tools", "thinking", "vision"],
     ),
 ]
+
+# Model id → catalog entry, for the model-driven ``supports_vision`` lookup.
+MODELS_BY_ID: dict[str, ModelInfo] = {m.id: m for m in MODELS}

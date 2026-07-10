@@ -693,10 +693,10 @@ class TestPolarGridToolMessages:
         assert tool_msg["tool_call_id"] == "call_1"
         assert tool_msg["name"] == "get_weather"
 
-    def test_image_tool_result_flattens_to_text(self) -> None:
-        # polargrid-sdk 0.8.7 validates chat Message.content as str | None, so
-        # image tool results remain text-only until the SDK/API exposes a
-        # multimodal chat request shape.
+    def test_image_tool_result_splits_to_user_message(self) -> None:
+        # polargrid-sdk 0.9.0 accepts multimodal chat content. A tool message
+        # can't carry an image, so it stays text-only and the image rides on a
+        # synthetic user message right after (OpenAI-shaped image_url).
         provider, _ = _provider()
         messages = provider._build_messages(
             [
@@ -719,9 +719,41 @@ class TestPolarGridToolMessages:
         assert messages == [
             {
                 "role": "tool",
-                "content": "the screen\n[image]",
+                "content": "the screen",
                 "tool_call_id": "call_1",
                 "name": "screenshot",
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,IMGDATA"}}
+                ],
+            },
+        ]
+
+    def test_renders_user_image_as_image_url(self) -> None:
+        # A user turn with a text + image part renders as an OpenAI-shaped
+        # multimodal content list (text block + image_url block, order kept).
+        provider, _ = _provider()
+        messages = provider._build_messages(
+            [
+                AIMessage(
+                    role="user",
+                    content=[
+                        AITextPart(text="what is this?"),
+                        AIImagePart(url="data:image/png;base64,IMGDATA"),
+                    ],
+                )
+            ],
+            None,
+        )
+        assert messages == [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "what is this?"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,IMGDATA"}},
+                ],
             }
         ]
 
@@ -741,7 +773,10 @@ class TestPolarGridModels:
         assert by_id["qwen-3.5-27b"].display_name == "Qwen 3.5 27B"
         # 3.6 is the thinking-capable model (validated on yul-02).
         assert "thinking" in by_id["qwen-3.6-35b-a3b"].capabilities
+        # Vision landed with polargrid-sdk 0.9.0, but only qwen-3.6-35b-a3b
+        # (yul-02) actually reads the image (verified live); 3.5 is text-only.
         assert by_id["qwen-3.5-27b"].supports_vision is False
+        assert by_id["qwen-3.6-35b-a3b"].supports_vision is True
 
     def test_available_models_is_offline_classmethod(self) -> None:
         # Callable on the class without an SDK/instance (no network/key).
@@ -749,6 +784,18 @@ class TestPolarGridModels:
 
         ids = [m.id for m in PolarGridAIProvider.available_models()]
         assert ids == ["qwen-3.5-27b", "qwen-3.6-35b-a3b"]
+
+    def test_supports_vision_is_model_driven(self) -> None:
+        # Per-model: only qwen-3.6-35b-a3b reads images; 3.5 and any unknown
+        # model are text-only.
+        vision, _ = _provider(model="qwen-3.6-35b-a3b")
+        assert vision.supports_vision is True
+
+        text_default, _ = _provider(model="qwen-3.5-27b")
+        assert text_default.supports_vision is False
+
+        unknown, _ = _provider(model="some-text-only-model")
+        assert unknown.supports_vision is False
 
     @pytest.mark.asyncio
     async def test_list_models_maps_and_backfills(self) -> None:

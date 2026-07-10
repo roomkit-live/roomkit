@@ -31,7 +31,7 @@ from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelO
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelMediaType, ChannelType
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.event import EventContent, EventSource, RoomEvent, TextContent
 from roomkit.models.streaming import ThinkingDeltaMarker
 
 if TYPE_CHECKING:
@@ -194,6 +194,7 @@ class CLIChannel(Channel):
         *,
         sender_id: str = "user",
         welcome: str | None = None,
+        content_factory: Callable[[str], EventContent | None] | None = None,
     ) -> None:
         """Run an interactive input loop.
 
@@ -206,6 +207,11 @@ class CLIChannel(Channel):
             room_id: Target room ID.
             sender_id: Participant ID for the human user.
             welcome: Optional welcome message printed before the loop.
+            content_factory: Optional hook mapping a raw input line to the
+                inbound content. Defaults to ``TextContent(body=line)``; an
+                example can return richer content (e.g. an image attachment)
+                without reimplementing this loop. Returning ``None`` skips the
+                line (e.g. a local slash-command already handled by the hook).
         """
         if welcome:
             print(welcome)
@@ -240,12 +246,18 @@ class CLIChannel(Channel):
             if stripped.lower() in ("quit", "exit", "q"):
                 break
 
+            if content_factory:
+                content = content_factory(stripped)
+                if content is None:
+                    continue
+            else:
+                content = TextContent(body=stripped)
             try:
                 await kit.process_inbound(
                     InboundMessage(
                         channel_id=self.channel_id,
                         sender_id=sender_id,
-                        content=TextContent(body=stripped),
+                        content=content,
                     )
                 )
             except asyncio.CancelledError:
