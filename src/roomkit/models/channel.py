@@ -80,6 +80,10 @@ class ChannelBinding(BaseModel):
     output_muted: bool = False
     visibility: str = Visibility.ALL
     participant_id: str | None = None
+    # Not the read-tracking source of truth: the read position lives in the
+    # ``read_markers`` table (see ``mark_read`` / ``list_read_markers``). This
+    # field is an optional per-binding hint only and is not advanced by the
+    # read API — read receipts and unread counts derive from ``read_markers``.
     last_read_index: int | None = Field(default=None, ge=0)
     attached_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     capabilities: ChannelCapabilities = Field(default_factory=ChannelCapabilities)

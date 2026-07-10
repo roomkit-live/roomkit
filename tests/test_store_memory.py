@@ -194,6 +194,18 @@ class TestReadTracking:
         count = await store.get_unread_count("r1", "ch1")
         assert count == 0
 
+    async def test_list_read_markers(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        events = []
+        for _ in range(3):
+            e = make_event(room_id="r1")
+            await store.add_event(e)
+            events.append(e)
+        await store.mark_read("r1", "ch1", events[2].id)
+        await store.mark_read("r1", "ch2", events[0].id)
+        markers = await store.list_read_markers("r1")
+        assert markers == {"ch1": 2, "ch2": 0}
+
 
 class TestIdentityOperations:
     async def test_create_and_get(self, store: InMemoryStore) -> None:

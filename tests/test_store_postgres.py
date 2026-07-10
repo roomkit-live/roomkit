@@ -234,6 +234,21 @@ class TestReadTracking:
         count = await store.get_unread_count("r1", "ch1")
         assert count == 0
 
+    async def test_list_read_markers(self, store) -> None:
+        await store.create_room(Room(id="r1"))
+        events = []
+        for _ in range(3):
+            e = _make_event(room_id="r1")
+            await store.add_event(e)
+            events.append(e)
+        await store.mark_read("r1", "ch1", events[2].id)
+        await store.mark_read("r1", "ch2", events[0].id)
+        markers = await store.list_read_markers("r1")
+        assert set(markers) == {"ch1", "ch2"}
+        # ch1 read further than ch2; a channel with no marker is absent
+        assert markers["ch1"] > markers["ch2"]
+        assert "ch3" not in markers
+
 
 class TestIdentityOperations:
     async def test_create_and_get(self, store) -> None:

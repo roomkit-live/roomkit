@@ -590,3 +590,13 @@ class RoomKit(
     async def mark_all_read(self, room_id: str, channel_id: str) -> None:
         """Mark all events as read for a channel."""
         await self._store.mark_all_read(room_id, channel_id)
+
+    async def list_read_markers(self, room_id: str) -> dict[str, int]:
+        """Return every channel's read high-water-mark (event index) in a room.
+
+        Maps ``channel_id`` -> the highest read event ``index``. With one
+        channel per member, this is the per-member read position used to
+        aggregate "seen by" receipts; resolve channels to members via the
+        bindings/participants (see :meth:`list_members`).
+        """
+        return await self._store.list_read_markers(room_id)

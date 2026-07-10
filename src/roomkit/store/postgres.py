@@ -789,6 +789,14 @@ class PostgresStore(ConversationStore):
             )
             return row["cnt"] if row else 0
 
+    async def list_read_markers(self, room_id: str) -> dict[str, int]:
+        async with self._acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT channel_id, event_index FROM read_markers WHERE room_id = $1",
+                room_id,
+            )
+        return {r["channel_id"]: r["event_index"] for r in rows}
+
     # ── Identity operations ──────────────────────────────────────
 
     async def create_identity(self, identity: Identity) -> Identity:

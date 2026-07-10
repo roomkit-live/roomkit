@@ -343,3 +343,13 @@ class ConversationStore(ABC):
     async def get_unread_count(self, room_id: str, channel_id: str) -> int:
         """Return the number of unread events for a channel in a room."""
         ...
+
+    @abstractmethod
+    async def list_read_markers(self, room_id: str) -> dict[str, int]:
+        """Return every channel's read high-water-mark in a room.
+
+        Maps ``channel_id`` -> the highest read event ``index``. Channels with
+        no marker are absent. With one channel per member, this is the raw
+        material for aggregating per-member "seen by" receipts.
+        """
+        ...

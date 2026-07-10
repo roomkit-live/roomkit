@@ -198,6 +198,8 @@ class HookTrigger(StrEnum):
     ON_IDENTITY_AMBIGUOUS = "on_identity_ambiguous"
     ON_IDENTITY_UNKNOWN = "on_identity_unknown"
     ON_PARTICIPANT_IDENTIFIED = "on_participant_identified"
+    ON_PARTICIPANT_JOINED = "on_participant_joined"
+    ON_PARTICIPANT_LEFT = "on_participant_left"
     # Side effects
     ON_TASK_CREATED = "on_task_created"
     # Delivery status (outbound message tracking)

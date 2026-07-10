@@ -837,6 +837,17 @@ class TestPostgresStore:
         result = await store.get_unread_count("room-1", "ch-1")
         assert result == 8
 
+    async def test_list_read_markers(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetch.return_value = [
+            {"channel_id": "ch-1", "event_index": 5},
+            {"channel_id": "ch-2", "event_index": 2},
+        ]
+        result = await store.list_read_markers("room-1")
+        assert result == {"ch-1": 5, "ch-2": 2}
+        call_args = mock_conn.fetch.call_args
+        assert "read_markers" in call_args[0][0]
+
     # ── Identity operations ─────────────────────────────────────
 
     async def test_create_identity(self) -> None:

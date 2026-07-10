@@ -334,6 +334,16 @@ class InMemoryStore(ConversationStore):
         except ValueError:
             return len(event_ids)
 
+    async def list_read_markers(self, room_id: str) -> dict[str, int]:
+        event_ids = self._room_events.get(room_id, [])
+        markers: dict[str, int] = {}
+        for channel_id, event_id in self._read_markers.get(room_id, {}).items():
+            try:
+                markers[channel_id] = event_ids.index(event_id)
+            except ValueError:
+                continue
+        return markers
+
     # Identity operations
 
     async def create_identity(self, identity: Identity) -> Identity:
