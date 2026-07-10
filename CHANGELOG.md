@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] — 2026-07-10
+
 ### Added
 
 - **Message threading (flat two-level, Slack/Teams style).** Replies now form
@@ -28,6 +30,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `events(parent_event_id)`. Distinct from `ChannelData.thread_id`, which remains
   the provider-native thread reference. The in-app WebSocket channel now
   advertises `supports_threading`. See `examples/message_threading.py`.
+- **Explicit room membership (join/leave).** Member-level join/leave on top of
+  the participant model, distinct from `ensure_participant` (which lazily
+  materialises a sender the first time they speak). `add_member()` is a
+  deliberate, idempotent join — safe to call on every room open: joining an
+  already-`ACTIVE` member is a no-op (no write, no event), while a brand-new
+  member or a re-join (someone who previously left) upserts them `ACTIVE` and
+  preserves the original `joined_at`. `remove_member()` is a soft leave — it
+  flips `status` to `LEFT` (or `BANNED`) rather than deleting the row, so
+  membership history and read markers survive. `list_members()` returns the
+  active roster (`include_left=True` for the full history) and `is_member()`
+  tests active membership by identity. Each transition emits a
+  `PARTICIPANT_JOINED` / `PARTICIPANT_LEFT` system event and fires the new
+  `ON_PARTICIPANT_JOINED` / `ON_PARTICIPANT_LEFT` hooks. No schema migration —
+  `ParticipantStatus`, `participants.status` and the `read_markers` table
+  already existed.
+- **Read-marker aggregation ("seen by").** New
+  `ConversationStore.list_read_markers(room_id)` (on the ABC, PostgreSQL and
+  in-memory stores) and `RoomKit.list_read_markers()` return every channel's
+  read high-water-mark as `channel_id -> event index`. With one channel per
+  member, this is the raw material for aggregating per-member "seen by"
+  receipts. `read_markers` is now documented as the single source of truth for
+  read position; `ChannelBinding.last_read_index` is an explicitly
+  non-authoritative per-binding hint that the read API does not advance.
 
 ## [0.25.0] — 2026-07-09
 
