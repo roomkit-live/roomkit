@@ -36,9 +36,7 @@ class TestVoiceChannelCloseProviders:
     async def test_close_providers_false_leaves_stt_tts_open(self) -> None:
         """The caller owns the injected providers; only the backend is closed."""
         stt, tts, backend = _FakeClosable(), _FakeClosable(), MockVoiceBackend()
-        channel = VoiceChannel(
-            "v", stt=stt, tts=tts, backend=backend, close_providers=False
-        )
+        channel = VoiceChannel("v", stt=stt, tts=tts, backend=backend, close_providers=False)
 
         await channel.close()
 
