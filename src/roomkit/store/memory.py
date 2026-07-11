@@ -54,7 +54,7 @@ class InMemoryStore(ConversationStore):
 
     async def get_room(self, room_id: str) -> Room | None:
         room = self._rooms.get(room_id)
-        return room.model_copy() if room is not None else None
+        return room.model_copy(deep=True) if room is not None else None
 
     async def update_room(self, room: Room) -> Room:
         if room.id not in self._rooms:
@@ -89,7 +89,7 @@ class InMemoryStore(ConversationStore):
 
     async def list_rooms(self, offset: int = 0, limit: int = 50) -> list[Room]:
         rooms = list(self._rooms.values())
-        return [r.model_copy() for r in rooms[offset : offset + limit]]
+        return [r.model_copy(deep=True) for r in rooms[offset : offset + limit]]
 
     async def find_rooms(
         self,
@@ -110,7 +110,7 @@ class InMemoryStore(ConversationStore):
                 room.metadata.get(k) == v for k, v in metadata_filter.items()
             ):
                 continue
-            results.append(room.model_copy())
+            results.append(room.model_copy(deep=True))
         return results[offset : offset + limit]
 
     async def find_latest_room(
@@ -137,7 +137,7 @@ class InMemoryStore(ConversationStore):
                     continue
             if best is None or room.created_at > best.created_at:
                 best = room
-        return best.model_copy() if best is not None else None
+        return best.model_copy(deep=True) if best is not None else None
 
     async def find_room_id_by_channel(
         self, channel_id: str, status: str | None = None
@@ -162,7 +162,7 @@ class InMemoryStore(ConversationStore):
 
     async def get_event(self, event_id: str) -> RoomEvent | None:
         event = self._events.get(event_id)
-        return event.model_copy() if event is not None else None
+        return event.model_copy(deep=True) if event is not None else None
 
     async def update_event(self, event: RoomEvent) -> RoomEvent:
         self._events[event.id] = event
@@ -206,17 +206,17 @@ class InMemoryStore(ConversationStore):
 
         if before_index is not None:
             tail = events[-limit:] if limit < len(events) else events
-            return [e.model_copy() for e in tail]
+            return [e.model_copy(deep=True) for e in tail]
         if after_index is not None:
-            return [e.model_copy() for e in events[:limit]]
+            return [e.model_copy(deep=True) for e in events[:limit]]
         if newest_first:
             # Newest ``limit`` events (offset counted from the newest end),
             # returned oldest-first so the snapshot reads chronologically.
             # Mirrors the ``before_index`` tail slice.
             end = max(0, len(events) - offset)
             start = max(0, end - limit)
-            return [e.model_copy() for e in events[start:end]]
-        return [e.model_copy() for e in events[offset : offset + limit]]
+            return [e.model_copy(deep=True) for e in events[start:end]]
+        return [e.model_copy(deep=True) for e in events[offset : offset + limit]]
 
     @staticmethod
     def _apply_event_filter(events: list[RoomEvent], ef: EventFilter) -> list[RoomEvent]:
@@ -288,7 +288,7 @@ class InMemoryStore(ConversationStore):
 
     async def get_binding(self, room_id: str, channel_id: str) -> ChannelBinding | None:
         binding = self._bindings.get(room_id, {}).get(channel_id)
-        return binding.model_copy() if binding is not None else None
+        return binding.model_copy(deep=True) if binding is not None else None
 
     async def update_binding(self, binding: ChannelBinding) -> ChannelBinding:
         self._bindings.setdefault(binding.room_id, {})[binding.channel_id] = binding
@@ -302,7 +302,7 @@ class InMemoryStore(ConversationStore):
         return True
 
     async def list_bindings(self, room_id: str) -> list[ChannelBinding]:
-        return [b.model_copy() for b in self._bindings.get(room_id, {}).values()]
+        return [b.model_copy(deep=True) for b in self._bindings.get(room_id, {}).values()]
 
     # Participant operations
 
@@ -312,14 +312,14 @@ class InMemoryStore(ConversationStore):
 
     async def get_participant(self, room_id: str, participant_id: str) -> Participant | None:
         participant = self._participants.get(room_id, {}).get(participant_id)
-        return participant.model_copy() if participant is not None else None
+        return participant.model_copy(deep=True) if participant is not None else None
 
     async def update_participant(self, participant: Participant) -> Participant:
         self._participants.setdefault(participant.room_id, {})[participant.id] = participant
         return participant
 
     async def list_participants(self, room_id: str) -> list[Participant]:
-        return [p.model_copy() for p in self._participants.get(room_id, {}).values()]
+        return [p.model_copy(deep=True) for p in self._participants.get(room_id, {}).values()]
 
     # Read tracking
 
@@ -363,14 +363,14 @@ class InMemoryStore(ConversationStore):
 
     async def get_identity(self, identity_id: str) -> Identity | None:
         identity = self._identities.get(identity_id)
-        return identity.model_copy() if identity is not None else None
+        return identity.model_copy(deep=True) if identity is not None else None
 
     async def resolve_identity(self, channel_type: str, address: str) -> Identity | None:
         identity_id = self._address_index.get((channel_type, address))
         if identity_id is None:
             return None
         identity = self._identities.get(identity_id)
-        return identity.model_copy() if identity is not None else None
+        return identity.model_copy(deep=True) if identity is not None else None
 
     async def link_address(self, identity_id: str, channel_type: str, address: str) -> None:
         identity = self._identities.get(identity_id)
@@ -393,14 +393,14 @@ class InMemoryStore(ConversationStore):
 
     async def get_task(self, task_id: str) -> Task | None:
         task = self._tasks.get(task_id)
-        return task.model_copy() if task is not None else None
+        return task.model_copy(deep=True) if task is not None else None
 
     async def list_tasks(self, room_id: str, status: str | None = None) -> list[Task]:
         task_ids = self._room_tasks.get(room_id, [])
         tasks = [self._tasks[tid] for tid in task_ids if tid in self._tasks]
         if status is not None:
             tasks = [t for t in tasks if t.status == status]
-        return [t.model_copy() for t in tasks]
+        return [t.model_copy(deep=True) for t in tasks]
 
     async def update_task(self, task: Task) -> Task:
         self._tasks[task.id] = task
@@ -416,5 +416,7 @@ class InMemoryStore(ConversationStore):
     async def list_observations(self, room_id: str) -> list[Observation]:
         obs_ids = self._room_observations.get(room_id, [])
         return [
-            self._observations[oid].model_copy() for oid in obs_ids if oid in self._observations
+            self._observations[oid].model_copy(deep=True)
+            for oid in obs_ids
+            if oid in self._observations
         ]

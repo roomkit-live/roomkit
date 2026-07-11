@@ -371,3 +371,12 @@ class ConversationStore(ABC):
         material for aggregating per-member "seen by" receipts.
         """
         ...
+
+    async def close(self) -> None:
+        """Release any resources held by the store (e.g. a connection pool).
+
+        Called by ``RoomKit.close()``. The default is a no-op — override it in
+        backends that own external resources. Implementations MUST be
+        idempotent and MUST NOT close resources they do not own.
+        """
+        return None

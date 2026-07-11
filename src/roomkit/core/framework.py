@@ -389,6 +389,9 @@ class RoomKit(
         if self._voice:
             await self._voice.close()
         await self._realtime.close()
+        # Close the conversation store (e.g. release a PostgreSQL pool). The
+        # store's close() is idempotent and a no-op for a caller-owned pool.
+        await self._store.close()
         # Close status bus
         await self._status_bus.close()
         # Flush telemetry (ends active spans, flushes exporter)
