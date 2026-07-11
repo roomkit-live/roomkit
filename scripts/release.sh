@@ -29,6 +29,21 @@ if [[ "$BRANCH" != "main" ]]; then
     exit 1
 fi
 
+# --- Refuse a version already on PyPI (the publish step is irreversible) ---
+echo "==> Checking PyPI for an existing ${VERSION}..."
+if curl -sfL "https://pypi.org/pypi/roomkit/${VERSION}/json" -o /dev/null; then
+    echo "Error: roomkit ${VERSION} already exists on PyPI — pick a new version."
+    exit 1
+fi
+echo "    ${VERSION} is not on PyPI."
+
+# --- Require a CHANGELOG entry for this version ---
+if ! grep -qE "^## \[${VERSION}\]" CHANGELOG.md; then
+    echo "Error: CHANGELOG.md has no '## [${VERSION}]' entry — write it before releasing."
+    exit 1
+fi
+echo "    CHANGELOG.md documents ${VERSION}."
+
 # --- Ensure GitHub Actions CI is green ---
 echo "==> Checking GitHub Actions status..."
 CI_STATUS=$(gh run list --branch main --limit 1 --json status,conclusion --jq '.[0]')
@@ -82,12 +97,11 @@ echo "    Committed."
 git tag "v${VERSION}"
 echo "    Tagged v${VERSION}."
 
-# --- Build + publish ---
+# --- Build ---
 echo "==> Building..."
 uv build
-echo "==> Publishing to PyPI..."
-# Only publish artifacts for the current version — uploading the whole dist/
-# dir fails when older wheels from prior releases are still sitting there.
+# Only ship artifacts for the current version — uploading the whole dist/ dir
+# fails when older wheels from prior releases are still sitting there.
 DIST_FILES=(
     "dist/roomkit-${VERSION}.tar.gz"
     "dist/roomkit-${VERSION}-py3-none-any.whl"
@@ -98,18 +112,11 @@ for f in "${DIST_FILES[@]}"; do
         exit 1
     fi
 done
-if [[ -n "${UV_PUBLISH_TOKEN:-}" ]]; then
-    uv publish "${DIST_FILES[@]}"
-elif [[ -f "$HOME/.pypirc" ]]; then
-    PYPI_TOKEN=$(python3 -c "import configparser; c = configparser.ConfigParser(); c.read('$HOME/.pypirc'); print(c.get('pypi', 'password'))")
-    uv publish --username __token__ --password "$PYPI_TOKEN" "${DIST_FILES[@]}"
-else
-    echo "Error: No PyPI credentials found. Set UV_PUBLISH_TOKEN or create ~/.pypirc"
-    exit 1
-fi
-echo "    Published."
 
-# --- Push ---
+# --- Push git state BEFORE publishing ---
+# The PyPI upload below is irreversible; pushing the commit, tag, and GitHub
+# Release first means a failed upload leaves git and PyPI consistent and the
+# upload can simply be retried — PyPI is never ahead of the repository.
 echo "==> Pushing..."
 git push && git push --tags
 echo "    Pushed."
@@ -139,6 +146,19 @@ gh release create "v${VERSION}" \
     ${PRERELEASE_FLAG} \
     --notes "${NOTES}"
 echo "    GitHub Release created."
+
+# --- Publish to PyPI (last, irreversible step) ---
+echo "==> Publishing to PyPI..."
+if [[ -n "${UV_PUBLISH_TOKEN:-}" ]]; then
+    uv publish "${DIST_FILES[@]}"
+elif [[ -f "$HOME/.pypirc" ]]; then
+    PYPI_TOKEN=$(python3 -c "import configparser; c = configparser.ConfigParser(); c.read('$HOME/.pypirc'); print(c.get('pypi', 'password'))")
+    uv publish --username __token__ --password "$PYPI_TOKEN" "${DIST_FILES[@]}"
+else
+    echo "Error: No PyPI credentials found. Set UV_PUBLISH_TOKEN or create ~/.pypirc"
+    exit 1
+fi
+echo "    Published."
 
 # --- Open the next development cycle ---
 # Leaving main on the released version makes _version.py / `git describe` lie
