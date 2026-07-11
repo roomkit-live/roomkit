@@ -526,11 +526,14 @@ class HelpersMixin:
                 context = await kit_ref._build_context(event.room_id)
             except Exception:
                 logger.warning(
-                    "Failed to build context for BEFORE_TOOL_USE hook in room %s",
+                    "Failed to build context for BEFORE_TOOL_USE hook in room %s "
+                    "— denying tool call (fail-closed)",
                     event.room_id,
                     exc_info=True,
                 )
-                return True  # Allow on error (fail-open)
+                # Fail-closed: an authorization failure MUST NOT silently permit
+                # the tool call. Denying is the safe default.
+                return False
 
             hook_result = await kit_ref._hook_engine.run_sync_hooks(
                 event.room_id,

@@ -396,3 +396,132 @@ class TestToolCallEvent:
         )
         with pytest.raises(AttributeError):
             event.name = "y"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# H1: fail-closed tool authorization
+# ---------------------------------------------------------------------------
+
+
+class TestToolAuthorizationH1:
+    async def test_before_tool_use_fails_closed_on_context_error(self) -> None:
+        """If building context for BEFORE_TOOL_USE fails, the tool call is denied
+        (fail-closed), never allowed by default."""
+        kit = RoomKit()
+        callback = kit._build_before_tool_call_hook("ch-1")
+
+        async def boom(room_id: str) -> Any:
+            raise RuntimeError("context build failed")
+
+        kit._build_context = boom  # type: ignore[assignment]
+
+        event = ToolCallEvent(
+            channel_id="ch-1",
+            channel_type=ChannelType.AI,
+            tool_call_id="tc-1",
+            name="x",
+            arguments={},
+            room_id="r1",
+        )
+        assert await callback(event) is False
+
+    async def test_ai_invalid_tool_args_rejected_before_handler(
+        self, ai_provider: MockAIProvider
+    ) -> None:
+        """Malformed tool arguments are rejected before the handler runs."""
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.enums import ChannelDirection
+        from roomkit.models.event import EventSource, RoomEvent, TextContent
+        from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
+
+        called: list[dict[str, Any]] = []
+
+        async def handler(name: str, args: dict[str, Any]) -> str:
+            called.append(args)
+            return json.dumps({"ok": True})
+
+        ch = AIChannel(
+            "ai-x",
+            provider=ai_provider,
+            system_prompt="Test.",
+            tool_handler=handler,
+            tools=[
+                AITool(
+                    name="get_weather",
+                    description="Weather.",
+                    parameters={
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
+                ),
+            ],
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ai-x")
+
+        # Tool call is missing the required `city` argument.
+        ai_provider._ai_responses = [
+            AIResponse(
+                content="",
+                tool_calls=[AIToolCall(id="tc-1", name="get_weather", arguments={})],
+            ),
+            AIResponse(content="done"),
+        ]
+
+        event = RoomEvent(
+            room_id=room.id,
+            source=EventSource(
+                channel_id="sms-1",
+                channel_type=ChannelType.SMS,
+                direction=ChannelDirection.INBOUND,
+            ),
+            content=TextContent(body="weather?"),
+        )
+        binding = ChannelBinding(channel_id="ai-x", room_id=room.id, channel_type=ChannelType.AI)
+        context = await kit._build_context(room.id)
+        await ch.on_event(event, binding, context)
+
+        # The malformed call never reached the handler.
+        assert called == []
+
+    async def test_realtime_before_tool_use_blocks_before_handler(
+        self,
+        rt_provider: MockRealtimeProvider,
+        rt_transport: MockRealtimeTransport,
+    ) -> None:
+        """A BEFORE_TOOL_USE block in realtime prevents the handler side effect,
+        not just the returned result."""
+        called: list[str] = []
+
+        async def handler(name: str, args: dict[str, Any]) -> str:
+            called.append(name)
+            return json.dumps({"handler_ran": True})
+
+        ch = RealtimeVoiceChannel(
+            "rt-gate",
+            provider=rt_provider,
+            transport=rt_transport,
+            tool_handler=handler,
+        )
+        kit = RoomKit()
+        kit.register_channel(ch)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-gate")
+        session = await ch.start_session(room.id, "u1", "ws")
+
+        @kit.hook(HookTrigger.BEFORE_TOOL_USE, execution=HookExecution.SYNC, name="deny")
+        async def deny(event: ToolCallEvent, ctx: RoomContext) -> HookResult:
+            return HookResult.block("not allowed")
+
+        await rt_provider.simulate_tool_call(session, "c9", "dangerous", {})
+        await asyncio.sleep(0.1)
+
+        # Handler never ran — the side effect was prevented, not merely hidden.
+        assert called == []
+        _, _, result_str = rt_provider.tool_results[0]
+        result = json.loads(result_str)
+        assert "error" in result
+        assert "not allowed" in result["error"]

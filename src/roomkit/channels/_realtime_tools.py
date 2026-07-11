@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from roomkit.channels._skill_constants import TOOL_ACTIVATE_SKILL
 from roomkit.models.enums import ChannelType, HookTrigger
 from roomkit.telemetry.base import Attr, SpanKind
+from roomkit.tools.validation import validate_tool_arguments
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -261,6 +262,23 @@ class RealtimeToolsMixin:
             # Run tool_handler (if exists).
             handler_result: str | None = None
             if self._tool_handler is not None:
+                # Pre-execution gate (parity with the classic AI path): validate
+                # arguments and run BEFORE_TOOL_USE BEFORE the handler, so a block
+                # prevents the side effect instead of only hiding the result.
+                denial = await self._authorize_realtime_tool(
+                    name, arguments, call_id, room_id, session
+                )
+                if denial is not None:
+                    await self._provider.submit_tool_result(session, call_id, denial)
+                    telemetry.end_span(tool_span_id)
+                    logger.info(
+                        "Realtime tool %s(%s) denied before execution for session %s",
+                        name,
+                        call_id,
+                        session.id,
+                    )
+                    return
+
                 logger.info(
                     "Executing tool %s(%s) via handler for session %s",
                     name,
@@ -357,6 +375,71 @@ class RealtimeToolsMixin:
                 self._transport.set_input_muted(session, False)
             if _rt_tok is not None:
                 reset_span(_rt_tok)
+
+    def _tool_parameters(self, name: str, session: VoiceSession) -> dict[str, Any] | None:
+        """Return the declared ``parameters`` schema for realtime tool *name*.
+
+        ``None`` when the tool's schema is unknown (skips argument validation).
+        """
+        tools = self._session_tools.get(session.id) or self._tools or []
+        for t in tools:
+            if isinstance(t, dict) and t.get("name") == name:
+                params = t.get("parameters")
+                return params if isinstance(params, dict) else None
+        return None
+
+    async def _authorize_realtime_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        call_id: str,
+        room_id: str | None,
+        session: VoiceSession,
+    ) -> str | None:
+        """Pre-execution gate for realtime tool calls (parity with the classic
+        AI path).
+
+        Validates arguments against the declared schema and runs BEFORE_TOOL_USE
+        so a block prevents the side effect rather than only hiding the result.
+        Returns a denial result string to reject the call, or ``None`` to
+        proceed with the handler.
+        """
+        # Argument validation against the declared schema (fail-closed).
+        params = self._tool_parameters(name, session)
+        if params is not None:
+            arg_error = validate_tool_arguments(params, arguments)
+            if arg_error is not None:
+                logger.warning("Realtime tool %s arguments rejected: %s", name, arg_error)
+                return json.dumps({"error": f"Invalid arguments for '{name}': {arg_error}"})
+
+        # BEFORE_TOOL_USE gate (needs a framework + room to run room hooks).
+        if self._framework is None or not room_id:
+            return None
+        from roomkit.models.tool_call import ToolCallEvent
+
+        pre_event = ToolCallEvent(
+            channel_id=self.channel_id,
+            channel_type=ChannelType.REALTIME_VOICE,
+            tool_call_id=call_id,
+            name=name,
+            arguments=arguments,
+            result=None,
+            room_id=room_id,
+        )
+        context = await self._framework._build_context(room_id)
+        hook_result = await self._framework.hook_engine.run_sync_hooks(
+            room_id,
+            HookTrigger.BEFORE_TOOL_USE,
+            pre_event,
+            context,
+            skip_event_filter=True,
+        )
+        if not hook_result.allowed:
+            logger.info("Realtime tool %s denied by BEFORE_TOOL_USE hook", name)
+            return json.dumps(
+                {"error": hook_result.reason or f"Tool '{name}' denied by pre-execution hook."}
+            )
+        return None
 
     async def _fire_tool_hook(
         self,

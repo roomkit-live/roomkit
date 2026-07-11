@@ -42,6 +42,7 @@ from roomkit.providers.ai.base import (
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX
 from roomkit.telemetry.base import SpanKind
 from roomkit.tools.human_input import ToolCallContext, _current_tool_call
+from roomkit.tools.validation import validate_tool_arguments
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -151,6 +152,18 @@ class AIToolsMixin:
     _gated_tool_names: Any  # see AIToolsHost
     _maybe_truncate_result: Any  # see AIToolsHost
     _get_loop_ctx: Any  # see AIToolsHost
+    extra_tools: Any  # AIChannel property: user + orchestration-injected tools
+
+    def _tool_parameters(self, name: str) -> dict[str, Any] | None:
+        """Return the declared JSON-Schema ``parameters`` for tool *name*.
+
+        ``None`` when the tool's schema is not known to this channel (infra,
+        skill, or sandbox tools) — those skip argument validation.
+        """
+        for tool in self.extra_tools:
+            if tool.name == name:
+                return tool.parameters
+        return None
 
     async def _execute_tools_parallel(
         self,
@@ -166,6 +179,21 @@ class AIToolsMixin:
 
         async def _run_one(tc: Any) -> AIToolResultPart:
             logger.info("Executing tool: %s(%s)", tc.name, tc.id)
+
+            # Execution guard: argument validation against the declared schema
+            # (fail-closed) — reject malformed calls before any other gate.
+            params = self._tool_parameters(tc.name)
+            if params is not None:
+                arg_error = validate_tool_arguments(params, tc.arguments)
+                if arg_error is not None:
+                    logger.warning("Tool %s arguments rejected: %s", tc.name, arg_error)
+                    return AIToolResultPart(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        result=json.dumps(
+                            {"error": f"Invalid arguments for '{tc.name}': {arg_error}"}
+                        ),
+                    )
 
             # Execution guard: policy deny (defense-in-depth, role-aware)
             # Sandbox tools are exempt — they are channel-managed, not user-managed.
