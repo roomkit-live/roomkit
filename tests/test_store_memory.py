@@ -84,6 +84,42 @@ class TestEventOperations:
         page = await store.list_events("r1", offset=2, limit=3)
         assert len(page) == 3
 
+    async def test_list_events_default_returns_oldest_page(self, store: InMemoryStore) -> None:
+        """The offset default is the *head* of the room — oldest events first."""
+        await store.create_room(Room(id="r1"))
+        for i in range(10):
+            await store.add_event(make_event(room_id="r1", body=f"msg{i}"))
+        page = await store.list_events("r1", limit=3)
+        assert [e.content.body for e in page] == ["msg0", "msg1", "msg2"]
+
+    async def test_list_events_newest_first_returns_latest_page(
+        self, store: InMemoryStore
+    ) -> None:
+        """``newest_first`` returns the most recent ``limit`` events, still in
+        ascending chronological order — the shape a reconnect snapshot needs so
+        it shows recent history instead of the room's opening events."""
+        await store.create_room(Room(id="r1"))
+        for i in range(10):
+            await store.add_event(make_event(room_id="r1", body=f"msg{i}"))
+        page = await store.list_events("r1", limit=3, newest_first=True)
+        assert [e.content.body for e in page] == ["msg7", "msg8", "msg9"]
+
+    async def test_list_events_newest_first_with_offset(self, store: InMemoryStore) -> None:
+        """Offset counts back from the newest end when ``newest_first`` is set."""
+        await store.create_room(Room(id="r1"))
+        for i in range(10):
+            await store.add_event(make_event(room_id="r1", body=f"msg{i}"))
+        page = await store.list_events("r1", limit=3, offset=3, newest_first=True)
+        assert [e.content.body for e in page] == ["msg4", "msg5", "msg6"]
+
+    async def test_list_events_newest_first_short_room(self, store: InMemoryStore) -> None:
+        """Fewer events than ``limit``: return them all, ascending, no crash."""
+        await store.create_room(Room(id="r1"))
+        for i in range(2):
+            await store.add_event(make_event(room_id="r1", body=f"msg{i}"))
+        page = await store.list_events("r1", limit=100, newest_first=True)
+        assert [e.content.body for e in page] == ["msg0", "msg1"]
+
     async def test_idempotency_check(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
         event = make_event(room_id="r1", idempotency_key="key1")

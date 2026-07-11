@@ -107,6 +107,7 @@ class ConversationStore(ABC):
         after_index: int | None = None,
         before_index: int | None = None,
         event_filter: EventFilter | None = None,
+        newest_first: bool = False,
     ) -> list[RoomEvent]:
         """List events in a room with pagination and filtering.
 
@@ -121,6 +122,13 @@ class ConversationStore(ABC):
 
         When *event_filter* is provided, its ``visibility`` field takes
         precedence over *visibility_filter*.
+
+        By default the offset-based mode returns the *oldest* ``limit`` events
+        (the head of the room). Pass ``newest_first=True`` to return the most
+        recent ``limit`` events instead — still in ascending chronological
+        order, so a "give me the latest page" snapshot reads top-to-bottom.
+        ``newest_first`` only applies to the offset-based mode; it is ignored
+        when a cursor (*after_index* / *before_index*) is supplied.
 
         .. note::
 
@@ -141,6 +149,9 @@ class ConversationStore(ABC):
                 ``index < before_index``, in ascending order.
             event_filter: Rich filter criteria (event types, source, time range,
                 correlation ID). See :class:`EventFilter`.
+            newest_first: In offset-based mode, return the most recent ``limit``
+                events (ascending order) instead of the oldest. Ignored when a
+                cursor is supplied.
         """
         ...
 
@@ -209,17 +220,24 @@ class ConversationStore(ABC):
         event_filter: EventFilter | None = None,
         limit: int = 100,
         after_index: int | None = None,
+        newest_first: bool = False,
     ) -> list[RoomEvent]:
         """Return the full activity timeline for a room.
 
         Returns all persisted events in order. Use *event_filter* to narrow
         results (e.g. only tool calls, only a specific correlation group).
+
+        Without a cursor the default is the *oldest* ``limit`` events; pass
+        ``newest_first=True`` for the most recent ``limit`` (still ascending) —
+        the right shape for a reconnect snapshot that must show recent history,
+        not the room's opening events.
         """
         return await self.list_events(
             room_id,
             limit=limit,
             after_index=after_index,
             event_filter=event_filter,
+            newest_first=newest_first,
         )
 
     # Binding operations

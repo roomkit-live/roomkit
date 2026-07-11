@@ -178,6 +178,7 @@ class InMemoryStore(ConversationStore):
         after_index: int | None = None,
         before_index: int | None = None,
         event_filter: EventFilter | None = None,
+        newest_first: bool = False,
     ) -> list[RoomEvent]:
         if after_index is not None and before_index is not None:
             raise ValueError("after_index and before_index are mutually exclusive")
@@ -208,6 +209,13 @@ class InMemoryStore(ConversationStore):
             return [e.model_copy() for e in tail]
         if after_index is not None:
             return [e.model_copy() for e in events[:limit]]
+        if newest_first:
+            # Newest ``limit`` events (offset counted from the newest end),
+            # returned oldest-first so the snapshot reads chronologically.
+            # Mirrors the ``before_index`` tail slice.
+            end = max(0, len(events) - offset)
+            start = max(0, end - limit)
+            return [e.model_copy() for e in events[start:end]]
         return [e.model_copy() for e in events[offset : offset + limit]]
 
     @staticmethod

@@ -634,6 +634,40 @@ class TestPostgresStore:
         with pytest.raises(ValueError, match="mutually exclusive"):
             await store.list_events("room-1", after_index=5, before_index=10)
 
+    async def test_list_events_default_orders_chronologically(self) -> None:
+        """Without a cursor and without ``newest_first``, the query keeps the
+        historical head ordering (``created_at``) — the behaviour every existing
+        offset-based caller relies on."""
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetch.return_value = []
+        await store.list_events("room-1", limit=50)
+        sql = mock_conn.fetch.call_args[0][0]
+        assert "ORDER BY created_at" in sql
+        assert "index DESC" not in sql
+        assert "OFFSET" in sql  # still offset-paginated
+
+    async def test_list_events_newest_first_uses_descending_index(self) -> None:
+        """``newest_first`` fetches the tail by descending index (offset mode)."""
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetch.return_value = []
+        await store.list_events("room-1", limit=50, newest_first=True)
+        sql = mock_conn.fetch.call_args[0][0]
+        assert "ORDER BY index DESC" in sql
+        assert "OFFSET" in sql  # newest_first is still offset-based, not a cursor
+
+    async def test_list_events_newest_first_reverses_to_ascending(self) -> None:
+        """The DESC fetch is reversed so the caller gets ascending chronological
+        order — the newest ``limit`` events, oldest-first."""
+        store, mock_conn = _make_store_with_pool()
+        # Rows arrive newest-first (index 9, 8, 7) as ``ORDER BY index DESC`` yields.
+        rows = [
+            _event_row(_make_event(event_id=f"evt-{i}").model_copy(update={"index": i}))
+            for i in (9, 8, 7)
+        ]
+        mock_conn.fetch.return_value = rows
+        result = await store.list_events("room-1", limit=3, newest_first=True)
+        assert [e.index for e in result] == [7, 8, 9]
+
     async def test_check_idempotency_exists(self) -> None:
         store, mock_conn = _make_store_with_pool()
         mock_conn.fetchrow.return_value = {"?column?": 1}

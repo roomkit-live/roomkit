@@ -366,6 +366,7 @@ class PostgresStore(ConversationStore):
         after_index: int | None = None,
         before_index: int | None = None,
         event_filter: EventFilter | None = None,
+        newest_first: bool = False,
     ) -> list[RoomEvent]:
         if after_index is not None and before_index is not None:
             raise ValueError("after_index and before_index are mutually exclusive")
@@ -404,12 +405,17 @@ class PostgresStore(ConversationStore):
         order_cols = {
             "before": "index DESC",
             "after": "index",
+            # Newest-first offset mode: fetch the tail by descending index,
+            # then reverse to ascending below (same shape as "before").
+            "newest": "index DESC",
             "default": "created_at",
         }
         if before_index is not None:
             order_col = order_cols["before"]
         elif after_index is not None:
             order_col = order_cols["after"]
+        elif newest_first:
+            order_col = order_cols["newest"]
         else:
             order_col = order_cols["default"]
 
@@ -428,7 +434,7 @@ class PostgresStore(ConversationStore):
                 rows = await conn.fetch(query, *params)
 
         events = [_row_to_event(r) for r in rows]
-        if before_index is not None:
+        if before_index is not None or newest_first:
             events.reverse()
         return events
 
