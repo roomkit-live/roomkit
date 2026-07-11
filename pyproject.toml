@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 authors = [{ name = "Sylvain Boily", email = "sylvainboilydroid@gmail.com" }]
 keywords = ["async", "multi-channel", "chat", "voice", "sms", "rcs", "whatsapp", "ai", "rooms"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
