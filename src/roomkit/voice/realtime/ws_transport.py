@@ -9,6 +9,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
+from roomkit.voice._limits import MAX_INBOUND_AUDIO_FRAME_BYTES, b64_within_limit
 from roomkit.voice.auth import AuthCallback
 from roomkit.voice.backends.base import (
     AudioReceivedCallback,
@@ -180,6 +181,11 @@ class WebSocketRealtimeTransport(VoiceBackend):
 
                     if msg_type == "audio":
                         audio_b64 = data.get("data", "")
+                        if not b64_within_limit(audio_b64, MAX_INBOUND_AUDIO_FRAME_BYTES):
+                            logger.warning(
+                                "Dropping oversized audio frame for session %s", session.id
+                            )
+                            continue
                         audio_bytes = base64.b64decode(audio_b64)
                         await self._fire_audio_callbacks(session, audio_bytes)
 

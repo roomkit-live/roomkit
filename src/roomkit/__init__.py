@@ -109,6 +109,7 @@ from roomkit.orchestration import (
 from roomkit.sandbox import SandboxExecutor, SandboxResult
 from roomkit.skills import ScriptExecutor, Skill, SkillMetadata, SkillRegistry
 from roomkit.store import ConversationStore, InMemoryStore
+from roomkit.telemetry.redaction import content_logging_enabled, set_content_logging
 from roomkit.tools.base import Tool
 from roomkit.tools.human_input import HumanInputHandler, HumanInputToolHandler
 from roomkit.tools.policy import RoleOverride, ToolPolicy
@@ -233,6 +234,9 @@ __all__ = [
     "RoutingRule",
     "Supervisor",
     "Swarm",
+    # Observability / privacy
+    "content_logging_enabled",
+    "set_content_logging",
     # Storage
     "ConversationStore",
     "EventFilter",

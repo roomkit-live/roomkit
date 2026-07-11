@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from roomkit.models.enums import HookTrigger
 from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
 from roomkit.telemetry.noop import NoopTelemetryProvider
+from roomkit.telemetry.redaction import redact
 from roomkit.voice.base import TranscriptionResult
 from roomkit.voice.events import TranscriptionEvent
 from roomkit.voice.interruption import InterruptionHandler
@@ -744,7 +745,7 @@ class VoiceSTTMixin:
                         await asyncio.wait_for(stream_state.task, timeout=5.0)
                     text = stream_state.final_text or stream_state.partial_text
                     if text:
-                        logger.debug("STT stream result for %s: %s", session.id, text)
+                        logger.debug("STT stream result for %s: %s", session.id, redact(text))
                     else:
                         logger.debug(
                             "STT stream returned no text for %s, falling back to batch",
@@ -845,7 +846,7 @@ class VoiceSTTMixin:
                 logger.debug("Empty transcription, skipping")
                 return
 
-            logger.info("Transcription: %s", text)
+            logger.debug("Transcription: %s", redact(text))
 
             # Send transcription to client UI (if backend supports it)
             backend = self._resolve_session_backend(session)

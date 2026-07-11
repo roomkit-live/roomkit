@@ -32,6 +32,7 @@ import re
 import subprocess  # nosec B404
 from typing import TYPE_CHECKING, Any
 
+from roomkit.telemetry.redaction import redact
 from roomkit.video.vision.screen_tool import capture_screen_frame
 
 if TYPE_CHECKING:
@@ -485,7 +486,7 @@ class ScreenInputTools:
     @staticmethod
     def _type_text(args: dict[str, Any]) -> str:
         text = str(args["text"])
-        logger.info("type_text(%r)", text)
+        logger.debug("type_text(%s)", redact(text))
         _clipboard_paste(text)
         return f"Typed: {text!r}"
 

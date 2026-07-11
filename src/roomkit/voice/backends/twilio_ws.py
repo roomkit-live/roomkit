@@ -33,6 +33,7 @@ import struct
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
+from roomkit.voice._limits import MAX_INBOUND_AUDIO_FRAME_BYTES, b64_within_limit
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.backends._mulaw import mulaw_to_pcm16, pcm16_to_mulaw
 from roomkit.voice.backends.base import (
@@ -207,6 +208,12 @@ class TwilioWebSocketBackend(VoiceBackend):
             session: The voice session this audio belongs to.
             mulaw_payload: Base64-encoded mu-law audio from a Twilio media frame.
         """
+        if not b64_within_limit(mulaw_payload, MAX_INBOUND_AUDIO_FRAME_BYTES):
+            logger.warning(
+                "Dropping oversized Twilio audio frame (%d base64 chars)",
+                len(mulaw_payload),
+            )
+            return
         mulaw_data = base64.b64decode(mulaw_payload)
         pcm_8k = mulaw_to_pcm16(mulaw_data)
         pcm_out = self._resample_inbound(pcm_8k)

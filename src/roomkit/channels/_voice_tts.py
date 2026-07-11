@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from roomkit.models.enums import EventType, HookTrigger, Visibility
 from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
 from roomkit.telemetry.noop import NoopTelemetryProvider
+from roomkit.telemetry.redaction import redact
 from roomkit.voice.utils import rms_db
 
 _NOOP = NoopTelemetryProvider()
@@ -627,7 +628,7 @@ class VoiceTTSMixin:
                     logger.debug("TTS text empty after filter — skipping")
                     return
 
-            logger.info("AI response: %s", final_text)
+            logger.debug("AI response: %s", redact(final_text))
 
             target_sessions = self._find_sessions(room_id, binding)
 
