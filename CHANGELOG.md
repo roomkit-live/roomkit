@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] — 2026-07-11
+
+Hardening release addressing a production-readiness review: the three critical
+blockers plus tool-authorization, privacy, and supply-chain fixes.
+
+### Changed
+
+- **BREAKING — `PostgresStore.init()` never drops tables.** It previously ran a
+  schema that `DROP … CASCADE`-ed every table when it detected a v1 (JSONB-blob)
+  schema, so a routine connect after an upgrade could wipe rooms, events,
+  participants, and identities. `init()` now runs additive, idempotent DDL only
+  and raises `PostgresSchemaError` when a v1 schema is present. The destructive
+  v1→v2 migration moved to an explicit, opt-in
+  `PostgresStore.migrate(dry_run=True, confirm=False)` serialized by a PostgreSQL
+  advisory lock.
+- **BREAKING — WebRTC `/webrtc/offer` is authenticated before a peer connection
+  is created.** The auth callback previously ran only for connections carrying a
+  WebSocket object, so HTTP WebRTC offers were unauthenticated and an
+  `RTCPeerConnection` was allocated for any caller. `mount_fastrtc_voice` and
+  `mount_fastrtc_av` now authenticate the offer (and ICE candidates) at the HTTP
+  layer and require an explicit `allow_anonymous=True` when no `auth` callback is
+  given.
+- **BREAKING — `process_timeout` is scoped to the pre-commit phase.** The whole
+  locked pipeline (persist → broadcast → counters) was wrapped in a single
+  timeout, so a slow broadcast could leave an event stored `DELIVERED` while the
+  caller received `blocked=process_timeout` and room counters went unset. The
+  inbound pipeline now splits at the commit point — pre-commit is timeout-bounded
+  with no durable write before commit, and the post-commit broadcast runs
+  unbounded — and the event persist and room-counter bump commit atomically, so
+  the timeline and counters never diverge. (RFC §10.1 / §13.6 / §14.3.)
+
+### Added
+
+- **`newest_first` offset pagination** on `list_events` /
+  `get_activity_timeline` — return the most recent `limit` events (still
+  ascending) for reconnect snapshots.
+- **`ConversationStore.close()`** (default no-op, idempotent), called by
+  `RoomKit.close()` so a PostgreSQL connection pool is released on shutdown.
+- **Central content-redaction policy** — `set_content_logging()` /
+  `content_logging_enabled()` (and the `ROOMKIT_LOG_CONTENT` env var); message
+  content is redacted from logs by default.
+- **Blocking `pip-audit` CI job** on the core dependency set, plus a Dependabot
+  configuration (uv + github-actions).
+
+### Fixed
+
+- **Tool authorization fails closed.** A context-build failure for the
+  `BEFORE_TOOL_USE` hook now denies the call (was: allowed by default). Tool
+  arguments are validated against the declared schema before execution, and
+  realtime voice runs authorization before the handler so a block prevents the
+  side effect rather than only hiding the result.
+- **PII is no longer logged in clear** — STT transcripts, TTS/AI responses, and
+  screen-agent typed text moved to DEBUG behind the redaction gate.
+- **Inbound audio decode is size-capped** (Twilio and realtime WebSocket) before
+  base64 decoding.
+- **`InMemoryStore` reads return deep copies** — mutating a nested field of a
+  read object no longer mutates the stored object.
+- README: the WhatsApp Personal extra is `roomkit[whatsapp-personal]` (was
+  incorrectly documented as `roomkit[neonize]`).
+
+## [0.27.0] — 2026-07-10
+
+### Changed
+
+- Development status promoted to Beta.
+
+### Documentation
+
+- Corrected the hook-trigger count to 65 and fixed the trigger listings.
+- Added a runnable room-membership example under `examples/`.
+
 ## [0.26.0] — 2026-07-10
 
 ### Added
