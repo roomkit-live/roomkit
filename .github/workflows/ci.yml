@@ -46,6 +46,28 @@ jobs:
       - name: Bandit
         run: uv run bandit -r src/ -c pyproject.toml
 
+  audit:
+    name: Dependency audit (core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # Audit the CORE runtime dependencies only (blocking). Optional extras
+      # pull heavier transitive trees and are kept current by Dependabot, so
+      # auditing them here would keep the gate permanently red without adding
+      # signal for the base install.
+      - name: Export core runtime dependencies
+        run: uv export --frozen --no-dev --no-emit-project --format requirements-txt -o requirements-core.txt
+
+      - name: pip-audit (core runtime dependencies)
+        run: uvx pip-audit --requirement requirements-core.txt
+
   typecheck:
     name: Type check
     runs-on: ubuntu-latest

@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Python dependencies (core + extras) via uv.lock / pyproject.toml.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      python-deps:
+        patterns: ["*"]
+
+  # Keep GitHub Actions pinned versions current (security patches).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
