@@ -9,31 +9,30 @@ tool calls before execution, not a full validator.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
+
+# Primitive JSON Schema type name -> predicate. ``bool`` is excluded from the
+# numeric types because in Python ``bool`` is a subclass of ``int``, so a
+# boolean must not satisfy ``integer``/``number``.
+_TYPE_CHECKS: dict[str, Callable[[Any], bool]] = {
+    "boolean": lambda v: isinstance(v, bool),
+    "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+    "number": lambda v: isinstance(v, int | float) and not isinstance(v, bool),
+    "string": lambda v: isinstance(v, str),
+    "object": lambda v: isinstance(v, dict),
+    "array": lambda v: isinstance(v, list),
+    "null": lambda v: v is None,
+}
 
 
 def _matches_type(value: Any, json_type: str) -> bool:
     """Return whether *value* matches a primitive JSON Schema ``type``.
 
-    ``bool`` is excluded from the numeric types because in Python ``bool`` is a
-    subclass of ``int`` — a boolean must not satisfy ``integer``/``number``.
     Unknown type names are not enforced (treated as a match).
     """
-    if json_type == "boolean":
-        return isinstance(value, bool)
-    if json_type == "integer":
-        return isinstance(value, int) and not isinstance(value, bool)
-    if json_type == "number":
-        return isinstance(value, int | float) and not isinstance(value, bool)
-    if json_type == "string":
-        return isinstance(value, str)
-    if json_type == "object":
-        return isinstance(value, dict)
-    if json_type == "array":
-        return isinstance(value, list)
-    if json_type == "null":
-        return value is None
-    return True  # unknown type — do not enforce
+    check = _TYPE_CHECKS.get(json_type)
+    return check is None or check(value)
 
 
 def validate_tool_arguments(parameters: dict[str, Any], arguments: dict[str, Any]) -> str | None:

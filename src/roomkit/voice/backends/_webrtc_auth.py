@@ -2,9 +2,9 @@
 
 The vendored FastRTC ``Stream`` runs its connection auth callback only when a
 WebSocket object is present. WebRTC connections arrive over an HTTP
-``POST /webrtc/offer`` with no WebSocket, so that path was never authenticated
-and an ``RTCPeerConnection`` was allocated for any caller — an auth bypass and
-a denial-of-service surface.
+``POST /webrtc/offer`` with no WebSocket, so without this gate that path is
+unauthenticated and an ``RTCPeerConnection`` is allocated for any caller — an
+auth bypass and a denial-of-service surface.
 
 :func:`register_webrtc_offer_auth` closes that hole: it registers an
 authenticated ``/webrtc/offer`` route that runs the ``auth`` callback against
