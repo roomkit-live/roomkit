@@ -38,7 +38,7 @@ mistral = ["mistralai>=2.0,<3"]
 polargrid = ["polargrid-sdk>=0.9.0"]
 deepgram = ["deepgram-sdk>=6.0.0"]
 sherpa-onnx = ["sherpa-onnx>=1.10"]
-elevenlabs = ["elevenlabs>=1.0"]
+elevenlabs = ["elevenlabs>=2.40"]
 qwen-tts = ["qwen-tts>=0.1"]
 qwen-asr = ["qwen-asr>=0.0.4"]
 neutts = ["neutts>=0.1"]
@@ -294,5 +294,5 @@ precision = 0
 
 [dependency-groups]
 dev = [
-    "setuptools<81",
+    "setuptools<84",
 ]
