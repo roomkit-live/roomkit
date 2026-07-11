@@ -35,7 +35,7 @@ V1_TABLES = [
     "schema_version",
 ]
 
-# Detects the legacy v1 (JSONB-blob) schema by the presence of the ``data``
+# Detects the v1 (JSONB-blob) schema by the presence of the ``data``
 # column on the ``rooms`` table. Returns a single boolean.
 V1_DETECT = """\
 SELECT EXISTS (

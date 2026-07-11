@@ -47,7 +47,7 @@ _MIGRATION_LOCK_KEY = 0x726F6F6D
 class PostgresSchemaError(RuntimeError):
     """Raised when the database schema needs an explicit, opt-in migration.
 
-    ``PostgresStore.init()`` never mutates a legacy schema on its own — it
+    ``PostgresStore.init()`` never mutates a v1 schema on its own — it
     raises this instead, so a routine connect can never destroy data.
     """
 
@@ -130,7 +130,7 @@ class PostgresStore(ConversationStore):
         It never drops a table, so calling ``init()`` after a library upgrade
         cannot destroy data.
 
-        If a legacy v1 (JSONB-blob) schema is detected, ``init()`` refuses to
+        If a v1 (JSONB-blob) schema is detected, ``init()`` refuses to
         touch it and raises :class:`PostgresSchemaError`. Back up your data,
         then run the explicit :meth:`migrate` to move v1 → v2.
         """
