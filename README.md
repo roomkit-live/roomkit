@@ -125,7 +125,7 @@ pip install roomkit[realtime-openai]   # OpenAI Realtime (speech-to-speech)
 pip install roomkit[httpx]             # SMS, RCS, Email providers
 pip install roomkit[teams]             # Microsoft Teams
 pip install roomkit[telegram]          # Telegram
-pip install roomkit[neonize]           # WhatsApp Personal
+pip install roomkit[whatsapp-personal] # WhatsApp Personal
 
 # Infrastructure
 pip install roomkit[postgres]          # PostgreSQL storage
