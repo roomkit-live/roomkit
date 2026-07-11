@@ -210,32 +210,18 @@ class InboundMixin(HelpersMixin):
         pending_streams: list[Any] = []
         pending_after_broadcast: list[tuple[RoomEvent, RoomContext]] = []
         async with self._lock_manager.locked(room_id):
-            try:
-                result: InboundResult = await asyncio.wait_for(
-                    self._process_locked(
-                        event,
-                        room_id,
-                        context,
-                        resolved_identity=resolved_identity,
-                        pending_id_result=pending_id_result,
-                        pending_streams_out=pending_streams,
-                        pending_after_broadcast_out=pending_after_broadcast,
-                    ),
-                    timeout=self._process_timeout,
-                )
-            except TimeoutError:
-                logger.error(
-                    "Process locked timed out after %.1fs",
-                    self._process_timeout,
-                    extra={"room_id": room_id, "event_id": event.id},
-                )
-                await self._emit_framework_event(
-                    "process_timeout",
-                    room_id=room_id,
-                    event_id=event.id,
-                    data={"timeout": self._process_timeout},
-                )
-                return InboundResult(blocked=True, reason="process_timeout")
+            # ``process_timeout`` is applied inside _process_locked, scoped to
+            # the pre-commit phase only (RFC §13.6) — once an event commits, its
+            # broadcast runs unbounded and is never cancelled.
+            result: InboundResult = await self._process_locked(
+                event,
+                room_id,
+                context,
+                resolved_identity=resolved_identity,
+                pending_id_result=pending_id_result,
+                pending_streams_out=pending_streams,
+                pending_after_broadcast_out=pending_after_broadcast,
+            )
 
         # Run AFTER_BROADCAST async hooks now that the room lock is released
         # (RFC §10.1) — a slow observer hook no longer blocks concurrent

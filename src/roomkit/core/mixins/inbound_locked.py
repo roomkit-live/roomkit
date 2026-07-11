@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import deque
 from datetime import UTC, datetime
@@ -29,6 +30,25 @@ if TYPE_CHECKING:
     from roomkit.store.base import ConversationStore
 
 logger = logging.getLogger("roomkit.framework")
+
+
+class _Proceed:
+    """Marker returned by ``_run_precommit`` once the event has committed and the
+    caller should run the post-commit broadcast phase (RFC §10.1 step 12).
+
+    Carries the state the broadcast phase needs — kept off the event so the
+    pre-commit and post-commit phases stay decoupled.
+    """
+
+    __slots__ = ("context", "event", "source_binding", "sync_result")
+
+    def __init__(
+        self, event: RoomEvent, source_binding: Any, sync_result: Any, context: RoomContext
+    ) -> None:
+        self.event = event
+        self.source_binding = source_binding
+        self.sync_result = sync_result
+        self.context = context
 
 
 @runtime_checkable
@@ -63,6 +83,7 @@ class InboundLockedMixin(HelpersMixin):
     _channels: dict[str, Channel]
     _hook_engine: HookEngine
     _max_chain_depth: int
+    _process_timeout: float
 
     # Stub for cross-mixin call — implemented by RoomKit._get_router().
     def _get_router(self) -> EventRouter: ...
@@ -87,6 +108,36 @@ class InboundLockedMixin(HelpersMixin):
             return None
         return parent.parent_event_id or parent_event_id
 
+    async def _bump_room_counters(self, room_id: str, latest_index: int) -> None:
+        """Refresh room counters to match stored events (RFC §14.3).
+
+        Updates ``latest_index``, ``event_count`` and ``last_activity_at`` from
+        the store's authoritative event count.
+        """
+        room = await self._store.get_room(room_id)
+        if room is None:
+            return
+        updates: dict[str, object] = {
+            "latest_index": latest_index,
+            "event_count": await self._store.get_event_count(room_id),
+        }
+        if room.timers:
+            updates["timers"] = room.timers.model_copy(
+                update={"last_activity_at": datetime.now(UTC)}
+            )
+        room = room.model_copy(update=updates)
+        await self._store.update_room(room)
+
+    async def _commit_event(self, room_id: str, event: RoomEvent) -> None:
+        """Commit an event to the timeline (RFC §10.1 step 12).
+
+        Persists the event as DELIVERED and bumps the room counters as one
+        logical unit, so an observer never sees a DELIVERED event that the room
+        counters do not reflect (§14.3).
+        """
+        await self._persist_event(event)
+        await self._bump_room_counters(room_id, event.index)
+
     async def _process_locked(
         self,
         event: RoomEvent,
@@ -98,12 +149,72 @@ class InboundLockedMixin(HelpersMixin):
         pending_streams_out: list[Any] | None = None,
         pending_after_broadcast_out: list[tuple[RoomEvent, RoomContext]] | None = None,
     ) -> InboundResult:
-        """Process an event under the room lock.
+        """Process an event under the room lock (RFC §10.1).
+
+        Split at the commit point (§10.1 step 12): the pre-commit critical
+        section (:meth:`_run_precommit`) is bounded by ``process_timeout``
+        (§13.6) and aborts before any durable write, while the post-commit
+        broadcast (:meth:`_process_broadcast`) runs unbounded — so a committed
+        event is never cancelled and the returned result never contradicts the
+        stored timeline.
 
         AFTER_BROADCAST async hooks are collected into
         ``pending_after_broadcast_out`` (when provided) so the caller can run
         them once the room lock is released (RFC §10.1 — async hooks run after
         the lock, not under it). Without a sink they run inline.
+        """
+        try:
+            outcome = await asyncio.wait_for(
+                self._run_precommit(
+                    event,
+                    room_id,
+                    context,
+                    resolved_identity=resolved_identity,
+                    pending_id_result=pending_id_result,
+                ),
+                timeout=self._process_timeout,
+            )
+        except TimeoutError:
+            logger.error(
+                "Inbound pre-commit timed out after %.1fs",
+                self._process_timeout,
+                extra={"room_id": room_id, "event_id": event.id},
+            )
+            await self._emit_framework_event(
+                "process_timeout",
+                room_id=room_id,
+                event_id=event.id,
+                data={"timeout": self._process_timeout},
+            )
+            return InboundResult(blocked=True, reason="process_timeout")
+        if isinstance(outcome, InboundResult):
+            return outcome
+        return await self._process_broadcast(
+            outcome.event,
+            room_id,
+            outcome.source_binding,
+            outcome.sync_result,
+            outcome.context,
+            pending_streams_out=pending_streams_out,
+            pending_after_broadcast_out=pending_after_broadcast_out,
+        )
+
+    async def _run_precommit(
+        self,
+        event: RoomEvent,
+        room_id: str,
+        context: RoomContext,
+        *,
+        resolved_identity: Identity | None = None,
+        pending_id_result: IdentityResult | None = None,
+    ) -> InboundResult | _Proceed:
+        """Pre-commit critical section (RFC §10.1 steps 3–12).
+
+        Returns an :class:`InboundResult` for any block/duplicate case, or a
+        :class:`_Proceed` once the event has been committed and the caller
+        should run the post-commit broadcast. Performs no durable write of the
+        inbound event before the commit point, so a ``process_timeout`` here
+        aborts cleanly with nothing persisted (§13.6).
         """
         # Rebuild context under lock to prevent stale reads
         context = await self._build_context(room_id)
@@ -243,10 +354,33 @@ class InboundLockedMixin(HelpersMixin):
         if edit_delete_target is not None:
             await self._apply_edit_delete_state(event, edit_delete_target)
 
-        # Store event as DELIVERED (respects persistence policy)
+        # Commit point (RFC §10.1 step 12): persist DELIVERED and bump the room
+        # counters atomically, before broadcast, so the timeline and counters
+        # never diverge (§14.3) even if the post-commit phase is slow or times
+        # out. Past this line the event is authoritative.
         event = event.model_copy(update={"status": EventStatus.DELIVERED})
-        await self._persist_event(event)
+        await self._commit_event(room_id, event)
+        return _Proceed(event, source_binding, sync_result, context)
 
+    async def _process_broadcast(
+        self,
+        event: RoomEvent,
+        room_id: str,
+        source_binding: Any,
+        sync_result: Any,
+        context: RoomContext,
+        *,
+        pending_streams_out: list[Any] | None = None,
+        pending_after_broadcast_out: list[tuple[RoomEvent, RoomContext]] | None = None,
+    ) -> InboundResult:
+        """Post-commit phase (RFC §10.1 steps 12–15): deliver injected events,
+        broadcast, and drain reentries.
+
+        Runs WITHOUT ``process_timeout`` — the event committed in
+        :meth:`_run_precommit` is authoritative and must never be cancelled or
+        re-marked by a timeout (§13.6). Delivery slowness is bounded per channel
+        and reported via ``delivery_failed`` / ``broadcast_partial_failure``.
+        """
         # Deliver any injected events from allow/modify hooks
         if sync_result.injected_events:
             await self._deliver_injected_events(sync_result.injected_events, room_id, context)
@@ -449,19 +583,10 @@ class InboundLockedMixin(HelpersMixin):
         # AFTER_BROADCAST async hooks (deferred to run outside the room lock)
         await self._dispatch_after_broadcast(room_id, event, context, pending_after_broadcast_out)
 
-        # Update room state per RFC §3.5 step 15
-        room = await self._store.get_room(room_id)
-        if room is not None:
-            updates: dict[str, object] = {
-                "latest_index": event.index,
-                "event_count": await self._store.get_event_count(room_id),
-            }
-            if room.timers:
-                updates["timers"] = room.timers.model_copy(
-                    update={"last_activity_at": datetime.now(UTC)}
-                )
-            room = room.model_copy(update=updates)
-            await self._store.update_room(room)
+        # Post-commit counter refresh (RFC §10.1 step 15) — captures reentry
+        # events added during broadcast; the source event was already reflected
+        # at the commit point.
+        await self._bump_room_counters(room_id, event.index)
 
         await self._emit_framework_event("event_processed", room_id=room_id, event_id=event.id)
 

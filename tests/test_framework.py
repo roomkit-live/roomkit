@@ -19,6 +19,7 @@ from roomkit.models.enums import (
     Access,
     ChannelCategory,
     ChannelType,
+    EventStatus,
     EventType,
     HookExecution,
     HookTrigger,
@@ -637,8 +638,9 @@ class TestTimeouts:
         assert len(events) == 1
         assert events[0].type == "identity_timeout"
 
-    async def test_process_timeout_returns_blocked(self) -> None:
-        """When _process_locked times out, return blocked result."""
+    async def test_process_timeout_in_precommit_returns_blocked(self) -> None:
+        """A timeout in the pre-commit phase blocks cleanly, with nothing
+        persisted to the timeline (RFC §13.6)."""
         events: list[FrameworkEvent] = []
 
         kit = RoomKit(process_timeout=0.01)
@@ -651,16 +653,21 @@ class TestTimeouts:
         async def capture(fe: FrameworkEvent) -> None:
             events.append(fe)
 
-        # Patch _process_locked to be slow
-        original = kit._process_locked
+        # process_timeout now wraps only the pre-commit phase — slow it down.
+        original = kit._run_precommit
 
-        async def slow_process(
+        async def slow_precommit(
             event: RoomEvent, room_id: str, context: RoomContext, **kwargs: object
-        ) -> InboundResult:
+        ) -> object:
             await asyncio.sleep(5.0)
             return await original(event, room_id, context, **kwargs)
 
-        kit._process_locked = slow_process  # type: ignore[assignment]
+        kit._run_precommit = slow_precommit  # type: ignore[assignment]
+
+        base_timeline = len(await kit.get_timeline("r1"))
+        room_before = await kit.get_room("r1")
+        assert room_before is not None
+        base_count = room_before.event_count
 
         msg = InboundMessage(
             channel_id="sms1",
@@ -671,6 +678,55 @@ class TestTimeouts:
         assert result.blocked
         assert result.reason == "process_timeout"
         assert len(events) == 1
+        # Aborted before the commit point — no new event, counters unchanged.
+        assert len(await kit.get_timeline("r1")) == base_timeline
+        room_after = await kit.get_room("r1")
+        assert room_after is not None
+        assert room_after.event_count == base_count
+
+    async def test_slow_broadcast_after_commit_is_not_blocked(self) -> None:
+        """A slow post-commit broadcast MUST NOT be cancelled or re-marked
+        blocked by process_timeout: the committed event stays DELIVERED and the
+        room counters reflect it (P0-3 — RFC §13.6 / §14.3)."""
+        kit = RoomKit(process_timeout=0.01)
+        ch = SimpleChannel("sms1")
+        kit.register_channel(ch)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+
+        # Broadcast (post-commit) takes far longer than process_timeout.
+        original = kit._process_broadcast
+
+        async def slow_broadcast(
+            event: RoomEvent, room_id: str, *args: object, **kwargs: object
+        ) -> InboundResult:
+            await asyncio.sleep(0.1)
+            return await original(event, room_id, *args, **kwargs)
+
+        kit._process_broadcast = slow_broadcast  # type: ignore[assignment]
+
+        base_timeline = len(await kit.get_timeline("r1"))
+
+        msg = InboundMessage(
+            channel_id="sms1",
+            sender_id="user1",
+            content=TextContent(body="hello"),
+        )
+        result = await kit.process_inbound(msg)
+
+        # Committed, not blocked — the result matches the stored timeline.
+        assert not result.blocked
+        assert result.event is not None
+        assert result.event.status == EventStatus.DELIVERED
+        timeline = await kit.get_timeline("r1")
+        assert len(timeline) == base_timeline + 1
+        assert timeline[-1].id == result.event.id
+        assert timeline[-1].status == EventStatus.DELIVERED
+        room_after = await kit.get_room("r1")
+        assert room_after is not None
+        # No divergence (§14.3): the counters reflect the stored timeline.
+        assert room_after.event_count == len(timeline)
+        assert room_after.latest_index == result.event.index
 
 
 # -- Changeset 6: Broadcast & side-effect error handling --
