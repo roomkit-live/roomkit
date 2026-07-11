@@ -190,6 +190,7 @@ async def lifespan(app: FastAPI):
         backend,
         path="/av",
         session_factory=session_factory,
+        allow_anonymous=True,  # local demo; pass auth= in production
     )
     logger.info("FastRTC A/V backend ready at /av")
     logger.info("Open http://localhost:8000 for the browser client")

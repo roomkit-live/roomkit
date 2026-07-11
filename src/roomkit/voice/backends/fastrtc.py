@@ -23,8 +23,10 @@ Usage::
     voice_channel = VoiceChannel("voice", stt=stt, tts=tts, backend=backend)
     kit.register_channel(voice_channel)
 
-    # Mount FastRTC endpoints on FastAPI app (in lifespan)
-    mount_fastrtc_voice(app, backend, path="/fastrtc")
+    # Mount FastRTC endpoints on FastAPI app (in lifespan). Pass an `auth`
+    # callback to authenticate /webrtc/offer, or allow_anonymous=True on a
+    # trusted network.
+    mount_fastrtc_voice(app, backend, path="/fastrtc", auth=my_auth)
 """
 
 from __future__ import annotations
@@ -113,6 +115,11 @@ class FastRTCVoiceBackend(VoiceBackend):
 
         # Session tracking: session_id -> VoiceSession
         self._sessions: dict[str, VoiceSession] = {}
+
+        # Authenticated WebRTC offer metadata: webrtc_id -> auth meta dict.
+        # Populated by register_webrtc_offer_auth() when an offer passes auth;
+        # consumed by the audio handler when it calls the session factory.
+        self._webrtc_auth_meta: dict[str, dict[str, Any]] = {}
 
         # FastRTC stream (set by mount_fastrtc_voice)
         self._stream: Any = None
@@ -520,6 +527,7 @@ def mount_fastrtc_voice(
     path: str = "/fastrtc",
     session_factory: Any = None,
     auth: AuthCallback | None = None,
+    allow_anonymous: bool = False,
     concurrency_limit: int | None = 1,
 ) -> None:
     """Mount FastRTC voice endpoints on a FastAPI app.
@@ -537,13 +545,21 @@ def mount_fastrtc_voice(
         session_factory: Async callable(websocket_id) -> VoiceSession that creates
             sessions when clients connect. If not provided, sessions must be
             created manually before clients connect.
-        auth: Optional async callback for authenticating connections. Receives
-            the WebSocket and returns a metadata dict on success or ``None``
-            to reject. Auth metadata is available via :data:`auth_context`.
+        auth: Optional async callback for authenticating connections. For
+            WebSocket/telephony it receives the ``WebSocket``; for WebRTC it
+            receives the HTTP ``Request`` and runs **before** any peer
+            connection is created. Return a metadata dict on success or
+            ``None`` to reject. Metadata is available via :data:`auth_context`.
+        allow_anonymous: Required to be ``True`` when *auth* is ``None`` — it is
+            an explicit acknowledgement that ``/webrtc/offer`` is exposed
+            without authentication (only safe on a trusted/local network).
+            Defaults to ``False``, which raises ``ValueError`` rather than
+            silently exposing an anonymous WebRTC endpoint.
         concurrency_limit: Maximum number of concurrent connections. Set to
             ``None`` for unlimited connections (e.g. multi-participant calls).
             Defaults to 1.
     """
+    from roomkit.voice.backends._webrtc_auth import register_webrtc_offer_auth
     from roomkit.webrtc import AsyncStreamHandler, Stream
 
     backend._session_factory = session_factory  # ty: ignore[unresolved-attribute]
@@ -569,6 +585,7 @@ def mount_fastrtc_voice(
         async def shutdown(self) -> None:
             """Called by FastRTC when the connection ends."""
             if self._webrtc_id:
+                backend._webrtc_auth_meta.pop(self._webrtc_id, None)
                 session = backend._find_session_by_websocket_id(self._webrtc_id)
                 if session:
                     logger.info(
@@ -627,8 +644,14 @@ def mount_fastrtc_voice(
             # Create session if not exists and we have a factory
             session = backend._find_session_by_websocket_id(connection_id)
             if not session and backend._session_factory:  # ty: ignore[unresolved-attribute]
+                # WebRTC auth runs at the HTTP /webrtc/offer layer, not here, so
+                # pull its metadata from the backend registry (WebSocket auth
+                # already populated self._auth_meta in start_up).
+                auth_meta = self._auth_meta
+                if auth_meta is None and websocket is None:
+                    auth_meta = backend._webrtc_auth_meta.get(connection_id)
                 try:
-                    token = auth_context.set(self._auth_meta)
+                    token = auth_context.set(auth_meta)
                     try:
                         session = await backend._session_factory(connection_id)  # ty: ignore[unresolved-attribute]
                     finally:
@@ -684,5 +707,9 @@ def mount_fastrtc_voice(
 
     backend._stream = stream
 
+    # Authenticate /webrtc/offer at the HTTP layer BEFORE stream.mount() so the
+    # guarded route takes precedence over the vendored (unauthenticated) one and
+    # rejects unauthorized offers before any RTCPeerConnection is allocated.
+    register_webrtc_offer_auth(app, path, stream, backend, auth, allow_anonymous=allow_anonymous)
     stream.mount(app, path=path)
     logger.info("FastRTC voice backend mounted at %s", path)

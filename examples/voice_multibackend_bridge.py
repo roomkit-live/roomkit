@@ -340,6 +340,7 @@ def create_app():
         fastrtc_backend,
         path="/voice",
         session_factory=fastrtc_session_factory,
+        allow_anonymous=True,  # local demo; pass auth= in production
     )
 
     # Serve the web UI
