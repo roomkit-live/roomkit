@@ -1,37 +1,59 @@
 """PostgreSQL DDL schema for the relational ConversationStore.
 
-Owns the ``CREATE TABLE`` / migration DDL applied by ``PostgresStore``
-on connect, kept separate from the store logic so the data definition
-and the CRUD implementation each stay one responsibility.
+Owns the DDL used by ``PostgresStore``. Two concerns are kept strictly
+separate:
+
+* ``SCHEMA`` — **additive, idempotent** DDL (``CREATE TABLE IF NOT EXISTS``
+  and index touch-ups). Safe to run on every connect; never drops a table.
+  This is the only DDL ``PostgresStore.init()`` executes.
+* ``V1_TO_V2_DROP`` — the **destructive** v1→v2 migration. It drops every
+  table (data loss) and is *never* run automatically. It is applied only by
+  the explicit, opt-in ``PostgresStore.migrate()`` after the caller confirms
+  a backup.
+
+Keeping the destructive DDL out of the connect path means a routine
+``init()`` — e.g. after a library upgrade — can never delete a user's data.
 """
 
 from __future__ import annotations
 
-SCHEMA = """\
--- Schema migration: drop v1 tables (JSONB blob schema) if present.
--- Detects v1 by checking for the 'data' column on the rooms table.
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'rooms' AND column_name = 'data'
-    ) THEN
-        RAISE NOTICE 'Detected v1 JSONB schema — dropping old tables for v2 migration';
-        DROP TABLE IF EXISTS read_markers CASCADE;
-        DROP TABLE IF EXISTS observations CASCADE;
-        DROP TABLE IF EXISTS tasks CASCADE;
-        DROP TABLE IF EXISTS identity_addresses CASCADE;
-        DROP TABLE IF EXISTS identities CASCADE;
-        DROP TABLE IF EXISTS participants CASCADE;
-        DROP TABLE IF EXISTS bindings CASCADE;
-        DROP TABLE IF EXISTS events CASCADE;
-        DROP TABLE IF EXISTS rooms CASCADE;
-        DROP TABLE IF EXISTS schema_version CASCADE;
-    END IF;
-END $$;
+SCHEMA_VERSION = 2
 
+# Tables owned by RoomKit, in dependency order (children before parents) so a
+# CASCADE-free reading of the list still makes sense. Used to build the
+# destructive migration DDL and to report what a migration would drop.
+V1_TABLES = [
+    "read_markers",
+    "observations",
+    "tasks",
+    "identity_addresses",
+    "identities",
+    "participants",
+    "bindings",
+    "events",
+    "rooms",
+    "schema_version",
+]
+
+# Detects the legacy v1 (JSONB-blob) schema by the presence of the ``data``
+# column on the ``rooms`` table. Returns a single boolean.
+V1_DETECT = """\
+SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'rooms' AND column_name = 'data'
+)
+"""
+
+# DESTRUCTIVE: drops all v1 tables. Applied only by PostgresStore.migrate()
+# with explicit confirmation — never by init(). ``schema_version`` is dropped
+# last so a partial failure still reads as "not yet migrated".
+V1_TO_V2_DROP = "\n".join(f"DROP TABLE IF EXISTS {t} CASCADE;" for t in V1_TABLES)
+
+# Additive, idempotent schema. Run on every connect. Contains no DROP TABLE.
+SCHEMA = """\
 -- Migration: idx_participants_channel must NOT be unique.
 -- Multiple participants can share the same channel in group rooms.
+-- Dropping/recreating an INDEX is non-destructive to data.
 DO $$
 BEGIN
     IF EXISTS (

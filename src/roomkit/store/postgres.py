@@ -8,6 +8,7 @@ storage for core fields.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
@@ -29,7 +30,26 @@ from roomkit.store.postgres_mappers import (
     _row_to_task,
     _source_extra,
 )
-from roomkit.store.postgres_schema import SCHEMA
+from roomkit.store.postgres_schema import (
+    SCHEMA,
+    V1_DETECT,
+    V1_TABLES,
+    V1_TO_V2_DROP,
+)
+
+logger = logging.getLogger("roomkit.store.postgres")
+
+# Advisory-lock key serializing schema migrations across processes.
+# Arbitrary constant; "room" in ASCII hex.
+_MIGRATION_LOCK_KEY = 0x726F6F6D
+
+
+class PostgresSchemaError(RuntimeError):
+    """Raised when the database schema needs an explicit, opt-in migration.
+
+    ``PostgresStore.init()`` never mutates a legacy schema on its own — it
+    raises this instead, so a routine connect can never destroy data.
+    """
 
 
 class PostgresStore(ConversationStore):
@@ -104,7 +124,16 @@ class PostgresStore(ConversationStore):
         )
 
     async def init(self, min_size: int = 2, max_size: int = 10) -> None:
-        """Create the connection pool (if needed) and ensure schema exists."""
+        """Create the connection pool (if needed) and ensure the schema exists.
+
+        Runs **only additive, idempotent** DDL (``CREATE TABLE IF NOT EXISTS``).
+        It never drops a table, so calling ``init()`` after a library upgrade
+        cannot destroy data.
+
+        If a legacy v1 (JSONB-blob) schema is detected, ``init()`` refuses to
+        touch it and raises :class:`PostgresSchemaError`. Back up your data,
+        then run the explicit :meth:`migrate` to move v1 → v2.
+        """
         if self._pool is None:
             self._pool = await self._asyncpg.create_pool(
                 self._dsn,
@@ -113,7 +142,65 @@ class PostgresStore(ConversationStore):
                 init=self._init_connection,
             )
         async with self._acquire() as conn:
+            if await conn.fetchval(V1_DETECT):
+                raise PostgresSchemaError(
+                    "Legacy v1 (JSONB-blob) schema detected. init() will not "
+                    "modify it — that migration drops every table (data loss). "
+                    "Back up your database, then run "
+                    "PostgresStore.migrate(dry_run=False, confirm=True)."
+                )
             await conn.execute(SCHEMA)
+
+    async def migrate(self, *, dry_run: bool = True, confirm: bool = False) -> dict[str, Any]:
+        """Explicit, opt-in schema migration. **Never runs automatically.**
+
+        The only path that performs the destructive v1 → v2 migration, which
+        DROPs every RoomKit table (irreversible data loss). Serialized across
+        processes with a PostgreSQL advisory lock.
+
+        Args:
+            dry_run: When ``True`` (the default) nothing is executed — the
+                returned report says what *would* happen. Set ``False`` to run.
+            confirm: Required together with ``dry_run=False`` to run the
+                destructive drop. It is your acknowledgement that you have a
+                backup; without it the call raises rather than deleting data.
+
+        Returns:
+            A report ``{"detected_version", "action", "dropped_tables"}`` where
+            ``action`` is one of ``"noop"`` (already v2), ``"dry_run"``, or
+            ``"migrated"``.
+
+        Raises:
+            PostgresSchemaError: on ``dry_run=False`` without ``confirm=True``.
+        """
+        async with self._acquire() as conn, conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock($1)", _MIGRATION_LOCK_KEY)
+            if not await conn.fetchval(V1_DETECT):
+                await conn.execute(SCHEMA)
+                return {"detected_version": 2, "action": "noop", "dropped_tables": []}
+            if dry_run:
+                return {
+                    "detected_version": 1,
+                    "action": "dry_run",
+                    "dropped_tables": list(V1_TABLES),
+                }
+            if not confirm:
+                raise PostgresSchemaError(
+                    "v1 schema detected. Migrating to v2 DROPs all tables "
+                    f"({', '.join(V1_TABLES)}) — irreversible data loss. Take a "
+                    "backup, then call migrate(dry_run=False, confirm=True)."
+                )
+            logger.warning(
+                "Running DESTRUCTIVE v1->v2 migration: dropping tables %s",
+                V1_TABLES,
+            )
+            await conn.execute(V1_TO_V2_DROP)
+            await conn.execute(SCHEMA)
+            return {
+                "detected_version": 1,
+                "action": "migrated",
+                "dropped_tables": list(V1_TABLES),
+            }
 
     async def close(self) -> None:
         """Release the connection pool if we own it."""

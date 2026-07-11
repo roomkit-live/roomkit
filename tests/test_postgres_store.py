@@ -353,6 +353,74 @@ class TestPostgresStore:
         await store.init()
         mock_conn.execute.assert_awaited_once()
 
+    # ── Migration safety (P0: no destructive DDL on connect) ─────
+
+    def test_schema_has_no_destructive_ddl(self) -> None:
+        """The connect-path SCHEMA must never DROP a table — drops live only
+        in the explicit, opt-in migration DDL."""
+        from roomkit.store import postgres_schema
+
+        assert "DROP TABLE" not in postgres_schema.SCHEMA
+        for table in postgres_schema.V1_TABLES:
+            assert f"DROP TABLE IF EXISTS {table} CASCADE" in postgres_schema.V1_TO_V2_DROP
+
+    async def test_init_refuses_v1_schema(self) -> None:
+        """A legacy v1 schema makes init() raise rather than drop tables."""
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval = AsyncMock(return_value=True)  # v1 detected
+        mod = sys.modules["roomkit.store.postgres"]
+        with pytest.raises(mod.PostgresSchemaError, match="v1"):
+            await store.init()
+        # No DDL executed at all when v1 is detected.
+        mock_conn.execute.assert_not_awaited()
+
+    async def test_init_runs_additive_schema_on_v2(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval = AsyncMock(return_value=False)  # v2 / fresh DB
+        await store.init()
+        executed = [c.args[0] for c in mock_conn.execute.await_args_list]
+        assert any("CREATE TABLE IF NOT EXISTS rooms" in sql for sql in executed)
+        assert not any("DROP TABLE" in sql for sql in executed)
+
+    async def test_migrate_dry_run_reports_without_dropping(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval = AsyncMock(return_value=True)  # v1 detected
+        report = await store.migrate()  # dry_run=True by default
+        assert report["action"] == "dry_run"
+        assert report["detected_version"] == 1
+        assert report["dropped_tables"]
+        executed = [c.args[0] for c in mock_conn.execute.await_args_list]
+        assert not any("DROP TABLE" in sql for sql in executed)
+        assert not any("CREATE TABLE" in sql for sql in executed)
+
+    async def test_migrate_requires_confirm(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval = AsyncMock(return_value=True)
+        mod = sys.modules["roomkit.store.postgres"]
+        with pytest.raises(mod.PostgresSchemaError, match="backup"):
+            await store.migrate(dry_run=False, confirm=False)
+        executed = [c.args[0] for c in mock_conn.execute.await_args_list]
+        assert not any("DROP TABLE" in sql for sql in executed)
+
+    async def test_migrate_drops_and_recreates_when_confirmed(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval = AsyncMock(return_value=True)
+        report = await store.migrate(dry_run=False, confirm=True)
+        assert report["action"] == "migrated"
+        executed = [c.args[0] for c in mock_conn.execute.await_args_list]
+        assert any("DROP TABLE IF EXISTS rooms CASCADE" in sql for sql in executed)
+        assert any("CREATE TABLE IF NOT EXISTS rooms" in sql for sql in executed)
+
+    async def test_migrate_noop_on_v2(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval = AsyncMock(return_value=False)  # already v2
+        report = await store.migrate(dry_run=False, confirm=True)
+        assert report["action"] == "noop"
+        assert report["dropped_tables"] == []
+        executed = [c.args[0] for c in mock_conn.execute.await_args_list]
+        assert not any("DROP TABLE" in sql for sql in executed)
+        assert any("CREATE TABLE IF NOT EXISTS rooms" in sql for sql in executed)
+
     # ── Context manager ─────────────────────────────────────────
 
     async def test_async_context_manager(self) -> None:
