@@ -86,9 +86,7 @@ class PostgresAdvisoryLockManager(RoomLockManager):
             yield
             return
         if self._pool is None:
-            raise RuntimeError(
-                "PostgresAdvisoryLockManager.init() must be called before use"
-            )
+            raise RuntimeError("PostgresAdvisoryLockManager.init() must be called before use")
         key = _advisory_key(room_id)
         async with self._pool.acquire() as conn:
             await conn.execute("SELECT pg_advisory_lock($1)", key)
