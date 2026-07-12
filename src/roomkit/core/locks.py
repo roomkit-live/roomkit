@@ -39,6 +39,12 @@ class RoomLockManager(ABC):
         """Acquire an exclusive lock for *room_id*."""
         yield  # pragma: no cover
 
+    async def close(self) -> None:
+        """Release any resources held by the lock manager (e.g. a connection
+        pool). Called by ``RoomKit.close()``. Default is a no-op; overrides
+        MUST be idempotent."""
+        return None
+
 
 class InMemoryLockManager(RoomLockManager):
     """In-process per-room asyncio locks with LRU eviction.

@@ -212,6 +212,19 @@ class RoomKit(
         self._channels: dict[str, Channel] = {}
         self._hook_engine = HookEngine()
         self._lock_manager = lock_manager or InMemoryLockManager()
+        # A persistent store paired with an in-process lock is unsafe if the
+        # store is shared across processes: per-process locks do not coordinate,
+        # so concurrent workers can assign duplicate event indices (RFC §13.5).
+        if not isinstance(self._store, InMemoryStore) and isinstance(
+            self._lock_manager, InMemoryLockManager
+        ):
+            logger.warning(
+                "%s is paired with InMemoryLockManager. This is safe only in a "
+                "single process; if the store is shared across processes (e.g. a "
+                "load-balanced deployment), use a distributed lock manager such "
+                "as PostgresAdvisoryLockManager to avoid duplicate event indices.",
+                type(self._store).__name__,
+            )
         self._realtime = realtime or InMemoryRealtime()
         self._transcoder = DefaultContentTranscoder()
         self._event_handlers: list[tuple[str, FrameworkEventHandler]] = []
@@ -392,6 +405,8 @@ class RoomKit(
         # Close the conversation store (e.g. release a PostgreSQL pool). The
         # store's close() is idempotent and a no-op for a caller-owned pool.
         await self._store.close()
+        # Close the lock manager (e.g. release an advisory-lock pool).
+        await self._lock_manager.close()
         # Close status bus
         await self._status_bus.close()
         # Flush telemetry (ends active spans, flushes exporter)

@@ -67,6 +67,23 @@ BEGIN
     END IF;
 END $$;
 
+-- Migration: idx_events_room_index MUST be UNIQUE (room_id, index) so a
+-- duplicate index (e.g. from two processes assigning concurrently) is rejected
+-- rather than silently persisted (RFC §8.1 / §14.3). Recreating the index is
+-- non-destructive to data; it raises if existing rows already violate it.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE indexname = 'idx_events_room_index'
+        AND indexdef NOT LIKE '%UNIQUE%'
+    ) THEN
+        DROP INDEX idx_events_room_index;
+        CREATE UNIQUE INDEX idx_events_room_index ON events(room_id, index);
+        RAISE NOTICE 'Upgraded idx_events_room_index to UNIQUE(room_id, index)';
+    END IF;
+END $$;
+
 -- rooms
 CREATE TABLE IF NOT EXISTS rooms (
     id              TEXT PRIMARY KEY,
@@ -109,7 +126,7 @@ CREATE TABLE IF NOT EXISTS events (
     channel_data        JSONB NOT NULL DEFAULT '{}',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_events_room_index ON events(room_id, index);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_room_index ON events(room_id, index);
 CREATE INDEX IF NOT EXISTS idx_events_room_created ON events(room_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_room_type ON events(room_id, type);
 CREATE INDEX IF NOT EXISTS idx_events_correlation
