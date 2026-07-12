@@ -214,6 +214,81 @@ class PostgresStore(ConversationStore):
                 "dropped_tables": list(V1_TABLES),
             }
 
+    @staticmethod
+    async def _events_index_is_unique(conn: Any) -> bool:
+        idxdef = await conn.fetchval(
+            "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_events_room_index'"
+        )
+        return isinstance(idxdef, str) and "UNIQUE" in idxdef
+
+    async def dedupe_event_indices(self, *, dry_run: bool = True) -> dict[str, Any]:
+        """Repair duplicate event indices, then enforce UNIQUE(room_id, index).
+
+        A pre-fix release could assign the same index to two events in a room
+        under concurrency (RFC §8.1). This renumbers each affected room's events
+        to a unique, sequential ``0..N-1`` ordered by ``(index, created_at, id)``,
+        reconciles the room counters, and (re)creates ``idx_events_room_index``
+        as UNIQUE — all in one transaction.
+
+        Renumbering **shifts** indices, so read markers (``last_read_index`` /
+        ``read_markers.event_index``) may be off afterwards. Run it in a
+        maintenance window, on a backup first.
+
+        Args:
+            dry_run: When ``True`` (the default) nothing is changed — the report
+                only counts what would be repaired.
+
+        Returns:
+            ``{"action", "duplicate_rows", "affected_rooms", "now_unique"}``
+            where ``action`` is ``"dry_run"``, ``"noop"`` (already clean), or
+            ``"repaired"``.
+        """
+        async with self._acquire() as conn, conn.transaction():
+            affected = await conn.fetch(
+                "SELECT room_id, count(*) - count(DISTINCT index) AS extra "
+                "FROM events GROUP BY room_id HAVING count(*) <> count(DISTINCT index)"
+            )
+            affected_rooms = [r["room_id"] for r in affected]
+            duplicate_rows = sum(r["extra"] for r in affected)
+            already_unique = await self._events_index_is_unique(conn)
+            report: dict[str, Any] = {
+                "duplicate_rows": duplicate_rows,
+                "affected_rooms": len(affected_rooms),
+                "now_unique": already_unique,
+            }
+            if dry_run:
+                report["action"] = "dry_run"
+                return report
+            if not affected_rooms and already_unique:
+                report["action"] = "noop"
+                return report
+
+            if affected_rooms:
+                await conn.execute(
+                    "WITH renum AS ("
+                    "  SELECT id, row_number() OVER "
+                    "    (PARTITION BY room_id ORDER BY index, created_at, id) - 1 AS new_index"
+                    "  FROM events WHERE room_id = ANY($1::text[]))"
+                    " UPDATE events e SET index = r.new_index FROM renum r"
+                    " WHERE e.id = r.id AND e.index <> r.new_index",
+                    affected_rooms,
+                )
+                await conn.execute(
+                    "UPDATE rooms rm SET latest_index = s.mx, event_count = s.cnt "
+                    "FROM (SELECT room_id, max(index) AS mx, count(*) AS cnt FROM events "
+                    "      WHERE room_id = ANY($1::text[]) GROUP BY room_id) s "
+                    "WHERE rm.id = s.room_id",
+                    affected_rooms,
+                )
+            if not already_unique:
+                await conn.execute("DROP INDEX IF EXISTS idx_events_room_index")
+                await conn.execute(
+                    "CREATE UNIQUE INDEX idx_events_room_index ON events(room_id, index)"
+                )
+            report["action"] = "repaired"
+            report["now_unique"] = True
+            return report
+
     async def close(self) -> None:
         """Release the connection pool if we own it."""
         if self._pool is not None and self._owns_pool:

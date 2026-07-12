@@ -112,3 +112,49 @@ async def test_without_cross_process_lock_the_constraint_catches_races(
     indices = [e.index for e in events]
     assert len(indices) == len(set(indices))  # no duplicate ever persisted
     assert sum(results) == len(events)  # successes == rows stored
+
+
+async def _seed_duplicates(store: PostgresStore, room_id: str = "r1", n: int = 3) -> None:
+    """Degrade to a pre-fix DB: non-unique index + ``n`` events all at index 0."""
+    async with store._pool.acquire() as conn:
+        await conn.execute(
+            "DROP INDEX IF EXISTS idx_events_room_index; "
+            "CREATE INDEX idx_events_room_index ON events(room_id, index)"
+        )
+    await store.create_room(Room(id=room_id))
+    for i in range(n):
+        await store.add_event(_event(room_id, f"d{i}", 0))
+
+
+async def test_dedupe_dry_run_reports_without_changing(store: PostgresStore) -> None:
+    await _seed_duplicates(store, n=3)
+    report = await store.dedupe_event_indices()  # dry_run=True
+    assert report["action"] == "dry_run"
+    assert report["duplicate_rows"] == 2  # 3 rows at index 0 → 2 extra
+    assert report["affected_rooms"] == 1
+    assert report["now_unique"] is False
+    events = await store.list_events("r1", limit=100)
+    assert sorted(e.index for e in events) == [0, 0, 0]  # unchanged
+
+
+async def test_dedupe_repairs_and_enforces_unique(store: PostgresStore) -> None:
+    await _seed_duplicates(store, n=3)
+    report = await store.dedupe_event_indices(dry_run=False)
+    assert report["action"] == "repaired"
+    assert report["now_unique"] is True
+    events = await store.list_events("r1", limit=100)
+    assert sorted(e.index for e in events) == [0, 1, 2]  # unique + sequential
+    with pytest.raises(asyncpg.UniqueViolationError):  # constraint now enforced
+        await store.add_event(_event("r1", "x", 0))
+    room = await store.get_room("r1")
+    assert room is not None
+    assert room.event_count == 3
+    assert room.latest_index == 2  # counters reconciled
+
+
+async def test_dedupe_noop_on_clean(store: PostgresStore) -> None:
+    await store.create_room(Room(id="r1"))
+    await store.add_event_auto_index("r1", _event("r1", "e1", 0))
+    report = await store.dedupe_event_indices(dry_run=False)
+    assert report["action"] == "noop"
+    assert report["now_unique"] is True
