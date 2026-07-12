@@ -134,3 +134,47 @@ jobs:
         with:
           name: coverage-report
           path: coverage.xml
+
+  # Runs the tests that need real infrastructure — they self-skip in the fast
+  # `test` job (no POSTGRES_DSN / no fastapi). This proves the Postgres store,
+  # the multi-process index safety (UNIQUE + advisory locks), and the WebRTC
+  # auth path against real dependencies.
+  integration:
+    name: Integration (real Postgres + WebRTC)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: roomkit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/roomkit_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra postgres
+
+      - name: Install fastapi (peer dep for WebRTC signaling tests)
+        run: uv pip install fastapi
+
+      - name: Run integration tests
+        run: >-
+          uv run pytest -v
+          tests/test_store_postgres.py
+          tests/test_postgres_multiprocess.py
+          tests/test_webrtc_offer_auth.py
