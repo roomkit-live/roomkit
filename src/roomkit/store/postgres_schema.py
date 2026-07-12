@@ -67,10 +67,13 @@ BEGIN
     END IF;
 END $$;
 
--- Migration: idx_events_room_index MUST be UNIQUE (room_id, index) so a
+-- Migration: upgrade idx_events_room_index to UNIQUE(room_id, index) so a
 -- duplicate index (e.g. from two processes assigning concurrently) is rejected
--- rather than silently persisted (RFC §8.1 / §14.3). Recreating the index is
--- non-destructive to data; it raises if existing rows already violate it.
+-- rather than silently persisted (RFC §8.1 / §14.3). Best-effort in init(): if
+-- the table already holds duplicate (room_id, index) rows (from a prior
+-- release's races), the upgrade is skipped with a warning so startup still
+-- succeeds — deduplicate, then recreate the index UNIQUE. The inner block's
+-- rollback on failure preserves the existing non-unique index.
 DO $$
 BEGIN
     IF EXISTS (
@@ -78,9 +81,16 @@ BEGIN
         WHERE indexname = 'idx_events_room_index'
         AND indexdef NOT LIKE '%UNIQUE%'
     ) THEN
-        DROP INDEX idx_events_room_index;
-        CREATE UNIQUE INDEX idx_events_room_index ON events(room_id, index);
-        RAISE NOTICE 'Upgraded idx_events_room_index to UNIQUE(room_id, index)';
+        BEGIN
+            DROP INDEX idx_events_room_index;
+            CREATE UNIQUE INDEX idx_events_room_index ON events(room_id, index);
+            RAISE NOTICE 'Upgraded idx_events_room_index to UNIQUE(room_id, index)';
+        EXCEPTION WHEN unique_violation THEN
+            RAISE WARNING 'idx_events_room_index NOT upgraded to UNIQUE: duplicate '
+                '(room_id, index) rows exist. Deduplicate the events table, then '
+                'recreate the index UNIQUE. Multi-process index safety is NOT '
+                'enforced until then.';
+        END;
     END IF;
 END $$;
 
