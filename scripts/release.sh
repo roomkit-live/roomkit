@@ -113,6 +113,18 @@ for f in "${DIST_FILES[@]}"; do
     fi
 done
 
+# --- Software Bill of Materials (CycloneDX) ---
+# A per-release inventory of the runtime dependency tree (core + the `providers`
+# extra), attached to the GitHub Release for downstream vulnerability and
+# license audits. `--no-emit-project` lists the dependencies, not roomkit itself.
+echo "==> Generating SBOM..."
+SBOM_FILE="dist/roomkit-${VERSION}.cdx.json"
+uv export --extra providers --no-dev --frozen --no-emit-project --format requirements-txt \
+    > dist/roomkit-sbom-requirements.txt
+uvx --from cyclonedx-bom cyclonedx-py requirements dist/roomkit-sbom-requirements.txt \
+    --of JSON -o "${SBOM_FILE}"
+echo "    Wrote ${SBOM_FILE}"
+
 # --- Push git state BEFORE publishing ---
 # The PyPI upload below is irreversible; pushing the commit, tag, and GitHub
 # Release first means a failed upload leaves git and PyPI consistent and the
@@ -144,8 +156,9 @@ fi
 gh release create "v${VERSION}" \
     --title "v${VERSION}" \
     ${PRERELEASE_FLAG} \
-    --notes "${NOTES}"
-echo "    GitHub Release created."
+    --notes "${NOTES}" \
+    "${SBOM_FILE}#SBOM (CycloneDX)"
+echo "    GitHub Release created (SBOM attached)."
 
 # --- Publish to PyPI (last, irreversible step) ---
 echo "==> Publishing to PyPI..."
