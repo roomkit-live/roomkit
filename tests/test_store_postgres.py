@@ -31,6 +31,7 @@ pytestmark = [
 async def store():
     from roomkit.store.postgres import PostgresStore
 
+    _index_counters.clear()
     s = PostgresStore(dsn=POSTGRES_DSN)
     await s.init(min_size=1, max_size=3)
     # Clean tables before each test
@@ -43,9 +44,18 @@ async def store():
     await s.close()
 
 
+# Per-room monotonic index, mirroring what the framework assigns — so a test
+# that adds several events via ``add_event`` gets distinct indices and does not
+# trip the UNIQUE(room_id, index) constraint. Reset per test by the fixture.
+_index_counters: dict[str, int] = {}
+
+
 def _make_event(room_id: str = "r1", body: str = "hello", **kwargs):
     from roomkit.models.event import EventSource, RoomEvent, TextContent
 
+    if "index" not in kwargs:
+        kwargs["index"] = _index_counters.get(room_id, 0)
+        _index_counters[room_id] = kwargs["index"] + 1
     return RoomEvent(
         room_id=room_id,
         source=EventSource(channel_id="ch1", channel_type=ChannelType.SMS),
