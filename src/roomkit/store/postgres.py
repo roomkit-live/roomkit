@@ -150,6 +150,18 @@ class PostgresStore(ConversationStore):
                     "PostgresStore.migrate(dry_run=False, confirm=True)."
                 )
             await conn.execute(SCHEMA)
+            # Surface the degraded state in the app's logs: if the events index
+            # could not be made UNIQUE (pre-existing duplicate (room_id, index)
+            # rows), multi-process index safety is not enforced.
+            idxdef = await conn.fetchval(
+                "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_events_room_index'"
+            )
+            if isinstance(idxdef, str) and "UNIQUE" not in idxdef:
+                logger.warning(
+                    "idx_events_room_index is not UNIQUE — duplicate (room_id, index) "
+                    "rows exist, so multi-process event-index safety is NOT enforced. "
+                    "Deduplicate the events table, then recreate the index UNIQUE."
+                )
 
     async def migrate(self, *, dry_run: bool = True, confirm: bool = False) -> dict[str, Any]:
         """Explicit, opt-in schema migration. **Never runs automatically.**
