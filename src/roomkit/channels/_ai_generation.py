@@ -235,11 +235,14 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                         "status_code": exc.status_code,
                     },
                 )
-            return ChannelOutput.empty()
+            # Propagate so the broadcast path fires ON_ERROR — mirrors the
+            # streaming path (which raises out of stream consumption). Swallowing
+            # into an empty output would leave the turn with no error surfaced.
+            raise
         except Exception:
             telemetry.end_span(span_id, status="error", error_message="AI provider failed")
             logger.exception("AI provider failed for channel %s", self.channel_id)
-            return ChannelOutput.empty()
+            raise
 
         response = loop_result.response
         usage = response.usage or {}

@@ -270,22 +270,17 @@ class InboundStreamingMixin(HelpersMixin):
                 logger.exception("Streaming delivery to %s failed", binding.channel_id)
                 # Persist any text accumulated before the error
                 await _persist_text_segment()
-                error_event = RoomEvent(
-                    room_id=room_id,
-                    source=_make_source(),
-                    content=TextContent(body=str(exc)),
-                    metadata={
-                        "error": str(exc),
-                        "error_type": type(exc).__name__,
-                        "error_category": "streaming",
-                    },
+                await self._fire_error_hook(
+                    room_id,
+                    context,
+                    _make_source(),
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                    error_category="streaming",
                     chain_depth=chain_depth,
                     visibility=visibility,
                     correlation_id=correlation_id,
                     parent_event_id=parent_event_id,
-                )
-                await self._hook_engine.run_async_hooks(
-                    room_id, HookTrigger.ON_ERROR, error_event, context
                 )
         else:
             # No streaming targets (e.g. a PII-locked / edge agent whose stream
@@ -301,22 +296,17 @@ class InboundStreamingMixin(HelpersMixin):
             except Exception as exc:
                 logger.exception("Stream consumption (no targets) failed for room %s", room_id)
                 await _persist_text_segment()
-                error_event = RoomEvent(
-                    room_id=room_id,
-                    source=_make_source(),
-                    content=TextContent(body=str(exc)),
-                    metadata={
-                        "error": str(exc),
-                        "error_type": type(exc).__name__,
-                        "error_category": "streaming",
-                    },
+                await self._fire_error_hook(
+                    room_id,
+                    context,
+                    _make_source(),
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                    error_category="streaming",
                     chain_depth=chain_depth,
                     visibility=visibility,
                     correlation_id=correlation_id,
                     parent_event_id=parent_event_id,
-                )
-                await self._hook_engine.run_async_hooks(
-                    room_id, HookTrigger.ON_ERROR, error_event, context
                 )
 
         if not persisted_events:

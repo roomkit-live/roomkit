@@ -18,7 +18,7 @@ from roomkit.models.enums import (
     EventType,
     HookTrigger,
 )
-from roomkit.models.event import DeleteContent, EditContent, RoomEvent
+from roomkit.models.event import DeleteContent, EditContent, EventSource, RoomEvent
 from roomkit.models.hook import InjectedEvent
 from roomkit.models.identity import Identity, IdentityResult
 from roomkit.models.task import Observation, Task
@@ -439,6 +439,33 @@ class InboundLockedMixin(HelpersMixin):
                 event_id=event.id,
                 channel_id=ch_id,
                 data={"error": error_msg},
+            )
+
+        # Surface intelligence-channel failures to ON_ERROR so hosts can render an
+        # error card. A failure raised in the AI channel's on_event — eager context
+        # build, tool/skill resolution, or a non-streaming provider error — lands
+        # here as a broadcast error; the streaming consumption path fires ON_ERROR
+        # on its own (see inbound_streaming). Transport delivery failures above are
+        # not turn-level agent errors, so they are deliberately excluded.
+        for binding in context.bindings:
+            if binding.category != ChannelCategory.INTELLIGENCE:
+                continue
+            error_msg = broadcast_result.errors.get(binding.channel_id)
+            if not error_msg:
+                continue
+            await self._fire_error_hook(
+                room_id,
+                context,
+                EventSource(
+                    channel_id=binding.channel_id,
+                    channel_type=binding.channel_type,
+                ),
+                error=error_msg,
+                error_type="unknown",
+                error_category="generation",
+                chain_depth=event.chain_depth + 1,
+                visibility=event.response_visibility or "all",
+                parent_event_id=event.parent_event_id,
             )
 
         # Store blocked events from chain depth enforcement with an atomic,

@@ -37,7 +37,7 @@ from roomkit.models.enums import (
     IdentificationStatus,
     Visibility,
 )
-from roomkit.models.event import EventSource, RoomEvent, SystemContent
+from roomkit.models.event import EventSource, RoomEvent, SystemContent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import Participant
@@ -134,6 +134,47 @@ class HelpersMixin:
         ):
             return None
         return await self._store.add_event_auto_index(room_id, event)
+
+    # -- Error surfacing --
+
+    async def _fire_error_hook(
+        self,
+        room_id: str,
+        context: RoomContext,
+        source: EventSource,
+        *,
+        error: str,
+        error_type: str,
+        error_category: str,
+        chain_depth: int = 0,
+        visibility: str = "all",
+        correlation_id: str | None = None,
+        parent_event_id: str | None = None,
+    ) -> None:
+        """Hand a turn-level failure to the ON_ERROR hooks.
+
+        RoomKit does not persist the error itself — it fires ON_ERROR with a
+        synthetic error :class:`RoomEvent` so hosts can classify and surface it
+        (e.g. render an error card). Every provider/inference failure path
+        funnels through here so no failure vanishes with only a log line.
+        """
+        error_event = RoomEvent(
+            room_id=room_id,
+            source=source,
+            content=TextContent(body=error),
+            metadata={
+                "error": error,
+                "error_type": error_type,
+                "error_category": error_category,
+            },
+            chain_depth=chain_depth,
+            visibility=visibility,
+            correlation_id=correlation_id,
+            parent_event_id=parent_event_id,
+        )
+        await self._hook_engine.run_async_hooks(
+            room_id, HookTrigger.ON_ERROR, error_event, context
+        )
 
     # -- Internal helpers --
 
