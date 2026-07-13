@@ -9,18 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Inbound commit is now a single atomic store transaction.** The pipeline
+- **Every timeline write is a single atomic store commit.** The pipeline
   previously assigned the event index with `get_event_count()`, then wrote the
   event and the room counters in separate calls — so two processes without an
   advisory lock could compute the same index (one write then failing on the
   `UNIQUE(room_id, index)` constraint), and a crash between the writes left
   `events` and `rooms.event_count` / `latest_index` divergent (RFC §8.1, §10.1,
   §14.3). The new `ConversationStore.commit_event()` assigns the authoritative
-  index, inserts the DELIVERED event, and bumps the room counters as one
-  transaction (`SELECT … FOR UPDATE` on the room row in Postgres), so index
-  assignment is authoritative at the storage layer even without a cross-process
-  lock. A new end-to-end test drives two `RoomKit` instances through the real
-  pipeline to prove it.
+  index, inserts the event, and bumps the room counters as one transaction
+  (`SELECT … FOR UPDATE` on the room row in Postgres). Every path that adds to
+  the timeline now goes through it — the trigger message, **AI reentry / tool
+  responses (previously stored `PENDING` and never counted), streamed AI
+  segments, chain-depth-blocked, injected, and system events** — so the timeline
+  and the counters can never diverge, and the post-broadcast counter reconcile
+  is gone (RFC §10.1 step 13/15). End-to-end tests drive two `RoomKit` instances
+  and an AI reentry through the real pipeline to prove it.
+- **A `PersistencePolicy` that excludes an event no longer creates a phantom
+  `latest_index`.** An excluded event is delivered but not stored, so it consumes
+  no index; the room counters are left untouched instead of being advanced to the
+  unstored event's provisional index.
 - **`ON_ERROR` hooks run after the room lock is released.** A failing
   intelligence channel previously fired `ON_ERROR` while still holding the room
   lock, so a slow error hook (up to the hook timeout) blocked every following
@@ -36,9 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **`scripts/release.sh` generates and validates the SBOM before any Git
-  mutation**, pins the CycloneDX generator (`cyclonedx-bom==7.3.0`), and makes
-  the commit and tag steps idempotent so a run that fails on a flaky network is
-  safe to re-run.
+  mutation**, pins the CycloneDX generator (`cyclonedx-bom==7.3.0`), and is
+  re-runnable end to end: the clean-tree check tolerates an already-applied
+  version bump, and the commit, tag, and GitHub-Release steps are idempotent, so
+  a run that fails on a flaky network (or a PyPI upload after the Release exists)
+  is safe to re-run.
 - **The Level 0 conformance matrix no longer overstates its guarantee.** Its
   docstring now distinguishes behavioural checks from structural (API-surface)
   ones and points to the feature suites that own the end-to-end coverage; the

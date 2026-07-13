@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
@@ -112,46 +111,25 @@ class InboundLockedMixin(HelpersMixin):
             return None
         return parent.parent_event_id or parent_event_id
 
-    async def _bump_room_counters(self, room_id: str, latest_index: int) -> None:
-        """Refresh room counters to match stored events (RFC §14.3).
-
-        Updates ``latest_index``, ``event_count`` and ``last_activity_at`` from
-        the store's authoritative event count.
-        """
-        room = await self._store.get_room(room_id)
-        if room is None:
-            return
-        updates: dict[str, object] = {
-            "latest_index": latest_index,
-            "event_count": await self._store.get_event_count(room_id),
-        }
-        if room.timers:
-            updates["timers"] = room.timers.model_copy(
-                update={"last_activity_at": datetime.now(UTC)}
-            )
-        room = room.model_copy(update=updates)
-        await self._store.update_room(room)
-
     async def _commit_event(self, room_id: str, event: RoomEvent) -> RoomEvent:
         """Commit an event to the timeline (RFC §10.1 step 12 / §14.3).
 
-        Persists the event as DELIVERED and bumps the room counters as ONE
-        atomic store transaction (:meth:`ConversationStore.commit_event`), so an
-        observer never sees a DELIVERED event the room counters do not reflect,
-        and the authoritative index is assigned inside that transaction (§8.1) —
-        safe even without a cross-process room lock. Returns the committed event
-        (its index may differ from the provisional pre-hook value if the store
-        serialized a concurrent writer).
+        Persists the event and bumps the room counters (event_count,
+        latest_index, timers.last_activity_at) as ONE atomic store transaction
+        (:meth:`ConversationStore.commit_event`), so an observer never sees a
+        stored event the room counters do not reflect, and the authoritative
+        index is assigned inside that transaction (§8.1) — safe even without a
+        cross-process room lock. Returns the committed event (its index may
+        differ from the provisional pre-hook value if the store serialized a
+        concurrent writer).
 
-        When the persistence policy excludes the event, nothing is stored; the
-        room counters are refreshed from the authoritative store count so the
-        room still reflects reality, and the input event is returned unchanged.
+        When the persistence policy excludes the event, nothing is stored: the
+        event is delivered but not persisted, so it consumes no index and MUST
+        NOT advance the room counters (latest_index must never point at an
+        unstored event, §14.3). The input event is returned unchanged.
         """
         committed = await self._persist_committed(room_id, event)
-        if committed is None:
-            await self._bump_room_counters(room_id, event.index)
-            return event
-        return committed
+        return event if committed is None else committed
 
     async def _process_locked(
         self,
@@ -494,10 +472,11 @@ class InboundLockedMixin(HelpersMixin):
                 parent_event_id=event.parent_event_id,
             )
 
-        # Store blocked events from chain depth enforcement with an atomic,
-        # monotonic index (RFC §8.1 / §8.3 — blocked events are still indexed).
+        # Commit blocked events from chain depth enforcement atomically (RFC
+        # §8.1 / §8.3 / §14.3 — blocked events are still indexed, and the commit
+        # keeps the room counters in step with the timeline).
         for blocked in broadcast_result.blocked_events:
-            await self._store.add_event_auto_index(room_id, blocked)
+            await self._store.commit_event(room_id, blocked)
             await self._emit_framework_event(
                 "chain_depth_exceeded",
                 room_id=room_id,
@@ -546,79 +525,91 @@ class InboundLockedMixin(HelpersMixin):
                             "blocked_by": "reentry_loop_cap",
                         }
                     )
-                    await self._store.add_event_auto_index(room_id, blocked_remaining)
+                    await self._store.commit_event(room_id, blocked_remaining)
                 break
             reentry_count += 1
             reentry = pending_reentries.popleft()
-            stored = await self._persist_event_auto_index(room_id, reentry)
-            if stored is not None:
-                reentry = stored
 
             # Tool call events are safe to broadcast — the AI channel's
             # self-loop guard skips events from its own channel_id.
             reentry_binding = await self._store.get_binding(room_id, reentry.source.channel_id)
-            if reentry_binding:
-                # Append reentry event to context locally instead of full rebuild
-                reentry_ctx = context.model_copy(
-                    update={
-                        "recent_events": [
-                            *context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :],
-                            reentry,
-                        ]
-                    }
+            if reentry_binding is None:
+                # No channel to broadcast to, but the response is still part of
+                # the timeline: commit it atomically as DELIVERED (RFC §10.1
+                # step 13) so it is indexed and counted like any other event.
+                await self._commit_event(
+                    room_id, reentry.model_copy(update={"status": EventStatus.DELIVERED})
+                )
+                continue
+
+            # Provisional index for the hook, mirroring the main inbound path;
+            # the authoritative index is (re)assigned atomically at commit.
+            reentry = reentry.model_copy(
+                update={"index": await self._store.get_event_count(room_id)}
+            )
+            # Append reentry event to context locally instead of full rebuild
+            reentry_ctx = context.model_copy(
+                update={
+                    "recent_events": [
+                        *context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :],
+                        reentry,
+                    ]
+                }
+            )
+
+            # Run BEFORE_BROADCAST sync hooks on reentry events so that
+            # orchestration routing (ConversationRouter) can stamp
+            # _routed_to metadata and prevent AI-to-AI loops.
+            reentry_sync = await self._hook_engine.run_sync_hooks(
+                room_id, HookTrigger.BEFORE_BROADCAST, reentry, reentry_ctx
+            )
+            # Collect side effects even if the hook blocks this event
+            reentry_tasks.extend(reentry_sync.tasks)
+            reentry_observations.extend(reentry_sync.observations)
+            if not reentry_sync.allowed:
+                # RFC §9.5: commit BLOCKED (fresh insert — no pre-persist),
+                # emit event_blocked, deliver InjectedEvents.
+                await self._handle_block(
+                    room_id=room_id,
+                    event=reentry,
+                    reason=reentry_sync.reason,
+                    blocked_by=reentry_sync.blocked_by,
+                    injected_events=reentry_sync.injected_events,
+                    context=reentry_ctx,
+                )
+                continue
+            reentry = reentry_sync.event or reentry
+            # RFC §9.5: deliver InjectedEvents produced by an allow/modify hook
+            # on this reentry event (same shape as the main inbound path).
+            if reentry_sync.injected_events:
+                await self._deliver_injected_events(
+                    reentry_sync.injected_events, room_id, reentry_ctx
                 )
 
-                # Run BEFORE_BROADCAST sync hooks on reentry events so that
-                # orchestration routing (ConversationRouter) can stamp
-                # _routed_to metadata and prevent AI-to-AI loops.
-                reentry_sync = await self._hook_engine.run_sync_hooks(
-                    room_id, HookTrigger.BEFORE_BROADCAST, reentry, reentry_ctx
-                )
-                # Collect side effects even if the hook blocks this event
-                reentry_tasks.extend(reentry_sync.tasks)
-                reentry_observations.extend(reentry_sync.observations)
-                if not reentry_sync.allowed:
-                    # RFC §9.5 block handling: update to BLOCKED, emit
-                    # event_blocked, deliver InjectedEvents.
-                    # ``update_existing=True`` because reentry events are
-                    # pre-persisted in PENDING above (atomic indexing
-                    # requires the row to exist before the hook fires).
-                    await self._handle_block(
-                        room_id=room_id,
-                        event=reentry,
-                        reason=reentry_sync.reason,
-                        blocked_by=reentry_sync.blocked_by,
-                        injected_events=reentry_sync.injected_events,
-                        context=reentry_ctx,
-                        update_existing=True,
-                    )
-                    continue
-                reentry = reentry_sync.event or reentry
-                # RFC §9.5: deliver InjectedEvents produced by an
-                # allow/modify hook on this reentry event (same shape as
-                # the main inbound path in ``_process_locked``).
-                if reentry_sync.injected_events:
-                    await self._deliver_injected_events(
-                        reentry_sync.injected_events, room_id, reentry_ctx
-                    )
+            # Commit point (RFC §10.1 step 13): assign the authoritative index,
+            # store DELIVERED, and bump the room counters as ONE transaction —
+            # the same atomic commit as the trigger event (step 12).
+            reentry = await self._commit_event(
+                room_id, reentry.model_copy(update={"status": EventStatus.DELIVERED})
+            )
 
-                reentry_result = await router.broadcast(
-                    reentry,
-                    reentry_binding,
-                    reentry_ctx,
-                )
-                # Collect tasks/observations from reentry broadcast
-                reentry_tasks.extend(reentry_result.tasks)
-                reentry_observations.extend(reentry_result.observations)
-                # Store reentry's blocked events with an atomic, monotonic index
-                for blocked in reentry_result.blocked_events:
-                    await self._store.add_event_auto_index(room_id, blocked)
-                # Queue nested reentry events for further broadcasting
-                pending_reentries.extend(reentry_result.reentry_events)
-                # AFTER_BROADCAST hooks for reentry events (e.g., AI responses)
-                await self._dispatch_after_broadcast(
-                    room_id, reentry, reentry_ctx, pending_after_broadcast_out
-                )
+            reentry_result = await router.broadcast(
+                reentry,
+                reentry_binding,
+                reentry_ctx,
+            )
+            # Collect tasks/observations from reentry broadcast
+            reentry_tasks.extend(reentry_result.tasks)
+            reentry_observations.extend(reentry_result.observations)
+            # Commit reentry's own blocked events atomically
+            for blocked in reentry_result.blocked_events:
+                await self._store.commit_event(room_id, blocked)
+            # Queue nested reentry events for further broadcasting
+            pending_reentries.extend(reentry_result.reentry_events)
+            # AFTER_BROADCAST hooks for reentry events (e.g., AI responses)
+            await self._dispatch_after_broadcast(
+                room_id, reentry, reentry_ctx, pending_after_broadcast_out
+            )
 
         # Persist side effects from hooks and broadcast (including reentry)
         all_tasks = sync_result.tasks + broadcast_result.tasks + reentry_tasks
@@ -636,11 +627,10 @@ class InboundLockedMixin(HelpersMixin):
         # AFTER_BROADCAST async hooks (deferred to run outside the room lock)
         await self._dispatch_after_broadcast(room_id, event, context, pending_after_broadcast_out)
 
-        # Post-commit counter refresh (RFC §10.1) — captures reentry
-        # events added during broadcast; the source event was already reflected
-        # at the commit point.
-        await self._bump_room_counters(room_id, event.index)
-
+        # No separate room-state write here (RFC §10.1 step 15): every event —
+        # the trigger, each reentry, and every blocked/injected event — bumped
+        # the room counters atomically at its own commit, so the timeline and
+        # the counters can never diverge (§14.3).
         await self._emit_framework_event("event_processed", room_id=room_id, event_id=event.id)
 
         return InboundResult(event=event)
@@ -654,24 +644,18 @@ class InboundLockedMixin(HelpersMixin):
         blocked_by: str | None,
         injected_events: list[InjectedEvent],
         context: RoomContext,
-        update_existing: bool,
     ) -> RoomEvent:
-        """RFC §9.5 block handling: persist BLOCKED, emit framework event,
-        deliver injected side effects. Shared by the hook-block paths (main
-        inbound + reentry) and the source write-permission block so they
-        cannot drift.
+        """RFC §9.5 block handling: commit the event as BLOCKED, emit the
+        framework event, and deliver injected side effects. Shared by every
+        block path (main-inbound hook block, reentry hook block, source
+        write-permission block) so they cannot drift.
 
-        ``update_existing=True`` when the event is already in the store
-        (reentry path — events are pre-persisted in PENDING before the
-        hook fires so they get an atomic index). The existing row is
-        updated in place to avoid double-insert.
+        The BLOCKED event is committed atomically like any other event — index,
+        status, and room counters in one store transaction (§14.3) — because a
+        blocked event is still part of the timeline and consumes an index (§8.3).
 
-        ``update_existing=False`` when the event has not yet been stored
-        (main inbound / permission path — the terminal status is decided
-        before first storage).
-
-        Returns the stored BLOCKED event so the caller can include it
-        in its return value.
+        Returns the committed BLOCKED event so the caller can include it in its
+        return value.
         """
         blocked_event = event.model_copy(
             update={
@@ -679,15 +663,11 @@ class InboundLockedMixin(HelpersMixin):
                 "blocked_by": blocked_by or reason,
             }
         )
-        if update_existing:
-            await self._store.update_event(blocked_event)
-        else:
-            await self._store.add_event(blocked_event)
-
+        blocked_event = await self._store.commit_event(room_id, blocked_event)
         await self._emit_framework_event(
             "event_blocked",
             room_id=room_id,
-            event_id=event.id,
+            event_id=blocked_event.id,
             data={
                 "reason": reason,
                 "blocked_by": blocked_by,
@@ -720,7 +700,6 @@ class InboundLockedMixin(HelpersMixin):
             blocked_by=blocked_by,
             injected_events=injected_events,
             context=context,
-            update_existing=False,
         )
         await self._persist_side_effects(room_id, tasks, observations, blocked_event, context)
         return InboundResult(event=blocked_event, blocked=True, reason=reason)
@@ -815,8 +794,9 @@ class InboundLockedMixin(HelpersMixin):
     ) -> None:
         """Store and deliver injected events to their target channels."""
         for injected in injected_events:
-            # Store the injected event with an atomic, monotonic index (RFC §8.1)
-            stored = await self._store.add_event_auto_index(room_id, injected.event)
+            # Commit the injected event atomically (index + room counters,
+            # RFC §8.1 / §14.3) — it is a real timeline event.
+            stored = await self._store.commit_event(room_id, injected.event)
 
             # Deliver to target channels
             target_ids = injected.target_channel_ids

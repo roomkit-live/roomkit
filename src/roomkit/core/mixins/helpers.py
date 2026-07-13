@@ -383,7 +383,9 @@ class HelpersMixin:
             status=EventStatus.DELIVERED,
             visibility=Visibility.INTERNAL,
         )
-        await self._persist_event_auto_index(room_id, event)
+        # Commit atomically (index + room counters, §14.3): a system event is a
+        # DELIVERED timeline event and must be reflected in the counters too.
+        await self._persist_committed(room_id, event)
 
     async def _build_context(
         self, room_id: str, *, recent_limit: int | None = None

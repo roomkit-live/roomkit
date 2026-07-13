@@ -289,3 +289,35 @@ async def test_inbound_pipeline_atomic_commit_serializes_without_advisory_lock(
         await kit_b.close()
         await store_a.close()
         await store_b.close()
+
+
+async def test_ai_reentry_commits_delivered_with_consistent_counters(store: PostgresStore) -> None:
+    """An AI response (a reentry) commits DELIVERED with room counters that match
+    the timeline through the REAL Postgres store — the atomic reentry commit of
+    RFC §10.1 step 13, exercised end-to-end via the pipeline."""
+    from roomkit.channels.ai import AIChannel
+    from roomkit.models.enums import ChannelCategory, EventStatus
+    from roomkit.providers.ai.mock import MockAIProvider
+
+    await store.create_room(Room(id="r1"))
+    kit = RoomKit(store=store)  # ty: ignore[invalid-argument-type]
+    kit.register_channel(_Transport("ws"))
+    kit.register_channel(AIChannel("ai", provider=MockAIProvider(responses=["hi there"])))
+    await kit.attach_channel("r1", "ws")
+    await kit.attach_channel("r1", "ai", category=ChannelCategory.INTELLIGENCE)
+
+    try:
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws", sender_id="u1", content=TextContent(body="hello")),
+            room_id="r1",
+        )
+        events = await store.list_events("r1", limit=100)
+        ai_events = [e for e in events if e.source.channel_id == "ai"]
+        assert ai_events, "the AI response must be persisted"
+        assert all(e.status is EventStatus.DELIVERED for e in ai_events)
+        room = await store.get_room("r1")
+        assert room is not None
+        assert room.event_count == len(events)
+        assert room.latest_index == max(e.index for e in events)
+    finally:
+        await kit.close()

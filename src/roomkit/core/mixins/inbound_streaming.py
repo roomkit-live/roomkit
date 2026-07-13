@@ -13,6 +13,7 @@ from roomkit.models.enums import (
     Access,
     ChannelCategory,
     ChannelDirection,
+    EventStatus,
     EventType,
     HookTrigger,
 )
@@ -129,6 +130,7 @@ class InboundStreamingMixin(HelpersMixin):
                 source=_make_source(),
                 type=EventType.MESSAGE,
                 content=TextContent(body=text),
+                status=EventStatus.DELIVERED,
                 chain_depth=chain_depth,
                 visibility=visibility,
                 correlation_id=correlation_id,
@@ -164,7 +166,7 @@ class InboundStreamingMixin(HelpersMixin):
                 )
                 return
             event = sync_result.event or event
-            stored = await self._persist_event_auto_index(room_id, event)
+            stored = await self._persist_committed(room_id, event)
             if stored is not None:
                 persisted_events.append(stored)
 
@@ -179,12 +181,13 @@ class InboundStreamingMixin(HelpersMixin):
                     arguments=marker.arguments,
                     status="pending",
                 ),
+                status=EventStatus.DELIVERED,
                 chain_depth=chain_depth,
                 visibility=visibility,
                 correlation_id=correlation_id,
                 parent_event_id=parent_event_id,
             )
-            stored = await self._persist_event_auto_index(room_id, event)
+            stored = await self._persist_committed(room_id, event)
             if stored is not None:
                 persisted_events.append(stored)
 
@@ -202,12 +205,13 @@ class InboundStreamingMixin(HelpersMixin):
                     duration_ms=marker.duration_ms,
                     error=marker.error,
                 ),
+                status=EventStatus.DELIVERED,
                 chain_depth=chain_depth,
                 visibility=visibility,
                 correlation_id=correlation_id,
                 parent_event_id=parent_event_id,
             )
-            stored = await self._persist_event_auto_index(room_id, event)
+            stored = await self._persist_committed(room_id, event)
             if stored is not None:
                 persisted_events.append(stored)
 
