@@ -21,8 +21,14 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-a-zA-Z0-9.]+)?$ ]]; then
 fi
 
 # --- Ensure clean working tree ---
-if [[ -n "$(git status --porcelain)" ]]; then
-    echo "Error: working tree is not clean. Commit or stash changes first."
+# A re-run after a mid-release failure may have already applied the version bump
+# to these two files (sed runs before the commit). That is the ONLY permitted
+# dirt — it lets the script resume; anything else must be committed or stashed.
+UNEXPECTED="$(git status --porcelain \
+    | grep -vE '(src/roomkit/_version\.py|tests/test_public_api\.py)$' || true)"
+if [[ -n "$UNEXPECTED" ]]; then
+    echo "Error: working tree has changes beyond the version bump. Commit or stash first:"
+    echo "$UNEXPECTED"
     exit 1
 fi
 
@@ -155,32 +161,39 @@ echo "==> Pushing..."
 git push && git push --tags
 echo "    Pushed."
 
-# --- GitHub Release ---
-# Find the previous tag to generate the changelog range.
-PREV_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | sed -n '2p')
-echo "==> Creating GitHub Release (v${VERSION}, since ${PREV_TAG:-scratch})..."
-
-NOTES="## What's Changed"$'\n\n'
-if [[ -n "${PREV_TAG:-}" ]]; then
-    NOTES+=$(git log "${PREV_TAG}..v${VERSION}" --pretty=format:"- %s" \
-        | grep -v "^- Bump version")
-    NOTES+=$'\n\n'"**Full Changelog**: https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/compare/${PREV_TAG}...v${VERSION}"
+# --- GitHub Release (idempotent) ---
+# A resume after a failed PyPI upload must not die here: if the Release already
+# exists from the prior run, skip creation and continue to the (retryable)
+# publish step below.
+if gh release view "v${VERSION}" >/dev/null 2>&1; then
+    echo "==> GitHub Release v${VERSION} already exists — skipping create."
 else
-    NOTES+=$(git log "v${VERSION}" --pretty=format:"- %s" \
-        | grep -v "^- Bump version")
-fi
+    # Find the previous tag to generate the changelog range.
+    PREV_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | sed -n '2p')
+    echo "==> Creating GitHub Release (v${VERSION}, since ${PREV_TAG:-scratch})..."
 
-PRERELEASE_FLAG=""
-if [[ "$VERSION" =~ [a-zA-Z] ]]; then
-    PRERELEASE_FLAG="--prerelease"
-fi
+    NOTES="## What's Changed"$'\n\n'
+    if [[ -n "${PREV_TAG:-}" ]]; then
+        NOTES+=$(git log "${PREV_TAG}..v${VERSION}" --pretty=format:"- %s" \
+            | grep -v "^- Bump version")
+        NOTES+=$'\n\n'"**Full Changelog**: https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/compare/${PREV_TAG}...v${VERSION}"
+    else
+        NOTES+=$(git log "v${VERSION}" --pretty=format:"- %s" \
+            | grep -v "^- Bump version")
+    fi
 
-gh release create "v${VERSION}" \
-    --title "v${VERSION}" \
-    ${PRERELEASE_FLAG} \
-    --notes "${NOTES}" \
-    "${SBOM_FILE}#SBOM (CycloneDX)"
-echo "    GitHub Release created (SBOM attached)."
+    PRERELEASE_FLAG=""
+    if [[ "$VERSION" =~ [a-zA-Z] ]]; then
+        PRERELEASE_FLAG="--prerelease"
+    fi
+
+    gh release create "v${VERSION}" \
+        --title "v${VERSION}" \
+        ${PRERELEASE_FLAG} \
+        --notes "${NOTES}" \
+        "${SBOM_FILE}#SBOM (CycloneDX)"
+    echo "    GitHub Release created (SBOM attached)."
+fi
 
 # --- Publish to PyPI (last, irreversible step) ---
 echo "==> Publishing to PyPI..."
