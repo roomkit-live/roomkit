@@ -579,19 +579,21 @@ class InboundLockedMixin(HelpersMixin):
                 )
                 continue
             reentry = reentry_sync.event or reentry
+            # Commit point (RFC §10.1 step 13): assign the authoritative index,
+            # store DELIVERED, and bump the room counters as ONE transaction —
+            # the same atomic commit as the trigger event (step 12). Commit the
+            # response BEFORE delivering any events its hook injected: the
+            # response causes the injection, so it must take the lower index
+            # (mirrors the main path, where the event commits before broadcast).
+            reentry = await self._commit_event(
+                room_id, reentry.model_copy(update={"status": EventStatus.DELIVERED})
+            )
             # RFC §9.5: deliver InjectedEvents produced by an allow/modify hook
             # on this reentry event (same shape as the main inbound path).
             if reentry_sync.injected_events:
                 await self._deliver_injected_events(
                     reentry_sync.injected_events, room_id, reentry_ctx
                 )
-
-            # Commit point (RFC §10.1 step 13): assign the authoritative index,
-            # store DELIVERED, and bump the room counters as ONE transaction —
-            # the same atomic commit as the trigger event (step 12).
-            reentry = await self._commit_event(
-                room_id, reentry.model_copy(update={"status": EventStatus.DELIVERED})
-            )
 
             reentry_result = await router.broadcast(
                 reentry,
@@ -794,9 +796,12 @@ class InboundLockedMixin(HelpersMixin):
     ) -> None:
         """Store and deliver injected events to their target channels."""
         for injected in injected_events:
-            # Commit the injected event atomically (index + room counters,
-            # RFC §8.1 / §14.3) — it is a real timeline event.
-            stored = await self._store.commit_event(room_id, injected.event)
+            # Commit the injected event atomically as DELIVERED (index + room
+            # counters, RFC §8.1 / §14.3) — it is a real, delivered timeline
+            # event, not a PENDING draft.
+            stored = await self._store.commit_event(
+                room_id, injected.event.model_copy(update={"status": EventStatus.DELIVERED})
+            )
 
             # Deliver to target channels
             target_ids = injected.target_channel_ids

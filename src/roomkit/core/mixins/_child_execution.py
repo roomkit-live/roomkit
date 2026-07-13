@@ -117,7 +117,9 @@ async def _persist_response_events(
     return the last message text, so the child room keeps the full trace."""
     final_text: str | None = None
     for resp in response_events:
-        await kit.store.commit_event(child_room_id, resp)
+        await kit.store.commit_event(
+            child_room_id, resp.model_copy(update={"status": EventStatus.DELIVERED})
+        )
         if isinstance(resp.content, TextContent) and resp.content.body:
             final_text = resp.content.body
     return final_text

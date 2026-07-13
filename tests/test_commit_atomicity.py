@@ -13,9 +13,19 @@ from __future__ import annotations
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.websocket import WebSocketChannel
 from roomkit.core.framework import RoomKit
+from roomkit.core.hooks import HookRegistration
+from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory, EventStatus, EventType
-from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.enums import (
+    ChannelCategory,
+    ChannelType,
+    EventStatus,
+    EventType,
+    HookExecution,
+    HookTrigger,
+)
+from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.store_filter import PersistencePolicy
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.test_framework import SimpleChannel
@@ -137,6 +147,51 @@ async def test_greeting_committed_and_counters_consistent() -> None:
     events = await _assert_counters_match_timeline(kit, "r1")
     greetings = [e for e in events if (e.metadata or {}).get("auto_greeting")]
     assert greetings and all(e.status is EventStatus.DELIVERED for e in greetings)
+    await kit.close()
+
+
+async def test_reentry_injection_commits_delivered_after_its_cause() -> None:
+    """An event injected by a hook on an AI reentry commits DELIVERED and AFTER
+    the response that produced it — the review reproduced the inverse (a PENDING
+    hook event at a lower index than the DELIVERED AI reply)."""
+    kit = RoomKit()
+    kit.register_channel(WebSocketChannel("ws1"))
+    kit.register_channel(AIChannel("ai1", provider=MockAIProvider(responses=["ai reply"])))
+
+    async def inject_on_ai(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        if event.source.channel_type is ChannelType.AI:
+            followup = RoomEvent(
+                room_id="r1",
+                source=EventSource(channel_id="hook", channel_type=ChannelType.SYSTEM),
+                content=TextContent(body="injected"),
+            )
+            return HookResult(
+                action="allow",
+                injected_events=[InjectedEvent(event=followup, target_channel_ids=None)],
+            )
+        return HookResult.allow()
+
+    kit.hook_engine.register(
+        HookRegistration(
+            trigger=HookTrigger.BEFORE_BROADCAST,
+            execution=HookExecution.SYNC,
+            fn=inject_on_ai,
+            name="inject_on_ai",
+        )
+    )
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "ws1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+
+    await kit.process_inbound(
+        InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body="hi"))
+    )
+
+    events = await _assert_counters_match_timeline(kit, "r1")
+    assert all(e.status is EventStatus.DELIVERED for e in events), "injection stays PENDING"
+    ai = next(e for e in events if e.source.channel_id == "ai1")
+    injected = next(e for e in events if e.source.channel_id == "hook")
+    assert ai.index < injected.index, "the AI response must precede the event it injected"
     await kit.close()
 
 

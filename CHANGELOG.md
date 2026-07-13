@@ -24,8 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   child-room (delegated agent) trace, and system events (e.g. `channel_attached`,
   which was `DELIVERED` yet uncounted) — so the timeline and the counters can
   never diverge, and the post-broadcast counter reconcile is gone (RFC §10.1
-  step 13/15). End-to-end tests drive two `RoomKit` instances and an AI reentry
-  through the real pipeline to prove it.
+  step 13/15). Injected, child-room, and regenerated events are committed
+  `DELIVERED` (not left `PENDING`), and an event injected by a reentry's hook is
+  now committed **after** the response that produced it, so it takes the higher
+  index (causal order). End-to-end tests drive two `RoomKit` instances and an AI
+  reentry through the real pipeline to prove it.
 - **A `PersistencePolicy` that excludes an event no longer creates a phantom
   `latest_index`.** An excluded event is delivered but not stored, so it consumes
   no index; the room counters are left untouched instead of being advanced to the
