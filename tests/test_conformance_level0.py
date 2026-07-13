@@ -1,17 +1,30 @@
-"""Executable RFC Level 0 (Core, REQUIRED) conformance matrix.
+"""RFC Level 0 (Core, REQUIRED) conformance matrix.
 
 Section 25.1 of ``roomkit-specs/roomkit-rfc.md`` lists what a conforming
-implementation MUST support. Each test below asserts one such requirement,
-mapped to its RFC section — behaviourally where that is clean, structurally
-(API-surface presence/shape) where a full behavioural harness would not add
-signal. This is the single "is RoomKit Level 0 conformant?" gate; deeper
-behavioural coverage lives in the feature-specific suites.
+implementation MUST support. This module maps each requirement to a test so the
+matrix is auditable at a glance. Two kinds of assertion appear, and every test's
+docstring says which it is:
+
+* **behavioural** — drives the pipeline/store and asserts the observable effect
+  (sequential indexing, permission blocking, hooks, timers auto-pause/close,
+  chain-depth blocking, transcoding fallback, idempotency);
+* **structural** — asserts an API-surface contract (a required type, field or
+  method exists) where the full behavioural harness lives elsewhere and would
+  only be duplicated here.
+
+This matrix is an INDEX, not the sole proof of conformance. The authoritative
+end-to-end coverage for each area lives in the feature-specific suites — e.g.
+``test_postgres_multiprocess`` for cross-process index atomicity (§8.1/§14.3),
+``test_integration/test_ai_chain_depth`` for reentry depth (§8.3),
+``test_channel_abc`` for transcoding (§11). A structural check here means "the
+contract exists"; it does not by itself certify the behaviour behind it.
 """
 
 from __future__ import annotations
 
 import inspect
 import logging
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -31,6 +44,7 @@ from roomkit.models.enums import (
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.hook import HookResult, InjectedEvent
+from roomkit.models.room import RoomTimers
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
 
@@ -95,11 +109,25 @@ class TestModels:
         """§25.1 / §4 — Room lifecycle: ACTIVE, PAUSED, CLOSED, ARCHIVED."""
         assert {"ACTIVE", "PAUSED", "CLOSED", "ARCHIVED"} <= {s.name for s in RoomStatus}
 
-    def test_room_has_timers(self) -> None:
-        """§25.1 / §5 — Room timers (auto-pause / auto-close)."""
-        from roomkit.models.room import Room
+    async def test_timers_auto_pause_and_close(self) -> None:
+        """§25.1 / §5 — room timers drive auto-pause and auto-close (behavioural).
 
-        assert "timers" in Room.model_fields
+        A room idle past ``inactive_after_seconds`` transitions to PAUSED; idle
+        past ``closed_after_seconds`` transitions to CLOSED."""
+        kit = RoomKit()
+        await kit.create_room(room_id="pause")
+        await kit.create_room(room_id="close")
+        past = datetime.now(UTC) - timedelta(seconds=60)
+
+        await kit.set_room_timers(
+            "pause", RoomTimers(inactive_after_seconds=1, last_activity_at=past)
+        )
+        assert (await kit.check_room_timers("pause")).status is RoomStatus.PAUSED
+
+        await kit.set_room_timers(
+            "close", RoomTimers(closed_after_seconds=1, last_activity_at=past)
+        )
+        assert (await kit.check_room_timers("close")).status is RoomStatus.CLOSED
 
     def test_event_types_present(self) -> None:
         """§25.1 / §5.2 — RoomEvent supports the core EventType values."""
@@ -225,10 +253,38 @@ class TestHooks:
 
 
 class TestChainDepth:
-    def test_chain_depth_tracked_and_limit_configurable(self) -> None:
-        """§25.1 / §8.3 — events track chain_depth and the limit is configurable."""
+    async def test_chain_depth_blocks_runaway_reentry(self) -> None:
+        """§25.1 / §8.3 — chain_depth is tracked AND enforced (behavioural): two
+        AI channels that would ping-pong forever are stopped, and the over-limit
+        reentry is stored BLOCKED rather than broadcast. Full recursion coverage
+        lives in ``test_integration/test_ai_chain_depth``."""
+        from roomkit.channels.ai import AIChannel
+        from roomkit.channels.websocket import WebSocketChannel
+        from roomkit.models.enums import ChannelCategory, EventStatus
+        from roomkit.providers.ai.mock import MockAIProvider
+
         assert "chain_depth" in RoomEvent.model_fields
-        assert RoomKit(max_chain_depth=3)._max_chain_depth == 3
+        kit = RoomKit(max_chain_depth=2)
+        assert kit._max_chain_depth == 2
+        ws = WebSocketChannel("ws1")
+        ai1 = AIChannel("ai1", provider=MockAIProvider(responses=["a"] * 10))
+        ai2 = AIChannel("ai2", provider=MockAIProvider(responses=["b"] * 10))
+        for ch in (ws, ai1, ai2):
+            kit.register_channel(ch)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "ws1")
+        await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+        await kit.attach_channel("r1", "ai2", category=ChannelCategory.INTELLIGENCE)
+
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body="go"))
+        )
+        events = await kit.store.list_events("r1", limit=100)
+        blocked = [e for e in events if e.status is EventStatus.BLOCKED]
+        assert blocked, "a runaway reentry must be blocked"
+        assert any(e.blocked_by == "event_chain_depth_limit" for e in blocked)
+        assert all(e.chain_depth <= 2 for e in events)  # bounded by the limit
+        await kit.close()
 
 
 # ── §10.1 / §10.2 — Pipelines ───────────────────────────────────
@@ -264,11 +320,31 @@ class TestPluggableInfrastructure:
         for method in ("create_room", "get_room", "add_event", "get_event_count"):
             assert hasattr(ConversationStore, method), method
 
-    def test_content_transcoding_has_text_fallback(self) -> None:
-        """§25.1 — content transcoding with at least a text fallback."""
+    async def test_content_transcoding_falls_back_to_text(self) -> None:
+        """§25.1 / §11 — a rich message is transcoded to plain text for a
+        text-only channel rather than dropped (behavioural). Full transcoding
+        matrix lives in ``test_channel_abc``."""
         from roomkit.core.transcoder import DefaultContentTranscoder
+        from roomkit.models.channel import ChannelCapabilities
+        from roomkit.models.enums import ChannelMediaType
+        from roomkit.models.event import RichContent
 
-        assert DefaultContentTranscoder is not None
+        def _binding(cid: str, media: list[ChannelMediaType]) -> ChannelBinding:
+            return ChannelBinding(
+                channel_id=cid,
+                room_id="r1",
+                channel_type=ChannelType.WEBSOCKET,
+                capabilities=ChannelCapabilities(media_types=media),
+            )
+
+        transcoder = DefaultContentTranscoder()
+        result = await transcoder.transcode(
+            RichContent(body="**bold**", plain_text="bold"),
+            _binding("rich", [ChannelMediaType.RICH, ChannelMediaType.TEXT]),
+            _binding("plain", [ChannelMediaType.TEXT]),
+        )
+        assert isinstance(result, TextContent)
+        assert result.body == "bold"
 
 
 # ── §8.2 / §15.1 — Observability ────────────────────────────────
