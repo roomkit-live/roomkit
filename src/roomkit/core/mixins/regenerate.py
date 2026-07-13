@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundResult
-from roomkit.models.enums import ChannelCategory
+from roomkit.models.enums import ChannelCategory, EventStatus
 from roomkit.models.event import RoomEvent
 
 if TYPE_CHECKING:
@@ -51,6 +51,7 @@ class RegenerateMixin(HelpersMixin):
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _get_router: Any  # see RegenerateHost
+    _commit_event: Any  # see RegenerateHost
     _run_deferred_after_broadcast: Any  # see RegenerateHost
     _process_streaming_responses: Any  # see RegenerateHost
 
@@ -118,8 +119,11 @@ class RegenerateMixin(HelpersMixin):
             # Non-streaming providers return the response as reentry events;
             # persist and broadcast them so transports receive the new answer.
             for reentry in broadcast_result.reentry_events:
-                stored = await self._persist_event_auto_index(room_id, reentry)
-                reentry = stored if stored is not None else reentry
+                # Commit the regenerated response atomically as DELIVERED
+                # (RFC §10.1 step 13) — same atomic commit as the inbound path.
+                reentry = await self._commit_event(
+                    room_id, reentry.model_copy(update={"status": EventStatus.DELIVERED})
+                )
                 reentry_binding = await self._store.get_binding(room_id, reentry.source.channel_id)
                 if reentry_binding is None:
                     continue

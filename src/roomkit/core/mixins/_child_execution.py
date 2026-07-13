@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelType, EventType
+from roomkit.models.enums import ChannelType, EventStatus, EventType
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.streaming import ToolCallEndMarker, ToolCallStartMarker
 
@@ -51,13 +51,14 @@ async def _persist_child_stream(
             return
         body = "".join(segment)
         segment.clear()
-        await kit.store.add_event_auto_index(
+        await kit.store.commit_event(
             child_room_id,
             RoomEvent(
                 room_id=child_room_id,
                 source=source,
                 type=EventType.MESSAGE,
                 content=TextContent(body=body),
+                status=EventStatus.DELIVERED,
                 chain_depth=chain_depth,
             ),
         )
@@ -68,7 +69,7 @@ async def _persist_child_stream(
             segment.append(delta)
         elif isinstance(delta, ToolCallStartMarker):
             await _flush_segment()
-            await kit.store.add_event_auto_index(
+            await kit.store.commit_event(
                 child_room_id,
                 RoomEvent(
                     room_id=child_room_id,
@@ -80,11 +81,12 @@ async def _persist_child_stream(
                         arguments=delta.arguments,
                         status="pending",
                     ),
+                    status=EventStatus.DELIVERED,
                     chain_depth=chain_depth,
                 ),
             )
         elif isinstance(delta, ToolCallEndMarker):
-            await kit.store.add_event_auto_index(
+            await kit.store.commit_event(
                 child_room_id,
                 RoomEvent(
                     room_id=child_room_id,
@@ -99,6 +101,7 @@ async def _persist_child_stream(
                         duration_ms=delta.duration_ms,
                         error=delta.error,
                     ),
+                    status=EventStatus.DELIVERED,
                     chain_depth=chain_depth,
                 ),
             )
@@ -114,7 +117,7 @@ async def _persist_response_events(
     return the last message text, so the child room keeps the full trace."""
     final_text: str | None = None
     for resp in response_events:
-        await kit.store.add_event_auto_index(child_room_id, resp)
+        await kit.store.commit_event(child_room_id, resp)
         if isinstance(resp.content, TextContent) and resp.content.body:
             final_text = resp.content.body
     return final_text
@@ -133,8 +136,9 @@ async def _broadcast_and_collect(
         type=EventType.MESSAGE,
         source=EventSource(channel_id="system", channel_type=ChannelType.SYSTEM),
         content=TextContent(body=message_body),
+        status=EventStatus.DELIVERED,
     )
-    msg_event = await kit.store.add_event_auto_index(child_room_id, msg_event)
+    msg_event = await kit.store.commit_event(child_room_id, msg_event)
 
     # Build context AFTER storing so the agent's memory provider
     # can see the message in recent_events.

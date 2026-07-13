@@ -29,6 +29,7 @@ def _recording_store() -> MagicMock:
         return event
 
     store.add_event_auto_index = AsyncMock(side_effect=_add)
+    store.commit_event = AsyncMock(side_effect=_add)
     return store
 
 

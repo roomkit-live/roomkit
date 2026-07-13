@@ -166,7 +166,9 @@ class GreetingMixin(HelpersMixin):
             status=EventStatus.DELIVERED,
             metadata={"auto_greeting": True},
         )
-        return await self._persist_event_auto_index(room_id, event)
+        # Commit atomically (index + room counters, §14.3): the greeting is a
+        # DELIVERED timeline event and must be reflected in the counters.
+        return await self._persist_committed(room_id, event)
 
     def _set_greeting_gate(self, room_id: str) -> None:
         """Increment the reference-counted gate for *room_id*.

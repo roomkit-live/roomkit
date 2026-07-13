@@ -36,6 +36,7 @@ def _make_kit(agent_id: str, submit_on_attempt: int | None, payload: dict[str, A
     kit.store.list_bindings = AsyncMock(return_value=[])
     kit.store.list_events = AsyncMock(return_value=[])
     kit.store.add_event_auto_index = AsyncMock(side_effect=lambda _rid, ev: ev)
+    kit.store.commit_event = AsyncMock(side_effect=lambda _rid, ev: ev)
 
     channel = SimpleNamespace(_injected_tools=[], tool_handler=None, role="Researcher")
     kit.channels = {agent_id: channel}
@@ -105,6 +106,7 @@ def _make_cc_kit(events: list[RoomEvent]):
     kit.store.list_bindings = AsyncMock(return_value=[])
     kit.store.list_events = AsyncMock(return_value=events)
     kit.store.add_event_auto_index = AsyncMock(side_effect=lambda _rid, ev: ev)
+    kit.store.commit_event = AsyncMock(side_effect=lambda _rid, ev: ev)
     channel = SimpleNamespace(_injected_tools=[], tool_handler=None, role="Researcher")
     kit.channels = {"agent:w1": channel}
 

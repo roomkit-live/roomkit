@@ -65,6 +65,7 @@ def _make_mock_kit(
     kit.store.list_events = AsyncMock(return_value=[])
     kit.store.add_event = AsyncMock()
     kit.store.add_event_auto_index = AsyncMock(side_effect=lambda room_id, event: event)
+    kit.store.commit_event = AsyncMock(side_effect=lambda room_id, event: event)
     kit.store.update_room = AsyncMock()
 
     router = MagicMock()
@@ -190,9 +191,10 @@ class TestInMemoryTaskRunner:
         # Should have called update_room at least twice (in_progress + completed)
         assert kit.store.update_room.call_count >= 2
 
-    async def test_events_stored_via_add_event_auto_index(self):
-        """_run_agent must use add_event_auto_index (not add_event) so the store
-        assigns sequential, monotonically increasing indices per room (RFC §10)."""
+    async def test_events_committed_atomically(self):
+        """_run_agent must commit child-room events via commit_event (index +
+        room counters in one transaction, RFC §10.1/§14.3) — never the
+        non-atomic add_event / add_event_auto_index."""
         kit = _make_mock_kit()
         runner = InMemoryTaskRunner()
         task = _make_task()
@@ -200,7 +202,8 @@ class TestInMemoryTaskRunner:
         await runner.submit(kit, task)
         await task.wait(timeout=5.0)
 
-        # add_event_auto_index should have been called (task event + response event)
-        assert kit.store.add_event_auto_index.call_count >= 2
-        # Legacy add_event must NOT be called from _run_agent
+        # commit_event should have been called (task message + response event)
+        assert kit.store.commit_event.call_count >= 2
+        # The non-atomic write paths must NOT be used from _run_agent
         kit.store.add_event.assert_not_called()
+        kit.store.add_event_auto_index.assert_not_called()

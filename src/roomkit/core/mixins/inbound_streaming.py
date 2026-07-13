@@ -388,7 +388,7 @@ class InboundStreamingMixin(HelpersMixin):
                             exclude_delivery=(sr_result.delivered_to if is_text else None),
                         )
                         for blocked in reentry_result.blocked_events:
-                            await self._store.add_event(blocked)
+                            await self._store.commit_event(room_id, blocked)
 
                     # Run AFTER_BROADCAST hooks for each segment so hook
                     # authors see the complete timeline.

@@ -98,6 +98,48 @@ async def test_policy_excluded_event_does_not_advance_latest_index() -> None:
     await kit.close()
 
 
+async def test_regenerate_response_committed_delivered_and_consistent() -> None:
+    """`regenerate_response()` commits the fresh answer DELIVERED with consistent
+    counters — it used to store the reentry PENDING and never count it (review
+    case: 5 events, event_count=4, latest_index=3)."""
+    kit = RoomKit()
+    kit.register_channel(WebSocketChannel("ws1"))
+    kit.register_channel(AIChannel("ai1", provider=MockAIProvider(responses=["first", "again"])))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "ws1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+
+    await kit.process_inbound(
+        InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body="hello"))
+    )
+    await kit.regenerate_response("r1")
+
+    events = await _assert_counters_match_timeline(kit, "r1")
+    assert all(e.status is EventStatus.DELIVERED for e in events), "regenerated reply must commit"
+    await kit.close()
+
+
+async def test_greeting_committed_and_counters_consistent() -> None:
+    """A stored greeting commits atomically (was event_count=0 with one event)."""
+    from roomkit.channels.agent import Agent
+
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("t1"))
+    kit.register_channel(
+        Agent("ai1", provider=MockAIProvider(responses=["x"]), greeting="Hi!", auto_greet=False)
+    )
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "t1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+
+    await kit.send_greeting("r1")
+
+    events = await _assert_counters_match_timeline(kit, "r1")
+    greetings = [e for e in events if (e.metadata or {}).get("auto_greeting")]
+    assert greetings and all(e.status is EventStatus.DELIVERED for e in greetings)
+    await kit.close()
+
+
 async def test_streaming_segments_committed_delivered_and_consistent() -> None:
     """A streamed AI response persists its segment DELIVERED (not PENDING) via
     the atomic commit, keeping the counters consistent (the streaming path used

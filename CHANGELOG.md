@@ -17,13 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `events` and `rooms.event_count` / `latest_index` divergent (RFC §8.1, §10.1,
   §14.3). The new `ConversationStore.commit_event()` assigns the authoritative
   index, inserts the event, and bumps the room counters as one transaction
-  (`SELECT … FOR UPDATE` on the room row in Postgres). Every path that adds to
-  the timeline now goes through it — the trigger message, **AI reentry / tool
-  responses (previously stored `PENDING` and never counted), streamed AI
-  segments, chain-depth-blocked, injected, and system events** — so the timeline
-  and the counters can never diverge, and the post-broadcast counter reconcile
-  is gone (RFC §10.1 step 13/15). End-to-end tests drive two `RoomKit` instances
-  and an AI reentry through the real pipeline to prove it.
+  (`SELECT … FOR UPDATE` on the room row in Postgres). **Every** path that adds
+  to a room's timeline now goes through it — the trigger message, AI reentry /
+  tool responses and regenerated responses (previously stored `PENDING` and
+  never counted), streamed AI segments, chain-depth-blocked, injected, greeting,
+  child-room (delegated agent) trace, and system events (e.g. `channel_attached`,
+  which was `DELIVERED` yet uncounted) — so the timeline and the counters can
+  never diverge, and the post-broadcast counter reconcile is gone (RFC §10.1
+  step 13/15). End-to-end tests drive two `RoomKit` instances and an AI reentry
+  through the real pipeline to prove it.
 - **A `PersistencePolicy` that excludes an event no longer creates a phantom
   `latest_index`.** An excluded event is delivered but not stored, so it consumes
   no index; the room counters are left untouched instead of being advanced to the
@@ -44,10 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`scripts/release.sh` generates and validates the SBOM before any Git
   mutation**, pins the CycloneDX generator (`cyclonedx-bom==7.3.0`), and is
-  re-runnable end to end: the clean-tree check tolerates an already-applied
-  version bump, and the commit, tag, and GitHub-Release steps are idempotent, so
-  a run that fails on a flaky network (or a PyPI upload after the Release exists)
-  is safe to re-run.
+  re-runnable end to end. The clean-tree check tolerates an already-applied
+  version bump; the commit, tag, and GitHub-Release steps are idempotent;
+  `uv publish --check-url` skips files already on PyPI (so a partial upload
+  resumes and uploads only what is missing); a local tag lets the PyPI safety
+  check tell a resume from a fresh release; and a run that already published and
+  opened the next dev cycle re-pushes and exits instead of aborting.
 - **The Level 0 conformance matrix no longer overstates its guarantee.** Its
   docstring now distinguishes behavioural checks from structural (API-surface)
   ones and points to the feature suites that own the end-to-end coverage; the
