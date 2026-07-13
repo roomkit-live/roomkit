@@ -48,11 +48,14 @@ if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
 fi
 
 # --- Resume shortcut: the release fully completed and the next dev cycle was
-# opened, but its commit/push failed. The tree is on a .dev version AND the tag
-# exists — nothing left to do but re-push (idempotent). ---
-CURRENT_VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/roomkit/_version.py)
-if [[ "$CURRENT_VERSION" == *.dev* && "$TAG_EXISTS" == "1" ]]; then
-    echo "==> v${VERSION} already released (tree on ${CURRENT_VERSION}); re-pushing git state."
+# already COMMITTED, but its push failed. Read the version from HEAD (not the
+# worktree): if the dev-cycle commit itself failed, the bump is only staged, so
+# the worktree shows .dev while HEAD is still the release commit — that case
+# must fall through and re-run to finish the commit, not exit here. ---
+HEAD_VERSION=$(git show HEAD:src/roomkit/_version.py 2>/dev/null \
+    | sed -n 's/^__version__ = "\(.*\)"/\1/p')
+if [[ "$HEAD_VERSION" == *.dev* && "$TAG_EXISTS" == "1" ]]; then
+    echo "==> v${VERSION} already released (HEAD on ${HEAD_VERSION}); re-pushing git state."
     git push && git push --tags
     echo "==> Done."
     exit 0
