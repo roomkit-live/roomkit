@@ -93,6 +93,7 @@ class InboundMixin(HelpersMixin):
     _resolve_identity: Any  # see InboundHost
     _process_locked: Any  # see InboundHost
     _run_deferred_after_broadcast: Any  # see InboundHost
+    _run_deferred_error_hooks: Any  # see InboundHost
     _process_streaming_responses: Any  # see InboundHost
     create_room: Any  # see InboundHost
     attach_channel: Any  # see InboundHost
@@ -209,6 +210,7 @@ class InboundMixin(HelpersMixin):
         # Process under room lock
         pending_streams: list[Any] = []
         pending_after_broadcast: list[tuple[RoomEvent, RoomContext]] = []
+        pending_error_hooks: list[tuple[RoomContext, Any, dict[str, Any]]] = []
         async with self._lock_manager.locked(room_id):
             # ``process_timeout`` is applied inside _process_locked, scoped to
             # the pre-commit phase only (RFC §13.6) — once an event commits, its
@@ -221,12 +223,14 @@ class InboundMixin(HelpersMixin):
                 pending_id_result=pending_id_result,
                 pending_streams_out=pending_streams,
                 pending_after_broadcast_out=pending_after_broadcast,
+                pending_error_hooks_out=pending_error_hooks,
             )
 
-        # Run AFTER_BROADCAST async hooks now that the room lock is released
-        # (RFC §10.1) — a slow observer hook no longer blocks concurrent
-        # process_inbound calls for the same room.
+        # Run AFTER_BROADCAST and ON_ERROR async hooks now that the room lock is
+        # released (RFC §10.1) — a slow observer or error hook no longer blocks
+        # concurrent process_inbound calls for the same room.
         await self._run_deferred_after_broadcast(room_id, pending_after_broadcast)
+        await self._run_deferred_error_hooks(room_id, pending_error_hooks)
 
         # Handle streaming responses outside lock (TTS delivery can take seconds;
         # holding the lock would block concurrent process_inbound calls)

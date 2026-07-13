@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Inbound commit is now a single atomic store transaction.** The pipeline
+  previously assigned the event index with `get_event_count()`, then wrote the
+  event and the room counters in separate calls — so two processes without an
+  advisory lock could compute the same index (one write then failing on the
+  `UNIQUE(room_id, index)` constraint), and a crash between the writes left
+  `events` and `rooms.event_count` / `latest_index` divergent (RFC §8.1, §10.1,
+  §14.3). The new `ConversationStore.commit_event()` assigns the authoritative
+  index, inserts the DELIVERED event, and bumps the room counters as one
+  transaction (`SELECT … FOR UPDATE` on the room row in Postgres), so index
+  assignment is authoritative at the storage layer even without a cross-process
+  lock. A new end-to-end test drives two `RoomKit` instances through the real
+  pipeline to prove it.
+- **`ON_ERROR` hooks run after the room lock is released.** A failing
+  intelligence channel previously fired `ON_ERROR` while still holding the room
+  lock, so a slow error hook (up to the hook timeout) blocked every following
+  message for that room. `ON_ERROR` is now deferred past the lock, like
+  `AFTER_BROADCAST`.
+
+### Added
+
+- **`PostgresAdvisoryLockManager` and `PostgresStore` are exported from
+  `roomkit.store`**, and `RoomLockManager` / `InMemoryLockManager` from the
+  top-level `roomkit` package.
+
+### Changed
+
+- **`scripts/release.sh` generates and validates the SBOM before any Git
+  mutation**, pins the CycloneDX generator (`cyclonedx-bom==7.3.0`), and makes
+  the commit and tag steps idempotent so a run that fails on a flaky network is
+  safe to re-run.
+- **The Level 0 conformance matrix no longer overstates its guarantee.** Its
+  docstring now distinguishes behavioural checks from structural (API-surface)
+  ones and points to the feature suites that own the end-to-end coverage; the
+  timers auto-pause/close, chain-depth blocking, and transcoder-fallback checks
+  are now behavioural.
+
 ## [0.28.0] — 2026-07-11
 
 Hardening release addressing a production-readiness review: the three critical

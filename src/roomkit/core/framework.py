@@ -545,6 +545,7 @@ class RoomKit(
             # reentry drain and AFTER_BROADCAST hooks. This keeps a single
             # validation/hooks/indexing/persistence model across entry points.
             pending_after_broadcast: list[tuple[RoomEvent, RoomContext]] = []
+            pending_error_hooks: list[tuple[RoomContext, Any, dict[str, Any]]] = []
             async with self._lock_manager.locked(room_id):
                 context = await self._build_context(room_id)
                 result = await self._process_locked(
@@ -552,10 +553,12 @@ class RoomKit(
                     room_id,
                     context,
                     pending_after_broadcast_out=pending_after_broadcast,
+                    pending_error_hooks_out=pending_error_hooks,
                 )
             event = result.event or event
-            # AFTER_BROADCAST runs outside the room lock (RFC §10.1)
+            # AFTER_BROADCAST and ON_ERROR run outside the room lock (RFC §10.1)
             await self._run_deferred_after_broadcast(room_id, pending_after_broadcast)
+            await self._run_deferred_error_hooks(room_id, pending_error_hooks)
 
             telemetry.end_span(span_id)
         except Exception as exc:

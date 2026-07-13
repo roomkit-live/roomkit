@@ -84,6 +84,53 @@ async def test_non_streaming_provider_error_fires_on_error() -> None:
     assert errors[0].source.channel_id == "ai1"
 
 
+async def test_on_error_runs_after_room_lock_released() -> None:
+    """ON_ERROR is deferred past the room lock (RFC §10.1), like AFTER_BROADCAST:
+    a slow error hook must not hold the lock and stall the room's next message.
+
+    Proven deterministically: the ``_held_rooms`` ContextVar tracks which rooms
+    the current context holds. When the deferred hook runs, the ``locked()``
+    block has already exited and reset the token, so the room is absent from the
+    set — i.e. the hook ran OUTSIDE the lock."""
+    from roomkit.core.locks import _held_rooms
+
+    class _RaisingProvider(MockAIProvider):
+        async def generate(self, context: AIContext) -> AIResponse:
+            raise RuntimeError("boom")
+
+    ai = AIChannel("ai1", provider=_RaisingProvider(streaming=False))
+    kit = RoomKit()
+    sms = SimpleChannel("sms1")
+    kit.register_channel(sms)
+    kit.register_channel(ai)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+
+    held_when_fired: list[frozenset[str]] = []
+
+    async def on_error(event: RoomEvent, _ctx: RoomContext) -> None:
+        held_when_fired.append(_held_rooms.get())
+
+    kit.hook_engine.register(
+        HookRegistration(
+            trigger=HookTrigger.ON_ERROR,
+            execution=HookExecution.ASYNC,
+            fn=on_error,
+            name="test_lock_probe",
+        )
+    )
+
+    await kit.process_inbound(
+        InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="go"))
+    )
+    await asyncio.sleep(0.05)
+    await kit.close()
+
+    assert len(held_when_fired) == 1
+    assert "r1" not in held_when_fired[0]  # fired after the lock was released
+
+
 async def test_transport_channel_error_does_not_fire_on_error() -> None:
     """A non-intelligence channel failing during broadcast is a delivery
     problem, not a turn-level agent error — it must NOT raise an error card."""

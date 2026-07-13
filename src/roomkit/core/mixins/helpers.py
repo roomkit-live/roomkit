@@ -113,17 +113,6 @@ class HelpersMixin:
 
     # -- Persistence helpers (policy-aware) --
 
-    async def _persist_event(self, event: RoomEvent) -> RoomEvent | None:
-        """Persist an event if the persistence policy allows it.
-
-        Returns the stored event, or ``None`` if the policy excluded it.
-        """
-        if self._persistence_policy is not None and not self._persistence_policy.should_persist(
-            event.type
-        ):
-            return None
-        return await self._store.add_event(event)
-
     async def _persist_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent | None:
         """Atomically index and persist an event if the policy allows it.
 
@@ -134,6 +123,18 @@ class HelpersMixin:
         ):
             return None
         return await self._store.add_event_auto_index(room_id, event)
+
+    async def _persist_committed(self, room_id: str, event: RoomEvent) -> RoomEvent | None:
+        """Atomically commit an event (index + insert + room counters, RFC
+        §10.1 step 12 / §14.3) if the policy allows it.
+
+        Returns the committed event, or ``None`` if the policy excluded it.
+        """
+        if self._persistence_policy is not None and not self._persistence_policy.should_persist(
+            event.type
+        ):
+            return None
+        return await self._store.commit_event(room_id, event)
 
     # -- Error surfacing --
 

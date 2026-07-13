@@ -31,6 +31,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.framework")
 
+# Deferred ON_ERROR invocations collected under the room lock and fired after it
+# is released (RFC §10.1): (context, error source, _fire_error_hook kwargs).
+_ErrorHookSink = list[tuple[RoomContext, EventSource, dict[str, Any]]]
+
 
 class _Proceed:
     """Marker returned by ``_run_precommit`` once the event has committed and the
@@ -128,15 +132,26 @@ class InboundLockedMixin(HelpersMixin):
         room = room.model_copy(update=updates)
         await self._store.update_room(room)
 
-    async def _commit_event(self, room_id: str, event: RoomEvent) -> None:
-        """Commit an event to the timeline (RFC §10.1).
+    async def _commit_event(self, room_id: str, event: RoomEvent) -> RoomEvent:
+        """Commit an event to the timeline (RFC §10.1 step 12 / §14.3).
 
-        Persists the event as DELIVERED and bumps the room counters as one
-        logical unit, so an observer never sees a DELIVERED event that the room
-        counters do not reflect (§14.3).
+        Persists the event as DELIVERED and bumps the room counters as ONE
+        atomic store transaction (:meth:`ConversationStore.commit_event`), so an
+        observer never sees a DELIVERED event the room counters do not reflect,
+        and the authoritative index is assigned inside that transaction (§8.1) —
+        safe even without a cross-process room lock. Returns the committed event
+        (its index may differ from the provisional pre-hook value if the store
+        serialized a concurrent writer).
+
+        When the persistence policy excludes the event, nothing is stored; the
+        room counters are refreshed from the authoritative store count so the
+        room still reflects reality, and the input event is returned unchanged.
         """
-        await self._persist_event(event)
-        await self._bump_room_counters(room_id, event.index)
+        committed = await self._persist_committed(room_id, event)
+        if committed is None:
+            await self._bump_room_counters(room_id, event.index)
+            return event
+        return committed
 
     async def _process_locked(
         self,
@@ -148,6 +163,7 @@ class InboundLockedMixin(HelpersMixin):
         pending_id_result: IdentityResult | None = None,
         pending_streams_out: list[Any] | None = None,
         pending_after_broadcast_out: list[tuple[RoomEvent, RoomContext]] | None = None,
+        pending_error_hooks_out: _ErrorHookSink | None = None,
     ) -> InboundResult:
         """Process an event under the room lock (RFC §10.1).
 
@@ -161,7 +177,9 @@ class InboundLockedMixin(HelpersMixin):
         AFTER_BROADCAST async hooks are collected into
         ``pending_after_broadcast_out`` (when provided) so the caller can run
         them once the room lock is released (RFC §10.1 — async hooks run after
-        the lock, not under it). Without a sink they run inline.
+        the lock, not under it). Without a sink they run inline. ON_ERROR hooks
+        are likewise collected into ``pending_error_hooks_out`` — a failing
+        provider must not hold the room lock while its error hooks run.
         """
         try:
             outcome = await asyncio.wait_for(
@@ -197,6 +215,7 @@ class InboundLockedMixin(HelpersMixin):
             outcome.context,
             pending_streams_out=pending_streams_out,
             pending_after_broadcast_out=pending_after_broadcast_out,
+            pending_error_hooks_out=pending_error_hooks_out,
         )
 
     async def _run_precommit(
@@ -357,9 +376,10 @@ class InboundLockedMixin(HelpersMixin):
         # Commit point (RFC §10.1): persist DELIVERED and bump the room
         # counters atomically, before broadcast, so the timeline and counters
         # never diverge (§14.3) even if the post-commit phase is slow or times
-        # out. Past this line the event is authoritative.
+        # out. Past this line the event is authoritative. ``_commit_event``
+        # returns the committed event carrying the store-authoritative index.
         event = event.model_copy(update={"status": EventStatus.DELIVERED})
-        await self._commit_event(room_id, event)
+        event = await self._commit_event(room_id, event)
         return _Proceed(event, source_binding, sync_result, context)
 
     async def _process_broadcast(
@@ -372,6 +392,7 @@ class InboundLockedMixin(HelpersMixin):
         *,
         pending_streams_out: list[Any] | None = None,
         pending_after_broadcast_out: list[tuple[RoomEvent, RoomContext]] | None = None,
+        pending_error_hooks_out: _ErrorHookSink | None = None,
     ) -> InboundResult:
         """Post-commit phase (RFC §10.1): deliver injected events,
         broadcast, and drain reentries.
@@ -447,19 +468,24 @@ class InboundLockedMixin(HelpersMixin):
         # here as a broadcast error; the streaming consumption path fires ON_ERROR
         # on its own (see inbound_streaming). Transport delivery failures above are
         # not turn-level agent errors, so they are deliberately excluded.
+        #
+        # ON_ERROR is DEFERRED past the room lock (RFC §10.1 — like
+        # AFTER_BROADCAST): a slow ON_ERROR hook (up to the hook timeout) must
+        # not hold the lock and stall every following message for the room.
         for binding in context.bindings:
             if binding.category != ChannelCategory.INTELLIGENCE:
                 continue
             error_msg = broadcast_result.errors.get(binding.channel_id)
             if not error_msg:
                 continue
-            await self._fire_error_hook(
+            await self._dispatch_error_hook(
                 room_id,
                 context,
                 EventSource(
                     channel_id=binding.channel_id,
                     channel_type=binding.channel_type,
                 ),
+                pending_error_hooks_out,
                 error=error_msg,
                 error_type="unknown",
                 error_category="generation",
@@ -728,6 +754,35 @@ class InboundLockedMixin(HelpersMixin):
         """
         for ev, ctx in pending:
             await self._hook_engine.run_async_hooks(room_id, HookTrigger.AFTER_BROADCAST, ev, ctx)
+
+    async def _dispatch_error_hook(
+        self,
+        room_id: str,
+        context: RoomContext,
+        source: EventSource,
+        deferred: _ErrorHookSink | None,
+        **kwargs: Any,
+    ) -> None:
+        """Fire ON_ERROR now, or defer it to *deferred* so the caller runs it
+        once the room lock is released (RFC §10.1 — like AFTER_BROADCAST). A
+        provider failure must not hold the room lock while its ON_ERROR hooks
+        run (up to the hook timeout) and stall the room's next messages.
+        """
+        if deferred is not None:
+            deferred.append((context, source, kwargs))
+        else:
+            await self._fire_error_hook(room_id, context, source, **kwargs)
+
+    async def _run_deferred_error_hooks(
+        self,
+        room_id: str,
+        pending: _ErrorHookSink,
+    ) -> None:
+        """Run the ON_ERROR hooks collected during locked processing, called by
+        inbound/direct-injection callers once the room lock is released.
+        """
+        for context, source, kwargs in pending:
+            await self._fire_error_hook(room_id, context, source, **kwargs)
 
     async def _apply_edit_delete_state(self, event: RoomEvent, target_event: RoomEvent) -> None:
         """Apply RFC §10.3 state updates to an edit/delete target event.

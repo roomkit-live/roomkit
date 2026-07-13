@@ -16,7 +16,13 @@ import os
 import asyncpg
 import pytest
 
-from roomkit.models.enums import ChannelType
+from roomkit import RoomKit
+from roomkit.channels.base import Channel
+from roomkit.core.locks import InMemoryLockManager
+from roomkit.models.channel import ChannelBinding, ChannelOutput
+from roomkit.models.context import RoomContext
+from roomkit.models.delivery import InboundMessage
+from roomkit.models.enums import ChannelType, EventType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
 from roomkit.store.postgres import PostgresStore
@@ -158,3 +164,128 @@ async def test_dedupe_noop_on_clean(store: PostgresStore) -> None:
     report = await store.dedupe_event_indices(dry_run=False)
     assert report["action"] == "noop"
     assert report["now_unique"] is True
+
+
+# ── End-to-end: the real inbound pipeline commits atomically (RFC §14.3) ──────
+#
+# The tests above drive the store directly. These drive two *RoomKit instances*
+# sharing one database through ``process_inbound`` — the path the reviewer noted
+# was previously bypassed — proving that index assignment, event insertion and
+# the room-counter bump land as one atomic store transaction (``commit_event``),
+# so the timeline and ``rooms.event_count`` / ``latest_index`` never diverge.
+
+
+class _Transport(Channel):
+    """Minimal transport: turns an inbound message into a RoomEvent."""
+
+    channel_type = ChannelType.WEBSOCKET
+
+    async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
+        return RoomEvent(
+            room_id=context.room.id,
+            type=message.event_type,
+            source=EventSource(
+                channel_id=self.channel_id,
+                channel_type=self.channel_type,
+                participant_id=message.sender_id,
+            ),
+            content=message.content,
+        )
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        return ChannelOutput.empty()
+
+
+async def _make_kit(dsn: str, lock_manager: object) -> tuple[RoomKit, PostgresStore]:
+    """A RoomKit backed by its own Postgres pool (a distinct 'process')."""
+    store = PostgresStore(dsn=dsn)
+    await store.init(min_size=1, max_size=5)
+    kit = RoomKit(store=store, lock_manager=lock_manager)  # ty: ignore[invalid-argument-type]
+    kit.register_channel(_Transport("src"))
+    return kit, store
+
+
+async def _assert_dense_and_consistent(
+    store: PostgresStore, room_id: str, n_messages: int
+) -> None:
+    """The §14.3 invariant, through the real pipeline: indices are dense from 0
+    (unique + sequential — no duplicate, no gap), all ``n_messages`` inbound
+    messages landed (none lost to a race), and the room counters match the
+    timeline exactly (an attach system event precedes the messages)."""
+    events = await store.list_events(room_id, limit=n_messages + 10)
+    indices = sorted(e.index for e in events)
+    assert indices == list(range(len(events))), indices  # dense, unique, no gap
+    assert sum(e.type == EventType.MESSAGE for e in events) == n_messages  # nothing lost
+    room = await store.get_room(room_id)
+    assert room is not None
+    assert room.event_count == len(events)  # counters reflect the timeline
+    assert room.latest_index == len(events) - 1
+
+
+async def test_inbound_pipeline_commits_atomically_with_advisory_lock(
+    store: PostgresStore,
+) -> None:
+    """Two RoomKit instances (separate advisory-lock pools = two processes)
+    sharing one DB, driving concurrent inbound through the real pipeline: every
+    index is unique + sequential and the room counters stay consistent."""
+    await store.create_room(Room(id="r1"))
+
+    mgr_a = PostgresAdvisoryLockManager(dsn=POSTGRES_DSN)
+    mgr_b = PostgresAdvisoryLockManager(dsn=POSTGRES_DSN)
+    await mgr_a.init()
+    await mgr_b.init()
+    kit_a, store_a = await _make_kit(POSTGRES_DSN, mgr_a)
+    kit_b, store_b = await _make_kit(POSTGRES_DSN, mgr_b)
+    await kit_a.attach_channel("r1", "src")
+
+    n = 16
+
+    async def send(kit: RoomKit, i: int) -> None:
+        await kit.process_inbound(
+            InboundMessage(channel_id="src", sender_id="u1", content=TextContent(body=f"m{i}")),
+            room_id="r1",
+        )
+
+    try:
+        await asyncio.gather(*(send(kit_a if i % 2 == 0 else kit_b, i) for i in range(n)))
+        await _assert_dense_and_consistent(store, "r1", n)
+    finally:
+        await kit_a.close()
+        await kit_b.close()
+        await store_a.close()
+        await store_b.close()
+        await mgr_a.close()
+        await mgr_b.close()
+
+
+async def test_inbound_pipeline_atomic_commit_serializes_without_advisory_lock(
+    store: PostgresStore,
+) -> None:
+    """Even with per-process (in-memory) locks only, ``commit_event``'s
+    ``SELECT ... FOR UPDATE`` on the room row serializes concurrent writers at
+    the STORAGE layer (RFC §8.1) — so two instances sharing one DB still produce
+    unique sequential indices and consistent counters, no duplicate, no loss."""
+    await store.create_room(Room(id="r1"))
+
+    kit_a, store_a = await _make_kit(POSTGRES_DSN, InMemoryLockManager())
+    kit_b, store_b = await _make_kit(POSTGRES_DSN, InMemoryLockManager())
+    await kit_a.attach_channel("r1", "src")
+
+    n = 16
+
+    async def send(kit: RoomKit, i: int) -> None:
+        await kit.process_inbound(
+            InboundMessage(channel_id="src", sender_id="u1", content=TextContent(body=f"m{i}")),
+            room_id="r1",
+        )
+
+    try:
+        await asyncio.gather(*(send(kit_a if i % 2 == 0 else kit_b, i) for i in range(n)))
+        await _assert_dense_and_consistent(store, "r1", n)
+    finally:
+        await kit_a.close()
+        await kit_b.close()
+        await store_a.close()
+        await store_b.close()

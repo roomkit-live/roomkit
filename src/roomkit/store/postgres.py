@@ -11,6 +11,7 @@ import json
 import logging
 from collections.abc import Generator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from typing import Any
 
 from roomkit.models.channel import ChannelBinding
@@ -42,6 +43,47 @@ logger = logging.getLogger("roomkit.store.postgres")
 # Advisory-lock key serializing schema migrations across processes.
 # Arbitrary constant; "room" in ASCII hex.
 _MIGRATION_LOCK_KEY = 0x726F6F6D
+
+
+async def _insert_event(conn: Any, event: RoomEvent) -> None:
+    """Run the canonical ``events`` INSERT on *conn*.
+
+    Shared by :meth:`PostgresStore.add_event`, ``add_event_auto_index`` and
+    ``commit_event`` so the column list and parameter order can never drift
+    between the three write paths.
+    """
+    await conn.execute(
+        "INSERT INTO events"
+        " (id, room_id, type, content, source_channel_id, source_channel_type,"
+        "  source_direction, source_participant_id, source_provider, source_extra,"
+        "  status, visibility, response_visibility, index, chain_depth,"
+        "  correlation_id, parent_event_id, idempotency_key, blocked_by,"
+        "  metadata, channel_data, created_at)"
+        " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,"
+        "         $16,$17,$18,$19,$20,$21,$22)",
+        event.id,
+        event.room_id,
+        event.type.value,
+        event.content.model_dump(mode="json"),
+        event.source.channel_id,
+        event.source.channel_type.value,
+        event.source.direction.value,
+        event.source.participant_id,
+        event.source.provider,
+        _source_extra(event.source),
+        event.status.value,
+        event.visibility,
+        event.response_visibility,
+        event.index,
+        event.chain_depth,
+        event.correlation_id,
+        event.parent_event_id,
+        event.idempotency_key,
+        event.blocked_by,
+        event.metadata,
+        event.channel_data.model_dump(mode="json"),
+        event.created_at,
+    )
 
 
 class PostgresSchemaError(RuntimeError):
@@ -471,38 +513,7 @@ class PostgresStore(ConversationStore):
     async def add_event(self, event: RoomEvent) -> RoomEvent:
         with self._query_span("add_event", "events"):
             async with self._acquire() as conn:
-                await conn.execute(
-                    "INSERT INTO events"
-                    " (id, room_id, type, content, source_channel_id, source_channel_type,"
-                    "  source_direction, source_participant_id, source_provider, source_extra,"
-                    "  status, visibility, response_visibility, index, chain_depth,"
-                    "  correlation_id, parent_event_id, idempotency_key, blocked_by,"
-                    "  metadata, channel_data, created_at)"
-                    " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,"
-                    "         $16,$17,$18,$19,$20,$21,$22)",
-                    event.id,
-                    event.room_id,
-                    event.type.value,
-                    event.content.model_dump(mode="json"),
-                    event.source.channel_id,
-                    event.source.channel_type.value,
-                    event.source.direction.value,
-                    event.source.participant_id,
-                    event.source.provider,
-                    _source_extra(event.source),
-                    event.status.value,
-                    event.visibility,
-                    event.response_visibility,
-                    event.index,
-                    event.chain_depth,
-                    event.correlation_id,
-                    event.parent_event_id,
-                    event.idempotency_key,
-                    event.blocked_by,
-                    event.metadata,
-                    event.channel_data.model_dump(mode="json"),
-                    event.created_at,
-                )
+                await _insert_event(conn, event)
         return event
 
     async def get_event(self, event_id: str) -> RoomEvent | None:
@@ -720,38 +731,50 @@ class PostgresStore(ConversationStore):
                 )
                 next_idx = row["next_idx"]
                 indexed = event.model_copy(update={"index": next_idx})
-                await conn.execute(
-                    "INSERT INTO events"
-                    " (id, room_id, type, content, source_channel_id, source_channel_type,"
-                    "  source_direction, source_participant_id, source_provider, source_extra,"
-                    "  status, visibility, response_visibility, index, chain_depth,"
-                    "  correlation_id, parent_event_id, idempotency_key, blocked_by,"
-                    "  metadata, channel_data, created_at)"
-                    " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,"
-                    "         $16,$17,$18,$19,$20,$21,$22)",
-                    indexed.id,
-                    indexed.room_id,
-                    indexed.type.value,
-                    indexed.content.model_dump(mode="json"),
-                    indexed.source.channel_id,
-                    indexed.source.channel_type.value,
-                    indexed.source.direction.value,
-                    indexed.source.participant_id,
-                    indexed.source.provider,
-                    _source_extra(indexed.source),
-                    indexed.status.value,
-                    indexed.visibility,
-                    indexed.response_visibility,
-                    indexed.index,
-                    indexed.chain_depth,
-                    indexed.correlation_id,
-                    indexed.parent_event_id,
-                    indexed.idempotency_key,
-                    indexed.blocked_by,
-                    indexed.metadata,
-                    indexed.channel_data.model_dump(mode="json"),
-                    indexed.created_at,
+                await _insert_event(conn, indexed)
+        return indexed
+
+    async def commit_event(self, room_id: str, event: RoomEvent) -> RoomEvent:
+        """Atomic commit (RFC §10.1 step 12 / §8.1 / §14.3) in ONE transaction.
+
+        ``SELECT ... FOR UPDATE`` on the room row serializes concurrent commits
+        for the same room across connections (i.e. across processes); the index
+        is computed, the event inserted, and the room counters
+        (``event_count`` / ``latest_index`` / ``timers.last_activity_at``)
+        updated together, so the timeline and the counters can never diverge —
+        even under a crash or without a cross-process room lock.
+        """
+        with self._query_span("commit_event", "events"):
+            async with self._acquire() as conn, conn.transaction():
+                room_row = await conn.fetchrow(
+                    "SELECT * FROM rooms WHERE id = $1 FOR UPDATE",
+                    room_id,
                 )
+                row = await conn.fetchrow(
+                    "SELECT COALESCE(MAX(index), -1) + 1 AS next_idx"
+                    " FROM events WHERE room_id = $1",
+                    room_id,
+                )
+                next_idx = row["next_idx"]
+                indexed = event.model_copy(update={"index": next_idx})
+                await _insert_event(conn, indexed)
+                if room_row is not None:
+                    room = _row_to_room(room_row)
+                    timers = room.timers.model_copy(update={"last_activity_at": datetime.now(UTC)})
+                    count_row = await conn.fetchrow(
+                        "SELECT count(*) AS cnt FROM events WHERE room_id = $1",
+                        room_id,
+                    )
+                    await conn.execute(
+                        "UPDATE rooms SET event_count = $2, latest_index = $3, timers = $4"
+                        " WHERE id = $1",
+                        room_id,
+                        count_row["cnt"],
+                        next_idx,
+                        # Pass the dict directly — the registered jsonb codec
+                        # encodes it; json.dumps() here would double-encode.
+                        timers.model_dump(mode="json"),
+                    )
         return indexed
 
     # ── Binding operations ───────────────────────────────────────

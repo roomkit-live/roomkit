@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from typing import Any
 
 from roomkit.models.channel import ChannelBinding
@@ -188,6 +189,44 @@ class ConversationStore(ABC):
         count = await self.get_event_count(room_id)
         indexed = event.model_copy(update={"index": count})
         return await self.add_event(indexed)
+
+    async def commit_event(self, room_id: str, event: RoomEvent) -> RoomEvent:
+        """Store *event* and bump the room counters as ONE atomic commit.
+
+        The commit point of RFC §10.1 (step 12) / §14.3: (re)assigning the
+        authoritative index, persisting the event, and updating the room's
+        ``event_count`` / ``latest_index`` / ``timers.last_activity_at`` form a
+        **single logical transaction**. An observer MUST never see a stored
+        event that the room counters do not reflect, nor counters that count an
+        event absent from the timeline.
+
+        The authoritative index is (re)computed inside the commit (RFC §8.1) so
+        a persistent store shared across processes serializes concurrent
+        writers on the store, not only on an in-process room lock.
+
+        Returns the committed event — its ``index`` may differ from any
+        provisional value the caller assigned before hooks ran, if the store
+        serialized a concurrent writer.
+
+        The default implementation is **NOT atomic** — it indexes, inserts,
+        then updates the room in separate steps. Persistent backends that may be
+        shared across processes MUST override this with a single storage
+        transaction.
+        """
+        indexed = await self.add_event_auto_index(room_id, event)
+        room = await self.get_room(room_id)
+        if room is not None:
+            timers = room.timers.model_copy(update={"last_activity_at": datetime.now(UTC)})
+            await self.update_room(
+                room.model_copy(
+                    update={
+                        "event_count": await self.get_event_count(room_id),
+                        "latest_index": indexed.index,
+                        "timers": timers,
+                    }
+                )
+            )
+        return indexed
 
     async def get_conversation(
         self,

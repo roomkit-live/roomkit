@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from typing import Any
 
 from roomkit.models.channel import ChannelBinding
@@ -278,6 +279,30 @@ class InMemoryStore(ConversationStore):
             events.append(indexed.id)
             if indexed.idempotency_key:
                 self._idempotency.setdefault(room_id, set()).add(indexed.idempotency_key)
+            return indexed
+
+    async def commit_event(self, room_id: str, event: RoomEvent) -> RoomEvent:
+        """Atomic commit (RFC §10.1 step 12 / §14.3): index, store, and bump the
+        room counters under the per-room lock as one critical section, so the
+        timeline and the counters can never diverge."""
+        async with self._lock_for(room_id):
+            events = self._room_events.setdefault(room_id, [])
+            index = len(events)
+            indexed = event.model_copy(update={"index": index})
+            self._events[indexed.id] = indexed
+            events.append(indexed.id)
+            if indexed.idempotency_key:
+                self._idempotency.setdefault(room_id, set()).add(indexed.idempotency_key)
+            room = self._rooms.get(room_id)
+            if room is not None:
+                timers = room.timers.model_copy(update={"last_activity_at": datetime.now(UTC)})
+                self._rooms[room_id] = room.model_copy(
+                    update={
+                        "event_count": len(events),
+                        "latest_index": index,
+                        "timers": timers,
+                    }
+                )
             return indexed
 
     # Binding operations
