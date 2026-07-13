@@ -39,13 +39,38 @@ if [[ "$BRANCH" != "main" ]]; then
     exit 1
 fi
 
-# --- Refuse a version already on PyPI (the publish step is irreversible) ---
+# A local tag v${VERSION} means a prior run already built, committed, and tagged
+# this release — so this invocation is a RESUME, not a fresh release. That gates
+# the PyPI safety check below and the dev-cycle detection.
+TAG_EXISTS=0
+if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+    TAG_EXISTS=1
+fi
+
+# --- Resume shortcut: the release fully completed and the next dev cycle was
+# opened, but its commit/push failed. The tree is on a .dev version AND the tag
+# exists — nothing left to do but re-push (idempotent). ---
+CURRENT_VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/roomkit/_version.py)
+if [[ "$CURRENT_VERSION" == *.dev* && "$TAG_EXISTS" == "1" ]]; then
+    echo "==> v${VERSION} already released (tree on ${CURRENT_VERSION}); re-pushing git state."
+    git push && git push --tags
+    echo "==> Done."
+    exit 0
+fi
+
+# --- Refuse a version already on PyPI, UNLESS resuming (the local tag proves a
+# prior run of THIS release; publish below skips files already uploaded). ---
 echo "==> Checking PyPI for an existing ${VERSION}..."
 if curl -sfL "https://pypi.org/pypi/roomkit/${VERSION}/json" -o /dev/null; then
-    echo "Error: roomkit ${VERSION} already exists on PyPI — pick a new version."
-    exit 1
+    if [[ "$TAG_EXISTS" == "0" ]]; then
+        echo "Error: roomkit ${VERSION} already on PyPI and no local tag v${VERSION} to"
+        echo "       resume from — pick a new version."
+        exit 1
+    fi
+    echo "    ${VERSION} is on PyPI, but tag v${VERSION} exists — resuming; publish skips existing files."
+else
+    echo "    ${VERSION} is not on PyPI."
 fi
-echo "    ${VERSION} is not on PyPI."
 
 # --- Require a CHANGELOG entry for this version ---
 if ! grep -qE "^## \[${VERSION}\]" CHANGELOG.md; then
@@ -196,12 +221,16 @@ else
 fi
 
 # --- Publish to PyPI (last, irreversible step) ---
+# `--check-url` skips files already on the index, so a re-run after a partial
+# upload (e.g. sdist landed, wheel failed) uploads only what is missing instead
+# of failing on the duplicate — making publish idempotent.
+PYPI_INDEX="https://pypi.org/simple/roomkit/"
 echo "==> Publishing to PyPI..."
 if [[ -n "${UV_PUBLISH_TOKEN:-}" ]]; then
-    uv publish "${DIST_FILES[@]}"
+    uv publish --check-url "$PYPI_INDEX" "${DIST_FILES[@]}"
 elif [[ -f "$HOME/.pypirc" ]]; then
     PYPI_TOKEN=$(python3 -c "import configparser; c = configparser.ConfigParser(); c.read('$HOME/.pypirc'); print(c.get('pypi', 'password'))")
-    uv publish --username __token__ --password "$PYPI_TOKEN" "${DIST_FILES[@]}"
+    uv publish --check-url "$PYPI_INDEX" --username __token__ --password "$PYPI_TOKEN" "${DIST_FILES[@]}"
 else
     echo "Error: No PyPI credentials found. Set UV_PUBLISH_TOKEN or create ~/.pypirc"
     exit 1
@@ -224,7 +253,11 @@ if [[ ! "$VERSION" =~ [a-zA-Z] ]]; then
         sed -i "s/^__version__ = .*/__version__ = \"${DEV_VERSION}\"/" src/roomkit/_version.py
     fi
     git add src/roomkit/_version.py
-    git commit -m "Begin ${DEV_VERSION} development"
+    if git diff --cached --quiet; then
+        echo "    Already on ${DEV_VERSION}."
+    else
+        git commit -m "Begin ${DEV_VERSION} development"
+    fi
     git push
     echo "    main now on ${DEV_VERSION}."
 fi
