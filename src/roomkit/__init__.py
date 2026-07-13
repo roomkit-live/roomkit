@@ -42,6 +42,7 @@ from roomkit.core.framework import (
     VoiceBackendNotConfiguredError,
     VoiceNotConfiguredError,
 )
+from roomkit.core.locks import InMemoryLockManager, RoomLockManager
 from roomkit.delivery import (
     DeliveryBackend,
     DeliveryItem,
@@ -242,6 +243,9 @@ __all__ = [
     "EventFilter",
     "InMemoryStore",
     "PersistencePolicy",
+    # Locking (extension point — RFC §13.5)
+    "InMemoryLockManager",
+    "RoomLockManager",
     # Memory
     "MemoryProvider",
     # Sandbox
