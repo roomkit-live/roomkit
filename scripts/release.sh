@@ -10,6 +10,10 @@ fi
 
 VERSION="$1"
 
+# Pinned SBOM generator: a floating version would make the attached SBOM's
+# format/tooling non-reproducible across releases. Bump deliberately.
+CYCLONEDX_BOM_VERSION="7.3.0"
+
 # --- Validate semver format (with optional pre-release suffix) ---
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-a-zA-Z0-9.]+)?$ ]]; then
     echo "Error: VERSION must be in semver format (e.g. 1.2.3 or 1.2.3a1)"
@@ -88,16 +92,12 @@ echo "==> Running tests..."
 uv run pytest
 echo "    Tests passed."
 
-# --- Commit ---
-git add src/roomkit/_version.py tests/test_public_api.py
-git commit -m "Bump version to ${VERSION}"
-echo "    Committed."
-
-# --- Tag ---
-git tag "v${VERSION}"
-echo "    Tagged v${VERSION}."
-
-# --- Build ---
+# --- Build + SBOM BEFORE any Git mutation ---
+# Everything below the commit is irreversible or awkward to unwind, so the
+# steps that can fail on a flaky network (the build download and, especially,
+# fetching the pinned SBOM generator) run FIRST — while the tree is still clean
+# and the version bump is only a local, un-committed sed edit. A failure here
+# leaves nothing to undo: fix the network and re-run from scratch.
 echo "==> Building..."
 uv build
 # Only ship artifacts for the current version — uploading the whole dist/ dir
@@ -117,13 +117,35 @@ done
 # A per-release inventory of the runtime dependency tree (core + the `providers`
 # extra), attached to the GitHub Release for downstream vulnerability and
 # license audits. `--no-emit-project` lists the dependencies, not roomkit itself.
-echo "==> Generating SBOM..."
+# The generator is pinned (CYCLONEDX_BOM_VERSION) for reproducibility.
+echo "==> Generating SBOM (cyclonedx-bom==${CYCLONEDX_BOM_VERSION})..."
 SBOM_FILE="dist/roomkit-${VERSION}.cdx.json"
 uv export --extra providers --no-dev --frozen --no-emit-project --format requirements-txt \
     > dist/roomkit-sbom-requirements.txt
-uvx --from cyclonedx-bom cyclonedx-py requirements dist/roomkit-sbom-requirements.txt \
-    --of JSON -o "${SBOM_FILE}"
+uvx --from "cyclonedx-bom==${CYCLONEDX_BOM_VERSION}" cyclonedx-py requirements \
+    dist/roomkit-sbom-requirements.txt --of JSON -o "${SBOM_FILE}"
+if [[ ! -s "$SBOM_FILE" ]]; then
+    echo "Error: SBOM generation produced no output: ${SBOM_FILE}"
+    exit 1
+fi
 echo "    Wrote ${SBOM_FILE}"
+
+# --- Commit (idempotent: safe to re-run after a later step failed) ---
+git add src/roomkit/_version.py tests/test_public_api.py
+if git diff --cached --quiet; then
+    echo "    Version ${VERSION} already committed — skipping."
+else
+    git commit -m "Bump version to ${VERSION}"
+    echo "    Committed."
+fi
+
+# --- Tag (idempotent) ---
+if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+    echo "    Tag v${VERSION} already exists — skipping."
+else
+    git tag "v${VERSION}"
+    echo "    Tagged v${VERSION}."
+fi
 
 # --- Push git state BEFORE publishing ---
 # The PyPI upload below is irreversible; pushing the commit, tag, and GitHub
