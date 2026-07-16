@@ -141,8 +141,12 @@ CREATE INDEX IF NOT EXISTS idx_events_room_created ON events(room_id, created_at
 CREATE INDEX IF NOT EXISTS idx_events_room_type ON events(room_id, type);
 CREATE INDEX IF NOT EXISTS idx_events_correlation
     ON events(correlation_id) WHERE correlation_id IS NOT NULL;
+-- Composite on (parent_event_id, index): thread-reply pagination filters by
+-- parent_event_id then reads forward ORDER BY index, so the second column lets
+-- Postgres return the page pre-sorted instead of sorting the whole thread. The
+-- leading column still serves plain parent_event_id lookups.
 CREATE INDEX IF NOT EXISTS idx_events_parent
-    ON events(parent_event_id) WHERE parent_event_id IS NOT NULL;
+    ON events(parent_event_id, index) WHERE parent_event_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_events_source ON events(source_channel_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency
     ON events(room_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
