@@ -144,8 +144,11 @@ CREATE INDEX IF NOT EXISTS idx_events_correlation
 -- Composite on (parent_event_id, index): thread-reply pagination filters by
 -- parent_event_id then reads forward ORDER BY index, so the second column lets
 -- Postgres return the page pre-sorted instead of sorting the whole thread. The
--- leading column still serves plain parent_event_id lookups.
-CREATE INDEX IF NOT EXISTS idx_events_parent
+-- leading column still serves plain parent_event_id lookups. A distinct name
+-- (not the older single-column idx_events_parent) so init()'s additive
+-- CREATE IF NOT EXISTS actually creates it on databases that predate the
+-- composite; PostgresStore.drop_legacy_parent_index() removes the old one.
+CREATE INDEX IF NOT EXISTS idx_events_parent_index
     ON events(parent_event_id, index) WHERE parent_event_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_events_source ON events(source_channel_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency

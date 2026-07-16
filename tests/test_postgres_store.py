@@ -364,6 +364,20 @@ class TestPostgresStore:
         for table in postgres_schema.V1_TABLES:
             assert f"DROP TABLE IF EXISTS {table} CASCADE" in postgres_schema.V1_TO_V2_DROP
 
+    def test_thread_index_is_composite_under_a_new_name(self) -> None:
+        """The thread-reply index carries (parent_event_id, index) under a name
+        distinct from the legacy single-column idx_events_parent — so init()'s
+        additive CREATE IF NOT EXISTS actually creates it on existing databases
+        instead of no-op'ing against the old index."""
+        from roomkit.store import postgres_schema
+
+        assert (
+            "idx_events_parent_index\n    ON events(parent_event_id, index)"
+            in postgres_schema.SCHEMA
+        )
+        # The old single-column index must not be re-created for fresh databases.
+        assert "ON events(parent_event_id)" not in postgres_schema.SCHEMA
+
     async def test_init_refuses_v1_schema(self) -> None:
         """A legacy v1 schema makes init() raise rather than drop tables."""
         store, mock_conn = _make_store_with_pool()
@@ -1108,3 +1122,45 @@ class TestPostgresStore:
             store._query_span("test_op", "test_table"),
         ):
             raise ValueError("boom")
+
+
+def _drops(mock_conn) -> list[str]:
+    """The DROP INDEX statements executed on the mock connection."""
+    return [
+        str(call.args[0])
+        for call in mock_conn.execute.await_args_list
+        if "DROP INDEX" in str(call.args[0])
+    ]
+
+
+class TestDropLegacyParentIndex:
+    """The composite idx_events_parent_index is created additively by init(),
+    but init() never drops, so an existing database keeps the redundant single-
+    column idx_events_parent until this opt-in migration removes it."""
+
+    async def test_dry_run_reports_without_dropping(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval.return_value = 1  # legacy index present
+
+        report = await store.drop_legacy_parent_index()  # dry_run defaults to True
+
+        assert report == {"action": "dry_run"}
+        assert _drops(mock_conn) == []
+
+    async def test_drops_the_legacy_index_when_present(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval.return_value = 1  # present on this (existing) database
+
+        report = await store.drop_legacy_parent_index(dry_run=False)
+
+        assert report == {"action": "dropped"}
+        assert _drops(mock_conn) == ["DROP INDEX IF EXISTS idx_events_parent"]
+
+    async def test_noop_when_already_absent(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval.return_value = None  # fresh DB / already migrated
+
+        report = await store.drop_legacy_parent_index(dry_run=False)
+
+        assert report == {"action": "noop"}
+        assert _drops(mock_conn) == []

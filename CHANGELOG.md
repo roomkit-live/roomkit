@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Thread-reply pagination reads from a composite index.** The query filters
+  `events` by `parent_event_id` then reads forward `ORDER BY index`; the
+  single-column `idx_events_parent` forced a sort of the whole thread on every
+  page. The index now carries `(parent_event_id, index)` — the leading column
+  still serves plain `parent_event_id` lookups. It ships under a new name,
+  `idx_events_parent_index`, so `init()`'s additive `CREATE INDEX IF NOT EXISTS`
+  actually creates it on databases that predate the composite (reusing the old
+  name would have no-op'd against the existing single-column index).
+
+### Added
+
+- `PostgresStore.drop_legacy_parent_index(dry_run=True)` — opt-in migration that
+  removes the now-redundant single-column `idx_events_parent` on databases that
+  predate the composite. `init()` is additive and never drops, so this is the
+  explicit path to reclaim the old index. Idempotent; dry-run by default.
+
 ## [0.29.0] — 2026-07-13
 
 ### Fixed

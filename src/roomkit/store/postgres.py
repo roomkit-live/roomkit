@@ -331,6 +331,35 @@ class PostgresStore(ConversationStore):
             report["now_unique"] = True
             return report
 
+    async def drop_legacy_parent_index(self, *, dry_run: bool = True) -> dict[str, Any]:
+        """Drop the pre-composite single-column ``idx_events_parent``.
+
+        ``idx_events_parent_index`` on ``(parent_event_id, index)`` — created
+        additively by :meth:`init` — supersedes it: the leading column still
+        serves plain ``parent_event_id`` lookups while the second lets thread
+        pagination read the page pre-sorted. :meth:`init` is additive and never
+        drops, so this opt-in call removes the now-redundant single-column index
+        on databases that predate the composite. Idempotent — a no-op once gone.
+
+        Args:
+            dry_run: When ``True`` (the default) nothing is changed; the report
+                only says whether the legacy index is still present.
+
+        Returns:
+            ``{"action"}`` — ``"dry_run"``, ``"noop"`` (already gone), or
+            ``"dropped"``.
+        """
+        async with self._acquire() as conn:
+            present = await conn.fetchval(
+                "SELECT 1 FROM pg_indexes WHERE indexname = 'idx_events_parent'"
+            )
+            if not present:
+                return {"action": "noop"}
+            if dry_run:
+                return {"action": "dry_run"}
+            await conn.execute("DROP INDEX IF EXISTS idx_events_parent")
+            return {"action": "dropped"}
+
     async def close(self) -> None:
         """Release the connection pool if we own it."""
         if self._pool is not None and self._owns_pool:
