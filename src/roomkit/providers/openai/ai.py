@@ -350,7 +350,7 @@ class OpenAIAIProvider(AIProvider):
 
         t0 = time.monotonic()
         try:
-            response = await self._client.chat.completions.create(**kwargs)  # ty: ignore[no-matching-overload]
+            response = await self._client.chat.completions.create(**kwargs)
         except ProviderError:
             raise
         except self._api_connection_error as exc:

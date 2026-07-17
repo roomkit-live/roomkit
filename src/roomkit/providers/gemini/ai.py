@@ -251,7 +251,7 @@ class GeminiAIProvider(AIProvider):
         thinking_budget = context.thinking_budget
         if thinking_level:
             gen_config.thinking_config = self._types.ThinkingConfig(
-                thinking_level=thinking_level,  # ty: ignore[invalid-argument-type]
+                thinking_level=thinking_level,
                 include_thoughts=True,
             )
         elif thinking_budget:
