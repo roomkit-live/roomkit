@@ -291,21 +291,21 @@ class AnthropicAIProvider(AIProvider):
                         continue
 
                     if event.type == "content_block_start":
-                        cb = event.content_block  # ty: ignore[unresolved-attribute]
+                        cb = event.content_block
                         if hasattr(cb, "type") and cb.type == "tool_use":
-                            _tool_blocks[event.index] = {  # ty: ignore[unresolved-attribute]
-                                "id": cb.id,  # ty: ignore[unresolved-attribute]
-                                "name": cb.name,  # ty: ignore[unresolved-attribute]
+                            _tool_blocks[event.index] = {
+                                "id": cb.id,
+                                "name": cb.name,
                                 "input_json": "",
                             }
 
-                    elif event.type == "content_block_delta" and hasattr(event.delta, "type"):  # ty: ignore[unresolved-attribute]
-                        delta = event.delta  # ty: ignore[unresolved-attribute]
+                    elif event.type == "content_block_delta" and hasattr(event.delta, "type"):
+                        delta = event.delta
                         if delta.type == "thinking_delta":
                             if first_token:
                                 self._record_ttfb(t0)
                                 first_token = False
-                            yield StreamThinkingDelta(thinking=delta.thinking)  # ty: ignore[unresolved-attribute]
+                            yield StreamThinkingDelta(thinking=delta.thinking)
                         elif delta.type == "signature_delta":
                             # The thinking block's opaque signature arrives as
                             # its own delta after the text. Surface it so the
@@ -313,20 +313,20 @@ class AnthropicAIProvider(AIProvider):
                             # 400s on a thinking block missing its signature).
                             yield StreamThinkingDelta(
                                 thinking="",
-                                signature=delta.signature,  # ty: ignore[unresolved-attribute]
+                                signature=delta.signature,
                             )
                         elif delta.type == "text_delta":
                             if first_token:
                                 self._record_ttfb(t0)
                                 first_token = False
-                            yield StreamTextDelta(text=delta.text)  # ty: ignore[unresolved-attribute]
+                            yield StreamTextDelta(text=delta.text)
                         elif delta.type == "input_json_delta":
-                            idx = event.index  # ty: ignore[unresolved-attribute]
+                            idx = event.index
                             if idx in _tool_blocks:
-                                _tool_blocks[idx]["input_json"] += delta.partial_json  # ty: ignore[unresolved-attribute]
+                                _tool_blocks[idx]["input_json"] += delta.partial_json
 
                     elif event.type == "content_block_stop":
-                        idx = event.index  # ty: ignore[unresolved-attribute]
+                        idx = event.index
                         if idx in _tool_blocks:
                             tb = _tool_blocks.pop(idx)
                             if tb["id"] not in _yielded_tool_ids:
@@ -345,11 +345,11 @@ class AnthropicAIProvider(AIProvider):
 
             # Yield any tool calls from final message not already yielded
             for block in final.content:
-                if block.type == "tool_use" and block.id not in _yielded_tool_ids:  # ty: ignore[unresolved-attribute]
+                if block.type == "tool_use" and block.id not in _yielded_tool_ids:
                     yield StreamToolCall(
-                        id=block.id,  # ty: ignore[unresolved-attribute]
-                        name=block.name,  # ty: ignore[unresolved-attribute]
-                        arguments=block.input,  # ty: ignore[unresolved-attribute]
+                        id=block.id,
+                        name=block.name,
+                        arguments=block.input,
                     )
 
             usage: dict[str, int] = {

@@ -231,6 +231,18 @@ include = [
 [tool.ty.overrides.rules]
 "invalid-method-override" = "ignore"
 
+[[tool.ty.overrides]]
+# `asyncio.get_event_loop_policy().get_event_loop()` is deprecated since 3.14 but
+# remains the fallback for scheduling coroutines from non-async SIP/WebRTC
+# callback threads, where no loop is running. Revisit when the loop reference is
+# captured at setup time instead.
+include = [
+    "src/roomkit/voice/realtime/bridge.py",
+    "src/roomkit/voice/realtime/fastrtc_transport.py",
+]
+[tool.ty.overrides.rules]
+"deprecated" = "ignore"
+
 [tool.uv]
 # neutts, qwen-tts and qwen-asr pin incompatible transformers versions
 conflicts = [
@@ -261,8 +273,8 @@ known-first-party = ["roomkit"]
 "src/roomkit/voice/backends/base.py" = ["B027"]  # Optional callback hooks with default no-ops
 "src/roomkit/voice/realtime/provider.py" = ["B027"]  # Optional callback hooks with default no-ops
 "src/roomkit/voice/realtime/transport.py" = ["B027"]  # Optional callback hooks with default no-ops
-"examples/*.py" = ["E402", "E501", "N806", "ASYNC210", "ASYNC221", "F841", "SIM102", "SIM105"]  # Examples: relaxed style
-"tests/*.py" = ["N817", "PT011", "PT012", "PT018", "PT019"]  # Allow short aliases + relaxed pytest style
+"examples/*.py" = ["E402", "E501", "N806", "ASYNC210", "ASYNC221", "ASYNC240", "F841", "SIM102", "SIM105"]  # Examples: relaxed style
+"tests/*.py" = ["N817", "ASYNC240", "PT011", "PT012", "PT018", "PT019"]  # Allow short aliases + relaxed pytest style, sync path assertions
 
 [tool.bandit]
 exclude_dirs = ["tests", "examples"]
