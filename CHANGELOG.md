@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Direct event-mutation APIs with hooks.** New `RoomKit.update_event()` and
+  `RoomKit.delete_event()` (EventOpsMixin) let a host application mutate a
+  persisted event — replace content/source/metadata, or hard-delete a thread
+  root with its replies (`ConversationStore.delete_event`, implemented for
+  memory and Postgres) — under the room lock, with authorization owned by the
+  caller. Both fire the new hook triggers `ON_EVENT_UPDATED` /
+  `ON_EVENT_DELETED` after the lock is released.
+- **RFC §10.3 inbound edits/deletes fire the mutation triggers.** The
+  `_apply_edit_delete_state` path (channel-originated EDIT/DELETE events) now
+  fires `ON_EVENT_UPDATED` / `ON_EVENT_DELETED` with the mutated target, so
+  observers (e.g. denormalized-projection maintainers) see every stored-state
+  change regardless of origin. Firings are deferred until the room lock is
+  released, like AFTER_BROADCAST.
+
+### Fixed
+
+- **Postgres `update_event` now persists the `source_*` columns.** The UPDATE
+  omitted `source_channel_id/type`, `source_participant_id`, `source_provider`
+  and `source_extra`, silently dropping sender reclassification on Postgres
+  (the in-memory store, which replaces the whole object, honored it).
+
 ## [0.30.0] — 2026-07-16
 
 ### Changed

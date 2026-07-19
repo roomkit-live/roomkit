@@ -558,7 +558,9 @@ class PostgresStore(ConversationStore):
             async with self._acquire() as conn:
                 await conn.execute(
                     "UPDATE events SET content=$2, status=$3, visibility=$4,"
-                    " metadata=$5, idempotency_key=$6, blocked_by=$7"
+                    " metadata=$5, idempotency_key=$6, blocked_by=$7,"
+                    " source_channel_id=$8, source_channel_type=$9,"
+                    " source_participant_id=$10, source_provider=$11, source_extra=$12"
                     " WHERE id=$1",
                     event.id,
                     event.content.model_dump(mode="json"),
@@ -567,8 +569,41 @@ class PostgresStore(ConversationStore):
                     event.metadata,
                     event.idempotency_key,
                     event.blocked_by,
+                    event.source.channel_id,
+                    event.source.channel_type.value,
+                    event.source.participant_id,
+                    event.source.provider,
+                    _source_extra(event.source),
                 )
         return event
+
+    async def delete_event(
+        self, room_id: str, event_id: str, *, cascade_replies: bool = True
+    ) -> list[str]:
+        with self._query_span("delete_event", "events"):
+            async with self._acquire() as conn, conn.transaction():
+                root = await conn.fetchval(
+                    "SELECT 1 FROM events WHERE room_id = $1 AND id = $2", room_id, event_id
+                )
+                if root is None:
+                    return []
+                if cascade_replies:
+                    rows = await conn.fetch(
+                        "DELETE FROM events"
+                        " WHERE room_id = $1 AND (id = $2 OR parent_event_id = $2)"
+                        " RETURNING id",
+                        room_id,
+                        event_id,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        "DELETE FROM events WHERE room_id = $1 AND id = $2 RETURNING id",
+                        room_id,
+                        event_id,
+                    )
+        # Root first, then replies — RETURNING order is not guaranteed.
+        ids = [row["id"] for row in rows]
+        return sorted(ids, key=lambda eid: eid != event_id)
 
     async def list_events(
         self,

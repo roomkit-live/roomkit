@@ -98,6 +98,19 @@ class ConversationStore(ABC):
         ...
 
     @abstractmethod
+    async def delete_event(
+        self, room_id: str, event_id: str, *, cascade_replies: bool = True
+    ) -> list[str]:
+        """Hard-delete a persisted event, optionally cascading to its thread replies.
+
+        ``parent_event_id`` has no DB-level FK, so a bare root delete would
+        orphan its replies — ``cascade_replies`` (default) removes them in the
+        same operation. Returns the deleted event IDs (root first, then
+        replies); empty when *event_id* does not exist in *room_id*.
+        """
+        ...
+
+    @abstractmethod
     async def list_events(
         self,
         room_id: str,

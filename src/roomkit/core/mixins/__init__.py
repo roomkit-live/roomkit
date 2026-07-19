@@ -5,6 +5,7 @@ from __future__ import annotations
 from roomkit.core.mixins.channel_ops import ChannelOpsMixin
 from roomkit.core.mixins.delegation import DelegationMixin
 from roomkit.core.mixins.deliver import DeliverMixin
+from roomkit.core.mixins.event_ops import EventOpsMixin
 from roomkit.core.mixins.greeting import GreetingMixin
 from roomkit.core.mixins.helpers import FrameworkEventHandler, HelpersMixin, IdentityHookFn
 from roomkit.core.mixins.hooks_api import HooksApiMixin
@@ -24,6 +25,7 @@ __all__ = [
     "ChannelOpsMixin",
     "DelegationMixin",
     "DeliverMixin",
+    "EventOpsMixin",
     "FrameworkEventHandler",
     "GreetingMixin",
     "HelpersMixin",

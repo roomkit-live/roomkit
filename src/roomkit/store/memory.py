@@ -169,6 +169,32 @@ class InMemoryStore(ConversationStore):
         self._events[event.id] = event
         return event
 
+    async def delete_event(
+        self, room_id: str, event_id: str, *, cascade_replies: bool = True
+    ) -> list[str]:
+        root = self._events.get(event_id)
+        if root is None or root.room_id != room_id:
+            return []
+        deleted = [event_id]
+        if cascade_replies:
+            room_event_ids = self._room_events.get(room_id, [])
+            deleted.extend(
+                eid
+                for eid in room_event_ids
+                if eid != event_id
+                and (e := self._events.get(eid)) is not None
+                and e.parent_event_id == event_id
+            )
+        for eid in deleted:
+            event = self._events.pop(eid, None)
+            if event is not None and event.idempotency_key:
+                self._idempotency.get(room_id, set()).discard(event.idempotency_key)
+        room_ids = self._room_events.get(room_id)
+        if room_ids is not None:
+            gone = set(deleted)
+            self._room_events[room_id] = [eid for eid in room_ids if eid not in gone]
+        return deleted
+
     async def list_events(
         self,
         room_id: str,

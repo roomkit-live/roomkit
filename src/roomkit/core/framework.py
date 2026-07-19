@@ -42,6 +42,7 @@ from roomkit.core.mixins import (
     ChannelOpsMixin,
     DelegationMixin,
     DeliverMixin,
+    EventOpsMixin,
     FrameworkEventHandler,
     GreetingMixin,
     HelpersMixin,
@@ -120,6 +121,7 @@ class RoomKit(
     DeliverMixin,
     RealtimeOpsMixin,
     SourceOpsMixin,
+    EventOpsMixin,
     HooksApiMixin,
     HelpersMixin,
 ):
@@ -544,7 +546,7 @@ class RoomKit(
             # handling, source write-permission gate, persistence, broadcast,
             # reentry drain and AFTER_BROADCAST hooks. This keeps a single
             # validation/hooks/indexing/persistence model across entry points.
-            pending_after_broadcast: list[tuple[RoomEvent, RoomContext]] = []
+            pending_async_hooks: list[tuple[HookTrigger, RoomEvent, RoomContext]] = []
             pending_error_hooks: list[tuple[RoomContext, Any, dict[str, Any]]] = []
             async with self._lock_manager.locked(room_id):
                 context = await self._build_context(room_id)
@@ -552,12 +554,12 @@ class RoomKit(
                     event,
                     room_id,
                     context,
-                    pending_after_broadcast_out=pending_after_broadcast,
+                    pending_after_broadcast_out=pending_async_hooks,
                     pending_error_hooks_out=pending_error_hooks,
                 )
             event = result.event or event
-            # AFTER_BROADCAST and ON_ERROR run outside the room lock (RFC §10.1)
-            await self._run_deferred_after_broadcast(room_id, pending_after_broadcast)
+            # AFTER_BROADCAST/mutation and ON_ERROR run outside the room lock (RFC §10.1)
+            await self._run_deferred_async_hooks(room_id, pending_async_hooks)
             await self._run_deferred_error_hooks(room_id, pending_error_hooks)
 
             telemetry.end_span(span_id)

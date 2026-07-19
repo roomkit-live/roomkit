@@ -34,24 +34,37 @@ logger = logging.getLogger("roomkit.framework")
 # is released (RFC §10.1): (context, error source, _fire_error_hook kwargs).
 _ErrorHookSink = list[tuple[RoomContext, EventSource, dict[str, Any]]]
 
+# Deferred async-hook firings collected under the room lock and fired after it
+# is released (RFC §10.1): (trigger, event, context). Carries AFTER_BROADCAST
+# plus the RFC §10.3 mutation triggers (ON_EVENT_UPDATED / ON_EVENT_DELETED).
+_AsyncHookSink = list[tuple[HookTrigger, RoomEvent, RoomContext]]
+
 
 class _Proceed:
     """Marker returned by ``_run_precommit`` once the event has committed and the
     caller should run the post-commit broadcast phase (RFC §10.1).
 
     Carries the state the broadcast phase needs — kept off the event so the
-    pre-commit and post-commit phases stay decoupled.
+    pre-commit and post-commit phases stay decoupled. ``mutation_hook`` is the
+    (trigger, updated target) pair to fire when the event edited/deleted a
+    target (RFC §10.3), or ``None``.
     """
 
-    __slots__ = ("context", "event", "source_binding", "sync_result")
+    __slots__ = ("context", "event", "mutation_hook", "source_binding", "sync_result")
 
     def __init__(
-        self, event: RoomEvent, source_binding: Any, sync_result: Any, context: RoomContext
+        self,
+        event: RoomEvent,
+        source_binding: Any,
+        sync_result: Any,
+        context: RoomContext,
+        mutation_hook: tuple[HookTrigger, RoomEvent] | None = None,
     ) -> None:
         self.event = event
         self.source_binding = source_binding
         self.sync_result = sync_result
         self.context = context
+        self.mutation_hook = mutation_hook
 
 
 @runtime_checkable
@@ -140,7 +153,7 @@ class InboundLockedMixin(HelpersMixin):
         resolved_identity: Identity | None = None,
         pending_id_result: IdentityResult | None = None,
         pending_streams_out: list[Any] | None = None,
-        pending_after_broadcast_out: list[tuple[RoomEvent, RoomContext]] | None = None,
+        pending_after_broadcast_out: _AsyncHookSink | None = None,
         pending_error_hooks_out: _ErrorHookSink | None = None,
     ) -> InboundResult:
         """Process an event under the room lock (RFC §10.1).
@@ -152,10 +165,11 @@ class InboundLockedMixin(HelpersMixin):
         event is never cancelled and the returned result never contradicts the
         stored timeline.
 
-        AFTER_BROADCAST async hooks are collected into
-        ``pending_after_broadcast_out`` (when provided) so the caller can run
-        them once the room lock is released (RFC §10.1 — async hooks run after
-        the lock, not under it). Without a sink they run inline. ON_ERROR hooks
+        AFTER_BROADCAST (and RFC §10.3 mutation-trigger) async hooks are
+        collected into ``pending_after_broadcast_out`` (when provided) so the
+        caller can run them once the room lock is released (RFC §10.1 — async
+        hooks run after the lock, not under it). Without a sink they run
+        inline. ON_ERROR hooks
         are likewise collected into ``pending_error_hooks_out`` — a failing
         provider must not hold the room lock while its error hooks run.
         """
@@ -185,6 +199,14 @@ class InboundLockedMixin(HelpersMixin):
             return InboundResult(blocked=True, reason="process_timeout")
         if isinstance(outcome, InboundResult):
             return outcome
+        # RFC §10.3 — the target of an edit/delete mutated at the commit point;
+        # fire its mutation trigger first so observers see mutation before the
+        # edit/delete event's own AFTER_BROADCAST, matching execution order.
+        if outcome.mutation_hook is not None:
+            trigger, target = outcome.mutation_hook
+            await self._dispatch_async_hooks(
+                room_id, trigger, target, outcome.context, pending_after_broadcast_out
+            )
         return await self._process_broadcast(
             outcome.event,
             room_id,
@@ -348,8 +370,9 @@ class InboundLockedMixin(HelpersMixin):
 
         # Apply edit/delete target mutation now that the event is authorized and
         # hook-allowed (RFC §10.3 — mutation must not precede the block decision).
+        mutation_hook: tuple[HookTrigger, RoomEvent] | None = None
         if edit_delete_target is not None:
-            await self._apply_edit_delete_state(event, edit_delete_target)
+            mutation_hook = await self._apply_edit_delete_state(event, edit_delete_target)
 
         # Commit point (RFC §10.1): persist DELIVERED and bump the room
         # counters atomically, before broadcast, so the timeline and counters
@@ -358,7 +381,7 @@ class InboundLockedMixin(HelpersMixin):
         # returns the committed event carrying the store-authoritative index.
         event = event.model_copy(update={"status": EventStatus.DELIVERED})
         event = await self._commit_event(room_id, event)
-        return _Proceed(event, source_binding, sync_result, context)
+        return _Proceed(event, source_binding, sync_result, context, mutation_hook)
 
     async def _process_broadcast(
         self,
@@ -369,7 +392,7 @@ class InboundLockedMixin(HelpersMixin):
         context: RoomContext,
         *,
         pending_streams_out: list[Any] | None = None,
-        pending_after_broadcast_out: list[tuple[RoomEvent, RoomContext]] | None = None,
+        pending_after_broadcast_out: _AsyncHookSink | None = None,
         pending_error_hooks_out: _ErrorHookSink | None = None,
     ) -> InboundResult:
         """Post-commit phase (RFC §10.1): deliver injected events,
@@ -609,8 +632,12 @@ class InboundLockedMixin(HelpersMixin):
             # Queue nested reentry events for further broadcasting
             pending_reentries.extend(reentry_result.reentry_events)
             # AFTER_BROADCAST hooks for reentry events (e.g., AI responses)
-            await self._dispatch_after_broadcast(
-                room_id, reentry, reentry_ctx, pending_after_broadcast_out
+            await self._dispatch_async_hooks(
+                room_id,
+                HookTrigger.AFTER_BROADCAST,
+                reentry,
+                reentry_ctx,
+                pending_after_broadcast_out,
             )
 
         # Persist side effects from hooks and broadcast (including reentry)
@@ -627,7 +654,9 @@ class InboundLockedMixin(HelpersMixin):
         )
 
         # AFTER_BROADCAST async hooks (deferred to run outside the room lock)
-        await self._dispatch_after_broadcast(room_id, event, context, pending_after_broadcast_out)
+        await self._dispatch_async_hooks(
+            room_id, HookTrigger.AFTER_BROADCAST, event, context, pending_after_broadcast_out
+        )
 
         # No separate room-state write here (RFC §10.1 step 15): every event —
         # the trigger, each reentry, and every blocked/injected event — bumped
@@ -706,35 +735,32 @@ class InboundLockedMixin(HelpersMixin):
         await self._persist_side_effects(room_id, tasks, observations, blocked_event, context)
         return InboundResult(event=blocked_event, blocked=True, reason=reason)
 
-    async def _dispatch_after_broadcast(
+    async def _dispatch_async_hooks(
         self,
         room_id: str,
+        trigger: HookTrigger,
         event: RoomEvent,
         context: RoomContext,
-        deferred: list[tuple[RoomEvent, RoomContext]] | None,
+        deferred: _AsyncHookSink | None,
     ) -> None:
-        """Run AFTER_BROADCAST async hooks, or defer them to *deferred* so the
+        """Run *trigger* async hooks, or defer them to *deferred* so the
         caller runs them once the room lock is released (RFC §10.1 — async
         hooks run after the lock, not under it; a slow hook must not hold the
         lock and block concurrent inbound processing for the room).
         """
         if deferred is not None:
-            deferred.append((event, context))
+            deferred.append((trigger, event, context))
         else:
-            await self._hook_engine.run_async_hooks(
-                room_id, HookTrigger.AFTER_BROADCAST, event, context
-            )
+            await self._hook_engine.run_async_hooks(room_id, trigger, event, context)
 
-    async def _run_deferred_after_broadcast(
-        self, room_id: str, pending: list[tuple[RoomEvent, RoomContext]]
-    ) -> None:
-        """Run the AFTER_BROADCAST hooks collected during locked processing,
+    async def _run_deferred_async_hooks(self, room_id: str, pending: _AsyncHookSink) -> None:
+        """Run the async-hook firings collected during locked processing,
         called by inbound/direct-injection callers once the room lock is
-        released (RFC §10.1). Order matches execution: reentry events first,
-        then the trigger event.
+        released (RFC §10.1). Order matches execution: mutation triggers and
+        reentry events first, then the trigger event.
         """
-        for ev, ctx in pending:
-            await self._hook_engine.run_async_hooks(room_id, HookTrigger.AFTER_BROADCAST, ev, ctx)
+        for trigger, ev, ctx in pending:
+            await self._hook_engine.run_async_hooks(room_id, trigger, ev, ctx)
 
     async def _dispatch_error_hook(
         self,
@@ -765,13 +791,20 @@ class InboundLockedMixin(HelpersMixin):
         for context, source, kwargs in pending:
             await self._fire_error_hook(room_id, context, source, **kwargs)
 
-    async def _apply_edit_delete_state(self, event: RoomEvent, target_event: RoomEvent) -> None:
+    async def _apply_edit_delete_state(
+        self, event: RoomEvent, target_event: RoomEvent
+    ) -> tuple[HookTrigger, RoomEvent] | None:
         """Apply RFC §10.3 state updates to an edit/delete target event.
 
         Invoked only after the edit/delete event has passed authorization
         *and* been allowed by BEFORE_BROADCAST hooks, so a blocked
         edit/delete never mutates the target. Uses the final (post-modify)
         event content so a ``modify`` hook on the edit is honored.
+
+        Returns the (mutation trigger, updated target) pair the caller must
+        fire once the room lock is released — ON_EVENT_UPDATED for an edit,
+        ON_EVENT_DELETED for a (soft) delete — or ``None`` when the content
+        was not an edit/delete payload.
         """
         content = event.content
         if isinstance(content, EditContent):
@@ -782,11 +815,14 @@ class InboundLockedMixin(HelpersMixin):
                 }
             )
             await self._store.update_event(updated)
-        elif isinstance(content, DeleteContent):
+            return (HookTrigger.ON_EVENT_UPDATED, updated)
+        if isinstance(content, DeleteContent):
             updated = target_event.model_copy(
                 update={"metadata": {**target_event.metadata, "deleted": True}}
             )
             await self._store.update_event(updated)
+            return (HookTrigger.ON_EVENT_DELETED, updated)
+        return None
 
     async def _deliver_injected_events(
         self,

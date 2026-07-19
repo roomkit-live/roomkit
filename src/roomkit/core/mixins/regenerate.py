@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundResult
-from roomkit.models.enums import ChannelCategory, EventStatus
+from roomkit.models.enums import ChannelCategory, EventStatus, HookTrigger
 from roomkit.models.event import RoomEvent
 
 if TYPE_CHECKING:
@@ -30,7 +30,7 @@ class RegenerateHost(Protocol):
 
     Cross-mixin methods (provided by other mixins in the MRO):
         _get_router: From :class:`InboundLockedMixin`.
-        _run_deferred_after_broadcast: From :class:`InboundLockedMixin`.
+        _run_deferred_async_hooks: From :class:`InboundLockedMixin`.
         _process_streaming_responses: From :class:`InboundStreamingMixin`.
     """
 
@@ -52,7 +52,7 @@ class RegenerateMixin(HelpersMixin):
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _get_router: Any  # see RegenerateHost
     _commit_event: Any  # see RegenerateHost
-    _run_deferred_after_broadcast: Any  # see RegenerateHost
+    _run_deferred_async_hooks: Any  # see RegenerateHost
     _process_streaming_responses: Any  # see RegenerateHost
 
     async def regenerate_response(self, room_id: str) -> InboundResult | None:
@@ -80,7 +80,7 @@ class RegenerateMixin(HelpersMixin):
         BEFORE_BROADCAST hooks) are not re-routed here.
         """
         pending_streams: list[Any] = []
-        pending_after_broadcast: list[tuple[RoomEvent, RoomContext]] = []
+        pending_async_hooks: list[tuple[HookTrigger, RoomEvent, RoomContext]] = []
         trigger: RoomEvent | None = None
 
         async with self._lock_manager.locked(room_id):
@@ -136,11 +136,11 @@ class RegenerateMixin(HelpersMixin):
                     }
                 )
                 await router.broadcast(reentry, reentry_binding, reentry_ctx)
-                pending_after_broadcast.append((reentry, reentry_ctx))
+                pending_async_hooks.append((HookTrigger.AFTER_BROADCAST, reentry, reentry_ctx))
 
         # Outside the room lock (RFC §10.1): AFTER_BROADCAST hooks for the new
         # response, then streaming delivery (which can take seconds).
-        await self._run_deferred_after_broadcast(room_id, pending_after_broadcast)
+        await self._run_deferred_async_hooks(room_id, pending_async_hooks)
         if pending_streams:
             await self._process_streaming_responses(pending_streams, room_id)
 

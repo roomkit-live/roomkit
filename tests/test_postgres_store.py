@@ -672,7 +672,57 @@ class TestPostgresStore:
         await store.update_event(event)
         sql, *params = mock_conn.execute.call_args[0]
         assert "blocked_by" in sql
-        assert params[-1] == "agent:sup"
+        assert params[6] == "agent:sup"
+
+    async def test_update_event_persists_source_columns(self) -> None:
+        # ``patch``-style sender reclassification (e.g. a task-result message
+        # rewritten as system) must reach the row — the UPDATE used to omit
+        # the source_* columns, silently dropping the new channel type.
+        store, mock_conn = _make_store_with_pool()
+        event = _make_event()
+        patched = event.model_copy(
+            update={
+                "source": event.source.model_copy(
+                    update={"channel_type": ChannelType.SYSTEM, "participant_id": "task_result"}
+                )
+            }
+        )
+        await store.update_event(patched)
+        sql, *params = mock_conn.execute.call_args[0]
+        assert "source_channel_type" in sql
+        assert "source_participant_id" in sql
+        assert "system" in params
+        assert "task_result" in params
+
+    async def test_delete_event_cascades_and_orders_root_first(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval.return_value = 1
+        mock_conn.fetch.return_value = [{"id": "reply-1"}, {"id": "evt-1"}]
+
+        deleted = await store.delete_event("room-1", "evt-1")
+
+        assert deleted == ["evt-1", "reply-1"]
+        sql = mock_conn.fetch.call_args[0][0]
+        assert "DELETE FROM events" in sql
+        assert "parent_event_id = $2" in sql
+
+    async def test_delete_event_without_cascade(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval.return_value = 1
+        mock_conn.fetch.return_value = [{"id": "evt-1"}]
+
+        deleted = await store.delete_event("room-1", "evt-1", cascade_replies=False)
+
+        assert deleted == ["evt-1"]
+        sql = mock_conn.fetch.call_args[0][0]
+        assert "parent_event_id" not in sql
+
+    async def test_delete_event_missing_root_deletes_nothing(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchval.return_value = None
+
+        assert await store.delete_event("room-1", "missing") == []
+        mock_conn.fetch.assert_not_called()
 
     async def test_list_events_basic(self) -> None:
         store, mock_conn = _make_store_with_pool()

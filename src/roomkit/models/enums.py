@@ -185,6 +185,9 @@ class HookTrigger(StrEnum):
     # Event pipeline (RFC §4.1)
     BEFORE_BROADCAST = "before_broadcast"
     AFTER_BROADCAST = "after_broadcast"
+    # Event mutation (RFC §10.3) — a persisted event's stored state changed
+    ON_EVENT_UPDATED = "on_event_updated"
+    ON_EVENT_DELETED = "on_event_deleted"
     # Channel lifecycle (RFC §4.1)
     ON_CHANNEL_ATTACHED = "on_channel_attached"
     ON_CHANNEL_DETACHED = "on_channel_detached"

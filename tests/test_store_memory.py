@@ -134,6 +134,51 @@ class TestEventOperations:
         assert await store.get_event_count("r1") == 1
 
 
+class TestDeleteEvent:
+    async def test_delete_cascades_to_replies(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        root = make_event(room_id="r1", body="root")
+        reply = make_event(room_id="r1", body="reply", parent_event_id=root.id)
+        other = make_event(room_id="r1", body="unrelated")
+        for event in (root, reply, other):
+            await store.add_event(event)
+
+        deleted = await store.delete_event("r1", root.id)
+
+        assert deleted == [root.id, reply.id]
+        assert await store.get_event(root.id) is None
+        assert await store.get_event(reply.id) is None
+        assert await store.get_event(other.id) is not None
+        assert [e.id for e in await store.list_events("r1")] == [other.id]
+
+    async def test_delete_without_cascade(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        root = make_event(room_id="r1", body="root")
+        reply = make_event(room_id="r1", body="reply", parent_event_id=root.id)
+        for event in (root, reply):
+            await store.add_event(event)
+
+        deleted = await store.delete_event("r1", root.id, cascade_replies=False)
+
+        assert deleted == [root.id]
+        assert await store.get_event(reply.id) is not None
+
+    async def test_delete_missing_or_foreign_returns_empty(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        event = make_event(room_id="r1")
+        await store.add_event(event)
+        assert await store.delete_event("r1", "missing") == []
+        assert await store.delete_event("r2", event.id) == []
+        assert await store.get_event(event.id) is not None
+
+    async def test_delete_releases_idempotency_key(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        event = make_event(room_id="r1", idempotency_key="key1")
+        await store.add_event(event)
+        await store.delete_event("r1", event.id)
+        assert await store.check_idempotency("r1", "key1") is False
+
+
 class TestBindingOperations:
     async def test_add_and_get(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
