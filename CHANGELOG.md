@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Atomic room-metadata patch API.** New
+  `ConversationStore.patch_room_metadata(room_id, patch, *, unset=())` merges
+  keys into a room's metadata (optionally removing `unset` keys first) without
+  rewriting the whole row. `update_room` is a full-row read-modify-write: a
+  caller holding a stale `Room` silently clobbers concurrent metadata patches
+  and regresses the `event_count` / `latest_index` / `timers` counters
+  maintained by `commit_event`. The base implementation is a documented
+  non-atomic fallback (sufficient for `InMemoryStore`); the Postgres store
+  overrides it with a single `(metadata - unset) || patch` JSONB update.
+  Returns the updated `Room`, or `None` when the room does not exist.
+
 ## [0.31.0] — 2026-07-19
 
 ### Added

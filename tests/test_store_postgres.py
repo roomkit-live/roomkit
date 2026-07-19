@@ -8,6 +8,7 @@ These tests require a running PostgreSQL instance. Set POSTGRES_DSN to run them:
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 import pytest
@@ -83,6 +84,50 @@ class TestRoomOperations:
         result = await store.get_room("r1")
         assert result is not None
         assert result.status == RoomStatus.CLOSED
+
+    async def test_patch_room_metadata_merges(self, store) -> None:
+        await store.create_room(Room(id="r1", metadata={"a": 1, "keep": "x"}))
+        result = await store.patch_room_metadata("r1", {"a": 2, "b": 3})
+        assert result is not None
+        assert result.metadata == {"a": 2, "keep": "x", "b": 3}
+        stored = await store.get_room("r1")
+        assert stored is not None
+        assert stored.metadata == {"a": 2, "keep": "x", "b": 3}
+
+    async def test_patch_room_metadata_unset(self, store) -> None:
+        await store.create_room(Room(id="r1", metadata={"drop": 1, "keep": 2}))
+        result = await store.patch_room_metadata("r1", {"new": 3}, unset=["drop"])
+        assert result is not None
+        assert result.metadata == {"keep": 2, "new": 3}
+
+    async def test_patch_room_metadata_nonexistent(self, store) -> None:
+        assert await store.patch_room_metadata("nope", {"a": 1}) is None
+
+    async def test_patch_room_metadata_does_not_touch_counters(self, store) -> None:
+        await store.create_room(Room(id="r1", metadata={"seed": True}))
+        for i in range(3):
+            await store.commit_event("r1", _make_event(body=f"m{i}"))
+        await store.patch_room_metadata("r1", {"title": "t"})
+        room = await store.get_room("r1")
+        assert room is not None
+        assert room.event_count == 3
+        assert room.latest_index == 2
+        assert room.metadata == {"seed": True, "title": "t"}
+
+    async def test_patch_room_metadata_concurrent_with_commits(self, store) -> None:
+        """Interleaved patches and commits across pool connections must not
+        clobber each other — the read-modify-write regression this API exists
+        to prevent. Every patched key and every committed event must survive.
+        """
+        await store.create_room(Room(id="r1"))
+        patches = [store.patch_room_metadata("r1", {f"k{i}": i}) for i in range(10)]
+        commits = [store.commit_event("r1", _make_event(body=f"m{i}")) for i in range(10)]
+        await asyncio.gather(*patches, *commits)
+        room = await store.get_room("r1")
+        assert room is not None
+        assert room.event_count == 10
+        assert room.latest_index == 9
+        assert {f"k{i}": i for i in range(10)}.items() <= room.metadata.items()
 
     async def test_delete_room(self, store) -> None:
         await store.create_room(Room(id="r1"))

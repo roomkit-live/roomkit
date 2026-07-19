@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
@@ -422,6 +422,37 @@ class PostgresStore(ConversationStore):
                     room.closed_at,
                 )
         return room
+
+    async def patch_room_metadata(
+        self,
+        room_id: str,
+        patch: dict[str, Any],
+        *,
+        unset: Sequence[str] = (),
+    ) -> Room | None:
+        """Atomic override: one partial UPDATE, no read-modify-write.
+
+        ``(metadata - unset) || patch`` runs inside the row update itself, so
+        concurrent patches merge instead of clobbering and the counters
+        maintained by ``commit_event`` are never touched.
+        """
+        with self._query_span("patch_room_metadata", "rooms"):
+            async with self._acquire() as conn:
+                row = await conn.fetchrow(
+                    "UPDATE rooms SET"
+                    " metadata = (metadata - $2::text[]) || $3::jsonb,"
+                    " updated_at = $4"
+                    " WHERE id = $1 RETURNING *",
+                    room_id,
+                    list(unset),
+                    # Pass the dict directly — the registered jsonb codec
+                    # encodes it; json.dumps() here would double-encode.
+                    patch,
+                    datetime.now(UTC),
+                )
+        if row is None:
+            return None
+        return _row_to_room(row)
 
     async def delete_room(self, room_id: str) -> bool:
         with self._query_span("delete_room", "rooms"):

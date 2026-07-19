@@ -34,6 +34,24 @@ class TestRoomOperations:
         assert result is not None
         assert result.status == RoomStatus.CLOSED
 
+    async def test_patch_room_metadata_merges(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1", metadata={"a": 1, "keep": "x"}))
+        result = await store.patch_room_metadata("r1", {"a": 2, "b": 3})
+        assert result is not None
+        assert result.metadata == {"a": 2, "keep": "x", "b": 3}
+        stored = await store.get_room("r1")
+        assert stored is not None
+        assert stored.metadata == {"a": 2, "keep": "x", "b": 3}
+
+    async def test_patch_room_metadata_unset(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1", metadata={"drop": 1, "keep": 2}))
+        result = await store.patch_room_metadata("r1", {"new": 3}, unset=["drop"])
+        assert result is not None
+        assert result.metadata == {"keep": 2, "new": 3}
+
+    async def test_patch_room_metadata_nonexistent(self, store: InMemoryStore) -> None:
+        assert await store.patch_room_metadata("nope", {"a": 1}) is None
+
     async def test_delete_room(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1"))
         assert await store.delete_room("r1") is True

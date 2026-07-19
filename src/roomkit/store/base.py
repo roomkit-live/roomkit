@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -39,6 +40,39 @@ class ConversationStore(ABC):
     async def update_room(self, room: Room) -> Room:
         """Update an existing room."""
         ...
+
+    async def patch_room_metadata(
+        self,
+        room_id: str,
+        patch: dict[str, Any],
+        *,
+        unset: Sequence[str] = (),
+    ) -> Room | None:
+        """Merge ``patch`` into a room's metadata, removing ``unset`` keys first.
+
+        The targeted alternative to ``update_room`` for metadata-only changes.
+        ``update_room`` rewrites the whole room row from an in-memory ``Room``
+        (read-modify-write), so a caller holding a stale object silently
+        clobbers concurrent metadata patches and regresses the counters
+        (``event_count`` / ``latest_index`` / ``timers``) advanced by
+        ``commit_event``. This method touches only the metadata keys it is
+        given and stamps ``updated_at``.
+
+        Returns the updated room, or ``None`` when *room_id* does not exist.
+
+        The default implementation is **NOT atomic** — it reads, merges, then
+        writes back via ``update_room``. Persistent backends that may be
+        shared across processes MUST override this with a single storage-level
+        partial update (e.g. a JSONB merge).
+        """
+        room = await self.get_room(room_id)
+        if room is None:
+            return None
+        metadata = {k: v for k, v in room.metadata.items() if k not in set(unset)}
+        metadata.update(patch)
+        return await self.update_room(
+            room.model_copy(update={"metadata": metadata, "updated_at": datetime.now(UTC)})
+        )
 
     @abstractmethod
     async def delete_room(self, room_id: str) -> bool:
