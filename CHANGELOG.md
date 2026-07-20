@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] — 2026-07-20
+
 ### Fixed
 
+- **`send_event` delivers a streaming AI response instead of dropping it.** A
+  directly-injected event that woke a streaming intelligence channel had its
+  response generated and then silently discarded — `send_event` ran the locked
+  pipeline but omitted the post-lock streaming-response drain the inbound path
+  performs. It now consumes `pending_streams` like `process_inbound`, so the
+  reply is persisted and delivered. Non-streaming providers were unaffected;
+  injections that don't wake an agent are a no-op.
 - **`regenerate_response` fires ON_ERROR on a non-streaming failure.** A failed
   regeneration with a non-streaming provider surfaced on `InboundResult.error`
   but rendered no error card; it now fires `ON_ERROR` too (parity with the

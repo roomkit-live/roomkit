@@ -548,6 +548,7 @@ class RoomKit(
             # validation/hooks/indexing/persistence model across entry points.
             pending_async_hooks: list[tuple[HookTrigger, RoomEvent, RoomContext]] = []
             pending_error_hooks: list[tuple[RoomContext, Any, dict[str, Any]]] = []
+            pending_streams: list[Any] = []
             async with self._lock_manager.locked(room_id):
                 context = await self._build_context(room_id)
                 result = await self._process_locked(
@@ -556,11 +557,17 @@ class RoomKit(
                     context,
                     pending_after_broadcast_out=pending_async_hooks,
                     pending_error_hooks_out=pending_error_hooks,
+                    pending_streams_out=pending_streams,
                 )
             event = result.event or event
             # AFTER_BROADCAST/mutation and ON_ERROR run outside the room lock (RFC §10.1)
             await self._run_deferred_async_hooks(room_id, pending_async_hooks)
             await self._run_deferred_error_hooks(room_id, pending_error_hooks)
+            # Streaming AI responses to a directly-injected event are consumed
+            # outside the lock, exactly like the inbound path — without this a
+            # streaming provider's reply is generated and then silently dropped.
+            if pending_streams:
+                await self._process_streaming_responses(pending_streams, room_id)
 
             telemetry.end_span(span_id)
         except Exception as exc:

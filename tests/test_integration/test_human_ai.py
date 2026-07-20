@@ -92,3 +92,27 @@ class TestHumanAI:
         # Second call should have more context
         second_call = ai_provider.calls[1]
         assert len(second_call.messages) >= 2
+
+    async def test_send_event_delivers_streaming_ai_response(self) -> None:
+        """A directly-injected event that wakes a STREAMING intelligence channel
+        gets its response consumed + persisted, not silently dropped (regression:
+        send_event omitted the streaming-response drain the inbound path runs)."""
+        kit = RoomKit()
+        sms = SMSChannel("sms1")
+        ai = AIChannel(
+            "ai1", provider=MockAIProvider(responses=["Streamed reply"], streaming=True)
+        )
+        kit.register_channel(sms)
+        kit.register_channel(ai)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+
+        await kit.send_event(room_id="r1", channel_id="sms1", content=TextContent(body="hi"))
+
+        events = await kit.store.list_events("r1")
+        ai_replies = [
+            e for e in events if e.source.channel_id == "ai1" and getattr(e.content, "body", "")
+        ]
+        assert len(ai_replies) == 1
+        assert ai_replies[0].content.body == "Streamed reply"
