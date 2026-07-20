@@ -233,9 +233,14 @@ class InboundMixin(HelpersMixin):
         await self._run_deferred_error_hooks(room_id, pending_error_hooks)
 
         # Handle streaming responses outside lock (TTS delivery can take seconds;
-        # holding the lock would block concurrent process_inbound calls)
+        # holding the lock would block concurrent process_inbound calls). A
+        # failure while consuming the response stream is surfaced on the result
+        # so a headless caller can react (interactive callers ignore it — the
+        # ON_ERROR hooks already fired an error card).
         if pending_streams:
-            await self._process_streaming_responses(pending_streams, room_id)
+            stream_error = await self._process_streaming_responses(pending_streams, room_id)
+            if stream_error is not None and result.error is None:
+                result.error = stream_error
 
         # Bind session for stateful channels (voice, persistent WS, etc.)
         # Runs AFTER hooks passed and the event was stored — a blocked

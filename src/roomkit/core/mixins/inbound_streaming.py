@@ -19,6 +19,7 @@ from roomkit.models.enums import (
 )
 from roomkit.models.event import RoomEvent, ToolCallContent
 from roomkit.models.streaming import ThinkingDeltaMarker, ToolCallEndMarker, ToolCallStartMarker
+from roomkit.providers.ai.base import ProviderError
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -32,10 +33,16 @@ logger = logging.getLogger("roomkit.framework")
 
 @dataclass
 class _StreamingResult:
-    """Result of handling a streaming response."""
+    """Result of handling a streaming response.
+
+    ``error`` is the exception raised while consuming the response stream
+    (provider/transport failure), captured so the inbound pipeline can surface
+    it to a headless caller. ``None`` when the stream completed.
+    """
 
     events: list[RoomEvent] = field(default_factory=list)
     delivered_to: set[str] = field(default_factory=set)
+    error: Exception | None = None
 
 
 @runtime_checkable
@@ -256,6 +263,7 @@ class InboundStreamingMixin(HelpersMixin):
                 yield persisted_events[-1]
 
         delivered_to: set[str] = set()
+        stream_error: Exception | None = None
         if streaming_targets:
             channel, binding = streaming_targets[0]  # V1: single target
             placeholder = RoomEvent(
@@ -271,7 +279,10 @@ class InboundStreamingMixin(HelpersMixin):
                 await channel.deliver_stream(segment_stream(), placeholder, binding, context)
                 delivered_to.add(binding.channel_id)
             except Exception as exc:
-                logger.exception("Streaming delivery to %s failed", binding.channel_id)
+                stream_error = exc
+                self._log_stream_failure(
+                    exc, f"streaming delivery to {binding.channel_id}", room_id
+                )
                 # Persist any text accumulated before the error
                 await _persist_text_segment()
                 await self._fire_error_hook(
@@ -288,17 +299,19 @@ class InboundStreamingMixin(HelpersMixin):
                 )
         else:
             # No streaming targets (e.g. a PII-locked / edge agent whose stream
-            # send fn was withheld) — still consume the stream to drive
+            # send fn was withheld, or a headless one-shot call whose only
+            # transport is also the source) — still consume the stream to drive
             # persistence via markers. Under the SAME error contract as the
             # streaming branch above: a failure (context overflow, provider
             # error) must fire ON_ERROR so the error reaches the ON_ERROR hooks
-            # (which classify + surface it), instead of propagating raw and
-            # vanishing with no card.
+            # (which classify + surface it) AND be returned to the caller via
+            # ``_StreamingResult.error``, instead of vanishing with no card.
             try:
                 async for _ in segment_stream():
                     pass
             except Exception as exc:
-                logger.exception("Stream consumption (no targets) failed for room %s", room_id)
+                stream_error = exc
+                self._log_stream_failure(exc, "stream consumption (no targets)", room_id)
                 await _persist_text_segment()
                 await self._fire_error_hook(
                     room_id,
@@ -313,10 +326,27 @@ class InboundStreamingMixin(HelpersMixin):
                     parent_event_id=parent_event_id,
                 )
 
-        if not persisted_events:
+        if not persisted_events and stream_error is None:
             return None
 
-        return _StreamingResult(events=persisted_events, delivered_to=delivered_to)
+        return _StreamingResult(
+            events=persisted_events, delivered_to=delivered_to, error=stream_error
+        )
+
+    @staticmethod
+    def _log_stream_failure(exc: Exception, what: str, room_id: str) -> None:
+        """Log a streaming-response failure at the right verbosity.
+
+        A ``ProviderError`` (backend unreachable, 5xx, timeout, context
+        overflow) is a transient/expected condition, not a code defect — one
+        WARNING line without a traceback keeps log-based alerting quiet, and the
+        error is also returned to the caller and delivered to ``ON_ERROR``
+        hooks. Any other exception is unexpected and keeps its full traceback.
+        """
+        if isinstance(exc, ProviderError):
+            logger.warning("%s failed for room %s: %s", what, room_id, exc)
+        else:
+            logger.exception("%s failed for room %s", what, room_id)
 
     def _find_streaming_targets(
         self,
@@ -348,18 +378,25 @@ class InboundStreamingMixin(HelpersMixin):
         self,
         pending_streams: list[Any],
         room_id: str,
-    ) -> None:
+    ) -> Exception | None:
         """Handle streaming responses outside the room lock.
 
         Streaming delivery (TTS playback) can take seconds. Running it outside
         the lock allows other process_inbound calls to proceed concurrently,
         preventing continuous STT echo from being queued behind the lock.
+
+        Returns the first response-stream failure encountered (so the inbound
+        pipeline can surface it to a headless caller), or ``None`` when every
+        stream completed.
         """
         router = self._get_router()
         context = await self._build_context(room_id)
 
+        first_error: Exception | None = None
         for sr in pending_streams:
             sr_result = await self._handle_streaming_response(router, sr, room_id, context)
+            if sr_result and sr_result.error and first_error is None:
+                first_error = sr_result.error
             if sr_result and sr_result.events:
                 # Broadcast all persisted segments to non-streaming channels.
                 # Tool call events are safe to broadcast — the AI channel's
@@ -399,3 +436,5 @@ class InboundStreamingMixin(HelpersMixin):
                             seg_event,
                             context,
                         )
+
+        return first_error

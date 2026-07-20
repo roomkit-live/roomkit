@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from roomkit.models.enums import EventType, Visibility
 from roomkit.models.event import EventContent, RoomEvent
@@ -53,11 +53,21 @@ class InboundMessage(BaseModel):
 
 
 class InboundResult(BaseModel):
-    """Result of processing an inbound message."""
+    """Result of processing an inbound message.
+
+    ``error`` carries a generation/transport failure raised while consuming the
+    intelligence channel's streaming response, so a headless caller (no
+    streaming target to render an error card) can observe it and react —
+    instead of the failure vanishing after ``ON_ERROR`` fires. ``None`` on
+    success. Interactive callers ignore it; the ``ON_ERROR`` hooks still fire.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     event: RoomEvent | None = None
     blocked: bool = False
     reason: str | None = None
+    error: Exception | None = None
 
 
 class DeliveryResult(BaseModel):
