@@ -30,6 +30,7 @@ from uuid import uuid4
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
+    ChannelCategory,
     ChannelType,
     EventStatus,
     EventType,
@@ -165,6 +166,22 @@ class HelpersMixin:
         await self._hook_engine.run_async_hooks(
             room_id, HookTrigger.ON_ERROR, error_event, context
         )
+
+    @staticmethod
+    def _first_intelligence_error(broadcast_result: Any, context: RoomContext) -> Exception | None:
+        """The first intelligence-channel generation failure from a broadcast,
+        as the live exception (cause chain intact) so a headless caller can
+        classify it. Transport-delivery failures are excluded — they are not
+        turn-level agent errors.
+        """
+        errors_exc = getattr(broadcast_result, "errors_exc", {})
+        for binding in context.bindings:
+            if binding.category != ChannelCategory.INTELLIGENCE:
+                continue
+            exc = errors_exc.get(binding.channel_id)
+            if exc is not None:
+                return exc
+        return None
 
     # -- Internal helpers --
 

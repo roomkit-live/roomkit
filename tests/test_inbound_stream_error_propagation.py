@@ -24,7 +24,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, InboundResult
 from roomkit.models.enums import ChannelCategory, HookExecution, HookTrigger
 from roomkit.models.event import RoomEvent, TextContent
-from roomkit.providers.ai.base import AIContext, ProviderError, StreamEvent
+from roomkit.providers.ai.base import AIContext, AIResponse, ProviderError, StreamEvent
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.test_framework import SimpleChannel
 
@@ -143,3 +143,74 @@ async def test_unexpected_error_keeps_traceback(caplog) -> None:
     record = stream_records[0]
     assert record.levelno == logging.ERROR
     assert record.exc_info is not None  # traceback preserved for diagnosis
+
+
+# ── Non-streaming generation path (the LUG-204 twin) ──────────────────────
+
+
+class _GenerateRaisingProvider(MockAIProvider):
+    """Non-streaming provider whose generate() raises (no streaming support)."""
+
+    def __init__(self, exc: Exception) -> None:
+        super().__init__(streaming=False)
+        self._exc = exc
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        raise self._exc
+
+
+async def test_non_streaming_provider_error_propagates_with_cause() -> None:
+    """A non-streaming AI failure reaches InboundResult.error (cause intact),
+    symmetric with the streaming path — a headless caller reading the store is
+    no longer misled by an empty answer with no signal."""
+    cause = ConnectionError("[Errno -2] Name or service not known")
+    exc = ProviderError("provider request failed", provider="mock")
+    exc.__cause__ = cause
+    result, errors = await _run_headless_turn(
+        AIChannel("ai1", provider=_GenerateRaisingProvider(exc))
+    )
+
+    assert result.error is exc
+    assert isinstance(result.error.__cause__, ConnectionError)
+    assert len(errors) == 1  # ON_ERROR card still fires
+
+
+async def test_non_streaming_provider_error_logs_warning_no_traceback(caplog) -> None:
+    """The router logs a non-streaming ProviderError as WARNING without a stack,
+    matching the streaming path's _log_stream_failure."""
+    exc = ProviderError("connection refused", provider="mock")
+    with caplog.at_level(logging.WARNING, logger="roomkit.event_router"):
+        await _run_headless_turn(AIChannel("ai1", provider=_GenerateRaisingProvider(exc)))
+
+    target_records = [r for r in caplog.records if "Processing target" in r.message]
+    assert len(target_records) == 1
+    assert target_records[0].levelno == logging.WARNING
+    assert target_records[0].exc_info is None
+
+
+# ── regenerate_response surfaces the same error ───────────────────────────
+
+
+async def test_regenerate_surfaces_stream_error() -> None:
+    """regenerate_response returns the failure on InboundResult.error instead of
+    a success-looking result (it used to discard the stream error)."""
+    kit = RoomKit()
+    sms = SimpleChannel("sms1")
+    ai = AIChannel("ai1", provider=_StreamRaisingProvider(_provider_error_from_connect()))
+    kit.register_channel(sms)
+    kit.register_channel(ai)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+
+    # First inbound persists the transport message regenerate re-runs on (the AI
+    # fails, which is the already-tested inbound path).
+    await kit.process_inbound(
+        InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="go"))
+    )
+
+    result = await kit.regenerate_response("r1")
+    await kit.close()
+
+    assert result is not None
+    assert result.error is not None

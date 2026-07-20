@@ -82,6 +82,7 @@ class RegenerateMixin(HelpersMixin):
         pending_streams: list[Any] = []
         pending_async_hooks: list[tuple[HookTrigger, RoomEvent, RoomContext]] = []
         trigger: RoomEvent | None = None
+        broadcast_error: Exception | None = None
 
         async with self._lock_manager.locked(room_id):
             context = await self._build_context(room_id)
@@ -115,6 +116,11 @@ class RegenerateMixin(HelpersMixin):
             )
 
             pending_streams.extend(broadcast_result.streaming_responses)
+            # A non-streaming intelligence failure surfaces as a broadcast error;
+            # capture it so the regenerated turn reports it on InboundResult.error
+            # like the inbound path (the streaming path returns its own error via
+            # _process_streaming_responses below).
+            broadcast_error = self._first_intelligence_error(broadcast_result, context)
 
             # Non-streaming providers return the response as reentry events;
             # persist and broadcast them so transports receive the new answer.
@@ -141,7 +147,8 @@ class RegenerateMixin(HelpersMixin):
         # Outside the room lock (RFC §10.1): AFTER_BROADCAST hooks for the new
         # response, then streaming delivery (which can take seconds).
         await self._run_deferred_async_hooks(room_id, pending_async_hooks)
+        stream_error: Exception | None = None
         if pending_streams:
-            await self._process_streaming_responses(pending_streams, room_id)
+            stream_error = await self._process_streaming_responses(pending_streams, room_id)
 
-        return InboundResult(event=trigger)
+        return InboundResult(event=trigger, error=stream_error or broadcast_error)

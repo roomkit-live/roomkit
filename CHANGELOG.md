@@ -11,23 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Response-stream failures reach the caller via `InboundResult.error`.**
-  When consuming an intelligence channel's streaming response raises
-  (provider/transport failure, context overflow), `process_inbound` now returns
-  the exception on the new `InboundResult.error` field (cause chain intact), in
-  addition to firing `ON_ERROR`. A headless one-shot caller with no streaming
+- **Turn failures reach the caller via `InboundResult.error`.** When an
+  intelligence channel's response fails — while consuming a streaming response,
+  or raised by a non-streaming provider (`generate`) — `process_inbound` now
+  returns the exception on the new `InboundResult.error` field (cause chain
+  intact), in addition to firing `ON_ERROR`. A headless caller with no streaming
   target — which previously saw the failure fire `ON_ERROR` and then vanish,
   leaving `process_inbound` to return an empty result — can now observe and
-  classify it. Interactive callers ignore the field; the `ON_ERROR` error-card
+  classify it. Both the streaming and non-streaming paths surface identically
+  (`BroadcastResult.errors_exc` carries the live exception per channel, not just
+  `str(exc)`). Interactive callers ignore the field; the `ON_ERROR` error-card
   behaviour is unchanged.
+- **`regenerate_response` surfaces the same error.** A failure while
+  regenerating a turn is returned on the result's `error` instead of a
+  success-looking `InboundResult` — it used to discard the stream error and
+  never read the broadcast error.
 
 ### Changed
 
-- **Stream-consumption failures log at the right verbosity.** A `ProviderError`
-  (backend unreachable, 5xx, timeout, context overflow) — an expected transient
-  now returned to the caller and delivered to `ON_ERROR` — is logged as a single
+- **Turn-failure logging at the right verbosity.** A `ProviderError` (backend
+  unreachable, 5xx, timeout, context overflow) — an expected transient now
+  returned to the caller and delivered to `ON_ERROR` — is logged as a single
   WARNING line without a traceback, instead of a full `logger.exception` ERROR.
-  Any other exception is unexpected and keeps its traceback.
+  Applies to both the streaming consumption path (`_handle_streaming_response`)
+  and the broadcast path (`event_router`, non-streaming generation). Any other
+  exception is unexpected and keeps its traceback.
 
 ## [0.32.0] — 2026-07-19
 

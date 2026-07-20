@@ -37,8 +37,24 @@ from roomkit.models.event import (
     VideoContent,
 )
 from roomkit.models.task import Observation, Task
+from roomkit.providers.ai.base import ProviderError
 
 logger = logging.getLogger("roomkit.event_router")
+
+
+def _log_target_failure(what: str, channel_id: str, exc: Exception, extra: dict[str, Any]) -> None:
+    """Log a broadcast-target failure at the right verbosity.
+
+    A ``ProviderError`` (backend unreachable, 5xx, timeout, context overflow) is
+    an expected transient — one WARNING line without a traceback, matching the
+    streaming path's ``_log_stream_failure``. The exception is captured on the
+    ``_TargetResult`` regardless, so it still reaches the caller. Anything else
+    is unexpected and keeps its full traceback.
+    """
+    if isinstance(exc, ProviderError):
+        logger.warning("%s %s failed: %s", what, channel_id, exc, extra=extra)
+    else:
+        logger.exception("%s %s failed", what, channel_id, extra=extra)
 
 
 @dataclass
@@ -65,6 +81,11 @@ class BroadcastResult:
     metadata_updates: dict[str, Any] = field(default_factory=dict)
     blocked_events: list[RoomEvent] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
+    # Same failures as ``errors`` but the live exception object per channel, so a
+    # caller (e.g. the inbound pipeline surfacing a non-streaming generation
+    # failure on ``InboundResult.error``) can classify it with the cause chain
+    # intact — ``errors`` only carries ``str(exc)``.
+    errors_exc: dict[str, Exception] = field(default_factory=dict)
 
 
 @dataclass
@@ -76,6 +97,7 @@ class _TargetResult:
     delivery_output: ChannelOutput | None = None
     streaming_response: StreamingResponse | None = None
     error: str | None = None
+    error_exc: Exception | None = None
     reentry_events: list[RoomEvent] = field(default_factory=list)
     blocked_events: list[RoomEvent] = field(default_factory=list)
     observations: list[Observation] = field(default_factory=list)
@@ -296,10 +318,12 @@ class EventRouter:
                         except Exception as exc:
                             breaker.record_failure()
                             tr.error = str(exc)
-                            logger.exception(
-                                "Delivery to %s failed",
+                            tr.error_exc = exc
+                            _log_target_failure(
+                                "Delivery to",
                                 binding.channel_id,
-                                extra={
+                                exc,
+                                {
                                     "room_id": event.room_id,
                                     "channel_id": binding.channel_id,
                                     "event_id": event.id,
@@ -369,10 +393,12 @@ class EventRouter:
 
             except Exception as exc:
                 tr.error = str(exc)
-                logger.exception(
-                    "Processing target %s failed",
+                tr.error_exc = exc
+                _log_target_failure(
+                    "Processing target",
                     binding.channel_id,
-                    extra={
+                    exc,
+                    {
                         "room_id": event.room_id,
                         "channel_id": binding.channel_id,
                         "event_id": event.id,
@@ -395,6 +421,8 @@ class EventRouter:
                 result.streaming_responses.append(tr.streaming_response)
             if tr.error is not None:
                 result.errors[tr.channel_id] = tr.error
+            if tr.error_exc is not None:
+                result.errors_exc[tr.channel_id] = tr.error_exc
             result.reentry_events.extend(tr.reentry_events)
             result.blocked_events.extend(tr.blocked_events)
             result.observations.extend(tr.observations)

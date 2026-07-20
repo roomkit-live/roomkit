@@ -226,14 +226,15 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                     exc,
                 )
             else:
-                logger.exception(
-                    "AI provider error for channel %s",
+                # Connect-refused/timeout (status None), rate-limit (429), other
+                # 4xx: expected transients — one WARNING line, no traceback (the
+                # error is re-raised and surfaced to the caller regardless).
+                logger.warning(
+                    "AI provider error (channel=%s, provider=%s, status=%s): %s",
                     self.channel_id,
-                    extra={
-                        "provider": exc.provider,
-                        "retryable": exc.retryable,
-                        "status_code": exc.status_code,
-                    },
+                    exc.provider,
+                    exc.status_code,
+                    exc,
                 )
             # Propagate so the broadcast path fires ON_ERROR — mirrors the
             # streaming path (which raises out of stream consumption). Swallowing

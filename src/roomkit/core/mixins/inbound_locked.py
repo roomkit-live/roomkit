@@ -664,7 +664,14 @@ class InboundLockedMixin(HelpersMixin):
         # the counters can never diverge (§14.3).
         await self._emit_framework_event("event_processed", room_id=room_id, event_id=event.id)
 
-        return InboundResult(event=event)
+        # Surface a non-streaming intelligence failure to the caller (symmetry
+        # with the streaming path's ``InboundResult.error``): ON_ERROR fired
+        # above, but a headless caller reading the store — not the hooks — would
+        # otherwise see an empty answer with no signal.
+        return InboundResult(
+            event=event,
+            error=self._first_intelligence_error(broadcast_result, context),
+        )
 
     async def _handle_block(
         self,
