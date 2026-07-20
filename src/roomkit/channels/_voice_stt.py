@@ -680,8 +680,23 @@ class VoiceSTTMixin:
             else:
                 await self._route_text(session, final_text, room_id)
 
-        except Exception:
+        except Exception as exc:
             logger.exception("Error processing continuous STT transcription")
+            # Emit stt_error like the VAD twin (_process_speech_end), so event
+            # consumers see a continuous-mode routing failure too.
+            if self._framework:
+                try:
+                    await self._framework._emit_framework_event(
+                        "stt_error",
+                        room_id=room_id,
+                        data={
+                            "session_id": session.id,
+                            "provider": self._stt.name if self._stt else "unknown",
+                            "error": str(exc),
+                        },
+                    )
+                except Exception:
+                    logger.exception("Error emitting stt_error")
         finally:
             if _vs_token is not None:
                 reset_span(_vs_token)

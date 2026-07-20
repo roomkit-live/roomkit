@@ -244,6 +244,10 @@ class DeepgramSTTProvider(STTProvider):
 
         # Results queue — SDK callbacks push, our async generator pulls
         result_queue: asyncio.Queue[TranscriptionResult | None] = asyncio.Queue()
+        # Last stream error from the SDK's on_error callback. The stream then
+        # closes via on_close; we raise it so the consumer marks the stream
+        # failed (and reconnects) instead of seeing a clean, empty end.
+        stream_error: list[Any] = []
 
         def on_message(message: Any) -> None:
             """Handle transcription results from the SDK."""
@@ -270,6 +274,7 @@ class DeepgramSTTProvider(STTProvider):
 
         def on_error(error: Any) -> None:
             logger.error("Deepgram stream error: %s", error)
+            stream_error.append(error)
 
         def on_close(_: Any) -> None:
             result_queue.put_nowait(None)  # sentinel
@@ -317,6 +322,8 @@ class DeepgramSTTProvider(STTProvider):
                     if result is None:
                         break
                     yield result
+                if stream_error:
+                    raise RuntimeError(f"Deepgram stream error: {stream_error[-1]}")
             finally:
                 sender_task.cancel()
                 listen_task.cancel()

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`regenerate_response` fires ON_ERROR on a non-streaming failure.** A failed
+  regeneration with a non-streaming provider surfaced on `InboundResult.error`
+  but rendered no error card; it now fires `ON_ERROR` too (parity with the
+  inbound path). The streaming path already fires its own, so the two never
+  double up.
+- **Voice failures surface as events, not just log lines.** A TTS provider
+  without `synthesize_stream` now emits `tts_error` (not only an ERROR log); a
+  continuous-mode STT routing failure emits `stt_error` like the VAD path; and
+  the Deepgram stream raises on an SDK `on_error` so the consumer marks the
+  stream failed and reconnects instead of seeing a clean, empty end.
+
 ## [0.34.0] — 2026-07-20
 
 ### Changed

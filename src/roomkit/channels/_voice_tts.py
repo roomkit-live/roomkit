@@ -548,12 +548,23 @@ class VoiceTTSMixin:
             if self._pipeline is not None or getattr(self, "_outbound_audio_taps", []):
                 audio_stream = self._wrap_outbound(session, audio_stream)
             await self._backend.send_audio(session, audio_stream)
-        except NotImplementedError:
+        except NotImplementedError as exc:
             logger.error(
                 "TTS provider %s does not support streaming synthesis; "
                 "voice channels require synthesize_stream(). No audio sent.",
                 tts_name,
             )
+            # Surface the misconfiguration as an event too, not only in the logs,
+            # so event-driven consumers see it like any other TTS failure.
+            if self._framework is not None:
+                try:
+                    await self._framework._emit_framework_event(
+                        "tts_error",
+                        room_id=room_id,
+                        data={"provider": tts_name, "error": str(exc)},
+                    )
+                except Exception:
+                    logger.exception("Error emitting tts_error")
         except Exception:
             if telemetry is not None and span_id is not None:
                 telemetry.end_span(span_id, status="error", error_message="TTS failed")

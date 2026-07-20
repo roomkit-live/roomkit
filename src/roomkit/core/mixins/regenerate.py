@@ -10,7 +10,7 @@ from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, HelpersMixin
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundResult
 from roomkit.models.enums import ChannelCategory, EventStatus, HookTrigger
-from roomkit.models.event import RoomEvent
+from roomkit.models.event import EventSource, RoomEvent
 
 if TYPE_CHECKING:
     from roomkit.core.locks import RoomLockManager
@@ -83,6 +83,7 @@ class RegenerateMixin(HelpersMixin):
         pending_async_hooks: list[tuple[HookTrigger, RoomEvent, RoomContext]] = []
         trigger: RoomEvent | None = None
         broadcast_error: Exception | None = None
+        error_source: EventSource | None = None
 
         async with self._lock_manager.locked(room_id):
             context = await self._build_context(room_id)
@@ -116,11 +117,21 @@ class RegenerateMixin(HelpersMixin):
             )
 
             pending_streams.extend(broadcast_result.streaming_responses)
-            # A non-streaming intelligence failure surfaces as a broadcast error;
-            # capture it so the regenerated turn reports it on InboundResult.error
-            # like the inbound path (the streaming path returns its own error via
-            # _process_streaming_responses below).
-            broadcast_error = self._first_intelligence_error(broadcast_result, context)
+            # A non-streaming intelligence failure surfaces as a broadcast error.
+            # Capture it (reported on InboundResult.error) and its source so an
+            # ON_ERROR card fires after the lock — parity with _process_broadcast.
+            # The streaming path fires its own ON_ERROR via
+            # _process_streaming_responses below, so the two never double up.
+            for b in context.bindings:
+                if b.category != ChannelCategory.INTELLIGENCE:
+                    continue
+                exc = broadcast_result.errors_exc.get(b.channel_id)
+                if exc is not None:
+                    broadcast_error = exc
+                    error_source = EventSource(
+                        channel_id=b.channel_id, channel_type=b.channel_type
+                    )
+                    break
 
             # Non-streaming providers return the response as reentry events;
             # persist and broadcast them so transports receive the new answer.
@@ -147,6 +158,21 @@ class RegenerateMixin(HelpersMixin):
         # Outside the room lock (RFC §10.1): AFTER_BROADCAST hooks for the new
         # response, then streaming delivery (which can take seconds).
         await self._run_deferred_async_hooks(room_id, pending_async_hooks)
+        # A non-streaming regeneration failure fires ON_ERROR here (the streaming
+        # path fires its own inside _process_streaming_responses), so the host
+        # renders an error card for a failed regenerate on either path.
+        if broadcast_error is not None and error_source is not None and trigger is not None:
+            await self._fire_error_hook(
+                room_id,
+                context,
+                error_source,
+                error=str(broadcast_error),
+                error_type=type(broadcast_error).__name__,
+                error_category="generation",
+                chain_depth=trigger.chain_depth + 1,
+                visibility=trigger.response_visibility or "all",
+                parent_event_id=trigger.parent_event_id,
+            )
         stream_error: Exception | None = None
         if pending_streams:
             stream_error = await self._process_streaming_responses(pending_streams, room_id)

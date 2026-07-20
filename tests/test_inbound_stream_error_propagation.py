@@ -215,3 +215,46 @@ async def test_regenerate_surfaces_stream_error() -> None:
 
     assert result is not None
     assert result.error is not None
+
+
+async def test_regenerate_non_streaming_failure_fires_on_error() -> None:
+    """A non-streaming provider failure during regenerate fires ON_ERROR (parity
+    with the inbound path) so the host renders an error card, not just surfaces
+    it on InboundResult.error."""
+    kit = RoomKit()
+    sms = SimpleChannel("sms1")
+    ai = AIChannel(
+        "ai1", provider=_GenerateRaisingProvider(ProviderError("boom", provider="mock"))
+    )
+    kit.register_channel(sms)
+    kit.register_channel(ai)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+
+    errors: list[RoomEvent] = []
+
+    async def on_error(event: RoomEvent, _ctx: RoomContext) -> None:
+        errors.append(event)
+
+    kit.hook_engine.register(
+        HookRegistration(
+            trigger=HookTrigger.ON_ERROR,
+            execution=HookExecution.ASYNC,
+            fn=on_error,
+            name="test_capture_error",
+        )
+    )
+
+    await kit.process_inbound(
+        InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="go"))
+    )
+    await asyncio.sleep(0.05)
+    before = len(errors)  # the inbound failure already fired one
+
+    result = await kit.regenerate_response("r1")
+    await asyncio.sleep(0.05)
+    await kit.close()
+
+    assert result is not None and result.error is not None
+    assert len(errors) == before + 1  # regenerate fired its own ON_ERROR card
