@@ -311,7 +311,9 @@ class InboundStreamingMixin(HelpersMixin):
                     pass
             except Exception as exc:
                 stream_error = exc
-                self._log_stream_failure(exc, "stream consumption (no targets)", room_id)
+                self._log_stream_failure(
+                    exc, "stream consumption (no targets)", room_id, headless=True
+                )
                 await _persist_text_segment()
                 await self._fire_error_hook(
                     room_id,
@@ -334,17 +336,23 @@ class InboundStreamingMixin(HelpersMixin):
         )
 
     @staticmethod
-    def _log_stream_failure(exc: Exception, what: str, room_id: str) -> None:
+    def _log_stream_failure(
+        exc: Exception, what: str, room_id: str, *, headless: bool = False
+    ) -> None:
         """Log a streaming-response failure at the right verbosity.
 
         A ``ProviderError`` (backend unreachable, 5xx, timeout, context
-        overflow) is a transient/expected condition, not a code defect — one
-        WARNING line without a traceback keeps log-based alerting quiet, and the
-        error is also returned to the caller and delivered to ``ON_ERROR``
-        hooks. Any other exception is unexpected and keeps its full traceback.
+        overflow) is a transient/expected condition, not a code defect — no
+        traceback, and the error is also returned to the caller and delivered to
+        ``ON_ERROR`` hooks. When there is no streaming target (``headless`` — a
+        one-shot programmatic caller that owns its own logging), a framework
+        WARNING would just duplicate the caller's line, so it drops to DEBUG;
+        with a streaming target the framework WARNING is the operational record.
+        Any other exception is unexpected and keeps its full traceback.
         """
         if isinstance(exc, ProviderError):
-            logger.warning("%s failed for room %s: %s", what, room_id, exc)
+            level = logging.DEBUG if headless else logging.WARNING
+            logger.log(level, "%s failed for room %s: %s", what, room_id, exc)
         else:
             logger.exception("%s failed for room %s", what, room_id)
 

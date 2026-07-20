@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] — 2026-07-20
+
+### Changed
+
+- **A headless turn failure logs once, at the host's layer.** When there is no
+  streaming target — a one-shot programmatic caller that reads
+  `InboundResult.error` and logs it itself — a `ProviderError` now logs at DEBUG
+  in the framework instead of WARNING, so the framework line no longer
+  duplicates the caller's WARNING for the same incident. With a streaming target
+  (interactive) the framework WARNING is unchanged; unexpected errors still keep
+  their traceback.
+
 ## [0.33.0] — 2026-07-20
 
 ### Added

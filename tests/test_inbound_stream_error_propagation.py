@@ -116,10 +116,11 @@ async def test_successful_turn_has_no_error() -> None:
     assert errors == []
 
 
-async def test_provider_error_logged_without_traceback(caplog) -> None:
-    """A ProviderError is one WARNING line, no traceback; log-based alerting
-    stays quiet and the caller owns the reaction."""
-    with caplog.at_level(logging.WARNING, logger="roomkit.framework"):
+async def test_headless_provider_error_logged_at_debug_no_traceback(caplog) -> None:
+    """With no streaming target the error is returned to the caller, which owns
+    logging — the framework line drops to DEBUG (no traceback) so it doesn't
+    duplicate the caller's WARNING for the same incident."""
+    with caplog.at_level(logging.DEBUG, logger="roomkit.framework"):
         await _run_headless_turn(
             AIChannel("ai1", provider=_StreamRaisingProvider(_provider_error_from_connect()))
         )
@@ -127,7 +128,7 @@ async def test_provider_error_logged_without_traceback(caplog) -> None:
     stream_records = [r for r in caplog.records if "stream consumption (no targets)" in r.message]
     assert len(stream_records) == 1
     record = stream_records[0]
-    assert record.levelno == logging.WARNING
+    assert record.levelno == logging.DEBUG
     assert record.exc_info is None  # no traceback attached
 
 
