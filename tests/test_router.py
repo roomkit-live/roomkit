@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from roomkit.channels.base import Channel
 from roomkit.core.event_router import EventRouter
 from roomkit.models.channel import (
@@ -65,6 +67,40 @@ class RespondingChannel(Channel):
             chain_depth=self._chain_depth,
         )
         return ChannelOutput(responded=True, response_events=[resp])
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        return ChannelOutput.empty()
+
+
+class StreamingRespondingChannel(Channel):
+    """Intelligence channel that answers with a streaming response.
+
+    ``stream_started`` flips only once the generator is iterated, i.e. once the
+    provider round-trip runs — so a muted channel that suppresses the stream
+    must leave it False.
+    """
+
+    channel_type = ChannelType.AI
+    category = ChannelCategory.INTELLIGENCE
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.stream_started = False
+
+    async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
+        raise NotImplementedError
+
+    async def on_event(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        return ChannelOutput(responded=True, response_stream=self._stream())
+
+    async def _stream(self) -> AsyncIterator[str]:
+        self.stream_started = True
+        yield "AI"
+        yield " response"
 
     async def deliver(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
@@ -156,6 +192,52 @@ class TestMuteBlocking:
         assert "ch2" in result.outputs
         # But response_events are suppressed (no reentry)
         assert len(result.reentry_events) == 0
+
+    async def test_muted_target_streaming_response_suppressed(self) -> None:
+        """A muted channel's streaming voice is silenced too — not just its
+        non-streaming response_events. Without this, a muted intelligence
+        channel's stream is captured and delivered, so a team-channel message
+        with no @mention still wakes the agent."""
+        src = StubChannel("src")
+        ai = StreamingRespondingChannel("ai")
+        router = _make_router({"src": src, "ai": ai})
+
+        b_src = make_binding("src")
+        b_ai = ChannelBinding(
+            channel_id="ai",
+            room_id="test-room",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+            muted=True,
+        )
+
+        event = make_event(channel_id="src")
+        result = await router.broadcast(event, b_src, _make_context([b_src, b_ai]))
+
+        # No stream is handed to the caller...
+        assert result.streaming_responses == []
+        # ...and the generator was never iterated — no provider round-trip.
+        assert ai.stream_started is False
+
+    async def test_unmuted_target_streaming_response_delivered(self) -> None:
+        """Positive control: an unmuted intelligence channel still streams."""
+        src = StubChannel("src")
+        ai = StreamingRespondingChannel("ai")
+        router = _make_router({"src": src, "ai": ai})
+
+        b_src = make_binding("src")
+        b_ai = ChannelBinding(
+            channel_id="ai",
+            room_id="test-room",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+        )
+
+        event = make_event(channel_id="src")
+        result = await router.broadcast(event, b_src, _make_context([b_src, b_ai]))
+
+        assert len(result.streaming_responses) == 1
+        assert result.streaming_responses[0].source_channel_id == "ai"
 
 
 class TestVisibility:

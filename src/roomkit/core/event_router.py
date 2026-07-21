@@ -57,6 +57,19 @@ def _log_target_failure(what: str, channel_id: str, exc: Exception, extra: dict[
         logger.exception("%s %s failed", what, channel_id, extra=extra)
 
 
+async def _aclose_stream(stream: Any) -> None:
+    """Close an un-consumed response stream without generating its reply.
+
+    A muted channel's streamed voice is dropped: the async generator is never
+    iterated, so no provider round-trip runs. Closing it releases the object
+    cleanly (and silences the ``async generator was never awaited`` warning).
+    A stream without ``aclose`` is left to be garbage-collected.
+    """
+    aclose = getattr(stream, "aclose", None)
+    if aclose is not None:
+        await aclose()
+
+
 @dataclass
 class StreamingResponse:
     """A streaming response from an intelligence channel."""
@@ -264,6 +277,21 @@ class EventRouter:
 
                 # Streaming response: capture handle, skip reentry logic
                 if output.response_stream is not None:
+                    # Muting silences the voice — including the streaming voice.
+                    # A muted channel's brain still ran (memory ingest + context
+                    # build happened in on_event), but its streamed reply must
+                    # not be delivered, exactly like the response_events
+                    # suppression below. Close the un-consumed generator so no
+                    # provider round-trip is made — the reply is never generated.
+                    if binding.muted:
+                        await _aclose_stream(output.response_stream)
+                        logger.debug(
+                            "Channel %s is muted — suppressing streaming response",
+                            binding.channel_id,
+                        )
+                        tr.observations.extend(output.observations)
+                        target_results.append(tr)
+                        return
                     tr.streaming_response = StreamingResponse(
                         stream=output.response_stream,
                         source_channel_id=binding.channel_id,

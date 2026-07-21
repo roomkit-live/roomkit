@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] — 2026-07-20
+
+### Fixed
+
+- **Muting an intelligence channel silences its streaming voice, not just its
+  events.** A muted channel's non-streaming `response_events` were suppressed in
+  the router, but a streaming response was captured and returned *before* the
+  mute check — so a muted streaming provider still replied. Once 0.35.0 made
+  `send_event` deliver those streams, a directly-injected message (e.g. a REST
+  team-channel post carrying no `@`-mention) woke the muted agent. The router
+  now drops a muted channel's stream without iterating it — no provider
+  round-trip, the reply is never generated — matching the `response_events`
+  suppression and the RFC contract "muting silences the voice, not the brain".
+
 ## [0.35.0] — 2026-07-20
 
 ### Fixed
