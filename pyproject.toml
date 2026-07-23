@@ -82,6 +82,10 @@ smart-turn = ["numpy>=1.26", "onnxruntime", "transformers"]
 telegram = ["httpx>=0.27", "telegramify-markdown>=1.2.0"]
 teams = ["botbuilder-core>=4.14"]
 discord = ["discord.py>=2.4"]
+# Buzz (Nostr relay) — buzzkit is a compiled (Rust) wheel, kept OUT of the
+# aggregate `providers`/`dev`/`all` groups so RoomKit's own CI never has to
+# build it. Install explicitly with `pip install roomkit[buzz]`.
+buzz = ["buzzkit>=0.1"]
 whatsapp-personal = ["neonize>=0.3.14"]
 postgres = ["asyncpg>=0.29"]
 redis = ["redis>=5.0"]

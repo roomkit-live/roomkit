@@ -28,8 +28,9 @@ class TestChannelType:
         assert ChannelType.AI == "ai"
 
     def test_count(self) -> None:
-        # Includes MMS, RCS, REALTIME_VOICE, REALTIME_AUDIO_VIDEO, WHATSAPP_PERSONAL, DISCORD, etc.
-        assert len(ChannelType) == 21
+        # Includes MMS, RCS, REALTIME_VOICE, REALTIME_AUDIO_VIDEO, WHATSAPP_PERSONAL,
+        # DISCORD, BUZZ, etc.
+        assert len(ChannelType) == 22
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):

@@ -23,6 +23,7 @@ class ChannelType(StrEnum):
     TELEGRAM = "telegram"
     TEAMS = "teams"
     DISCORD = "discord"
+    BUZZ = "buzz"
     WEBHOOK = "webhook"
     VIDEO = "video"
     AUDIO_VIDEO = "audio_video"

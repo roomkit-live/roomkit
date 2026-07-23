@@ -132,6 +132,13 @@ DISCORD_CAPABILITIES = ChannelCapabilities(
     supports_media=True,
 )
 
+BUZZ_CAPABILITIES = ChannelCapabilities(
+    media_types=[ChannelMediaType.TEXT],
+    max_length=65536,
+    supports_threading=True,
+    supports_reactions=True,
+)
+
 HTTP_CAPABILITIES = ChannelCapabilities(
     media_types=[ChannelMediaType.TEXT, ChannelMediaType.RICH],
 )
@@ -282,6 +289,25 @@ def DiscordChannel(
         provider=provider,
         capabilities=DISCORD_CAPABILITIES,
         recipient_key="discord_channel_id",
+    )
+
+
+def BuzzChannel(
+    channel_id: str,
+    *,
+    provider: Any = None,
+) -> TransportChannel:
+    """Create a Buzz (Nostr relay) transport channel.
+
+    The recipient key ``buzz_channel_id`` resolves to the target Buzz channel
+    UUID at delivery time.
+    """
+    return TransportChannel(
+        channel_id,
+        ChannelType.BUZZ,
+        provider=provider,
+        capabilities=BUZZ_CAPABILITIES,
+        recipient_key="buzz_channel_id",
     )
 
 

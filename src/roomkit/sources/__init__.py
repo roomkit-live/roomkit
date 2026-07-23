@@ -21,6 +21,7 @@ __all__ = [
     "SSESource",
     "WhatsAppPersonalSourceProvider",
     "DiscordGatewaySource",
+    "BuzzRelaySource",
 ]
 
 
@@ -42,4 +43,8 @@ def __getattr__(name: str) -> Any:
         from roomkit.sources.discord import DiscordGatewaySource
 
         return DiscordGatewaySource
+    if name == "BuzzRelaySource":
+        from roomkit.sources.buzz import BuzzRelaySource
+
+        return BuzzRelaySource
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
