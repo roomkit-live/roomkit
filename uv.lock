@@ -721,15 +721,15 @@ wheels = [
 
 [[package]]
 name = "buzzkit"
-version = "0.1.1"
+version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f3/1c/b0b6252d9fefd095c4ec8668e4e68594c41e1fc96274eba688a527d0f216/buzzkit-0.1.1.tar.gz", hash = "sha256:37d08c1d38bd1c9891f9f3630420f67c0bcd0d1918f07ed4f7b7686f19b992e8", size = 28884, upload-time = "2026-07-23T02:56:38.332Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/47/d4e97163a073d0c919c74da15b1f2b31c7efaf42f6b678e9af830e3a138b/buzzkit-0.1.2.tar.gz", hash = "sha256:adc6122c183a645213f4962f95482dea0d9e37c2d9a31a203caa5650c75c2222", size = 29613, upload-time = "2026-07-23T03:42:42.112Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bf/22/b870b8fbfd4629b0d007ba7d5bec3482616750d00392a884d5cc800df347/buzzkit-0.1.1-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:29046a58dafccd1376f38ad110aec41c486cff858ab2a43604b244b4be62bf4e", size = 1784396, upload-time = "2026-07-23T02:56:36.794Z" },
+    { url = "https://files.pythonhosted.org/packages/75/df/35b09e76adca6937a39f523a7366658e005bcd4349dc834b19c515fd2db4/buzzkit-0.1.2-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:988ea10d6fdb0f23eba2fdeb4b56bbddb8375293a1262a28f95d77ee1fe4a203", size = 1800173, upload-time = "2026-07-23T03:42:40.872Z" },
 ]
 
 [[package]]
@@ -5299,7 +5299,7 @@ requires-dist = [
     { name = "botbuilder-core", marker = "extra == 'dev'", specifier = ">=4.14" },
     { name = "botbuilder-core", marker = "extra == 'providers'", specifier = ">=4.14" },
     { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.14" },
-    { name = "buzzkit", marker = "extra == 'buzz'", specifier = ">=0.1.1" },
+    { name = "buzzkit", marker = "extra == 'buzz'", specifier = ">=0.1.2" },
     { name = "deepgram-sdk", marker = "extra == 'all'", specifier = ">=6.0.0" },
     { name = "deepgram-sdk", marker = "extra == 'deepgram'", specifier = ">=6.0.0" },
     { name = "discord-py", marker = "extra == 'all'", specifier = ">=2.4" },

@@ -21,3 +21,10 @@ class BuzzConfig(BaseModel):
     # agent's messages reach other channel members and it resolves in mention
     # autocomplete. Requires buzzkit>=0.1.1.
     auto_join: bool = True
+    # Announce presence (kind 20001 "online") on connect + periodic heartbeat,
+    # so the agent shows as online while it runs. Requires buzzkit>=0.1.2.
+    announce_presence: bool = True
+    # Optional NIP-OA owner-attestation tag JSON (``["auth", <owner>, …]``) — makes
+    # the relay record the agent's owner. Generate it with the owner's key via
+    # ``buzzkit.compute_auth_tag``. Requires buzzkit>=0.1.2.
+    auth_tag: str | None = None

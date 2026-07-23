@@ -43,6 +43,7 @@ BuzzMessageParser = Callable[[dict[str, Any], str | None], InboundMessage | None
 
 _INITIAL_BACKOFF = 1.0
 _MAX_BACKOFF = 30.0
+_PRESENCE_INTERVAL = 55.0  # presence TTL is 90s; re-announce well within it
 
 
 def parse_buzz_event(
@@ -122,6 +123,7 @@ class BuzzRelaySource(BaseSourceProvider):
         self._client: Any = BuzzClient(
             config.relay_url,
             config.private_key.get_secret_value(),
+            auth_tag=config.auth_tag,
         )
 
     @property
@@ -147,17 +149,30 @@ class BuzzRelaySource(BaseSourceProvider):
                 result.get("message", ""),
             )
 
+    async def _presence_loop(self) -> None:
+        """Announce presence (kind 20001) on connect, then heartbeat within TTL."""
+        while not self._should_stop():
+            try:
+                await self._client.publish_presence("online")
+            except Exception as exc:
+                logger.debug("Buzz presence publish failed: %s", exc)
+                return
+            await asyncio.sleep(_PRESENCE_INTERVAL)
+
     async def start(self, emit: EmitCallback) -> None:
         self._reset_stop()
         self._set_status(SourceStatus.CONNECTING)
         backoff = _INITIAL_BACKOFF
         while not self._should_stop():
+            presence_task: asyncio.Task | None = None
             try:
                 await self._client.connect()
                 self._set_status(SourceStatus.CONNECTED)
                 backoff = _INITIAL_BACKOFF
                 if self._config.auto_join:
                     await self._join_channel()
+                if self._config.announce_presence:
+                    presence_task = asyncio.create_task(self._presence_loop())
                 async for event in self._client.subscribe_channel(self._relay_channel_id):
                     if self._should_stop():
                         break
@@ -169,6 +184,10 @@ class BuzzRelaySource(BaseSourceProvider):
                 self._set_status(SourceStatus.ERROR, str(exc))
                 logger.warning("Buzz source %s error: %s", self._channel_id, exc)
             finally:
+                if presence_task is not None:
+                    presence_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await presence_task
                 with contextlib.suppress(Exception):
                     await self._client.close()
             if self._should_stop():
