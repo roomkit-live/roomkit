@@ -17,3 +17,7 @@ class BuzzConfig(BaseModel):
     # Drop the agent's own events so its outbound messages don't echo back in
     # through the inbound stream.
     ignore_own: bool = True
+    # Self-join the channel (NIP-29 kind 9000, role=bot) on connect, so the
+    # agent's messages reach other channel members and it resolves in mention
+    # autocomplete. Requires buzzkit>=0.1.1.
+    auto_join: bool = True

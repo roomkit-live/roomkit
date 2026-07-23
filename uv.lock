@@ -721,15 +721,15 @@ wheels = [
 
 [[package]]
 name = "buzzkit"
-version = "0.1.0"
+version = "0.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6d/44/d4f6ecba200b0576bb38b69b103304151209d977b31db4ed41037b21b4f4/buzzkit-0.1.0.tar.gz", hash = "sha256:742ac96dadd33f27cb8577c03317c1a76331a594f251bbd49e3662e194d3bd2c", size = 28309, upload-time = "2026-07-23T01:48:00.314Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/1c/b0b6252d9fefd095c4ec8668e4e68594c41e1fc96274eba688a527d0f216/buzzkit-0.1.1.tar.gz", hash = "sha256:37d08c1d38bd1c9891f9f3630420f67c0bcd0d1918f07ed4f7b7686f19b992e8", size = 28884, upload-time = "2026-07-23T02:56:38.332Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/db/72/872663921be9e87bc33d50fd0b3f6c8c09bffddb02e67347f8fa5d96946a/buzzkit-0.1.0-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:369690e4185598749cf46366483adf8dba749e7c9356a566285723e23360b765", size = 1779405, upload-time = "2026-07-23T01:47:58.308Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/22/b870b8fbfd4629b0d007ba7d5bec3482616750d00392a884d5cc800df347/buzzkit-0.1.1-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:29046a58dafccd1376f38ad110aec41c486cff858ab2a43604b244b4be62bf4e", size = 1784396, upload-time = "2026-07-23T02:56:36.794Z" },
 ]
 
 [[package]]
@@ -866,50 +866,10 @@ wheels = [
 
 [[package]]
 name = "click"
-version = "8.3.1"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten'",
-    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-]
-dependencies = [
-    { name = "colorama", marker = "(sys_platform == 'win32' and extra == 'extra-7-roomkit-qwen-asr') or (sys_platform == 'win32' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3d/fa/656b739db8587d7b5dfa22e22ed02566950fbfbcdc20311993483657a5c0/click-8.3.1.tar.gz", hash = "sha256:12ff4785d337a1bb490bb7e9c2b1ee5da3112e94a8622f26a6c77f5d2fc6842a", size = 295065, upload-time = "2025-11-15T20:45:42.706Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/98/78/01c019cdb5d6498122777c1a43056ebb3ebfeef2076d9d026bfe15583b2b/click-8.3.1-py3-none-any.whl", hash = "sha256:981153a64e25f12d547d3426c367a4857371575ee7ad18df2a6183ab0545b2a6", size = 108274, upload-time = "2025-11-15T20:45:41.139Z" },
-]
-
-[[package]]
-name = "click"
 version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform == 'emscripten' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform == 'emscripten' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform == 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform == 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform != 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-]
 dependencies = [
-    { name = "colorama", marker = "(sys_platform == 'win32' and extra == 'extra-7-roomkit-neutts') or (sys_platform == 'win32' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/76/d4/81420972a676e8ffea40450d8c8c92943e7218a78fe9b64359836cc9876b/click-8.4.2.tar.gz", hash = "sha256:9a6cea6e60b17ebe0a44c5cc636d94f09bd66142c1cd7d8b4cd731c4917a15f6", size = 338000, upload-time = "2026-06-24T17:45:15.148Z" }
 wheels = [
@@ -1450,7 +1410,7 @@ version = "3.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "blinker" },
-    { name = "click", version = "8.3.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "click" },
     { name = "itsdangerous" },
     { name = "jinja2" },
     { name = "markupsafe" },
@@ -1726,7 +1686,7 @@ dependencies = [
     { name = "semantic-version" },
     { name = "starlette" },
     { name = "tomlkit" },
-    { name = "typer", version = "0.21.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "typer" },
     { name = "typing-extensions" },
     { name = "uvicorn" },
 ]
@@ -1800,7 +1760,7 @@ version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "gradio-client" },
-    { name = "typer", version = "0.21.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "typer" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ce/86/c9694b7cfada5780e75769e60dc161a161f4dd7fc91b61db5e3a3338bef9/hf_gradio-0.4.1.tar.gz", hash = "sha256:a017d942618f0d495a58ee4563047fa04bef614c00e0cb789a9a6d0633cffa7b", size = 6560, upload-time = "2026-04-22T14:01:32.334Z" }
 wheels = [
@@ -1809,65 +1769,8 @@ wheels = [
 
 [[package]]
 name = "hf-xet"
-version = "1.2.0"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten'",
-    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5e/6e/0f11bacf08a67f7fb5ee09740f2ca54163863b07b70d579356e9222ce5d8/hf_xet-1.2.0.tar.gz", hash = "sha256:a8c27070ca547293b6890c4bf389f713f80e8c478631432962bb7f4bc0bd7d7f", size = 506020, upload-time = "2025-10-24T19:04:32.129Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9e/a5/85ef910a0aa034a2abcfadc360ab5ac6f6bc4e9112349bd40ca97551cff0/hf_xet-1.2.0-cp313-cp313t-macosx_10_12_x86_64.whl", hash = "sha256:ceeefcd1b7aed4956ae8499e2199607765fbd1c60510752003b6cc0b8413b649", size = 2861870, upload-time = "2025-10-24T19:04:11.422Z" },
-    { url = "https://files.pythonhosted.org/packages/ea/40/e2e0a7eb9a51fe8828ba2d47fe22a7e74914ea8a0db68a18c3aa7449c767/hf_xet-1.2.0-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:b70218dd548e9840224df5638fdc94bd033552963cfa97f9170829381179c813", size = 2717584, upload-time = "2025-10-24T19:04:09.586Z" },
-    { url = "https://files.pythonhosted.org/packages/a5/7d/daf7f8bc4594fdd59a8a596f9e3886133fdc68e675292218a5e4c1b7e834/hf_xet-1.2.0-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7d40b18769bb9a8bc82a9ede575ce1a44c75eb80e7375a01d76259089529b5dc", size = 3315004, upload-time = "2025-10-24T19:04:00.314Z" },
-    { url = "https://files.pythonhosted.org/packages/b1/ba/45ea2f605fbf6d81c8b21e4d970b168b18a53515923010c312c06cd83164/hf_xet-1.2.0-cp313-cp313t-manylinux_2_28_aarch64.whl", hash = "sha256:cd3a6027d59cfb60177c12d6424e31f4b5ff13d8e3a1247b3a584bf8977e6df5", size = 3222636, upload-time = "2025-10-24T19:03:58.111Z" },
-    { url = "https://files.pythonhosted.org/packages/4a/1d/04513e3cab8f29ab8c109d309ddd21a2705afab9d52f2ba1151e0c14f086/hf_xet-1.2.0-cp313-cp313t-musllinux_1_2_aarch64.whl", hash = "sha256:6de1fc44f58f6dd937956c8d304d8c2dea264c80680bcfa61ca4a15e7b76780f", size = 3408448, upload-time = "2025-10-24T19:04:20.951Z" },
-    { url = "https://files.pythonhosted.org/packages/f0/7c/60a2756d7feec7387db3a1176c632357632fbe7849fce576c5559d4520c7/hf_xet-1.2.0-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:f182f264ed2acd566c514e45da9f2119110e48a87a327ca271027904c70c5832", size = 3503401, upload-time = "2025-10-24T19:04:22.549Z" },
-    { url = "https://files.pythonhosted.org/packages/4e/64/48fffbd67fb418ab07451e4ce641a70de1c40c10a13e25325e24858ebe5a/hf_xet-1.2.0-cp313-cp313t-win_amd64.whl", hash = "sha256:293a7a3787e5c95d7be1857358a9130694a9c6021de3f27fa233f37267174382", size = 2900866, upload-time = "2025-10-24T19:04:33.461Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/51/f7e2caae42f80af886db414d4e9885fac959330509089f97cccb339c6b87/hf_xet-1.2.0-cp314-cp314t-macosx_10_12_x86_64.whl", hash = "sha256:10bfab528b968c70e062607f663e21e34e2bba349e8038db546646875495179e", size = 2861861, upload-time = "2025-10-24T19:04:19.01Z" },
-    { url = "https://files.pythonhosted.org/packages/6e/1d/a641a88b69994f9371bd347f1dd35e5d1e2e2460a2e350c8d5165fc62005/hf_xet-1.2.0-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:2a212e842647b02eb6a911187dc878e79c4aa0aa397e88dd3b26761676e8c1f8", size = 2717699, upload-time = "2025-10-24T19:04:17.306Z" },
-    { url = "https://files.pythonhosted.org/packages/df/e0/e5e9bba7d15f0318955f7ec3f4af13f92e773fbb368c0b8008a5acbcb12f/hf_xet-1.2.0-cp314-cp314t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:30e06daccb3a7d4c065f34fc26c14c74f4653069bb2b194e7f18f17cbe9939c0", size = 3314885, upload-time = "2025-10-24T19:04:07.642Z" },
-    { url = "https://files.pythonhosted.org/packages/21/90/b7fe5ff6f2b7b8cbdf1bd56145f863c90a5807d9758a549bf3d916aa4dec/hf_xet-1.2.0-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:29c8fc913a529ec0a91867ce3d119ac1aac966e098cf49501800c870328cc090", size = 3221550, upload-time = "2025-10-24T19:04:05.55Z" },
-    { url = "https://files.pythonhosted.org/packages/6f/cb/73f276f0a7ce46cc6a6ec7d6c7d61cbfe5f2e107123d9bbd0193c355f106/hf_xet-1.2.0-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:66e159cbfcfbb29f920db2c09ed8b660eb894640d284f102ada929b6e3dc410a", size = 3408010, upload-time = "2025-10-24T19:04:28.598Z" },
-    { url = "https://files.pythonhosted.org/packages/b8/1e/d642a12caa78171f4be64f7cd9c40e3ca5279d055d0873188a58c0f5fbb9/hf_xet-1.2.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:9c91d5ae931510107f148874e9e2de8a16052b6f1b3ca3c1b12f15ccb491390f", size = 3503264, upload-time = "2025-10-24T19:04:30.397Z" },
-    { url = "https://files.pythonhosted.org/packages/17/b5/33764714923fa1ff922770f7ed18c2daae034d21ae6e10dbf4347c854154/hf_xet-1.2.0-cp314-cp314t-win_amd64.whl", hash = "sha256:210d577732b519ac6ede149d2f2f34049d44e8622bf14eb3d63bbcd2d4b332dc", size = 2901071, upload-time = "2025-10-24T19:04:37.463Z" },
-    { url = "https://files.pythonhosted.org/packages/96/2d/22338486473df5923a9ab7107d375dbef9173c338ebef5098ef593d2b560/hf_xet-1.2.0-cp37-abi3-macosx_10_12_x86_64.whl", hash = "sha256:46740d4ac024a7ca9b22bebf77460ff43332868b661186a8e46c227fdae01848", size = 2866099, upload-time = "2025-10-24T19:04:15.366Z" },
-    { url = "https://files.pythonhosted.org/packages/7f/8c/c5becfa53234299bc2210ba314eaaae36c2875e0045809b82e40a9544f0c/hf_xet-1.2.0-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:27df617a076420d8845bea087f59303da8be17ed7ec0cd7ee3b9b9f579dff0e4", size = 2722178, upload-time = "2025-10-24T19:04:13.695Z" },
-    { url = "https://files.pythonhosted.org/packages/9a/92/cf3ab0b652b082e66876d08da57fcc6fa2f0e6c70dfbbafbd470bb73eb47/hf_xet-1.2.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3651fd5bfe0281951b988c0facbe726aa5e347b103a675f49a3fa8144c7968fd", size = 3320214, upload-time = "2025-10-24T19:04:03.596Z" },
-    { url = "https://files.pythonhosted.org/packages/46/92/3f7ec4a1b6a65bf45b059b6d4a5d38988f63e193056de2f420137e3c3244/hf_xet-1.2.0-cp37-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:d06fa97c8562fb3ee7a378dd9b51e343bc5bc8190254202c9771029152f5e08c", size = 3229054, upload-time = "2025-10-24T19:04:01.949Z" },
-    { url = "https://files.pythonhosted.org/packages/0b/dd/7ac658d54b9fb7999a0ccb07ad863b413cbaf5cf172f48ebcd9497ec7263/hf_xet-1.2.0-cp37-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:4c1428c9ae73ec0939410ec73023c4f842927f39db09b063b9482dac5a3bb737", size = 3413812, upload-time = "2025-10-24T19:04:24.585Z" },
-    { url = "https://files.pythonhosted.org/packages/92/68/89ac4e5b12a9ff6286a12174c8538a5930e2ed662091dd2572bbe0a18c8a/hf_xet-1.2.0-cp37-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:a55558084c16b09b5ed32ab9ed38421e2d87cf3f1f89815764d1177081b99865", size = 3508920, upload-time = "2025-10-24T19:04:26.927Z" },
-    { url = "https://files.pythonhosted.org/packages/cb/44/870d44b30e1dcfb6a65932e3e1506c103a8a5aea9103c337e7a53180322c/hf_xet-1.2.0-cp37-abi3-win_amd64.whl", hash = "sha256:e6584a52253f72c9f52f9e549d5895ca7a471608495c4ecaa6cc73dba2b24d69", size = 2905735, upload-time = "2025-10-24T19:04:35.928Z" },
-]
-
-[[package]]
-name = "hf-xet"
 version = "1.5.2"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform == 'emscripten' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform == 'emscripten' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform == 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform == 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform != 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-]
 sdist = { url = "https://files.pythonhosted.org/packages/63/39/67be8d71f900d9a55761b6022821d6679fb56c64f1b6063d5af2c2606727/hf_xet-1.5.2.tar.gz", hash = "sha256:73044bd31bae33c984af832d19c752a0dffb67518fee9ddbd91d616e1101cf47", size = 903674, upload-time = "2026-07-16T17:29:56.833Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/29/be/525eabac5d1736b679c39e342ecd4292534012546a2d18f0043c8e3b6021/hf_xet-1.5.2-cp314-cp314t-macosx_10_12_x86_64.whl", hash = "sha256:4a5ecb9cda8512ba2aa8ee5d37c87a1422992165892d653098c7b90247481c3b", size = 4064284, upload-time = "2026-07-16T17:29:29.907Z" },
@@ -1943,7 +1846,7 @@ resolution-markers = [
 dependencies = [
     { name = "filelock", marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts'" },
     { name = "fsspec", marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts'" },
-    { name = "hf-xet", version = "1.2.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'aarch64' and extra == 'extra-7-roomkit-qwen-asr') or (platform_machine == 'aarch64' and extra == 'extra-7-roomkit-qwen-tts') or (platform_machine == 'amd64' and extra == 'extra-7-roomkit-qwen-asr') or (platform_machine == 'amd64' and extra == 'extra-7-roomkit-qwen-tts') or (platform_machine == 'arm64' and extra == 'extra-7-roomkit-qwen-asr') or (platform_machine == 'arm64' and extra == 'extra-7-roomkit-qwen-tts') or (platform_machine == 'x86_64' and extra == 'extra-7-roomkit-qwen-asr') or (platform_machine == 'x86_64' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "hf-xet", marker = "(platform_machine == 'aarch64' and extra == 'extra-7-roomkit-qwen-asr') or (platform_machine == 'aarch64' and extra == 'extra-7-roomkit-qwen-tts') or (platform_machine == 'amd64' and extra == 'extra-7-roomkit-qwen-asr') or (platform_machine == 'amd64' and extra == 'extra-7-roomkit-qwen-tts') or (platform_machine == 'arm64' and extra == 'extra-7-roomkit-qwen-asr') or (platform_machine == 'arm64' and extra == 'extra-7-roomkit-qwen-tts') or (platform_machine == 'x86_64' and extra == 'extra-7-roomkit-qwen-asr') or (platform_machine == 'x86_64' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
     { name = "packaging", marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts'" },
     { name = "pyyaml", marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts'" },
     { name = "requests", marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts'" },
@@ -1977,10 +1880,10 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
 ]
 dependencies = [
-    { name = "click", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
+    { name = "click", marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
     { name = "filelock", marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
     { name = "fsspec", marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
-    { name = "hf-xet", version = "1.5.2", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'AMD64' and extra == 'extra-7-roomkit-neutts') or (platform_machine == 'aarch64' and extra == 'extra-7-roomkit-neutts') or (platform_machine == 'amd64' and extra == 'extra-7-roomkit-neutts') or (platform_machine == 'arm64' and extra == 'extra-7-roomkit-neutts') or (platform_machine == 'x86_64' and extra == 'extra-7-roomkit-neutts') or (platform_machine == 'AMD64' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (platform_machine == 'aarch64' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (platform_machine == 'amd64' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (platform_machine == 'arm64' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (platform_machine == 'x86_64' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "hf-xet", marker = "(platform_machine == 'AMD64' and extra == 'extra-7-roomkit-neutts') or (platform_machine == 'aarch64' and extra == 'extra-7-roomkit-neutts') or (platform_machine == 'amd64' and extra == 'extra-7-roomkit-neutts') or (platform_machine == 'arm64' and extra == 'extra-7-roomkit-neutts') or (platform_machine == 'x86_64' and extra == 'extra-7-roomkit-neutts') or (platform_machine == 'AMD64' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (platform_machine == 'aarch64' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (platform_machine == 'amd64' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (platform_machine == 'arm64' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (platform_machine == 'x86_64' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
     { name = "httpx", marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
     { name = "packaging", marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
     { name = "pyyaml", marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
@@ -2720,8 +2623,7 @@ name = "mkdocs"
 version = "1.6.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "click", version = "8.3.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts'" },
-    { name = "click", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
+    { name = "click" },
     { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
     { name = "ghp-import" },
     { name = "jinja2" },
@@ -5397,7 +5299,7 @@ requires-dist = [
     { name = "botbuilder-core", marker = "extra == 'dev'", specifier = ">=4.14" },
     { name = "botbuilder-core", marker = "extra == 'providers'", specifier = ">=4.14" },
     { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.14" },
-    { name = "buzzkit", marker = "extra == 'buzz'", specifier = ">=0.1" },
+    { name = "buzzkit", marker = "extra == 'buzz'", specifier = ">=0.1.1" },
     { name = "deepgram-sdk", marker = "extra == 'all'", specifier = ">=6.0.0" },
     { name = "deepgram-sdk", marker = "extra == 'deepgram'", specifier = ">=6.0.0" },
     { name = "discord-py", marker = "extra == 'all'", specifier = ">=2.4" },
@@ -6591,56 +6493,13 @@ wheels = [
 
 [[package]]
 name = "typer"
-version = "0.21.1"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32'",
-    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten'",
-    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-]
-dependencies = [
-    { name = "click", version = "8.3.1", source = { registry = "https://pypi.org/simple" } },
-    { name = "rich" },
-    { name = "shellingham" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/36/bf/8825b5929afd84d0dabd606c67cd57b8388cb3ec385f7ef19c5cc2202069/typer-0.21.1.tar.gz", hash = "sha256:ea835607cd752343b6b2b7ce676893e5a0324082268b48f27aa058bdb7d2145d", size = 110371, upload-time = "2026-01-06T11:21:10.989Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a0/1d/d9257dd49ff2ca23ea5f132edf1281a0c4f9de8a762b9ae399b670a59235/typer-0.21.1-py3-none-any.whl", hash = "sha256:7985e89081c636b88d172c2ee0cfe33c253160994d47bdfdc302defd7d1f1d01", size = 47381, upload-time = "2026-01-06T11:21:09.824Z" },
-]
-
-[[package]]
-name = "typer"
 version = "0.27.0"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform == 'emscripten' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform == 'emscripten' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform == 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform == 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform == 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform == 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version >= '3.14' and sys_platform != 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version == '3.13.*' and sys_platform != 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-    "python_full_version < '3.13' and sys_platform != 'win32' and extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts'",
-]
 dependencies = [
-    { name = "annotated-doc", marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
-    { name = "colorama", marker = "(sys_platform == 'win32' and extra == 'extra-7-roomkit-neutts') or (sys_platform == 'win32' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
-    { name = "rich", marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
-    { name = "shellingham", marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
+    { name = "annotated-doc" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts')" },
+    { name = "rich" },
+    { name = "shellingham" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/37/78/fda3361b56efc27944f24225f6ecd13d96d6fcfe37bd0eb34e2f4c63f9fc/typer-0.27.0.tar.gz", hash = "sha256:629bd12ea5d13a17148125d9a264f949eb171fb3f120f9b04d85873cab054fa5", size = 203430, upload-time = "2026-07-15T19:21:07.007Z" }
 wheels = [
@@ -6652,7 +6511,7 @@ name = "typer-slim"
 version = "0.24.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typer", version = "0.27.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
+    { name = "typer", marker = "extra == 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a7/a7/e6aecc4b4eb59598829a3b5076a93aff291b4fdaa2ded25efc4e1f4d219c/typer_slim-0.24.0.tar.gz", hash = "sha256:f0ed36127183f52ae6ced2ecb2521789995992c521a46083bfcdbb652d22ad34", size = 4776, upload-time = "2026-02-16T22:08:51.2Z" }
 wheels = [
@@ -6748,8 +6607,7 @@ name = "uvicorn"
 version = "0.40.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "click", version = "8.3.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-7-roomkit-qwen-asr' or extra == 'extra-7-roomkit-qwen-tts'" },
-    { name = "click", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'emscripten' and extra == 'extra-7-roomkit-neutts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra != 'extra-7-roomkit-neutts' and extra != 'extra-7-roomkit-qwen-asr' and extra != 'extra-7-roomkit-qwen-tts')" },
+    { name = "click", marker = "sys_platform != 'emscripten' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts')" },
     { name = "h11", marker = "sys_platform != 'emscripten' or extra != 'extra-7-roomkit-neutts' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c3/d1/8f3c683c9561a4e6689dd3b1d345c815f10f86acd044ee1fb9a4dcd0b8c5/uvicorn-0.40.0.tar.gz", hash = "sha256:839676675e87e73694518b5574fd0f24c9d97b46bea16df7b8c05ea1a51071ea", size = 81761, upload-time = "2025-12-21T14:16:22.45Z" }

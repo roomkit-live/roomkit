@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import TextContent
@@ -20,15 +20,20 @@ from roomkit.providers.buzz.config import BuzzConfig
 from roomkit.sources.base import BaseSourceProvider, EmitCallback, SourceStatus
 
 # Optional dependency --------------------------------------------------------
-# ``buzzkit`` is a compiled wheel kept out of RoomKit's own dev/CI env; the
-# runtime guard below handles its absence.
-try:
-    from buzzkit import BuzzClient
-
+# ``buzzkit`` is a compiled wheel kept out of RoomKit's own dev/CI env. It is
+# typed as Any (via the TYPE_CHECKING branch) so type-checking stays stable
+# whether or not the package is resolvable; the runtime guard handles absence.
+if TYPE_CHECKING:
+    BuzzClient: Any = None
     HAS_BUZZKIT = True
-except ImportError:
-    BuzzClient = None
-    HAS_BUZZKIT = False
+else:
+    try:
+        from buzzkit import BuzzClient
+
+        HAS_BUZZKIT = True
+    except ImportError:
+        BuzzClient = None
+        HAS_BUZZKIT = False
 
 logger = logging.getLogger("roomkit.sources.buzz")
 
@@ -114,7 +119,7 @@ class BuzzRelaySource(BaseSourceProvider):
         self._channel_id = channel_id
         self._relay_channel_id = relay_channel_id
         self._parser = parser or default_message_parser(channel_id, ignore_own=config.ignore_own)
-        self._client: Any = BuzzClient(  # ty: ignore[call-non-callable]
+        self._client: Any = BuzzClient(
             config.relay_url,
             config.private_key.get_secret_value(),
         )
@@ -128,6 +133,20 @@ class BuzzRelaySource(BaseSourceProvider):
     def name(self) -> str:
         return f"buzz:{self._channel_id}"
 
+    async def _join_channel(self) -> None:
+        """Best-effort NIP-29 self-join so the agent is a channel member."""
+        try:
+            result = await self._client.join_channel(self._relay_channel_id)
+        except Exception as exc:
+            logger.warning("Buzz auto-join failed for %s: %s", self._relay_channel_id, exc)
+            return
+        if not result.get("accepted", False):
+            logger.info(
+                "Buzz auto-join not accepted for %s: %s",
+                self._relay_channel_id,
+                result.get("message", ""),
+            )
+
     async def start(self, emit: EmitCallback) -> None:
         self._reset_stop()
         self._set_status(SourceStatus.CONNECTING)
@@ -137,6 +156,8 @@ class BuzzRelaySource(BaseSourceProvider):
                 await self._client.connect()
                 self._set_status(SourceStatus.CONNECTED)
                 backoff = _INITIAL_BACKOFF
+                if self._config.auto_join:
+                    await self._join_channel()
                 async for event in self._client.subscribe_channel(self._relay_channel_id):
                     if self._should_stop():
                         break
