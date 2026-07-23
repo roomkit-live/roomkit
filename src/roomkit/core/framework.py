@@ -483,6 +483,7 @@ class RoomKit(
         response_visibility: str | None = None,
         created_at: datetime | None = None,
         parent_event_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> RoomEvent:
         """Send an event directly into a room from a channel.
 
@@ -501,6 +502,13 @@ class RoomKit(
             parent_event_id: In-app thread parent. The locked pipeline normalises
                 it to the thread root (flat two-level model); see
                 :meth:`_resolve_thread_root`.
+            idempotency_key: Stable de-duplication key. When set, the locked
+                pipeline's idempotency check (backed by the unique
+                ``events(room_id, idempotency_key)`` index) skips a re-send that
+                carries the same key — so a caller that may replay a publish (an
+                outbox dispatcher redelivering after a crash) gets at-most-once
+                persistence for a given key. None keeps the prior behaviour (no
+                de-duplication), matching inbound events that carry no key.
         """
         from roomkit.telemetry.base import SpanKind
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
@@ -525,6 +533,7 @@ class RoomKit(
             metadata=metadata or {},
             visibility=visibility,
             response_visibility=response_visibility,
+            idempotency_key=idempotency_key,
         )
         if created_at is not None:
             event_kwargs["created_at"] = created_at

@@ -379,3 +379,27 @@ class TestIdempotency:
         second = await _send(kit, idempotency_key="k1")
         assert not first.blocked
         assert second.blocked and second.reason == "duplicate"
+
+    async def test_send_event_idempotency_key_dedupes_a_resend(self) -> None:
+        """§10.1 — a direct ``send_event`` carrying a repeated idempotency_key is
+        de-duplicated: the resend persists nothing. This gives an outbox that
+        redelivers a publish after a crash at-most-once persistence per key."""
+        kit, _, _ = await _room()
+        for _ in range(2):
+            await kit.send_event(
+                room_id="r1",
+                channel_id="src",
+                content=TextContent(body="one"),
+                idempotency_key="ek1",
+            )
+        timeline = await kit.get_timeline("r1")
+        assert [e.idempotency_key for e in timeline].count("ek1") == 1  # resend deduped
+        # A different key still persists — dedup is per key, not a global lock.
+        await kit.send_event(
+            room_id="r1",
+            channel_id="src",
+            content=TextContent(body="two"),
+            idempotency_key="ek2",
+        )
+        keys = {e.idempotency_key for e in await kit.get_timeline("r1") if e.idempotency_key}
+        assert keys == {"ek1", "ek2"}
