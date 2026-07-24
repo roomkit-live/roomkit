@@ -49,7 +49,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from buzzkit import BuzzClient, HuddleClient, HuddleError
+from buzzkit import BuzzClient, HuddleAudio, HuddleClient, HuddleError
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
@@ -140,12 +140,62 @@ class TappedBuzzHuddleBackend(BuzzHuddleBackend):
         ):
             f.close()
 
+
 KIND_HUDDLE_STARTED = 48100
 
 DEFAULT_PROMPT = (
     "You are a friendly voice assistant participating in a team huddle. "
     "Be concise and conversational."
 )
+
+
+# How long to sit alone in a huddle waiting for a human. The announcement can
+# arrive before the creator's audio socket is up, so don't hang up instantly.
+_EMPTY_HUDDLE_GRACE = 90.0
+
+
+async def _end_when_alone(
+    huddle: HuddleClient, ended: asyncio.Event, alone: asyncio.Event
+) -> None:
+    """Hang up when the last human leaves (or nobody ever shows up).
+
+    The relay keeps a huddle alive while ANY member is connected — the agent
+    included — so an agent that never hangs up leaves the huddle running
+    forever and the watch loop never moves on to the next one.
+    """
+    events = aiter(huddle.events())
+    seen_human = len(huddle.peers) > 1
+    while True:
+        try:
+            if seen_human:
+                ev = await anext(events)
+            else:
+                async with asyncio.timeout(_EMPTY_HUDDLE_GRACE):
+                    ev = await anext(events)
+        except TimeoutError:
+            logger.info("Nobody joined the huddle — hanging up")
+            break
+        except StopAsyncIteration:
+            return  # socket closed; the disconnect callback ends the session
+        if isinstance(ev, HuddleAudio):
+            continue
+        if len(huddle.peers) > 1:
+            seen_human = True
+        elif seen_human:
+            logger.info("Last peer left the huddle — hanging up")
+            break
+    alone.set()
+    ended.set()
+
+
+async def _report_stats(huddle: HuddleClient) -> None:
+    last_sent = 0.0
+    while True:
+        await asyncio.sleep(5)
+        stats = dict(huddle.sender_stats)
+        if stats["sent"] != last_sent:
+            last_sent = stats["sent"]
+            logger.info("sender stats: %s (queued=%d)", stats, huddle.queued_frames)
 
 
 async def run_huddle_session(
@@ -157,44 +207,61 @@ async def run_huddle_session(
     parent_id: str,
     auth_tag: str | None,
 ) -> None:
-    """Join one huddle and bridge it to Gemini until it ends."""
-    # paced=False: the BuzzHuddleBackend drives outbound timing with its own
-    # prebuffer + jitter-headroom pacer (prevents choppy playback under the
-    # agent's GIL load); the client just relays frames to the wire.
-    huddle = HuddleClient(
-        relay_url,
-        nsec,
-        huddle_id,
-        parent_channel_id=parent_id,
-        auth_tag=auth_tag,
-        paced=False,
-    )
-    try:
-        await huddle.connect()
-    except (HuddleError, OSError) as exc:
-        logger.warning("Could not join huddle %s: %s", huddle_id, exc)
-        return
+    """Bridge one huddle to Gemini until everyone has left.
 
-    logger.info("Joined huddle %s (%d peer(s))", huddle_id, max(len(huddle.peers) - 1, 0))
-    ended.clear()
-    session = await channel.start_session("buzz-huddle", "buzz-agent", connection=huddle)
+    A dropped audio socket while humans are still in the room is a connection
+    loss, not the end of the call: rejoin the same huddle with a short
+    backoff. A rejected (re)join means the huddle is actually over.
+    """
+    retry = 0
+    while True:
+        # paced=False: the BuzzHuddleBackend drives outbound timing with its
+        # own prebuffer + jitter-headroom pacer (prevents choppy playback
+        # under the agent's GIL load); the client just relays frames.
+        huddle = HuddleClient(
+            relay_url,
+            nsec,
+            huddle_id,
+            parent_channel_id=parent_id,
+            auth_tag=auth_tag,
+            paced=False,
+        )
+        try:
+            await huddle.connect()
+        except HuddleError as exc:
+            logger.info("Huddle %s is over (%s)", huddle_id, exc)
+            return
+        except OSError as exc:
+            retry += 1
+            if retry > 3:
+                logger.warning("Could not join huddle %s: %s — giving up", huddle_id, exc)
+                return
+            logger.info("Join failed (%s) — retry %d/3 in %ds", exc, retry, 2 * retry)
+            await asyncio.sleep(2 * retry)
+            continue
+        retry = 0
 
-    async def stats_reporter() -> None:
-        last_sent = 0.0
-        while True:
-            await asyncio.sleep(5)
-            stats = dict(huddle.sender_stats)
-            if stats["sent"] != last_sent:
-                last_sent = stats["sent"]
-                logger.info("sender stats: %s (queued=%d)", stats, huddle.queued_frames)
-
-    reporter = asyncio.create_task(stats_reporter())
-    try:
-        await ended.wait()  # the huddle ended or the relay dropped us
-    finally:
-        reporter.cancel()
-        await channel.end_session(session)
-        logger.info("Left huddle %s — final sender stats: %s", huddle_id, huddle.sender_stats)
+        logger.info("Joined huddle %s (%d peer(s))", huddle_id, max(len(huddle.peers) - 1, 0))
+        ended.clear()
+        alone = asyncio.Event()
+        session = await channel.start_session("buzz-huddle", "buzz-agent", connection=huddle)
+        # Watchers subscribe to huddle.events() and must start AFTER
+        # start_session: the backend's receive loop is the first subscriber
+        # and takes the pre-connect event backlog.
+        watchers = [
+            asyncio.create_task(_end_when_alone(huddle, ended, alone)),
+            asyncio.create_task(_report_stats(huddle)),
+        ]
+        try:
+            await ended.wait()  # last human left, or the relay dropped us
+        finally:
+            for w in watchers:
+                w.cancel()
+            await channel.end_session(session)
+            logger.info("Left huddle %s — final sender stats: %s", huddle_id, huddle.sender_stats)
+        if alone.is_set():
+            return
+        logger.info("Connection to huddle %s lost — rejoining…", huddle_id)
 
 
 async def main() -> None:
@@ -242,23 +309,31 @@ async def main() -> None:
         return
 
     # Watch mode: join every huddle announced on the parent channel from now
-    # on (`since` skips historical announcements replayed before EOSE).
+    # on (`since` skips historical announcements replayed before EOSE). The
+    # subscription ends silently when the relay drops the socket, so wrap it
+    # in a reconnect loop — a relay restart must not kill the agent.
     logger.info("Watching channel %s for huddles (kind 48100)…", parent_id)
-    async with BuzzClient(relay_url, nsec, auth_tag=auth_tag) as bz:
-        live_filter = {
-            "kinds": [KIND_HUDDLE_STARTED],
-            "#h": [parent_id],
-            "since": int(time.time()),
-        }
-        async for event in bz.subscribe([live_filter]):
-            try:
-                huddle_id = json.loads(event.get("content", "{}"))["ephemeral_channel_id"]
-            except (json.JSONDecodeError, KeyError):
-                continue
-            await run_huddle_session(
-                channel, ended, relay_url, nsec, huddle_id, parent_id, auth_tag
-            )
-            logger.info("Watching channel %s for the next huddle…", parent_id)
+    while True:
+        try:
+            async with BuzzClient(relay_url, nsec, auth_tag=auth_tag) as bz:
+                live_filter = {
+                    "kinds": [KIND_HUDDLE_STARTED],
+                    "#h": [parent_id],
+                    "since": int(time.time()),
+                }
+                async for event in bz.subscribe([live_filter]):
+                    try:
+                        huddle_id = json.loads(event.get("content", "{}"))["ephemeral_channel_id"]
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+                    await run_huddle_session(
+                        channel, ended, relay_url, nsec, huddle_id, parent_id, auth_tag
+                    )
+                    logger.info("Watching channel %s for the next huddle…", parent_id)
+            logger.warning("Relay connection lost — reconnecting in 5s…")
+        except OSError as exc:
+            logger.warning("Relay unreachable (%s) — reconnecting in 5s…", exc)
+        await asyncio.sleep(5)
 
 
 if __name__ == "__main__":
