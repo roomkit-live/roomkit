@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **ACP intelligence channel for external coding agents.** The new
+  `ACPChannel` makes RoomKit an ACP client over stdio (stable ACP v1): it starts
+  one agent subprocess lazily, maps each Room to an isolated ACP session,
+  serializes prompts within a Room, and lets different Rooms run concurrently.
+  Agent text and reasoning stream as they arrive; tool lifecycle, plan, usage,
+  and progress updates are exposed through RoomKit stream/realtime events.
+  Permission requests pass through `ExternalToolHandler` — and therefore the
+  existing `BEFORE_TOOL_USE` / `ON_TOOL_USE` hooks — with a deny-by-default
+  policy when no handler is configured. Sessions can be inspected, cancelled,
+  or closed explicitly, and subprocess/session cleanup is handled by
+  `RoomKit.close()`. Install the optional `roomkit[acp]` extra.
+- **Claude Code over ACP, through the existing CLI channel.** The new
+  `examples/acp_claude_code.py` wires `CLIChannel` to `ACPChannel`, runs the
+  official Claude Agent ACP adapter, streams visible reasoning and tool
+  activity, asks for each tool permission in the terminal, and scopes the
+  coding agent to a selected workspace.
+- **Progressive Markdown and tool activity in `CLIChannel`.** Set
+  `markdown=True` to render both complete and streaming agent responses with
+  Rich via the new `roomkit[console]` extra. The live document refreshes on
+  every real text delta instead of waiting for turn completion, while
+  `show_thinking=True` renders reasoning deltas and tool start/end events remain
+  visible inline. Plain terminal output also now shows tool names, arguments,
+  completion status, and duration.
+- **Buzz transport channel over Nostr.** `ChannelType.BUZZ`, `BuzzChannel`,
+  `BuzzConfig`, `BuzzProvider`, `MockBuzzProvider`, and `BuzzRelaySource`
+  provide bidirectional Buzz messaging through one shared `buzzkit` client.
+  The source authenticates with NIP-42, converts relay events into idempotent
+  RoomKit messages, filters the agent's own events by default, reconnects with
+  backoff, self-joins its NIP-29 channel as a bot, and publishes an online
+  presence heartbeat. `BuzzConfig.auth_tag` carries an optional NIP-OA owner
+  attestation, while custom `kinds` and parsers allow non-chat subscriptions.
+  Install the isolated `roomkit[buzz]` extra.
+- **Buzz Huddles realtime voice transport.** `BuzzHuddleBackend` bridges
+  `buzzkit.HuddleClient` Opus sessions to RoomKit's realtime voice pipeline,
+  including streaming 48 kHz resampling, outbound pacing, barge-in, silence
+  fill for server-side VAD, roster metadata, and deterministic disconnect
+  reasons. With `end_when_alone=True` (the default), the transport leaves when
+  the last remote peer is gone instead of keeping the huddle alive by itself.
+  `BuzzHuddleWatcher` owns the full announcement-to-call lifecycle: it watches
+  kind-48100 announcements through an auto-restarting `BuzzRelaySource`, dials
+  one huddle at a time, rejoins after connection loss, and waits for the next
+  announcement after a normal end. `RealtimeVoiceChannel.transport` exposes
+  the backend for this and other transport-level orchestration.
+- **Replay-safe programmatic publishing.** `RoomKit.send_event()` accepts an
+  optional `idempotency_key`. Replaying the same key in one Room is blocked by
+  the existing locked idempotency pipeline and unique store index, preventing a
+  second persistence and re-broadcast while preserving the previous behaviour
+  when the key is omitted.
+
+### Changed
+
+- **Fixed-rate voice backends share a stateful streaming resampler.** Buzz
+  Huddles and Twilio use the same low-latency soxr QQ implementation, with the
+  existing pure-Python linear fallback when soxr is unavailable.
+
+### Fixed
+
+- **Idle silence no longer splices into bursty voice responses.**
+  `OutboundAudioPacer(fill_with_silence_when_idle=True)` previously inserted a
+  silence frame after a short provider lull even while its jitter buffer was
+  still ahead of wall clock, permanently displacing subsequent speech and
+  producing chopped audio. Silence is now emitted only after the pacer has
+  actually fallen behind.
+
 ## [0.36.0] — 2026-07-20
 
 ### Fixed
@@ -2062,7 +2128,7 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.36.0...HEAD
 [0.19.0]: https://github.com/roomkit-live/roomkit/compare/v0.18.0...v0.19.0
 [0.10.0]: https://github.com/roomkit-live/roomkit/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/roomkit-live/roomkit/compare/v0.9.0...v0.9.1
