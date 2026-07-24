@@ -167,7 +167,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra postgres
+        run: uv sync --extra dev --extra postgres --extra fastrtc
 
       # fastapi is a peer dep (WebRTC signaling). `uv run --with` resolves it
       # against the project's locked deps, keeping a starlette/httpx combo that
