@@ -25,6 +25,10 @@ updates:
       # Version dictated by the TTS extras' exact pins (qwen-tts pins
       # transformers==4.57.3; the lockfile forks via tool.uv.conflicts).
       - dependency-name: "transformers"
+      # Dependabot's uv updater crashes ("Declaration not found for numpy!")
+      # rewriting our multiple numpy declarations (capped <2.5 in fastrtc for
+      # numba/librosa, uncapped elsewhere). Bump numpy manually via uv lock.
+      - dependency-name: "numpy"
 
   # Keep GitHub Actions pinned versions current (security patches).
   - package-ecosystem: "github-actions"
