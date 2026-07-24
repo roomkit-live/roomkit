@@ -83,8 +83,10 @@ fi
 echo "    CHANGELOG.md documents ${VERSION}."
 
 # --- Ensure GitHub Actions CI is green ---
+# Filter on the CI workflow: other workflows on main (e.g. Dependabot Updates)
+# can fail for reasons unrelated to code health and must not block a release.
 echo "==> Checking GitHub Actions status..."
-CI_STATUS=$(gh run list --branch main --limit 1 --json status,conclusion --jq '.[0]')
+CI_STATUS=$(gh run list --workflow CI --branch main --limit 1 --json status,conclusion --jq '.[0]')
 CI_CONCLUSION=$(echo "$CI_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('conclusion',''))")
 CI_STATE=$(echo "$CI_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))")
 if [[ "$CI_STATE" != "completed" ]]; then
@@ -93,7 +95,7 @@ if [[ "$CI_STATE" != "completed" ]]; then
 fi
 if [[ "$CI_CONCLUSION" != "success" ]]; then
     echo "Error: latest CI run on main concluded with '${CI_CONCLUSION}'. Fix CI before releasing."
-    echo "       See: gh run list --branch main --limit 1"
+    echo "       See: gh run list --workflow CI --branch main --limit 1"
     exit 1
 fi
 echo "    CI is green."
