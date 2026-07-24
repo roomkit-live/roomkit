@@ -114,6 +114,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self._connection: Any = None
         self._process: Any = None
         self._process_context: Any = None
+        self._message_queue: Any = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._connect_lock = asyncio.Lock()
         self._room_locks: dict[str, asyncio.Lock] = {}
@@ -313,6 +314,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
                 prompt,
                 **{"roomkit.live/eventId": event_id},
             )
+            await self._drain_session_updates(session_id)
         except BaseException as exc:
             turn.queue.put_nowait(_TurnDone(error=exc))
         else:

@@ -30,6 +30,7 @@ _STABLE_PROTOCOL_VERSION = 1
 class _SDK:
     acp: ModuleType
     schema: ModuleType
+    task: ModuleType
     version: str
 
 
@@ -64,6 +65,7 @@ def _load_sdk() -> _SDK:
     try:
         import acp
         import acp.schema
+        import acp.task
     except ImportError as exc:
         raise ImportError(
             "ACPChannel requires the official Agent Client Protocol SDK. "
@@ -74,7 +76,7 @@ def _load_sdk() -> _SDK:
         sdk_version = metadata.version("agent-client-protocol")
     except metadata.PackageNotFoundError:
         sdk_version = "unknown"
-    return _SDK(acp=acp, schema=acp.schema, version=sdk_version)
+    return _SDK(acp=acp, schema=acp.schema, task=acp.task, version=sdk_version)
 
 
 def _absolute_path(value: str | Path, *, field_name: str) -> str:
@@ -115,6 +117,7 @@ class _ACPClient:
 
     def __init__(self, channel: Any) -> None:
         self._channel = channel
+        self._session_update_tasks: dict[str, set[asyncio.Task[Any]]] = {}
 
     async def request_permission(
         self,
@@ -131,7 +134,26 @@ class _ACPClient:
         update: Any,
         **kwargs: Any,
     ) -> None:
-        await self._channel._receive_update(session_id, update)
+        task = asyncio.current_task()
+        if task is not None:
+            self._session_update_tasks.setdefault(session_id, set()).add(task)
+        try:
+            await self._channel._receive_update(session_id, update)
+        finally:
+            if task is not None:
+                tasks = self._session_update_tasks.get(session_id)
+                if tasks is not None:
+                    tasks.discard(task)
+                    if not tasks:
+                        self._session_update_tasks.pop(session_id, None)
+
+    async def drain_session_updates(self, session_id: str) -> None:
+        """Wait for already-dispatched updates for one session to finish."""
+        # The SDK schedules notification handlers as tasks. Yield once so every
+        # handler dispatched by the message queue can register itself above.
+        await asyncio.sleep(0)
+        while tasks := tuple(self._session_update_tasks.get(session_id, ())):
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def write_text_file(self, *args: Any, **kwargs: Any) -> Any:
         raise self._unsupported("fs/write_text_file")
@@ -186,6 +208,7 @@ class ACPConnectionMixin:
     _connection: Any
     _process: Any
     _process_context: Any
+    _message_queue: Any
     _stderr_task: asyncio.Task[None] | None
     _connect_lock: asyncio.Lock
     _sessions: dict[str, str]
@@ -200,13 +223,23 @@ class ACPConnectionMixin:
         return self._loaded_sdk
 
     def _create_process_context(self, sdk: _SDK) -> Any:
+        self._message_queue = sdk.task.InMemoryMessageQueue()
         return sdk.acp.spawn_agent_process(
             self._client,
             self._command[0],
             *self._command[1:],
             env=self._env,
             cwd=self._cwd,
+            queue=self._message_queue,
         )
+
+    async def _drain_session_updates(self, session_id: str) -> None:
+        # A prompt response is resolved directly by the SDK receive loop, while
+        # preceding notifications are dispatched through this queue. Joining it
+        # first guarantees those handlers exist before the client awaits them.
+        if self._message_queue is not None:
+            await self._message_queue.join()
+        await self._client.drain_session_updates(session_id)
 
     async def _ensure_connection(self) -> Any:
         if self._closed:
@@ -285,6 +318,7 @@ class ACPConnectionMixin:
         if process_context is not None:
             with contextlib.suppress(Exception):
                 await process_context.__aexit__(None, None, None)
+        self._message_queue = None
         await self._stop_stderr_task()
 
     async def _stop_stderr_task(self) -> None:
