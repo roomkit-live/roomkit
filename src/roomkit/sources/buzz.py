@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -89,6 +90,46 @@ def default_message_parser(channel_id: str, *, ignore_own: bool = True) -> BuzzM
 
     def parser(event: dict[str, Any], own_pubkey: str | None) -> InboundMessage | None:
         return parse_buzz_event(event, channel_id, own_pubkey=own_pubkey, ignore_own=ignore_own)
+
+    return parser
+
+
+#: Nostr kind for Buzz huddle announcements ("a huddle just started here").
+KIND_HUDDLE_STARTED = 48100
+
+
+def huddle_announcement_parser(
+    channel_id: str, *, started_after: int | None = None
+) -> BuzzMessageParser:
+    """Parser for huddle announcements (kind 48100).
+
+    Emits one :class:`InboundMessage` per announcement with the ephemeral
+    huddle id in ``metadata["ephemeral_channel_id"]``. Subscribe the source
+    with ``kinds=[KIND_HUDDLE_STARTED]``.
+
+    ``started_after`` (unix seconds) drops announcements replayed from relay
+    history — the subscription replays recent events before EOSE, and a
+    restarted agent must not chase long-dead huddles.
+    """
+
+    def parser(event: dict[str, Any], own_pubkey: str | None) -> InboundMessage | None:
+        if event.get("kind") != KIND_HUDDLE_STARTED:
+            return None
+        if started_after is not None and int(event.get("created_at") or 0) < started_after:
+            return None
+        try:
+            huddle_id = json.loads(event.get("content") or "{}")["ephemeral_channel_id"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return None
+        event_id = str(event.get("id", ""))
+        return InboundMessage(
+            channel_id=channel_id,
+            sender_id=str(event.get("pubkey", "")),
+            content=TextContent(body=f"huddle started: {huddle_id}"),
+            external_id=event_id,
+            idempotency_key=event_id,
+            metadata={"ephemeral_channel_id": str(huddle_id)},
+        )
 
     return parser
 

@@ -431,3 +431,122 @@ class TestEndWhenAlone:
         await backend.disconnect(session)
         await settle()
         assert disconnected == []
+
+
+# =============================================================================
+# BuzzHuddleWatcher
+# =============================================================================
+
+
+@dataclass
+class FakeDialClient:
+    """Duck-typed HuddleClient for the watcher's dial path."""
+
+    fail_with: Exception | None = None
+    peers: dict[int, str] = field(default_factory=lambda: {0: "me" * 32, 2: "cd" * 32})
+
+    async def connect(self) -> None:
+        if self.fail_with is not None:
+            raise self.fail_with
+
+
+class StubTransport:
+    def __init__(self) -> None:
+        self.disconnect_cbs: list = []
+
+    def on_client_disconnected(self, cb) -> None:
+        self.disconnect_cbs.append(cb)
+
+    def fire(self, reason: str) -> None:
+        session = make_session()
+        session.metadata["buzz_end_reason"] = reason
+        for cb in self.disconnect_cbs:
+            cb(session)
+
+
+class StubVoiceChannel:
+    def __init__(self) -> None:
+        self._transport = StubTransport()
+        self.connections: list = []
+
+    @property
+    def transport(self) -> StubTransport:
+        return self._transport
+
+    async def start_session(self, room_id, participant_id, connection):
+        self.connections.append(connection)
+        return make_session(f"vs{len(self.connections)}")
+
+
+def make_watcher(voice: StubVoiceChannel, factory) -> buzz_huddle_module.BuzzHuddleWatcher:
+    from types import SimpleNamespace
+
+    return buzz_huddle_module.BuzzHuddleWatcher(
+        kit=None,  # bridge() never touches the kit; start() is framework wiring
+        voice_channel=voice,
+        config=SimpleNamespace(relay_url="wss://x", auth_tag=None),
+        parent_channel_id="parent-uuid",
+        room_id="r",
+        client_factory=factory,
+    )
+
+
+class TestBuzzHuddleWatcher:
+    async def test_bridge_rejoins_on_loss_then_stops_when_alone(self) -> None:
+        voice = StubVoiceChannel()
+        dialed: list[FakeDialClient] = []
+
+        def factory(**_kw) -> FakeDialClient:
+            client = FakeDialClient()
+            dialed.append(client)
+            return client
+
+        watcher = make_watcher(voice, factory)
+        task = asyncio.create_task(watcher.bridge("huddle-uuid"))
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert len(voice.connections) == 1
+
+        voice.transport.fire("connection_lost")  # relay dropped us mid-call
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert len(voice.connections) == 2, "watcher must rejoin after a connection loss"
+
+        voice.transport.fire("alone")  # call is over
+        await asyncio.wait_for(task, timeout=1)
+        assert len(voice.connections) == 2
+        assert dialed and all(c.peers for c in dialed)
+
+    async def test_bridge_returns_when_huddle_is_over(self) -> None:
+        voice = StubVoiceChannel()
+        factory = lambda **_kw: FakeDialClient(fail_with=buzz_huddle_module.HuddleError("gone"))  # noqa: E731
+
+        watcher = make_watcher(voice, factory)
+        await asyncio.wait_for(watcher.bridge("huddle-uuid"), timeout=1)
+        assert voice.connections == []
+
+    async def test_bridge_ignored_while_busy(self) -> None:
+        voice = StubVoiceChannel()
+        watcher = make_watcher(voice, lambda **_kw: FakeDialClient())
+        task = asyncio.create_task(watcher.bridge("first"))
+        for _ in range(20):
+            await asyncio.sleep(0)
+
+        await asyncio.wait_for(watcher.bridge("second"), timeout=1)  # returns at once
+        assert len(voice.connections) == 1, "a second huddle must not start mid-call"
+
+        voice.transport.fire("alone")
+        await asyncio.wait_for(task, timeout=1)
+
+    def test_start_lazy_imports_resolve(self) -> None:
+        """start() imports these lazily — a wrong path only explodes at
+        runtime, long after the module itself imported fine."""
+        from roomkit.channels import BuzzChannel  # noqa: F401
+        from roomkit.models.enums import HookExecution, HookTrigger  # noqa: F401
+        from roomkit.models.hook import HookResult  # noqa: F401
+        from roomkit.providers.buzz import BuzzProvider  # noqa: F401
+        from roomkit.sources.buzz import (  # noqa: F401
+            KIND_HUDDLE_STARTED,
+            BuzzRelaySource,
+            huddle_announcement_parser,
+        )

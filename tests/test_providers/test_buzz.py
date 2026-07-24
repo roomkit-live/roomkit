@@ -189,3 +189,42 @@ class TestBuzzInboundIntegration:
         assert result.event is not None
         assert result.event.content.body == "ping"
         assert result.event.source.channel_type == ChannelType.BUZZ
+
+
+class TestHuddleAnnouncementParser:
+    def _announcement(self, **overrides) -> dict:
+        event = {
+            "id": "evt48100",
+            "kind": 48100,
+            "pubkey": "creator_pubkey",
+            "created_at": 1_000,
+            "content": '{"ephemeral_channel_id": "huddle-uuid"}',
+            "tags": [["h", "parent-uuid"]],
+        }
+        event.update(overrides)
+        return event
+
+    def test_emits_message_with_huddle_id(self) -> None:
+        from roomkit.sources.buzz import huddle_announcement_parser
+
+        parser = huddle_announcement_parser("buzz-events")
+        msg = parser(self._announcement(), None)
+        assert msg is not None
+        assert msg.channel_id == "buzz-events"
+        assert msg.metadata["ephemeral_channel_id"] == "huddle-uuid"
+        assert msg.idempotency_key == "evt48100"
+
+    def test_drops_other_kinds_and_malformed_content(self) -> None:
+        from roomkit.sources.buzz import huddle_announcement_parser
+
+        parser = huddle_announcement_parser("buzz-events")
+        assert parser(self._announcement(kind=9), None) is None
+        assert parser(self._announcement(content="not json"), None) is None
+        assert parser(self._announcement(content="{}"), None) is None
+
+    def test_started_after_drops_replayed_history(self) -> None:
+        from roomkit.sources.buzz import huddle_announcement_parser
+
+        parser = huddle_announcement_parser("buzz-events", started_after=2_000)
+        assert parser(self._announcement(created_at=1_999), None) is None
+        assert parser(self._announcement(created_at=2_000), None) is not None

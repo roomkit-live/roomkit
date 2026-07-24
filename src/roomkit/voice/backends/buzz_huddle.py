@@ -45,16 +45,27 @@ from roomkit.voice.backends.base import (
 from roomkit.voice.base import AudioChunk, VoiceCapability, VoiceSession
 
 if TYPE_CHECKING:
+    from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+    from roomkit.core.framework import RoomKit
+    from roomkit.providers.buzz.config import BuzzConfig
+
     HuddleClient: Any = None
     HAS_BUZZKIT = True
+
+    class HuddleError(Exception): ...
+
 else:
     try:
-        from buzzkit import HuddleClient
+        from buzzkit import HuddleClient, HuddleError
 
         HAS_BUZZKIT = True
     except ImportError:
         HuddleClient = None
         HAS_BUZZKIT = False
+
+        class HuddleError(Exception):
+            """Placeholder when buzzkit is absent (keeps except clauses valid)."""
+
 
 logger = logging.getLogger("roomkit.voice.backends.buzz_huddle")
 
@@ -383,3 +394,183 @@ class BuzzHuddleBackend(VoiceBackend):
                     await result
             except Exception:
                 logger.exception("Error in audio callback for session %s", session.id)
+
+
+def _default_client_factory(*, config: BuzzConfig, huddle_id: str, parent_channel_id: str) -> Any:
+    """Build a huddle client ready for BuzzHuddleBackend.
+
+    paced=False: the backend's OutboundAudioPacer owns the outbound timing;
+    the client just relays frames to the wire.
+    """
+    return HuddleClient(
+        config.relay_url,
+        config.private_key.get_secret_value(),
+        huddle_id,
+        parent_channel_id=parent_channel_id,
+        auth_tag=config.auth_tag,
+        paced=False,
+    )
+
+
+class BuzzHuddleWatcher:
+    """Bridge every huddle announced on a Buzz channel to a voice channel.
+
+    Owns the whole announcement→call lifecycle so an application only builds
+    its voice channel::
+
+        voice = RealtimeVoiceChannel("buzz-voice", provider=..., transport=BuzzHuddleBackend())
+        kit.register_channel(voice)
+        await kit.create_room(room_id="huddles")
+        await kit.attach_channel("huddles", "buzz-voice")
+
+        watcher = BuzzHuddleWatcher(
+            kit,
+            voice_channel=voice,
+            config=BuzzConfig(relay_url=..., private_key=...),
+            parent_channel_id=parent_uuid,
+            room_id="huddles",
+        )
+        await watcher.start()
+
+    ``start()`` subscribes to huddle announcements (kind 48100) on the parent
+    channel through a :class:`~roomkit.sources.buzz.BuzzRelaySource` attached
+    with ``auto_restart=True`` — relay reconnection is the framework's job —
+    and dials every announced huddle. The transport ends each call on its own
+    (``end_when_alone``, or the relay dropping the socket); the watcher reads
+    ``session.metadata["buzz_end_reason"]`` to choose between rejoining the
+    same huddle (connection loss) and waiting for the next one (call over).
+
+    ``bridge(huddle_id)`` dials one known huddle directly (no watching).
+    Calls are bridged one at a time; announcements that arrive mid-call are
+    ignored. ``client_factory`` is injectable for tests.
+    """
+
+    def __init__(
+        self,
+        kit: RoomKit,
+        *,
+        voice_channel: RealtimeVoiceChannel,
+        config: BuzzConfig,
+        parent_channel_id: str,
+        room_id: str,
+        participant_id: str = "buzz-agent",
+        events_channel_id: str = "buzz-huddle-events",
+        join_attempts: int = 3,
+        client_factory: Callable[..., Any] | None = None,
+    ) -> None:
+        self._kit = kit
+        self._voice = voice_channel
+        self._config = config
+        self._parent_id = parent_channel_id
+        self._room_id = room_id
+        self._participant_id = participant_id
+        self._events_channel_id = events_channel_id
+        self._join_attempts = join_attempts
+        self._client_factory = client_factory or _default_client_factory
+        self._busy = asyncio.Lock()
+        self._session_over = asyncio.Event()
+        self._end_reason: str | None = None
+        self._tasks: set[asyncio.Task] = set()
+        voice_channel.transport.on_client_disconnected(self._on_session_over)
+
+    def _on_session_over(self, session: VoiceSession) -> None:
+        self._end_reason = session.metadata.get("buzz_end_reason")
+        self._session_over.set()
+
+    async def start(self) -> None:
+        """Register the announcement channel + hook and attach the source."""
+        import time
+
+        from roomkit.channels import BuzzChannel
+        from roomkit.models.enums import HookExecution, HookTrigger
+        from roomkit.models.hook import HookResult
+        from roomkit.providers.buzz import BuzzProvider
+        from roomkit.sources.buzz import (
+            KIND_HUDDLE_STARTED,
+            BuzzRelaySource,
+            huddle_announcement_parser,
+        )
+
+        source = BuzzRelaySource(
+            self._config,
+            self._events_channel_id,
+            relay_channel_id=self._parent_id,
+            kinds=[KIND_HUDDLE_STARTED],
+            parser=huddle_announcement_parser(
+                self._events_channel_id, started_after=int(time.time())
+            ),
+        )
+        self._kit.register_channel(
+            BuzzChannel(self._events_channel_id, provider=BuzzProvider(source))
+        )
+        # The announcement feed gets its own room: it is an input, not a
+        # conversation participant. Attached to the voice room, every
+        # transcription RoomEvent would be delivered outbound through the
+        # Buzz channel (and fail with "channel_id must be a UUID").
+        announcements_room = f"{self._events_channel_id}-room"
+        await self._kit.create_room(room_id=announcements_room)
+        await self._kit.attach_channel(announcements_room, self._events_channel_id)
+
+        @self._kit.hook(
+            HookTrigger.AFTER_BROADCAST,
+            execution=HookExecution.ASYNC,
+            name=f"{self._events_channel_id}:join",
+        )
+        async def join_huddle(event: Any, ctx: Any) -> HookResult:
+            huddle_id = event.metadata.get("ephemeral_channel_id")
+            if huddle_id and event.source.channel_id == self._events_channel_id:
+                task = asyncio.create_task(self.bridge(str(huddle_id)))
+                self._tasks.add(task)
+                task.add_done_callback(self._tasks.discard)
+            return HookResult.allow()
+
+        await self._kit.attach_source(self._events_channel_id, source, auto_restart=True)
+        logger.info(
+            "Watching Buzz channel %s for huddles (kind %d)", self._parent_id, KIND_HUDDLE_STARTED
+        )
+
+    async def bridge(self, huddle_id: str) -> None:
+        """Dial one huddle and keep the call bridged until it is over."""
+        if self._busy.locked():
+            logger.info("Already bridging a huddle — ignoring %s", huddle_id)
+            return
+        async with self._busy:
+            attempt = 0
+            while True:
+                client = self._client_factory(
+                    config=self._config,
+                    huddle_id=huddle_id,
+                    parent_channel_id=self._parent_id,
+                )
+                try:
+                    await client.connect()
+                except HuddleError as exc:
+                    logger.info("Huddle %s is over (%s)", huddle_id, exc)
+                    return
+                except OSError as exc:
+                    attempt += 1
+                    if attempt >= self._join_attempts:
+                        logger.warning("Could not join huddle %s: %s — giving up", huddle_id, exc)
+                        return
+                    logger.info(
+                        "Join failed (%s) — retry %d/%d",
+                        exc,
+                        attempt,
+                        self._join_attempts - 1,
+                    )
+                    await asyncio.sleep(2 * attempt)
+                    continue
+                attempt = 0
+                logger.info(
+                    "Joined huddle %s (%d peer(s))", huddle_id, max(len(client.peers) - 1, 0)
+                )
+                self._session_over.clear()
+                self._end_reason = None
+                await self._voice.start_session(
+                    self._room_id, self._participant_id, connection=client
+                )
+                await self._session_over.wait()
+                if self._end_reason == "alone":
+                    logger.info("Huddle %s over — everyone left", huddle_id)
+                    return
+                logger.info("Connection to huddle %s lost — rejoining…", huddle_id)
