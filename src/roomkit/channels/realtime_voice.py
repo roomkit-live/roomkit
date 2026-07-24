@@ -412,6 +412,11 @@ class RealtimeVoiceChannel(
         return self._provider
 
     @property
+    def transport(self) -> VoiceBackend:
+        """The transport backend carrying this channel's audio."""
+        return self._transport
+
+    @property
     def session_rooms(self) -> dict[str, str]:
         """Mapping of session_id to room_id."""
         with self._state_lock:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -93,6 +94,46 @@ def default_message_parser(channel_id: str, *, ignore_own: bool = True) -> BuzzM
     return parser
 
 
+#: Nostr kind for Buzz huddle announcements ("a huddle just started here").
+KIND_HUDDLE_STARTED = 48100
+
+
+def huddle_announcement_parser(
+    channel_id: str, *, started_after: int | None = None
+) -> BuzzMessageParser:
+    """Parser for huddle announcements (kind 48100).
+
+    Emits one :class:`InboundMessage` per announcement with the ephemeral
+    huddle id in ``metadata["ephemeral_channel_id"]``. Subscribe the source
+    with ``kinds=[KIND_HUDDLE_STARTED]``.
+
+    ``started_after`` (unix seconds) drops announcements replayed from relay
+    history — the subscription replays recent events before EOSE, and a
+    restarted agent must not chase long-dead huddles.
+    """
+
+    def parser(event: dict[str, Any], own_pubkey: str | None) -> InboundMessage | None:
+        if event.get("kind") != KIND_HUDDLE_STARTED:
+            return None
+        if started_after is not None and int(event.get("created_at") or 0) < started_after:
+            return None
+        try:
+            huddle_id = json.loads(event.get("content") or "{}")["ephemeral_channel_id"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return None
+        event_id = str(event.get("id", ""))
+        return InboundMessage(
+            channel_id=channel_id,
+            sender_id=str(event.get("pubkey", "")),
+            content=TextContent(body=f"huddle started: {huddle_id}"),
+            external_id=event_id,
+            idempotency_key=event_id,
+            metadata={"ephemeral_channel_id": str(huddle_id)},
+        )
+
+    return parser
+
+
 class BuzzRelaySource(BaseSourceProvider):
     """Persistent Buzz relay connection emitting one channel's messages.
 
@@ -109,7 +150,12 @@ class BuzzRelaySource(BaseSourceProvider):
         *,
         relay_channel_id: str,
         parser: BuzzMessageParser | None = None,
+        kinds: list[int] | None = None,
     ) -> None:
+        """``kinds`` selects the Nostr event kinds to subscribe to (default:
+        chat messages, kind 9). Pass other kinds — e.g. huddle announcements,
+        kind 48100 — together with a ``parser`` that knows how to convert
+        them; the default parser only understands text messages."""
         super().__init__()
         if not HAS_BUZZKIT:
             raise ImportError(
@@ -119,6 +165,7 @@ class BuzzRelaySource(BaseSourceProvider):
         self._config = config
         self._channel_id = channel_id
         self._relay_channel_id = relay_channel_id
+        self._kinds = kinds
         self._parser = parser or default_message_parser(channel_id, ignore_own=config.ignore_own)
         self._client: Any = BuzzClient(
             config.relay_url,
@@ -173,7 +220,9 @@ class BuzzRelaySource(BaseSourceProvider):
                     await self._join_channel()
                 if self._config.announce_presence:
                     presence_task = asyncio.create_task(self._presence_loop())
-                async for event in self._client.subscribe_channel(self._relay_channel_id):
+                async for event in self._client.subscribe_channel(
+                    self._relay_channel_id, kinds=self._kinds
+                ):
                     if self._should_stop():
                         break
                     parsed = self._parser(event, self._client.pubkey_hex)

@@ -80,6 +80,18 @@ wheels = [
 ]
 
 [[package]]
+name = "agent-client-protocol"
+version = "0.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6c/93/396d02c91b387b2678f23081869ca47bd495fc6c78789022c683180cf5f1/agent_client_protocol-0.11.0.tar.gz", hash = "sha256:8920a3b27bdcc852fd7c73066f47ab53257dbfbe57b505e20a40c69f80a5391c", size = 87402, upload-time = "2026-07-05T17:07:56.803Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/48/a1367dded7765f5489f9840389949d5aeac53a73aeb1b4e6c0ab61e1617a/agent_client_protocol-0.11.0-py3-none-any.whl", hash = "sha256:2d8570cd4911f8af9fbab4808f7b05f09204a756f346c7409ecdcae3f37cdb2f", size = 68089, upload-time = "2026-07-05T17:07:55.518Z" },
+]
+
+[[package]]
 name = "aic-sdk"
 version = "2.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4957,10 +4969,14 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+acp = [
+    { name = "agent-client-protocol" },
+]
 aicoustics = [
     { name = "aic-sdk" },
 ]
 all = [
+    { name = "agent-client-protocol" },
     { name = "aiortc" },
     { name = "aiortp" },
     { name = "aiosipua", extra = ["rtp"] },
@@ -5023,6 +5039,7 @@ deepgram = [
     { name = "deepgram-sdk" },
 ]
 dev = [
+    { name = "agent-client-protocol" },
     { name = "anthropic" },
     { name = "asyncpg" },
     { name = "bandit" },
@@ -5048,6 +5065,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "rich" },
     { name = "ruff" },
     { name = "telegramify-markdown" },
     { name = "twilio" },
@@ -5239,6 +5257,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aec-audio-processing", marker = "extra == 'webrtc-aec'", specifier = ">=0.1" },
+    { name = "agent-client-protocol", marker = "extra == 'acp'", specifier = ">=0.11.0,<0.12" },
+    { name = "agent-client-protocol", marker = "extra == 'all'", specifier = ">=0.11.0,<0.12" },
+    { name = "agent-client-protocol", marker = "extra == 'dev'", specifier = ">=0.11.0,<0.12" },
     { name = "aic-sdk", marker = "extra == 'aicoustics'", specifier = ">=2.1" },
     { name = "aioquic", marker = "extra == 'webtransport'", specifier = ">=1.0" },
     { name = "aiortc", marker = "extra == 'all'", specifier = ">=1.6" },
@@ -5371,6 +5392,7 @@ requires-dist = [
     { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0" },
     { name = "rich", marker = "extra == 'all'", specifier = ">=13.0" },
     { name = "rich", marker = "extra == 'console'", specifier = ">=13.0" },
+    { name = "rich", marker = "extra == 'dev'", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "sherpa-onnx", marker = "extra == 'all'", specifier = ">=1.10" },
     { name = "sherpa-onnx", marker = "extra == 'sherpa-onnx'", specifier = ">=1.10" },
@@ -5395,7 +5417,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'sources'", specifier = ">=14.0" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=14.0" },
 ]
-provides-extras = ["aicoustics", "all", "anam", "anthropic", "azure", "buzz", "console", "deepgram", "dev", "discord", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "openrouter", "opentelemetry", "phonenumbers", "polargrid", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
+provides-extras = ["acp", "aicoustics", "all", "anam", "anthropic", "azure", "buzz", "console", "deepgram", "dev", "discord", "docs", "elevenlabs", "fastrtc", "gemini", "gradium", "httpx", "local-audio", "local-video", "mcp", "mediapipe", "mistral", "neutts", "ollama", "openai", "openrouter", "opentelemetry", "phonenumbers", "polargrid", "postgres", "providers", "pynacl", "pyroscope", "qwen-asr", "qwen-tts", "realtime-elevenlabs", "realtime-gemini", "realtime-openai", "redis", "rtp", "screen-capture", "screen-input", "sherpa-onnx", "sip", "smart-turn", "sources", "sse", "teams", "telegram", "twilio", "video", "video-overlay", "vllm", "webrtc-aec", "websocket", "webtransport", "whatsapp-personal", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "setuptools", specifier = "<84" }]

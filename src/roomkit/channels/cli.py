@@ -22,16 +22,17 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import json
 import sys
 from collections.abc import AsyncIterator, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from roomkit.channels.base import Channel
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelMediaType, ChannelType
-from roomkit.models.event import EventContent, EventSource, RoomEvent, TextContent
+from roomkit.models.enums import ChannelMediaType, ChannelType, EventType
+from roomkit.models.event import EventContent, EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.streaming import ThinkingDeltaMarker
 
 if TYPE_CHECKING:
@@ -52,6 +53,8 @@ class CLIChannel(Channel):
         use_color: Enable ANSI colors. Auto-detected from terminal.
         agent_label: Callable that maps ``channel_id`` to a display name
             for agent responses.  Defaults to the raw channel ID.
+        markdown: Render agent output as progressively updated Markdown.
+            Requires the ``console`` extra.
     """
 
     channel_type = ChannelType.CLI
@@ -67,8 +70,13 @@ class CLIChannel(Channel):
         use_color: bool | None = None,
         agent_label: Callable[[str], str] | None = None,
         show_thinking: bool = False,
+        markdown: bool = False,
     ) -> None:
         super().__init__(channel_id)
+        if markdown:
+            from roomkit.channels._cli_markdown import require_markdown_support
+
+            require_markdown_support()
         self._prompt = prompt
         self._user_color = user_color
         self._agent_color = agent_color
@@ -76,6 +84,7 @@ class CLIChannel(Channel):
         self._use_color = use_color if use_color is not None else _is_tty()
         self._agent_label = agent_label or _default_agent_label
         self._show_thinking = show_thinking
+        self._markdown = markdown
         self._reset = "\033[0m"
 
     # -- Channel interface ----------------------------------------------------
@@ -107,7 +116,12 @@ class CLIChannel(Channel):
             return ChannelOutput.empty()
 
         label = self._agent_label(event.source.channel_id)
-        self._print_agent(label, text)
+        if self._markdown:
+            from roomkit.channels._cli_markdown import print_markdown
+
+            print_markdown(label, text, file=sys.stdout, use_color=self._use_color)
+        else:
+            self._print_agent(label, text)
         return ChannelOutput.empty()
 
     @property
@@ -116,7 +130,7 @@ class CLIChannel(Channel):
 
     async def deliver_stream(
         self,
-        text_stream: AsyncIterator[str],
+        text_stream: AsyncIterator[Any],
         event: RoomEvent,
         binding: ChannelBinding,
         context: RoomContext,
@@ -127,17 +141,22 @@ class CLIChannel(Channel):
         enabled, :class:`ThinkingDeltaMarker` chunks are rendered in
         ``thinking_color`` with a leading ``💭`` and a trailing newline
         before the first text delta, so the reasoning appears coherently
-        above the answer.
+        above the answer. Persisted tool-call events are rendered inline so
+        long-running agent work remains visible before the final answer.
         """
         if event.source.channel_id == self.channel_id:
             return ChannelOutput.empty()
 
         label = self._agent_label(event.source.channel_id)
+        if self._markdown:
+            return await self._deliver_markdown_stream(text_stream, label)
+
         agent_prefix = self._colorize(self._agent_color, f"{label}: ")
 
         thinking_open = False
         thinking_has_text = False
         answer_started = False
+        tool_activity_rendered = False
 
         async for chunk in text_stream:
             if self._show_thinking and isinstance(chunk, ThinkingDeltaMarker):
@@ -172,14 +191,45 @@ class CLIChannel(Channel):
                     answer_started = True
                 sys.stdout.write(text)
                 sys.stdout.flush()
+            elif isinstance(chunk, RoomEvent) and isinstance(chunk.content, ToolCallContent):
+                if thinking_open:
+                    sys.stdout.write(f"{self._reset}\n")
+                    thinking_open = False
+                    thinking_has_text = False
+                self._print_tool_event(chunk)
+                tool_activity_rendered = True
 
         if thinking_open:
             sys.stdout.write(f"{self._reset}\n")
-        if not answer_started:
+        if not answer_started and not tool_activity_rendered:
             # No text — at least put the prefix so the user sees something.
             sys.stdout.write(f"\n{agent_prefix}")
         sys.stdout.write("\n\n")
         sys.stdout.flush()
+        return ChannelOutput.empty()
+
+    async def _deliver_markdown_stream(
+        self,
+        stream: AsyncIterator[Any],
+        label: str,
+    ) -> ChannelOutput:
+        from roomkit.channels._cli_markdown import MarkdownStreamRenderer
+
+        renderer = MarkdownStreamRenderer(
+            label,
+            file=sys.stdout,
+            use_color=self._use_color,
+        )
+        try:
+            async for chunk in stream:
+                if isinstance(chunk, str):
+                    renderer.add_text(chunk)
+                elif self._show_thinking and isinstance(chunk, ThinkingDeltaMarker):
+                    renderer.add_thinking(chunk.thinking)
+                elif isinstance(chunk, RoomEvent) and isinstance(chunk.content, ToolCallContent):
+                    renderer.add_tool_event(chunk)
+        finally:
+            renderer.close()
         return ChannelOutput.empty()
 
     def capabilities(self) -> ChannelCapabilities:
@@ -276,6 +326,24 @@ class CLIChannel(Channel):
         prefix = self._colorize(self._agent_color, f"{label}:")
         print(f"\n{prefix} {text}\n")
 
+    def _print_tool_event(self, event: RoomEvent) -> None:
+        content = event.content
+        if not isinstance(content, ToolCallContent):
+            return
+
+        if event.type == EventType.TOOL_CALL_START:
+            arguments = _format_tool_arguments(content.arguments)
+            sys.stdout.write(f"\n🔧 {content.tool_name}{arguments}\n")
+        elif event.type == EventType.TOOL_CALL_END:
+            symbol = "✗" if content.status == "failed" else "✓"
+            duration = (
+                f" ({content.duration_ms} ms)"
+                if content.duration_ms is not None and content.duration_ms > 0
+                else ""
+            )
+            sys.stdout.write(f"\n{symbol} {content.tool_name}{duration}\n")
+        sys.stdout.flush()
+
 
 def _default_agent_label(channel_id: str) -> str:
     """Convert ``agent-researcher`` to ``Researcher``."""
@@ -286,3 +354,12 @@ def _default_agent_label(channel_id: str) -> str:
 def _is_tty() -> bool:
     """Check if stdout is connected to a terminal."""
     return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+
+def _format_tool_arguments(arguments: dict[str, Any], *, max_length: int = 240) -> str:
+    if not arguments:
+        return ""
+    rendered = json.dumps(arguments, ensure_ascii=False, default=str, sort_keys=True)
+    if len(rendered) > max_length:
+        rendered = f"{rendered[: max_length - 1]}…"
+    return f" {rendered}"

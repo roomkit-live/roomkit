@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from roomkit.realtime.base import RealtimeBackend
     from roomkit.store.base import ConversationStore
     from roomkit.telemetry.base import TelemetryProvider
+    from roomkit.tools.external import ExternalToolHandler
 
 
 @runtime_checkable
@@ -107,15 +108,25 @@ class ChannelOpsMixin(HelpersMixin):
 
             # Inject hook callbacks into external tool handler if present
             if channel._external_tool_handler is not None:
-                handler = channel._external_tool_handler
-                handler._channel_id = channel.channel_id
-                handler._before_tool_hook = self._build_before_tool_call_hook(channel.channel_id)
-                handler._on_tool_hook = self._build_tool_call_hook(channel.channel_id)
+                self._wire_external_tool_handler(
+                    channel.channel_id, channel._external_tool_handler
+                )
 
             # Inject ON_USER_INPUT_REQUIRED hook into human input handler
             if channel._human_input_handler is not None:
                 channel._human_input_handler.handler._on_input_required = (
                     self._build_on_user_input_required_hook(channel.channel_id)
+                )
+
+        # ACP agents own their tool loop, but use the same RoomKit permission
+        # hooks and realtime activity surface as in-process AI providers.
+        from roomkit.channels.acp import ACPChannel
+
+        if isinstance(channel, ACPChannel):
+            channel._realtime = self._realtime
+            if channel._external_tool_handler is not None:
+                self._wire_external_tool_handler(
+                    channel.channel_id, channel._external_tool_handler
                 )
 
         # Propagate telemetry to channel's sub-providers (AI, STT, TTS, etc.)
@@ -133,6 +144,12 @@ class ChannelOpsMixin(HelpersMixin):
 
         if isinstance(channel, AgentChannel) and channel.auto_greet and channel.greeting:
             self._register_auto_greet_hook(channel)
+
+    def _wire_external_tool_handler(self, channel_id: str, handler: ExternalToolHandler) -> None:
+        """Inject hook callbacks so external tool calls fire RoomKit tool hooks."""
+        handler._channel_id = channel_id
+        handler._before_tool_hook = self._build_before_tool_call_hook(channel_id)
+        handler._on_tool_hook = self._build_tool_call_hook(channel_id)
 
     def unregister_channel(self, channel_id: str) -> Channel | None:
         """Remove a channel from the registry and return it.

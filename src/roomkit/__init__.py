@@ -17,6 +17,7 @@ from roomkit.channels import (
     WhatsAppPersonalChannel,
 )
 from roomkit.channels._turn_config import AIChannelTurnConfig
+from roomkit.channels.acp import ACPChannel
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.av import AudioVideoChannel
@@ -184,6 +185,7 @@ __all__ = [
     "Queued",
     "WaitForIdle",
     # Channels
+    "ACPChannel",
     "Agent",
     "AIChannel",
     "AIChannelTurnConfig",

@@ -105,6 +105,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `openai_ai.py` | OpenAI | AI-powered assistant using OpenAI GPT |
 | `mistral_ai.py` | Mistral | AI-powered assistant using Mistral AI |
 | `openrouter_ai.py` | OpenRouter | Interactive CLI for any of 300+ models behind one key |
+| `acp_claude_code.py` | ACP / Claude Code | Interactive Claude Code with live Markdown, reasoning, tools, and permissions |
 | `gemini_vertex_ai.py` | Gemini / Vertex | Gemini on Vertex AI — regional endpoint, data residency, ADC auth |
 | `ollama_ai.py` | Ollama | AI-powered assistant using Ollama's native API (proper thinking support) |
 | `ollama_cli.py` | Ollama | Interactive CLI test bed — `--think`/`--no-think`, `--stream`/`--no-stream`, `--mcp <url>` |

@@ -51,7 +51,11 @@ class FakeHuddleClient:
     left: bool = False
 
     def __post_init__(self) -> None:
-        self._events: asyncio.Queue = asyncio.Queue()
+        # Mirrors the real client's fan-out: every events() call gets its own
+        # queue; events fed before the first subscriber exists are a backlog
+        # handed to that first subscriber.
+        self._subs: list[asyncio.Queue] = []
+        self._backlog: list = []
 
     # -- what the backend calls --------------------------------------------
     def send_pcm(self, pcm: bytes) -> None:
@@ -71,21 +75,34 @@ class FakeHuddleClient:
 
     async def leave(self) -> None:
         self.left = True
-        await self._events.put(None)
+        self.end()
 
     async def events(self):
+        queue: asyncio.Queue = asyncio.Queue()
+        if not self._subs:
+            for pending in self._backlog:
+                queue.put_nowait(pending)
+            self._backlog.clear()
+        self._subs.append(queue)
         while True:
-            event = await self._events.get()
+            event = await queue.get()
             if event is None:
                 return
             yield event
 
     # -- test controls -------------------------------------------------------
     def feed(self, event) -> None:
-        self._events.put_nowait(event)
+        if self._subs:
+            for queue in self._subs:
+                queue.put_nowait(event)
+        else:
+            self._backlog.append(event)
 
     def end(self) -> None:
-        self._events.put_nowait(None)
+        for queue in self._subs:
+            queue.put_nowait(None)
+        if not self._subs:
+            self._backlog.append(None)
 
 
 def make_session(session_id: str = "s1") -> VoiceSession:
@@ -132,14 +149,14 @@ class FakePacer:
 @pytest.fixture(autouse=True)
 def fake_pacer(monkeypatch) -> None:
     """Swap the real (timed) pacer for the deterministic fake in all tests."""
-    monkeypatch.setattr(
-        "roomkit.voice.realtime.pacer.OutboundAudioPacer", FakePacer
-    )
+    monkeypatch.setattr("roomkit.voice.realtime.pacer.OutboundAudioPacer", FakePacer)
 
 
 def make_backend(**kw) -> BuzzHuddleBackend:
-    """Silence fill is disabled by default so assertions stay deterministic."""
+    """Silence fill and the alone-watcher are disabled by default so
+    assertions stay deterministic (one events() consumer, no timers)."""
     kw.setdefault("silence_fill", False)
+    kw.setdefault("end_when_alone", False)
     return BuzzHuddleBackend(**kw)
 
 
@@ -347,3 +364,189 @@ class TestLifecycle:
         await backend.close()
         assert c1.left and c2.left
         assert backend.list_sessions("r") == []
+
+
+class TestEndWhenAlone:
+    async def test_last_peer_leaving_ends_the_session(self) -> None:
+        """Roster shrinking to just us fires the disconnect path with
+        reason "alone" — and only once, even if the socket closes after."""
+        backend = make_backend(end_when_alone=True)
+        disconnected: list[VoiceSession] = []
+        backend.on_client_disconnected(lambda s: disconnected.append(s))
+        session = make_session()
+        client = FakeHuddleClient(peers={0: "me" * 32, 2: "cd" * 32})
+        await backend.accept(session, client)
+        await settle()
+
+        client.peers = {0: "me" * 32}  # last remote peer gone
+        client.feed(FakePeerJoined(pubkey="cd" * 32, peer_index=2))  # roster event
+        await settle()
+
+        assert disconnected == [session]
+        assert session.metadata["buzz_end_reason"] == "alone"
+
+        client.end()  # socket closes during teardown — must not re-fire
+        await settle()
+        assert len(disconnected) == 1
+        await backend.disconnect(session)
+
+    async def test_socket_drop_reports_connection_lost(self) -> None:
+        backend = make_backend(end_when_alone=True)
+        disconnected: list[VoiceSession] = []
+        backend.on_client_disconnected(lambda s: disconnected.append(s))
+        session = make_session()
+        client = FakeHuddleClient(peers={0: "me" * 32, 2: "cd" * 32})
+        await backend.accept(session, client)
+        await settle()
+
+        client.end()  # relay dropped us while a peer was still there
+        await settle()
+
+        assert disconnected == [session]
+        assert session.metadata["buzz_end_reason"] == "connection_lost"
+        await backend.disconnect(session)
+
+    async def test_empty_huddle_times_out(self) -> None:
+        """A huddle nobody joins ends after the grace period."""
+        backend = make_backend(end_when_alone=True, empty_huddle_grace=0.05)
+        disconnected: list[VoiceSession] = []
+        backend.on_client_disconnected(lambda s: disconnected.append(s))
+        session = make_session()
+        client = FakeHuddleClient(peers={0: "me" * 32})  # just us
+        await backend.accept(session, client)
+
+        await asyncio.sleep(0.15)
+
+        assert disconnected == [session]
+        assert session.metadata["buzz_end_reason"] == "alone"
+        await backend.disconnect(session)
+
+    async def test_deliberate_disconnect_fires_no_callback(self) -> None:
+        """end_session-style teardown is not a transport-reported hangup."""
+        backend = make_backend(end_when_alone=True)
+        disconnected: list[VoiceSession] = []
+        backend.on_client_disconnected(lambda s: disconnected.append(s))
+        session, client = await accept_fake(backend)
+        await settle()
+        await backend.disconnect(session)
+        await settle()
+        assert disconnected == []
+
+
+# =============================================================================
+# BuzzHuddleWatcher
+# =============================================================================
+
+
+@dataclass
+class FakeDialClient:
+    """Duck-typed HuddleClient for the watcher's dial path."""
+
+    fail_with: Exception | None = None
+    peers: dict[int, str] = field(default_factory=lambda: {0: "me" * 32, 2: "cd" * 32})
+
+    async def connect(self) -> None:
+        if self.fail_with is not None:
+            raise self.fail_with
+
+
+class StubTransport:
+    def __init__(self) -> None:
+        self.disconnect_cbs: list = []
+
+    def on_client_disconnected(self, cb) -> None:
+        self.disconnect_cbs.append(cb)
+
+    def fire(self, reason: str) -> None:
+        session = make_session()
+        session.metadata["buzz_end_reason"] = reason
+        for cb in self.disconnect_cbs:
+            cb(session)
+
+
+class StubVoiceChannel:
+    def __init__(self) -> None:
+        self._transport = StubTransport()
+        self.connections: list = []
+
+    @property
+    def transport(self) -> StubTransport:
+        return self._transport
+
+    async def start_session(self, room_id, participant_id, connection):
+        self.connections.append(connection)
+        return make_session(f"vs{len(self.connections)}")
+
+
+def make_watcher(voice: StubVoiceChannel, factory) -> buzz_huddle_module.BuzzHuddleWatcher:
+    from types import SimpleNamespace
+
+    return buzz_huddle_module.BuzzHuddleWatcher(
+        kit=None,  # bridge() never touches the kit; start() is framework wiring
+        voice_channel=voice,
+        config=SimpleNamespace(relay_url="wss://x", auth_tag=None),
+        parent_channel_id="parent-uuid",
+        room_id="r",
+        client_factory=factory,
+    )
+
+
+class TestBuzzHuddleWatcher:
+    async def test_bridge_rejoins_on_loss_then_stops_when_alone(self) -> None:
+        voice = StubVoiceChannel()
+        dialed: list[FakeDialClient] = []
+
+        def factory(**_kw) -> FakeDialClient:
+            client = FakeDialClient()
+            dialed.append(client)
+            return client
+
+        watcher = make_watcher(voice, factory)
+        task = asyncio.create_task(watcher.bridge("huddle-uuid"))
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert len(voice.connections) == 1
+
+        voice.transport.fire("connection_lost")  # relay dropped us mid-call
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert len(voice.connections) == 2, "watcher must rejoin after a connection loss"
+
+        voice.transport.fire("alone")  # call is over
+        await asyncio.wait_for(task, timeout=1)
+        assert len(voice.connections) == 2
+        assert dialed and all(c.peers for c in dialed)
+
+    async def test_bridge_returns_when_huddle_is_over(self) -> None:
+        voice = StubVoiceChannel()
+        factory = lambda **_kw: FakeDialClient(fail_with=buzz_huddle_module.HuddleError("gone"))  # noqa: E731
+
+        watcher = make_watcher(voice, factory)
+        await asyncio.wait_for(watcher.bridge("huddle-uuid"), timeout=1)
+        assert voice.connections == []
+
+    async def test_bridge_ignored_while_busy(self) -> None:
+        voice = StubVoiceChannel()
+        watcher = make_watcher(voice, lambda **_kw: FakeDialClient())
+        task = asyncio.create_task(watcher.bridge("first"))
+        for _ in range(20):
+            await asyncio.sleep(0)
+
+        await asyncio.wait_for(watcher.bridge("second"), timeout=1)  # returns at once
+        assert len(voice.connections) == 1, "a second huddle must not start mid-call"
+
+        voice.transport.fire("alone")
+        await asyncio.wait_for(task, timeout=1)
+
+    def test_start_lazy_imports_resolve(self) -> None:
+        """start() imports these lazily — a wrong path only explodes at
+        runtime, long after the module itself imported fine."""
+        from roomkit.channels import BuzzChannel  # noqa: F401
+        from roomkit.models.enums import HookExecution, HookTrigger  # noqa: F401
+        from roomkit.models.hook import HookResult  # noqa: F401
+        from roomkit.providers.buzz import BuzzProvider  # noqa: F401
+        from roomkit.sources.buzz import (  # noqa: F401
+            KIND_HUDDLE_STARTED,
+            BuzzRelaySource,
+            huddle_announcement_parser,
+        )
