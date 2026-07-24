@@ -49,7 +49,8 @@ fastrtc = [
     "aiortc>=1.6",
     "av>=12.0.0",
     "librosa>=0.10",
-    "numpy>=1.26",
+    # Numba (via librosa) does not yet support NumPy 2.5.
+    "numpy>=1.26,<2.5",
     "pydub>=0.25",
     "anyio>=4.0",
 ]
@@ -267,7 +268,9 @@ line-length = 99
 src = ["src", "tests"]
 # Vendored, gradio-free WebRTC transport (see src/roomkit/webrtc/LICENSE) — kept
 # close to upstream fastrtc 0.0.34, not restyled to roomkit conventions.
-extend-exclude = ["src/roomkit/webrtc/"]
+# Markdown examples are maintained for documentation readability rather than
+# rewritten as source files by Ruff's fenced-code formatter.
+extend-exclude = ["src/roomkit/webrtc/", "*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "PT", "ASYNC"]

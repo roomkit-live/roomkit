@@ -329,6 +329,32 @@ class TestACPChannel:
         assert channel.info["sdk_version"].startswith("0.11.")
         await channel.close()
 
+    async def test_waits_for_deferred_update_before_ending_stream(self, tmp_path: Any) -> None:
+        channel, connection, _ = _channel(tmp_path, emit_updates=False)
+
+        async def prompt_with_deferred_update(
+            session_id: str,
+            prompt: list[Any],
+            **kwargs: Any,
+        ) -> PromptResponse:
+            asyncio.create_task(
+                connection.client.session_update(
+                    session_id,
+                    acp.update_agent_message_text("last chunk"),
+                )
+            )
+            return PromptResponse(stop_reason="end_turn")
+
+        connection.prompt = prompt_with_deferred_update  # type: ignore[method-assign]
+        output = await channel.on_event(
+            make_event(body="Inspect"),
+            _binding(),
+            RoomContext(room=Room(id="room-1")),
+        )
+
+        assert [chunk async for chunk in output.response_stream] == ["last chunk"]
+        await channel.close()
+
     async def test_default_permission_policy_rejects(self, tmp_path: Any) -> None:
         channel, connection, _ = _channel(tmp_path)
         output = await channel.on_event(
