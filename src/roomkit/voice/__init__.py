@@ -447,6 +447,13 @@ def get_websocket_realtime_transport() -> type:
     return WebSocketRealtimeTransport
 
 
+def get_buzz_huddle_backend() -> type:
+    """Get BuzzHuddleBackend class (requires buzzkit — pip install roomkit[buzz])."""
+    from roomkit.voice.backends.buzz_huddle import BuzzHuddleBackend
+
+    return BuzzHuddleBackend
+
+
 def get_local_audio_transport() -> type:
     """Get LocalAudioBackend class (requires sounddevice, numpy).
 

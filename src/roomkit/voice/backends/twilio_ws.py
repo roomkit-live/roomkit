@@ -29,7 +29,6 @@ import asyncio
 import base64
 import contextlib
 import logging
-import struct
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -229,44 +228,11 @@ class TwilioWebSocketBackend(VoiceBackend):
 
     @staticmethod
     def _build_resampler(in_rate: int, out_rate: int) -> Callable[[bytes], bytes]:
-        """Build a stateful resampler (soxr preferred, linear fallback)."""
-        if in_rate == out_rate:
-            return lambda data: data
-        try:
-            import numpy as np
-            import soxr
+        """Build a stateful resampler (soxr preferred, linear fallback).
 
-            # quality="QQ" (Quick) keeps per-chunk latency at ~one frame.
-            # Default VHQ buffers ~120 ms of filter history before emitting,
-            # which silently drops the first six 20 ms Twilio frames at
-            # call start. QQ is still well above telephony-band fidelity
-            # for 8↔16 kHz.
-            stream = soxr.ResampleStream(in_rate, out_rate, 1, dtype=np.int16, quality="QQ")
-            logger.info("Resampler: soxr stream QQ (%d -> %d Hz)", in_rate, out_rate)
+        Shared with other fixed-rate backends — see
+        :func:`roomkit.voice.backends._resample.build_streaming_resampler`.
+        """
+        from roomkit.voice.backends._resample import build_streaming_resampler
 
-            def _soxr(data: bytes) -> bytes:
-                out = stream.resample_chunk(np.frombuffer(data, dtype=np.int16))
-                return bytes(out.tobytes())
-
-            return _soxr
-        except ImportError:
-            logger.info("Resampler: linear (%d -> %d Hz)", in_rate, out_rate)
-            ratio = out_rate / in_rate
-
-            def _linear(data: bytes) -> bytes:
-                n_in = len(data) // 2
-                if n_in == 0:
-                    return data
-                samples = struct.unpack(f"<{n_in}h", data)
-                n_out = int(n_in * ratio)
-                out = [0] * n_out
-                for i in range(n_out):
-                    src = i / ratio
-                    idx = int(src)
-                    frac = src - idx
-                    s0 = samples[min(idx, n_in - 1)]
-                    s1 = samples[min(idx + 1, n_in - 1)]
-                    out[i] = max(-32768, min(32767, int(s0 + frac * (s1 - s0))))
-                return struct.pack(f"<{n_out}h", *out)
-
-            return _linear
+        return build_streaming_resampler(in_rate, out_rate)
