@@ -96,7 +96,16 @@ class BuzzHuddleBackend(VoiceBackend):
         silence_fill: bool = True,
         provider_input_rate: int = 16_000,
         provider_output_rate: int = 24_000,
+        end_when_alone: bool = True,
+        empty_huddle_grace: float = 90.0,
     ) -> None:
+        """``end_when_alone`` (default on) ends the session when the last
+        remote peer leaves the huddle. The relay keeps a huddle alive while
+        ANY member is connected — this agent included — so without it the
+        huddle and the provider session run forever. ``empty_huddle_grace``
+        is how long to wait for a first peer in a huddle that is empty at
+        join time (the announcement can precede the creator's audio socket).
+        """
         if not HAS_BUZZKIT:
             raise ImportError(
                 "BuzzHuddleBackend requires the buzzkit package. "
@@ -105,12 +114,18 @@ class BuzzHuddleBackend(VoiceBackend):
         self._silence_fill = silence_fill
         self._input_rate = provider_input_rate
         self._output_rate = provider_output_rate
+        self._end_when_alone = end_when_alone
+        self._empty_grace = empty_huddle_grace
         # 20 ms of s16le silence at the provider's input rate.
         self._silence_frame = b"\x00\x00" * int(provider_input_rate * _FRAME_SECONDS)
         self._clients: dict[str, Any] = {}  # session_id -> HuddleClient
         self._pacers: dict[str, Any] = {}  # session_id -> OutboundAudioPacer
         self._receive_tasks: dict[str, asyncio.Task[None]] = {}
         self._silence_tasks: dict[str, asyncio.Task[None]] = {}
+        self._alone_tasks: dict[str, asyncio.Task[None]] = {}
+        # Sessions whose disconnect callbacks already fired (or must not fire
+        # because teardown is deliberate). Guarded by the event loop.
+        self._disconnect_fired: set[str] = set()
         self._last_audio_at: dict[str, float] = {}
         self._inbound_resample: dict[str, Callable[[bytes], bytes]] = {}
         self._outbound_resample: dict[str, Callable[[bytes], bytes]] = {}
@@ -169,6 +184,14 @@ class BuzzHuddleBackend(VoiceBackend):
                 self._silence_loop(session),
                 name=f"buzz_huddle_silence:{session.id}",
             )
+        if self._end_when_alone:
+            # Second events() subscriber — must start after the receive task:
+            # the client hands its pre-connect event backlog to the first
+            # subscriber, which belongs to the audio path.
+            self._alone_tasks[session.id] = asyncio.create_task(
+                self._alone_loop(session, connection),
+                name=f"buzz_huddle_alone:{session.id}",
+            )
 
     def _make_wire_sender(self, client: Any) -> Callable[[bytes], Any]:
         """Build the pacer's send_fn: encode 48 kHz PCM → relay Opus frames."""
@@ -223,7 +246,10 @@ class BuzzHuddleBackend(VoiceBackend):
             pacer.end_of_response()
 
     async def disconnect(self, session: VoiceSession) -> None:
-        for tasks in (self._receive_tasks, self._silence_tasks):
+        # Deliberate teardown: the dying receive loop must not report it as a
+        # connection loss (the session owner already knows it's over).
+        self._disconnect_fired.add(session.id)
+        for tasks in (self._receive_tasks, self._silence_tasks, self._alone_tasks):
             task = tasks.pop(session.id, None)
             if task is not None:
                 task.cancel()
@@ -241,6 +267,7 @@ class BuzzHuddleBackend(VoiceBackend):
         if client is not None:
             with contextlib.suppress(Exception):
                 await client.leave()
+        self._disconnect_fired.discard(session.id)
 
     def get_session(self, session_id: str) -> VoiceSession | None:
         return self._sessions.get(session_id)
@@ -294,13 +321,59 @@ class BuzzHuddleBackend(VoiceBackend):
         except Exception:
             logger.exception("Huddle receive loop failed for session %s", session.id)
         finally:
-            for cb in self._disconnect_callbacks:
-                try:
-                    result = cb(session)
-                    if hasattr(result, "__await__"):
-                        await result
-                except Exception:
-                    logger.exception("Error in disconnect callback for session %s", session.id)
+            await self._fire_disconnect(session, "connection_lost")
+
+    async def _alone_loop(self, session: VoiceSession, client: Any) -> None:
+        """End the session when the last remote peer leaves the huddle.
+
+        The relay keeps a huddle alive while ANY member is connected — this
+        agent included — so a session that never hangs up keeps the huddle
+        (and the provider connection) open forever. A huddle that is empty
+        at join time gets ``empty_huddle_grace`` seconds for a first peer to
+        arrive before the session ends.
+        """
+        events = aiter(client.events())
+        seen_peer = len(client.peers) > 1
+        while True:
+            try:
+                if seen_peer:
+                    event = await anext(events)
+                else:
+                    async with asyncio.timeout(self._empty_grace):
+                        event = await anext(events)
+            except TimeoutError:
+                logger.info("Session %s: nobody joined the huddle — hanging up", session.id)
+                break
+            except StopAsyncIteration:
+                return  # socket closed; the receive loop reports the disconnect
+            if getattr(event, "pcm", None) is not None:
+                continue  # audio frame; only roster changes matter here
+            if len(client.peers) > 1:
+                seen_peer = True
+            elif seen_peer:
+                logger.info("Session %s: last peer left the huddle — hanging up", session.id)
+                break
+        await self._fire_disconnect(session, "alone")
+
+    async def _fire_disconnect(self, session: VoiceSession, reason: str) -> None:
+        """Invoke the disconnect callbacks exactly once per session.
+
+        ``reason`` lands in ``session.metadata["buzz_end_reason"]``: "alone"
+        (last peer left, or nobody ever joined) or "connection_lost" (the
+        relay dropped the audio socket). Callers deciding whether to rejoin
+        the huddle read it from there.
+        """
+        if session.id in self._disconnect_fired:
+            return
+        self._disconnect_fired.add(session.id)
+        session.metadata["buzz_end_reason"] = reason
+        for cb in self._disconnect_callbacks:
+            try:
+                result = cb(session)
+                if hasattr(result, "__await__"):
+                    await result
+            except Exception:
+                logger.exception("Error in disconnect callback for session %s", session.id)
 
     async def _fire_audio_callbacks(self, session: VoiceSession, audio: bytes) -> None:
         for cb in self._audio_callbacks:
