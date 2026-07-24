@@ -733,19 +733,19 @@ wheels = [
 
 [[package]]
 name = "buzzkit"
-version = "0.1.3"
+version = "0.1.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0d/dc/9d28f041fdb50c816ec2fe20f255661094c096208bed8caa73b91becc629/buzzkit-0.1.3.tar.gz", hash = "sha256:5826c404f9a4996066c240c53141af666d7d5b9fbdfd0ab08224b5077780cc9f", size = 46817, upload-time = "2026-07-23T14:40:12.823Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c9/43/7866e122d13a87bacd89aeeed37cc276e7487b73a91c75fca298fc9a1f45/buzzkit-0.1.4.tar.gz", hash = "sha256:d29bfdfab3480ab0f96a3ed421f34d89dd65c9c196df57b41166fbaa97da0e9d", size = 55506, upload-time = "2026-07-24T02:28:23.584Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/b2/2233c189fe5bd99dc0120c3b2e79f2921cf200d9f77db2e07a28b504d0dc/buzzkit-0.1.3-cp312-abi3-macosx_10_12_x86_64.whl", hash = "sha256:8fe08e3860b9d6863f8b0cb413f3b4301ae384755fe0f85762d4647c2f35b052", size = 2102097, upload-time = "2026-07-23T14:39:59.58Z" },
-    { url = "https://files.pythonhosted.org/packages/ab/e7/1adaac5e926a086ed3c198c3e33df7c9407eb4f56eb3057b0d1c058a07fd/buzzkit-0.1.3-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:dd78e73c2e363e8b76564c1517702735e3bc6b9e9b5b63cced94313283c12158", size = 2088274, upload-time = "2026-07-23T14:40:02.09Z" },
-    { url = "https://files.pythonhosted.org/packages/7f/99/615fad9d27dbec097fb5ed5471e741861ebf382fdf2e681e8dac8fd917ef/buzzkit-0.1.3-cp312-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:b1bd2ccd788f49b23c1a59b5a4ffaae3a7e56f664e7ca69f5590be5f0645a30f", size = 2155637, upload-time = "2026-07-23T14:40:06.565Z" },
-    { url = "https://files.pythonhosted.org/packages/65/af/8333702cf938b6a642cd3c823186d4dccbd38ea9e69a1aa5ed4fe6df72f2/buzzkit-0.1.3-cp312-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:97d52654937a2d716d24ec78608ff2d1d281ca36102ca56ef08db50e5f6caf1e", size = 2174574, upload-time = "2026-07-23T14:40:09.478Z" },
-    { url = "https://files.pythonhosted.org/packages/11/f2/eab4244a82c5e5d5077c62eed99e8c1028c68c923a8c3a0d4fb9f40d3e1d/buzzkit-0.1.3-cp312-abi3-win_amd64.whl", hash = "sha256:bc722a2c81aa81304ba9aac36301d097007950170f9b044474ec0053f054d6d9", size = 1886521, upload-time = "2026-07-23T14:40:11.774Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/34/1a99bd173d835e2c306f12237ad4a161e7e5f3a45a8932d35220db2e7544/buzzkit-0.1.4-cp312-abi3-macosx_10_12_x86_64.whl", hash = "sha256:5cd5a41593a66ab3a8d0d901c14545ae01d6dd5d5e88b7d7c700638088f9276c", size = 2105678, upload-time = "2026-07-24T02:28:16.356Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/b4/82fa1def12563d773f62023616e946aa4e473e8cf08fa61f119e03da8dc8/buzzkit-0.1.4-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:b9a4936396e05169d2fd0fb9f4cf8260880dd9bb55027ff4031c6b00a8616e4f", size = 2092199, upload-time = "2026-07-24T02:28:17.885Z" },
+    { url = "https://files.pythonhosted.org/packages/04/f3/f3da5ac26571c0ff1f8bbfcfd0d0caf84b17e977c3ce55ca12e0c80c68eb/buzzkit-0.1.4-cp312-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:4b5bfe13630b6cd388feb02e068ac958cc36ec62a2cba5c7c5a34508e66fc1a3", size = 2159901, upload-time = "2026-07-24T02:28:19.13Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/dd/a5cc6f9f929a3f9ed37cd16533a9d55fafd80e95cc294861b70bfe5d22d4/buzzkit-0.1.4-cp312-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:feb01cf5e864ddedfcada99e9def2382db559b749f4233b66b945a694b23a2d9", size = 2179303, upload-time = "2026-07-24T02:28:20.568Z" },
+    { url = "https://files.pythonhosted.org/packages/93/93/38faf82c7e6ea5622894364c04f2b84b848cffe062e188783a03a79e2b2e/buzzkit-0.1.4-cp312-abi3-win_amd64.whl", hash = "sha256:5db99c0801430a5133e08fb93d6f423604825223270a35c3372e37f211af540d", size = 1890591, upload-time = "2026-07-24T02:28:22.282Z" },
 ]
 
 [[package]]
