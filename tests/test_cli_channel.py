@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from io import StringIO
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
+import pytest
+
+from roomkit.channels._cli_markdown import MarkdownStreamRenderer
 from roomkit.channels.cli import CLIChannel, _default_agent_label
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelMediaType, ChannelType
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.enums import ChannelMediaType, ChannelType, EventType
+from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.room import Room
+from roomkit.models.streaming import ThinkingDeltaMarker
 
 
 def _make_binding(channel_id: str = "cli") -> ChannelBinding:
@@ -58,6 +62,16 @@ class TestCLIChannelBasics:
     def test_default_channel_id(self) -> None:
         cli = CLIChannel()
         assert cli.channel_id == "cli"
+
+    def test_markdown_requires_optional_renderer(self) -> None:
+        with (
+            patch(
+                "roomkit.channels._cli_markdown.require_markdown_support",
+                side_effect=ImportError("missing"),
+            ),
+            pytest.raises(ImportError, match="missing"),
+        ):
+            CLIChannel("cli", markdown=True)
 
 
 class TestHandleInbound:
@@ -126,6 +140,24 @@ class TestDeliver:
             await cli.deliver(event, binding, context)
             assert "Bot:" in mock_out.getvalue()
 
+    async def test_renders_complete_markdown(self) -> None:
+        cli = CLIChannel(
+            "cli",
+            use_color=False,
+            markdown=True,
+            agent_label=lambda _channel_id: "Bot",
+        )
+        event = _make_event(body="# Result\n\n- **first**\n- second")
+
+        with patch("sys.stdout", new_callable=StringIO) as mock_out:
+            await cli.deliver(event, _make_binding(), _make_context())
+            output = mock_out.getvalue()
+
+        assert "Bot:" in output
+        assert "Result" in output
+        assert "first" in output
+        assert "second" in output
+
 
 class TestDeliverStream:
     async def test_streams_chunks_to_stdout(self) -> None:
@@ -156,6 +188,106 @@ class TestDeliverStream:
         with patch("sys.stdout", new_callable=StringIO) as mock_out:
             await cli.deliver_stream(chunks(), event, binding, context)  # type: ignore[arg-type]
             assert mock_out.getvalue() == ""
+
+    async def test_renders_tool_activity_inline(self) -> None:
+        cli = CLIChannel("cli", use_color=False)
+        event = _make_event(body="")
+        binding = _make_binding()
+        context = _make_context()
+
+        tool_start = RoomEvent(
+            room_id="room-1",
+            type=EventType.TOOL_CALL_START,
+            source=event.source,
+            content=ToolCallContent(
+                tool_name="Read file",
+                tool_id="tool-1",
+                arguments={"path": "README.md"},
+                status="pending",
+            ),
+        )
+        tool_end = tool_start.model_copy(
+            update={
+                "type": EventType.TOOL_CALL_END,
+                "content": tool_start.content.model_copy(
+                    update={"status": "completed", "duration_ms": 42}
+                ),
+            }
+        )
+
+        async def chunks() -> None:
+            yield tool_start  # type: ignore[misc]
+            yield "The file is valid."  # type: ignore[misc]
+            yield tool_end  # type: ignore[misc]
+
+        with patch("sys.stdout", new_callable=StringIO) as mock_out:
+            await cli.deliver_stream(chunks(), event, binding, context)  # type: ignore[arg-type]
+            output = mock_out.getvalue()
+
+        assert "🔧 Read file" in output
+        assert '"path": "README.md"' in output
+        assert "The file is valid." in output
+        assert "✓ Read file (42 ms)" in output
+
+    async def test_markdown_renderer_receives_every_stream_delta(self) -> None:
+        cli = CLIChannel(
+            "cli",
+            use_color=False,
+            show_thinking=True,
+            markdown=True,
+            agent_label=lambda _channel_id: "Bot",
+        )
+        event = _make_event(body="")
+        tool_start = RoomEvent(
+            room_id="room-1",
+            type=EventType.TOOL_CALL_START,
+            source=event.source,
+            content=ToolCallContent(
+                tool_name="Search",
+                tool_id="tool-1",
+                arguments={"query": "streaming"},
+                status="pending",
+            ),
+        )
+
+        async def chunks() -> None:
+            yield ThinkingDeltaMarker(thinking="Checking")  # type: ignore[misc]
+            yield "# Head"  # type: ignore[misc]
+            yield "ing\n\n"  # type: ignore[misc]
+            yield tool_start  # type: ignore[misc]
+            yield "Done."  # type: ignore[misc]
+
+        with patch("roomkit.channels._cli_markdown.MarkdownStreamRenderer") as renderer_type:
+            renderer = renderer_type.return_value
+            await cli.deliver_stream(
+                chunks(),
+                event,
+                _make_binding(),
+                _make_context(),
+            )  # type: ignore[arg-type]
+
+        assert renderer.add_text.call_args_list == [
+            call("# Head"),
+            call("ing\n\n"),
+            call("Done."),
+        ]
+        renderer.add_thinking.assert_called_once_with("Checking")
+        renderer.add_tool_event.assert_called_once_with(tool_start)
+        renderer.close.assert_called_once_with()
+
+    def test_markdown_live_renderer_refreshes_for_each_delta(self) -> None:
+        output = StringIO()
+        renderer = MarkdownStreamRenderer("Bot", file=output, use_color=False)
+
+        renderer.add_text("# Head")
+        renderer.add_text("ing")
+        renderer.add_thinking("Considering tools")
+        renderer.close()
+
+        assert renderer.update_count == 3
+        rendered = output.getvalue()
+        assert "Heading" in rendered
+        assert "Considering tools" in rendered
 
 
 class TestRun:

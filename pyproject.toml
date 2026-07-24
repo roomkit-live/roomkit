@@ -90,6 +90,7 @@ whatsapp-personal = ["neonize>=0.3.14"]
 postgres = ["asyncpg>=0.29"]
 redis = ["redis>=5.0"]
 mcp = ["mcp>=1.0"]
+acp = ["agent-client-protocol>=0.11.0,<0.12"]
 console = ["rich>=13.0"]
 sources = [
     "roomkit[websocket]",
@@ -130,8 +131,10 @@ dev = [
     "roomkit[pynacl]",
     "roomkit[sources]",
     "roomkit[docs]",
+    "roomkit[console]",
     "roomkit[postgres]",
     "roomkit[opentelemetry]",
+    "roomkit[acp]",
 ]
 all = [
     "roomkit[providers]",
@@ -154,6 +157,7 @@ all = [
     "roomkit[postgres]",
     "roomkit[redis]",
     "roomkit[mcp]",
+    "roomkit[acp]",
     "roomkit[opentelemetry]",
     "roomkit[phonenumbers]",
     "roomkit[smart-turn]",
