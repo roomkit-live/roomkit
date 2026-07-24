@@ -394,3 +394,46 @@ class TestEmptyAudio:
 
         # No audio should have been sent
         assert len(received) == 0
+
+
+class TestSilenceFillTiming:
+    async def test_no_silence_spliced_while_ahead(self) -> None:
+        """Mid-response, fill must not fire while the pacer is still ahead.
+
+        Filling during a provider lull that the jitter headroom already
+        covers splices silence into the middle of the response — heard as
+        chopped speech. Silence fill may only kick in once the pacer has
+        actually fallen behind wall-clock.
+        """
+        received: list[bytes] = []
+
+        async def send_fn(audio: bytes) -> None:
+            received.append(audio)
+
+        pacer = OutboundAudioPacer(
+            send_fn,
+            sample_rate=8000,
+            prebuffer_ms=0,
+            jitter_headroom_ms=200,
+            fill_with_silence_when_idle=True,
+        )
+        await pacer.start()
+
+        # 200ms of non-zero content, then a provider lull (no end_of_response:
+        # the response is still in flight).
+        content = b"\x01\x00" * int(8000 * 0.2)
+        pacer.push(content)
+
+        # t≈100ms: cumulative is 200ms, so the pacer is still ~100ms ahead.
+        await asyncio.sleep(0.1)
+        assert all(any(chunk) for chunk in received), (
+            "silence was spliced into the response while still ahead of wall-clock"
+        )
+
+        # t≈500ms: well past the 200ms of sent audio — now genuinely behind,
+        # fill must resume to keep the stream continuous.
+        await asyncio.sleep(0.4)
+        await pacer.stop()
+        assert any(not any(chunk) for chunk in received), (
+            "silence fill never kicked in after falling behind"
+        )

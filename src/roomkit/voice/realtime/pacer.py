@@ -334,12 +334,17 @@ class OutboundAudioPacer:
                                 underruns,
                                 behind * 1000,
                             )
-                    if self._fill_with_silence_when_idle:
-                        # Emit a 20 ms silence frame to keep the RTP stream
-                        # continuous, then advance the pacing clock so we
-                        # don't try to catch up on the next real audio.
-                        await self._emit_silence_frame()
-                        cumulative += 0.02
+                        if self._fill_with_silence_when_idle:
+                            # Truly out of runway: emit a 20 ms silence frame
+                            # to keep the RTP stream continuous, and advance
+                            # the pacing clock so we don't try to catch up on
+                            # the next real audio. While still ahead (jitter
+                            # headroom) we just keep polling instead — filling
+                            # early splices silence into the middle of the
+                            # response, which listeners hear as chopped speech
+                            # whenever the provider delivers in bursts.
+                            await self._emit_silence_frame()
+                            cumulative += 0.02
                     continue
 
                 if isinstance(next_item, str):
