@@ -5,6 +5,18 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.1] — 2026-07-24
+
+### Fixed
+
+- **`buzz` extra now requires buzzkit 0.1.4.** `BuzzHuddleBackend` drives the
+  huddle client with `paced=False` so RoomKit's `OutboundAudioPacer` owns the
+  outbound clock — an argument that only exists in buzzkit 0.1.4, so the
+  0.37.0 floor (`buzzkit>=0.1.3`) allowed installs whose huddle sessions fail
+  with a `TypeError` on connect. buzzkit 0.1.4 also runs all WebSocket I/O on
+  a dedicated thread and drops late frames instead of bursting them, curing
+  choppy huddle audio under event-loop load.
+
 ## [0.37.0] — 2026-07-24
 
 ### Added
