@@ -9,6 +9,22 @@ updates:
     groups:
       python-deps:
         patterns: ["*"]
+    # Candidates that upstream constraints make unresolvable — attempting them
+    # fails the whole run with dependency_file_not_resolvable. Revisit when the
+    # named upstream loosens its pin.
+    ignore:
+      # aiortc (<=1.15.0) requires av<18 — drop when aiortc supports av 18.
+      - dependency-name: "av"
+        versions: [">=18.0.0"]
+      # mistralai pins opentelemetry-semantic-conventions<0.61, which locks the
+      # OpenTelemetry line to 1.39.x.
+      - dependency-name: "opentelemetry-api"
+        versions: [">=1.40.0"]
+      - dependency-name: "opentelemetry-sdk"
+        versions: [">=1.40.0"]
+      # Version dictated by the TTS extras' exact pins (qwen-tts pins
+      # transformers==4.57.3; the lockfile forks via tool.uv.conflicts).
+      - dependency-name: "transformers"
 
   # Keep GitHub Actions pinned versions current (security patches).
   - package-ecosystem: "github-actions"
