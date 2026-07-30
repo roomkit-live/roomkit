@@ -27,6 +27,7 @@ from roomkit.core.exceptions import (
     ChannelNotRegisteredError,
     IdentityNotFoundError,
     ParticipantNotFoundError,
+    RoomClosedError,
     RoomKitError,
     RoomNotFoundError,
     SourceAlreadyAttachedError,
@@ -99,6 +100,7 @@ __all__ = [
     "ParticipantNotFoundError",
     "RoomKit",
     "RoomKitError",
+    "RoomClosedError",
     "RoomNotFoundError",
     "SourceAlreadyAttachedError",
     "SourceNotFoundError",
@@ -729,6 +731,13 @@ class RoomKit(
                     pending_error_hooks_out=pending_error_hooks,
                     pending_streams_out=pending_streams,
                 )
+            # A room that refuses events (RFC §5.1) is the one block this API
+            # cannot report by returning: its contract is the committed event,
+            # and handing back one marked DELIVERED for a write that never
+            # happened would be a lie the caller acts on. Consistent with
+            # get_room() above, which already raises for a room that is gone.
+            if result.blocked and result.reason == "room_closed":
+                raise RoomClosedError(f"Room {room_id} does not accept new events")
             if isinstance(result.event, RoomEvent):
                 event = result.event
             # AFTER_BROADCAST/mutation and ON_ERROR run outside the room lock (RFC §10.1)

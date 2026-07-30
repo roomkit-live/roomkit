@@ -268,6 +268,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A closed room refuses new events.** `RoomStatus.CLOSED` and `ARCHIVED` were
+  enforced nowhere: the inbound router skipped non-ACTIVE rooms, which made
+  implicit routing look safe, but every path that *names* the room went
+  straight through — `process_inbound(room_id=...)`, `send_event()`, and the
+  framework's own re-injection on the delegation path. A closed room went on
+  storing events, broadcasting them and letting its agent reply. This was not
+  even a spec violation to point at: RFC §5.1 said "no new events accepted" in
+  a table cell with no RFC 2119 keyword, and no step of the normative §10.1
+  pipeline enforced it. The spec was fixed first, then this.
+
+  The check sits at the one point every entry converges on, under the room
+  lock — `close_room()` takes the same lock, so an earlier answer could be
+  stale by commit time. Nothing is written for a refused event, not even a
+  `BLOCKED` record, since an audit entry appended to a closed room is exactly
+  what the status forbids. The inbound path returns
+  `InboundResult(blocked=True, reason="room_closed")`; `send_event()` raises
+  the new `RoomClosedError`, because its contract is to return the committed
+  event and handing back one marked `DELIVERED` for a write that never
+  happened is worse than raising — the same reason it already raises for a
+  room that does not exist. PAUSED still accepts events, closing a room stays
+  observable through `ON_ROOM_CLOSED`, and history stays readable.
+
 - **A binding is no longer widened by accident.** Two paths handed out more
   access than the integrator had granted, both by letting a default fill a gap.
   Sharing a channel into a delegated room (`delegate(share_channels=...)`)

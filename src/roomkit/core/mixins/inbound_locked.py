@@ -18,6 +18,7 @@ from roomkit.models.enums import (
     EventType,
     HookTrigger,
     ParticipantRole,
+    RoomStatus,
 )
 from roomkit.models.event import DeleteContent, EditContent, EventSource, RoomEvent
 from roomkit.models.hook import InjectedEvent
@@ -36,6 +37,10 @@ logger = logging.getLogger("roomkit.framework")
 # field stays a free-form ``str`` for compatibility, so anything outside the
 # vocabulary is treated as unprivileged rather than trusted.
 _EDIT_SOURCE_SYSTEM = "system"
+
+# RFC §5.1 — statuses that refuse new events. CLOSED and ARCHIVED refuse
+# identically; they differ in intent, not in what they accept.
+_REFUSING_STATUSES = frozenset({RoomStatus.CLOSED, RoomStatus.ARCHIVED})
 
 # Deferred ON_ERROR invocations collected under the room lock and fired after it
 # is released (RFC §10.1): (context, error source, _fire_error_hook kwargs).
@@ -310,6 +315,30 @@ class InboundLockedMixin(HelpersMixin):
         """
         # Rebuild context under lock to prevent stale reads
         context = await self._build_context(room_id)
+
+        # RFC §5.1 / §10.1 step 6 — a room whose status refuses new events
+        # refuses them here, at the one point every entry converges on: inbound
+        # messages, send_event(), hook-injected events and the framework's own
+        # re-injection all pass through this. Under the lock, because
+        # close_room() takes the same one and an earlier answer can be stale by
+        # the time the event would commit.
+        #
+        # Nothing is written, not even a BLOCKED record: appending an audit
+        # event to a closed room is the thing the status forbids (§5.1).
+        if context.room.status in _REFUSING_STATUSES:
+            logger.info(
+                "Event refused: room %s is %s",
+                room_id,
+                context.room.status,
+                extra={"room_id": room_id, "event_id": event.id},
+            )
+            await self._emit_framework_event(
+                "room_refused_event",
+                room_id=room_id,
+                event_id=event.id,
+                data={"status": str(context.room.status), "event_type": str(event.type)},
+            )
+            return InboundResult(blocked=True, reason="room_closed")
 
         # Persist deferred participant creation inside the lock (Fix #1)
         if resolved_identity is not None:

@@ -13,6 +13,17 @@ class RoomNotFoundError(RoomKitError):
     """Room does not exist."""
 
 
+class RoomClosedError(RoomKitError):
+    """Room's status refuses new events (RFC §5.1).
+
+    Raised by the direct-injection API, which returns the committed
+    ``RoomEvent`` and so has no way to hand back a refusal — returning an
+    event marked DELIVERED for a write that never happened would be worse
+    than raising. The inbound path, whose result type can say so, returns
+    ``InboundResult(blocked=True, reason="room_closed")`` instead.
+    """
+
+
 class ChannelNotFoundError(RoomKitError):
     """Channel binding not found in room."""
 

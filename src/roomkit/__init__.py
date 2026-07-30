@@ -73,6 +73,7 @@ from roomkit.core.framework import (
     ChannelNotRegisteredError,
     IdentityNotFoundError,
     ParticipantNotFoundError,
+    RoomClosedError,
     RoomKit,
     RoomKitError,
     RoomNotFoundError,
@@ -203,6 +204,7 @@ __all__ = [
     "RoomKit",
     # Errors
     "RoomKitError",
+    "RoomClosedError",
     "RoomNotFoundError",
     "ChannelNotFoundError",
     "ChannelNotRegisteredError",
