@@ -13,6 +13,8 @@ from uuid import uuid4
 
 from roomkit.recorder._pyav_mux import (
     ENCODED_VIDEO_CODECS,
+    AudioTrackFormat,
+    audio_track_format,
     compute_pts,
     create_stream,
     h264_annex_b,
@@ -37,6 +39,7 @@ class _TrackState:
     """Per-track muxing state."""
 
     track: RecordingTrack
+    audio: AudioTrackFormat | None = None  # how to read this track's PCM, audio only
     stream: Any = None
     frame_count: int = 0
     last_pts: int = -1  # monotonic guard for PTS (video)
@@ -168,6 +171,10 @@ class PyAVMediaRecorder(MediaRecorder):
             return
         with state.lock:
             ts = _TrackState(track=track)
+            if track.kind == "audio":
+                # Once, here: the declaration is complete by the time a track is
+                # registered, and every frame that follows is in it.
+                ts.audio = audio_track_format(track)
             state.tracks[track.id] = ts
 
             # If encoding already started, we can't add streams to an MP4
@@ -456,11 +463,17 @@ class PyAVMediaRecorder(MediaRecorder):
         import numpy as np
 
         stream = ts.stream
-        if stream is None:
+        audio = ts.audio
+        if stream is None or audio is None:
             return
 
-        samples = np.frombuffer(data, dtype=np.int16).reshape(1, -1)
-        num_samples = len(samples[0])
+        samples = np.frombuffer(data, dtype=audio.dtype).reshape(1, -1)
+        if audio.shifts_to_unsigned:
+            # The offset between the two scales is where each of them puts zero.
+            samples = (samples.astype(np.int16) + audio.silence).astype(audio.buffer_dtype)
+        # Per channel, which is what a PTS counts. Interleaved samples counted
+        # whole make a stereo track twice as long as it was and twice as fast.
+        num_samples = len(samples[0]) // audio.channels
 
         # Where this frame should start (wall-clock position for A/V sync).
         if timestamp_ms is not None:
@@ -482,8 +495,8 @@ class PyAVMediaRecorder(MediaRecorder):
 
         frame = self._av.audio.frame.AudioFrame.from_ndarray(
             samples,
-            format="s16",
-            layout="mono",
+            format=audio.sample_format,
+            layout=audio.layout,
         )
         frame.sample_rate = stream.rate
         frame.pts = max(wall_pos, ts.audio_end)
@@ -508,17 +521,18 @@ class PyAVMediaRecorder(MediaRecorder):
         import numpy as np
 
         stream = ts.stream
-        if stream is None:
+        audio = ts.audio
+        if stream is None or audio is None:
             return
         chunk = min(num_samples, stream.rate)
         remaining = num_samples
         while remaining > 0:
             n = min(remaining, chunk)
-            silence = np.zeros((1, n), dtype=np.int16)
+            silence = np.full((1, n * audio.channels), audio.silence, dtype=audio.buffer_dtype)
             frame = self._av.audio.frame.AudioFrame.from_ndarray(
                 silence,
-                format="s16",
-                layout="mono",
+                format=audio.sample_format,
+                layout=audio.layout,
             )
             frame.sample_rate = stream.rate
             frame.pts = ts.audio_end

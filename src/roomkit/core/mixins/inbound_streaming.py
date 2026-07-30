@@ -172,7 +172,8 @@ class InboundStreamingMixin(HelpersMixin):
                     sync_result.reason,
                 )
                 return
-            event = sync_result.event or event
+            if isinstance(sync_result.event, RoomEvent):
+                event = sync_result.event
             stored = await self._persist_committed(room_id, event)
             if stored is not None:
                 persisted_events.append(stored)

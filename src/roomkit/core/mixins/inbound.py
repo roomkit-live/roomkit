@@ -199,7 +199,7 @@ class InboundMixin(HelpersMixin):
         if message.parent_event_id is not None and event.parent_event_id is None:
             event = event.model_copy(update={"parent_event_id": message.parent_event_id})
 
-        # Identity resolution pipeline (RFC §7)
+        # Identity resolution pipeline (RFC §11)
         try:
             event, resolved_identity, pending_id_result = await self._resolve_identity(
                 event, message, channel, room_id, context, telemetry

@@ -25,7 +25,7 @@ from roomkit.channels._realtime_tool_recovery import RealtimeToolRecoveryMixin
 from roomkit.channels._realtime_tools import RealtimeToolsMixin
 from roomkit.channels._realtime_transcription import RealtimeTranscriptionMixin
 from roomkit.channels._voice_pipeline import VoicePipelineMixin
-from roomkit.channels.base import Channel
+from roomkit.channels.base import Channel, FrameworkAwareChannel
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -71,6 +71,7 @@ class RealtimeVoiceChannel(
     RealtimeAudioMixin,
     RealtimeResponseMixin,
     VoicePipelineMixin,
+    FrameworkAwareChannel,
     Channel,
 ):
     """Real-time voice channel using speech-to-speech AI providers.

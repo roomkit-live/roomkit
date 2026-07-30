@@ -29,8 +29,8 @@ class TestChannelType:
 
     def test_count(self) -> None:
         # Includes MMS, RCS, REALTIME_VOICE, REALTIME_AUDIO_VIDEO, WHATSAPP_PERSONAL,
-        # DISCORD, BUZZ, etc.
-        assert len(ChannelType) == 22
+        # DISCORD, BUZZ, CONFERENCE, etc.
+        assert len(ChannelType) == 23
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):
@@ -149,7 +149,7 @@ class TestHookTrigger:
         assert HookTrigger.ON_EVENT_DELETED == "on_event_deleted"
 
     def test_count(self) -> None:
-        assert len(HookTrigger) == 67
+        assert len(HookTrigger) == 72
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):

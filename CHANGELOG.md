@@ -9,11 +9,128 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multi-party conference support.** RoomKit can now join a meeting it does
+  not host. `ConferenceChannel` attaches a room to a conference whose media
+  plane an external SFU owns: it brings a bot into it, transcribes its
+  participants, speaks the AI's answers into it, records it, and can be asked
+  what it is doing there. RFC §12.10 is the normative reference (conformance
+  Level 3); the pieces, briefly:
+
+  - **Transport.** `ConferenceBackend` is the ABC — join/leave, track
+    subscription, `publish_audio()` on a single bot track, `mint_access()`,
+    room lifecycle — and `MockConferenceBackend` implements the whole of it
+    for tests, with fault injection to make the failure paths reachable:
+    `fail(method, ...)`, `delay(operation, ...)`, per-track audio formats
+    (`MockTrackFormat`), and the bot's output grouped by utterance. A real
+    backend (LiveKit) is tracked separately.
+  - **Transcription.** Each subscribed AUDIO track runs through the shared
+    `AudioPipeline` in a lane of its own, under the track's stream identity:
+    one utterance becomes one transcription event attributed to its speaker,
+    and one participant's recognizer latency never delays another's frames.
+    Backpressure is bounded and counted (`max_queued_frames`, oldest frame
+    dropped). A lane requires a VAD, and `InterruptionStrategy.SEMANTIC` is
+    refused — a backchannel can only be classified once the utterance has
+    ended, too late to interrupt anything.
+  - **Identity.** An arrival the framework did not name is resolved when it
+    arrives, from the attributes the SFU itself vouches for
+    (`ConferenceParticipant.asserted_metadata`); a participant's own claims
+    reach a resolver only on a channel told to trust them. Provider
+    attributes land under `participant.metadata["conference"]`, bounded and
+    provenance-kept, never over the integrator's own keys. Utterances skip
+    re-resolution: the roster already carries the answer.
+  - **Recording.** With `recorder=` and `recording=ConferenceRecordingConfig()`,
+    every subscribed track is recorded separately and attributed to its
+    publisher — the bot's own audio included — through the room-level
+    `MediaRecorder` contract now specified in RFC §12.11. Writes stay off
+    the frame-delivery path, the per-track backlog is bounded and counted,
+    and `ON_RECORDING_STARTED` / `ON_RECORDING_STOPPED` report where each
+    recording was written.
+  - **Speaking and interruption.** AI responses are synthesized once and
+    published on the bot track, one utterance at a time, every utterance
+    closed; who may interrupt the bot is policy
+    (`ConferenceInterruptionConfig`), and `ON_BARGE_IN` names the
+    interrupting participant. Non-AI text is spoken only with
+    `speak_text_events=True` — a meeting is not a place to read unrelated
+    channel traffic aloud.
+  - **Admission.** `mint_access()` issues `ConferenceAccess` under
+    `default_grants`, validates before it mints, and refuses a banned
+    participant and a room the channel is leaving; a mint still in flight
+    when a detach lands is taken back rather than left valid against a
+    meeting the framework has left. Bans stick — no SFU event lifts one.
+  - **Observability.** `conference_started` / `conference_ended` name and
+    measure the bot session, and `info()` answers RFC §17.7's disclosure
+    questions per room — bot present, collection permitted, STT and
+    recording *active* as distinct from configured — keeping a session on
+    its way out visible until it has actually left.
+  - **Shutdown.** The media plane outranks the bookkeeping: a detach and a
+    close take the bot out of the meeting on bounded budgets, and the media
+    calls are no exception — `leave()`, the backend's close and a lane's
+    recogniser are cancelled past their budget, given a bounded grace, then
+    abandoned and reported rather than waited for again; nothing an
+    abandoned call was using is freed on its account. A session the channel
+    could not remove is a *failed* close: `close()` raises
+    `ConferenceCloseError` naming it, at the very end, once every other
+    step has run — `info()` goes on reporting the session. The waits that
+    cannot be bounded belong to `RoomKit.close()`: every operation the
+    channel starts on the store or the lock manager — the reads included,
+    and the room lock from the moment its acquisition begins to the moment
+    it is let go — runs under a framework *resource lease*, and the
+    framework finishes every lease after all the channels have closed and
+    before it releases either resource. Nothing integrator-owned ever runs
+    under a lease, and once the final wait has concluded the registry is
+    sealed: work that resumes later — a callback parked in a backend past
+    every closing budget — is refused with a clear error rather than run
+    against a released resource (RFC §12.10.4).
+
+  See `examples/conference_fault_injection.py`,
+  `examples/conference_identity_provenance.py`,
+  `examples/conference_recording_result.py`, and RFC §12.10 for the
+  contracts.
+
 - **`AudioPipeline.process_inbound_stream(stream, frame)`** — a stream-keyed
   inbound entry point that returns what the stages produced instead of fanning
   out to callbacks typed on a `VoiceSession`, plus `release_stream(stream)` for
   the cleanup a lane owes when its track goes away. `process_inbound(session,
   frame)` is unchanged and now shares the same stage chain.
+
+### Changed
+
+- **`RoomKit.close()` finishes the shutdown before it raises.** A channel
+  whose `close()` raised used to abort the framework's close on the spot:
+  every channel after it kept its media — for a conference channel, a bot
+  left sitting in a meeting — and the store, the lock manager and the rest
+  were never released. The failure is now collected, every remaining step of
+  the shutdown runs, and what was collected is re-raised at the very end as
+  an `ExceptionGroup` naming each channel that failed. Raised, not swallowed:
+  the channel that failed may still be holding its media, and a close that
+  returns cleanly over that turns a logged error into an operational and
+  disclosure risk (RFC §12.10.4).
+
+- **The recorder contract bounds its close, and names when a recorder may not
+  be released.** RFC §12.11 bounded the writes and said nothing about
+  `on_track_removed()` / `on_recording_stop()`, which block the same way and
+  which a conference teardown waits for before its bot leaves; it now requires
+  those to be bounded too, and a recording the implementation stopped waiting
+  for to be reported rather than guessed at. It also states the rule that
+  follows from every one of those bounds: `close()` MUST NOT be called while a
+  call the implementation gave up on is still running, because freeing the
+  context a call is inside is not an error a recorder can return. An
+  implementation that cannot settle them leaves the recorder unreleased and
+  says so.
+
+- **`FrameworkAwareChannel` is how a channel asks for the framework.**
+  `register_channel()` hands session-based channels the `RoomKit` instance they
+  were registered with; it used to pick them out with a hardcoded list of three
+  concrete classes, briefly by `hasattr(channel, "set_framework")`, and now by
+  inheritance from the exported `FrameworkAwareChannel`. The list meant a new
+  session-based channel could not be written without editing the framework; the
+  attribute check meant any channel owning a method of that name — a wrapper
+  around another framework, say — was called with an argument it never asked
+  for. A `runtime_checkable` `Protocol` would not have helped: its `isinstance`
+  tests the name and nothing else. Inheriting is a declaration, and it puts the
+  override's signature under the type checker. `VoiceChannel`,
+  `RealtimeVoiceChannel`, `VideoChannel` and `ConferenceChannel` declare it —
+  `AudioVideoChannel` and `RealtimeAudioVideoChannel` through their parent.
 
 ### Changed — BREAKING
 
@@ -85,6 +202,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same defect one layer down.
 
 ### Fixed
+
+- **Sync hooks fail closed, and can rewrite every payload they are given.**
+  `HookResult.event` was typed as a `RoomEvent`, but only one of the nine sync
+  triggers passes one — the rest carry a string, a media frame or their own
+  event type, so a hook returning `action="modify"` on `BEFORE_TTS` or
+  `ON_TRANSCRIPTION` raised inside the engine, which logged the error and
+  carried on with the *original* payload: a redaction hook published exactly
+  what it existed to suppress. The field now accepts the trigger's own
+  payload, `HookResult.modify()` takes it too, and each reader substitutes a
+  rewritten value of the type it expects.
+
+  Failing is no longer a way through either. On the triggers whose payload a
+  hook may exist to withhold, every way a hook can fail to produce a usable
+  result — raising, exceeding its timeout, returning something that is not a
+  `HookResult`, returning a rewrite of a type the consumer cannot use — now
+  blocks the payload instead of letting it pass unmodified, and a rewrite to
+  an empty string reads as a rewrite rather than as no modification.
+  Everywhere else a raising hook stays non-fatal, so a broken hook still
+  cannot take a room down.
+
+- **A refused attach no longer destroys the attachment it failed to replace.**
+  `attach_channel()` writes the binding before asking the channel to establish
+  it, and rolled back by *deleting* that binding. Over a live attachment that
+  is the wrong inverse: the second attach replaced the first's binding, and a
+  channel that refuses the new one has said nothing about the old — it is still
+  attached, its conference still running, its bot still in the meeting. The
+  delete took the room's only handle on that away, so `detach_channel()` found
+  nothing to remove, returned false, and the attachment ran on with nothing able
+  to reach it. The previous binding is now restored rather than removed; a first
+  attach, which had nothing to restore, still leaves nothing behind.
+
+- **A detach is announced even when the channel raises on its way out.** By the
+  time `on_room_detached()` runs, the binding is gone and `CHANNEL_DETACHED` is
+  indexed — the detach has happened as far as the room is concerned — but an
+  exception from the channel skipped `ON_CHANNEL_DETACHED` and
+  `room_channel_detached` entirely, leaving every observer believing the channel
+  was still attached. Both now fire before the error is re-raised at the caller.
+  An announcement that fails as well is logged rather than allowed to displace
+  the channel's own failure, which is the one the caller is owed.
+
+- **A sender the room has already named is not resolved again.** Every
+  conference utterance re-entered the inbound pipeline as a message whose
+  `sender_id` was the speaker's backend identity, and identity resolution ran on
+  it — per sentence, per participant, for the whole meeting. No resolver can
+  match a framework identifier, so the answer was `UNKNOWN` every time. That is
+  a lookup per sentence where a resolver reads a CRM, and worse than noise: the
+  standard `ON_IDENTITY_UNKNOWN` hook that refuses unknown senders then blocked
+  every transcript of a participant the framework had identified when they
+  dialled in — silently, since a blocked event leaves nothing in the room.
+
+  Two senders now skip resolution (RFC §11.6). One the room has already marked
+  `IDENTIFIED`, read off the participants the pipeline had already loaded — the
+  answer is on the roster, and `identity_id` carries it. And one arriving on a
+  channel that declares `sender_is_participant`, meaning its `sender_id` is a
+  room `Participant.id` rather than an address: `ConferenceChannel` sets it,
+  because a conference resolves when a participant *arrives* and the address its
+  provider attached is there to resolve (§12.10.2), and speaking again asks
+  nothing new. This also covers the participant the framework minted access for,
+  whose id no resolver knows any better.
+
+  `PENDING` and `AMBIGUOUS` participants are deliberately still resolved: a
+  participant the room *has* is not one it has *identified*, a resolver may
+  still be what settles it, and a hook may still want to challenge or refuse.
+  Nothing changes for a genuinely unknown sender on a text channel.
 
 - **What is typed at a terminal is not an address, and is no longer resolved as
   one.** `CLIChannel.run()` names the human at the keyboard — its `sender_id`

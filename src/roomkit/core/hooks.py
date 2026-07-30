@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelDirection, ChannelType, HookExecution, HookTrigger
@@ -72,7 +72,7 @@ class SyncPipelineResult:
     """Result of running the sync hook pipeline."""
 
     allowed: bool = True
-    event: RoomEvent | None = None
+    event: Any = None
     reason: str | None = None
     blocked_by: str | None = None
     injected_events: list[InjectedEvent] = field(default_factory=list)
@@ -181,6 +181,16 @@ class HookEngine:
         all_hooks.sort(key=lambda h: h.priority)
         return all_hooks
 
+    #: Triggers whose payload is content that a hook may be there to withhold —
+    #: redacting a transcript, holding back speech. On those, a hook that raises
+    #: blocks rather than letting the original payload through: logging the
+    #: error and carrying on would publish exactly what the hook existed to
+    #: suppress. Everywhere else a failing hook stays non-fatal, so a broken
+    #: hook cannot take a room down.
+    FAIL_CLOSED_TRIGGERS: ClassVar[frozenset[HookTrigger]] = frozenset(
+        {HookTrigger.BEFORE_TTS, HookTrigger.ON_TRANSCRIPTION}
+    )
+
     async def run_sync_hooks(
         self,
         room_id: str,
@@ -225,7 +235,10 @@ class HookEngine:
                     },
                 )
             try:
-                current_event = result.event or event
+                # ``is not None`` rather than truthiness: redacting to an empty
+                # string is a modification, and treating it as absent would hand
+                # the next hook the original secret.
+                current_event = result.event if result.event is not None else event
                 fn = cast(SyncHookFn, hook.fn)
                 hook_result: HookResult = await asyncio.wait_for(
                     fn(current_event, context), timeout=hook.timeout
@@ -240,6 +253,10 @@ class HookEngine:
                 result.hook_errors.append(
                     {"hook": hook.name, "error": f"timeout ({hook.timeout}s)"}
                 )
+                if trigger in self.FAIL_CLOSED_TRIGGERS:
+                    result.allowed = False
+                    result.reason = f"hook {hook.name} timed out after {hook.timeout}s"
+                    return result
                 if span_id is not None:
                     self._telemetry.end_span(span_id, status="error", error_message="timeout")
                 continue
@@ -248,6 +265,10 @@ class HookEngine:
                 result.hook_errors.append({"hook": hook.name, "error": str(exc)})
                 if span_id is not None:
                     self._telemetry.end_span(span_id, status="error", error_message=str(exc))
+                if trigger in self.FAIL_CLOSED_TRIGGERS:
+                    result.allowed = False
+                    result.reason = f"hook {hook.name} failed: {exc}"
+                    return result
                 continue
 
             if not isinstance(hook_result, HookResult):
@@ -267,6 +288,13 @@ class HookEngine:
                     self._telemetry.end_span(
                         span_id, status="error", error_message="invalid return type"
                     )
+                if trigger in self.FAIL_CLOSED_TRIGGERS:
+                    result.allowed = False
+                    result.reason = (
+                        f"hook {hook.name} returned {type(hook_result).__name__} "
+                        "instead of HookResult"
+                    )
+                    return result
                 continue
 
             if span_id is not None:
@@ -288,6 +316,31 @@ class HookEngine:
                 return result
 
             if hook_result.action == "modify" and hook_result.event is not None:
+                if trigger in self.FAIL_CLOSED_TRIGGERS and not isinstance(
+                    hook_result.event, type(current_event)
+                ):
+                    # The consumer would silently ignore a payload it cannot use
+                    # and carry on with the original — which for a redaction hook
+                    # publishes the very content it meant to replace.
+                    logger.error(
+                        "Sync hook %s returned a %s where a %s was expected",
+                        hook.name,
+                        type(hook_result.event).__name__,
+                        type(current_event).__name__,
+                        extra={"room_id": room_id},
+                    )
+                    result.hook_errors.append(
+                        {
+                            "hook": hook.name,
+                            "error": (
+                                f"modify returned {type(hook_result.event).__name__}, "
+                                f"expected {type(current_event).__name__}"
+                            ),
+                        }
+                    )
+                    result.allowed = False
+                    result.reason = f"hook {hook.name} returned an unusable payload"
+                    return result
                 result.event = hook_result.event
 
         # Fire ASYNC observers for the same trigger (fire-and-forget).
@@ -295,7 +348,7 @@ class HookEngine:
         # are only invoked via run_sync_hooks (e.g. ON_TRANSCRIPTION,
         # ON_VISION_RESULT, ON_TOOL_CALL).  Only ASYNC hooks are fired
         # — SYNC hooks already ran above.
-        final_event = result.event or event
+        final_event = result.event if result.event is not None else event
         filter_ev = None if skip_event_filter else final_event
         async_hooks = self._get_hooks(
             room_id,

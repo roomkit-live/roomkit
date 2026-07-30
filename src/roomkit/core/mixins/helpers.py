@@ -111,6 +111,7 @@ class HelpersMixin:
     _pending_traces: dict[str, list[object]]  # room_id -> [ProtocolTrace, ...]
     _pending_hook_tasks: set[asyncio.Task[Any]]
     _persistence_policy: Any  # PersistencePolicy | None — set by RoomKit.__init__
+    _resource_lease: Any  # RoomKit._resource_lease — the close()-ordering hold on the store
 
     # -- Persistence helpers (policy-aware) --
 
@@ -322,7 +323,8 @@ class HelpersMixin:
             context = await self._build_context(room_id)
         except Exception:
             # Room may not exist yet (e.g. ON_ROOM_CREATED before bindings exist)
-            room = await self._store.get_room(room_id)
+            with self._resource_lease():
+                room = await self._store.get_room(room_id)
             if room is None:
                 return
             context = RoomContext(room=room, bindings=[])
@@ -404,15 +406,21 @@ class HelpersMixin:
         declares, floored for hooks and capped at ``_RECENT_EVENTS_LIMIT``. A
         transport-only room (e.g. realtime voice) whose channels read no history
         loads just the floor instead of deserialising the whole ceiling per turn.
+
+        Runs whole under the framework's resource lease: it is store reads and
+        nothing else, and ``close()`` promises not to release the store while
+        an operation it was given is still in flight — a context built for a
+        hook announcement is one of the reads that promise covers.
         """
-        room = await self._store.get_room(room_id)
-        if room is None:
-            raise RoomNotFoundError(f"Room {room_id} not found")
-        bindings = await self._store.list_bindings(room_id)
-        participants = await self._store.list_participants(room_id)
-        if recent_limit is None:
-            recent_limit = self._resolve_recent_events_limit(bindings)
-        recent = await self._store.get_conversation(room_id, limit=recent_limit)
+        with self._resource_lease():
+            room = await self._store.get_room(room_id)
+            if room is None:
+                raise RoomNotFoundError(f"Room {room_id} not found")
+            bindings = await self._store.list_bindings(room_id)
+            participants = await self._store.list_participants(room_id)
+            if recent_limit is None:
+                recent_limit = self._resolve_recent_events_limit(bindings)
+            recent = await self._store.get_conversation(room_id, limit=recent_limit)
         return RoomContext(
             room=room,
             bindings=bindings,

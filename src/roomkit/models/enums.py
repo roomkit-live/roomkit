@@ -27,6 +27,7 @@ class ChannelType(StrEnum):
     WEBHOOK = "webhook"
     VIDEO = "video"
     AUDIO_VIDEO = "audio_video"
+    CONFERENCE = "conference"
     CLI = "cli"
     SYSTEM = "system"
 
@@ -273,6 +274,15 @@ class HookTrigger(StrEnum):
     ON_SCREEN_SHARE_STARTED = "on_screen_share_started"
     ON_SCREEN_SHARE_STOPPED = "on_screen_share_stopped"
     ON_VIDEO_DETECTION = "on_video_detection"
+    # Conference (SFU orchestration). The track triggers carry the CONFERENCE_
+    # prefix to stay distinct from ON_VIDEO_TRACK_ADDED/REMOVED above, which
+    # describe tracks within one video session rather than publications by
+    # other participants in a conference.
+    ON_CONFERENCE_PARTICIPANT_JOINED = "on_conference_participant_joined"
+    ON_CONFERENCE_PARTICIPANT_LEFT = "on_conference_participant_left"
+    ON_CONFERENCE_TRACK_PUBLISHED = "on_conference_track_published"
+    ON_CONFERENCE_TRACK_UNPUBLISHED = "on_conference_track_unpublished"
+    ON_ACTIVE_SPEAKER_CHANGED = "on_active_speaker_changed"
     # Planning (agentic task tracking)
     ON_PLAN_UPDATED = "on_plan_updated"
     # Feedback (user quality ratings)

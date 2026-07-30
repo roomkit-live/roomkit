@@ -95,6 +95,8 @@ CONSOLE=1 uv run python examples/<example>.py
 | `sip_send_video.py` | SIP video | SIP send video test pattern |
 | `pyav_video_recorder.py` | Recording | PyAV H.264 webcam recorder to MP4 |
 | `room_media_recorder.py` | Recording | Room-level media recording: mic + webcam to MP4 |
+| `conference_recording_result.py` | Recording | Conference recording: finding where each track's file was written |
+| `conference_fault_injection.py` | Conference | Testing a conference against a backend that fails, lags and varies its audio formats |
 
 ## Text / Messaging
 

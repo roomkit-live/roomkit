@@ -346,8 +346,10 @@ class InboundLockedMixin(HelpersMixin):
                 observations=sync_result.observations,
             )
 
-        # Use potentially modified event
-        event = sync_result.event or event
+        # Use potentially modified event. HookResult.event carries whatever
+        # payload its trigger passed, so only a RoomEvent may replace one.
+        if isinstance(sync_result.event, RoomEvent):
+            event = sync_result.event
 
         # RFC §7.5 — a source that cannot write (READ_ONLY/NONE or muted) must
         # not inject a DELIVERED event into the timeline. Persist it BLOCKED for

@@ -272,12 +272,16 @@ class AudioBridge:
             buf.frames[session.id] = frame
             # Collect targets and their mix frames
             room = self._rooms.get(room_id, {})
-            mix_jobs: list[tuple[_BridgedSession, list[AudioFrame]]] = []
+            # Each frame keeps the session it came from: the resampler keys its
+            # state on the (source, target) pair, not on the target alone.
+            mix_jobs: list[tuple[_BridgedSession, list[tuple[str, AudioFrame]]]] = []
             for sid, bs in room.items():
                 if sid == session.id:
                     continue
-                # Collect frames from all sessions except this target
-                others = [f for s, f in buf.frames.items() if s != sid]
+                # Collect frames from all sessions except this target, each
+                # still carrying the session it came from — the resampler keys
+                # its state on the pair, and one target mixes several sources.
+                others = [(s, f) for s, f in buf.frames.items() if s != sid]
                 if others:
                     mix_jobs.append((bs, others))
 
@@ -286,8 +290,10 @@ class AudioBridge:
             # mixing so that samples are temporally aligned.
             target_rate = target.output_sample_rate
             resampled = [
-                self._resample(f, target_rate) if f.sample_rate != target_rate else f
-                for f in frames_to_mix
+                self._resample(f, target_rate, _mix_stream(source_id, target.session.id))
+                if f.sample_rate != target_rate
+                else f
+                for source_id, f in frames_to_mix
             ]
             mixed = resampled[0] if len(resampled) == 1 else self._mixer.mix(resampled)
             self._send_to_target(session, target, mixed)
@@ -306,7 +312,9 @@ class AudioBridge:
             # Always resample to the target's output rate before processing
             target_rate = target.output_sample_rate
             if frame.sample_rate != target_rate:
-                frame = self._resample(frame, target_rate)
+                frame = self._resample(
+                    frame, target_rate, _mix_stream(source.id, target.session.id)
+                )
             if self._frame_processor is not None:
                 chunk = self._frame_processor(target.session, frame)
             else:
@@ -338,13 +346,21 @@ class AudioBridge:
         return []
 
     @staticmethod
-    def _resample(frame: AudioFrame, target_rate: int) -> AudioFrame:
-        """Resample a frame to the target sample rate using the linear resampler."""
+    def _resample(frame: AudioFrame, target_rate: int, stream: str) -> AudioFrame:
+        """Resample a frame to the target sample rate using the linear resampler.
+
+        The resampler instance is shared process-wide, so ``stream`` has to
+        separate every conversion whose state must not meet. On the mixing path
+        that is a *pair*, not a session: one target takes a frame from each of
+        the other participants, and keying on the destination alone would hand
+        them all the same buffer — the conference defect one layer down.
+        """
         return _get_resampler().resample(
             frame,
             target_rate=target_rate,
             target_channels=frame.channels,
             target_width=frame.sample_width,
+            stream=stream,
         )
 
     @staticmethod
@@ -362,6 +378,23 @@ class AudioBridge:
 # ======================================================================
 # Cached singletons (module-level, lazy)
 # ======================================================================
+
+
+def _mix_stream(source_id: str, target_id: str) -> str:
+    """The resampler stream key for one leg of the bridge.
+
+    One conversion per (source, target): a target mixes a frame from every
+    other participant, and each of those conversions is its own continuous
+    signal. Sharing a key between them is the same defect as sharing one
+    between two conference lanes.
+
+    Length-prefixed rather than joined by a separator, because session ids come
+    from backends and nothing forbids one containing whatever separator was
+    chosen — and two pairs colliding on a key is exactly the state-sharing this
+    exists to prevent.
+    """
+    return f"{len(source_id)}:{source_id}:{target_id}"
+
 
 _resampler_lock = threading.Lock()
 _resampler_instance: ResamplerProvider | None = None

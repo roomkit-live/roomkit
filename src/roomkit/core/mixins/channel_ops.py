@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.channels.base import Channel, FrameworkAwareChannel
 from roomkit.core.exceptions import ChannelNotFoundError, ChannelNotRegisteredError
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.channel import ChannelBinding
@@ -17,7 +19,6 @@ from roomkit.models.enums import (
 )
 
 if TYPE_CHECKING:
-    from roomkit.channels.base import Channel
     from roomkit.core.event_router import EventRouter
     from roomkit.core.hooks import HookEngine
     from roomkit.core.locks import RoomLockManager
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
     from roomkit.store.base import ConversationStore
     from roomkit.telemetry.base import TelemetryProvider
     from roomkit.tools.external import ExternalToolHandler
+
+logger = logging.getLogger("roomkit.framework")
 
 
 @runtime_checkable
@@ -82,9 +85,6 @@ class ChannelOpsMixin(HelpersMixin):
 
     def register_channel(self, channel: Channel) -> None:
         """Register a channel implementation by its ID."""
-        from roomkit.channels.realtime_voice import RealtimeVoiceChannel
-        from roomkit.channels.voice import VoiceChannel
-
         self._channels[channel.channel_id] = channel
         self._event_router = None  # Reset router cache
 
@@ -133,10 +133,12 @@ class ChannelOpsMixin(HelpersMixin):
         if hasattr(channel, "_propagate_telemetry"):
             channel._propagate_telemetry()  # ty: ignore[call-non-callable]
 
-        # Set framework reference on session-based channels for inbound routing
-        from roomkit.channels.video import VideoChannel
-
-        if isinstance(channel, (VoiceChannel, RealtimeVoiceChannel, VideoChannel)):
+        # Set framework reference on session-based channels for inbound routing.
+        # A channel opts in by inheriting FrameworkAwareChannel, so this needs no
+        # edit when one is written — and a channel that merely owns a method of
+        # that name is not called with an argument it never expected.
+        if isinstance(channel, FrameworkAwareChannel):
+            # The host is the RoomKit instance; the mixin cannot say so.
             channel.set_framework(self)  # ty: ignore[invalid-argument-type]
 
         # Auto-greet: register global ON_SESSION_STARTED hook for agents
@@ -192,7 +194,19 @@ class ChannelOpsMixin(HelpersMixin):
                 capabilities=channel.capabilities(),
                 **kwargs,
             )
+            # Read before it is replaced, so a refusal can put it back. An
+            # attach over a live attachment is the case that needs it: the
+            # channel is still attached when it refuses, and a room left with
+            # no binding at all is one `detach_channel()` no longer reaches.
+            previous = await self._store.get_binding(room_id, channel_id)
             result = await self._store.add_binding(binding)
+            # Before the attachment is announced, not after: what the channel
+            # establishes here is what the binding claims exists, and a channel
+            # that cannot establish it has not been attached. Left to the
+            # ON_CHANNEL_ATTACHED hook, the failure would be logged and swallowed
+            # (hooks are observation) and the caller would receive a binding to
+            # a conference that was never created.
+            await self._on_room_attached(room_id, channel, result, previous)
             await self._emit_system_event(
                 room_id,
                 EventType.CHANNEL_ATTACHED,
@@ -231,6 +245,59 @@ class ChannelOpsMixin(HelpersMixin):
         await self._post_attach(room_id, channel_id, channel, result)
         return result
 
+    async def _on_room_attached(
+        self,
+        room_id: str,
+        channel: Channel,
+        binding: ChannelBinding,
+        previous: ChannelBinding | None,
+    ) -> None:
+        """Let the channel establish the attachment, or take the binding back.
+
+        The rollback is what makes propagating safe here. Only the binding has
+        been written — no system event, no hook, no framework event — so undoing
+        it leaves nothing for an observer to have seen. A few lines further down
+        that stops being true: ``CHANNEL_ATTACHED`` is indexed and events do not
+        come back, so a failure there would have to be announced as a detach of
+        an attachment that never happened.
+
+        Undoing means restoring, not deleting. Attaching over a live attachment
+        replaces its binding, and the channel refusing the new one says nothing
+        about the old: it is still attached, still collecting, still holding
+        whatever it joined. Deleting the row would take the room's only handle
+        on it away — ``detach_channel()`` finds nothing to remove and returns
+        false, and the attachment it could have torn down runs on unreachable.
+        """
+        try:
+            await channel.on_room_attached(room_id, binding)
+        except Exception:
+            await self._undo_refused_binding(room_id, channel.channel_id, previous)
+            raise
+
+    async def _undo_refused_binding(
+        self, room_id: str, channel_id: str, previous: ChannelBinding | None
+    ) -> None:
+        """Put back what a channel's refusal replaced, saying so if even that fails.
+
+        Swallowing here is what lets the refusal be the exception the caller
+        sees: it is the reason the attachment is being undone, and a store that
+        is down as well is a second problem rather than a replacement for the
+        first.
+        """
+        try:
+            if previous is None:
+                await self._store.remove_binding(room_id, channel_id)
+            else:
+                await self._store.add_binding(previous)
+        except Exception:
+            logger.exception(
+                "Could not restore the binding of channel %r to room %s after it "
+                "refused the attachment; the room may keep a binding to a channel "
+                "that is not attached, or have lost the one it had",
+                channel_id,
+                room_id,
+            )
+
     async def _post_attach(
         self,
         room_id: str,
@@ -261,20 +328,63 @@ class ChannelOpsMixin(HelpersMixin):
                     message=f"Channel {channel_id} detached",
                     data={"channel_id": channel_id},
                 )
-                await self._fire_lifecycle_hook(
-                    room_id,
-                    HookTrigger.ON_CHANNEL_DETACHED,
-                    EventType.CHANNEL_DETACHED,
-                    code="channel_detached",
-                    message=f"Channel {channel_id} detached",
-                    data={"channel_id": channel_id},
-                )
-                await self._emit_framework_event(
-                    "room_channel_detached",
-                    room_id=room_id,
-                    channel_id=channel_id,
-                )
+                # Before the hooks, so an integrator's handler runs after the
+                # channel has finished letting go rather than concurrently with
+                # it — async hooks of one trigger run together, and the channel's
+                # own teardown is not one of the things they should race.
+                #
+                # Announced whatever the channel makes of it. The binding is
+                # already gone and CHANNEL_DETACHED already indexed, so the
+                # detach has happened as far as the room is concerned; a channel
+                # that raised on its way out changes how *well* it happened, not
+                # whether, and observers told nothing would go on believing the
+                # channel is attached. The error still reaches the caller, after
+                # the room has been told.
+                channel = self._channels.get(channel_id)
+                refusal: Exception | None = None
+                if channel is not None:
+                    try:
+                        await channel.on_room_detached(room_id)
+                    except Exception as error:
+                        refusal = error
+                await self._announce_detach(room_id, channel_id, refusal)
+                if refusal is not None:
+                    raise refusal
             return removed
+
+    async def _announce_detach(
+        self, room_id: str, channel_id: str, refusal: Exception | None = None
+    ) -> None:
+        """Tell the room's observers that a channel has been detached.
+
+        ``refusal`` is what the channel raised on its way out, when it raised
+        anything. It is why this can fail quietly: that exception is the one the
+        caller is owed, and an announcement that fails as well must not take its
+        place. With nothing to displace, a failure here is the caller's to see.
+        """
+        try:
+            await self._fire_lifecycle_hook(
+                room_id,
+                HookTrigger.ON_CHANNEL_DETACHED,
+                EventType.CHANNEL_DETACHED,
+                code="channel_detached",
+                message=f"Channel {channel_id} detached",
+                data={"channel_id": channel_id},
+            )
+            await self._emit_framework_event(
+                "room_channel_detached",
+                room_id=room_id,
+                channel_id=channel_id,
+            )
+        except Exception:
+            if refusal is None:
+                raise
+            logger.exception(
+                "Could not announce the detach of channel %r from room %s, which is "
+                "being reported as the channel's own failure to let go",
+                channel_id,
+                room_id,
+            )
 
     async def mute(self, room_id: str, channel_id: str) -> ChannelBinding:
         """Mute a channel in a room."""

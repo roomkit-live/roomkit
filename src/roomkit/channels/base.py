@@ -23,6 +23,7 @@ from roomkit.models.enums import (
 from roomkit.models.event import RoomEvent, TextContent
 
 if TYPE_CHECKING:
+    from roomkit.core.framework import RoomKit
     from roomkit.models.trace import ProtocolTrace
 
 # Callback type for protocol trace observers
@@ -43,12 +44,53 @@ def _safe_invoke(cb: TraceCallback, trace: ProtocolTrace) -> None:
         _trace_logger.exception("Trace callback error")
 
 
+class FrameworkAwareChannel(ABC):
+    """A channel that is handed the framework it is registered with.
+
+    Session-based channels — voice, realtime voice, video, conference — route
+    inbound media and fire hooks themselves, which needs a reference back to the
+    :class:`~roomkit.core.framework.RoomKit` instance.  Registration passes it to
+    every channel that inherits this class, and only to those.
+
+    Inheriting is the opt-in, and the framework needs no edit to serve a channel
+    that declares it.  It is also what makes the selection safe — a channel that
+    merely happens to own a method named ``set_framework`` is not called with an
+    argument it never expected, and a subclass whose override does not match the
+    signature below is a type error.
+
+    Example::
+
+        class MyChannel(FrameworkAwareChannel, Channel):
+            def set_framework(self, framework: RoomKit) -> None:
+                self._framework = framework
+    """
+
+    @abstractmethod
+    def set_framework(self, framework: RoomKit) -> None:
+        """Receive the framework this channel was registered with."""
+
+
 class Channel(ABC):
     """Base class for all channels."""
 
     channel_type: ChannelType
     category: ChannelCategory = ChannelCategory.TRANSPORT
     direction: ChannelDirection = ChannelDirection.BIDIRECTIONAL
+
+    sender_is_participant: bool = False
+    """Whether this channel's ``sender_id`` is a room ``Participant.id``.
+
+    An identity resolver maps an *address* — a number, an email, a handle — to
+    an Identity.  Most channels carry one: what arrives on ``sender_id`` is how
+    the sender is reachable, and who that is remains to be looked up.  A channel
+    that sets this declares the opposite: its senders are named by the room
+    itself, so there is no address to look up and identity resolution (RFC §11)
+    is skipped for its messages.
+
+    Declaring it wrongly is not a small mistake: a channel that does carry
+    addresses would stop resolving them, and every sender would stay
+    unidentified.
+    """
 
     def __init__(self, channel_id: str) -> None:
         self.channel_id = channel_id
@@ -197,6 +239,41 @@ class Channel(ABC):
         ``set_access()`` update the store.  Override in session-based
         channels (voice, realtime voice) to update cached binding state
         used for audio gating.  Default: no-op.
+        """
+
+    async def on_room_attached(  # noqa: B027
+        self,
+        room_id: str,
+        binding: ChannelBinding,
+    ) -> None:
+        """Establish whatever the new binding claims exists.
+
+        Awaited by ``attach_channel()`` after the binding is written and before
+        anything has observed it — no system event, no hook.  This is where a
+        channel does the outside-world work an attachment implies: a conference
+        channel creates the SFU room here (RFC §12.10.4 step 1).
+
+        Raising cancels the attachment.  The framework takes the binding back
+        and re-raises, so the caller learns that the channel refused rather than
+        receiving a binding to something that was never built.  Which is why
+        this is not a hook: a lifecycle hook is observation, its errors are
+        logged and never raised, and the room would go on believing it was
+        attached.  Default: no-op.
+        """
+
+    async def on_room_detached(  # noqa: B027
+        self,
+        room_id: str,
+    ) -> None:
+        """Take down what :meth:`on_room_attached` established.
+
+        Awaited by ``detach_channel()`` before the ``ON_CHANNEL_DETACHED``
+        hooks, so an integrator's handler runs after the channel has finished
+        letting go rather than alongside it.
+
+        Nothing is rolled back if this raises — the binding is already gone and
+        the detach already announced — but the error reaches the caller instead
+        of disappearing into a log.  Default: no-op.
         """
 
     def capabilities(self) -> ChannelCapabilities:

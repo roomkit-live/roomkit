@@ -21,7 +21,18 @@ class HookResult(BaseModel):
     """Result returned by a sync hook."""
 
     action: Literal["allow", "block", "modify"]
-    event: RoomEvent | None = None
+    event: Any = None
+    """The replacement payload when action is "modify".
+
+    Typed loosely because a sync hook receives whatever its trigger passes, and
+    only one of them passes a RoomEvent: BEFORE_TTS receives a string, the
+    bridge triggers receive frames, the tool and generation triggers receive
+    their own event types. Restricting this to RoomEvent made "modify"
+    impossible for all of them — the hook raised, the engine logged and carried
+    on, and the unmodified payload continued on its way.
+
+    Consumers must check the type they expect before using it.
+    """
     reason: str | None = None
     injected_events: list[InjectedEvent] = Field(default_factory=list)
     tasks: list[Task] = Field(default_factory=list)
@@ -61,8 +72,13 @@ class HookResult(BaseModel):
     @classmethod
     def modify(
         cls,
-        event: RoomEvent,
+        event: Any,
         injected: list[InjectedEvent] | None = None,
     ) -> HookResult:
-        """Modify the event before it proceeds."""
+        """Replace the payload before it proceeds.
+
+        Takes whatever the trigger passed the hook — a string for BEFORE_TTS, a
+        RoomEvent for BEFORE_BROADCAST — because restricting it to RoomEvent
+        left every other sync trigger unable to use its own constructor.
+        """
         return cls(action="modify", event=event, injected_events=injected or [])

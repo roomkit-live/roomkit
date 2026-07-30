@@ -1,9 +1,14 @@
-"""Tests for the full identity resolution pipeline (Phase C, Area 7)."""
+"""Tests for the full identity resolution pipeline (RFC §11)."""
 
 from __future__ import annotations
 
 import pytest
 
+from roomkit.channels.base import Channel
+from roomkit.channels.cli import CLIChannel
+from roomkit.channels.conference import ConferenceChannel
+from roomkit.channels.voice import VoiceChannel
+from roomkit.channels.websocket import WebSocketChannel
 from roomkit.core.framework import IdentityNotFoundError, ParticipantNotFoundError, RoomKit
 from roomkit.identity.base import IdentityResolver
 from roomkit.identity.mock import MockIdentityResolver
@@ -45,7 +50,63 @@ class RejectedResolver(IdentityResolver):
         return IdentityResult(status=IdentificationStatus.REJECTED, message="not allowed")
 
 
+class CountingIdentityResolver(IdentityResolver):
+    """Answers nothing, remembers every address it was handed."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def resolve(self, message: InboundMessage, context: RoomContext) -> IdentityResult:
+        self.calls.append(message.sender_id or "")
+        return IdentityResult(status=IdentificationStatus.UNKNOWN)
+
+
 # ---- Helpers ----
+
+
+class _AddressedChannel(SimpleChannel):
+    """A channel that attributes its events, as every transport channel does.
+
+    ``SimpleChannel`` leaves ``source.participant_id`` unset, which no real
+    transport does (see ``TransportChannel.handle_inbound``) — and the roster is
+    keyed on exactly that field.
+    """
+
+    async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
+        event = await super().handle_inbound(message, context)
+        return event.model_copy(
+            update={
+                "source": event.source.model_copy(
+                    update={"participant_id": message.sender_id or None}
+                )
+            }
+        )
+
+
+class _NamingChannel(_AddressedChannel):
+    """A channel whose senders the room names, as a conference's are.
+
+    Declared on the class, which is where a channel states it: an instance
+    attribute would read as something an integrator flips per channel.
+    """
+
+    sender_is_participant = True
+
+
+async def _setup_addressed_room(kit: RoomKit) -> _AddressedChannel:
+    channel = _AddressedChannel("sms")
+    kit.register_channel(channel)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms")
+    return channel
+
+
+def _addressed_msg(*, channel_id: str = "sms", sender: str = "+15551234") -> InboundMessage:
+    return InboundMessage(
+        channel_id=channel_id,
+        sender_id=sender,
+        content=TextContent(body="hello"),
+    )
 
 
 async def _setup_room(
@@ -854,3 +915,155 @@ class TestIdentityChannelTypesFiltering:
             if hasattr(e.content, "code") and e.content.code == "participant_joined_pending"
         ]
         assert len(pending_events) == 0
+
+
+class TestTheRestrictionIsAskedOnceAndAnsweredEverywhere:
+    """``identity_enabled_for`` is the single answer to "resolve this channel?".
+
+    Public because the inbound pipeline is not the only caller: a conference
+    resolves an arriving participant on a path with no inbound message, and a
+    restriction the integrator configured has to reach that path too. A copy of
+    the test inline is a copy that can drift out of agreement with this one.
+    """
+
+    def test_no_resolver_means_no_channel_type_is_enabled(self) -> None:
+        kit = RoomKit()
+
+        assert kit.identity_enabled_for(ChannelType.SMS) is False
+        assert kit.identity_enabled_for(ChannelType.CONFERENCE) is False
+
+    def test_no_restriction_means_every_channel_type_is_enabled(self) -> None:
+        kit = RoomKit(identity_resolver=UnknownResolver())
+
+        assert kit.identity_enabled_for(ChannelType.SMS) is True
+        assert kit.identity_enabled_for(ChannelType.CONFERENCE) is True
+
+    def test_a_restriction_answers_for_the_types_it_names_and_against_the_rest(self) -> None:
+        kit = RoomKit(
+            identity_resolver=UnknownResolver(),
+            identity_channel_types={ChannelType.SMS},
+        )
+
+        assert kit.identity_enabled_for(ChannelType.SMS) is True
+        assert kit.identity_enabled_for(ChannelType.CONFERENCE) is False
+
+
+class TestSendersTheResolverIsNotAskedAbout:
+    """Two senders carry no question, and asking anyway is not free (RFC §11.6).
+
+    A resolver maps an address to an Identity. Where there is no address to map
+    — because the room already answered, or because the channel names its own
+    senders — the call costs a lookup per message and re-fires
+    ``ON_IDENTITY_UNKNOWN``, so a hook written to refuse unknown senders refuses
+    one the room knows.
+    """
+
+    async def test_a_sender_the_room_has_identified_is_not_looked_up_again(self) -> None:
+        resolver = CountingIdentityResolver()
+        kit = RoomKit(identity_resolver=resolver)
+        await _setup_addressed_room(kit)
+        await kit.store.add_participant(
+            Participant(
+                id="+15551234",
+                room_id="r1",
+                channel_id="sms",
+                identification=IdentificationStatus.IDENTIFIED,
+                identity_id="alice-id",
+            )
+        )
+
+        result = await kit.process_inbound(_addressed_msg())
+
+        assert resolver.calls == []
+        assert not result.blocked
+        assert result.event is not None
+        assert result.event.source.participant_id == "+15551234"
+
+    async def test_a_pending_sender_is_still_resolved_and_still_refusable(self) -> None:
+        """The room having a record is not the room having an answer: PENDING is
+        exactly the case a resolver may still settle, and a hook may still want
+        to challenge or refuse.
+        """
+        resolver = CountingIdentityResolver()
+        kit = RoomKit(identity_resolver=resolver)
+        await _setup_addressed_room(kit)
+        await kit.store.add_participant(
+            Participant(
+                id="+15551234",
+                room_id="r1",
+                channel_id="sms",
+                identification=IdentificationStatus.PENDING,
+            )
+        )
+
+        @kit.identity_hook(HookTrigger.ON_IDENTITY_UNKNOWN)
+        async def refuse(
+            event: RoomEvent, context: RoomContext, id_result: IdentityResult
+        ) -> IdentityHookResult:
+            return IdentityHookResult.reject("unknown sender")
+
+        result = await kit.process_inbound(_addressed_msg())
+
+        assert resolver.calls == ["+15551234"]
+        assert result.blocked
+        assert result.reason == "unknown sender"
+
+    async def test_a_channel_that_names_its_own_senders_is_not_resolved(self) -> None:
+        """No roster record involved: the declaration alone settles it, which is
+        what a conference needs — its minted participants are PENDING.
+        """
+        resolver = CountingIdentityResolver()
+        kit = RoomKit(identity_resolver=resolver)
+        await _setup_addressed_room(kit)
+        kit.register_channel(_NamingChannel("named"))
+        await kit.attach_channel("r1", "named")
+
+        await kit.process_inbound(_addressed_msg(channel_id="named"))
+        assert resolver.calls == []
+
+        # Contrast: the same sender on a channel that does carry addresses.
+        await kit.process_inbound(_addressed_msg())
+        assert resolver.calls == ["+15551234"]
+
+
+class TestWhichChannelsNameTheirOwnSenders:
+    """Who declares ``sender_is_participant``, and who deliberately does not.
+
+    Declared wrongly it costs a channel its resolution entirely — every address
+    it carries stays unresolved, silently — so the roster is asserted here
+    rather than left to a review. A channel belongs on the naming side when the
+    framework itself chooses the ``sender_id``; on the addressed side when the
+    value arrives from the remote network or from the integrator, which is where
+    ``identity_channel_types`` (RFC §11.4) is the lever instead.
+    """
+
+    @pytest.mark.parametrize("channel_class", [CLIChannel, ConferenceChannel])
+    def test_a_channel_that_names_its_senders_declares_it(
+        self, channel_class: type[Channel]
+    ) -> None:
+        assert channel_class.sender_is_participant is True
+
+    @pytest.mark.parametrize("channel_class", [SimpleChannel, VoiceChannel, WebSocketChannel])
+    def test_a_channel_that_carries_addresses_leaves_the_default(
+        self, channel_class: type[Channel]
+    ) -> None:
+        assert channel_class.sender_is_participant is False
+
+    async def test_a_websocket_sender_is_resolved_as_before(self) -> None:
+        """A WebSocket carries whatever its integrator puts on ``sender_id``,
+        which may well be an address — RFC §11.4 leaves that call to
+        ``identity_channel_types``, not to the channel.
+        """
+        resolver = CountingIdentityResolver()
+        kit = RoomKit(identity_resolver=resolver)
+        await kit.create_room(room_id="r1")
+        kit.register_channel(WebSocketChannel("ws"))
+        await kit.attach_channel("r1", "ws")
+
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="ws", sender_id="+15551234", content=TextContent(body="hello")
+            )
+        )
+
+        assert resolver.calls == ["+15551234"]

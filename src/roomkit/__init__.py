@@ -21,8 +21,18 @@ from roomkit.channels.acp import ACPChannel
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.av import AudioVideoChannel
-from roomkit.channels.base import Channel
+from roomkit.channels.base import Channel, FrameworkAwareChannel
 from roomkit.channels.cli import CLIChannel
+from roomkit.channels.conference import (
+    CONFERENCE_ADDRESS_KEYS,
+    CONFERENCE_METADATA_KEY,
+    CONFERENCE_UNASSERTED_METADATA_KEY,
+    ConferenceBargeIn,
+    ConferenceChannel,
+    ConferenceRecordingStarted,
+    ConferenceRecordingStopped,
+    ConferenceTranscription,
+)
 from roomkit.channels.realtime_av import RealtimeAudioVideoChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel, get_current_voice_session
 from roomkit.channels.realtime_voice import ToolHandler as ToolHandler
@@ -30,7 +40,32 @@ from roomkit.channels.transport import TransportChannel
 from roomkit.channels.video import VideoChannel
 from roomkit.channels.voice import VoiceChannel
 from roomkit.channels.websocket import WebSocketChannel
+from roomkit.conference import (
+    BotSession,
+    ConferenceAccess,
+    ConferenceBackend,
+    ConferenceCapability,
+    ConferenceGrants,
+    ConferenceInterruptionConfig,
+    ConferenceInterruptionScope,
+    ConferenceParticipant,
+    ConferenceRecordingConfig,
+    ConferenceRecordingMode,
+    ConferenceTrack,
+    MockConferenceBackend,
+    MockDelivery,
+    MockFaults,
+    MockTrackFormat,
+    MockUtterance,
+    TrackKind,
+)
 from roomkit.core.delivery import DeliveryStrategy, Immediate, Queued, WaitForIdle
+from roomkit.core.exceptions import (
+    ConferenceCapabilityError,
+    ConferenceCloseError,
+    ParticipantNotAdmittedError,
+    RoomNotAttachedError,
+)
 from roomkit.core.framework import (
     ChannelNotFoundError,
     ChannelNotRegisteredError,
@@ -170,11 +205,15 @@ __all__ = [
     "ChannelNotFoundError",
     "ChannelNotRegisteredError",
     "ParticipantNotFoundError",
+    "ParticipantNotAdmittedError",
     "IdentityNotFoundError",
     "SourceAlreadyAttachedError",
     "SourceNotFoundError",
     "VoiceBackendNotConfiguredError",
     "VoiceNotConfiguredError",
+    "ConferenceCapabilityError",
+    "ConferenceCloseError",
+    "RoomNotAttachedError",
     # Delivery
     "DeliveryBackend",
     "DeliveryItem",
@@ -193,8 +232,10 @@ __all__ = [
     "BuzzChannel",
     "Channel",
     "CLIChannel",
+    "ConferenceChannel",
     "DiscordChannel",
     "EmailChannel",
+    "FrameworkAwareChannel",
     "HTTPChannel",
     "MessengerChannel",
     "RCSChannel",
@@ -239,6 +280,31 @@ __all__ = [
     "RoutingRule",
     "Supervisor",
     "Swarm",
+    # Conference (SFU orchestration — RFC §12.10, PROVISIONAL)
+    "CONFERENCE_ADDRESS_KEYS",
+    "CONFERENCE_METADATA_KEY",
+    "CONFERENCE_UNASSERTED_METADATA_KEY",
+    "BotSession",
+    "ConferenceAccess",
+    "ConferenceBackend",
+    "ConferenceBargeIn",
+    "ConferenceCapability",
+    "ConferenceGrants",
+    "ConferenceInterruptionConfig",
+    "ConferenceInterruptionScope",
+    "ConferenceParticipant",
+    "ConferenceRecordingConfig",
+    "ConferenceRecordingMode",
+    "ConferenceRecordingStarted",
+    "ConferenceRecordingStopped",
+    "ConferenceTrack",
+    "ConferenceTranscription",
+    "MockConferenceBackend",
+    "MockDelivery",
+    "MockFaults",
+    "MockTrackFormat",
+    "MockUtterance",
+    "TrackKind",
     # Observability / privacy
     "content_logging_enabled",
     "set_content_logging",

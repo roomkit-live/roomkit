@@ -17,7 +17,7 @@ from roomkit.channels._voice_pipeline import VoicePipelineMixin
 from roomkit.channels._voice_stt import VoiceSTTMixin
 from roomkit.channels._voice_tts import VoiceTTSMixin
 from roomkit.channels._voice_turn import VoiceTurnMixin
-from roomkit.channels.base import Channel
+from roomkit.channels.base import Channel, FrameworkAwareChannel
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import (
     Access,
@@ -109,6 +109,7 @@ class VoiceChannel(
     VoiceHooksMixin,
     VoiceTurnMixin,
     VoicePipelineMixin,
+    FrameworkAwareChannel,
     Channel,
 ):
     """Real-time voice communication channel.
@@ -1140,7 +1141,7 @@ class VoiceChannel(
         # passes through cleanly until the next TTS starts.
         if self._pipeline is not None and self._pipeline._config.aec is not None:
             aec = self._pipeline._config.aec
-            aec.reset()
+            aec.reset(session.id)
             aec.set_active(False)
 
         if self._framework:

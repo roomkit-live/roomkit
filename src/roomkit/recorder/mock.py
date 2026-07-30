@@ -55,6 +55,10 @@ class MockMediaRecorder(MediaRecorder):
         handle.state = "stopped"
         result = MediaRecordingResult(
             id=handle.id,
+            # A recorder's result says where it wrote. The mock writes nowhere,
+            # but a caller that reports the location has to have one to report,
+            # and an empty string proves nothing about whether it was carried.
+            url=f"mock://{handle.id}",
             duration_seconds=0.0,
             tracks=list(self.tracks),
             format="mp4",

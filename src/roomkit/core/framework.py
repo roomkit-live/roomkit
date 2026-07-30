@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+from collections.abc import Iterator
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -158,6 +160,8 @@ class RoomKit(
             identity_channel_types: Restrict identity resolution to specific channel
                 types. If ``None`` (default), resolution runs for all channels.
                 Set to e.g. ``{ChannelType.SMS}`` to only resolve identity for SMS.
+                Applies wherever resolution runs, the conference arrival path
+                included — see :meth:`identity_enabled_for`.
             inbound_router: Strategy for routing inbound messages to rooms.
                 Defaults to ``DefaultInboundRoomRouter``.
             lock_manager: Per-room locking backend. Defaults to
@@ -274,6 +278,8 @@ class RoomKit(
         self._pending_traces: dict[str, list[object]] = {}
         # Track fire-and-forget trace hook tasks to prevent GC
         self._pending_hook_tasks: set[asyncio.Task[Any]] = set()
+        self._resource_leases: set[asyncio.Event] = set()
+        self._resource_leases_sealed = False
         # Telemetry
         if isinstance(telemetry, _TelemetryProviderCls):
             self._telemetry: _TelemetryProviderCls = telemetry
@@ -311,6 +317,27 @@ class RoomKit(
     def realtime(self) -> RealtimeBackend:
         """The realtime backend for ephemeral events."""
         return self._realtime
+
+    @property
+    def identity_resolver(self) -> IdentityResolver | None:
+        """The pluggable identity resolver, if one was configured.
+
+        Exposed because the inbound pipeline is not the only place identity is
+        resolved: a conference participant the framework did not name must be
+        identified when it arrives rather than when it first speaks (RFC
+        §12.10.2), and there is no inbound message at that point to carry it
+        through the pipeline.
+        """
+        return self._identity_resolver
+
+    @property
+    def identity_timeout(self) -> float:
+        """How long identity resolution may take before it counts as UNKNOWN.
+
+        The same budget wherever resolution runs (RFC §11.5), so a resolver
+        cannot be slow in one caller and bounded in another.
+        """
+        return self._identity_timeout
 
     @property
     def stt(self) -> STTProvider | None:
@@ -377,7 +404,27 @@ class RoomKit(
         return self._event_router
 
     async def close(self) -> None:
-        """Close all sources, channels, voice backend, and the realtime backend."""
+        """Close every channel, then release what they share.
+
+        In two phases (RFC 12.10.4). First the channels close, one at a time
+        and shielded from one another, each on its own bounded budgets — a
+        conference channel's bot is out of its meeting when this phase ends,
+        whatever the store is doing. Then, with every channel's media
+        released, the framework waits — with no deadline — for the operations
+        the store and the lock manager already have (each runs under a
+        resource lease), seals both against new work, and releases them. An
+        operation arriving after the seal is refused with
+        :class:`RoomKitError` rather than started against a resource being
+        released.
+
+        Raises:
+            ExceptionGroup: one or more channels failed to close. Raised only
+                once the rest of the shutdown has run to completion — every
+                other channel is closed and the shared resources are released
+                — so nothing else is skipped on a failure's account. The
+                channel that failed may still be holding its own resources (a
+                bot possibly still in its meeting); the group names each one.
+        """
         # Stop room-level media recorders before channels close
         self._room_recorder_mgr.close()
         # Clear stale greeting gates
@@ -397,13 +444,35 @@ class RoomKit(
         # Stop all event sources
         for channel_id in list(self._sources.keys()):
             await self.detach_source(channel_id)
-        # Then close channels
-        for channel in self._channels.values():
-            await channel.close()
+        # Then close the channels. In sequence, but shielded from one another:
+        # they close one at a time, so a close that raises would leave every
+        # channel behind it holding its media — for a conference channel, a
+        # bot left sitting in a meeting (RFC 12.10.4). Collected rather than
+        # swallowed: the failed channel's own resources are in an unknown
+        # state — its bot may still be in its conference — and a close() that
+        # returns cleanly over that turns a logged error into an operational
+        # and disclosure risk. Raised at the very end, so the failure of one
+        # channel costs nothing else its shutdown.
+        channel_failures: list[Exception] = []
+        for channel_id, channel in self._channels.items():
+            try:
+                await channel.close()
+            except Exception as error:
+                logger.exception(
+                    "Channel %r failed to close; the remaining channels still close",
+                    channel_id,
+                )
+                error.add_note(f"while closing channel {channel_id!r}")
+                channel_failures.append(error)
         # Close voice backend
         if self._voice:
             await self._voice.close()
         await self._realtime.close()
+        # Every channel is closed and its media released. Only now wait for
+        # the operations the store or the lock manager already has — they are
+        # bracketed by resource leases, and this wait is what lets a channel's
+        # own close() stay bounded (RFC 12.10.4).
+        await self._await_resource_leases()
         # Close the conversation store (e.g. release a PostgreSQL pool). The
         # store's close() is idempotent and a no-op for a caller-owned pool.
         await self._store.close()
@@ -413,6 +482,90 @@ class RoomKit(
         await self._status_bus.close()
         # Flush telemetry (ends active spans, flushes exporter)
         self._telemetry.close()
+        # Last, the failures the channel loop collected. After everything, so
+        # the caller learns of them without any other part of the shutdown
+        # having been skipped on their account — what cannot be reported as a
+        # success is a close that returns cleanly while a channel that failed
+        # may still be holding its media (RFC 12.10.4).
+        if channel_failures:
+            raise ExceptionGroup(
+                f"{len(channel_failures)} channel(s) failed to close; "
+                "the rest of the shutdown ran to completion",
+                channel_failures,
+            )
+
+    @contextlib.contextmanager
+    def _resource_lease(self) -> Iterator[None]:
+        """Hold the store and the lock manager open across one operation.
+
+        Taken by a channel around work those resources have already been
+        given — a roster write inside the room lock, from taking the lock to
+        letting it go — and released when the last of it is out of them.
+        ``close()`` waits for every lease after the channels have closed and
+        their media is released, and only then releases the store and the
+        lock manager: an operation a shared resource is running cannot be
+        taken back, so the owner of the resource is the one that waits
+        (RFC 12.10.4). Everything under a lease must be framework or channel
+        code and the resource calls themselves — never integrator code, which
+        can suspend forever and must only ever be waited for on a budget.
+
+        Refused once the shutdown has sealed the registry. A callback can
+        suspend in a backend past every closing budget while holding no lease
+        at all — there is nothing for the shutdown to wait for — and resume
+        after the store has been released, asking for a lease as its first
+        act. Granting one then would be a use-after-free with a registration
+        on it; the seal turns it into an error that says what happened.
+        """
+        if self._resource_leases_sealed:
+            raise RoomKitError(
+                "RoomKit.close() has sealed the store and the lock manager; an operation "
+                "arriving now would run against resources that are being released"
+            )
+        released = asyncio.Event()
+        self._resource_leases.add(released)
+        try:
+            yield
+        finally:
+            self._resource_leases.discard(released)
+            released.set()
+
+    async def _await_resource_leases(self) -> None:
+        """Wait for every resource lease, with no deadline — then seal.
+
+        No deadline, because there is no third option: the work under a lease
+        is already inside the store or the lock manager, giving up on it is
+        releasing the resource under it, and the media was all released before
+        this wait begins — so it costs the shutdown its latency and nothing
+        else. And it terminates: nothing integrator-owned ever runs under a
+        lease, so every lease is first-party code and the resource calls
+        themselves. The loop re-reads the registry because a lease can still
+        register while this waits — a straggler announcement building its
+        room context, say — and the wait owes it the same patience.
+
+        The seal is set the moment the registry is last seen empty, with no
+        await in between, so there is no instant at which the wait has
+        concluded and a new lease could still be granted. What arrives after
+        is refused by :meth:`_resource_lease` — the alternative was a lease
+        registered onto a registry nothing will read again, over a resource
+        already being released.
+        """
+        if self._resource_leases:
+            logger.warning(
+                "Shutdown is waiting for %d operation(s) the store or the lock manager "
+                "is still running. Every channel is closed and its media released, so "
+                "this costs the shutdown its latency and nothing else",
+                len(self._resource_leases),
+            )
+        while self._resource_leases:
+            waiters = [
+                asyncio.ensure_future(released.wait()) for released in list(self._resource_leases)
+            ]
+            try:
+                await asyncio.wait(waiters)
+            finally:
+                for waiter in waiters:
+                    waiter.cancel()
+        self._resource_leases_sealed = True
 
     async def __aenter__(self) -> RoomKit:
         await self._ensure_status_bus_subscribed()
@@ -568,7 +721,8 @@ class RoomKit(
                     pending_error_hooks_out=pending_error_hooks,
                     pending_streams_out=pending_streams,
                 )
-            event = result.event or event
+            if isinstance(result.event, RoomEvent):
+                event = result.event
             # AFTER_BROADCAST/mutation and ON_ERROR run outside the room lock (RFC §10.1)
             await self._run_deferred_async_hooks(room_id, pending_async_hooks)
             await self._run_deferred_error_hooks(room_id, pending_error_hooks)

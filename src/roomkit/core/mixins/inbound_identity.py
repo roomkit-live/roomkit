@@ -1,4 +1,4 @@
-"""InboundIdentityMixin — identity resolution pipeline (RFC §7)."""
+"""InboundIdentityMixin — identity resolution pipeline (RFC §11)."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ class IdentityHost(Protocol):
 
 
 class InboundIdentityMixin(HelpersMixin):
-    """Identity resolution pipeline for inbound messages (RFC §7).
+    """Identity resolution pipeline for inbound messages (RFC §11).
 
     Host contract: :class:`IdentityHost`.
     """
@@ -72,6 +72,26 @@ class InboundIdentityMixin(HelpersMixin):
     # in the MRO, and a stub would shadow the real implementation at runtime.
     _deliver_injected_events: Any  # see IdentityHost for typed signature
 
+    def identity_enabled_for(self, channel_type: ChannelType) -> bool:
+        """Whether identity resolution runs for a channel of this type.
+
+        The whole of what ``identity_resolver`` and ``identity_channel_types``
+        decide together, in one place, because the inbound pipeline is not the
+        only caller: a conference participant the framework did not name is
+        resolved when it *arrives* (RFC §12.10.2), on a path with no inbound
+        message to carry it through the pipeline. Every path that resolves asks
+        here, so a deployment restricting resolution to, say, SMS keeps a
+        dial-in's caller number from leaving for the resolver as surely as it
+        keeps a WhatsApp handle from it.
+
+        Cheap on purpose — a null test and a set lookup, nothing configured
+        after construction — so a caller can ask before doing anything that
+        costs. ``ConferenceIdentity.active`` is exactly that caller.
+        """
+        if self._identity_resolver is None:
+            return False
+        return self._identity_channel_types is None or channel_type in self._identity_channel_types
+
     async def _resolve_identity(
         self,
         event: Any,
@@ -81,16 +101,30 @@ class InboundIdentityMixin(HelpersMixin):
         context: RoomContext,
         telemetry: Any,
     ) -> tuple[Any, Identity | None, IdentityResult | None]:
-        """Run identity resolution pipeline (RFC §7).
+        """Run identity resolution pipeline (RFC §11).
+
+        Two senders carry no question for a resolver, and asking anyway is not
+        free — it costs a lookup per message where a resolver reads a CRM, and
+        it re-fires ``ON_IDENTITY_UNKNOWN``, so a hook written to refuse unknown
+        senders blocks a sender the room already knows (RFC §11.6):
+
+        - one the channel names itself, whose ``sender_id`` is a
+          ``Participant.id`` rather than an address (``sender_is_participant``);
+        - one the room has already identified, whose answer is on the roster.
+
+        Whether resolution is configured for this channel at all is a separate
+        question, and :meth:`identity_enabled_for` is the one place that answers
+        it.
 
         Returns:
             A tuple of (event, resolved_identity, pending_id_result). The event
             may be modified with participant_id stamped on the source.
         """
         resolver = self._identity_resolver
-        should_resolve = resolver is not None and (
-            self._identity_channel_types is None
-            or channel.channel_type in self._identity_channel_types
+        should_resolve = (
+            self.identity_enabled_for(channel.channel_type)
+            and not channel.sender_is_participant
+            and not _sender_already_identified(event, context)
         )
         if not should_resolve or resolver is None:
             return event, None, None
@@ -264,3 +298,25 @@ class InboundIdentityMixin(HelpersMixin):
             )
             return event, hook_result.identity
         return event, None
+
+
+def _sender_already_identified(event: Any, context: RoomContext) -> bool:
+    """Whether the room has already identified this event's sender.
+
+    Read off ``context.participants``, which the inbound pipeline loaded before
+    the channel ever saw the message: the check costs nothing, where a store
+    query per message would cost more on the text channels that never hit it.
+
+    Only IDENTIFIED counts. A PENDING participant is one the room *has* but has
+    not identified — a resolver may still be the thing that names it, and a
+    hook may still want to challenge or refuse — so those go on resolving as
+    before.
+    """
+    participant_id = event.source.participant_id
+    if not participant_id:
+        return False
+    return any(
+        participant.id == participant_id
+        and participant.identification is IdentificationStatus.IDENTIFIED
+        for participant in context.participants
+    )

@@ -8,6 +8,31 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 
+PCM_CODECS = {1: "pcm_s8", 2: "pcm_s16le", 4: "pcm_s32le"}
+"""Codec name for a PCM sample width in bytes, as :class:`RecordingTrack` names it.
+
+Signed little-endian throughout, which is the framework's own convention rather
+than a reading of the bytes: the resamplers map widths to int8/int16/int32 and
+:class:`~roomkit.voice.audio_frame.AudioFrame` carries no format field to say
+otherwise. Four bytes is therefore ``pcm_s32le`` and never ``pcm_f32le`` — the
+ambiguity is real, and it is settled here so that it is settled in one place. A
+backend holding float samples converts them before handing them to the
+framework, as the pipeline stages already do.
+"""
+
+
+def pcm_codec(sample_width: int) -> str:
+    """Name the PCM codec of a sample width, for a track's declaration.
+
+    Raises for a width the framework does not carry, rather than guessing: a
+    recording declared in the wrong format is a file that opens and is wrong,
+    which is the failure this mapping exists to prevent.
+    """
+    try:
+        return PCM_CODECS[sample_width]
+    except KeyError:
+        raise ValueError(f"sample_width must be 1, 2 or 4 bytes, got {sample_width}") from None
+
 
 def safe_filename(value: str) -> str:
     """Sanitize a string for use in filenames."""
@@ -31,7 +56,14 @@ def validate_storage_path(storage: str) -> str:
 
 @dataclass
 class RecordingTrack:
-    """Describes a single media track within a room recording."""
+    """Describes a single media track within a room recording.
+
+    The description is how a recorder learns to interpret the bytes it is then
+    handed: ``on_data`` carries none of it, and one PCM format is
+    indistinguishable from another by inspection. A caller therefore declares
+    what it will actually deliver — not what the framework normally carries —
+    and does not then deliver something else (RFC section 12.11).
+    """
 
     id: str
     kind: str  # "audio", "video", "screen_share"
@@ -39,6 +71,9 @@ class RecordingTrack:
     participant_id: str | None = None
     codec: str = ""
     sample_rate: int | None = None
+    channels: int | None = None
+    """Audio channel count. ``None`` leaves it to the recorder, which reads mono."""
+
     width: int | None = None
     height: int | None = None
 

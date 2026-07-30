@@ -9,7 +9,7 @@ from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._video_hooks import VideoHooksMixin
-from roomkit.channels.base import Channel
+from roomkit.channels.base import Channel, FrameworkAwareChannel
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.enums import (
     ChannelCategory,
@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.video")
 
 
-class VideoChannel(VideoHooksMixin, Channel):
+class VideoChannel(VideoHooksMixin, FrameworkAwareChannel, Channel):
     """Real-time video communication channel.
 
     Wires a :class:`VideoBackend` into the RoomKit framework,

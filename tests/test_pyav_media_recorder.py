@@ -368,6 +368,119 @@ class TestPyAVMediaRecorder:
         assert len(result.tracks) == 2
 
 
+class TestDeclaredAudioFormat:
+    """A track says what its media is, and the file has to come out that way.
+
+    PCM carries no description of itself, so a recorder that assumed 16-bit
+    mono wrote a stereo track as twice the audio at twice the speed and an
+    8-bit track as noise — a file that opens, plays wrong, and reports nothing.
+    Written losslessly here (WAV/`pcm_s16le`) so the assertion is on the
+    samples rather than on what an encoder made of them.
+    """
+
+    @staticmethod
+    def _lossless_recording(tmp_path: object, track: RecordingTrack):
+        recorder = _get_recorder()
+        handle = recorder.on_recording_start(
+            MediaRecordingConfig(
+                storage=str(tmp_path),
+                format="wav",
+                audio_codec="pcm_s16le",
+                audio_sample_rate=track.sample_rate or 16000,
+            )
+        )
+        recorder.on_track_added(handle, track)
+        return recorder, handle
+
+    @staticmethod
+    def _decode(url: str) -> tuple[int, float, object]:
+        """Channel count, duration in seconds, and the interleaved samples."""
+        with av.open(url) as container:
+            stream = container.streams.audio[0]
+            frames = [frame.to_ndarray().reshape(-1) for frame in container.decode(stream)]
+            return (
+                len(stream.layout.channels),
+                container.duration / 1_000_000,
+                np.concatenate(frames),
+            )
+
+    def test_a_stereo_track_is_written_as_stereo(self, tmp_path: object) -> None:
+        """One second in is one second out. Read as mono the same bytes are two
+        seconds of audio played at double speed, with the channels alternating.
+        """
+        track = RecordingTrack(
+            id="audio:s1",
+            kind="audio",
+            channel_id="conf",
+            codec="pcm_s16le",
+            sample_rate=16000,
+            channels=2,
+        )
+        recorder, handle = self._lossless_recording(tmp_path, track)
+
+        frame = np.empty(320 * 2, dtype=np.int16)  # 20 ms, interleaved L/R
+        frame[0::2] = 1000
+        frame[1::2] = -1000
+        for i in range(50):
+            recorder.on_data(handle, track, frame.tobytes(), i * 20.0)
+        result = recorder.on_recording_stop(handle)
+
+        channels, duration, samples = self._decode(result.url)
+        assert channels == 2
+        assert duration == pytest.approx(1.0, abs=0.02)
+        assert samples.size == 16000 * 2
+        # The channels came out the way they went in, not swapped or summed.
+        assert set(np.unique(samples[0::2])) == {1000}
+        assert set(np.unique(samples[1::2])) == {-1000}
+
+    def test_an_eight_bit_track_is_read_as_eight_bit(self, tmp_path: object) -> None:
+        """Signed 8-bit PCM, which FFmpeg has no sample format for: the samples
+        are shifted into unsigned rather than relabelled, so half full scale in
+        is half full scale out.
+        """
+        track = RecordingTrack(
+            id="audio:s1",
+            kind="audio",
+            channel_id="conf",
+            codec="pcm_s8",
+            sample_rate=8000,
+            channels=1,
+        )
+        recorder, handle = self._lossless_recording(tmp_path, track)
+
+        for i in range(10):
+            recorder.on_data(handle, track, np.full(160, 64, dtype=np.int8).tobytes(), i * 20.0)
+        result = recorder.on_recording_stop(handle)
+
+        channels, duration, samples = self._decode(result.url)
+        assert channels == 1
+        assert duration == pytest.approx(0.2, abs=0.02)
+        assert samples.size == 1600
+        assert set(np.unique(samples)) == {16384}  # 64/128 of full scale
+
+    def test_a_track_that_declares_no_channels_is_still_mono(self, tmp_path: object) -> None:
+        """The room recording path names no channel count, and it never carried
+        anything but mono. It goes on not having to.
+        """
+        track = RecordingTrack(
+            id="audio:s1",
+            kind="audio",
+            channel_id="voice-1",
+            codec="pcm_s16le",
+            sample_rate=16000,
+        )
+        recorder, handle = self._lossless_recording(tmp_path, track)
+
+        for i in range(10):
+            recorder.on_data(handle, track, np.full(320, 500, dtype=np.int16).tobytes(), i * 20.0)
+        result = recorder.on_recording_stop(handle)
+
+        channels, duration, samples = self._decode(result.url)
+        assert channels == 1
+        assert duration == pytest.approx(0.2, abs=0.02)
+        assert set(np.unique(samples)) == {500}
+
+
 class TestComputePts:
     def test_monotonic_with_timestamp(self) -> None:
         from roomkit.recorder._pyav_mux import compute_pts
