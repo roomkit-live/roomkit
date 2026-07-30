@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
 from typing import TYPE_CHECKING, Any
 
 from roomkit.models.delivery import InboundMessage, ProviderResult
@@ -14,6 +11,7 @@ from roomkit.providers.sms.meta import (
     extract_media_urls,
     extract_text_body,
 )
+from roomkit.providers.twilio._signature import verify_twilio_signature
 from roomkit.providers.twilio.config import TwilioConfig
 
 if TYPE_CHECKING:
@@ -124,35 +122,12 @@ class TwilioSMSProvider(SMSProvider):
         Returns:
             True if the signature is valid, False otherwise.
         """
-        if not url:
-            return False
-
-        # Parse form-encoded payload and sort parameters
-        try:
-            from urllib.parse import unquote_plus
-
-            pairs = payload.decode().split("&")
-            params = dict(pair.split("=", 1) for pair in pairs if "=" in pair)
-            # URL decode the values
-            params = {k: unquote_plus(v) for k, v in params.items()}
-        except Exception:
-            return False
-
-        # Build the validation string: URL + sorted params
-        validation_string = url
-        for key in sorted(params.keys()):
-            validation_string += key + params[key]
-
-        # Compute HMAC-SHA1
-        expected_sig = base64.b64encode(
-            hmac.new(
-                self._config.auth_token.get_secret_value().encode(),
-                validation_string.encode(),
-                hashlib.sha1,
-            ).digest()
-        ).decode()
-
-        return hmac.compare_digest(expected_sig, signature)
+        return verify_twilio_signature(
+            payload,
+            signature,
+            auth_token=self._config.auth_token.get_secret_value(),
+            url=url,
+        )
 
     async def close(self) -> None:
         await self._client.aclose()

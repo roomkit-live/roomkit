@@ -13,6 +13,7 @@ from roomkit.providers.sms.meta import (
     extract_media_urls,
     extract_text_body,
 )
+from roomkit.providers.twilio._signature import verify_twilio_signature
 
 if TYPE_CHECKING:
     import httpx
@@ -142,6 +143,38 @@ class TwilioRCSProvider(RCSProvider):
             provider_message_id=response_data.get("sid"),
             channel_used="rcs",
             fallback=False,
+        )
+
+    def verify_signature(
+        self,
+        payload: bytes,
+        signature: str,
+        timestamp: str | None = None,
+        url: str | None = None,
+    ) -> bool:
+        """Verify a Twilio webhook signature using HMAC-SHA1.
+
+        RCS webhooks arrive from the same Messages API as SMS and are signed
+        identically, so this is the same check the SMS provider runs. It was
+        missing here, which meant an RCS webhook endpoint had no way to
+        establish that Twilio sent it — the inherited method raised
+        ``NotImplementedError``.
+
+        Args:
+            payload: Raw request body bytes (form-encoded).
+            signature: Value of the ``X-Twilio-Signature`` header.
+            timestamp: Not used by Twilio (interface compatibility).
+            url: The exact public URL Twilio called. Required — it is part of
+                the signed string.
+
+        Returns:
+            True if the signature is valid, False otherwise.
+        """
+        return verify_twilio_signature(
+            payload,
+            signature,
+            auth_token=self._config.auth_token.get_secret_value(),
+            url=url,
         )
 
     async def close(self) -> None:
