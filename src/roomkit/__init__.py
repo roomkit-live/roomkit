@@ -286,7 +286,7 @@ __all__ = [
     "RoutingRule",
     "Supervisor",
     "Swarm",
-    # Conference (SFU orchestration — RFC §12.10, PROVISIONAL)
+    # Conference (SFU orchestration — RFC §12.10)
     "CONFERENCE_ADDRESS_KEYS",
     "CONFERENCE_METADATA_KEY",
     "CONFERENCE_UNASSERTED_METADATA_KEY",

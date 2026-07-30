@@ -5,9 +5,9 @@ and everything that goes with it — SDP negotiation, ICE, codec selection,
 simulcast layers, bitrate management — and exposes none of it: the framework
 sees decoded frames, opaque credentials, and participant lifecycle events.
 
-See RFC section 12.10.3. That section is PROVISIONAL: it has been validated
-against the published server APIs of several SFUs, but breaking revisions are
-permitted until the first conforming backend lands.
+See RFC section 12.10.3. The section is STABLE — validated on paper against
+the published server APIs of several SFUs, then revised against the first
+conforming backend (LiveKit) — and follows normal stability rules.
 """
 
 from __future__ import annotations
