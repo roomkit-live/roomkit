@@ -245,6 +245,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the roster belongs on `update_event`/`delete_event`, where the host owns
   authorization.
 
+- **`WebTransportBackend` can be authenticated, and refuses to be anonymous by
+  accident.** The backend accepted any client that reached its UDP port: the
+  CONNECT handshake was checked for its path and nothing else, and the HTTP
+  headers — the only place a WebTransport client can put a credential — were
+  read and thrown away before the application ever saw them. With the default
+  `0.0.0.0` bind, that is an open voice endpoint whose sessions bill STT and
+  TTS to the operator.
+
+  `authenticate` now receives a `WebTransportConnectRequest` carrying the
+  path and the full header block, and returns metadata to accept or `None` to
+  reject with 403; the metadata reaches the session factory through
+  `auth_context`, as it already did for WebSocket and WebRTC. `start()` raises
+  unless either `authenticate` or `allow_anonymous=True` is given, mirroring
+  the guard the WebRTC offer endpoint has had since 0.28.0 — existing
+  deployments that meant to be open say so in one argument.
+
 - **The Teams bot example validates its webhook JWT.** `examples/teams_bot.py`
   is the only example that stands up a real HTTP endpoint — on `0.0.0.0:3978`
   — and it read the request body without ever looking at the `Authorization`

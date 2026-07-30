@@ -53,10 +53,12 @@ import logging
 import struct
 import uuid
 from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.auth import AuthCallback, auth_context
 from roomkit.voice.backends.base import (
     AudioReceivedCallback,
     SessionReadyCallback,
@@ -75,6 +77,28 @@ _HEADER_SIZE = _HEADER_STRUCT.size
 SessionFactory = Callable[[str], Any]
 
 
+@dataclass(frozen=True)
+class WebTransportConnectRequest:
+    """The CONNECT handshake, as an authentication callback sees it.
+
+    WebTransport has no equivalent of a WebSocket object to hand an
+    application, and the URL path is fixed by the server, so this is the only
+    place a client credential can arrive: ``headers`` carries whatever it
+    sent — ``authorization``, ``cookie``, ``origin``.
+
+    Header names are lowercased; HTTP/3 pseudo-headers (``:method``,
+    ``:authority``, …) are kept as-is.
+    """
+
+    path: str
+    headers: dict[str, str] = field(default_factory=dict)
+    stream_id: int = 0
+
+    def header(self, name: str, default: str = "") -> str:
+        """Case-insensitive header lookup."""
+        return self.headers.get(name.lower(), default)
+
+
 class WebTransportBackend(VoiceBackend):
     """Voice backend using WebTransport (QUIC) datagrams for audio.
 
@@ -91,6 +115,16 @@ class WebTransportBackend(VoiceBackend):
         output_sample_rate: Outbound audio sample rate.
         path: URL path for WebTransport connections (default ``"/audio"``).
         max_datagram_size: Maximum datagram payload size in bytes.
+        authenticate: Async callback receiving the
+            :class:`WebTransportConnectRequest` for the CONNECT handshake —
+            its headers carry whatever credential the client sent. Returns a
+            metadata dict to accept (readable from the session factory via
+            :data:`roomkit.voice.auth.auth_context`) or ``None`` to reject
+            with 403.
+        allow_anonymous: Required when *authenticate* is ``None``. The
+            default bind is ``0.0.0.0`` and an accepted session costs STT and
+            TTS on the operator's account, so an unauthenticated endpoint has
+            to be asked for rather than fallen into.
     """
 
     def __init__(
@@ -104,6 +138,8 @@ class WebTransportBackend(VoiceBackend):
         output_sample_rate: int = 16000,
         path: str = "/audio",
         max_datagram_size: int = 65536,
+        authenticate: AuthCallback | None = None,
+        allow_anonymous: bool = False,
     ) -> None:
         self._host = host
         self._port = port
@@ -113,6 +149,8 @@ class WebTransportBackend(VoiceBackend):
         self._output_sample_rate = output_sample_rate
         self._path = path
         self._max_datagram_size = max_datagram_size
+        self._authenticate = authenticate
+        self._allow_anonymous = allow_anonymous
 
         # Callbacks
         self._audio_received_callback: AudioReceivedCallback | None = None
@@ -286,17 +324,33 @@ class WebTransportBackend(VoiceBackend):
     # WebTransport session lifecycle
     # ------------------------------------------------------------------
 
-    async def _on_client_connect(self, protocol: Any, stream_id: int, path: str) -> bool:
+    async def _on_client_connect(
+        self, protocol: Any, stream_id: int, request: WebTransportConnectRequest
+    ) -> bool:
         """Called when a WebTransport client connects.
 
         Returns True to accept, False to reject.
         """
-        if path != self._path:
-            logger.debug("Rejected WebTransport connection to %s", path)
+        if request.path != self._path:
+            logger.debug("Rejected WebTransport connection to %s", request.path)
             return False
+
+        # Authenticate before a session — and the STT/TTS spend it implies —
+        # exists. Rejection is a 403 on the CONNECT stream.
+        meta: dict[str, Any] | None = None
+        if self._authenticate is not None:
+            try:
+                meta = await self._authenticate(request)
+            except Exception:
+                logger.exception("WebTransport auth error on stream %d", stream_id)
+                return False
+            if meta is None:
+                logger.warning("WebTransport auth rejected on stream %d", stream_id)
+                return False
 
         connection_id = f"wt-{stream_id}"
 
+        auth_context.set(meta)
         if self._session_factory:
             result = self._session_factory(connection_id)
             if asyncio.iscoroutine(result):
@@ -351,7 +405,28 @@ class WebTransportBackend(VoiceBackend):
     # ------------------------------------------------------------------
 
     async def start(self) -> None:
-        """Start the QUIC/WebTransport server."""
+        """Start the QUIC/WebTransport server.
+
+        Raises:
+            ValueError: if no ``authenticate`` callback was given and
+                ``allow_anonymous`` was not set.
+        """
+        if self._authenticate is None and not self._allow_anonymous:
+            raise ValueError(
+                f"The WebTransport endpoint at {self._host}:{self._port}{self._path} would "
+                "accept voice sessions WITHOUT authentication, and every accepted session "
+                "spends STT/TTS on your account. Pass an `authenticate` callback, or set "
+                "allow_anonymous=True to explicitly allow unauthenticated access (only safe "
+                "on a trusted/local network)."
+            )
+        if self._authenticate is None:
+            logger.warning(
+                "WebTransport endpoint at %s:%d%s is UNAUTHENTICATED (allow_anonymous=True)",
+                self._host,
+                self._port,
+                self._path,
+            )
+
         try:
             from aioquic.asyncio import serve
             from aioquic.quic.configuration import QuicConfiguration
@@ -428,9 +503,21 @@ class WebTransportBackend(VoiceBackend):
                 protocol = headers.get(b":protocol", b"").decode()
 
                 if method == "CONNECT" and protocol == "webtransport":
-                    # WebTransport session request
+                    # WebTransport session request. The whole header block goes
+                    # to the backend: it is the only place a client credential
+                    # can reach the application.
                     stream_id = event.stream_id
-                    fut = asyncio.ensure_future(backend._on_client_connect(self, stream_id, path))
+                    request = WebTransportConnectRequest(
+                        path=path,
+                        headers={
+                            k.decode("utf-8", "replace").lower(): v.decode("utf-8", "replace")
+                            for k, v in headers.items()
+                        },
+                        stream_id=stream_id,
+                    )
+                    fut = asyncio.ensure_future(
+                        backend._on_client_connect(self, stream_id, request)
+                    )
 
                     def _on_connect_done(f: Any, sid: int = stream_id) -> None:
                         exc = f.exception()

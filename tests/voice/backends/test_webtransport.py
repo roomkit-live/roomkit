@@ -7,6 +7,9 @@ import struct
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from roomkit.voice.auth import auth_context
 from roomkit.voice.base import VoiceCapability, VoiceSessionState
 
 # ---------------------------------------------------------------------------
@@ -79,6 +82,107 @@ class TestWebTransportBackendConstructor:
         assert backend._input_sample_rate == 48000
         assert backend._output_sample_rate == 24000
         assert backend._path == "/voice"
+
+
+class TestWebTransportAnonymousGuard:
+    """An unauthenticated voice endpoint must be asked for, not fallen into."""
+
+    async def test_start_refuses_an_anonymous_endpoint(self):
+        wt_mod = _import_backend()
+        backend = wt_mod.WebTransportBackend()
+
+        with pytest.raises(ValueError, match="WITHOUT authentication"):
+            await backend.start()
+
+    async def test_start_passes_the_guard_once_authenticate_is_given(self):
+        wt_mod = _import_backend()
+        backend = wt_mod.WebTransportBackend(authenticate=AsyncMock(return_value={}))
+
+        # Past the guard, start() is aioquic's and the certificate's business.
+        with pytest.raises(Exception) as exc_info:  # noqa: B017
+            await backend.start()
+        assert not isinstance(exc_info.value, ValueError)
+
+
+class TestWebTransportConnectAuthorization:
+    """The CONNECT handshake is the only place a client credential can arrive."""
+
+    @staticmethod
+    async def _connect(backend, wt_mod, *, headers=None, path="/audio", stream_id=4):
+        request = wt_mod.WebTransportConnectRequest(
+            path=path, headers=headers or {}, stream_id=stream_id
+        )
+        return await backend._on_client_connect(MagicMock(), stream_id, request)
+
+    async def test_rejected_when_auth_returns_none(self):
+        wt_mod = _import_backend()
+        backend = wt_mod.WebTransportBackend(authenticate=AsyncMock(return_value=None))
+
+        assert await self._connect(backend, wt_mod) is False
+        assert backend._sessions == {}
+
+    async def test_rejected_when_auth_raises(self):
+        wt_mod = _import_backend()
+        backend = wt_mod.WebTransportBackend(
+            authenticate=AsyncMock(side_effect=RuntimeError("auth backend down"))
+        )
+
+        assert await self._connect(backend, wt_mod) is False
+        assert backend._sessions == {}
+
+    async def test_auth_callback_sees_the_connect_headers(self):
+        wt_mod = _import_backend()
+        seen: dict[str, str] = {}
+
+        async def authenticate(request):
+            seen["authorization"] = request.header("Authorization")
+            seen["origin"] = request.header("origin")
+            return {"user": "alice"}
+
+        backend = wt_mod.WebTransportBackend(authenticate=authenticate)
+
+        accepted = await self._connect(
+            backend,
+            wt_mod,
+            headers={"authorization": "Bearer t0ken", "origin": "https://app.example"},
+        )
+
+        assert accepted is True
+        assert seen["authorization"] == "Bearer t0ken"
+        assert seen["origin"] == "https://app.example"
+
+    async def test_auth_metadata_reaches_the_session_factory(self):
+        wt_mod = _import_backend()
+        seen: list[dict | None] = []
+
+        async def session_factory(connection_id: str):
+            seen.append(auth_context.get())
+            return await backend.connect(
+                room_id="r1", participant_id=connection_id, channel_id="voice"
+            )
+
+        backend = wt_mod.WebTransportBackend(
+            authenticate=AsyncMock(return_value={"user": "alice"})
+        )
+        backend.set_session_factory(session_factory)
+
+        assert await self._connect(backend, wt_mod) is True
+        assert seen == [{"user": "alice"}]
+
+    async def test_wrong_path_is_rejected_before_auth(self):
+        wt_mod = _import_backend()
+        authenticate = AsyncMock(return_value={})
+        backend = wt_mod.WebTransportBackend(authenticate=authenticate)
+
+        assert await self._connect(backend, wt_mod, path="/nope") is False
+        authenticate.assert_not_awaited()
+
+    async def test_anonymous_backend_still_accepts(self):
+        wt_mod = _import_backend()
+        backend = wt_mod.WebTransportBackend(allow_anonymous=True)
+
+        assert await self._connect(backend, wt_mod) is True
+        assert len(backend._sessions) == 1
 
 
 class TestDatagramHeaderEncoding:

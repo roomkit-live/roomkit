@@ -91,6 +91,17 @@ backend = WebTransportBackend(
     private_key=KEY,
     input_sample_rate=SAMPLE_RATE,
     output_sample_rate=SAMPLE_RATE,
+    # This echo demo listens on localhost only, so it opts out of auth
+    # explicitly. Anywhere reachable, pass an `authenticate` callback instead:
+    # it receives the CONNECT handshake and returns a metadata dict to accept
+    # or None to reject with 403. Every accepted session spends STT/TTS on
+    # your account, so an open endpoint is an open invoice.
+    #
+    #     async def authenticate(request):
+    #         token = request.header("Authorization").removeprefix("Bearer ")
+    #         return {"user": await verify(token)} if await verify(token) else None
+    #
+    allow_anonymous=True,
 )
 
 voice = VoiceChannel("voice", backend=backend)

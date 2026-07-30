@@ -10,8 +10,15 @@ from roomkit.voice.backends.webtransport import (
     _HEADER_SIZE,
     _HEADER_STRUCT,
     WebTransportBackend,
+    WebTransportConnectRequest,
 )
 from roomkit.voice.base import AudioChunk, VoiceCapability, VoiceSession, VoiceSessionState
+
+
+def _connect_request(path: str = "/audio", stream_id: int = 0) -> WebTransportConnectRequest:
+    """A CONNECT handshake carrying no credential."""
+    return WebTransportConnectRequest(path=path, headers={}, stream_id=stream_id)
+
 
 # ---------------------------------------------------------------------------
 # Datagram header encoding/decoding
@@ -412,48 +419,50 @@ class TestOutboundAudio:
 
 class TestClientLifecycle:
     async def test_on_client_connect_default_factory(self) -> None:
-        backend = WebTransportBackend()
+        backend = WebTransportBackend(allow_anonymous=True)
         protocol = MagicMock()
         stream_id = 20
 
-        accepted = await backend._on_client_connect(protocol, stream_id, "/audio")
+        accepted = await backend._on_client_connect(
+            protocol, stream_id, _connect_request(stream_id=stream_id)
+        )
         assert accepted is True
         assert stream_id in backend._stream_sessions
         session_id = backend._stream_sessions[stream_id]
         assert session_id in backend._session_transports
 
     async def test_on_client_connect_wrong_path_rejected(self) -> None:
-        backend = WebTransportBackend()
+        backend = WebTransportBackend(allow_anonymous=True)
         protocol = MagicMock()
 
-        accepted = await backend._on_client_connect(protocol, 20, "/wrong")
+        accepted = await backend._on_client_connect(protocol, 20, _connect_request("/wrong"))
         assert accepted is False
         assert 20 not in backend._stream_sessions
 
     async def test_on_client_connect_fires_session_ready(self) -> None:
-        backend = WebTransportBackend()
+        backend = WebTransportBackend(allow_anonymous=True)
         ready_sessions: list[VoiceSession] = []
         backend.on_session_ready(lambda s: ready_sessions.append(s))
 
-        accepted = await backend._on_client_connect(MagicMock(), 30, "/audio")
+        accepted = await backend._on_client_connect(MagicMock(), 30, _connect_request())
         assert accepted is True
         assert len(ready_sessions) == 1
         assert ready_sessions[0].metadata["transport"] == "webtransport"
 
     async def test_on_client_connect_with_custom_factory(self) -> None:
-        backend = WebTransportBackend()
+        backend = WebTransportBackend(allow_anonymous=True)
 
         custom_session = await backend.connect(
             room_id="custom", participant_id="p1", channel_id="v"
         )
         backend.set_session_factory(lambda conn_id: custom_session)
 
-        accepted = await backend._on_client_connect(MagicMock(), 40, "/audio")
+        accepted = await backend._on_client_connect(MagicMock(), 40, _connect_request())
         assert accepted is True
         assert backend._stream_sessions[40] == custom_session.id
 
     async def test_on_client_connect_with_async_factory(self) -> None:
-        backend = WebTransportBackend()
+        backend = WebTransportBackend(allow_anonymous=True)
 
         custom_session = await backend.connect(
             room_id="custom", participant_id="p1", channel_id="v"
@@ -464,17 +473,17 @@ class TestClientLifecycle:
 
         backend.set_session_factory(async_factory)
 
-        accepted = await backend._on_client_connect(MagicMock(), 50, "/audio")
+        accepted = await backend._on_client_connect(MagicMock(), 50, _connect_request())
         assert accepted is True
         assert backend._stream_sessions[50] == custom_session.id
 
     async def test_on_client_disconnect_fires_callbacks(self) -> None:
-        backend = WebTransportBackend()
+        backend = WebTransportBackend(allow_anonymous=True)
         disconnected: list[VoiceSession] = []
         backend.on_client_disconnected(lambda s: disconnected.append(s))
 
         # First connect
-        await backend._on_client_connect(MagicMock(), 60, "/audio")
+        await backend._on_client_connect(MagicMock(), 60, _connect_request())
         assert 60 in backend._stream_sessions
         session_id = backend._stream_sessions[60]
 
@@ -504,7 +513,7 @@ class TestClientLifecycle:
 class TestServerLifecycle:
     async def test_start_requires_aioquic(self) -> None:
         """start() should raise ImportError when aioquic is not available."""
-        backend = WebTransportBackend()
+        backend = WebTransportBackend(allow_anonymous=True)
         # We don't install aioquic in test env, so this should fail gracefully
         try:
             await backend.start()
