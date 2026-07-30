@@ -12,6 +12,7 @@ Requires ``mediapipe``.  Install with::
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 import threading
@@ -65,6 +66,17 @@ def _resolve_model(model_path: str, model_type: str) -> str:
     If *model_path* already exists on disk (absolute or relative), return
     it as-is.  Otherwise, download the default model from Google Cloud
     Storage into ``~/.cache/roomkit/mediapipe/`` and return that path.
+
+    **Supply chain.** The download URL is Google's ``.../float16/latest/``,
+    which is mutable by design — its contents change when Google publishes a
+    new model — so there is no checksum this function could pin without
+    breaking on the next upstream release. What it does instead is log the
+    SHA-256 of whatever it fetched.
+
+    A deployment that needs reproducible or vetted weights should not rely on
+    this path at all: fetch the model once, check it, commit or ship it, and
+    pass its path as *model_path*. An existing file is returned untouched and
+    nothing is downloaded.
     """
     if Path(model_path).exists():
         return model_path
@@ -88,7 +100,8 @@ def _resolve_model(model_path: str, model_type: str) -> str:
     except Exception:
         cached.unlink(missing_ok=True)
         raise
-    logger.info("Download complete: %s", cached)
+    digest = hashlib.sha256(cached.read_bytes()).hexdigest()
+    logger.info("Download complete: %s (sha256=%s)", cached, digest)
     return str(cached)
 
 

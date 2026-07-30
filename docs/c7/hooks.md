@@ -40,6 +40,33 @@ modified = event.model_copy(update={"content": TextContent(body="[REDACTED]")})
 HookResult.modify(modified)
 ```
 
+### What happens when a hook fails
+
+A hook that does not produce a usable result — it raises, it exceeds its
+timeout, it returns something that is not a `HookResult`, or it returns a
+`modify` whose payload is the wrong type for the trigger — is treated as
+**allow**, and the error is logged. A broken hook must not be able to take a
+room down, so the event goes through.
+
+**Two triggers invert that**, because their payload is content a hook may
+exist to withhold:
+
+| Trigger | On hook failure |
+|---|---|
+| `BEFORE_TTS` | **Blocked** — the text is not synthesised |
+| `ON_TRANSCRIPTION` | **Blocked** — the transcript is not published |
+| every other sync trigger | Allowed, error logged |
+
+All four failure modes block on those two, not just exceptions: a rule that
+covered exceptions but allowed timeouts would leak through the timeout.
+
+The consequence for `BEFORE_BROADCAST` is worth being explicit about, since
+it is the trigger most often used for moderation: **a moderation hook that
+crashes lets the content through.** That is deliberate (RFC §9.3), not an
+oversight. If you need the opposite, watch the `hook_error` framework event —
+it fires for every such failure — or subclass `HookEngine` and extend its
+`FAIL_CLOSED_TRIGGERS`.
+
 ## Hook Priority
 
 Lower priority numbers run first. Default is 0.
