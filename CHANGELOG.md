@@ -60,7 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     refusing, because a detach removes the binding at its start and takes
     the bot out at its end. The refusal is retryable, never a wait: the
     attach may come from inside the very announcement the teardown is
-    deferred behind. A backend that observes the SFU ending the bot's
+    deferred behind. The reservation's authority is one RoomKit instance —
+    its bindings plus the books of its registered channels; making it hold
+    across workers sharing one store is a contract decision tracked
+    separately. A backend that observes the SFU ending the bot's
     session without a `leave()` — a dropped connection, an eviction —
     reports it through `on_bot_session_ended`; the channel takes the
     session off its books, finalizes its recordings, announces
@@ -98,8 +101,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     rather than being dropped where nothing would say so. The end is
     reported only once the old connection is confirmed disconnected — a
     disconnect that will not go through keeps the session on the books,
-    refusing a replacement, for a later `leave()` to retry — and the
-    reason counts the events discarded undelivered. The supervisor's
+    refusing a replacement, for a later `leave()` to retry — the
+    disconnect itself is single-flight (a `leave()` arriving while the
+    unhealthy end's call is on the wire joins it rather than issuing a
+    second one, and a requested leave owns the books: nothing spontaneous
+    is reported over it), and the reason counts the events discarded
+    undelivered. The supervisor's
     re-join then announces the conference's *current* state; what happened
     entirely inside the outage window is genuinely lost, and the reason
     string is the signal for §17.7 implementations to treat that window
