@@ -268,6 +268,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The inbound router no longer guesses which room a message belongs to.** It
+  tried the channel binding first and returned the first match, so a channel
+  bound to several active rooms sent the message to whichever the store
+  happened to hand back — the oldest binding in the in-memory store, and
+  whatever the planner chose in Postgres, where the query had no `ORDER BY` at
+  all. Two deployments of the same code could route differently. This is a
+  durable cross-room disclosure, not a transient one: the message is stored in
+  the wrong room, broadcast to that room's channels, and read back as context
+  by that room's agent. It is also not exotic — `delegate(share_channels=...)`
+  creates exactly this shape, as does a channel re-attached after its room
+  closed.
+
+  The order now follows RFC §10.4: the sender's own latest room first (a
+  binding identifies the pipe, a participant identifies the conversation),
+  then a channel bound to *exactly one* active room. More than one, and the
+  router returns null with a warning naming the channel — a new room is
+  recoverable, a message in someone else's conversation is not. Both stores
+  order their candidates the same way, so the answer no longer depends on the
+  backend. `ConversationStore` gains `find_room_ids_by_channel()`, non-abstract
+  with a fallback, so existing third-party stores keep working.
+
 - **A closed room refuses new events.** `RoomStatus.CLOSED` and `ARCHIVED` were
   enforced nowhere: the inbound router skipped non-ACTIVE rooms, which made
   implicit routing look safe, but every path that *names* the room went

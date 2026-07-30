@@ -606,30 +606,47 @@ class TestPostgresStore:
 
     async def test_find_room_id_by_channel_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
-        mock_conn.fetchrow.return_value = {"room_id": "room-1"}
+        mock_conn.fetch.return_value = [{"room_id": "room-1"}]
         result = await store.find_room_id_by_channel("ch-1")
         assert result == "room-1"
 
     async def test_find_room_id_by_channel_not_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
-        mock_conn.fetchrow.return_value = None
+        mock_conn.fetch.return_value = []
         result = await store.find_room_id_by_channel("ch-missing")
         assert result is None
 
     async def test_find_room_id_by_channel_with_status(self) -> None:
         store, mock_conn = _make_store_with_pool()
-        mock_conn.fetchrow.return_value = {"room_id": "room-1"}
+        mock_conn.fetch.return_value = [{"room_id": "room-1"}]
         result = await store.find_room_id_by_channel("ch-1", status="active")
         assert result == "room-1"
-        call_args = mock_conn.fetchrow.call_args
+        call_args = mock_conn.fetch.call_args
         assert "r.status" in call_args[0][0]
 
     async def test_find_room_id_by_channel_with_enum_status(self) -> None:
         store, mock_conn = _make_store_with_pool()
-        mock_conn.fetchrow.return_value = None
+        mock_conn.fetch.return_value = []
         await store.find_room_id_by_channel("ch-1", status=RoomStatus.ACTIVE)
-        call_args = mock_conn.fetchrow.call_args
+        call_args = mock_conn.fetch.call_args
         assert "r.status" in call_args[0][0]
+
+    async def test_find_room_ids_by_channel_reports_ambiguity(self) -> None:
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetch.return_value = [{"room_id": "room-1"}, {"room_id": "room-2"}]
+        result = await store.find_room_ids_by_channel("ch-1", status="active")
+        assert result == ["room-1", "room-2"]
+
+    async def test_find_room_ids_by_channel_orders_deterministically(self) -> None:
+        """Without ORDER BY the planner picks, and routing stops being a rule."""
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetch.return_value = []
+
+        await store.find_room_ids_by_channel("ch-1", status="active")
+        assert "ORDER BY r.created_at, b.room_id" in mock_conn.fetch.call_args[0][0]
+
+        await store.find_room_ids_by_channel("ch-1")
+        assert "ORDER BY r.created_at, b.room_id" in mock_conn.fetch.call_args[0][0]
 
     # ── Event operations ────────────────────────────────────────
 

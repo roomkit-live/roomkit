@@ -551,22 +551,39 @@ class PostgresStore(ConversationStore):
         channel_id: str,
         status: str | None = None,
     ) -> str | None:
+        matches = await self.find_room_ids_by_channel(channel_id, status=status, limit=1)
+        return matches[0] if matches else None
+
+    async def find_room_ids_by_channel(
+        self,
+        channel_id: str,
+        status: str | None = None,
+        limit: int = 2,
+    ) -> list[str]:
+        # ORDER BY is not decoration here: without it the planner picks the row
+        # and the same stored state can route two different ways, in the same
+        # deployment (RFC §10.4). Ordered like the in-memory store — oldest
+        # room first, id as tie-breaker — so the two agree.
         if status is not None:
             status_val = status.value if hasattr(status, "value") else status
             query = (
                 "SELECT b.room_id FROM bindings b "
                 "JOIN rooms r ON r.id = b.room_id "
-                "WHERE b.channel_id = $1 AND r.status = $2 LIMIT 1"
+                "WHERE b.channel_id = $1 AND r.status = $2 "
+                "ORDER BY r.created_at, b.room_id LIMIT $3"
             )
             async with self._acquire() as conn:
-                row = await conn.fetchrow(query, channel_id, status_val)
+                rows = await conn.fetch(query, channel_id, status_val, limit)
         else:
+            query = (
+                "SELECT b.room_id FROM bindings b "
+                "JOIN rooms r ON r.id = b.room_id "
+                "WHERE b.channel_id = $1 "
+                "ORDER BY r.created_at, b.room_id LIMIT $2"
+            )
             async with self._acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT room_id FROM bindings WHERE channel_id = $1 LIMIT 1",
-                    channel_id,
-                )
-        return row["room_id"] if row else None
+                rows = await conn.fetch(query, channel_id, limit)
+        return [row["room_id"] for row in rows]
 
     # ── Event operations ─────────────────────────────────────────
 

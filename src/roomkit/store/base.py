@@ -114,6 +114,27 @@ class ConversationStore(ABC):
         """Find a room ID that has a binding for the given channel_id."""
         ...
 
+    async def find_room_ids_by_channel(
+        self, channel_id: str, status: str | None = None, limit: int = 2
+    ) -> list[str]:
+        """Room IDs bound to *channel_id*, deterministically ordered.
+
+        Routing must be able to tell "exactly one room" from "several", because
+        picking one of several delivers a message into a conversation it does
+        not belong to (RFC §10.4). ``find_room_id_by_channel`` cannot express
+        that — it returns one id either way — so this returns up to *limit*,
+        and the default of 2 is enough to answer "is this ambiguous?".
+
+        Implementations MUST order the result deterministically: the same
+        stored state has to give the same answer whatever the backend.
+
+        This is not abstract, so a store written before it existed keeps
+        working — it falls back to the single lookup and therefore cannot
+        report ambiguity. Override it.
+        """
+        room_id = await self.find_room_id_by_channel(channel_id, status=status)
+        return [room_id] if room_id is not None else []
+
     # Event operations
 
     @abstractmethod

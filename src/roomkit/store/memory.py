@@ -143,14 +143,28 @@ class InMemoryStore(ConversationStore):
     async def find_room_id_by_channel(
         self, channel_id: str, status: str | None = None
     ) -> str | None:
+        matches = await self.find_room_ids_by_channel(channel_id, status=status, limit=1)
+        return matches[0] if matches else None
+
+    async def find_room_ids_by_channel(
+        self, channel_id: str, status: str | None = None, limit: int = 2
+    ) -> list[str]:
+        # Ordered by the room's creation time, oldest first, with the id as
+        # tie-breaker: dict insertion order would be an accident of how the
+        # process happened to load, and the answer has to be the same one the
+        # SQL store gives (RFC §10.4).
+        matched: list[tuple[Any, str]] = []
         for room_id, bindings in self._bindings.items():
-            if channel_id in bindings:
-                if status is not None:
-                    room = self._rooms.get(room_id)
-                    if room is None or room.status.value != status:
-                        continue
-                return room_id
-        return None
+            if channel_id not in bindings:
+                continue
+            room = self._rooms.get(room_id)
+            if room is None:
+                continue
+            if status is not None and room.status.value != status:
+                continue
+            matched.append((room.created_at, room_id))
+        matched.sort()
+        return [room_id for _created_at, room_id in matched[:limit]]
 
     # Event operations
 
