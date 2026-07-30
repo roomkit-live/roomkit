@@ -45,6 +45,14 @@ from roomkit.voice.base import AudioChunk, VoiceSession
 
 logger = logging.getLogger("roomkit.voice.backend.twilio_ws")
 
+# Outbound mu-law frames that may sit queued for the Twilio socket. At 20 ms
+# per frame this is ~10 s of speech; further behind than that and the call is
+# not recoverable, the socket has stopped draining.
+_MAX_QUEUED_FRAMES = 500
+
+# How often a dropping session is logged, in dropped frames.
+_DROP_LOG_INTERVAL = 100
+
 TWILIO_SAMPLE_RATE = 8000
 """Twilio Media Streams audio rate: 8 kHz mu-law."""
 
@@ -72,6 +80,7 @@ class TwilioWebSocketBackend(VoiceBackend):
         # Outbound write queue + dedicated writer task — prevents send_json()
         # from blocking inbound receive_json() on the same WebSocket.
         self._write_queue: asyncio.Queue[dict[str, Any] | None] | None = None
+        self._dropped_frames = 0
         self._writer_task: asyncio.Task[None] | None = None
         # Inbound/outbound resamplers (soxr preferred, linear fallback).
         self._resample_inbound = self._build_resampler(TWILIO_SAMPLE_RATE, output_sample_rate)
@@ -146,8 +155,22 @@ class TwilioWebSocketBackend(VoiceBackend):
             "conversation_id": session.room_id,
             "media": {"payload": payload},
         }
-        # Queue for async writer instead of sending directly
+        # Queue for async writer instead of sending directly. Bounded: the
+        # writer is the only thing draining it, so a socket Twilio has stopped
+        # reading would let this grow for the length of the call. Dropping the
+        # newest frame keeps the utterance contiguous up to the cut and costs
+        # O(1); a call this far behind is already inaudible.
         if self._write_queue is not None:
+            if self._write_queue.qsize() >= _MAX_QUEUED_FRAMES:
+                self._dropped_frames += 1
+                if self._dropped_frames % _DROP_LOG_INTERVAL == 1:
+                    logger.warning(
+                        "Twilio outbound queue full (%d frames) — dropping; "
+                        "total dropped %d. The socket is not draining.",
+                        self._write_queue.qsize(),
+                        self._dropped_frames,
+                    )
+                return
             await self._write_queue.put(msg)
         else:
             await self._websocket.send_json(msg)
@@ -182,6 +205,7 @@ class TwilioWebSocketBackend(VoiceBackend):
         self._websocket = websocket
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._write_queue = queue
+        self._dropped_frames = 0
 
         async def _writer() -> None:
             try:

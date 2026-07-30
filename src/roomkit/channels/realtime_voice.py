@@ -351,6 +351,8 @@ class RealtimeVoiceChannel(
         # Outbound send queue + resident worker per session — one consumer
         # task per session instead of one task per 20 ms provider chunk.
         self._audio_send_queues: dict[str, asyncio.Queue[Any]] = {}
+        # Outbound chunks dropped per session because the transport fell behind.
+        self._audio_dropped: dict[str, int] = {}
         self._audio_send_workers: dict[str, asyncio.Task[Any]] = {}
         # Last assistant text per session (for barge-in event context)
         self._last_assistant_text: dict[str, str] = {}
@@ -1001,6 +1003,7 @@ class RealtimeVoiceChannel(
             resamplers = self._session_resamplers.pop(session.id, None)
             send_queue = self._audio_send_queues.pop(session.id, None)
             self._audio_send_workers.pop(session.id, None)
+            self._audio_dropped.pop(session.id, None)
 
         # Release the send worker — it exits on the sentinel; anything still
         # queued belongs to the closed session and is dropped with it.

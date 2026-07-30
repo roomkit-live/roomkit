@@ -290,6 +290,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Outbound audio queues are bounded, and the binary inbound path is capped.**
+  The realtime channel's per-session send queue and the Twilio backend's write
+  queue were both unbounded `asyncio.Queue()`. Neither producer can be
+  back-pressured — the realtime one is a synchronous provider callback that
+  returns immediately by contract — so a client that stops reading its socket
+  makes the queue grow for as long as the provider keeps talking, at roughly
+  48 KB/s for 24 kHz PCM16, while the provider goes on billing for audio
+  nobody will hear. The existing drop paths (barge-in, mute, teardown) all
+  assume an interruption or an ending; a client that simply goes quiet and
+  stops reading triggers none of them.
+
+  Both are capped at ~10 s of speech, dropping the *newest* chunk. That is the
+  opposite of the conference backlog's policy, deliberately: control items —
+  the end-of-response marker transports use to settle playback state, and the
+  teardown sentinel — share the realtime queue, so evicting from the head
+  could swallow one; and truncating the tail of an utterance is kinder than
+  punching a gap in its middle.
+
+  On the inbound side, `MAX_INBOUND_AUDIO_FRAME_BYTES` was applied to the
+  base64 path and not to the raw-binary path ten lines above it in the same
+  function. Under Starlette/FastAPI `receive_bytes()` has no size limit of its
+  own, so that branch accepted whatever an untrusted client sent. It is capped
+  now too.
+
 - **One unresponsive WebSocket client no longer freezes its room.** Delivery
   fanned out sequentially with no timeout on the send. A socket that is closed
   raises and gets evicted after a few failures, but one that is merely gone —

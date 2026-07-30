@@ -23,6 +23,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.channels.realtime_voice")
 
+# Outbound audio chunks a session may have queued before the bound bites.
+# At 20 ms per chunk this is ~10 s of speech; a transport further behind than
+# that is not going to catch up, it has stopped reading.
+_MAX_QUEUED_AUDIO_CHUNKS = 500
+
+# How often a session that is dropping is logged, in dropped chunks. A backlog
+# that is full drops continuously, so per-chunk logging would bury the process.
+_DROP_LOG_INTERVAL = 100
+
 
 @runtime_checkable
 class RealtimeAudioHost(Protocol):
@@ -69,6 +78,7 @@ class RealtimeAudioHost(Protocol):
     _audio_forward_count: dict[str, int]
     _audio_generation: dict[str, int]
     _audio_send_queues: dict[str, asyncio.Queue[Any]]
+    _audio_dropped: dict[str, int]
     _audio_send_workers: dict[str, Any]
     _sessions: dict[str, Any]
     _input_sample_rate: int
@@ -113,6 +123,7 @@ class RealtimeAudioMixin:
     _audio_forward_count: dict[str, int]
     _audio_generation: dict[str, int]
     _audio_send_queues: dict[str, asyncio.Queue[Any]]
+    _audio_dropped: dict[str, int]
     _audio_send_workers: dict[str, Any]
     _sessions: dict[str, Any]
     _input_sample_rate: int
@@ -576,6 +587,35 @@ class RealtimeAudioMixin:
             if queue is None:
                 queue = asyncio.Queue()
                 self._audio_send_queues[session.id] = queue
+
+        # Bounded, because nothing else bounds it. The producer is a
+        # synchronous provider callback that cannot be back-pressured — it
+        # returns immediately by contract — so if the transport stops draining
+        # (a client that stopped reading its socket) the queue grows for as
+        # long as the provider keeps talking, at ~48 KB/s, while the provider
+        # goes on billing for audio nobody will hear.
+        #
+        # The newest chunk is dropped rather than the oldest, unlike the
+        # conference backlog (`_conference_backlog.TrackBacklog`), for two
+        # reasons: control items ("eor", the teardown sentinel) share this
+        # queue and transports rely on them to settle playback state, so
+        # evicting from the head could silently swallow one; and for a
+        # contiguous utterance, truncating the tail is kinder than punching a
+        # gap in the middle. A queue this far behind belongs to a client that
+        # is about to be disconnected anyway — the bound is here to stop the
+        # growth, not to preserve fidelity for a socket nobody is reading.
+        if queue.qsize() >= _MAX_QUEUED_AUDIO_CHUNKS:
+            dropped = self._audio_dropped.get(session.id, 0) + 1
+            self._audio_dropped[session.id] = dropped
+            if dropped % _DROP_LOG_INTERVAL == 1:
+                logger.warning(
+                    "Outbound audio backlog full for session %s (%d chunks queued) — "
+                    "dropping; total dropped %d. The transport is not draining.",
+                    session.id,
+                    queue.qsize(),
+                    dropped,
+                )
+            return
 
         queue.put_nowait(("audio", audio, resamplers, transport_rate, gen))
         if spawn_worker:

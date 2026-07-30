@@ -172,7 +172,20 @@ class WebSocketRealtimeTransport(VoiceBackend):
             async for raw_message in ws:
                 try:
                     if isinstance(raw_message, bytes):
-                        # Raw binary audio
+                        # Raw binary audio — capped like the base64 path below.
+                        # The cap is not decoration on either: this reads from
+                        # an untrusted client, and under Starlette/FastAPI
+                        # ``receive_bytes()`` has no size limit of its own (the
+                        # ``websockets`` library's 1 MiB default does not apply).
+                        if len(raw_message) > MAX_INBOUND_AUDIO_FRAME_BYTES:
+                            logger.warning(
+                                "Dropping oversized binary audio frame for session %s "
+                                "(%d bytes > %d)",
+                                session.id,
+                                len(raw_message),
+                                MAX_INBOUND_AUDIO_FRAME_BYTES,
+                            )
+                            continue
                         await self._fire_audio_callbacks(session, raw_message)
                         continue
 
