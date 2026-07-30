@@ -335,6 +335,10 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._uas.on_invite = self._spawn_invite_handler
         self._uas.on_reinvite = self._handle_reinvite
         self._uas.on_bye = self._handle_bye
+        # aiosipua releases its own state when a 2xx goes unacknowledged; this
+        # is how we hear about it and release ours (RFC 3261 §13.3.1.4).
+        # Without it, answering and never ACKing leaks a session and its port.
+        self._uas.on_ack_timeout = self._handle_ack_timeout
 
         await self._uas.start()
 

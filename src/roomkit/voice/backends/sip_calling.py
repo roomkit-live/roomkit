@@ -622,6 +622,41 @@ class SIPCallingMixin:
         )
         task.add_done_callback(self._log_task_exception)
 
+    def _handle_ack_timeout(self, call: Any) -> None:
+        """Release a call whose 2xx was never ACKed (RFC 3261 §13.3.1.4).
+
+        aiosipua gives up on the ACK after 64×T1 and has already dropped its
+        own state by the time this runs; without it, ours would survive the
+        call forever. That is the cheapest way to leak a session — answer the
+        INVITE, never acknowledge, never send RTP — because the dialog looks
+        established to us and the RTP watchdog has no packet to measure
+        against.
+
+        ``rtp_establishment_timeout`` reaps the same session eventually, but
+        a minute later and by inference. This is the signal itself.
+        """
+        session_id = self._call_to_session.get(call.call_id)
+        if session_id is None:
+            logger.debug("ACK timeout for unknown call_id: %s", call.call_id)
+            return
+
+        state = self._session_states.get(session_id)
+        session = state.session if state is not None else None
+        call_session = state.call_session if state is not None else None
+
+        logger.warning(
+            "No ACK for 2xx on call_id=%s — releasing session %s", call.call_id, session_id
+        )
+
+        # Same teardown as a remote BYE: close RTP, release the port, tell the
+        # application. Wrapped in a task because this is called synchronously
+        # from the UAS.
+        task = asyncio.get_running_loop().create_task(
+            self._finalize_bye(session_id, call_session, session),
+            name=f"sip_ack_timeout:{session_id}",
+        )
+        task.add_done_callback(self._log_task_exception)
+
     async def _finalize_bye(
         self, session_id: str, call_session: Any, session: VoiceSession | None
     ) -> None:

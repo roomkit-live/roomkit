@@ -1383,3 +1383,63 @@ class TestHandleByeOrdering:
         await asyncio.sleep(0.05)
 
         assert order == ["close", "disconnect_cb"]
+
+
+class TestAckTimeout:
+    """Answering and never acknowledging is the cheapest way to leak a session.
+
+    The dialog looks established to us, so no BYE arrives; and no RTP was ever
+    sent, so the inactivity watchdog has nothing to measure against. aiosipua
+    gives up after 64×T1 and drops its own state — this is how ours goes too.
+    """
+
+    async def test_the_session_is_released(self, backend: Any, mock_rtp_bridge: MagicMock) -> None:
+        call = _make_mock_incoming_call(call_id="call-1", session_id="s1")
+        await backend._handle_invite(call)
+        assert "s1" in backend._session_states
+
+        backend._handle_ack_timeout(call)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        assert "s1" not in backend._session_states
+        assert "call-1" not in backend._call_to_session
+
+    async def test_the_rtp_port_goes_back_to_the_pool(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        before = set(backend._allocated_ports)
+        call = _make_mock_incoming_call(call_id="call-1", session_id="s1")
+        await backend._handle_invite(call)
+        assert backend._allocated_ports != before
+
+        backend._handle_ack_timeout(call)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        assert backend._allocated_ports == before
+
+    async def test_the_application_is_told(self, backend: Any, mock_rtp_bridge: MagicMock) -> None:
+        disconnected: list[Any] = []
+        backend.on_client_disconnected(lambda s: disconnected.append(s))
+
+        call = _make_mock_incoming_call(call_id="call-1", session_id="s1")
+        await backend._handle_invite(call)
+        backend._handle_ack_timeout(call)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        assert len(disconnected) == 1
+
+    async def test_an_unknown_call_id_is_a_no_op(self, backend: Any) -> None:
+        stranger = _make_mock_incoming_call(call_id="never-seen")
+        backend._handle_ack_timeout(stranger)
+        assert backend._session_states == {}
+
+    async def test_the_handler_is_wired_to_the_uas(
+        self, backend: Any, mock_aiosipua: MagicMock
+    ) -> None:
+        """A handler nothing calls is the bug this fixes."""
+        await backend.start()
+        assert backend._uas.on_ack_timeout == backend._handle_ack_timeout
+        await backend.close()
