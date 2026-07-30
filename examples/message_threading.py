@@ -44,7 +44,9 @@ async def main() -> None:
 
     # Clients need a connection registered to receive deliveries.
     for ch in (ws_alice, ws_bob):
-        ch.register_connection(f"{ch.channel_id}-conn", lambda _c, _e: asyncio.sleep(0))
+        ch.register_connection(
+            f"{ch.channel_id}-conn", lambda _c, _e: asyncio.sleep(0), room_id="team-room"
+        )
 
     await kit.create_room(room_id="team-room")
     await kit.attach_channel("team-room", "ws-alice")

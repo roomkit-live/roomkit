@@ -378,7 +378,11 @@ class InboundStreamingMixin(HelpersMixin):
             if response_vis is not None and not visibility_allows(response_vis, binding):
                 continue
             channel = router.get_channel(binding.channel_id)
-            supports = getattr(channel, "supports_streaming_delivery", False) if channel else False
+            # Asked per room: a channel can hold streaming clients for one room
+            # and none for another, and only the room being delivered counts.
+            supports = (
+                channel.supports_streaming_delivery_for(binding.room_id) if channel else False
+            )
             if channel and supports:
                 targets.append((channel, binding))
         return targets

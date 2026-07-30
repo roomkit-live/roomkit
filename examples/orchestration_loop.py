@@ -71,7 +71,7 @@ async def main() -> None:
     async def on_receive(_conn: str, event: RoomEvent) -> None:
         inbox.append(event)
 
-    ws.register_connection("dev", on_receive)
+    ws.register_connection("dev", on_receive, room_id="dev-room")
     kit.register_channel(ws)
 
     # AI agents — each with multiple mock responses for the loop

@@ -60,7 +60,7 @@ class TestWaitForResultBasic:
         async def on_receive(_conn: str, event: RoomEvent) -> None:
             inbox.append(event)
 
-        ws.register_connection("user", on_receive)
+        ws.register_connection("user", on_receive, room_id="room")
         kit.register_channel(ws)
 
         await kit.create_room(room_id="room")
@@ -102,7 +102,7 @@ class TestWaitForResultBasic:
         )
 
         ws = WebSocketChannel("ws")
-        ws.register_connection("u", lambda _c, _e: None)
+        ws.register_connection("u", lambda _c, _e: None, room_id="room")
         kit.register_channel(ws)
         await kit.create_room(room_id="room")
         await kit.attach_channel("room", "ws")
@@ -147,7 +147,7 @@ class TestWaitForResultHooks:
         )
 
         ws = WebSocketChannel("ws")
-        ws.register_connection("u", lambda _c, _e: None)
+        ws.register_connection("u", lambda _c, _e: None, room_id="room")
         kit.register_channel(ws)
         await kit.create_room(room_id="room")
         await kit.attach_channel("room", "ws")
@@ -221,7 +221,7 @@ class TestWaitForResultMultipleWorkers:
         )
 
         ws = WebSocketChannel("ws")
-        ws.register_connection("u", lambda _c, _e: None)
+        ws.register_connection("u", lambda _c, _e: None, room_id="room")
         kit.register_channel(ws)
         await kit.create_room(room_id="room")
         await kit.attach_channel("room", "ws")
@@ -272,7 +272,7 @@ class TestWaitForResultFalse:
         )
 
         ws = WebSocketChannel("ws")
-        ws.register_connection("u", lambda _c, _e: None)
+        ws.register_connection("u", lambda _c, _e: None, room_id="room")
         kit.register_channel(ws)
         await kit.create_room(room_id="room")
         await kit.attach_channel("room", "ws")
@@ -315,7 +315,7 @@ class TestInlineDelegationState:
         )
 
         ws = WebSocketChannel("ws")
-        ws.register_connection("u", lambda _c, _e: None)
+        ws.register_connection("u", lambda _c, _e: None, room_id="room")
         kit.register_channel(ws)
         await kit.create_room(room_id="room")
         await kit.attach_channel("room", "ws")

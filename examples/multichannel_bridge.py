@@ -72,7 +72,7 @@ async def main() -> None:
     async def ws_recv(_conn: str, event: RoomEvent) -> None:
         ws_inbox.append(event)
 
-    ws.register_connection("webapp-conn", ws_recv)
+    ws.register_connection("webapp-conn", ws_recv, room_id="bridge-room")
 
     # --- Create room and attach all channels ---
     await kit.create_room(

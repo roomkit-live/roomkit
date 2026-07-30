@@ -32,7 +32,7 @@ async def main() -> None:
 
     ws = WebSocketChannel("ws-agent")
     kit.register_channel(ws)
-    ws.register_connection("agent-conn", lambda _c, _e: asyncio.sleep(0))
+    ws.register_connection("agent-conn", lambda _c, _e: asyncio.sleep(0), room_id="delivery-room")
 
     # Create a room with a channel so delivery status can resolve the room
     sms = WebSocketChannel(CHANNEL_ID)

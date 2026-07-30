@@ -50,7 +50,7 @@ async def main() -> None:
     async def on_recv(_conn: str, event: RoomEvent) -> None:
         inbox.append(event)
 
-    ws.register_connection("user-conn", on_recv)
+    ws.register_connection("user-conn", on_recv, room_id="weather-room")
 
     # --- Room 1: Weather assistant with tools ---
     print("=== Room 1: Weather Assistant ===")
@@ -123,6 +123,8 @@ async def main() -> None:
 
     await kit.create_room(room_id="restaurant-room")
     await kit.attach_channel("restaurant-room", "ws-user")
+    # The same socket now follows a second conversation.
+    ws.subscribe("user-conn", "restaurant-room")
     await kit.attach_channel(
         "restaurant-room",
         "ai-assistant",

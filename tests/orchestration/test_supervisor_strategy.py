@@ -43,7 +43,7 @@ async def _setup(strategy: str, workers: list[Agent]) -> tuple[RoomKit, Agent]:
         ),
     )
     ws = WebSocketChannel("ws")
-    ws.register_connection("u", lambda _c, _e: None)
+    ws.register_connection("u", lambda _c, _e: None, room_id="room")
     kit.register_channel(ws)
     await kit.create_room(room_id="room")
     await kit.attach_channel("room", "ws")
@@ -71,7 +71,7 @@ class TestStrategyToolInjection:
             ),
         )
         ws = WebSocketChannel("ws")
-        ws.register_connection("u", lambda _c, _e: None)
+        ws.register_connection("u", lambda _c, _e: None, room_id="room")
         kit.register_channel(ws)
         await kit.create_room(room_id="room")
         await kit.attach_channel("room", "ws")
@@ -312,7 +312,7 @@ class TestBackgroundDedup:
             ),
         )
         ws = WebSocketChannel("ws")
-        ws.register_connection("u", lambda _c, _e: None)
+        ws.register_connection("u", lambda _c, _e: None, room_id="room")
         kit.register_channel(ws)
         await kit.create_room(room_id="room")
         await kit.attach_channel("room", "ws")
@@ -344,7 +344,7 @@ class TestBackgroundDedup:
             ),
         )
         ws = WebSocketChannel("ws")
-        ws.register_connection("u", lambda _c, _e: None)
+        ws.register_connection("u", lambda _c, _e: None, room_id="room")
         kit.register_channel(ws)
         await kit.create_room(room_id="room")
         await kit.attach_channel("room", "ws")

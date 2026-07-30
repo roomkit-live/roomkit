@@ -33,8 +33,10 @@ async def main() -> None:
     async def bob_recv(_conn: str, event: RoomEvent) -> None:
         bob_inbox.append(event)
 
-    ws_alice.register_connection("alice-conn", lambda _c, _e: asyncio.sleep(0))
-    ws_bob.register_connection("bob-conn", bob_recv)
+    ws_alice.register_connection(
+        "alice-conn", lambda _c, _e: asyncio.sleep(0), room_id="edit-room"
+    )
+    ws_bob.register_connection("bob-conn", bob_recv, room_id="edit-room")
 
     await kit.create_room(room_id="edit-room")
     await kit.attach_channel("edit-room", "ws-alice")

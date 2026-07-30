@@ -32,8 +32,10 @@ async def main() -> None:
     kit.register_channel(ws_bob)
 
     # Wire up message delivery
-    ws_alice.register_connection("alice-conn", lambda _c, _e: asyncio.sleep(0))
-    ws_bob.register_connection("bob-conn", lambda _c, _e: asyncio.sleep(0))
+    ws_alice.register_connection(
+        "alice-conn", lambda _c, _e: asyncio.sleep(0), room_id="typing-room"
+    )
+    ws_bob.register_connection("bob-conn", lambda _c, _e: asyncio.sleep(0), room_id="typing-room")
 
     await kit.create_room(room_id="typing-room")
     await kit.attach_channel("typing-room", "ws-alice")

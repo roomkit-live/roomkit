@@ -220,12 +220,22 @@ from roomkit import WebSocketChannel
 
 ws = WebSocketChannel("ws-client")
 
-# Register a connection
-ws.register_connection("conn-1", on_receive_callback)
+# Register a connection — room_id says which conversation this socket is for
+ws.register_connection("conn-1", on_receive_callback, room_id="room-1")
 
 # In production, connect to the framework
-await kit.connect_websocket("ws-client", "conn-1", send_fn)
+await kit.connect_websocket("ws-client", "conn-1", send_fn, room_id="room-1")
 await kit.disconnect_websocket("ws-client", "conn-1")
+```
+
+One channel instance can serve several rooms, so a connection has to say which
+one it belongs to: the channel delivers a room's events only to the
+connections registered for it. A client holding several conversations open on
+one socket subscribes to the extra rooms rather than opening more sockets:
+
+```python
+kit.subscribe_websocket("ws-client", "conn-1", "room-2")
+kit.unsubscribe_websocket("ws-client", "conn-1", "room-2")
 ```
 
 ## Phone Number Utilities

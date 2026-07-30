@@ -77,8 +77,8 @@ async def main() -> None:
     kit.register_channel(ws_user)
     kit.register_channel(ws_sms)
 
-    ws_user.register_connection("user-conn", lambda _c, _e: asyncio.sleep(0))
-    ws_sms.register_connection("sms-conn", lambda _c, _e: asyncio.sleep(0))
+    ws_user.register_connection("user-conn", lambda _c, _e: asyncio.sleep(0), room_id="rate-room")
+    ws_sms.register_connection("sms-conn", lambda _c, _e: asyncio.sleep(0), room_id="rate-room")
 
     await kit.create_room(room_id="rate-room")
     await kit.attach_channel("rate-room", "ws-user")
@@ -149,7 +149,7 @@ async def main() -> None:
 
     ws_in = WebSocketChannel("ws-inbound")
     kit2.register_channel(ws_in)
-    ws_in.register_connection("conn", lambda _c, _e: asyncio.sleep(0))
+    ws_in.register_connection("conn", lambda _c, _e: asyncio.sleep(0), room_id="rate-room-2")
 
     await kit2.create_room(room_id="rate-room-2")
     await kit2.attach_channel("rate-room-2", "ws-inbound")

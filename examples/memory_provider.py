@@ -87,7 +87,7 @@ async def main() -> None:
     async def on_receive(_conn: str, event: RoomEvent) -> None:
         inbox.append(event)
 
-    ws.register_connection("user", on_receive)
+    ws.register_connection("user", on_receive, room_id="room1")
 
     kit.register_channel(ws)
     kit.register_channel(ai)
@@ -126,7 +126,7 @@ async def main() -> None:
     async def on_receive2(_conn: str, event: RoomEvent) -> None:
         inbox2.append(event)
 
-    ws2.register_connection("user", on_receive2)
+    ws2.register_connection("user", on_receive2, room_id="room2")
 
     kit2.register_channel(ws2)
     kit2.register_channel(ai2)

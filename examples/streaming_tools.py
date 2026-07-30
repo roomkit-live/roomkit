@@ -128,7 +128,7 @@ async def main() -> None:
         body = event.content.body if isinstance(event.content, TextContent) else "?"
         print(f"  [{conn_id}] Event: {body!r}")
 
-    ws.register_connection("client", on_event, stream_send_fn=on_stream)
+    ws.register_connection("client", on_event, stream_send_fn=on_stream, room_id="support-room")
 
     # -- Set up room with tools --
 

@@ -123,7 +123,7 @@ async def main() -> None:
     async def on_recv(_conn: str, event: RoomEvent) -> None:
         inbox.append(event)
 
-    ws.register_connection("user-conn", on_recv)
+    ws.register_connection("user-conn", on_recv, room_id="demo-room")
 
     # --- Room setup ----------------------------------------------
 

@@ -35,8 +35,8 @@ async def main() -> None:
     async def customer_recv(_conn: str, event: RoomEvent) -> None:
         customer_inbox.append(event)
 
-    ws_customer.register_connection("customer-conn", customer_recv)
-    ws_agent.register_connection("agent-conn", agent_recv)
+    ws_customer.register_connection("customer-conn", customer_recv, room_id="location-room")
+    ws_agent.register_connection("agent-conn", agent_recv, room_id="location-room")
 
     await kit.create_room(room_id="location-room")
     await kit.attach_channel("location-room", "ws-customer")

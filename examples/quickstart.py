@@ -46,8 +46,8 @@ async def main() -> None:
     async def bob_recv(_conn: str, event: RoomEvent) -> None:
         bob_inbox.append(event)
 
-    ws_alice.register_connection("alice-conn", alice_recv)
-    ws_bob.register_connection("bob-conn", bob_recv)
+    ws_alice.register_connection("alice-conn", alice_recv, room_id="demo-room")
+    ws_bob.register_connection("bob-conn", bob_recv, room_id="demo-room")
 
     # Create a room and attach all three channels.
     await kit.create_room(room_id="demo-room")

@@ -34,7 +34,9 @@ async def main() -> None:
 
     # Register dummy connections
     for ch in [ws_alice, ws_bob, ws_charlie]:
-        ch.register_connection(f"{ch.channel_id}-conn", lambda _c, _e: asyncio.sleep(0))
+        ch.register_connection(
+            f"{ch.channel_id}-conn", lambda _c, _e: asyncio.sleep(0), room_id="presence-room"
+        )
 
     await kit.create_room(room_id="presence-room")
     await kit.attach_channel("presence-room", "ws-alice")

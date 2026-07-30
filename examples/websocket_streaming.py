@@ -45,6 +45,7 @@ async def main() -> None:
     ws.register_connection(
         "spa-client",
         on_event_streaming,
+        room_id="room-1",
         stream_send_fn=on_stream_message,
     )
 
@@ -54,7 +55,7 @@ async def main() -> None:
         body = event.content.body if isinstance(event.content, TextContent) else "?"
         print(f"[{conn_id}] full message: {body!r}")
 
-    ws.register_connection("legacy-client", on_event_legacy)
+    ws.register_connection("legacy-client", on_event_legacy, room_id="room-1")
 
     # -- Simulate a streaming AI response ---------------------------------------
 

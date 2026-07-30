@@ -137,7 +137,7 @@ class TestChannelInfoProperty:
         from roomkit.channels.websocket import WebSocketChannel
 
         ch = WebSocketChannel("ws1")
-        assert ch.info == {"connection_count": 0}
+        assert ch.info == {"connection_count": 0, "room_count": 0}
 
     def test_ai_channel_info(self) -> None:
         from roomkit.channels.ai import AIChannel

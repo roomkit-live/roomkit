@@ -53,7 +53,7 @@ async def main() -> None:
     async def on_receive(_conn: str, event: RoomEvent) -> None:
         inbox.append(event)
 
-    ws.register_connection("user-conn", on_receive)
+    ws.register_connection("user-conn", on_receive, room_id="demo-room")
 
     await kit.create_room(room_id="demo-room")
     await kit.attach_channel("demo-room", "ws-user")

@@ -71,7 +71,7 @@ async def main() -> None:
     async def monitor_recv(_conn: str, event: RoomEvent) -> None:
         monitor_inbox.append(event)
 
-    ws_monitor.register_connection("monitor-conn", monitor_recv)
+    ws_monitor.register_connection("monitor-conn", monitor_recv, room_id="guarded-room")
 
     await kit.create_room(room_id="guarded-room")
     await kit.attach_channel("guarded-room", "ws-user")

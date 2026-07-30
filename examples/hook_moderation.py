@@ -41,7 +41,7 @@ async def main() -> None:
     async def agent_recv(_conn: str, event: RoomEvent) -> None:
         agent_inbox.append(event)
 
-    ws_agent.register_connection("agent-conn", agent_recv)
+    ws_agent.register_connection("agent-conn", agent_recv, room_id="moderated-room")
 
     await kit.create_room(room_id="moderated-room")
     await kit.attach_channel("moderated-room", "ws-user")

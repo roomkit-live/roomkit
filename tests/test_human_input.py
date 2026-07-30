@@ -373,7 +373,7 @@ async def test_hook_deny_blocks_tool_via_framework() -> None:
     await kit.attach_channel("deny-room", "ws-test")
 
     inbox: list = []
-    ws.register_connection("c1", lambda _conn, ev: inbox.append(ev))
+    ws.register_connection("c1", lambda _conn, ev: inbox.append(ev), room_id="deny-room")
 
     await kit.process_inbound(
         InboundMessage(

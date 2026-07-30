@@ -50,7 +50,7 @@ class TestAIAssistant:
         async def ws2_send(conn_id: str, event: RoomEvent) -> None:
             ws2_received.append(event)
 
-        ws2.register_connection("conn2", ws2_send)
+        ws2.register_connection("conn2", ws2_send, room_id="r1")
 
         kit.register_channel(ws1)
         kit.register_channel(ws2)
@@ -94,8 +94,8 @@ class TestAIAssistant:
         async def ws2_send(conn_id: str, event: RoomEvent) -> None:
             ws2_received.append(event)
 
-        ws1.register_connection("conn1", ws1_send)
-        ws2.register_connection("conn2", ws2_send)
+        ws1.register_connection("conn1", ws1_send, room_id="r1")
+        ws2.register_connection("conn2", ws2_send, room_id="r1")
 
         kit.register_channel(ws1)
         kit.register_channel(ws2)

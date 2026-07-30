@@ -48,7 +48,7 @@ async def main() -> None:
     async def on_recv(_conn: str, event: RoomEvent) -> None:
         inbox.append(event)
 
-    ws.register_connection("user-conn", on_recv)
+    ws.register_connection("user-conn", on_recv, room_id="persistent-room")
 
     # --- Create room and send messages ---
     room = await kit.create_room(room_id="persistent-room", metadata={"topic": "Support"})

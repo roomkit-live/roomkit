@@ -99,7 +99,7 @@ async def test_streaming_transport_persists_modified_but_streams_raw() -> None:
         if delta:
             chunks.append(delta)
 
-    ws.register_connection("c1", send_fn, stream_send_fn=stream_send_fn)
+    ws.register_connection("c1", send_fn, stream_send_fn=stream_send_fn, room_id="r1")
     kit.register_channel(SimpleChannel("sms1"))
     kit.register_channel(ws)
     kit.register_channel(AIChannel("ai1", provider=provider))

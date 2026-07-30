@@ -97,7 +97,7 @@ async def main() -> None:
         if isinstance(event.content, TextContent):
             reply_text.append(event.content.body)
 
-    ws.register_connection("user-conn", on_receive)
+    ws.register_connection("user-conn", on_receive, room_id="webcam-room")
 
     await kit.create_room(room_id="webcam-room")
     await kit.attach_channel("webcam-room", "ws-user")

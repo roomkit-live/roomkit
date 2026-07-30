@@ -44,7 +44,7 @@ async def main() -> None:
     kit.register_channel(ai)
 
     inbox: list[RoomEvent] = []
-    ws.register_connection("conn", lambda _c, ev: inbox.append(ev))  # type: ignore[arg-type,return-value]
+    ws.register_connection("conn", lambda _c, ev: inbox.append(ev), room_id="analytics-room")  # type: ignore[arg-type,return-value]
 
     await kit.create_room(room_id="analytics-room")
     await kit.attach_channel("analytics-room", "ws-user")

@@ -37,7 +37,7 @@ async def main() -> None:
 
     ws = WebSocketChannel("ws-user")
     kit.register_channel(ws)
-    ws.register_connection("conn", lambda _c, _e: asyncio.sleep(0))
+    ws.register_connection("conn", lambda _c, _e: asyncio.sleep(0), room_id="room-manual")
 
     # --- Hook: Track lifecycle events ---
     @kit.hook(HookTrigger.ON_ROOM_PAUSED, execution=HookExecution.ASYNC, name="on_paused")
@@ -80,6 +80,7 @@ async def main() -> None:
         ),
     )
     await kit.attach_channel("room-timed", "ws-user")
+    ws.subscribe("conn", "room-timed")
 
     # Simulate activity then inactivity by manipulating timer state
     room2 = await kit.get_room("room-timed")
@@ -135,6 +136,7 @@ async def main() -> None:
         ),
     )
     await kit.attach_channel("room-batch", "ws-user")
+    ws.subscribe("conn", "room-batch")
 
     transitioned = await kit.check_all_timers()
     print(f"  Batch check: {len(transitioned)} room(s) transitioned")

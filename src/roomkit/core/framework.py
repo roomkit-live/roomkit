@@ -766,21 +766,50 @@ class RoomKit(
         connection_id: str,
         send_fn: SendFn,
         *,
+        room_id: str,
         stream_send_fn: StreamSendFn | None = None,
     ) -> None:
-        """Register a WebSocket connection and emit framework event."""
+        """Register a WebSocket connection for a room and emit framework event.
+
+        ``room_id`` says which conversation this socket belongs to. It is
+        required because one channel instance can serve several rooms, and a
+        connection the channel cannot place would otherwise have to receive
+        every room's events. Add more rooms to the same socket with
+        :meth:`subscribe_websocket`.
+        """
         await self._ensure_status_bus_subscribed()
         channel = self._channels.get(channel_id)
         if not isinstance(channel, WebSocketChannel):
             raise ChannelNotRegisteredError(
                 f"Channel {channel_id} is not a registered WebSocket channel"
             )
-        channel.register_connection(connection_id, send_fn, stream_send_fn=stream_send_fn)
+        channel.register_connection(
+            connection_id, send_fn, room_id=room_id, stream_send_fn=stream_send_fn
+        )
         await self._emit_framework_event(
             "channel_connected",
             channel_id=channel_id,
-            data={"connection_id": connection_id},
+            room_id=room_id,
+            data={"connection_id": connection_id, "room_id": room_id},
         )
+
+    def subscribe_websocket(self, channel_id: str, connection_id: str, room_id: str) -> None:
+        """Also deliver *room_id* to an already-connected socket."""
+        channel = self._channels.get(channel_id)
+        if not isinstance(channel, WebSocketChannel):
+            raise ChannelNotRegisteredError(
+                f"Channel {channel_id} is not a registered WebSocket channel"
+            )
+        channel.subscribe(connection_id, room_id)
+
+    def unsubscribe_websocket(self, channel_id: str, connection_id: str, room_id: str) -> None:
+        """Stop delivering *room_id* to a connected socket."""
+        channel = self._channels.get(channel_id)
+        if not isinstance(channel, WebSocketChannel):
+            raise ChannelNotRegisteredError(
+                f"Channel {channel_id} is not a registered WebSocket channel"
+            )
+        channel.unsubscribe(connection_id, room_id)
 
     async def disconnect_websocket(self, channel_id: str, connection_id: str) -> None:
         """Unregister a WebSocket connection and emit framework event."""

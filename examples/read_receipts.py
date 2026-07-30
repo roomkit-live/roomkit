@@ -37,8 +37,8 @@ async def main() -> None:
     async def bob_recv(_conn: str, event: RoomEvent) -> None:
         bob_inbox.append(event)
 
-    ws_alice.register_connection("alice-conn", alice_recv)
-    ws_bob.register_connection("bob-conn", bob_recv)
+    ws_alice.register_connection("alice-conn", alice_recv, room_id="receipt-room")
+    ws_bob.register_connection("bob-conn", bob_recv, room_id="receipt-room")
 
     await kit.create_room(room_id="receipt-room")
     await kit.attach_channel("receipt-room", "ws-alice")

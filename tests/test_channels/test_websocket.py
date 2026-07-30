@@ -31,8 +31,8 @@ class TestWebSocketChannel:
         async def mock_send(conn_id: str, event: RoomEvent) -> None:
             sent.append((conn_id, event))
 
-        ch.register_connection("conn1", mock_send)
-        ch.register_connection("conn2", mock_send)
+        ch.register_connection("conn1", mock_send, room_id="r1")
+        ch.register_connection("conn2", mock_send, room_id="r1")
 
         binding = ChannelBinding(
             channel_id="ws1", room_id="r1", channel_type=ChannelType.WEBSOCKET
@@ -48,7 +48,7 @@ class TestWebSocketChannel:
         async def mock_send(conn_id: str, event: RoomEvent) -> None:
             pass
 
-        ch.register_connection("conn1", mock_send)
+        ch.register_connection("conn1", mock_send, room_id="r1")
         assert ch.connection_count == 1
         ch.unregister_connection("conn1")
         assert ch.connection_count == 0

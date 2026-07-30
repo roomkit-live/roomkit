@@ -88,7 +88,7 @@ async def main() -> None:
     async def on_text(_conn: str, event: RoomEvent) -> None:
         text_events.append(event)
 
-    ws_dashboard.register_connection("dev-screen", on_text)
+    ws_dashboard.register_connection("dev-screen", on_text, room_id="code-review")
     kit.register_channel(ws_dashboard)
 
     # Simulated voice channel
@@ -100,7 +100,7 @@ async def main() -> None:
     async def on_voice(_conn: str, event: RoomEvent) -> None:
         voice_events.append(event)
 
-    ws_voice.register_connection("dev-earpiece", on_voice)
+    ws_voice.register_connection("dev-earpiece", on_voice, room_id="code-review")
     kit.register_channel(ws_voice)
 
     # --- AI agents -----------------------------------------------------------

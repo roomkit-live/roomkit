@@ -65,7 +65,7 @@ async def main() -> None:
     async def on_recv(_conn: str, event: RoomEvent) -> None:
         inbox.append(event)
 
-    ws.register_connection("user-conn", on_recv)
+    ws.register_connection("user-conn", on_recv, room_id="think-room")
 
     # Subscribe to ephemeral events to observe thinking in real time.
     # AIChannel publishes THINKING_START / THINKING_END events while
@@ -124,6 +124,8 @@ async def main() -> None:
     sub_id = await kit.realtime.subscribe_to_room("deep-think-room", on_ephemeral)
 
     await kit.attach_channel("deep-think-room", "ws-user")
+    # Same socket, second conversation.
+    ws.subscribe("user-conn", "deep-think-room")
     await kit.attach_channel(
         "deep-think-room",
         "ai-thinker",

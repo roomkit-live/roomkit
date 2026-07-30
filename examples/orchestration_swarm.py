@@ -83,7 +83,7 @@ async def main() -> None:
     async def on_receive(_conn: str, event: RoomEvent) -> None:
         inbox.append(event)
 
-    ws.register_connection("user", on_receive)
+    ws.register_connection("user", on_receive, room_id="swarm-room")
     kit.register_channel(ws)
 
     # Create room — Swarm wires bidirectional handoff automatically

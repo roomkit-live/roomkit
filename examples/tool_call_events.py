@@ -72,7 +72,7 @@ async def main() -> None:
     async def capture_stream(conn_id: str, event: Any) -> None:
         pass  # Messages delivered via normal routing
 
-    ws.register_connection("user-conn", capture_stream)
+    ws.register_connection("user-conn", capture_stream, room_id="tool-room")
 
     await kit.create_room(room_id="tool-room")
     await kit.attach_channel("tool-room", "ws-user")

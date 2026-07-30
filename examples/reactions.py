@@ -34,7 +34,9 @@ async def main() -> None:
     kit.register_channel(ws_charlie)
 
     for ch in [ws_alice, ws_bob, ws_charlie]:
-        ch.register_connection(f"{ch.channel_id}-conn", lambda _c, _e: asyncio.sleep(0))
+        ch.register_connection(
+            f"{ch.channel_id}-conn", lambda _c, _e: asyncio.sleep(0), room_id="reaction-room"
+        )
 
     await kit.create_room(room_id="reaction-room")
     await kit.attach_channel("reaction-room", "ws-alice")

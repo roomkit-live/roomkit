@@ -87,7 +87,7 @@ class TestSINScanning:
         async def ws2_send(conn_id: str, event: RoomEvent) -> None:
             ws2_received.append(event)
 
-        ws2.register_connection("conn2", ws2_send)
+        ws2.register_connection("conn2", ws2_send, room_id="r1")
 
         kit.register_channel(ws1)
         kit.register_channel(ws2)

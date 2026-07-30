@@ -87,7 +87,7 @@ async def main() -> None:
 
     ws = WebSocketChannel("ws-main")
     kit.register_channel(ws)
-    ws.register_connection("conn", lambda _c, _e: asyncio.sleep(0))
+    ws.register_connection("conn", lambda _c, _e: asyncio.sleep(0), room_id="identity-room")
 
     # --- Hook: Handle unknown senders ---
     @kit.identity_hook(HookTrigger.ON_IDENTITY_UNKNOWN)

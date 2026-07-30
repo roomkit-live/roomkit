@@ -186,6 +186,17 @@ class Channel(ABC):
         """Whether this channel can accept streaming text delivery."""
         return False
 
+    def supports_streaming_delivery_for(self, room_id: str) -> bool:
+        """Whether this channel can stream *into a specific room*.
+
+        Defaults to the channel-wide answer, which is right for a channel whose
+        capability does not vary by room — a voice session, a terminal. A
+        channel that holds per-room client connections overrides this, so a
+        room whose clients cannot stream does not take the streaming path only
+        to fall back at the end.
+        """
+        return self.supports_streaming_delivery
+
     async def deliver_stream(
         self,
         text_stream: AsyncIterator[str],

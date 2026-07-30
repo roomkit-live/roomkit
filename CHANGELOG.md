@@ -268,6 +268,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A WebSocket connection receives its rooms, and only its rooms.**
+  `WebSocketChannel` held a flat `{connection_id: send_fn}` registry with no
+  room dimension anywhere in its API — not on `register_connection`, not on
+  `connect_websocket`. `deliver()` was handed the binding naming the room and
+  had nothing to filter against, so it sent every room's events to every
+  socket the channel held. A channel shared across conversations leaked them
+  into each other, and the leak was durable: the client saw them.
+
+  There was no smaller fix available. Filtering needs data the API did not
+  carry; the only alternative was for each integrator's `send_fn` to check
+  `event.room_id` itself, which is the undocumented status quo that caused
+  this. So the dimension is now explicit.
+
+  **BREAKING:** `room_id` is a required keyword on
+  `WebSocketChannel.register_connection()` and `RoomKit.connect_websocket()`.
+  Every call site fails loudly and takes one argument to fix. A socket that
+  follows several conversations calls `subscribe()` / `unsubscribe()`
+  (`kit.subscribe_websocket()` / `kit.unsubscribe_websocket()`) instead of
+  opening one socket per room. `deliver()` and `deliver_stream()` both scope
+  to `binding.room_id`, so a connection the channel cannot place receives
+  nothing. `Channel.supports_streaming_delivery_for(room_id)` joins the ABC —
+  defaulting to the channel-wide property, overridden by `WebSocketChannel` —
+  so a room whose clients cannot stream no longer takes the streaming path
+  only to fall back at the end.
+
 - **The inbound router no longer guesses which room a message belongs to.** It
   tried the channel binding first and returned the first match, so a channel
   bound to several active rooms sent the message to whichever the store

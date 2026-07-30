@@ -47,7 +47,7 @@ async def main() -> None:
     async def on_ws_receive(_conn: str, event: RoomEvent) -> None:
         ws_inbox.append(event)
 
-    ws.register_connection("browser", on_ws_receive)
+    ws.register_connection("browser", on_ws_receive, room_id="hybrid-room")
 
     # Another transport — should NOT receive the AI response
     other = WebSocketChannel("voice-out")
@@ -56,7 +56,7 @@ async def main() -> None:
     async def on_other_receive(_conn: str, event: RoomEvent) -> None:
         other_inbox.append(event)
 
-    other.register_connection("speaker", on_other_receive)
+    other.register_connection("speaker", on_other_receive, room_id="hybrid-room")
 
     # AI channel
     ai_provider = MockAIProvider(responses=["The answer is 42."])

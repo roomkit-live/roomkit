@@ -71,7 +71,7 @@ class TestConnectWebSocket:
         async def send(conn_id: str, event: RoomEvent) -> None:
             pass
 
-        await kit.connect_websocket("ws1", "conn1", send)
+        await kit.connect_websocket("ws1", "conn1", send, room_id="room-1")
         assert ws.connection_count == 1
 
     async def test_connect_emits_framework_event(self, kit: RoomKit) -> None:
@@ -87,7 +87,7 @@ class TestConnectWebSocket:
         async def send(conn_id: str, event: RoomEvent) -> None:
             pass
 
-        await kit.connect_websocket("ws1", "conn1", send)
+        await kit.connect_websocket("ws1", "conn1", send, room_id="room-1")
         assert len(received) == 1
         assert received[0].type == "channel_connected"
         assert received[0].data["connection_id"] == "conn1"
@@ -101,7 +101,7 @@ class TestConnectWebSocket:
             pass
 
         with pytest.raises(ChannelNotRegisteredError):
-            await kit.connect_websocket("sms1", "conn1", send)
+            await kit.connect_websocket("sms1", "conn1", send, room_id="room-1")
 
     async def test_connect_unregistered_raises(self, kit: RoomKit) -> None:
         """connect_websocket raises for unregistered channel."""
@@ -110,7 +110,7 @@ class TestConnectWebSocket:
             pass
 
         with pytest.raises(ChannelNotRegisteredError):
-            await kit.connect_websocket("nope", "conn1", send)
+            await kit.connect_websocket("nope", "conn1", send, room_id="room-1")
 
 
 class TestDisconnectWebSocket:
@@ -122,7 +122,7 @@ class TestDisconnectWebSocket:
         async def send(conn_id: str, event: RoomEvent) -> None:
             pass
 
-        await kit.connect_websocket("ws1", "conn1", send)
+        await kit.connect_websocket("ws1", "conn1", send, room_id="room-1")
         assert ws.connection_count == 1
 
         await kit.disconnect_websocket("ws1", "conn1")
@@ -142,7 +142,7 @@ class TestDisconnectWebSocket:
         async def send(conn_id: str, event: RoomEvent) -> None:
             pass
 
-        await kit.connect_websocket("ws1", "conn1", send)
+        await kit.connect_websocket("ws1", "conn1", send, room_id="room-1")
         await kit.disconnect_websocket("ws1", "conn1")
         assert len(received) == 1
         assert received[0].data["connection_id"] == "conn1"
@@ -160,8 +160,8 @@ class TestDisconnectWebSocket:
         async def send(conn_id: str, event: RoomEvent) -> None:
             pass
 
-        await kit.connect_websocket("ws1", "conn1", send)
-        await kit.connect_websocket("ws1", "conn2", send)
+        await kit.connect_websocket("ws1", "conn1", send, room_id="room-1")
+        await kit.connect_websocket("ws1", "conn2", send, room_id="room-1")
         assert ws.connection_count == 2
 
         await kit.disconnect_websocket("ws1", "conn1")
@@ -174,13 +174,15 @@ class TestStreamingDelivery:
     async def test_supports_streaming_delivery_false_by_default(self) -> None:
         """No stream_send_fn registered → supports_streaming_delivery is False."""
         ws = WebSocketChannel("ws1")
-        ws.register_connection("c1", _noop_send)
+        ws.register_connection("c1", _noop_send, room_id="room-1")
         assert ws.supports_streaming_delivery is False
 
     async def test_supports_streaming_delivery_true(self) -> None:
         """At least one stream_send_fn → supports_streaming_delivery is True."""
         ws = WebSocketChannel("ws1")
-        ws.register_connection("c1", _noop_send, stream_send_fn=_noop_stream_send)
+        ws.register_connection(
+            "c1", _noop_send, room_id="room-1", stream_send_fn=_noop_stream_send
+        )
         assert ws.supports_streaming_delivery is True
 
     async def test_deliver_stream_sends_protocol_messages(self) -> None:
@@ -191,7 +193,7 @@ class TestStreamingDelivery:
         async def stream_send(conn_id: str, msg: StreamMessage) -> None:
             received.append(msg)
 
-        ws.register_connection("c1", _noop_send, stream_send_fn=stream_send)
+        ws.register_connection("c1", _noop_send, room_id="room-1", stream_send_fn=stream_send)
 
         event = _make_event()
         binding = _make_binding()
@@ -218,7 +220,7 @@ class TestStreamingDelivery:
             if isinstance(msg, StreamChunk):
                 chunks.append(msg)
 
-        ws.register_connection("c1", _noop_send, stream_send_fn=stream_send)
+        ws.register_connection("c1", _noop_send, room_id="room-1", stream_send_fn=stream_send)
         await ws.deliver_stream(
             _text_stream("a", "b", "c"), _make_event(), _make_binding(), _make_context()
         )
@@ -234,7 +236,7 @@ class TestStreamingDelivery:
             if isinstance(msg, StreamChunk):
                 chunks.append(msg)
 
-        ws.register_connection("c1", _noop_send, stream_send_fn=stream_send)
+        ws.register_connection("c1", _noop_send, room_id="room-1", stream_send_fn=stream_send)
         await ws.deliver_stream(
             _text_stream("Hello", " ", "world"), _make_event(), _make_binding(), _make_context()
         )
@@ -250,7 +252,7 @@ class TestStreamingDelivery:
             final_events.append(event)
 
         # c1 has no stream_send_fn — should receive final event
-        ws.register_connection("c1", regular_send)
+        ws.register_connection("c1", regular_send, room_id="room-1")
 
         await ws.deliver_stream(
             _text_stream("Hi", " there"), _make_event(), _make_binding(), _make_context()
@@ -267,7 +269,9 @@ class TestStreamingDelivery:
         async def failing_stream_send(conn_id: str, msg: StreamMessage) -> None:
             raise ConnectionError("gone")
 
-        ws.register_connection("c1", _noop_send, stream_send_fn=failing_stream_send)
+        ws.register_connection(
+            "c1", _noop_send, room_id="room-1", stream_send_fn=failing_stream_send
+        )
         assert ws.connection_count == 1
 
         # stream_start (err 1), then 3 chunks each cause an error
@@ -286,7 +290,7 @@ class TestStreamingDelivery:
         async def stream_send(conn_id: str, msg: StreamMessage) -> None:
             received.append(msg)
 
-        ws.register_connection("c1", _noop_send, stream_send_fn=stream_send)
+        ws.register_connection("c1", _noop_send, room_id="room-1", stream_send_fn=stream_send)
 
         await ws.deliver_stream(_text_stream(), _make_event(), _make_binding(), _make_context())
 
@@ -309,8 +313,8 @@ class TestStreamingDelivery:
             regular_events.append(event)
 
         # c1 = streaming, c2 = regular
-        ws.register_connection("c1", _noop_send, stream_send_fn=stream_send)
-        ws.register_connection("c2", regular_send)
+        ws.register_connection("c1", _noop_send, room_id="room-1", stream_send_fn=stream_send)
+        ws.register_connection("c2", regular_send, room_id="room-1")
 
         await ws.deliver_stream(
             _text_stream("foo", "bar"), _make_event(), _make_binding(), _make_context()
@@ -329,7 +333,9 @@ class TestStreamingDelivery:
     async def test_unregister_clears_stream_send_fn(self) -> None:
         """unregister_connection removes stream_send_fn too."""
         ws = WebSocketChannel("ws1")
-        ws.register_connection("c1", _noop_send, stream_send_fn=_noop_stream_send)
+        ws.register_connection(
+            "c1", _noop_send, room_id="room-1", stream_send_fn=_noop_stream_send
+        )
         assert ws.supports_streaming_delivery is True
 
         ws.unregister_connection("c1")

@@ -22,7 +22,7 @@ class TestCrossChannel:
         async def ws_send(conn_id: str, event: RoomEvent) -> None:
             ws_received.append(event)
 
-        ws.register_connection("conn1", ws_send)
+        ws.register_connection("conn1", ws_send, room_id="r1")
 
         kit.register_channel(sms)
         kit.register_channel(ws)
@@ -72,8 +72,8 @@ class TestCrossChannel:
         async def ws_send(conn_id: str, event: RoomEvent) -> None:
             all_received.append((conn_id, event))
 
-        ws.register_connection("conn1", ws_send)
-        ws.register_connection("conn2", ws_send)
+        ws.register_connection("conn1", ws_send, room_id="r1")
+        ws.register_connection("conn2", ws_send, room_id="r1")
 
         sms = SMSChannel("sms1")
         kit.register_channel(sms)
