@@ -70,6 +70,7 @@ def _invocations(
         "subscribe_track": lambda: backend.subscribe_track(bot, track.id),
         "unsubscribe_track": lambda: backend.unsubscribe_track(bot, track.id),
         "publish_audio": lambda: backend.publish_audio(bot, AudioChunk(data=b"\x00\x00")),
+        "stop_playback": lambda: backend.stop_playback(bot),
         "publish_video": lambda: backend.publish_video(
             bot, VideoFrame(data=b"", codec="raw_rgb24")
         ),

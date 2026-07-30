@@ -55,6 +55,7 @@ BACKEND_SURFACE = (
     "subscribe_track",
     "unsubscribe_track",
     "publish_audio",
+    "stop_playback",
     "publish_video",
     "close",
 )

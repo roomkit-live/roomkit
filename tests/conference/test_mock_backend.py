@@ -273,6 +273,23 @@ class TestPublishing:
         assert len(backend.published_audio) == 2
         assert backend.published_audio[-1].is_final is True
 
+    async def test_stop_playback_is_recorded_and_closes_nothing(self) -> None:
+        """The stop is the barge-in gesture, not a boundary: the utterance
+        stays open until the closing chunk that is still owed after it, and
+        that chunk is what closes it (RFC §12.10.3).
+        """
+        backend = MockConferenceBackend()
+        bot = await _joined_bot(backend)
+        await backend.publish_audio(bot, AudioChunk(data=b"\x00\x00"))
+
+        await backend.stop_playback(bot)
+
+        assert backend.playback_stops == [bot.id]
+        assert backend.utterances[-1].complete is False, "the stop closed the utterance"
+
+        await backend.publish_audio(bot, AudioChunk(data=b"", is_final=True))
+        assert backend.utterances[-1].complete is True
+
     async def test_tracks_carry_room_and_publisher(self) -> None:
         backend = MockConferenceBackend()
         await backend.ensure_room(ROOM)

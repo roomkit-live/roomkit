@@ -249,7 +249,10 @@ class ConferenceBackend(ABC):
         implementation can rely on rather than a hint. An utterance a
         participant cut short ends the same way, and that closing chunk may
         carry no audio at all (``data=b""``): there is nothing left to play,
-        only an end to declare.
+        only an end to declare. It is a boundary, not a flush — an
+        implementation must not discard queued audio on it, or a synthesizer
+        whose real ending is queued behind an empty final chunk would lose
+        it. What silences the room on a barge-in is :meth:`stop_playback`.
 
         With one exception, which is the end of the session rather than the end
         of an utterance. An utterance the channel abandons because it has left
@@ -260,6 +263,30 @@ class ConferenceBackend(ABC):
         either — so an implementation must take :meth:`leave`, and a session
         disconnecting by any other means, as ending whatever utterance was in
         flight on it (RFC section 12.10.4).
+        """
+
+    @abstractmethod
+    async def stop_playback(self, bot: BotSession) -> None:
+        """Discard the bot's queued, unplayed audio: the barge-in gesture.
+
+        The one call that says the room asked for silence *now*, rather than
+        at the end of whatever the transport has buffered. An implementation
+        must immediately discard the audio it accepted through
+        :meth:`publish_audio` but has not yet delivered for playout; what has
+        already left it is beyond recall, and the smaller its local queue the
+        smaller that residue.
+
+        This does not end the utterance. ``is_final`` remains the only
+        boundary: the closing chunk still follows, and must be accepted after
+        the stop. The track stays usable — the next utterance publishes
+        normally.
+
+        A stop for a session this backend no longer holds is a no-op, not an
+        error: the silence the call asks for is already true of a session
+        that is gone. Deliberately unlike :meth:`publish_audio`, which
+        refuses media for a session that is out — a refusal there protects a
+        track from writes, and there is no track left to protect (RFC
+        section 12.10.3).
         """
 
     @abstractmethod

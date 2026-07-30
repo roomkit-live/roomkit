@@ -336,6 +336,18 @@ class LiveKitBotSession:
             )
         await self._voice.publish(chunk)
 
+    def stop_playback(self) -> None:
+        """Drop the queued, unplayed audio of the bot's track.
+
+        A session that has left is a no-op rather than the error
+        :meth:`publish` raises: a chunk for a departed session is a write with
+        no track to land on, while the silence a stop asks for is already true
+        of one (RFC section 12.10.3).
+        """
+        if self._left:
+            return
+        self._voice.discard_queued()
+
     # -------------------------------------------------------------------------
     # Event bridge — sync handlers in, ordered emissions out
     # -------------------------------------------------------------------------

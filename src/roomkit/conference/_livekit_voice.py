@@ -57,15 +57,28 @@ class BotVoiceTrack:
         play. The queue is deliberately *not* flushed on it: an utterance cut
         short and one that ended by itself both close this way, the two are
         indistinguishable from here, and flushing would truncate real speech in
-        the second case. What bounds the audio still queued behind a barge-in is
-        the queue's own size, because the interface has no way to say "stop
-        talking".
+        the second case. Flushing has a call of its own — :meth:`discard_queued`,
+        the barge-in gesture — and the queue's size bounds only what is left
+        playing when that gesture fails or never arrives.
         """
         require_publishable_pcm(chunk)
         if chunk.data:
             source = await self._ensure_source(chunk)
             await source.capture_frame(self._frame(chunk))
         self._utterance_open = not chunk.is_final
+
+    def discard_queued(self) -> None:
+        """Drop the audio captured but not yet played out: the barge-in gesture.
+
+        ``clear_queue`` empties the source's buffer — the ``queue_ms`` of audio
+        the framework was allowed to run ahead of playout, which is exactly the
+        audio a participant who cut the bot off would otherwise sit through.
+        The utterance is not ended by it: the closing chunk still follows
+        through :meth:`publish`, and closes a queue that is simply empty. No
+        source yet means nothing was ever published, and nothing to discard.
+        """
+        if self._source is not None:
+            self._source.clear_queue()
 
     def abandon_utterance(self) -> bool:
         """Take an in-flight utterance as ended, and say whether there was one.

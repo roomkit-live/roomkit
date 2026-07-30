@@ -90,6 +90,15 @@ class ConferencePlayback:
     downstream of it should still run.
     """
 
+    bot: BotSession | None = None
+    """The session this utterance publishes on, once it has taken the floor.
+
+    What a barge-in stops playback against: the gesture goes to the session
+    that queued the audio, not to whatever session the room holds by the time
+    the latch is read. ``None`` while the utterance still waits its turn —
+    nothing of it has been published anywhere, so there is nothing to stop.
+    """
+
     published: AudioChunk | None = None
     """The last chunk the backend *accepted*, or ``None`` before the first.
 
@@ -288,11 +297,14 @@ class ConferenceVoice:
         path.
 
         Publication is interruptible. A lane that detects an allowed speaker
-        talking over the bot latches the playback, and the loop stops sending
-        at the next chunk — that is the whole barge-in mechanism, and the
-        reason the bot's utterance is tracked at all. An utterance still
-        waiting its turn is latched too: taking the floor from the bot means
-        the room goes quiet, not that the queue starts draining into it.
+        talking over the bot latches the playback, the loop stops sending at
+        the next chunk, and the backend is told to drop what it has already
+        queued (``stop_playback``, RFC section 12.10.3) — the latch stops the
+        stream, the stop silences the transport, and together they are the
+        barge-in mechanism and the reason the bot's utterance is tracked at
+        all. An utterance still waiting its turn is latched too: taking the
+        floor from the bot means the room goes quiet, not that the queue
+        starts draining into it.
 
         AFTER_TTS fires either way, so BEFORE_TTS and AFTER_TTS stay a matched
         pair — an utterance stopped before it ever spoke runs neither. What was
@@ -374,6 +386,7 @@ class ConferenceVoice:
                 return None
             playback.text = text
             bot = await self._ensure_bot(room_id)
+            playback.bot = bot
             playback.begin()
             await self._publish(playback, bot, tts)
             return text
@@ -783,7 +796,33 @@ class ConferenceVoice:
             return
         for playback in pending:
             playback.interrupted = True
+        await self._stop_playback(speaking)
         await self._fire_barge_in(lane, speaking)
+
+    async def _stop_playback(self, playback: ConferencePlayback) -> None:
+        """Tell the backend to drop the interrupted utterance's queued audio.
+
+        The latch stops the loop at the next chunk; this is what stops the
+        audio already past it, queued in the transport ahead of playout (RFC
+        section 12.10.3). Best-effort: a backend that fails here has only kept
+        its own queue, whose size bounds the overrun — the barge-in has
+        already landed, and the closing chunk still follows either way.
+        """
+        bot = playback.bot
+        if bot is None:
+            return
+        try:
+            with self._operations.use(
+                ConferenceResource.BACKEND, what=f"stopping bot playback for session {bot.id}"
+            ):
+                await self._backend.stop_playback(bot)
+        except Exception:
+            logger.warning(
+                "The conference backend could not stop the bot's playback in room %s; the "
+                "audio it had already queued will play out to the end of its buffer",
+                playback.room_id,
+                exc_info=True,
+            )
 
     async def _fire_barge_in(self, lane: ConferenceLane, playback: ConferencePlayback) -> None:
         """Announce that a named participant cut the bot off.

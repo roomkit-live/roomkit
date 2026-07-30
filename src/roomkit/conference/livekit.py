@@ -158,11 +158,12 @@ class LiveKitConfig:
     publish_queue_ms: int = 300
     """How much of the AI's voice LiveKit may buffer ahead of playout.
 
-    Two things trade off here. The buffer is what keeps the bot's speech
-    gap-free when synthesis stutters — and it is also the audio that keeps
-    playing after a participant interrupts, because the interface has no way to
-    say "stop talking" (see :meth:`LiveKitBotSession.publish`). 300 ms keeps an
-    interruption within the range a person reads as responsive.
+    The buffer is what keeps the bot's speech gap-free when synthesis
+    stutters. It is not what a participant who interrupts must sit through: a
+    barge-in discards it (``stop_playback``, RFC section 12.10.3), and the
+    size bounds only what keeps playing when that gesture fails or a chunk
+    already on its way lands behind it. 300 ms keeps even that residue within
+    the range a person reads as responsive.
     """
 
     remote_unmute: bool = False
@@ -554,6 +555,24 @@ class LiveKitConferenceBackend(ConferenceBackend):
 
     async def publish_audio(self, bot: BotSession, chunk: AudioChunk) -> None:
         await self._session(bot).publish(chunk)
+
+    async def stop_playback(self, bot: BotSession) -> None:
+        """Drop the bot's queued, unplayed audio — the barge-in gesture.
+
+        A session this backend no longer holds is a no-op rather than an
+        error, unlike :meth:`publish_audio`: the SFU may have dropped the bot
+        in the same breath as the barge-in, and the silence the call asks for
+        is already true of a session that is gone (RFC section 12.10.3).
+        """
+        session = self._sessions.get(bot.id)
+        if session is None:
+            logger.debug(
+                "stop_playback for bot session %s is a no-op: the session is not "
+                "connected, and a session that is gone is already silent",
+                bot.id,
+            )
+            return
+        session.stop_playback()
 
     async def publish_video(self, bot: BotSession, frame: VideoFrame) -> None:
         """Refused: this backend does not publish the bot's video.

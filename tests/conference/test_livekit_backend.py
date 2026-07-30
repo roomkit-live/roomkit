@@ -459,6 +459,32 @@ class TestBotSurface:
         """
         await _backend().leave(BotSession(id="lk-gone", room_id="room-1", identity="roomkit"))
 
+    async def test_stopping_playback_for_a_session_that_is_not_there_is_quiet(self) -> None:
+        """Deliberately unlike the refused trio above: a barge-in can race the
+        SFU dropping the bot, and the silence a stop asks for is already true
+        of a session that is gone (RFC §12.10.3).
+        """
+        await _backend().stop_playback(
+            BotSession(id="lk-gone", room_id="room-1", identity="roomkit")
+        )
+
+    async def test_stopping_playback_reaches_the_session_it_names(self) -> None:
+        backend = _backend()
+
+        class _Session:
+            def __init__(self) -> None:
+                self.stops = 0
+
+            def stop_playback(self) -> None:
+                self.stops += 1
+
+        session = _Session()
+        backend._sessions["lk-1"] = session  # type: ignore[assignment]
+
+        await backend.stop_playback(BotSession(id="lk-1", room_id="room-1", identity="roomkit"))
+
+        assert session.stops == 1
+
     async def test_joining_a_closed_backend_is_refused(self) -> None:
         backend = _backend()
         _served(backend)
@@ -627,6 +653,107 @@ def _bridge_session() -> Any:
             bot_session_ended=_sink,
         ),
     )
+
+
+class _ClearableSource:
+    """A stand-in ``rtc.AudioSource`` that records what happens to its queue."""
+
+    def __init__(self, sample_rate: int, num_channels: int, queue_size_ms: int = 0) -> None:
+        self.captured: list[Any] = []
+        self.cleared = 0
+
+    async def capture_frame(self, frame: Any) -> None:
+        self.captured.append(frame)
+
+    def clear_queue(self) -> None:
+        self.cleared += 1
+
+    async def aclose(self) -> None:
+        return None
+
+
+def _voice_track() -> tuple[Any, list[_ClearableSource]]:
+    """A BotVoiceTrack on a fake rtc, and every source it creates."""
+    from types import SimpleNamespace
+
+    from roomkit.conference._livekit_voice import BotVoiceTrack
+
+    sources: list[_ClearableSource] = []
+
+    def _source(sample_rate: int, num_channels: int, queue_size_ms: int) -> _ClearableSource:
+        source = _ClearableSource(sample_rate, num_channels, queue_size_ms)
+        sources.append(source)
+        return source
+
+    class _LocalParticipant:
+        async def publish_track(self, track: Any, options: Any) -> None:
+            return None
+
+        async def unpublish_track(self, sid: Any) -> None:
+            return None
+
+    rtc = SimpleNamespace(
+        AudioSource=_source,
+        LocalAudioTrack=SimpleNamespace(
+            create_audio_track=lambda name, source: SimpleNamespace(sid="TR_BOT")
+        ),
+        TrackPublishOptions=lambda **kwargs: SimpleNamespace(**kwargs),
+        TrackSource=SimpleNamespace(SOURCE_MICROPHONE=2),
+        AudioFrame=lambda **kwargs: SimpleNamespace(**kwargs),
+    )
+    track = BotVoiceTrack(
+        rtc=rtc,
+        room=SimpleNamespace(local_participant=_LocalParticipant()),
+        identity="roomkit",
+        room_id="room-1",
+        queue_ms=200,
+    )
+    return track, sources
+
+
+class TestStopPlaybackDiscardsTheQueue:
+    async def test_the_stop_empties_the_sources_queue(self) -> None:
+        """``clear_queue`` is the whole point of the gesture: the ``queue_ms``
+        of audio the framework ran ahead of playout is what a participant who
+        cut the bot off would otherwise sit through.
+        """
+        track, sources = _voice_track()
+        await track.publish(AudioChunk(data=b"\x00\x00" * 160, sample_rate=48_000))
+
+        track.discard_queued()
+
+        assert [source.cleared for source in sources] == [1]
+
+    async def test_a_stop_before_any_audio_touches_nothing(self) -> None:
+        """No source yet means nothing was ever published: nothing to discard,
+        and no source sprung into being by the discard itself.
+        """
+        track, sources = _voice_track()
+
+        track.discard_queued()
+
+        assert sources == []
+
+    async def test_a_stop_is_not_a_boundary(self) -> None:
+        """The utterance stays open across the stop: the closing chunk is
+        still owed after it (RFC §12.10.3), and it is what closes the track's
+        books, not the flush.
+        """
+        track, _ = _voice_track()
+        await track.publish(AudioChunk(data=b"\x00\x00", sample_rate=48_000))
+
+        track.discard_queued()
+
+        assert track.abandon_utterance() is True, "the stop closed the utterance"
+
+    async def test_a_left_session_stops_nothing_and_raises_nothing(self) -> None:
+        """Unlike ``publish``, which raises for a departed session: the
+        silence a stop asks for is already true of one.
+        """
+        session = _bridge_session()
+        await session.leave()
+
+        session.stop_playback()
 
 
 class TestTheEventBridgeIsBounded:

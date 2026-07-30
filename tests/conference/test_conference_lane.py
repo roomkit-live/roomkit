@@ -426,6 +426,84 @@ class TestInterruption:
 
         assert len(backend.published_audio) == 8
         assert seen == []
+        assert backend.playback_stops == [], "nobody barged in, nothing to silence"
+
+    async def test_a_barge_in_tells_the_backend_to_stop_playback(self) -> None:
+        """The latch stops the loop at the next chunk; the gesture is what
+        stops the audio already past it, queued in the transport ahead of
+        playout (RFC §12.10.3). Exactly once, for the session that queued it —
+        and the boundary still goes out: the stop replaces nothing.
+        """
+        tts = _GatedTTS()
+        kit, channel, backend = await _kit(
+            tts=tts,
+            interruption=ConferenceInterruptionConfig(scope=ConferenceInterruptionScope.ANY),
+        )
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+
+        speaking = await self._speak(kit)
+        await tts.started.wait()
+
+        await say(backend, track, silence=0)
+        await drain(channel, track.id)
+        tts.release.set()
+        await speaking
+
+        assert backend.playback_stops == [backend.bots[0].id]
+        assert backend.published_audio[-1].is_final is True, "the stop replaced the boundary"
+        assert backend.utterances[-1].complete is True
+
+    async def test_the_bot_finishing_by_itself_stops_no_playback(self) -> None:
+        """The gesture belongs to a barge-in alone. An utterance that ends by
+        itself has nothing queued that anyone asked to silence, and a stop
+        fired on every natural ending would flush a synthesizer's real tail.
+        """
+        tts = _GatedTTS()
+        kit, _, backend = await _kit(
+            tts=tts,
+            interruption=ConferenceInterruptionConfig(scope=ConferenceInterruptionScope.ANY),
+        )
+        speaking = await self._speak(kit)
+        await tts.started.wait()
+        tts.release.set()
+        await speaking
+
+        assert backend.playback_stops == []
+        assert backend.utterances[-1].complete is True
+
+    async def test_a_failing_stop_does_not_lose_the_barge_in(self) -> None:
+        """Best-effort: a backend that cannot flush has only kept its own
+        queue, whose size bounds the overrun. The interruption still lands,
+        ON_BARGE_IN still fires, and the utterance is still closed.
+        """
+        tts = _GatedTTS()
+        kit, channel, backend = await _kit(
+            tts=tts,
+            interruption=ConferenceInterruptionConfig(scope=ConferenceInterruptionScope.ANY),
+        )
+        backend.fail("stop_playback", RuntimeError("the SFU cannot flush"))
+        seen: list[ConferenceBargeIn] = []
+
+        @kit.hook(HookTrigger.ON_BARGE_IN)
+        async def _barge(payload: Any, ctx: Any) -> None:
+            seen.append(payload)
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+
+        speaking = await self._speak(kit)
+        await tts.started.wait()
+
+        await say(backend, track, silence=0)
+        await drain(channel, track.id)
+        tts.release.set()
+        await speaking
+
+        spoken = [chunk for chunk in backend.published_audio if chunk.data]
+        assert len(spoken) == 1, "the failed stop kept the bot speaking"
+        assert [b.participant_id for b in seen] == ["p-alice"]
+        assert backend.published_audio[-1].is_final is True
 
     async def test_allowlist_scope_admits_only_the_listed_speakers(self) -> None:
         tts = _GatedTTS()

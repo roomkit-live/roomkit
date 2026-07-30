@@ -60,6 +60,7 @@ INJECTABLE_METHODS = frozenset(
         "subscribe_track",
         "unsubscribe_track",
         "publish_audio",
+        "stop_playback",
         "publish_video",
         "close",
     }
@@ -127,6 +128,7 @@ class MockConferenceBackend(ConferenceBackend):
         self.utterances: list[MockUtterance] = []
         self._open_utterances: dict[str, MockUtterance] = {}
         self.published_video: list[VideoFrame] = []
+        self.playback_stops: list[str] = []
         self.bots: list[BotSession] = []
         self.dropped_frames: list[str] = []
         self.deliveries: list[MockDelivery] = []
@@ -281,6 +283,19 @@ class MockConferenceBackend(ConferenceBackend):
             )
         self.published_audio.append(chunk)
         self._append_to_utterance(bot, chunk)
+
+    async def stop_playback(self, bot: BotSession) -> None:
+        """Record the barge-in gesture. There is nothing here to discard.
+
+        The mock publishes synchronously — nothing queues, so a real flush
+        would have no observable effect, and inventing one would have the mock
+        outdo every real SFU. What a test asserts is that the gesture reached
+        the backend at all, and for which bot. The open utterance is
+        deliberately left open: a stop is not a boundary, and the closing
+        chunk that follows is still owed (RFC section 12.10.3).
+        """
+        await self._enter("stop_playback", bot=bot.id)
+        self.playback_stops.append(bot.id)
 
     async def publish_video(self, bot: BotSession, frame: VideoFrame) -> None:
         await self._enter("publish_video", bot=bot.id)

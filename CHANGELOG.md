@@ -145,9 +145,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     published on the bot track, one utterance at a time, every utterance
     closed; who may interrupt the bot is policy
     (`ConferenceInterruptionConfig`), and `ON_BARGE_IN` names the
-    interrupting participant. Non-AI text is spoken only with
-    `speak_text_events=True` — a meeting is not a place to read unrelated
-    channel traffic aloud.
+    interrupting participant. A barge-in that lands reaches the SFU as
+    `ConferenceBackend.stop_playback()` — the audio the transport had queued
+    is discarded instead of playing to the end of its buffer, so the
+    interruption is as immediate as the transport allows rather than bounded
+    by its queue. Non-AI text is spoken only with `speak_text_events=True` —
+    a meeting is not a place to read unrelated channel traffic aloud.
   - **Admission.** `mint_access()` issues `ConferenceAccess` under
     `default_grants`, validates before it mints, and refuses a banned
     participant and a room the channel is leaving; a mint still in flight

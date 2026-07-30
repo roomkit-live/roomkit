@@ -80,6 +80,9 @@ class _Stub(ConferenceBackend):
     async def publish_audio(self, bot: BotSession, chunk: AudioChunk) -> None:
         return None
 
+    async def stop_playback(self, bot: BotSession) -> None:
+        return None
+
     async def publish_video(self, bot: BotSession, frame: VideoFrame) -> None:
         return None
 
@@ -129,6 +132,7 @@ class TestAbstractSurface:
             "subscribe_track",
             "unsubscribe_track",
             "publish_audio",
+            "stop_playback",
             "publish_video",
             "close",
         ):
