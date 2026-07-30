@@ -216,6 +216,14 @@ class RoomKit(
         self._identity_timeout = identity_timeout
         self._process_timeout = process_timeout
         self._channels: dict[str, Channel] = {}
+        # (room_id, channel_id) pairs an integrator has explicitly detached.
+        # Detaching is how access is revoked, so the inbound path's convenience
+        # auto-attach MUST NOT hand it back (RFC §7.5-7); without this the next
+        # message naming the room silently re-attaches at default permissions.
+        # In-process, like `_channels` itself: it records a decision made
+        # against this framework instance, and a restart re-reads bindings from
+        # the store, where the revoked one is already absent.
+        self._detached_bindings: set[tuple[str, str]] = set()
         self._hook_engine = HookEngine()
         self._lock_manager = lock_manager or InMemoryLockManager()
         # A persistent store paired with an in-process lock is unsafe if the

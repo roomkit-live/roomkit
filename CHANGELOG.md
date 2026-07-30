@@ -268,6 +268,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A binding is no longer widened by accident.** Two paths handed out more
+  access than the integrator had granted, both by letting a default fill a gap.
+  Sharing a channel into a delegated room (`delegate(share_channels=...)`)
+  copied the parent binding's category and metadata but not its `access`,
+  `visibility` or `muted` — so a read-only observer, or a muted one, became a
+  full participant in the child room. And the inbound pipeline's convenience
+  auto-attach did not distinguish a channel that had never been bound from one
+  the integrator had deliberately `detach_channel()`ed: the next message naming
+  that room re-attached it at `READ_WRITE`, undoing the revocation. Both now
+  follow RFC §7.5-6 and §7.5-7. Re-granting access remains available, as an
+  explicit `attach_channel()` — which is the point.
+
 - **SIP auth and trace hygiene.** Three small things in the same area. The
   digest comparison used `!=`, the only credential comparison in the codebase
   that was not constant-time; it is `hmac.compare_digest` now. (No timing

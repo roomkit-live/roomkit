@@ -37,6 +37,8 @@ class ChannelOpsHost(Protocol):
     Attributes provided by the host's ``__init__``:
         _store: Conversation persistence backend.
         _channels: Registry of channel-id to :class:`Channel` instances.
+        _detached_bindings: (room_id, channel_id) pairs explicitly detached,
+            so auto-attach cannot re-grant revoked access (RFC §7.5-7).
         _lock_manager: Per-room lock for serialised mutation.
         _event_router: Cached event router (or ``None`` to rebuild).
         _hook_engine: Engine for hook execution.
@@ -54,6 +56,7 @@ class ChannelOpsHost(Protocol):
 
     _store: ConversationStore
     _channels: dict[str, Channel]
+    _detached_bindings: set[tuple[str, str]]
     _lock_manager: RoomLockManager
     _event_router: EventRouter | None
     _hook_engine: HookEngine
@@ -69,6 +72,7 @@ class ChannelOpsMixin(HelpersMixin):
 
     _store: ConversationStore
     _channels: dict[str, Channel]
+    _detached_bindings: set[tuple[str, str]]
     _lock_manager: RoomLockManager
     _event_router: EventRouter | None
     _hook_engine: HookEngine
@@ -200,6 +204,9 @@ class ChannelOpsMixin(HelpersMixin):
             # no binding at all is one `detach_channel()` no longer reaches.
             previous = await self._store.get_binding(room_id, channel_id)
             result = await self._store.add_binding(binding)
+            # An explicit attach is the integrator re-granting access, so the
+            # revocation recorded by detach_channel() no longer applies.
+            self._detached_bindings.discard((room_id, channel_id))
             # Before the attachment is announced, not after: what the channel
             # establishes here is what the binding claims exists, and a channel
             # that cannot establish it has not been attached. Left to the
@@ -321,6 +328,10 @@ class ChannelOpsMixin(HelpersMixin):
         async with self._lock_manager.locked(room_id):
             removed = await self._store.remove_binding(room_id, channel_id)
             if removed:
+                # Remember the revocation so the inbound path's auto-attach
+                # cannot undo it (RFC §7.5-7). An explicit attach_channel()
+                # clears it — re-granting access is the integrator's call.
+                self._detached_bindings.add((room_id, channel_id))
                 await self._emit_system_event(
                     room_id,
                     EventType.CHANNEL_DETACHED,

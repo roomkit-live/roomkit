@@ -254,7 +254,11 @@ class DelegationMixin(HelpersMixin):
             category=ChannelCategory.INTELLIGENCE,
         )
 
-        # Share channels from parent
+        # Share channels from parent. The child binding carries the parent's
+        # permissions too (RFC §7.5-6): copying category and metadata while
+        # letting access/visibility/muted fall back to the attach defaults
+        # would turn a read-only observer — or a muted one — into a full
+        # participant in a room the integrator never configured.
         for ch_id in share_channels or []:
             parent_binding = await self._store.get_binding(room_id, ch_id)
             if parent_binding:
@@ -262,6 +266,9 @@ class DelegationMixin(HelpersMixin):
                     child_room_id,
                     ch_id,
                     category=parent_binding.category,
+                    access=parent_binding.access,
+                    visibility=parent_binding.visibility,
+                    muted=parent_binding.muted,
                     metadata=parent_binding.metadata,
                 )
 
