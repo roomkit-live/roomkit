@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class GradiumTTSConfig:
     """Configuration for Gradium TTS provider."""
 
-    api_key: str
+    api_key: str = field(repr=False)
     voice_id: str = "default"
     region: str = "us"
     model_name: str = "default"

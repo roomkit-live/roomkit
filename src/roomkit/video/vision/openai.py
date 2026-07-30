@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from roomkit.video.video_frame import VideoFrame
@@ -56,7 +56,7 @@ class OpenAIVisionConfig:
         detail: Image detail level (``low``, ``high``, ``auto``).
     """
 
-    api_key: str = "ollama"
+    api_key: str = field(default="ollama", repr=False)
     base_url: str = "http://localhost:11434/v1"
     model: str = "qwen3.5"
     prompt: str = DEFAULT_VISION_PROMPT

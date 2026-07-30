@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 
 class AnamConfig(BaseModel):
@@ -29,7 +29,7 @@ class AnamConfig(BaseModel):
         timeout: Connection timeout in seconds.
     """
 
-    api_key: str
+    api_key: SecretStr
     persona_id: str | None = None
     avatar_id: str | None = None
     avatar_model: str | None = None

@@ -41,7 +41,7 @@ class DeepgramConfig:
     for the full parameter reference.
     """
 
-    api_key: str
+    api_key: str = field(repr=False)
 
     # Model & language
     model: str = "nova-2"

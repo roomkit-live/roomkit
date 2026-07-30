@@ -46,7 +46,7 @@ class ElevenLabsConfig:
     are not supported by v3 (``style``, ``use_speaker_boost``).
     """
 
-    api_key: str
+    api_key: str = field(repr=False)
     voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel (default)
     model_id: str = MODEL_MULTILINGUAL_V2
     stability: float = 0.5

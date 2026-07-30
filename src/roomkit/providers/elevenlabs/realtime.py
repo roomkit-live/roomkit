@@ -71,7 +71,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
         """List voices the account exposes via the ElevenLabs voices API."""
         from elevenlabs import ElevenLabs
 
-        client = ElevenLabs(api_key=self._config.api_key)
+        client = ElevenLabs(api_key=self._config.api_key.get_secret_value())
         resp = await asyncio.to_thread(client.voices.get_all)
         live = [
             VoiceInfo(
@@ -155,7 +155,7 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
 
         # Create SDK client (pass base_url for regional endpoints)
         base_url = self._config.base_url.replace("wss://", "https://").replace("ws://", "http://")
-        client = ElevenLabs(api_key=self._config.api_key, base_url=base_url)
+        client = ElevenLabs(api_key=self._config.api_key.get_secret_value(), base_url=base_url)
 
         conversation = AsyncConversation(
             client,

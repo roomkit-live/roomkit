@@ -156,7 +156,7 @@ class AnamRealtimeProvider(RealtimeAudioVideoProvider):
 
         pcfg = _anam_mod.PersonaConfig(**pcfg_kwargs)
         client = _anam_mod.AnamClient(
-            api_key=self._config.api_key,
+            api_key=self._config.api_key.get_secret_value(),
             persona_config=pcfg,
         )
 

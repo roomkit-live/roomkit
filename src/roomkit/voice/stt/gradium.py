@@ -26,7 +26,7 @@ _GRADIUM_SAMPLE_RATE = 24000
 class GradiumSTTConfig:
     """Configuration for Gradium STT provider."""
 
-    api_key: str
+    api_key: str = field(repr=False)
     region: str = "us"
     model_name: str = "default"
     input_format: str = "pcm"  # pcm | wav | opus

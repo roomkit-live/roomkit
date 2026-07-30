@@ -9,7 +9,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import httpx
@@ -51,7 +51,7 @@ class GrokTTSConfig:
         timeout: HTTP request timeout in seconds.
     """
 
-    api_key: str
+    api_key: str = field(repr=False)
     voice_id: str = "eve"
     language: str = "en"
     codec: str = "pcm"

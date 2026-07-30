@@ -124,7 +124,7 @@ class LiveKitConfig:
     url: str | None = None
     """Signalling endpoint. Defaults to ``LIVEKIT_URL``."""
 
-    api_key: str | None = None
+    api_key: str | None = field(default=None, repr=False)
     """API key. Defaults to ``LIVEKIT_API_KEY``."""
 
     api_secret: str | None = field(default=None, repr=False)

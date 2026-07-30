@@ -69,7 +69,7 @@ class AICousticsDenoiserConfig:
 
     model: str = "quail-vf-2.0-l-16khz"
     model_dir: str = "./models"
-    license_key: str = ""
+    license_key: str = field(default="", repr=False)
     enhancement_level: float = 0.8
     num_channels: int = 1
     _resolved_license_key: str = field(init=False, repr=False)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 
 class ElevenLabsRealtimeConfig(BaseModel):
@@ -18,7 +18,7 @@ class ElevenLabsRealtimeConfig(BaseModel):
             (e.g. ``"wss://api.eu.residency.elevenlabs.io"`` for EU).
     """
 
-    api_key: str
+    api_key: SecretStr
     agent_id: str
     requires_auth: bool = False
     base_url: str = "wss://api.elevenlabs.io"

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import SecretStr
 
 from roomkit.providers.elevenlabs.realtime import ElevenLabsRealtimeProvider
 from roomkit.providers.gemini.realtime import GeminiLiveProvider
@@ -99,7 +100,7 @@ def test_personaplex_voice_ids_are_pt_prompts() -> None:
 
 async def test_elevenlabs_list_voices_maps_and_merges() -> None:
     provider = ElevenLabsRealtimeProvider.__new__(ElevenLabsRealtimeProvider)
-    provider._config = SimpleNamespace(api_key="test-key")  # type: ignore[attr-defined]
+    provider._config = SimpleNamespace(api_key=SecretStr("test-key"))  # type: ignore[attr-defined]
 
     # A known default (Adam) to exercise the curated merge, plus a custom voice.
     voices = [
