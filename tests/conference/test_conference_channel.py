@@ -47,6 +47,7 @@ from roomkit.models.identity import Identity
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 from tests.conference.lane_audio import drain, say
+from tests.conference.test_conference_races import _settle
 
 ROOM = "room-1"
 
@@ -1150,3 +1151,159 @@ class TestASpontaneousBotDisconnect:
 
         assert channel._room(ROOM).bot is second
         assert channel.info()["rooms"][ROOM]["bot_present"] is True
+
+
+class _GatedLeaveBackend(MockConferenceBackend):
+    """Holds leave() open so a teardown can be caught mid-flight."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gate = asyncio.Event()
+        self.leaving = asyncio.Event()
+
+    async def leave(self, bot):  # type: ignore[no-untyped-def]
+        self.leaving.set()
+        await self.gate.wait()
+        return await super().leave(bot)
+
+
+class TestTheConferenceSlotOutlivesTheBinding:
+    """RFC 12.10.4: the one-conference reservation holds for as long as the
+    previous channel still holds the room — a session in the meeting, a
+    teardown still running — not merely while its binding exists. A detach
+    removes the binding first, which is exactly the window this closes.
+    """
+
+    async def test_a_session_left_behind_by_a_detach_holds_the_slot(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A detach whose leave() the budget abandoned leaves its bot in the
+        meeting, on the leaving ledger. The binding is long gone; the slot is
+        not free until the session is.
+        """
+        from roomkit.channels import _conference_activity as activity_module
+
+        monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", 0.05)
+        monkeypatch.setattr(activity_module, "CANCEL_GRACE_S", 0.05)
+        backend_a = _GatedLeaveBackend()
+        backend_b = MockConferenceBackend()
+        kit = RoomKit()
+        kit.register_channel(ConferenceChannel("conf-a", backend=backend_a))
+        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b))
+        await kit.create_room(ROOM)
+        await kit.attach_channel(ROOM, "conf-a")
+        await backend_a.simulate_participant_joined(ROOM, "p-alice")
+
+        try:
+            await asyncio.wait_for(kit.detach_channel(ROOM, "conf-a"), timeout=5.0)
+
+            assert backend_a.bots != [], "the leave was supposed to be abandoned mid-flight"
+            with pytest.raises(ConferenceAlreadyAttachedError) as refusal:
+                await kit.attach_channel(ROOM, "conf-b")
+            assert "conf-a" in str(refusal.value)
+            assert ROOM not in backend_b.rooms
+        finally:
+            backend_a.gate.set()
+
+    async def test_a_deferred_teardown_holds_the_slot_too(self) -> None:
+        """A detach issued from inside an announcement defers its destructive
+        phase onto a task; the room has no binding and no visible detach in
+        flight, and the old bot is still in the meeting.
+        """
+        backend_a = MockConferenceBackend()
+        backend_b = MockConferenceBackend()
+        kit = RoomKit()
+        channel_a = ConferenceChannel("conf-a", backend=backend_a)
+        kit.register_channel(channel_a)
+        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b))
+        await kit.create_room(ROOM)
+        await kit.attach_channel(ROOM, "conf-a")
+        refusals: list[BaseException] = []
+        done = asyncio.Event()
+
+        @kit.on("conference_started")
+        async def _swap(event: object) -> None:
+            if done.is_set():
+                return
+            done.set()
+            await kit.detach_channel(ROOM, "conf-a")
+            # The teardown is deferred behind this very announcement, and the
+            # old bot has not left. Waiting here would deadlock; the refusal
+            # is what makes the retry safe.
+            try:
+                await kit.attach_channel(ROOM, "conf-b")
+            except ConferenceAlreadyAttachedError as error:
+                refusals.append(error)
+
+        await backend_a.simulate_participant_joined(ROOM, "p-alice")
+        await _settle(channel_a)
+
+        assert len(refusals) == 1
+        assert ROOM not in backend_b.rooms
+        # After the deferred teardown has ended, the slot is genuinely free.
+        await kit.attach_channel(ROOM, "conf-b")
+        assert ROOM in backend_b.rooms
+
+
+class TestTheReconnectSupervisor:
+    """A lost bot cannot manufacture its own "next need": the dead session was
+    what received the frames and the events. The supervisor is that need —
+    bounded, backed off, and standing down the moment anything contradicts it.
+    """
+
+    async def test_the_bot_rejoins_without_any_new_external_event(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from roomkit.channels import _conference_session as session_module
+        from tests.conference.test_conference_races import _until
+
+        monkeypatch.setattr(session_module, "REJOIN_DELAYS_S", (0.01,))
+        _, channel, backend = await _kit_with_channel()
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        first = channel._room(ROOM).bot
+        assert first is not None
+
+        await backend.simulate_bot_disconnected(first, "connection lost")
+
+        # No arrival, no delivery, no track event — the supervisor alone.
+        await _until(lambda: len(backend.bots) == 1)
+        assert channel.info()["rooms"][ROOM]["bot_present"] is True
+
+    async def test_failed_attempts_back_off_and_then_stand_down(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from roomkit.channels import _conference_session as session_module
+        from tests.conference.test_conference_races import _until
+
+        monkeypatch.setattr(session_module, "REJOIN_DELAYS_S", (0.01, 0.01))
+        _, channel, backend = await _kit_with_channel()
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        first = channel._room(ROOM).bot
+        assert first is not None
+        # Exactly the supervisor's two attempts fail; the SFU then recovers.
+        backend.fail("join_as_bot", RuntimeError("SFU still down"), times=2)
+
+        await backend.simulate_bot_disconnected(first, "connection lost")
+        await _until(lambda: not channel._room(ROOM).tasks)
+
+        assert backend.bots == []
+        # The lazy join is still the fallback once the SFU recovers.
+        await backend.simulate_participant_joined(ROOM, "p-bob")
+        assert len(backend.bots) == 1
+
+    async def test_a_detach_stands_the_supervisor_down(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from roomkit.channels import _conference_session as session_module
+
+        monkeypatch.setattr(session_module, "REJOIN_DELAYS_S", (0.01,))
+        kit, channel, backend = await _kit_with_channel()
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        first = channel._room(ROOM).bot
+        assert first is not None
+
+        await backend.simulate_bot_disconnected(first, "connection lost")
+        await kit.detach_channel(ROOM, "conf")
+        await asyncio.sleep(0.05)
+
+        assert backend.bots == []

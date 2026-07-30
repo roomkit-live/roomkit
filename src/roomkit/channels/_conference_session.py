@@ -44,6 +44,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.channels.conference")
 
+# How long to wait before each re-join attempt after the SFU ended the bot's
+# session, and how many to make. Bounded with backoff: a healthy SFU takes the
+# bot back on the first try, an outage should not be hammered, and past the
+# last attempt the lazy join remains — the next delivery or arrival still
+# re-joins. Read through the module so a test's monkeypatch applies.
+REJOIN_DELAYS_S: tuple[float, ...] = (0.5, 1.0, 2.0, 4.0, 8.0)
+
 
 def _settle_clock(bot: BotSession, backend: str) -> None:
     """Make a session's join time comparable, whatever the backend set.
@@ -464,6 +471,57 @@ class ConferenceSessionMixin:
         for track_id in room.forget_subscriptions():
             await self._stop_consuming(track_id)
         await self._announce_end(bot.room_id, bot)
+        # The meeting is still running and the room still wants its audio
+        # collected, but nothing left in it can create the "next need" — the
+        # dead session received the frames and the events that used to. So
+        # the need is manufactured: a bounded re-join with backoff, abandoned
+        # the moment anything contradicts it. Registered as a room task, so a
+        # detach or a close cancels it like any other background work.
+        if room.may_collect():
+            room.spawn(self._rejoin_after_loss(bot.room_id, room.generation))
+
+    async def _rejoin_after_loss(self, room_id: str, generation: int) -> None:
+        """Bring a replacement bot in after the SFU dropped the last one.
+
+        Each attempt re-reads the world first: a re-attach bumped the
+        generation, a lazy join already brought a bot in, a detach turned
+        collection off — any of them makes this supervisor someone else's
+        late duplicate, and it stands down. Exhausting the attempts is
+        reported, not fatal: the lazy join remains, and the next delivery or
+        arrival still re-joins.
+        """
+        room = self._room(room_id)
+        for delay in REJOIN_DELAYS_S:
+            await asyncio.sleep(delay)
+            if room.generation != generation or room.bot is not None or not room.may_collect():
+                return
+            try:
+                await self._ensure_bot(room_id)
+            except RoomNotAttachedError:
+                return
+            except Exception:
+                logger.warning(
+                    "Conference channel %r could not re-join room %s after losing its bot "
+                    "session; retrying",
+                    self.channel_id,
+                    room_id,
+                    exc_info=True,
+                )
+                continue
+            logger.info(
+                "Conference channel %r re-joined room %s after losing its bot session",
+                self.channel_id,
+                room_id,
+            )
+            return
+        logger.error(
+            "Conference channel %r gave up re-joining room %s after %d attempt(s). The "
+            "conference runs untranscribed and unrecorded until the next delivery or "
+            "arrival triggers the lazy join",
+            self.channel_id,
+            room_id,
+            len(REJOIN_DELAYS_S),
+        )
 
     async def _leave_all(self, room_id: str) -> None:
         """Take every session a room still has in the conference out of it.

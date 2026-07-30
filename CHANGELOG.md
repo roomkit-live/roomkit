@@ -54,13 +54,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `fail(method, ...)`, `delay(operation, ...)`, per-track audio formats
     (`MockTrackFormat`), and the bot's output grouped by utterance. A room
     holds at most one conference: attaching a second conference channel is
-    refused with `ConferenceAlreadyAttachedError` (RFC §12.10.4). A backend
-    that observes the SFU ending the bot's session without a `leave()` — a
-    dropped connection, an eviction — reports it through
-    `on_bot_session_ended`; the channel takes the session off its books,
-    finalizes its recordings, announces `conference_ended`, and re-joins
-    lazily on the next need instead of reporting a dead connection present
-    forever.
+    refused with `ConferenceAlreadyAttachedError` (RFC §12.10.4), and the
+    reservation outlives the binding — a room whose previous conference
+    channel still has a session in the meeting or a teardown running keeps
+    refusing, because a detach removes the binding at its start and takes
+    the bot out at its end. The refusal is retryable, never a wait: the
+    attach may come from inside the very announcement the teardown is
+    deferred behind. A backend that observes the SFU ending the bot's
+    session without a `leave()` — a dropped connection, an eviction —
+    reports it through `on_bot_session_ended`; the channel takes the
+    session off its books, finalizes its recordings, announces
+    `conference_ended`, and re-joins on a bounded, backed-off supervisor
+    while the room stays attached and collecting — the dead session was
+    what received the frames, so nothing else could produce the lazy
+    join's "next need". Past the attempts, the lazy join remains the
+    fallback. A detach's own `leave()` runs on the same budget-and-grace
+    discipline as the close's: a wedged SFU costs the teardown one budget,
+    and the session goes back on the books where the close retries it.
   - **A real SFU.** `LiveKitConferenceBackend` (`pip install roomkit[livekit]`)
     implements the whole of that ABC against LiveKit, media plane only —
     `livekit-agents` stays out, because RoomKit already owns VAD, recognition,
@@ -81,9 +91,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     SDK refuses propagates — the session stays registered until it is
     genuinely out, and `close()` raises for the sessions it could not take
     out instead of logging them — and its control-plane event bridge is
-    bounded: active-speaker and quality events coalesce to their latest
-    value, lifecycle events past the bound evict the oldest, counted and
-    reported, so a flapping participant costs bounded memory.
+    bounded with the loss made explicit, never silent: active-speaker and
+    quality events coalesce to their latest value (a flapping participant
+    costs bounded memory), and a lifecycle event that would not fit ends
+    the session as a *reported discontinuity* through `bot_session_ended`
+    rather than being dropped where nothing would say so. The end is
+    reported only once the old connection is confirmed disconnected — a
+    disconnect that will not go through keeps the session on the books,
+    refusing a replacement, for a later `leave()` to retry — and the
+    reason counts the events discarded undelivered. The supervisor's
+    re-join then announces the conference's *current* state; what happened
+    entirely inside the outage window is genuinely lost, and the reason
+    string is the signal for §17.7 implementations to treat that window
+    as unaccounted rather than observed-and-empty.
   - **Transcription.** Each subscribed AUDIO track runs through the shared
     `AudioPipeline` in a lane of its own, under the track's stream identity:
     one utterance becomes one transcription event attributed to its speaker,

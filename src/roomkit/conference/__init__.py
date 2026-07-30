@@ -12,6 +12,7 @@ from roomkit.conference._mock_faults import ErrorSpec, MockFaults
 from roomkit.conference._mock_media import MockDelivery, MockTrackFormat, MockUtterance
 from roomkit.conference.base import (
     ActiveSpeakerCallback,
+    BotSessionEndedCallback,
     ConferenceBackend,
     ConnectionQualityCallback,
     ParticipantCallback,
@@ -43,6 +44,7 @@ from roomkit.conference.models import (
 __all__ = [
     "ActiveSpeakerCallback",
     "BotSession",
+    "BotSessionEndedCallback",
     "ConferenceBackend",
     "ConferenceAccess",
     "ConferenceCapability",

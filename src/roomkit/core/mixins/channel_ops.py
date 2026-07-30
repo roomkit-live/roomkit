@@ -198,18 +198,36 @@ class ChannelOpsMixin(HelpersMixin):
             # bot, a second transcription of every utterance and a second AI
             # voice for the same room. Re-attaching the same channel is an
             # ordinary attach over a live attachment and stays allowed.
+            #
+            # The reservation outlives the binding (RFC 12.10.4): a detach
+            # removes the binding at its start and takes the bot out at its
+            # end, so the bindings alone would admit a second conference while
+            # the first one's teardown — possibly deferred — still has its bot
+            # in the meeting. The other channel's own books are the durable
+            # reservation, and this is a refusal rather than a wait because
+            # the attach may be issued from inside the very announcement the
+            # teardown is deferred behind, where waiting deadlocks.
             if channel.channel_type is ChannelType.CONFERENCE:
-                for existing in await self._store.list_bindings(room_id):
-                    if (
-                        existing.channel_type is ChannelType.CONFERENCE
-                        and existing.channel_id != channel_id
-                    ):
-                        raise ConferenceAlreadyAttachedError(
-                            f"Room {room_id!r} already has conference channel "
-                            f"{existing.channel_id!r} attached, and a conference maps 1:1 "
-                            f"to a room (RFC 12.10.4) — {channel_id!r} is refused. Detach "
-                            f"{existing.channel_id!r} first."
-                        )
+                holders = {
+                    existing.channel_id
+                    for existing in await self._store.list_bindings(room_id)
+                    if existing.channel_type is ChannelType.CONFERENCE
+                    and existing.channel_id != channel_id
+                }
+                for other_id, other in self._channels.items():
+                    if other_id == channel_id or other.channel_type is not ChannelType.CONFERENCE:
+                        continue
+                    still_holds = getattr(other, "_holds_conference", None)
+                    if still_holds is not None and still_holds(room_id):
+                        holders.add(other_id)
+                if holders:
+                    named = ", ".join(sorted(holders))
+                    raise ConferenceAlreadyAttachedError(
+                        f"Room {room_id!r} already has conference channel {named!r} on it — "
+                        f"attached, or with a teardown still releasing its session — and a "
+                        f"conference maps 1:1 to a room (RFC 12.10.4). {channel_id!r} is "
+                        f"refused; retry once {named!r} has fully let go."
+                    )
             binding = ChannelBinding(
                 channel_id=channel_id,
                 room_id=room_id,

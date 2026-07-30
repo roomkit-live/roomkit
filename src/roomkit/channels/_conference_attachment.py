@@ -115,6 +115,7 @@ class ConferenceAttachmentMixin:
     _leave_and_record: Any
     _close_room: Any
     _emit_framework_event: Any
+    _shutdown: Any
 
     def update_binding(self, room_id: str, binding: ChannelBinding) -> None:
         """React to the room binding changing.
@@ -402,8 +403,13 @@ class ConferenceAttachmentMixin:
                 )
             if bot is not None:
                 # Which forgets the session when it worked and keeps it, with
-                # the reason, when it did not.
-                left = await self._leave_and_record(room_id, bot)
+                # the reason, when it did not. On the teardown's budget:
+                # leave() ends in the backend's network code, and a detach
+                # often runs under a lifecycle hook with a ceiling of its own —
+                # a wedged SFU must cost the teardown one budget, not hold it
+                # (RFC 12.10.4). A leave the budget abandons has already put
+                # the session back on the books, where the close retries it.
+                left = await self._leave_within_budget(room_id, bot)
                 if left:
                     await self._announce_end(room_id, bot)
         finally:
@@ -538,6 +544,40 @@ class ConferenceAttachmentMixin:
             logger.exception(message, *args)
             return False
         return True
+
+    async def _leave_within_budget(self, room_id: str, bot: BotSession) -> bool:
+        """Take the bot out on the teardown's budget, and say whether it is out.
+
+        The budget-and-grace discipline of the close, applied to the detach:
+        ``leave()`` ends in code the channel does not own, and a teardown held
+        open by a wedged SFU holds whatever drove it — a lifecycle hook with a
+        30 s ceiling, a caller's own shutdown. Past the budget the departure
+        is cancelled; past the grace it is abandoned and kept referenced, its
+        lease retaining the backend until it truly ends. Either way the
+        session is already back on the books — ``_depart`` records the failure
+        before the cancellation travels on — where ``close()`` retries it and
+        the room's conference slot stays held (RFC 12.10.4).
+        """
+        task = asyncio.ensure_future(self._leave_and_record(room_id, bot))
+        _, pending = await asyncio.wait({task}, timeout=_conference_activity.DRAIN_TIMEOUT_S)
+        if pending:
+            task.cancel()
+            _, pending = await asyncio.wait({task}, timeout=_conference_activity.CANCEL_GRACE_S)
+        if pending:
+            self._shutdown.retain(task)
+            logger.error(
+                "Conference channel %r abandoned the leave() of session %s in room %s after "
+                "%.1fs: it did not return and did not honour its cancellation. The session "
+                "stays on the books, and the backend stays open under its lease",
+                self.channel_id,
+                bot.id,
+                room_id,
+                _conference_activity.DRAIN_TIMEOUT_S,
+            )
+            return False
+        if task.cancelled():
+            return False
+        return bool(task.result())
 
     async def _await_teardowns(self) -> set[asyncio.Task[None]]:
         """Wait briefly for detaches and return those still using channel resources."""

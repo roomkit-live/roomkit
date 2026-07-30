@@ -684,10 +684,26 @@ class TestTheEventBridgeIsBounded:
 
         assert seen == [("room-1", "p-1", "excellent")]
 
-    async def test_lifecycle_events_past_the_bound_evict_the_oldest_counted(self) -> None:
+    async def test_a_lifecycle_overflow_ends_the_session_rather_than_losing_facts(
+        self,
+    ) -> None:
+        """An arrival or a track dropped silently is a roster that lies and a
+        track never transcribed. Past the bound the session ends through the
+        bot_session_ended contract — the channel re-joins, and the fresh
+        catch-up announces the current truth instead of a holed history.
+        """
         from roomkit.conference import _livekit_session as session_module
 
         session = _bridge_session()
+        reported: list[str] = []
+        original = session._emissions
+
+        async def _ended(bot: Any, reason: str) -> None:
+            reported.append(reason)
+
+        session._emissions = original.__class__(
+            **{**original.__dict__, "bot_session_ended": _ended}
+        )
 
         async def _sink(*args: Any) -> None:
             return None
@@ -695,8 +711,12 @@ class TestTheEventBridgeIsBounded:
         for _ in range(session_module.MAX_QUEUED_EVENTS + 50):
             session._put(_sink, "room-1")
 
-        assert session._events.qsize() == session_module.MAX_QUEUED_EVENTS
-        assert session._dropped_events == 50
+        assert session._events.qsize() <= session_module.MAX_QUEUED_EVENTS
+        assert session._left is True, "the overflow did not end the session"
+        assert session._ender is not None
+        await asyncio.wait_for(session._ender, timeout=5.0)
+        assert len(reported) == 1
+        assert "overflow" in reported[0]
 
 
 class TestASfuSideDisconnectIsReported:
@@ -759,3 +779,188 @@ class TestASfuSideDisconnectIsReported:
         await backend._bot_session_gone(bot, "connection lost")
 
         assert bot.id not in backend._sessions
+
+
+class TestAnOverflowEndIsConfirmedBeforeReported:
+    """Ending a session empties the registry and seats a replacement. For an
+    overflow the old connection is still live, so the report MUST wait for
+    the disconnect — reported early, the old bot sits in the meeting beside
+    the replacement the supervisor brings in.
+    """
+
+    def _session_with_room(self) -> tuple[Any, Any, list[str]]:
+        from types import SimpleNamespace
+
+        from roomkit.conference._livekit_session import ConferenceEmissions, LiveKitBotSession
+
+        class _FakeRoom:
+            local_participant = None
+
+            def __init__(self) -> None:
+                self.refuse = True
+                self.disconnects = 0
+
+            def on(self, *args: Any, **kwargs: Any) -> None:
+                return None
+
+            async def disconnect(self) -> None:
+                self.disconnects += 1
+                if self.refuse:
+                    raise RuntimeError("signalling wedged")
+
+        room = _FakeRoom()
+        reported: list[str] = []
+
+        async def _ended(bot: Any, reason: str) -> None:
+            reported.append(reason)
+
+        async def _sink(*args: Any) -> None:
+            return None
+
+        session = LiveKitBotSession(
+            rtc=SimpleNamespace(Room=lambda: room),
+            session=BotSession(id="lk-1", room_id="room-1", identity="roomkit"),
+            config=SimpleNamespace(publish_queue_ms=200),
+            emissions=ConferenceEmissions(
+                participant_joined=_sink,
+                participant_left=_sink,
+                track_published=_sink,
+                track_unpublished=_sink,
+                track_audio=_sink,
+                track_video=_sink,
+                active_speaker_changed=_sink,
+                connection_quality=_sink,
+                bot_session_ended=_ended,
+            ),
+        )
+        return session, room, reported
+
+    async def test_a_refused_disconnect_keeps_the_session_unreported(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from roomkit.conference import _livekit_session as session_module
+
+        monkeypatch.setattr(session_module, "OVERFLOW_DISCONNECT_DELAYS_S", (0.0,))
+        session, room, reported = self._session_with_room()
+
+        async def _sink(*args: Any) -> None:
+            return None
+
+        for _ in range(session_module.MAX_QUEUED_EVENTS + 1):
+            session._put(_sink, "room-1")
+        assert session._ender is not None
+        await asyncio.wait_for(session._ender, timeout=5.0)
+
+        # Every attempt failed: the end is NOT reported, the session is kept,
+        # and nothing will seat a replacement beside a live connection.
+        assert room.disconnects == 2
+        assert reported == []
+        assert session._disconnected is False
+
+        # leave() retries the disconnect — failure was not terminal — and a
+        # requested leave reports nothing: its caller owns the books.
+        room.refuse = False
+        await session.leave()
+        assert session._disconnected is True
+        assert reported == []
+
+    async def test_a_confirmed_disconnect_reports_with_the_loss_counted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from roomkit.conference import _livekit_session as session_module
+
+        monkeypatch.setattr(session_module, "OVERFLOW_DISCONNECT_DELAYS_S", (0.0,))
+        session, room, reported = self._session_with_room()
+        room.refuse = False
+
+        async def _sink(*args: Any) -> None:
+            return None
+
+        for _ in range(session_module.MAX_QUEUED_EVENTS + 1):
+            session._put(_sink, "room-1")
+        assert session._ender is not None
+        await asyncio.wait_for(session._ender, timeout=5.0)
+
+        assert len(reported) == 1
+        assert "overflow" in reported[0]
+        assert "discarded undelivered" in reported[0]
+        assert room.disconnects == 1
+
+
+class TestTheDisconnectIsSingleFlight:
+    async def test_a_leave_during_the_unhealthy_disconnect_shares_it_and_silences_the_report(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """One call on the wire, and the requested leave owns the books: the
+        unhealthy end that loses the race reports nothing.
+        """
+        from types import SimpleNamespace
+
+        from roomkit.conference import _livekit_session as session_module
+        from roomkit.conference._livekit_session import ConferenceEmissions, LiveKitBotSession
+
+        monkeypatch.setattr(session_module, "OVERFLOW_DISCONNECT_DELAYS_S", (0.0,))
+        gate = asyncio.Event()
+
+        class _FakeRoom:
+            local_participant = None
+
+            def __init__(self) -> None:
+                self.disconnects = 0
+
+            def on(self, *args: Any, **kwargs: Any) -> None:
+                return None
+
+            async def disconnect(self) -> None:
+                self.disconnects += 1
+                await gate.wait()
+
+        room = _FakeRoom()
+        reported: list[str] = []
+
+        async def _ended(bot: Any, reason: str) -> None:
+            reported.append(reason)
+
+        async def _sink(*args: Any) -> None:
+            return None
+
+        session = LiveKitBotSession(
+            rtc=SimpleNamespace(Room=lambda: room),
+            session=BotSession(id="lk-1", room_id="room-1", identity="roomkit"),
+            config=SimpleNamespace(publish_queue_ms=200),
+            emissions=ConferenceEmissions(
+                participant_joined=_sink,
+                participant_left=_sink,
+                track_published=_sink,
+                track_unpublished=_sink,
+                track_audio=_sink,
+                track_video=_sink,
+                active_speaker_changed=_sink,
+                connection_quality=_sink,
+                bot_session_ended=_ended,
+            ),
+        )
+
+        # Overflow: the unhealthy end starts its disconnect and suspends in it.
+        for _ in range(session_module.MAX_QUEUED_EVENTS + 1):
+            session._put(_sink, "room-1")
+        assert session._ender is not None
+        deadline = asyncio.get_running_loop().time() + 5.0
+        while room.disconnects == 0:
+            assert asyncio.get_running_loop().time() < deadline
+            await asyncio.sleep(0)
+
+        # A requested leave arrives while the call is on the wire. It joins
+        # the same call rather than issuing a second one.
+        leaving = asyncio.create_task(session.leave())
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert room.disconnects == 1, "two concurrent disconnects reached the SDK"
+
+        gate.set()
+        await asyncio.wait_for(leaving, timeout=5.0)
+        await asyncio.wait_for(session._ender, timeout=5.0)
+
+        assert room.disconnects == 1
+        assert session._disconnected is True
+        assert reported == [], "the unhealthy end reported over a requested leave"

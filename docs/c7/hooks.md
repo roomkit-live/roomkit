@@ -63,9 +63,25 @@ covered exceptions but allowed timeouts would leak through the timeout.
 The consequence for `BEFORE_BROADCAST` is worth being explicit about, since
 it is the trigger most often used for moderation: **a moderation hook that
 crashes lets the content through.** That is deliberate (RFC §9.3), not an
-oversight. If you need the opposite, watch the `hook_error` framework event —
-it fires for every such failure — or subclass `HookEngine` and extend its
-`FAIL_CLOSED_TRIGGERS`.
+oversight. Two levers exist if you need more, and their exact scope matters:
+
+- The `hook_error` framework event is emitted by the **inbound pipeline's**
+  `BEFORE_BROADCAST` pass only. Other sync-hook passes (`ON_TRANSCRIPTION`,
+  `BEFORE_TTS`, the re-entry path) and every async trigger report failures
+  in the log, not through `hook_error` — do not build monitoring for those
+  on this event.
+- To make additional triggers fail closed, extend the set the engine reads
+  through its instance — RoomKit builds its own `HookEngine`, so there is
+  no constructor to subclass into:
+
+  ```python
+  kit.hook_engine.FAIL_CLOSED_TRIGGERS = kit.hook_engine.FAIL_CLOSED_TRIGGERS | {
+      HookTrigger.BEFORE_BROADCAST,
+  }
+  ```
+
+  Weigh it first: fail-closed moderation means an outage in your hook is an
+  outage of the room.
 
 ## Hook Priority
 

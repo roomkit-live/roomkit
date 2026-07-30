@@ -361,6 +361,27 @@ class ConferenceChannel(
         room = self._attached_room(room_id)
         return room is not None and room.may_collect()
 
+    def _holds_conference(self, room_id: str) -> bool:
+        """Whether this channel still holds the room's one conference slot.
+
+        Read by ``attach_channel`` when another conference channel asks for
+        the room (RFC 12.10.4): the reservation outlives the binding, because
+        a detach removes the binding at its start and takes the bot out at
+        its end — possibly on a deferred teardown. The channel holds the room
+        for as long as it is attached, has a session in the meeting or on its
+        books, or has that teardown still running; a second conference
+        admitted inside that window is two bots in one meeting.
+        """
+        room = self._rooms.get(room_id)
+        if room is None:
+            return False
+        return (
+            room.attached
+            or room.bot is not None
+            or bool(room.leaving)
+            or (room.pending_teardown is not None and not room.pending_teardown.done())
+        )
+
     def _resolve_pipeline(self, config: AudioPipelineConfig | None) -> AudioPipelineConfig | None:
         """Settle what the lanes will run, or refuse a configuration that cannot work.
 

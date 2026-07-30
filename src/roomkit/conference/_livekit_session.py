@@ -42,12 +42,30 @@ from roomkit.voice.base import AudioChunk
 
 logger = logging.getLogger("roomkit.conference.livekit")
 
-# How many control-plane events the bridge holds before evicting the oldest.
-# State events (active speaker, connection quality) coalesce to one entry per
-# key and never accumulate; what this bounds is lifecycle events under a
-# consumer wedged in the framework's fanout — the pathological case, priced
-# as bounded memory plus a counted, reported loss instead of unbounded growth.
+
+def _consume_exception(task: asyncio.Task[Any]) -> None:
+    """Take a shared task's parting error so no waiter-less run warns."""
+    if not task.cancelled():
+        task.exception()
+
+
+# How many control-plane events the bridge holds before declaring the session
+# unhealthy. State events (active speaker, connection quality) coalesce to one
+# entry per key and never accumulate; lifecycle events carry facts the roster
+# and the lanes must not miss, so past this bound the session *ends* — through
+# the same ``bot_session_ended`` contract as a dropped connection — rather
+# than lose an arrival or a track silently. The channel's supervisor re-joins,
+# and the new session's catch-up rebuilds a consistent view of the *current*
+# state; what happened entirely inside the outage window is discarded with
+# the session, counted, and named in the report (RFC 12.10.3).
 MAX_QUEUED_EVENTS = 512
+
+# How long to wait before re-attempting the disconnect an unhealthy-session
+# teardown needs. Unlike the SFU-drop path, an overflow ends a session whose
+# connection is still live: the end must not be *reported* until the old bot
+# is genuinely out, or the re-join would seat a replacement beside it. The
+# first attempt is immediate; these pace the retries.
+OVERFLOW_DISCONNECT_DELAYS_S: tuple[float, ...] = (1.0, 2.0, 4.0)
 
 
 @dataclass(frozen=True)
@@ -89,11 +107,10 @@ class LiveKitBotSession:
         # fanout — identity resolution, hooks — so a participant generating
         # events faster than the fanout returns would otherwise grow this
         # without limit. State events never queue more than one entry each
-        # (see `_put_state`); lifecycle events past the bound evict the
-        # oldest, counted and said out loud.
+        # (see `_put_state`); a lifecycle event that would not fit ends the
+        # session rather than being lost (see `_overflow`).
         self._events: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
         self._pending_state: dict[Any, tuple[Callable[..., Awaitable[None]], tuple[Any, ...]]] = {}
-        self._dropped_events = 0
         self._consumer: asyncio.Task[None] | None = None
         self._announced: set[str] = set()
         self._tracks: dict[str, ConferenceTrack] = {}
@@ -110,6 +127,12 @@ class LiveKitBotSession:
         self._dominant_speaker: str | None = None
         self._left = False
         self._disconnected = False
+        # The one disconnect in flight, whoever asked for it — see
+        # `_disconnect_once` — and whether a *requested* leave() has asked:
+        # an unhealthy end that loses that race reports nothing, because the
+        # caller that requested the departure owns the books.
+        self._disconnecting: asyncio.Task[None] | None = None
+        self._leave_requested = False
         # The teardown task an SFU-side disconnect runs on; the callback that
         # learns of the loss is synchronous. Kept referenced until it ends.
         self._ender: asyncio.Task[None] | None = None
@@ -172,7 +195,13 @@ class LiveKitBotSession:
         failing to remove a session is failing to close). The local teardown
         that already ran stays torn down; a retry reattempts the disconnect
         alone, and only a disconnect that returned makes later calls no-ops.
+
+        ``_leave_requested`` is set before the first await: an unhealthy end
+        may be mid-disconnect on its own task, and the flag is how it learns —
+        after the one shared disconnect returns — that a *requested* leave now
+        owns the books and nothing spontaneous is to be reported.
         """
+        self._leave_requested = True
         if self._disconnected:
             return
         if not self._left:
@@ -185,8 +214,7 @@ class LiveKitBotSession:
                 )
             await self._stop_pumps()
             await self._voice.close()
-        await self._room.disconnect()
-        self._disconnected = True
+        await self._disconnect_once()
         if self._consumer is not None:
             self._consumer.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -194,16 +222,41 @@ class LiveKitBotSession:
             self._consumer = None
         self._drain_events()
 
-    def _drain_events(self) -> None:
-        """Drop whatever the consumer will never get to.
+    async def _disconnect_once(self) -> None:
+        """One disconnect on the wire at a time, shared by every path.
+
+        ``leave()`` and an unhealthy end can both need the disconnect, and
+        each may be suspended in it when the other arrives — two concurrent
+        calls into the SDK, and two owners for one outcome. Single-flight:
+        the first caller starts the call, later callers await the same one
+        (shielded, so a budget cancelling *a caller* does not cancel the call
+        the other still awaits). Success marks the session disconnected for
+        everyone; failure propagates to every waiter and is not terminal —
+        the next caller starts a fresh attempt.
+        """
+        if self._disconnected:
+            return
+        if self._disconnecting is None or self._disconnecting.done():
+            self._disconnecting = asyncio.create_task(self._room.disconnect())
+            self._disconnecting.add_done_callback(_consume_exception)
+        await asyncio.shield(self._disconnecting)
+        self._disconnected = True
+
+    def _drain_events(self) -> int:
+        """Drop whatever the consumer will never get to, and say how much.
 
         A departing session's remaining events describe a conference the
         framework has stopped listening to, and emitting them after the bot has
-        gone would announce arrivals into a room that is being torn down.
+        gone would announce arrivals into a room that is being torn down. The
+        count is returned because on the unhealthy path it is part of the
+        report: these were facts, and they are being discarded.
         """
+        undelivered = 0
         while not self._events.empty():
             self._events.get_nowait()
+            undelivered += 1
         self._pending_state.clear()
+        return undelivered
 
     async def _stop_pumps(self) -> None:
         pumps = list(self._pumps.values())
@@ -305,15 +358,14 @@ class LiveKitBotSession:
         """Queue a lifecycle event — an arrival, a departure, a track.
 
         These carry facts the roster and the lanes must not miss, so they are
-        never coalesced. What bounds them is eviction under pathology: a
-        conference producing lifecycle events faster than the framework's
-        fanout consumes them, for longer than the queue holds, loses its
-        oldest — counted, and reported in the log, because a roster that went
-        wrong silently is the one answer it must never give.
+        never coalesced and never silently dropped: a queue that can no
+        longer hold them ends the session instead (see :meth:`_overflow`).
         """
         if self._left:
             return
-        self._evict_if_full()
+        if self._events.qsize() >= MAX_QUEUED_EVENTS:
+            self._overflow()
+            return
         self._events.put_nowait(("event", (emit, args)))
 
     def _put_state(self, key: Any, emit: Callable[..., Awaitable[None]], *args: Any) -> None:
@@ -331,26 +383,42 @@ class LiveKitBotSession:
         self._pending_state[key] = (emit, args)
         if already_queued:
             return
-        self._evict_if_full()
+        if self._events.qsize() >= MAX_QUEUED_EVENTS:
+            self._overflow()
+            return
         self._events.put_nowait(("state", key))
 
-    def _evict_if_full(self) -> None:
-        """Make room for one entry, dropping the oldest when none is left."""
-        if self._events.qsize() < MAX_QUEUED_EVENTS:
-            return
-        with contextlib.suppress(asyncio.QueueEmpty):
-            kind, payload = self._events.get_nowait()
-            if kind == "state":
-                self._pending_state.pop(payload, None)
-            self._dropped_events += 1
-            if self._dropped_events == 1 or self._dropped_events % 100 == 0:
-                logger.error(
-                    "The LiveKit event queue for room %s overflowed: %d event(s) dropped so "
-                    "far. The framework's fanout is not keeping up with the conference, and "
-                    "the roster may be missing what the dropped events carried",
-                    self.room_id,
-                    self._dropped_events,
-                )
+    def _overflow(self) -> None:
+        """The consumer has fallen unrecoverably behind: end the session.
+
+        Evicting a lifecycle event would be worse than the memory it saves —
+        an arrival or a publication lost here is a roster that lies and a
+        track never transcribed, with nothing anywhere to say so, against the
+        lifecycle MUSTs of RFC 12.10.4. A session whose view of the
+        conference can no longer be trusted has one honest exit, and the
+        contract already names it: the session ends, the loss is reported
+        through ``bot_session_ended``, and the channel's re-join builds a
+        fresh session whose catch-up announces the *current* truth.
+        """
+        logger.error(
+            "The LiveKit event bridge for room %s overflowed at %d queued event(s): the "
+            "framework's fanout is not keeping up with the conference, and going on would "
+            "mean losing lifecycle facts silently. The bot session is being ended and "
+            "re-joined for a consistent view",
+            self.room_id,
+            MAX_QUEUED_EVENTS,
+        )
+        # Admission closes, but the session is NOT marked disconnected: unlike
+        # the SFU-drop path, this connection is still live, and the end must
+        # not be reported — nor the registry emptied, nor a replacement
+        # seated — until the disconnect has actually happened.
+        self._left = True
+        self._ender = asyncio.create_task(
+            self._end_unhealthy(
+                f"event queue overflow at {MAX_QUEUED_EVENTS} events; the session's view "
+                "of the conference can no longer be trusted"
+            )
+        )
 
     async def _consume(self) -> None:
         """Await the queued emissions, in order, until cancelled.
@@ -575,15 +643,83 @@ class LiveKitBotSession:
         self._ender = asyncio.create_task(self._ended_by_sfu(str(reason)))
 
     async def _ended_by_sfu(self, reason: str) -> None:
-        """Tear the session down after an end nobody asked for, and say so."""
+        """Tear the session down after the SFU dropped it, and say so.
+
+        The connection is already gone, so the disconnect attempt is a
+        harmless best-effort no-op; what matters is the report. The overflow
+        path is deliberately not this one — see :meth:`_end_unhealthy` — its
+        connection is still live and the report has to wait for the
+        disconnect.
+        """
         await self._stop_pumps()
         await self._voice.close()
+        with contextlib.suppress(Exception):
+            await self._room.disconnect()
+        await self._finish_end(reason)
+
+    async def _end_unhealthy(self, reason: str) -> None:
+        """End a live session whose view can no longer be trusted.
+
+        The report comes *after* the disconnect, never before: reporting the
+        session ended empties the backend's registry and seats a replacement,
+        and doing that while the old connection is still up is two bots in
+        one meeting. The disconnect is retried on a short backoff; a session
+        whose disconnect will not go through is *kept* — on the backend's
+        registry, on the channel's books, refusing a replacement — and said
+        out loud. A later ``leave()`` (a detach, the close) retries the
+        disconnect: failure is not terminal, exactly as in :meth:`leave`.
+        """
+        await self._stop_pumps()
+        await self._voice.close()
+        for attempt, delay in enumerate((0.0, *OVERFLOW_DISCONNECT_DELAYS_S)):
+            if self._leave_requested or self._disconnected:
+                # A requested leave() owns the books from the moment it asks;
+                # nothing spontaneous is reported over it.
+                return
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                await self._disconnect_once()
+            except Exception:
+                logger.warning(
+                    "Disconnecting the overflowed conference bot in room %s failed "
+                    "(attempt %d); the session is not reported ended while the bot may "
+                    "still be connected",
+                    self.room_id,
+                    attempt + 1,
+                    exc_info=True,
+                )
+                continue
+            # Re-read the owner *after* the shared disconnect: a leave() that
+            # arrived while the call was on the wire shared its outcome, and
+            # the outcome is the leave's to book, not this path's to report.
+            if self._leave_requested:
+                return
+            await self._finish_end(reason)
+            return
+        logger.error(
+            "The overflowed conference bot in room %s could not be disconnected after "
+            "%d attempt(s). The session is being kept — on the backend's registry and "
+            "the channel's books, holding the room's conference slot — rather than "
+            "reported ended beside a live connection. A detach or the channel close "
+            "retries the disconnect",
+            self.room_id,
+            len(OVERFLOW_DISCONNECT_DELAYS_S) + 1,
+        )
+
+    async def _finish_end(self, reason: str) -> None:
+        """Stop the bridge and report the session's end, loss counted."""
         if self._consumer is not None:
             self._consumer.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._consumer
             self._consumer = None
-        self._drain_events()
+        undelivered = self._drain_events()
+        if undelivered:
+            reason = (
+                f"{reason}; {undelivered} queued event(s) were discarded undelivered — "
+                "what happened while the consumer was stalled is not recoverable"
+            )
         await self._emissions.bot_session_ended(self.session, reason)
 
     # -------------------------------------------------------------------------
