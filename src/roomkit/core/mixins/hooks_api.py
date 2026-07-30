@@ -213,14 +213,27 @@ class HooksApiMixin(HelpersMixin):
         - Delivery status → process_delivery_status() with ON_DELIVERY_STATUS hooks
         - Unknown webhooks → silently ignored (acknowledged)
 
+        It does NOT authenticate the request. Verifying that the payload came
+        from the provider is the endpoint's job and has to happen before this
+        is called — nothing downstream can tell a forged webhook from a real
+        one, and a webhook URL is public by construction (RFC §17.1).
+
         Args:
             meta: WebhookMeta from extract_sms_meta().
             channel_id: The channel ID for inbound messages.
 
         Example:
             @app.post("/webhooks/sms/{provider}/inbound")
-            async def sms_webhook(provider: str, payload: dict):
-                meta = extract_sms_meta(provider, payload)
+            async def sms_webhook(provider: str, request: Request):
+                raw = await request.body()
+                if not sms_provider.verify_signature(
+                    raw,
+                    request.headers.get("X-Twilio-Signature", ""),
+                    url=str(request.url),
+                ):
+                    raise HTTPException(status_code=403)
+
+                meta = extract_sms_meta(provider, await request.json())
                 await kit.process_webhook(meta, channel_id=f"sms-{provider}")
                 return {"ok": True}
         """

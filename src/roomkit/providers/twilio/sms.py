@@ -141,6 +141,10 @@ def parse_twilio_webhook(
 
     Note: Twilio sends webhooks as form-encoded data. Convert to dict first:
         payload = dict(await request.form())
+
+    Verify ``X-Twilio-Signature`` with :meth:`TwilioSMSProvider.verify_signature`
+    before calling this. The endpoint is public; the signature is what makes
+    the sender's identity a fact rather than a claim.
     """
     from roomkit.providers.twilio.webhook import parse_twilio_payload
 

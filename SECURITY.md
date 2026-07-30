@@ -16,6 +16,40 @@ We will acknowledge your report within 48 hours and work to address the issue pr
 
 **Please do not open public GitHub issues for security vulnerabilities.**
 
+## Webhook endpoints
+
+A webhook URL is public by construction: the provider has to reach it, so
+anyone else can too. Nothing downstream of your handler can tell a forged
+payload from a real one — the parsers produce a perfectly well-formed
+`InboundMessage` either way, and `kit.process_webhook()` does not
+authenticate. Verifying the signature is the endpoint's job, and it has to
+happen before anything else (RFC §17.1).
+
+RoomKit ships the check for the providers that support one. All of them
+compare in constant time; Telnyx additionally rejects replays outside a
+five-minute window.
+
+| Provider | Method | Header |
+|---|---|---|
+| Twilio SMS / RCS | `verify_signature(payload, sig, url=...)` | `X-Twilio-Signature` |
+| Telnyx SMS / RCS | `verify_signature(payload, sig, timestamp)` | `telnyx-signature-ed25519`, `telnyx-timestamp` |
+| Sinch SMS | `verify_signature(payload, sig)` | `X-Sinch-Signature` |
+| Messenger | `verify_signature(payload, sig)` | `X-Hub-Signature-256` |
+| Telegram | `verify_signature(payload, secret_token)` | `X-Telegram-Bot-Api-Secret-Token` |
+| Teams | `process_inbound(payload, auth_header, on_turn)` | `Authorization` (JWT) |
+
+Two details that are easy to get wrong. Twilio signs the **URL** along with
+the parameters, so `url` must be the public URL your provider called, not the
+one your application sees behind a proxy — pass the wrong one and every
+request fails to verify. And the signature is computed over the **raw body**:
+read the bytes before any framework parses and re-serialises them.
+
+Providers with no `verify_signature` — WhatsApp, Discord, ElasticEmail,
+SendGrid, VoiceMeUp, and the generic HTTP provider, which signs its *outbound*
+requests but verifies nothing inbound — leave authentication entirely to your
+endpoint. Calling the inherited method on one raises `NotImplementedError`
+rather than returning `True`, so it fails closed if you try.
+
 ## What `participant_id` is, and is not
 
 Without an `identity_resolver`, a channel stamps the sender id it was given

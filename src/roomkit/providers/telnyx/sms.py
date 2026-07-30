@@ -200,6 +200,10 @@ def parse_telnyx_webhook(
                 elif meta.is_status:
                     await kit.process_delivery_status(meta.to_status())
                 return {"ok": True}
+
+    Verify ``telnyx-signature-ed25519`` / ``telnyx-timestamp`` with
+    :meth:`TelnyxSMSProvider.verify_signature` before calling this — it also
+    rejects replays outside a five-minute window, which the parser cannot.
     """
     if strict and not _is_telnyx_inbound(payload):
         event_type = payload.get("data", {}).get("event_type", "unknown")

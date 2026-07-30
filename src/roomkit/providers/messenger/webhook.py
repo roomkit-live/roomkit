@@ -18,6 +18,9 @@ def parse_messenger_webhook(
     contains a ``messaging`` list with individual messages.  Only messages that
     carry a ``message.text`` field are returned; delivery/read receipts and
     postbacks are silently skipped.
+
+    Verify ``X-Hub-Signature-256`` with
+    :meth:`FacebookMessengerProvider.verify_signature` before calling this.
     """
     messages: list[InboundMessage] = []
     for entry in payload.get("entry", []):

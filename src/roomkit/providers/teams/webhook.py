@@ -75,6 +75,10 @@ def parse_teams_webhook(
     Bot Framework sends one Activity per HTTP POST.  Only ``type="message"``
     activities with non-empty text are converted.  ``<at>BotName</at>``
     mention tags are stripped from group chat messages.
+
+    Validate the ``Authorization`` JWT — via
+    :meth:`BotFrameworkTeamsProvider.process_inbound`, which runs the Bot
+    Framework's own check — before calling this.
     """
     if payload.get("type") != "message":
         return []

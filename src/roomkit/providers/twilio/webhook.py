@@ -23,6 +23,10 @@ def parse_twilio_payload(
         payload: Form-encoded webhook body converted to dict.
         channel_id: RoomKit channel ID.
         extra_metadata: Additional metadata fields specific to the channel type.
+
+    Verify ``X-Twilio-Signature`` with ``TwilioSMSProvider.verify_signature`` /
+    ``TwilioRCSProvider.verify_signature`` before calling this — parsing a
+    forged payload produces a perfectly well-formed impersonation.
     """
     body = payload.get("Body", "")
 
