@@ -21,8 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     room lifecycle — and `MockConferenceBackend` implements the whole of it
     for tests, with fault injection to make the failure paths reachable:
     `fail(method, ...)`, `delay(operation, ...)`, per-track audio formats
-    (`MockTrackFormat`), and the bot's output grouped by utterance. A real
-    backend (LiveKit) is tracked separately.
+    (`MockTrackFormat`), and the bot's output grouped by utterance.
+  - **A real SFU.** `LiveKitConferenceBackend` (`pip install roomkit[livekit]`)
+    implements the whole of that ABC against LiveKit, media plane only —
+    `livekit-agents` stays out, because RoomKit already owns VAD, recognition,
+    synthesis and interruption, and a transport that segmented speech would
+    break the separation the ABC exists to draw. It joins with
+    auto-subscription off so the framework's subscription set stays the
+    authoritative one, announces the participants that were already there when
+    the bot arrived, and hands the lane 48 kHz frames that *declare* their
+    format rather than resampling them. `capabilities` reports what is wired
+    rather than what LiveKit sells: screen share, active speaker and connection
+    quality always; remote unmute and SIP dial-in only where the deployment
+    says the server was configured for them; not E2EE, whose key exchange
+    `ConferenceBackend` has no contract for, and not bot video, which has no
+    source until an avatar gives it one. Identity is founded only on
+    attributes LiveKit itself asserts — the `sip.` attributes of a participant
+    the *server* marked as a dial-in — so a client writing its own
+    `sip.phoneNumber` cannot reach someone else's Identity.
   - **Transcription.** Each subscribed AUDIO track runs through the shared
     `AudioPipeline` in a lane of its own, under the track's stream identity:
     one utterance becomes one transcription event attributed to its speaker,

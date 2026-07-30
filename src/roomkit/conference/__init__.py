@@ -19,6 +19,7 @@ from roomkit.conference.base import (
     TrackCallback,
     TrackVideoCallback,
 )
+from roomkit.conference.livekit import LiveKitConferenceBackend, LiveKitConfig
 from roomkit.conference.mock import (
     INJECTABLE_EMISSIONS,
     INJECTABLE_METHODS,
@@ -56,6 +57,8 @@ __all__ = [
     "INJECTABLE_EMISSIONS",
     "INJECTABLE_METHODS",
     "ErrorSpec",
+    "LiveKitConferenceBackend",
+    "LiveKitConfig",
     "MockConferenceBackend",
     "MockConferenceCall",
     "MockDelivery",

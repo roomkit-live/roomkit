@@ -87,6 +87,12 @@ discord = ["discord.py>=2.4"]
 # aggregate `providers`/`dev`/`all` groups so RoomKit's own CI never has to
 # build it. Install explicitly with `pip install roomkit[buzz]`.
 buzz = ["buzzkit>=0.1.4", "soxr>=0.4"]
+# LiveKit SFU (ConferenceBackend). `livekit` is the realtime SDK — a compiled
+# wheel carrying LiveKit's Rust client — and `livekit-api` the server API. Kept
+# OUT of the aggregate `providers`/`dev`/`all` groups so RoomKit's own CI does
+# not pull it: the translation and conformance tests are written to run without
+# it. Install explicitly with `pip install roomkit[livekit]`.
+livekit = ["livekit>=1.1", "livekit-api>=1.2"]
 whatsapp-personal = ["neonize>=0.3.14"]
 postgres = ["asyncpg>=0.29"]
 redis = ["redis>=5.0"]
