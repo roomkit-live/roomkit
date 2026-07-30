@@ -98,6 +98,7 @@ src/roomkit/
 │   ├── mistral/             # MistralAIProvider, MistralConfig
 │   ├── vllm/                # VLLMConfig, create_vllm_provider (local AI)
 │   ├── openrouter/          # OpenRouterAIProvider, OpenRouterConfig (300+ models)
+│   ├── xai/                 # XAIAIProvider, XAIConfig (Grok) + XAIRealtimeProvider (voice)
 
 │   ├── sms/                 # SMSProvider ABC, MockSMSProvider, phone utils
 │   ├── twilio/              # TwilioSMSProvider, TwilioRCSProvider
