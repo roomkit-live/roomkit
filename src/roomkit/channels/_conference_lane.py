@@ -30,6 +30,7 @@ from roomkit.channels._conference_backlog import TrackBacklog
 from roomkit.voice.pipeline.vad.base import VADEventType
 
 if TYPE_CHECKING:
+    from roomkit.channels._conference_operations import OperationLease
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.pipeline.engine import AudioPipeline
 
@@ -109,11 +110,18 @@ class ConferenceLane:
         on_speech: SpeechCallback,
         on_utterance: UtteranceCallback,
         max_queued_frames: int = 100,
+        lease: OperationLease | None = None,
     ) -> None:
         self.track_id = track_id
         self.room_id = room_id
         self.participant_id = participant_id
 
+        # The lane's hold on the shared pipeline and recognizer, released the
+        # moment no task of this lane's can still be inside either — which for
+        # an abandoned task is when it truly ends, not when it was given up
+        # on. What keeps the channel from closing those providers under a
+        # runaway recognizer call is this lease and nothing else.
+        self._lease = lease
         self._pipeline = pipeline
         self._on_speech = on_speech
         self._on_utterance = on_utterance
@@ -122,6 +130,7 @@ class ConferenceLane:
         )
         self._task: asyncio.Task[None] | None = None
         self._closed = False
+        self._released = asyncio.Event()
         self._speaking = False
         self._speech_ms = 0.0
 
@@ -134,6 +143,11 @@ class ConferenceLane:
     def dropped_frames(self) -> int:
         """Frames this lane never processed, because it was behind."""
         return self._backlog.dropped
+
+    @property
+    def released(self) -> bool:
+        """Whether no task can still be using this lane's provider state."""
+        return self._released.is_set()
 
     def start(self) -> None:
         """Begin draining the queue."""
@@ -161,7 +175,7 @@ class ConferenceLane:
         """Wait until every queued frame has been processed."""
         await self._backlog.join()
 
-    async def aclose(self) -> None:
+    async def aclose(self) -> bool:
         """Stop the lane and release the stage state its stream held.
 
         Stage state is keyed by stream and some of it is native memory, so a
@@ -186,17 +200,24 @@ class ConferenceLane:
         reported; the stream's stage state is *not* released underneath it —
         some of that state is native memory the task may still be touching —
         but the moment the task does end, it is.
+
+        Returns:
+            ``True`` when the task outlived its cancellation grace. Such a
+            lane keeps its lease on the shared providers until the task truly
+            ends, which is what holds their close off.
         """
         self._closed = True
+        if self._released.is_set():
+            return False
         task, self._task = self._task, None
         if task is None or task is asyncio.current_task():
-            self._pipeline.release_stream(self.track_id)
-            return
+            self._release_stream()
+            return False
         task.cancel()
         _, pending = await asyncio.wait({task}, timeout=_conference_activity.CANCEL_GRACE_S)
         if not pending:
-            self._pipeline.release_stream(self.track_id)
-            return
+            self._release_stream()
+            return False
         logger.error(
             "Conference lane %s did not stop within %.1fs of being cancelled — a provider "
             "inside it is not honouring cancellation. The lane is abandoned; its stage "
@@ -207,6 +228,16 @@ class ConferenceLane:
         _ABANDONED_TASKS.add(task)
         task.add_done_callback(_ABANDONED_TASKS.discard)
         task.add_done_callback(self._release_when_the_task_ends)
+        return True
+
+    def _release_stream(self) -> None:
+        """Release stage state once and open the provider-safety barrier."""
+        if self._released.is_set():
+            return
+        try:
+            self._pipeline.release_stream(self.track_id)
+        finally:
+            self._open_barrier()
 
     def _release_when_the_task_ends(self, task: asyncio.Task[None]) -> None:
         """Free the stream's stage state once its runaway task is truly over.
@@ -220,7 +251,16 @@ class ConferenceLane:
         with contextlib.suppress(BaseException):
             if not task.cancelled():
                 task.exception()
-            self._pipeline.release_stream(self.track_id)
+            self._release_stream()
+        # A failing reset is already best-effort at this boundary. The lane
+        # task has nevertheless ended, so no provider call is still in flight.
+        self._open_barrier()
+
+    def _open_barrier(self) -> None:
+        """Say that nothing of this lane's is inside the shared providers."""
+        self._released.set()
+        if self._lease is not None:
+            self._lease.release()
 
     async def _run(self) -> None:
         while not self._closed:

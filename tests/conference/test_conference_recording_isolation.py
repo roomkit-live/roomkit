@@ -22,8 +22,11 @@ import struct
 import threading
 from typing import TYPE_CHECKING
 
+import pytest
+
 from roomkit.channels import _conference_activity as activity_module
 from roomkit.channels._conference_recording_writer import TrackWriter
+from roomkit.core.exceptions import ConferenceCloseError
 from roomkit.models.enums import HookExecution, HookTrigger
 from roomkit.recorder.base import MediaRecordingConfig, MediaRecordingHandle, RecordingTrack
 from roomkit.recorder.mock import MockMediaRecorder
@@ -41,8 +44,6 @@ from tests.conference.test_conference_recording import ROOM, _recording_conferen
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-    import pytest
 
 SLOW = 0.25
 """Long enough that a delivery held behind a write is unmistakable."""
@@ -647,11 +648,17 @@ class TestTheRecorderIsNotFreedWhileItIsWorking:
         await drain_recordings(channel)
 
         try:
-            with caplog.at_level(logging.ERROR, logger="roomkit.channels.conference"):
+            with (
+                caplog.at_level(logging.ERROR, logger="roomkit.channels.conference"),
+                pytest.raises(ConferenceCloseError) as failure,
+            ):
                 await asyncio.wait_for(channel.close(), timeout=5.0)
 
             assert recorder.closed is False, "the recorder was freed while a call was in it"
             assert "not being released" in caplog.text
+            # And not in the log alone: a retained recorder is a close that
+            # failed, said in the close's own result (RFC 12.10.4).
+            assert "recorder" in str(failure.value)
         finally:
             gate.set()
 
@@ -733,9 +740,15 @@ class TestClosingTwice:
         await drain_recordings(channel)
 
         try:
-            await asyncio.wait_for(channel.close(), timeout=5.0)
-            await asyncio.wait_for(channel.close(), timeout=5.0)
+            with pytest.raises(ConferenceCloseError) as first:
+                await asyncio.wait_for(channel.close(), timeout=5.0)
+            # The second close joins the first's terminal result — the one
+            # shutdown already decided not to free the recorder, and a replay
+            # must not be the call that finds an emptied ledger and frees it.
+            with pytest.raises(ConferenceCloseError) as second:
+                await asyncio.wait_for(channel.close(), timeout=5.0)
 
+            assert second.value is first.value
             assert recorder.closed is False, "the second close freed it anyway"
         finally:
             gate.set()
@@ -778,9 +791,13 @@ class TestTheChannelCloseIsBoundedToo:
         await drain_recordings(channel)
 
         try:
-            await asyncio.wait_for(channel.close(), timeout=3.0)
+            with pytest.raises(ConferenceCloseError) as failure:
+                await asyncio.wait_for(channel.close(), timeout=3.0)
 
             assert recorder.releasing.is_set(), "the recorder was never asked to let go"
+            # A close that gave up on the recorder's own close is not a
+            # success, and says so rather than only logging it.
+            assert "recorder.close() did not return" in str(failure.value)
         finally:
             gate.set()
 
@@ -882,7 +899,12 @@ class TestTwoClosesAtOnce:
             )
 
             gate.set()
-            await asyncio.wait_for(asyncio.gather(first, second), timeout=10.0)
+            results = await asyncio.wait_for(
+                asyncio.gather(first, second, return_exceptions=True), timeout=10.0
+            )
+            # The wedged finalization made the one shutdown a failed close,
+            # and both callers were handed that same terminal result.
+            assert all(isinstance(r, ConferenceCloseError) for r in results)
         finally:
             gate.set()
 
@@ -928,7 +950,11 @@ class TestTwoClosesAtOnce:
             )
 
             gate.set()
-            await asyncio.wait_for(asyncio.gather(ending, closing), timeout=10.0)
+            results = await asyncio.wait_for(
+                asyncio.gather(ending, closing, return_exceptions=True), timeout=10.0
+            )
+            assert not isinstance(results[0], BaseException)
+            assert isinstance(results[1], ConferenceCloseError)
         finally:
             gate.set()
 
@@ -953,6 +979,8 @@ class TestTwoClosesAtOnce:
             first.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await first
+            # The cancelled caller abandoned only its wait — the one shutdown
+            # is still running, and the second close joins it.
             second = asyncio.create_task(channel.close())
             await _until(lambda: second.done() or recorder.closed, timeout=5.0)
 
@@ -961,7 +989,8 @@ class TestTwoClosesAtOnce:
             )
 
             gate.set()
-            await asyncio.wait_for(second, timeout=10.0)
+            with pytest.raises(ConferenceCloseError):
+                await asyncio.wait_for(second, timeout=10.0)
         finally:
             gate.set()
 

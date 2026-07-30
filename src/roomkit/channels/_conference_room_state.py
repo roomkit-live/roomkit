@@ -47,6 +47,17 @@ class LeavingSession:
     bot: BotSession
     error: str | None = None
     """What ``leave()`` raised, when it did. ``None`` while it is still ahead."""
+    task: asyncio.Task[bool] | None = None
+    """The one ``leave()`` in flight for this session, when one is.
+
+    Departures are exact-once (RFC 12.10.4): a path that wants this session
+    out while the task runs joins it instead of asking the backend a second
+    time — two concurrent ``leave()`` calls for one session ask the SFU to
+    remove a participant twice, and whichever answer arrives second is about
+    a session that no longer exists. A *finished* task is not a lock: a
+    departure that failed leaves ``error`` behind, and the close's retry is a
+    new departure.
+    """
     owed_an_end: bool = False
     """Whether a detach still has a ``conference_ended`` to announce for it.
 
@@ -203,6 +214,16 @@ class ConferenceRoomState:
         """Record that a detach is taking one session out, and it is not out yet."""
         self.leaving[bot.id] = LeavingSession(bot=bot, owed_an_end=True)
 
+    def start_closing(self, bot: BotSession) -> None:
+        """Move an active bot onto the close's durable departure ledger.
+
+        Closing inventories every room before its first external await. That
+        way a budget expiring in one room cannot make a later room's bot
+        disappear when ``bot`` is cleared. Unlike a detach, a channel close
+        never announced that it owed this session a ``conference_ended``.
+        """
+        self.leaving.setdefault(bot.id, LeavingSession(bot=bot))
+
     def record_leave_failure(self, bot: BotSession, reason: str) -> None:
         """Record that ``leave()`` did not take a session out of the conference.
 
@@ -230,6 +251,24 @@ class ConferenceRoomState:
         would be two ``leave()`` calls for one session.
         """
         return [entry for entry in self.leaving.values() if entry.error is not None]
+
+    def closing_sessions(self) -> list[LeavingSession]:
+        """Sessions the channel close owns or must retry.
+
+        An entry with a departure still running belongs to whichever path
+        started it — retrying would be a second ``leave()`` for one session,
+        and announcing its end is that path's own obligation. An entry with
+        ``owed_an_end`` and no error belongs to a detach whose teardown is
+        still running, for the same reason. Entries created by
+        :meth:`start_closing` owe no announcement; failed detach sessions
+        carry an error and are retried at the channel's last opportunity.
+        """
+        return [
+            entry
+            for entry in self.leaving.values()
+            if (entry.task is None or entry.task.done())
+            and (not entry.owed_an_end or entry.error is not None)
+        ]
 
     def leave_failures(self) -> dict[str, str]:
         """Why each session that could not be removed is still in the conference."""

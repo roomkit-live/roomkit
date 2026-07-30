@@ -16,13 +16,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
 
-from roomkit import MockConferenceBackend, RoomKit
+from roomkit import ConferenceRecordingConfig, MockConferenceBackend, RoomKit
 from roomkit.channels import _conference_activity as activity_module
 from roomkit.channels.conference import ConferenceChannel
 from roomkit.conference.models import ConferenceInterruptionConfig
@@ -45,9 +46,11 @@ from roomkit.models.enums import (
 from roomkit.models.hook import HookResult
 from roomkit.models.identity import IdentityResult
 from roomkit.models.participant import Participant
+from roomkit.recorder.mock import MockMediaRecorder
 from roomkit.store.memory import InMemoryStore
 from roomkit.voice.base import AudioChunk
 from roomkit.voice.interruption import InterruptionStrategy
+from roomkit.voice.pipeline import AudioPipelineConfig, MockDenoiserProvider, MockVADProvider
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.base import TTSProvider
 from tests.conference.lane_audio import say, speech_frame
@@ -1773,12 +1776,12 @@ class TestCloseDuringJoin:
 
 class TestCloseOutlastsItsBudget:
     """Every wait a close makes is bounded, because the work it waits for ends
-    in code the channel does not own. Which means the budget can pass with a
-    join still in flight — and the close went on to shut the backend, leaving
-    that join to call ``leave()`` on it.
+    in code the channel does not own. A join may therefore outlive the caller,
+    but the backend must outlive the join: closing it first strands any session
+    the join creates after the budget.
     """
 
-    async def test_no_leave_reaches_a_closed_backend(
+    async def test_a_late_join_leaves_before_the_backend_closes(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", 0.05)
@@ -1788,17 +1791,22 @@ class TestCloseOutlastsItsBudget:
 
         joining = asyncio.create_task(backend.simulate_participant_joined(ROOM, "p-alice"))
         await asyncio.wait_for(backend.joining.wait(), timeout=5.0)
-        await channel.close()
-        closed_at = len(backend.calls)
+        with pytest.raises(ConferenceCloseError) as failure:
+            await channel.close()
 
+        assert ROOM in str(failure.value)
+        assert channel._backend_closed is False
         backend.gate.set()
         await asyncio.gather(joining, return_exceptions=True)
+        await _until(lambda: any(call.method == "close" for call in backend.calls))
 
-        # `join_as_bot` is the call that was already in flight arriving at its
-        # own end, not a new one. What must not be there is what the channel
-        # would have gone on to do with the session it came back with.
-        after = [call.method for call in backend.calls[closed_at:] if call.method != "join_as_bot"]
-        assert after == [], f"the backend was called after it was closed: {after}"
+        assert backend.bots == []
+        media_calls = [
+            call.method
+            for call in backend.calls
+            if call.method in {"join_as_bot", "leave", "close"}
+        ]
+        assert media_calls[-3:] == ["join_as_bot", "leave", "close"]
 
     async def test_every_room_settles_on_one_budget(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The budget was spent per room, so a channel serving twenty
@@ -2582,8 +2590,11 @@ class TestACallbackResumingAfterTheShutdown:
         )
         await asyncio.wait_for(backend.joining.wait(), timeout=5.0)
         # Nothing holds a lease — the join is suspended in backend code — so
-        # the close completes and releases both resources.
-        await asyncio.wait_for(kit.close(), timeout=5.0)
+        # the close releases both resources, but it cannot claim the channel
+        # itself closed while that join still owns its backend.
+        with pytest.raises(ExceptionGroup) as failure:
+            await asyncio.wait_for(kit.close(), timeout=5.0)
+        assert isinstance(failure.value.exceptions[0], ConferenceCloseError)
         assert store.closed is True
         assert locks.closed is True
 
@@ -2676,6 +2687,38 @@ class TestTheMediaPlaneIsBoundedToo:
         assert isinstance(failure.value.exceptions[0], ConferenceCloseError)
         assert backend_a.bots != [], "the bot did leave; the raise was for nothing"
 
+    async def test_every_room_is_on_the_books_before_the_first_leave_await(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """One stuck room must not keep the later room from being attempted or
+        make its bot disappear from the channel's books."""
+        monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", 0.05)
+        monkeypatch.setattr(activity_module, "CANCEL_GRACE_S", 0.05)
+        backend = _SlowLeaveBackend(hold_first_only=True)
+        _, channel, _ = await _kit(backend, rooms=(ROOM, OTHER))
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        await backend.simulate_participant_joined(OTHER, "p-bob")
+        bots = {bot.room_id: bot.id for bot in backend.bots}
+
+        with pytest.raises(ConferenceCloseError) as failure:
+            await channel.close()
+
+        assert bots[ROOM] in str(failure.value)
+        assert bots[OTHER] not in str(failure.value)
+        assert [bot.id for bot in backend.bots] == [bots[ROOM]]
+        assert channel.info()["rooms"][ROOM]["leaving_session_ids"] == [bots[ROOM]]
+        assert OTHER not in channel.info()["rooms"]
+
+    async def test_a_backend_close_error_is_not_reported_as_success(self) -> None:
+        _, channel, backend = await _kit()
+        backend.fail("close", RuntimeError("control plane refused to close"))
+
+        with pytest.raises(ConferenceCloseError) as failure:
+            await channel.close()
+
+        assert "closing the conference backend" in str(failure.value)
+        assert "control plane refused to close" in str(failure.value)
+
     async def test_a_lane_that_shrugs_off_cancellation_does_not_hold_the_close(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
@@ -2708,13 +2751,360 @@ class TestTheMediaPlaneIsBoundedToo:
         runaway = lane._task
         assert runaway is not None
 
-        with caplog.at_level(logging.ERROR):
-            await asyncio.wait_for(kit.close(), timeout=5.0)
+        try:
+            with (
+                caplog.at_level(logging.ERROR),
+                pytest.raises(ExceptionGroup) as failure,
+            ):
+                await asyncio.wait_for(kit.close(), timeout=5.0)
 
-        assert "did not stop within" in caplog.text
-        # The provider finally gives in, so the loop can close cleanly; this
-        # is also the moment the abandoned lane's deferred release runs.
-        surrender.set()
-        runaway.cancel()
+            assert "did not stop within" in caplog.text
+            assert isinstance(failure.value.exceptions[0], ConferenceCloseError)
+        finally:
+            # The provider finally gives in, so the loop can close cleanly;
+            # this is also when the deferred stream release runs.
+            surrender.set()
+            runaway.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.wait_for(runaway, timeout=5.0)
+
+    async def test_stubborn_lanes_share_one_grace_and_keep_their_providers_alive(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", 0.05)
+        monkeypatch.setattr(activity_module, "CANCEL_GRACE_S", 0.1)
+
+        class _ClosingSTT(MockSTTProvider):
+            def __init__(self) -> None:
+                super().__init__()
+                self.closed = False
+
+            async def close(self) -> None:
+                self.closed = True
+
+        stt = _ClosingSTT()
+        vad = MockVADProvider()
+        _, channel, backend = await _kit(
+            stt=stt,
+            pipeline=AudioPipelineConfig(vad=vad),
+        )
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        tracks = [await backend.simulate_track_published(ROOM, "p-alice") for _ in range(4)]
+        stuck = [asyncio.Event() for _ in tracks]
+        surrender = asyncio.Event()
+        runaways: list[asyncio.Task[None]] = []
+
+        for index, track in enumerate(tracks):
+            lane = channel._lanes[track.id]
+
+            async def stubborn(frame: object, entered: asyncio.Event = stuck[index]) -> None:
+                entered.set()
+                while True:
+                    try:
+                        await asyncio.Event().wait()
+                    except asyncio.CancelledError:  # noqa: PERF203 — intentional
+                        if surrender.is_set():
+                            raise
+
+            lane._process = stubborn  # type: ignore[method-assign]
+            lane.submit(speech_frame())
+            assert lane._task is not None
+            runaways.append(lane._task)
+
+        await asyncio.gather(*(event.wait() for event in stuck))
+        try:
+            loop = asyncio.get_running_loop()
+            started = loop.time()
+            with pytest.raises(ConferenceCloseError):
+                await channel.close()
+            elapsed = loop.time() - started
+
+            assert elapsed < 0.25, f"four lanes paid their grace sequentially: {elapsed:.2f}s"
+            assert stt.closed is False, "the STT was closed under an abandoned transcription"
+            assert vad.closed is False, "the pipeline was closed under an abandoned lane"
+        finally:
+            surrender.set()
+            for runaway in runaways:
+                runaway.cancel()
+        await asyncio.gather(*runaways, return_exceptions=True)
+        await _until(lambda: stt.closed)
+        assert vad.closed is True
+
+
+# ---------------------------------------------------------------------------
+# One logical shutdown: what close() promises about itself
+# ---------------------------------------------------------------------------
+
+
+class _WedgedPublishBackend(MockConferenceBackend):
+    """Holds every publication open, and remembers what its close ran under.
+
+    The strict part is ``closed_under_publish``: a backend closed while one of
+    its own publish calls is still executing is the defect, whatever order the
+    call *records* happen to show.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gate = asyncio.Event()
+        self.publishing = asyncio.Event()
+        self.wedge = False
+        self.in_flight_publishes = 0
+        self.closed_under_publish = False
+
+    async def publish_audio(self, bot, chunk):  # type: ignore[no-untyped-def]
+        if not self.wedge:
+            return await super().publish_audio(bot, chunk)
+        self.in_flight_publishes += 1
+        try:
+            self.publishing.set()
+            await self.gate.wait()
+            return await super().publish_audio(bot, chunk)
+        finally:
+            self.in_flight_publishes -= 1
+
+    async def close(self) -> None:
+        if self.in_flight_publishes:
+            self.closed_under_publish = True
+        await super().close()
+
+
+class _CountingLeaveBackend(_SlowLeaveBackend):
+    """Counts entries into ``leave()`` — the call record alone is written on
+    the way *out*, so a leave cancelled while wedged never appears in it.
+    """
+
+    def __init__(self, **kwargs: bool) -> None:
+        super().__init__(**kwargs)
+        self.leave_entries = 0
+
+    async def leave(self, bot):  # type: ignore[no-untyped-def]
+        self.leave_entries += 1
+        return await super().leave(bot)
+
+
+class TestOneLogicalShutdown:
+    """RFC 12.10.4: there is one shutdown per channel. Concurrent ``close()``
+    calls join it, a cancelled caller does not cancel it, and once it reaches
+    its terminal result that result is replayed rather than re-earned.
+    """
+
+    async def test_concurrent_closes_share_one_shutdown(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", 0.05)
+        monkeypatch.setattr(activity_module, "CANCEL_GRACE_S", 0.05)
+        backend = _CountingLeaveBackend()
+        backend.slow = True
+        _, channel, _ = await _kit(backend)
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+
+        first = asyncio.create_task(channel.close())
+        await asyncio.wait_for(backend.leaving.wait(), timeout=5.0)
+        second = asyncio.create_task(channel.close())
+        results = await asyncio.gather(first, second, return_exceptions=True)
+
+        # The wedged leave outlived its budget, so the one shutdown failed —
+        # and both callers were given that same terminal result.
+        assert all(isinstance(r, ConferenceCloseError) for r in results)
+        assert results[0] is results[1], "two closes produced two shutdowns"
+        assert backend.leave_entries == 1
+        assert [c.method for c in backend.calls].count("close") <= 1
+
+        backend.gate.set()
+
+    async def test_a_finished_close_replays_its_result_without_acting(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", 0.05)
+        monkeypatch.setattr(activity_module, "CANCEL_GRACE_S", 0.05)
+        backend = _SlowLeaveBackend()
+        backend.slow = True
+        _, channel, _ = await _kit(backend)
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+
+        with pytest.raises(ConferenceCloseError) as first:
+            await channel.close()
+        backend.gate.set()
+        calls_after_first = [c.method for c in backend.calls]
+
+        # close() is a report of the one shutdown, not a retry of it: the same
+        # terminal failure, and not one further backend call on its account.
+        with pytest.raises(ConferenceCloseError) as second:
+            await channel.close()
+        assert second.value is first.value
+        assert [c.method for c in backend.calls] == calls_after_first
+
+    async def test_a_cancelled_caller_does_not_cancel_the_shutdown(self) -> None:
+        backend = _CountingLeaveBackend()
+        backend.slow = True
+        _, channel, _ = await _kit(backend)
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+
+        first = asyncio.create_task(channel.close())
+        await asyncio.wait_for(backend.leaving.wait(), timeout=5.0)
+        first.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.wait_for(runaway, timeout=5.0)
+            await first
+
+        # The shutdown the cancelled caller started is still running — its
+        # leave is wedged, not gone. Releasing it lets the shutdown finish, and
+        # a second caller is handed that shutdown's result, not a second run.
+        backend.gate.set()
+        await asyncio.wait_for(channel.close(), timeout=5.0)
+        assert backend.bots == []
+        assert backend.leave_entries == 1
+        assert [c.method for c in backend.calls].count("close") == 1
+
+
+class TestCloseUnderActivePublication:
+    """A publication that outlives the drain budget is still *using* the
+    backend. Closing the backend under it is the use-after-close every other
+    resource is protected from.
+    """
+
+    async def test_the_backend_is_not_closed_under_a_wedged_publication(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", 0.05)
+        monkeypatch.setattr(activity_module, "CANCEL_GRACE_S", 0.05)
+        backend = _WedgedPublishBackend()
+        _, channel, _ = await _kit(backend, tts=_ChunkedTTS(4))
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        backend.wedge = True
+
+        speaking = asyncio.create_task(channel._voice.speak(ROOM, "hello"))
+        await asyncio.wait_for(backend.publishing.wait(), timeout=5.0)
+
+        # The publication cannot be drained inside the budget, so the close
+        # fails — but it must retain the backend rather than close it under
+        # the call still inside it.
+        with pytest.raises(ConferenceCloseError):
+            await channel.close()
+
+        backend.gate.set()
+        await asyncio.gather(speaking, return_exceptions=True)
+        await _until(lambda: any(c.method == "close" for c in backend.calls))
+        assert backend.closed_under_publish is False
+
+
+class _BlockingCloseVAD(MockVADProvider):
+    """A provider whose synchronous ``close()`` blocks, as a native one can."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = threading.Event()
+        self.closed_on: threading.Thread | None = None
+
+    def close(self) -> None:
+        self.closed_on = threading.current_thread()
+        self.release.wait()
+        super().close()
+
+
+class _FailingCloseVAD(MockVADProvider):
+    def close(self) -> None:
+        super().close()
+        raise RuntimeError("the VAD refused to close")
+
+
+class TestProviderCloseDiscipline:
+    """The pipeline's providers close independently of each other, off the
+    event loop, and their failures surface in the close's result.
+    """
+
+    async def test_a_blocking_provider_close_does_not_hold_the_loop(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", 0.1)
+        monkeypatch.setattr(activity_module, "CANCEL_GRACE_S", 0.05)
+        vad = _BlockingCloseVAD()
+        # A safety valve, not part of the scenario: if the close *does* run the
+        # blocking call on the loop, the loop is frozen and no await can fire —
+        # only a real thread can unwedge the suite.
+        safety = threading.Timer(3.0, vad.release.set)
+        safety.start()
+        _, channel, backend = await _kit(
+            stt=MockSTTProvider(), pipeline=AudioPipelineConfig(vad=vad)
+        )
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+
+        try:
+            loop = asyncio.get_running_loop()
+            started = loop.time()
+            with pytest.raises(ConferenceCloseError) as failure:
+                await asyncio.wait_for(channel.close(), timeout=10.0)
+            elapsed = loop.time() - started
+
+            assert elapsed < 1.0, f"a blocking provider close held the loop {elapsed:.2f}s"
+            assert "pipeline" in str(failure.value)
+            assert vad.closed_on is not threading.current_thread(), (
+                "the pipeline's synchronous close ran on the event loop thread"
+            )
+        finally:
+            safety.cancel()
+            vad.release.set()
+        await _until(lambda: vad.closed)
+
+    async def test_one_failing_provider_does_not_cost_the_others_their_close(self) -> None:
+        vad = _FailingCloseVAD()
+        denoiser = MockDenoiserProvider()
+        _, channel, backend = await _kit(
+            stt=MockSTTProvider(),
+            pipeline=AudioPipelineConfig(vad=vad, denoiser=denoiser),
+        )
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+
+        with pytest.raises(ConferenceCloseError) as failure:
+            await channel.close()
+
+        assert denoiser.closed is True, "the failing VAD cost the denoiser its close"
+        assert "the VAD refused to close" in str(failure.value)
+
+
+class _WedgedStopRecorder(MockMediaRecorder):
+    """A recorder whose finalization blocks on its worker thread."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = threading.Event()
+        self.stopping = threading.Event()
+
+    def on_recording_stop(self, handle):  # type: ignore[no-untyped-def]
+        self.stopping.set()
+        self.release.wait()
+        return super().on_recording_stop(handle)
+
+
+class TestRecorderCloseBudget:
+    """The recorder's finalization ends in integrator code, so it runs on a
+    budget like every other such wait — and past it, the close fails rather
+    than reporting in a log what it could not finish.
+    """
+
+    async def test_a_wedged_finalization_neither_holds_nor_passes_the_close(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", 0.1)
+        monkeypatch.setattr(activity_module, "CANCEL_GRACE_S", 0.05)
+        recorder = _WedgedStopRecorder()
+        _, channel, backend = await _kit(
+            recording=ConferenceRecordingConfig(),
+            recorder=recorder,
+        )
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+        await backend.simulate_audio(track, speech_frame())
+        await _until(lambda: bool(recorder.handles))
+
+        try:
+            loop = asyncio.get_running_loop()
+            started = loop.time()
+            with pytest.raises(ConferenceCloseError) as failure:
+                await asyncio.wait_for(channel.close(), timeout=10.0)
+            elapsed = loop.time() - started
+
+            assert elapsed < 2.0, f"the recorder's finalization held the close {elapsed:.2f}s"
+            assert "record" in str(failure.value).lower()
+        finally:
+            recorder.release.set()

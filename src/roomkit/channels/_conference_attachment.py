@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any
 # deployment or a test sets on it is the one that has to apply, and a name
 # imported here would be a second copy to remember — see `_budget`.
 from roomkit.channels import _conference_activity
+from roomkit.channels._conference_operations import ConferenceResource
 from roomkit.core.exceptions import RoomNotAttachedError
 from roomkit.core.task_utils import log_task_exception
 
@@ -97,6 +98,7 @@ class ConferenceAttachmentMixin:
     channel_id: str
     _backend: ConferenceBackend
     _activity: RoomActivity
+    _operations: Any
     _voice: ConferenceVoice
     _recorder: ConferenceRecording | None
     _recording_events: ConferenceRecordingEvents
@@ -109,6 +111,7 @@ class ConferenceAttachmentMixin:
     _room: Any
     _apply_collection_state: Any
     _abandon_mints: Any
+    _close_lane_instance: Any
     _leave_and_record: Any
     _close_room: Any
     _emit_framework_event: Any
@@ -152,7 +155,10 @@ class ConferenceAttachmentMixin:
         room = self._room(room_id)
         await self._hold_sfu_room(room_id)
         try:
-            await self._backend.ensure_room(room_id, e2ee=self._e2ee)
+            with self._operations.use(
+                ConferenceResource.BACKEND, what=f"creating conference room {room_id}"
+            ):
+                await self._backend.ensure_room(room_id, e2ee=self._e2ee)
             room.bump()
             room.attached = True
             room.binding = binding
@@ -378,7 +384,7 @@ class ConferenceAttachmentMixin:
             self._abandon_mints(room_id)
             for lane in lanes:
                 await self._best_effort(
-                    lane.aclose(),
+                    self._close_lane_instance(lane),
                     "Conference channel %r could not close a lane of room %s. The rest of the "
                     "teardown is going ahead: the lane's pipeline state is leaked, the bot is "
                     "not",
@@ -519,7 +525,7 @@ class ConferenceAttachmentMixin:
         )
         await self._announce_end(room_id, bot)
 
-    async def _best_effort(self, step: Awaitable[None], message: str, *args: object) -> bool:
+    async def _best_effort(self, step: Awaitable[Any], message: str, *args: object) -> bool:
         """Run one step of a teardown, and let the others happen if it fails.
 
         Returns whether it worked, for the steps whose failure changes what the
@@ -533,11 +539,11 @@ class ConferenceAttachmentMixin:
             return False
         return True
 
-    async def _await_teardowns(self) -> None:
-        """Wait for detaches still finishing on their own tasks."""
+    async def _await_teardowns(self) -> set[asyncio.Task[None]]:
+        """Wait briefly for detaches and return those still using channel resources."""
         pending = list(self._teardowns)
         if not pending:
-            return
+            return set()
         done, unfinished = await asyncio.wait(
             pending, timeout=_conference_activity.DRAIN_TIMEOUT_S
         )
@@ -548,3 +554,4 @@ class ConferenceAttachmentMixin:
                 self.channel_id,
                 len(unfinished),
             )
+        return unfinished

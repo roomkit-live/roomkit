@@ -146,6 +146,26 @@ class FinishedRecording:
     result: MediaRecordingResult
 
 
+@dataclass(frozen=True)
+class RecordingCloseReport:
+    """What a recording close achieved, and what it has to say out loud.
+
+    ``finished`` is what was finalized and is announceable. ``unfinished``
+    names the recordings that were not — a finalization that failed, or one
+    still running inside the recorder past its budget. The recorder's own
+    fate is separate: ``recorder_retained`` says it was kept alive because
+    calls the framework gave up on are still inside it, and
+    ``recorder_close_error`` carries what its close raised or timed out on.
+    None of these stay in the log alone: the channel's close reports them as
+    its own failures (RFC 12.10.4).
+    """
+
+    finished: list[FinishedRecording]
+    unfinished: list[str]
+    recorder_retained: bool
+    recorder_close_error: str | None
+
+
 class ConferenceRecording:
     """The recordings a conference channel has open, keyed by track.
 
@@ -454,7 +474,7 @@ class ConferenceRecording:
         )
         return self._dropped.get(room_id, 0) + live
 
-    async def close(self, *, close_recorder: bool) -> list[FinishedRecording]:
+    async def close(self, *, close_recorder: bool) -> RecordingCloseReport:
         """Finalize everything still open, and release the recorder if it is ours.
 
         Finalizing is unconditional whatever the ownership answer is: a
@@ -462,9 +482,11 @@ class ConferenceRecording:
         finalized by no one is not a recording. Releasing the recorder is the
         part a caller sharing it across channels keeps for itself.
 
-        What it finalized is returned rather than dropped: a channel closing is
-        the last moment anything can be said about those files, and an
-        integrator who never hears where they went has to go looking.
+        The report carries everything the caller has to say out loud rather
+        than leave in this module's logs: what was finalized (the last moment
+        anything can be said about those files), what could not be, and what
+        became of the recorder itself — a close that only logged those turned
+        a retained provider into a success (RFC 12.10.4).
 
         One at a time, because two of these at once is not a hypothetical: a
         caller closing a channel while a framework shutdown closes the same one
@@ -478,12 +500,35 @@ class ConferenceRecording:
         async with self._closing:
             open_recordings = list(self._open.values())
             self._open.clear()
-            finished = await self.finish(open_recordings)
+            results = await asyncio.gather(
+                *(self._finish_one(recording) for recording in open_recordings)
+            )
+            finished: list[FinishedRecording] = []
+            unfinished: list[str] = []
+            for recording, result in zip(open_recordings, results, strict=True):
+                if result is not None:
+                    finished.append(result)
+                elif recording.writer.unsettled:
+                    unfinished.append(
+                        f"track {recording.track.id}: its finalization is still running "
+                        "inside the recorder"
+                    )
+                elif not recording.writer.refused:
+                    unfinished.append(
+                        f"track {recording.track.id}: the recorder could not finalize it"
+                    )
+            retained = False
+            release_error: str | None = None
             if close_recorder:
-                await self._release_recorder()
-            return finished
+                retained, release_error = await self._release_recorder()
+            return RecordingCloseReport(
+                finished=finished,
+                unfinished=unfinished,
+                recorder_retained=retained,
+                recorder_close_error=release_error,
+            )
 
-    async def _release_recorder(self) -> None:
+    async def _release_recorder(self) -> tuple[bool, str | None]:
         """Give the recorder back, once nothing is still running inside it.
 
         Every wait a recording makes is bounded, because a teardown held open is
@@ -504,9 +549,14 @@ class ConferenceRecording:
         what a framework shutdown has already closed — and it must not be the
         one that finds an emptied set and frees a recorder the first close
         refused to.
+
+        Returns ``(retained, error)``: whether the recorder was kept alive
+        under calls still running inside it, and what its own close raised or
+        timed out on when it did — the caller's close report says both, since
+        a log line is not a result.
         """
         if self._released:
-            return
+            return False, None
         if not await self._settle_calls():
             logger.error(
                 "Not releasing the recorder of channel %r: calls the framework gave up on "
@@ -514,7 +564,7 @@ class ConferenceRecording:
                 "something is using it",
                 self._channel_id,
             )
-            return
+            return True, None
         self._released = True
         try:
             # On a worker thread like everything else the recorder is asked:
@@ -532,10 +582,14 @@ class ConferenceRecording:
                 self._channel_id,
                 _conference_activity.DRAIN_TIMEOUT_S,
             )
-        except Exception:
+            budget = _conference_activity.DRAIN_TIMEOUT_S
+            return False, f"recorder.close() did not return within {budget:.1f}s"
+        except Exception as exc:
             # The files are written by now, and the channel closing behind
             # this still has a bot to take out of a conference.
             logger.exception("Could not release the recorder of channel %r", self._channel_id)
+            return False, f"recorder.close() failed: {type(exc).__name__}: {exc}"
+        return False, None
 
     async def _settle_calls(self) -> bool:
         """Wait for every abandoned recorder call. Says whether all of them returned.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class RoomKitError(Exception):
     """Base exception for all RoomKit errors."""
@@ -72,15 +74,24 @@ class ConferenceCapabilityError(RoomKitError):
 
 
 class ConferenceCloseError(RoomKitError):
-    """Raised when closing a conference channel left a bot in a meeting.
+    """Raised when a conference channel did not close all of its resources.
 
     Raised at the very end of ``ConferenceChannel.close()``, after every step
-    has run: the sessions it names could not be taken out of their
-    conferences — a ``leave()`` the SFU refused, a backend that outlived its
-    budget — and they are still on the channel's books, where ``info()``
-    reports them. Raised rather than summarised into a log, because a close
-    that returns cleanly while a bot may still be listening to a meeting
-    reports the one thing the roster exists to never misstate.
+    has run. It names sessions that could not be taken out, joins or lanes
+    retained past their budget, and backend or provider shutdown calls that
+    failed. Sessions remain on the channel's books, where ``info()`` reports
+    them; resources still used by an abandoned task remain alive until that
+    task settles. Raised rather than summarised into a log because a clean
+    return would misreport potentially live conference media as released.
     ``RoomKit.close()`` collects it into its ``ExceptionGroup`` instead of
     letting it stop the other channels' closes.
+
+    ``issues`` carries the structured report the message was rendered from —
+    one entry per step that failed, timed out, was abandoned, or left a
+    resource retained — so operator tooling can match on component and
+    status without parsing prose.
     """
+
+    def __init__(self, message: str, *, issues: tuple[Any, ...] = ()) -> None:
+        super().__init__(message)
+        self.issues = issues

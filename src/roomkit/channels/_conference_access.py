@@ -23,6 +23,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._conference_operations import ConferenceResource
 from roomkit.conference.models import ConferenceAccess, ConferenceGrants
 from roomkit.core.exceptions import (
     ParticipantNotAdmittedError,
@@ -81,6 +82,7 @@ class ConferenceAccessMixin:
     channel_id: str
     _backend: ConferenceBackend
     _activity: RoomActivity
+    _operations: Any
     _roster: ConferenceRoster
     _bot_identity: str
     _default_grants: ConferenceGrants
@@ -230,7 +232,7 @@ class ConferenceAccessMixin:
         :meth:`_hand_over`, in the same queue the roster's writers are in.
         """
         room = self._room(room_id)
-        request = asyncio.ensure_future(self._backend.mint_access(room_id, participant_id, grants))
+        request = asyncio.ensure_future(self._mint_on_backend(room_id, participant_id, grants))
         room.mints.add(request)
         try:
             access = await request
@@ -248,6 +250,21 @@ class ConferenceAccessMixin:
         if room.generation != generation or not room.attached:
             raise self._refuse_mint(room_id, participant_id)
         return access
+
+    async def _mint_on_backend(
+        self, room_id: str, participant_id: str, grants: ConferenceGrants
+    ) -> ConferenceAccess:
+        """Ask the backend for a credential, under a lease on the backend.
+
+        The lease is what keeps the backend open while the request runs: a
+        mint a teardown abandoned may still be executing inside the backend —
+        a shielded network call — and closing the transport under it neither
+        stops the mint nor recalls the credential it produces (RFC 12.10.4).
+        """
+        with self._operations.use(
+            ConferenceResource.BACKEND, what=f"minting access for {participant_id}"
+        ):
+            return await self._backend.mint_access(room_id, participant_id, grants)
 
     def _refuse_mint(self, room_id: str, participant_id: str) -> RoomNotAttachedError:
         """Withhold a credential for a conference the channel has left."""

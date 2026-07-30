@@ -22,6 +22,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._conference_lane import ConferenceLane, ConferenceTranscription
+from roomkit.channels._conference_operations import ConferenceResource
 from roomkit.channels._conference_recording import TrackFormat
 from roomkit.conference.models import ConferenceTrack, TrackKind
 from roomkit.models.delivery import InboundMessage
@@ -68,6 +69,7 @@ class ConferenceLanesMixin:
     _max_queued_frames: int
     _bot_identity: str
     _lanes: dict[str, ConferenceLane]
+    _operations: Any
 
     # Provided by ConferenceChannel — see the host contract above
     _room: Any
@@ -78,9 +80,19 @@ class ConferenceLanesMixin:
         return [track_id for track_id, lane in self._lanes.items() if lane.room_id == room_id]
 
     def _open_lane(self, room_id: str, track: ConferenceTrack) -> None:
-        """Start a processing lane for a subscribed track."""
+        """Start a processing lane for a subscribed track.
+
+        The lane holds a lease on the shared pipeline — and the recognizer,
+        when there is one — from before it starts until nothing of its own can
+        still be inside either. The lease, not any list the channel keeps, is
+        what stops a close from freeing those providers under a lane whose
+        provider call ignored its cancellation.
+        """
         if self._pipeline is None or track.id in self._lanes:
             return
+        resources = [ConferenceResource.PIPELINE]
+        if self._stt is not None:
+            resources.append(ConferenceResource.STT)
         lane = ConferenceLane(
             track_id=track.id,
             room_id=room_id,
@@ -89,6 +101,7 @@ class ConferenceLanesMixin:
             on_speech=self._voice.consider_interruption,
             on_utterance=self._on_lane_utterance,
             max_queued_frames=self._max_queued_frames,
+            lease=self._operations.acquire(*resources, what=f"lane for track {track.id}"),
         )
         self._lanes[track.id] = lane
         lane.start()
@@ -101,8 +114,18 @@ class ConferenceLanesMixin:
         lane = self._lanes.pop(track_id, None)
         if lane is None:
             return False
-        await lane.aclose()
+        await self._close_lane_instance(lane)
         return True
+
+    async def _close_lane_instance(self, lane: ConferenceLane) -> bool:
+        """Close one lane, and say whether its task outlived the grace.
+
+        An abandoned lane needs no tracking here: it holds its lease on the
+        shared pipeline and recognizer until its task truly ends, and the
+        close retains those providers for exactly as long as any lease on
+        them remains.
+        """
+        return await lane.aclose()
 
     async def _stop_consuming(self, track_id: str) -> None:
         """Close whatever a track was feeding: its lane, its recording, or both.

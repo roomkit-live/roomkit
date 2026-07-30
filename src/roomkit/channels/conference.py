@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Coroutine, Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -42,6 +42,7 @@ from roomkit.channels._conference_lane import (
 )
 from roomkit.channels._conference_lanes import ConferenceLanesMixin
 from roomkit.channels._conference_metadata import CONFERENCE_METADATA_KEY
+from roomkit.channels._conference_operations import ConferenceOperations, ConferenceResource
 from roomkit.channels._conference_recording import ConferenceRecording
 from roomkit.channels._conference_recording_events import (
     ConferenceRecordingEvents,
@@ -51,6 +52,7 @@ from roomkit.channels._conference_recording_events import (
 from roomkit.channels._conference_room_state import ConferenceRoomState
 from roomkit.channels._conference_roster import ConferenceRoster
 from roomkit.channels._conference_session import ConferenceSessionMixin
+from roomkit.channels._conference_shutdown import CloseStatus, ConferenceShutdownCoordinator
 from roomkit.channels._conference_subscription import ConferenceSubscriptionMixin
 from roomkit.channels._conference_voice import ConferenceVoice
 from roomkit.channels.base import Channel, FrameworkAwareChannel
@@ -64,7 +66,6 @@ from roomkit.conference.models import (
     ConferenceRecordingMode,
     TrackKind,
 )
-from roomkit.core.exceptions import ConferenceCloseError
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -202,12 +203,20 @@ class ConferenceChannel(
         # Shared with ConferenceVoice: a publication in flight is work a detach
         # must not overtake, exactly like an announcement is.
         self._activity = RoomActivity()
+        # The one ledger of which operations are using which of the channel's
+        # resources, and the one shutdown those operations are closed by. Every
+        # backend and provider call the channel admits takes a lease here, and
+        # a resource is closed only once no lease on it remains — see
+        # _conference_operations and _conference_shutdown.
+        self._operations = ConferenceOperations()
+        self._shutdown = ConferenceShutdownCoordinator(channel_id, self._operations)
         self._voice = ConferenceVoice(
             backend=backend,
             tts=tts,
             interruption=interruption or ConferenceInterruptionConfig(),
             ensure_bot=self._ensure_bot,
             activity=self._activity,
+            operations=self._operations,
             on_published=None if self._recorder is None else self._record_bot_audio,
         )
         self._roster = ConferenceRoster(channel_id)
@@ -254,10 +263,6 @@ class ConferenceChannel(
         # channels — so a budget that runs out stops the work rather than
         # letting it run on into what is being released.
         self._roster_closed = False
-        # Closing steps that outlived their budget and shrugged off their
-        # cancellation. Kept referenced so a survivor cannot end as a
-        # destroyed-pending-task warning; reported when abandoned.
-        self._abandoned_steps: set[asyncio.Task[Any]] = set()
         self._lanes: dict[str, ConferenceLane] = {}
         # Credentials a teardown took back. Kept off the room's record because
         # `_mint` reads it after the record has stopped listing the request.
@@ -969,6 +974,18 @@ class ConferenceChannel(
         return ChannelOutput.empty()
 
     async def close(self) -> None:
+        """Run the channel's one shutdown, or join the one already running.
+
+        There is one logical shutdown per channel (RFC 12.10.4): concurrent
+        callers await the same shielded task, a caller cancelled mid-wait
+        abandons only its own wait, and once the shutdown reaches its terminal
+        result every later call replays that result — an immediate return
+        after a success, the same ``ConferenceCloseError`` after a failure —
+        rather than running the steps again.
+        """
+        await self._shutdown.close(self._close_once)
+
+    async def _close_once(self) -> None:
         # Closing is a detach of every room at once, and it owes them the same
         # two steps in the same order. Clearing `attached` alone stops nothing
         # already in flight: a join suspended in the backend resumes, finds its
@@ -979,6 +996,13 @@ class ConferenceChannel(
             if room.attached:
                 room.bump()
                 room.attached = False
+            # Inventory every active session before the first external await.
+            # If one room spends the whole departure budget, a later room's
+            # bot is still on this ledger and therefore still visible and
+            # named by the final failure.
+            if room.bot is not None:
+                room.start_closing(room.bot)
+                room.bot = None
         # Participant callbacks are deliberately not part of the drain below —
         # they hold the framework's room lock, which a detach holds across that
         # drain — so closing has a barrier of its own. It is closed here, with
@@ -997,7 +1021,15 @@ class ConferenceChannel(
         # A detach may still be finishing on its own task — the deferred case —
         # and it ends in `leave()`. Cancelling it would strand the bot in the
         # conference, so it is waited for rather than cut off.
-        await self._await_teardowns()
+        unfinished_teardowns = await self._await_teardowns()
+        if unfinished_teardowns:
+            self._shutdown.record(
+                component="channel",
+                operation="detach",
+                status=CloseStatus.ABANDONED,
+                step="waiting for conference detaches",
+                detail=f"{len(unfinished_teardowns)} teardown(s) still running after the budget",
+            )
         await self._activity.drain_all()
 
         # Same reason the detach path does it, and the same deadline having
@@ -1010,7 +1042,15 @@ class ConferenceChannel(
         # it abandon the session it just opened. Taking each lock is how this
         # waits for that to have happened — without it the backend is closed
         # first and the abandoning join calls into it afterwards.
-        await self._settle_joins()
+        unsettled_joins = await self._settle_joins()
+        if unsettled_joins:
+            self._shutdown.record(
+                component="backend",
+                operation="join",
+                status=CloseStatus.ABANDONED,
+                step="waiting for conference joins",
+                detail="join(s) still running for room(s) " + ", ".join(sorted(unsettled_joins)),
+            )
         # Every session the channel still has in a conference, not only the one
         # in `bot`: a detach whose `leave()` the backend refused left its bot
         # sitting in the meeting and said so, and closing is the last moment
@@ -1019,39 +1059,44 @@ class ConferenceChannel(
         # must not hold every channel behind this one in its conference. A
         # leave the budget cancels puts its session on the books on the way
         # out, where the final raise below reports it.
-        await self._spend(self._leave_every_room(), "taking the bots out of their conferences")
+        await self._shutdown.spend(
+            self._leave_every_room(),
+            "taking the bots out of their conferences",
+            component="backend",
+            operation="leave",
+        )
         for room in self._rooms.values():
             room.forget_subscriptions()
-        # Each lane's post-cancellation wait is bounded inside `aclose()`
-        # itself — a recogniser that swallows the cancellation costs one grace
-        # period, not the shutdown.
-        for track_id in list(self._lanes):
-            await self._close_lane(track_id)
+        # All lanes receive cancellation together and share the same grace
+        # period. A survivor keeps its lease on the pipeline and the STT, which
+        # is what stops those providers being closed underneath its runaway
+        # task — the leases are the retention; nothing here has to remember it.
+        lanes = list(self._lanes.values())
+        self._lanes.clear()
+        lane_results = await asyncio.gather(
+            *(self._close_lane_instance(lane) for lane in lanes),
+            return_exceptions=True,
+        )
+        for lane, result in zip(lanes, lane_results, strict=True):
+            if isinstance(result, BaseException):
+                self._shutdown.record(
+                    component="pipeline",
+                    operation="close lane",
+                    status=CloseStatus.FAILED,
+                    step=f"closing conference lane {lane.track_id}",
+                    detail=f"{type(result).__name__}: {result}",
+                )
         # Finalized here rather than left to the recorder's own close: a caller
         # sharing the recorder across channels keeps it open, and the recordings
-        # this channel started are still its own to finish. The finalization is
-        # waited for in full — the recorder is an owned provider — but the
-        # *announcements* are not: they run hooks and read the store, neither of
-        # which is this channel's, so they get the drain budget like every other
-        # wait on something the channel does not own. Past it the recordings are
-        # finished and on disk; what is lost is the notification, and the log
-        # says so.
+        # this channel started are still its own to finish. Not under a `spend`
+        # of its own — every wait the recording subsystem makes is already
+        # bounded internally, stage by stage, and a single outer budget would
+        # cancel finalizations that were on their way to finishing inside
+        # theirs. Everything the subsystem could not do is recorded against
+        # the close rather than left in the log alone.
         if self._recorder is not None:
-            finished = await self._recorder.close(close_recorder=self._close_providers)
-            try:
-                async with asyncio.timeout(_conference_activity.DRAIN_TIMEOUT_S):
-                    await self._recording_events.stopped_all(finished)
-            except TimeoutError:
-                logger.error(
-                    "Conference channel %r closed without announcing %d finished "
-                    "recording(s): the announcements did not return within %.1fs. "
-                    "The recordings themselves are finalized",
-                    self.channel_id,
-                    len(finished),
-                    _conference_activity.DRAIN_TIMEOUT_S,
-                )
+            await self._close_recordings()
         for room in self._rooms.values():
-            room.bot = None
             room.track_epochs.clear()
             room.collision_reported = False
         # `leaving` is deliberately not cleared. What is left in it after the
@@ -1059,16 +1104,27 @@ class ConferenceChannel(
         # that outlived its budget — a bot still in a conference either way, and
         # forgetting it is how a closed channel came to report a meeting
         # unattended while the framework's bot was still listening to it.
-        # Every wait above is bounded, so this can still be reached with a join
-        # or a teardown in flight. Recorded before the backend goes rather than
-        # after, so what those reach for is a backend they can see is closed
-        # instead of one that only fails when called.
-        self._backend_closed = True
-        await self._spend(self._backend.close(), "closing the conference backend")
-        await self._spend(
-            self._voice.aclose(close_provider=self._close_providers),
-            "closing the conference voice",
+        # The utterances a cancellation left to be closed publish their
+        # terminal chunks on the backend, so they are settled before it goes.
+        await self._voice.aclose(close_provider=False)
+        # The backend closes only once nothing the channel admitted is still
+        # using it. The leases are the authority — a wedged publish, a late
+        # join, a leave that swallowed its cancellation all hold one — and the
+        # teardown tasks stand in for work that spans several backend calls.
+        # A backend still in use is retained and reported, and closes in the
+        # background once the operations truly end (RFC 12.10.4).
+        await self._shutdown.close_resource(
+            ConferenceResource.BACKEND,
+            self._close_backend,
+            step="closing the conference backend",
+            blockers=set(unfinished_teardowns),
         )
+        if self._close_providers:
+            await self._shutdown.close_resource(
+                ConferenceResource.TTS,
+                self._voice.close_tts,
+                step="closing the TTS provider",
+            )
         # Last, and after the media: the bookkeeping a participant callback was
         # in the middle of — waited for *here* rather than at the top because a
         # slow store holding this up must never be a bot held in a conference.
@@ -1079,117 +1135,120 @@ class ConferenceChannel(
         # waits for it before releasing the store and the lock manager.
         await self._settle_the_roster()
         if self._close_providers:
-            # The pipeline's stages are providers too, so they follow the same
-            # ownership rule: a caller sharing them across channels closes them.
-            if self._pipeline is not None:
-                self._pipeline.close()
-            if self._stt is not None:
-                await self._spend(self._stt.close(), "closing the STT provider")
-        # Last of all, and only once every step above has run: a close that
-        # could not take a session out of its conference is a close that
-        # failed, and it says so with an exception rather than a log a caller
-        # never reads. `RoomKit.close()` collects it and closes the other
-        # channels regardless.
-        self._raise_for_sessions_left_behind()
-
-    async def _leave_every_room(self) -> None:
-        """Take every room's sessions out of their conferences, in turn."""
-        for room_id in list(self._rooms):
-            await self._leave_all(room_id)
-
-    async def _spend(self, step: Coroutine[Any, Any, Any], what: str) -> bool:
-        """Run one closing step on a budget it may not outlive.
-
-        The steps this covers end in code the channel does not own — a
-        backend's network call, a provider's shutdown — and the framework
-        closes channels in sequence, so time spent here is spent holding
-        every channel behind this one in its conference (RFC 12.10.4).
-
-        Past the budget the step is cancelled, given a short grace to unwind,
-        and then abandoned rather than waited for again: a provider that
-        swallows the cancellation does not get to hold the shutdown. Nothing
-        the survivor was using is freed on its account *by this method* — it
-        is kept referenced and reported, and a session it failed to remove is
-        on the room's books, where the close's final raise names it.
-
-        A step that raises is logged and counted rather than propagated, so
-        one step's failure never costs the steps after it their run; what it
-        failed to do surfaces through the books, not through the log alone.
-        """
-        budget = _conference_activity.DRAIN_TIMEOUT_S
-        task = asyncio.ensure_future(step)
-        _, pending = await asyncio.wait({task}, timeout=budget)
-        if pending:
-            task.cancel()
-            _, pending = await asyncio.wait({task}, timeout=_conference_activity.CANCEL_GRACE_S)
-        if pending:
-            self._abandoned_steps.add(task)
-            task.add_done_callback(self._forget_abandoned_step)
-            logger.error(
-                "Conference channel %r abandoned a closing step after %.1fs: %s did not "
-                "return and did not honour its cancellation. Nothing it was using has "
-                "been freed on its account, and any session it failed to remove is "
-                "still on the books",
-                self.channel_id,
-                budget,
-                what,
+            await self._shutdown.close_resource(
+                (ConferenceResource.PIPELINE, ConferenceResource.STT),
+                self._close_owned_providers,
+                step="closing the conference audio pipeline and STT",
+                blockers=set(unfinished_teardowns),
             )
-            return False
-        if task.cancelled():
-            logger.error(
-                "Conference channel %r cancelled a closing step after %.1fs: %s outlived "
-                "the budget. Any session it failed to remove is still on the books",
-                self.channel_id,
-                budget,
-                what,
-            )
-            return False
-        if (failure := task.exception()) is not None:
-            logger.error(
-                "Conference channel %r: %s failed: %s. The close carries on; what the "
-                "step failed to do is reported from the books, not from this log alone",
-                self.channel_id,
-                what,
-                failure,
-                exc_info=failure,
-            )
-            return False
-        return True
-
-    def _forget_abandoned_step(self, task: asyncio.Task[Any]) -> None:
-        """Drop a survivor that finally ended, and consume its parting error."""
-        self._abandoned_steps.discard(task)
-        if not task.cancelled():
-            task.exception()
-
-    def _raise_for_sessions_left_behind(self) -> None:
-        """Fail the close, by name, for every session it could not remove.
-
-        The last thing ``close()`` does, so nothing is skipped on a failure's
-        account. What is on ``leaving`` by now is a bot the channel tried and
-        failed to take out of a meeting — a ``leave()`` the SFU refused, a
-        backend that outlived its budget — and ``info()`` goes on reporting
-        it. Returning cleanly over that would summarise "a bot may still be
-        listening" into a log line; an exception is the only report a caller
-        cannot miss, and ``RoomKit.close()`` aggregates it without letting it
-        stop the other channels (RFC 12.10.4).
-        """
+        # Last of all, and only once every step above has run: sessions and
+        # resource failures are raised together. `RoomKit.close()` collects the
+        # error and still closes every channel behind this one.
         stuck = {
             room_id: sorted(room.leaving) for room_id, room in self._rooms.items() if room.leaving
         }
-        if not stuck:
-            return
-        details = "; ".join(
-            f"room {room_id}: session(s) {', '.join(sessions)}"
-            for room_id, sessions in sorted(stuck.items())
-        )
-        total = sum(len(sessions) for sessions in stuck.values())
-        raise ConferenceCloseError(
-            f"Conference channel {self.channel_id!r} closed with {total} bot session(s) "
-            f"it could not take out of their conference(s) — {details}. They are still "
-            "on the channel's books and info() reports them; removing them is now an "
-            "operator's task"
-        )
+        self._shutdown.raise_for_failures(stuck)
+
+    async def _leave_every_room(self) -> None:
+        """Take every room's sessions out concurrently on one shared budget."""
+        await asyncio.gather(*(self._leave_all(room_id) for room_id in list(self._rooms)))
+
+    async def _close_backend(self) -> None:
+        """The backend's closer, run by the coordinator once its leases are back.
+
+        The flag is set before the call rather than after, so work that
+        outlived a budget reaches for a backend it can see is closed instead
+        of one that only fails when called.
+        """
+        self._backend_closed = True
+        await self._backend.close()
+
+    async def _close_owned_providers(self) -> None:
+        """Close pipeline and STT, each independently of the other's failure.
+
+        The pipeline's own ``close()`` already closes every provider it holds
+        and aggregates their failures rather than stopping at the first. It is
+        synchronous and potentially blocking — a native provider's close is a
+        real call — so it runs off the event loop; a close that blocks past
+        the budget leaves its worker thread running and is reported, never
+        waited for twice (the thread's future stays referenced by the
+        executor, so nothing mistakes an abandoned close for a finished one).
+        """
+        if self._pipeline is not None:
+            try:
+                await asyncio.to_thread(self._pipeline.close)
+            except BaseExceptionGroup as failures:
+                for failure in failures.exceptions:
+                    self._shutdown.record(
+                        component="pipeline",
+                        operation="close",
+                        status=CloseStatus.FAILED,
+                        step="closing the conference audio pipeline",
+                        detail=f"{type(failure).__name__}: {failure}",
+                    )
+                logger.error(
+                    "Conference channel %r could not close %d of its audio pipeline's "
+                    "providers; the others were closed",
+                    self.channel_id,
+                    len(failures.exceptions),
+                    exc_info=failures,
+                )
+        if self._stt is not None:
+            await self._shutdown.spend(
+                self._stt.close(),
+                "closing the STT provider",
+                component="stt",
+            )
+
+    async def _close_recordings(self) -> None:
+        """Finalize the recordings, release the recorder, and report the rest.
+
+        Everything the recording subsystem could not do — a finalization that
+        failed or is still running inside the recorder, a recorder retained
+        because calls the framework gave up on are still in it, a recorder
+        whose own close failed — is recorded against the close. The
+        *announcements* run hooks and read the store, neither of which is this
+        channel's, so they get the drain budget; past it the recordings are
+        finished and on disk, and what is lost is the notification.
+        """
+        assert self._recorder is not None
+        report = await self._recorder.close(close_recorder=self._close_providers)
+        for detail in report.unfinished:
+            self._shutdown.record(
+                component="recorder",
+                operation="finalize",
+                status=CloseStatus.FAILED,
+                step="finalizing the conference recordings",
+                detail=detail,
+            )
+        if report.recorder_retained:
+            self._shutdown.record(
+                component="recorder",
+                operation="close",
+                status=CloseStatus.RETAINED,
+                step="releasing the conference recorder",
+                detail="call(s) the framework gave up on are still running inside it",
+            )
+        if report.recorder_close_error is not None:
+            self._shutdown.record(
+                component="recorder",
+                operation="close",
+                status=CloseStatus.FAILED,
+                step="releasing the conference recorder",
+                detail=report.recorder_close_error,
+            )
+        try:
+            async with asyncio.timeout(_conference_activity.DRAIN_TIMEOUT_S):
+                await self._recording_events.stopped_all(report.finished)
+        except TimeoutError:
+            logger.error(
+                "Conference channel %r closed without announcing %d finished "
+                "recording(s): the announcements did not return within %.1fs. "
+                "The recordings themselves are finalized",
+                self.channel_id,
+                len(report.finished),
+                _conference_activity.DRAIN_TIMEOUT_S,
+            )
 
     # -------------------------------------------------------------------------
     # Framework plumbing

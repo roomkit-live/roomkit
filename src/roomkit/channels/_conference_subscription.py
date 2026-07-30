@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._conference_operations import ConferenceResource
 from roomkit.conference.models import ConferenceTrack, TrackKind
 from roomkit.models.enums import HookTrigger
 
@@ -47,6 +48,7 @@ class ConferenceSubscriptionMixin:
 
     channel_id: str
     _backend: ConferenceBackend
+    _operations: Any
     _activity: RoomActivity
     _stt: STTProvider | None
     _recording: ConferenceRecordingConfig | None
@@ -159,7 +161,10 @@ class ConferenceSubscriptionMixin:
         if bot is None:
             return
         try:
-            await self._backend.unsubscribe_track(bot, track_id)
+            with self._operations.use(
+                ConferenceResource.BACKEND, what=f"unsubscribing track {track_id}"
+            ):
+                await self._backend.unsubscribe_track(bot, track_id)
         except Exception:
             logger.exception(
                 "Conference channel %r could not unsubscribe from track %s. Its lane and "
@@ -202,7 +207,10 @@ class ConferenceSubscriptionMixin:
                 await self._stop_consuming(track_id)
             return
         generation = room.generation
-        participants = await self._backend.list_participants(room_id)
+        with self._operations.use(
+            ConferenceResource.BACKEND, what=f"listing participants of room {room_id}"
+        ):
+            participants = await self._backend.list_participants(room_id)
         if not room.is_current(generation, bot):
             return
         for participant in participants:
@@ -252,11 +260,14 @@ class ConferenceSubscriptionMixin:
         room = self._room(room_id)
         if track_token is None:
             track_token = room.track_token(track.id)
-        await self._backend.subscribe_track(bot, track.id)
-        room_current = room.is_current(generation, bot) and room.may_collect()
-        if room_current and room.track_token(track.id) == track_token:
-            room.subscribe(track)
-            self._open_lane(room_id, track)
-            return True
-        await self._backend.unsubscribe_track(bot, track.id)
-        return room_current
+        with self._operations.use(
+            ConferenceResource.BACKEND, what=f"subscribing track {track.id}"
+        ):
+            await self._backend.subscribe_track(bot, track.id)
+            room_current = room.is_current(generation, bot) and room.may_collect()
+            if room_current and room.track_token(track.id) == track_token:
+                room.subscribe(track)
+                self._open_lane(room_id, track)
+                return True
+            await self._backend.unsubscribe_track(bot, track.id)
+            return room_current

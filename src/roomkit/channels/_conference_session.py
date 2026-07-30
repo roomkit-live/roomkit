@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING, Any
 # deployment or a test sets on it is the one that has to apply, and a name
 # imported here would be a second copy to remember — see `_budget`.
 from roomkit.channels import _conference_activity
+from roomkit.channels._conference_operations import ConferenceResource
+from roomkit.channels._conference_room_state import LeavingSession
 from roomkit.conference.models import BotSession, ConferenceGrants
 from roomkit.core.exceptions import RoomNotAttachedError
 from roomkit.models.enums import ChannelType, HookTrigger
@@ -36,6 +38,7 @@ from roomkit.models.session_event import SessionStartedEvent
 
 if TYPE_CHECKING:
     from roomkit.channels._conference_activity import RoomActivity
+    from roomkit.channels._conference_operations import ConferenceOperations
     from roomkit.conference.base import ConferenceBackend
     from roomkit.core.framework import RoomKit
 
@@ -92,6 +95,7 @@ class ConferenceSessionMixin:
     channel_type: ChannelType
     _backend: ConferenceBackend
     _activity: RoomActivity
+    _operations: ConferenceOperations
     _framework: RoomKit | None
     _bot_identity: str
     _bot_grants: ConferenceGrants
@@ -126,21 +130,28 @@ class ConferenceSessionMixin:
             # this window.
             room.joining = True
             try:
-                bot = await self._backend.join_as_bot(
-                    room_id, self._bot_identity, self._bot_grants
-                )
-                _settle_clock(bot, self._backend.name)
-                if room.generation != generation:
-                    # Recorded rather than plain, because the detach that closed
-                    # this generation had no bot to put on `leaving` — this one
-                    # did not exist yet — so a `leave()` that fails here would
-                    # strand a session no part of the room could account for.
-                    await self._leave_and_record(room_id, bot)
-                    raise RoomNotAttachedError(
-                        f"Channel {self.channel_id!r} was detached from room "
-                        f"{room_id!r} while joining"
+                # One lease for the join *and* its compensation: the backend
+                # must not close between the two, or the session the abandoned
+                # join opened would have nothing to leave through.
+                with self._operations.use(
+                    ConferenceResource.BACKEND, what=f"joining room {room_id} as the bot"
+                ):
+                    bot = await self._backend.join_as_bot(
+                        room_id, self._bot_identity, self._bot_grants
                     )
-                room.bot = bot
+                    _settle_clock(bot, self._backend.name)
+                    if room.generation != generation:
+                        # Recorded rather than plain, because the detach that
+                        # closed this generation had no bot to put on `leaving`
+                        # — this one did not exist yet — so a `leave()` that
+                        # fails here would strand a session no part of the room
+                        # could account for.
+                        await self._leave_and_record(room_id, bot)
+                        raise RoomNotAttachedError(
+                            f"Channel {self.channel_id!r} was detached from room "
+                            f"{room_id!r} while joining"
+                        )
+                    room.bot = bot
             finally:
                 room.joining = False
         # The lock is released before the conference is announced, because
@@ -308,7 +319,51 @@ class ConferenceSessionMixin:
         )
 
     async def _leave_and_record(self, room_id: str, bot: BotSession) -> bool:
-        """Take the bot out of the conference, and say whether it is out.
+        """Take the bot out of the conference, exactly once, and say whether it is out.
+
+        The single funnel every departure goes through — a detach's teardown,
+        an abandoned join's compensation, the channel close's sweep. A session
+        has at most one ``leave()`` in flight (RFC 12.10.4): a caller that
+        finds a departure already running joins it and takes its answer,
+        because a second concurrent ``leave()`` would ask the backend to
+        remove a participant twice, and whichever answer arrived second would
+        be about a session that no longer exists.
+
+        The departure itself runs on a task of its own, so a joiner being
+        cancelled cancels nothing but its own wait. The caller that *started*
+        the departure owns it: its cancellation — the closing budget expiring
+        — travels on to the backend call, which is how the budget stops the
+        step; a backend that swallows it keeps its lease on itself until it
+        truly ends, and the close retains the backend accordingly.
+        """
+        room = self._room(room_id)
+        entry = room.leaving.get(bot.id)
+        if entry is not None and entry.task is not None and not entry.task.done():
+            # Join the departure in flight. Shielded: this caller's
+            # cancellation must not reach a task another path owns.
+            try:
+                return await asyncio.shield(entry.task)
+            except Exception:
+                return False
+        if entry is None:
+            entry = room.leaving[bot.id] = LeavingSession(bot=bot)
+        task = asyncio.create_task(
+            self._depart(room_id, bot), name=f"roomkit-conference-leave-{bot.id}"
+        )
+        entry.task = task
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Ours to own: the budget cancelled this caller, and the departure
+            # it started is cancelled with it. The task's own handler puts the
+            # session back on the books before the cancellation travels on.
+            task.cancel()
+            raise
+        except Exception:
+            return False
+
+    async def _depart(self, room_id: str, bot: BotSession) -> bool:
+        """The one ``leave()`` a departure makes. See :meth:`_leave_and_record`.
 
         A ``leave()`` the SFU refuses is the failure this exists for: the bot is
         still in the meeting, and until this the framework said the opposite —
@@ -333,18 +388,21 @@ class ConferenceSessionMixin:
         the books like any other the channel could not remove.
         """
         room = self._room(room_id)
-        if self._backend_closed:
-            logger.warning(
-                "Conference channel %r cannot take bot session %s out of room %s: its backend "
-                "is already closed, so the bot may remain in the conference",
-                self.channel_id,
-                bot.id,
-                room_id,
-            )
-            room.record_leave_failure(bot, "the channel's backend was already closed")
-            return False
         try:
-            await self._backend.leave(bot)
+            if self._backend_closed:
+                logger.warning(
+                    "Conference channel %r cannot take bot session %s out of room %s: its "
+                    "backend is already closed, so the bot may remain in the conference",
+                    self.channel_id,
+                    bot.id,
+                    room_id,
+                )
+                room.record_leave_failure(bot, "the channel's backend was already closed")
+                return False
+            with self._operations.use(
+                ConferenceResource.BACKEND, what=f"leave() for session {bot.id}"
+            ):
+                await self._backend.leave(bot)
         except asyncio.CancelledError:
             # The closing budget expired while the call was in flight. The
             # cancellation must travel on — it is how the budget stops the
@@ -386,11 +444,12 @@ class ConferenceSessionMixin:
         conferences it was still in.
         """
         room = self._room(room_id)
-        for entry in room.stuck_sessions():
+        if room.bot is not None:
+            room.start_closing(room.bot)
+            room.bot = None
+        for entry in room.closing_sessions():
             if await self._leave_and_record(room_id, entry.bot) and entry.owed_an_end:
                 await self._announce_end(room_id, entry.bot)
-        if room.bot is not None:
-            await self._leave_and_record(room_id, room.bot)
 
     async def _close_room(self, room_id: str) -> None:
         """Destroy the conference room, unless the backend is already gone."""
@@ -402,9 +461,12 @@ class ConferenceSessionMixin:
                 room_id,
             )
             return
-        await self._backend.close_room(room_id)
+        with self._operations.use(
+            ConferenceResource.BACKEND, what=f"closing conference room {room_id}"
+        ):
+            await self._backend.close_room(room_id)
 
-    async def _settle_joins(self) -> None:
+    async def _settle_joins(self) -> set[str]:
         """Wait for any join still holding a room's lock to have let go.
 
         Taking the lock and releasing it is the whole operation: it cannot be
@@ -419,7 +481,7 @@ class ConferenceSessionMixin:
         left behind is a bot in a conference nobody will leave.
         """
         if not self._rooms:
-            return
+            return set()
         waiters = {
             asyncio.ensure_future(self._settle_one(room.lock)): room_id
             for room_id, room in list(self._rooms.items())
@@ -428,13 +490,17 @@ class ConferenceSessionMixin:
         for waiter in unfinished:
             waiter.cancel()
         if unfinished:
+            await asyncio.gather(*unfinished, return_exceptions=True)
+        room_ids = {waiters[waiter] for waiter in unfinished}
+        if unfinished:
             logger.warning(
                 "Closing conference channel %r with a join still in flight for room(s) %s "
                 "after %.0fs; the bot it is opening may be left in the conference",
                 self.channel_id,
-                ", ".join(sorted(waiters[waiter] for waiter in unfinished)),
+                ", ".join(sorted(room_ids)),
                 _conference_activity.DRAIN_TIMEOUT_S,
             )
+        return room_ids
 
     @staticmethod
     async def _settle_one(lock: asyncio.Lock) -> None:

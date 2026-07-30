@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **xAI (Grok) chat provider.** `XAIAIProvider` + `XAIConfig`
+  (`pip install roomkit[xai]`) put Grok's text models on the same footing as
+  every other AI provider. xAI serves the OpenAI Chat Completions API verbatim,
+  so the provider subclasses `OpenAIAIProvider` and inherits message building,
+  tool handling, streaming, `/v1/models` discovery and client construction
+  unchanged; `XAIConfig` subclasses `OpenAIConfig` so no request field can drift
+  between the two. Three things are genuinely xAI's own:
+
+  - **The catalog** (`available_models()`): the six current Grok text models
+    with their real context windows (`grok-4.5` 500k, `grok-4.3` and the 4.20
+    variants 1M, `grok-build-0.1` 256k).
+  - **Vision.** The inherited implementation prefix-matches *OpenAI's* vision
+    model names, so it reports every `grok-*` id as text-only and silently drops
+    images. `supports_vision` now reads the catalog instead, and an id the
+    catalog does not know (an alias like `grok-latest`, or a model newer than
+    the snapshot) defaults to capable — the whole Grok text line is multimodal.
+  - **Reasoning.** Depth rides the top-level `reasoning_effort` string, as on
+    OpenAI (the nested `reasoning: {effort}` object is `/v1/responses`, not Chat
+    Completions). Unlike the parent it is sent on **tool turns too**: Grok
+    reasons unconditionally, so effort is the only lever over the cost of an
+    agentic turn, and dropping it on exactly the turns that spend the most would
+    defeat the setting. It is withheld only from `grok-4.20-0309-non-reasoning`,
+    which the catalog marks as refusing it.
+
+  `XAIConfig` also flips two parent defaults to match the API: the output cap
+  goes out as `max_completion_tokens` (xAI deprecated `max_tokens`) and
+  `stream_options.include_usage` is on so streamed turns account their tokens.
+  Runnable example in `examples/xai_ai.py`. The pre-existing
+  `XAIRealtimeProvider` (Grok speech-to-speech) is untouched — same vendor,
+  different protocol.
+
 - **Multi-party conference support.** RoomKit can now join a meeting it does
   not host. `ConferenceChannel` attaches a room to a conference whose media
   plane an external SFU owns: it brings a bot into it, transcribes its
@@ -78,15 +109,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     questions per room — bot present, collection permitted, STT and
     recording *active* as distinct from configured — keeping a session on
     its way out visible until it has actually left.
-  - **Shutdown.** The media plane outranks the bookkeeping: a detach and a
-    close take the bot out of the meeting on bounded budgets, and the media
-    calls are no exception — `leave()`, the backend's close and a lane's
-    recogniser are cancelled past their budget, given a bounded grace, then
-    abandoned and reported rather than waited for again; nothing an
-    abandoned call was using is freed on its account. A session the channel
-    could not remove is a *failed* close: `close()` raises
-    `ConferenceCloseError` naming it, at the very end, once every other
-    step has run — `info()` goes on reporting the session. The waits that
+  - **Shutdown.** There is one logical shutdown per channel: concurrent
+    `close()` calls join the same shielded task, a caller cancelled mid-wait
+    abandons only its own wait, and once the shutdown reaches its terminal
+    result later calls replay it — an immediate return after a success, the
+    same `ConferenceCloseError` after a failure — instead of re-running the
+    steps. Departures are exact-once: every path a session leaves through —
+    a detach, an abandoned join, the close's sweep — funnels into one
+    `leave()` per session, and a path that finds one in flight joins it.
+    The media plane outranks the bookkeeping: a detach and a close take the
+    bot out of the meeting on bounded budgets, and the media calls are no
+    exception — `leave()`, the backend's close and a lane's recogniser are
+    cancelled past their budget, given a bounded grace, then abandoned and
+    reported rather than waited for again. Every backend and provider call
+    the channel admits holds a *lease* on the resources it uses — the
+    backend under a publish or a late join, the pipeline and recognizer
+    under a lane, the synthesizer under a stream — and a resource is closed
+    only once no lease on it remains: one still in use past the budget is
+    retained, closes in the background when its operations truly end, and
+    fails the current close explicitly. The pipeline's own close runs off
+    the event loop and closes every provider whatever became of the ones
+    before it; the recorder reports finalizations it could not finish and a
+    provider it had to keep alive instead of leaving them in the log. A
+    session the channel could not remove, a resource it had to retain, or a
+    backend/provider close that failed is a *failed* close: `close()` raises
+    `ConferenceCloseError` carrying the structured report (component,
+    operation, status per issue) at the very end, once every other step has
+    run — `info()` goes on reporting retained sessions. The waits that
     cannot be bounded belong to `RoomKit.close()`: every operation the
     channel starts on the store or the lock manager — the reads included,
     and the room lock from the moment its acquisition begins to the moment

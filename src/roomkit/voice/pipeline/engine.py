@@ -812,7 +812,16 @@ class AudioPipeline:
         self._debug_tap_sessions.clear()
 
     def close(self) -> None:
-        """Release all pipeline resources."""
+        """Release all pipeline resources.
+
+        Every provider is closed whatever became of the ones before it — the
+        providers are independent, and stopping at the first failure left
+        every provider after it open for good. What failed is raised together,
+        as an ``ExceptionGroup``, once everything has been asked to close.
+
+        Raises:
+            ExceptionGroup: if any provider's ``close()`` raised.
+        """
         self._outbound_locks.clear()
         # Stop active recordings before closing providers
         for handle in self._recording_handles.values():
@@ -822,36 +831,41 @@ class AudioPipeline:
                 except Exception:
                     logger.exception("Failed to stop recording during close")
         self._recording_handles.clear()
+        failures: list[Exception] = []
+
+        def _close(provider: Any) -> None:
+            if provider is None:
+                return
+            try:
+                provider.close()
+            except Exception as exc:
+                failures.append(exc)
+                logger.exception(
+                    "Failed to close %s during pipeline close", type(provider).__name__
+                )
+
         # Close debug taps
         for dt in self._debug_tap_sessions.values():
-            dt.close()
+            _close(dt)
         self._debug_tap_sessions.clear()
-        if self._resampler is not None:
-            self._resampler.close()
-        if self._aec_resampler is not None:
-            self._aec_resampler.close()
-        if self._playback_aec_resampler is not None:
-            self._playback_aec_resampler.close()
-        if self._config.vad is not None:
-            self._config.vad.close()
-        if self._config.denoiser is not None:
-            self._config.denoiser.close()
-        if self._config.diarization is not None:
-            self._config.diarization.close()
-        if self._config.aec is not None:
-            self._config.aec.close()
-        if self._config.agc is not None:
-            self._config.agc.close()
-        if self._config.dtmf is not None:
-            self._config.dtmf.close()
-        if self._config.recorder is not None:
-            self._config.recorder.close()
+        _close(self._resampler)
+        _close(self._aec_resampler)
+        _close(self._playback_aec_resampler)
+        _close(self._config.vad)
+        _close(self._config.denoiser)
+        _close(self._config.diarization)
+        _close(self._config.aec)
+        _close(self._config.agc)
+        _close(self._config.dtmf)
+        _close(self._config.recorder)
         for pp in self._config.postprocessors:
-            pp.close()
-        if self._config.turn_detector is not None:
-            self._config.turn_detector.close()
-        if self._config.backchannel_detector is not None:
-            self._config.backchannel_detector.close()
+            _close(pp)
+        _close(self._config.turn_detector)
+        _close(self._config.backchannel_detector)
+        if failures:
+            raise ExceptionGroup(
+                f"closing the audio pipeline failed for {len(failures)} provider(s)", failures
+            )
 
 
 def _create_default_resampler() -> ResamplerProvider:

@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 from roomkit.channels import _conference_activity
 from roomkit.channels._conference_activity import RoomActivity
 from roomkit.channels._conference_lane import ConferenceBargeIn
+from roomkit.channels._conference_operations import ConferenceOperations, ConferenceResource
 from roomkit.conference.models import ConferenceInterruptionScope
 from roomkit.core.task_utils import log_task_exception
 from roomkit.models.enums import HookTrigger
@@ -221,6 +222,7 @@ class ConferenceVoice:
         interruption: ConferenceInterruptionConfig,
         ensure_bot: EnsureBot,
         activity: RoomActivity,
+        operations: ConferenceOperations,
         on_published: PublishedCallback | None = None,
     ) -> None:
         self._backend = backend
@@ -228,6 +230,7 @@ class ConferenceVoice:
         self._interruption = interruption
         self._ensure_bot = ensure_bot
         self._activity = activity
+        self._operations = operations
         self._on_published = on_published
         self._handler = InterruptionHandler(
             InterruptionConfig(strategy=self._require_supported_strategy())
@@ -396,6 +399,13 @@ class ConferenceVoice:
         not give up on the chunk.
         """
         room_id = playback.room_id
+        # The synthesizer is in use for the whole of the loop — the iterator
+        # is suspended inside the provider between chunks — so the lease
+        # covers it all: a close must not free the synthesizer under a stream
+        # a provider is still producing.
+        lease = self._operations.acquire(
+            ConferenceResource.TTS, what=f"synthesis for room {room_id}"
+        )
         try:
             async for chunk in tts.synthesize_stream(playback.text):
                 # Re-read every chunk: synthesis awaits between them, and that
@@ -442,6 +452,8 @@ class ConferenceVoice:
             with contextlib.suppress(Exception):
                 await asyncio.shield(self._closing_task(playback, bot))
             raise
+        finally:
+            lease.release()
         # Shielded rather than awaited: a cancellation arriving here propagates
         # to the caller, and the chunk that ends the utterance still goes out.
         await asyncio.shield(self._closing_task(playback, bot))
@@ -468,9 +480,7 @@ class ConferenceVoice:
         backend — and the teardown then drained a room it believed quiet and
         took the bot out from under a chunk on its way to that very session.
         """
-        publishing = self._activity.spawn(
-            playback.room_id, self._backend.publish_audio(bot, chunk)
-        )
+        publishing = self._activity.spawn(playback.room_id, self._publish_on_backend(bot, chunk))
         playback.publishing = (chunk, publishing)
         try:
             await asyncio.shield(publishing)
@@ -643,7 +653,7 @@ class ConferenceVoice:
         async with self._activity.track(playback.room_id):
             if playback.abandoned:
                 return
-            await self._backend.publish_audio(
+            await self._publish_on_backend(
                 bot,
                 AudioChunk(
                     data=b"",
@@ -654,6 +664,20 @@ class ConferenceVoice:
                 ),
             )
             playback.published = None
+
+    async def _publish_on_backend(self, bot: BotSession, chunk: AudioChunk) -> None:
+        """Publish one chunk under a lease on the backend.
+
+        The lease is what a close reads: a publication still inside the
+        backend — a wedged network call, an SDK that shields its send — keeps
+        the backend open until the call truly ends, however the caller's own
+        waits and budgets fared. Closing the backend under it was the
+        use-after-close every other resource is protected from (RFC 12.10.4).
+        """
+        with self._operations.use(
+            ConferenceResource.BACKEND, what=f"publishing bot audio for session {bot.id}"
+        ):
+            await self._backend.publish_audio(bot, chunk)
 
     def _forget(self, playback: ConferencePlayback) -> None:
         """Drop a finished utterance, and the room's record once it is idle.
@@ -832,7 +856,9 @@ class ConferenceVoice:
 
         A caller sharing one synthesizer across channels closes it itself,
         which is why the channel's ownership answer is passed in rather than
-        assumed.
+        assumed. The channel's own close passes ``False`` and closes the
+        synthesizer through its shutdown coordinator instead, so the close
+        waits on the synthesizer's leases like on every other resource's.
 
         The utterances a cancellation left to be closed are waited for first,
         on the usual budget. They are publishing into a conference the channel
@@ -842,6 +868,11 @@ class ConferenceVoice:
         await self._settle_closings()
         self.abandon_all()
         if close_provider and self._tts is not None:
+            await self._tts.close()
+
+    async def close_tts(self) -> None:
+        """Close the synthesizer. The coordinator's closer for the TTS resource."""
+        if self._tts is not None:
             await self._tts.close()
 
     async def _settle_closings(self, room_id: str | None = None) -> bool:
