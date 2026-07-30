@@ -159,6 +159,13 @@ class RoomKit(
         Args:
             store: Persistent storage backend. Defaults to ``InMemoryStore``.
             identity_resolver: Optional resolver for identifying inbound senders.
+                Without one, an event's ``participant_id`` is whatever the
+                channel stamped on it (RFC §11.6) — so it is only as
+                trustworthy as the transport that supplied it, and the
+                edit/delete author check (RFC §10.3) is decided from it. Derive
+                the sender id from an authenticated session rather than a
+                client-supplied field, or install a resolver. See
+                ``SECURITY.md``.
             identity_channel_types: Restrict identity resolution to specific channel
                 types. If ``None`` (default), resolution runs for all channels.
                 Set to e.g. ``{ChannelType.SMS}`` to only resolve identity for SMS.

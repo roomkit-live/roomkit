@@ -16,6 +16,33 @@ We will acknowledge your report within 48 hours and work to address the issue pr
 
 **Please do not open public GitHub issues for security vulnerabilities.**
 
+## What `participant_id` is, and is not
+
+Without an `identity_resolver`, a channel stamps the sender id it was given
+straight onto the event as `participant_id`, and RoomKit leaves it there. This
+is required behaviour, not an oversight — the specification says so explicitly
+(RFC §11.6: when resolution is skipped the id "MUST be left as the channel set
+it") — because only the channel knows whether its sender ids mean anything.
+
+What follows from it is worth stating plainly, because it is not obvious from
+the outside: **`participant_id` is whatever your transport put there.** If your
+WebSocket handler takes it from a client-supplied field, then it is
+client-controlled, and so is everything the framework decides from it. That
+includes authorship: the edit/delete rules (RFC §10.3) establish who may
+rewrite or remove a message by comparing `participant_id` to the target
+event's. An unauthenticated id there means an unauthenticated author check.
+
+So: derive `sender_id` from your own authenticated session — the token you
+validated when the socket opened, not a field in the message — or install an
+`identity_resolver` and let the framework resolve it. RoomKit cannot tell the
+difference between the two, and does not try to.
+
+Conference participants are the exception, and deliberately so: identity there
+is resolved only from `asserted_metadata`, which a backend may populate solely
+with values the SFU established (RFC §12.10). Widening that to what a client
+supplied at join requires setting `identity_trusts_unasserted_metadata=True`,
+which exists to be a visible decision.
+
 ## Deploying the SIP backend
 
 `SIPVoiceBackend` is written for a **trusted PBX or SBC in front of it**. Its
