@@ -47,6 +47,7 @@ ROOM = "room-1"
 async def _recording_conference(
     *,
     recorder: MockMediaRecorder | None = None,
+    recording: ConferenceRecordingConfig | None = None,
     **channel_kwargs: object,
 ) -> tuple[RoomKit, ConferenceChannel, MockConferenceBackend, MockMediaRecorder]:
     backend = MockConferenceBackend()
@@ -55,7 +56,7 @@ async def _recording_conference(
         "conf",
         backend=backend,
         recorder=recorder,
-        recording=ConferenceRecordingConfig(),
+        recording=recording if recording is not None else ConferenceRecordingConfig(),
         **channel_kwargs,  # type: ignore[arg-type]
     )
     kit = RoomKit()
@@ -866,3 +867,83 @@ class TestRecordingResultReported:
 
         assert len(recorder.results) == 1
         assert backend.bots == []
+
+
+class TestNothingIsCapturedBeforeTheStartAnnouncement:
+    """RFC 17.6: ON_RECORDING_STARTED fires before any audio is captured.
+    That order is what makes the hook a consent point — a handler can notify
+    participants, or refuse by detaching, while nothing has yet been written.
+    """
+
+    async def test_writes_wait_for_the_announcement_to_be_heard(self) -> None:
+        kit, channel, backend, recorder = await _recording_conference()
+        held = asyncio.Event()
+        entered = asyncio.Event()
+
+        @kit.hook(HookTrigger.ON_RECORDING_STARTED, execution=HookExecution.ASYNC)
+        async def _hold(event: object, ctx: object) -> None:
+            entered.set()
+            await held.wait()
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        alice = await backend.simulate_track_published(ROOM, "p-alice")
+        await backend.simulate_audio(alice, speech_frame())
+        await asyncio.wait_for(entered.wait(), timeout=5.0)
+        # More audio arrives while the announcement is still being heard, and
+        # the writer gets every scheduling opportunity to misbehave.
+        await backend.simulate_audio(alice, speech_frame())
+        for _ in range(20):
+            await asyncio.sleep(0)
+
+        assert recorder.chunks == [], "audio was captured before ON_RECORDING_STARTED finished"
+
+        held.set()
+        # Consent given: the audio buffered while the announcement was being
+        # heard flows to the recorder — buffered, not lost.
+        await drain_recordings(channel)
+        await _until(lambda: len(recorder.chunks) >= 2)
+
+    async def test_a_handler_that_refuses_by_detaching_captures_nothing(self) -> None:
+        kit, channel, backend, recorder = await _recording_conference()
+
+        @kit.hook(HookTrigger.ON_RECORDING_STARTED, execution=HookExecution.ASYNC)
+        async def _refuse(event: object, ctx: object) -> None:
+            await kit.detach_channel(ROOM, "conf")
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        alice = await backend.simulate_track_published(ROOM, "p-alice")
+        await backend.simulate_audio(alice, speech_frame())
+        await _until(lambda: not channel._room(ROOM).attached)
+        await _settle(channel)
+
+        assert recorder.chunks == [], "a refused recording still captured audio"
+
+
+class TestRecordingMetadataReachesTheRecorder:
+    async def test_the_configured_metadata_is_carried_verbatim(self) -> None:
+        """`ConferenceRecordingConfig.metadata` is the caller's to define and
+        the recorder's to interpret; a field the framework silently dropped
+        read as if it worked.
+        """
+        from roomkit.recorder.base import MediaRecordingConfig, MediaRecordingHandle
+
+        class _ConfigKeeper(MockMediaRecorder):
+            def __init__(self) -> None:
+                super().__init__()
+                self.configs: list[MediaRecordingConfig] = []
+
+            def on_recording_start(self, config: MediaRecordingConfig) -> MediaRecordingHandle:
+                self.configs.append(config)
+                return super().on_recording_start(config)
+
+        recorder = _ConfigKeeper()
+        _, channel, backend, _ = await _recording_conference(
+            recorder=recorder,
+            recording=ConferenceRecordingConfig(metadata={"matter": "M-2026-071"}),
+        )
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        alice = await backend.simulate_track_published(ROOM, "p-alice")
+        await backend.simulate_audio(alice, speech_frame())
+        await _until(lambda: recorder.configs != [])
+
+        assert recorder.configs[0].metadata == {"matter": "M-2026-071"}

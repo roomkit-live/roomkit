@@ -277,6 +277,7 @@ class ConferenceChannel(
         backend.on_track_unpublished(self._on_track_unpublished)
         backend.on_track_audio(self._on_track_audio)
         backend.on_active_speaker_changed(self._on_active_speaker_changed)
+        backend.on_bot_session_ended(self._on_bot_session_ended)
 
     def _resolve_recorder(
         self,
@@ -346,7 +347,19 @@ class ConferenceChannel(
             # Announced from the writer's task, which is where a recording is
             # opened and therefore the first moment there is one to announce.
             on_opened=self._announce_recording_started,
+            # Read once the announcement has been heard, before the audio
+            # buffered during it reaches the recorder: an ON_RECORDING_STARTED
+            # handler that refuses — detaching the channel is the ordinary
+            # way — closes admission synchronously, so this check turning
+            # false is what keeps the pre-consent audio out of the file
+            # (RFC 17.6).
+            may_capture=self._may_record,
         )
+
+    def _may_record(self, room_id: str) -> bool:
+        """Whether the channel is still allowed to record a room's audio."""
+        room = self._attached_room(room_id)
+        return room is not None and room.may_collect()
 
     def _resolve_pipeline(self, config: AudioPipelineConfig | None) -> AudioPipelineConfig | None:
         """Settle what the lanes will run, or refuse a configuration that cannot work.

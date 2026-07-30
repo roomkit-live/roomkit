@@ -208,12 +208,14 @@ class ConferenceRecording:
         channel_id: str,
         max_queued_frames: int = 100,
         on_opened: Callable[[TrackRecording], Awaitable[None]] | None = None,
+        may_capture: Callable[[str], bool] | None = None,
     ) -> None:
         self._recorder = recorder
         self._config = config
         self._channel_id = channel_id
         self._max_queued_frames = max_queued_frames
         self._on_opened = on_opened
+        self._may_capture = may_capture
         self._open: dict[str, TrackRecording] = {}
         # Writers whose closed recordings still have a call running inside the
         # recorder. Kept until they settle, because releasing the recorder is
@@ -332,10 +334,19 @@ class ConferenceRecording:
                     storage=self._config.storage,
                     format=self._config.format,
                     audio_sample_rate=audio_format.sample_rate,
+                    # Verbatim, and a copy per recording: recorders may
+                    # annotate what they were handed, and two tracks must not
+                    # share one mutable dict on that account.
+                    metadata=dict(self._config.metadata),
                 ),
                 track=media_track,
                 room_id=track.room_id,
                 max_queued_frames=self._max_queued_frames,
+                may_capture=(
+                    None
+                    if self._may_capture is None
+                    else partial(self._may_capture, track.room_id)
+                ),
             ),
         )
         self._open[track.id] = recording

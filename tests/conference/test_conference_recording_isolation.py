@@ -518,6 +518,9 @@ class TestFlushBeforeFinalizing:
         alice = await backend.simulate_track_published(ROOM, "p-alice")
         for marker in range(10):
             await backend.simulate_audio(alice, _numbered_frame(marker))
+        # Let the recording be announced and live first: a detach racing the
+        # start announcement reads as a refusal, and drops rather than writes.
+        await _until(lambda: recorder.chunks != [], timeout=5.0)
 
         await kit.detach_channel(ROOM, "conf")
 
@@ -696,9 +699,10 @@ class TestClosingFromTheOpeningAnnouncement:
         ]
 
     async def test_the_frame_that_opened_the_recording_is_still_written(self) -> None:
-        """The writing carries on beside the announcement rather than behind
-        it, so a handler that takes its time does not cost the recording the
-        frames that arrive while it runs.
+        """The frame waits out the announcement rather than racing it — no
+        audio is captured before ON_RECORDING_STARTED has been heard
+        (RFC 17.6) — and a handler that takes its time costs the recording
+        nothing: the frame is buffered, and written once consent stood.
         """
         kit, channel, backend, recorder = await _recording_conference()
         released = asyncio.Event()
@@ -710,8 +714,11 @@ class TestClosingFromTheOpeningAnnouncement:
         await backend.simulate_participant_joined(ROOM, "p-alice")
         alice = await backend.simulate_track_published(ROOM, "p-alice")
         await backend.simulate_audio(alice, _numbered_frame(7))
-        await _until(lambda: recorder.chunks != [], timeout=5.0)
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert recorder.chunks == [], "audio was captured before the announcement was heard"
         released.set()
+        await _until(lambda: recorder.chunks != [], timeout=5.0)
 
         assert [struct.unpack("<h", c.data[:2])[0] for c in recorder.chunks] == [7]
 

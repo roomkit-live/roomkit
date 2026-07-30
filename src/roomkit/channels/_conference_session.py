@@ -104,6 +104,9 @@ class ConferenceSessionMixin:
     # Provided by ConferenceChannel — see the host contract above
     _rooms: Any
     _room: Any
+    _attached_room: Any
+    _voice: Any
+    _stop_consuming: Any
     _emit_framework_event: Any
     _announce_end: Any
 
@@ -426,6 +429,41 @@ class ConferenceSessionMixin:
             return False
         room.forget_leaving(bot)
         return True
+
+    async def _on_bot_session_ended(self, bot: BotSession, reason: str) -> None:
+        """React to the SFU ending the bot's session without a ``leave()``.
+
+        The report is the session's end in fact (RFC 12.10.3): the connection
+        is gone, whatever the books say. So the books are corrected — the
+        session comes off them, ``bot_present`` stops answering yes for a
+        connection that no longer exists — the session's lanes are closed and
+        its recordings finalized (their tracks stopped delivering with the
+        connection), its playbacks are abandoned, and the end is announced.
+        The next need re-joins lazily, exactly as the first one did: the
+        generation bump is what makes the dead session's leftover background
+        work abandon itself instead of adopting the new bot.
+
+        A stale report — a session already replaced by a re-join, or one a
+        detach is already taking out — corrects nothing: whoever owns that
+        session's end owns its announcements too.
+        """
+        room = self._attached_room(bot.room_id)
+        if room is None or room.bot is not bot:
+            return
+        logger.warning(
+            "Conference channel %r lost bot session %s in room %s without a leave(): %s. "
+            "The session is off the books; the channel re-joins on the next need",
+            self.channel_id,
+            bot.id,
+            bot.room_id,
+            reason,
+        )
+        room.bump()
+        room.bot = None
+        self._voice.forget_room(bot.room_id)
+        for track_id in room.forget_subscriptions():
+            await self._stop_consuming(track_id)
+        await self._announce_end(bot.room_id, bot)
 
     async def _leave_all(self, room_id: str) -> None:
         """Take every session a room still has in the conference out of it.

@@ -63,6 +63,7 @@ from roomkit.conference import (
 )
 from roomkit.core.delivery import DeliveryStrategy, Immediate, Queued, WaitForIdle
 from roomkit.core.exceptions import (
+    ConferenceAlreadyAttachedError,
     ConferenceCapabilityError,
     ConferenceCloseError,
     ParticipantNotAdmittedError,
@@ -215,6 +216,7 @@ __all__ = [
     "SourceNotFoundError",
     "VoiceBackendNotConfiguredError",
     "VoiceNotConfiguredError",
+    "ConferenceAlreadyAttachedError",
     "ConferenceCapabilityError",
     "ConferenceCloseError",
     "RoomNotAttachedError",

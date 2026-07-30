@@ -511,7 +511,18 @@ class LiveKitConferenceBackend(ConferenceBackend):
             track_video=self._emit_track_video,
             active_speaker_changed=self._emit_active_speaker_changed,
             connection_quality=self._emit_connection_quality,
+            bot_session_ended=self._bot_session_gone,
         )
+
+    async def _bot_session_gone(self, bot: BotSession, reason: str) -> None:
+        """Forget a session the SFU ended, then report it (RFC 12.10.3).
+
+        Forgotten first: the connection is gone, so there is nothing a later
+        ``leave()`` could do for it, and a registry still carrying it would
+        refuse the re-join the report exists to make possible.
+        """
+        self._sessions.pop(bot.id, None)
+        await self._emit_bot_session_ended(bot, reason)
 
     def _session(self, bot: BotSession) -> LiveKitBotSession:
         session = self._sessions.get(bot.id)
@@ -520,10 +531,20 @@ class LiveKitConferenceBackend(ConferenceBackend):
         return session
 
     async def leave(self, bot: BotSession) -> None:
-        session = self._sessions.pop(bot.id, None)
+        """Take the bot out, and forget the session only once it *is* out.
+
+        Popping first was how a failed disconnect became invisible: the
+        registry had already forgotten the session, so a retry found nothing
+        to leave and the channel's books called the bot gone while it may
+        still have been in the meeting. The session stays registered until
+        the disconnect returns, and the failure propagates for the channel's
+        leaving ledger to record (RFC 12.10.4).
+        """
+        session = self._sessions.get(bot.id)
         if session is None:
             return
         await session.leave()
+        self._sessions.pop(bot.id, None)
 
     async def subscribe_track(self, bot: BotSession, track_id: str) -> None:
         await self._session(bot).subscribe(track_id)
@@ -545,20 +566,36 @@ class LiveKitConferenceBackend(ConferenceBackend):
         self._require(ConferenceCapability.VIDEO_PUBLISH, "Bot video publishing")
 
     async def close(self) -> None:
-        """Release the sessions and the API client. Idempotent."""
+        """Release the sessions and the API client. Idempotent.
+
+        A session whose disconnect fails stays registered and is *raised*,
+        together, once every session has been attempted and the client is
+        released — a close that only logged them reported bots possibly still
+        in their meetings as a clean shutdown, which is the one answer the
+        channel's books must never get (RFC 12.10.4). The channel records the
+        failure against its own close and keeps naming the sessions.
+        """
         if self._closed:
             return
         self._closed = True
-        sessions = list(self._sessions.values())
-        self._sessions.clear()
-        for session in sessions:
+        failures: list[Exception] = []
+        for bot_id, session in list(self._sessions.items()):
             try:
                 await session.leave()
-            except Exception:
+            except Exception as exc:
+                failures.append(exc)
                 logger.exception("Leaving conference room %s during close failed", session.room_id)
+            else:
+                self._sessions.pop(bot_id, None)
         api, self._api = self._api, None
         if api is not None:
             await api.aclose()
+        if failures:
+            raise ExceptionGroup(
+                f"closing the LiveKit backend could not take {len(failures)} bot session(s) "
+                "out of their conference room(s)",
+                failures,
+            )
 
 
 def _joined_at(info: Any) -> datetime | None:

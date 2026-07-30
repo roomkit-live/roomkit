@@ -52,7 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     room lifecycle — and `MockConferenceBackend` implements the whole of it
     for tests, with fault injection to make the failure paths reachable:
     `fail(method, ...)`, `delay(operation, ...)`, per-track audio formats
-    (`MockTrackFormat`), and the bot's output grouped by utterance.
+    (`MockTrackFormat`), and the bot's output grouped by utterance. A room
+    holds at most one conference: attaching a second conference channel is
+    refused with `ConferenceAlreadyAttachedError` (RFC §12.10.4). A backend
+    that observes the SFU ending the bot's session without a `leave()` — a
+    dropped connection, an eviction — reports it through
+    `on_bot_session_ended`; the channel takes the session off its books,
+    finalizes its recordings, announces `conference_ended`, and re-joins
+    lazily on the next need instead of reporting a dead connection present
+    forever.
   - **A real SFU.** `LiveKitConferenceBackend` (`pip install roomkit[livekit]`)
     implements the whole of that ABC against LiveKit, media plane only —
     `livekit-agents` stays out, because RoomKit already owns VAD, recognition,
@@ -69,7 +77,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     source until an avatar gives it one. Identity is founded only on
     attributes LiveKit itself asserts — the `sip.` attributes of a participant
     the *server* marked as a dial-in — so a client writing its own
-    `sip.phoneNumber` cannot reach someone else's Identity.
+    `sip.phoneNumber` cannot reach someone else's Identity. A disconnect the
+    SDK refuses propagates — the session stays registered until it is
+    genuinely out, and `close()` raises for the sessions it could not take
+    out instead of logging them — and its control-plane event bridge is
+    bounded: active-speaker and quality events coalesce to their latest
+    value, lifecycle events past the bound evict the oldest, counted and
+    reported, so a flapping participant costs bounded memory.
   - **Transcription.** Each subscribed AUDIO track runs through the shared
     `AudioPipeline` in a lane of its own, under the track's stream identity:
     one utterance becomes one transcription event attributed to its speaker,
@@ -91,7 +105,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `MediaRecorder` contract now specified in RFC §12.11. Writes stay off
     the frame-delivery path, the per-track backlog is bounded and counted,
     and `ON_RECORDING_STARTED` / `ON_RECORDING_STOPPED` report where each
-    recording was written.
+    recording was written. No audio reaches the recorder before
+    `ON_RECORDING_STARTED` has been heard (RFC §17.6): the audio buffered
+    during the announcement flows to the recorder once the hook returns, and
+    a handler that refuses — detaching the channel is the ordinary way —
+    captures nothing, the buffered frames dropped and counted. The hook is a
+    consent point, not a notification of capture under way; the full consent
+    and encryption-at-rest mechanism is tracked separately.
+    `ConferenceRecordingConfig.metadata` reaches the recorder verbatim on
+    `MediaRecordingConfig.metadata`, one copy per recording.
   - **Speaking and interruption.** AI responses are synthesized once and
     published on the bot track, one utterance at a time, every utterance
     closed; who may interrupt the bot is policy

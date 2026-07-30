@@ -42,6 +42,13 @@ from roomkit.voice.base import AudioChunk
 
 logger = logging.getLogger("roomkit.conference.livekit")
 
+# How many control-plane events the bridge holds before evicting the oldest.
+# State events (active speaker, connection quality) coalesce to one entry per
+# key and never accumulate; what this bounds is lifecycle events under a
+# consumer wedged in the framework's fanout — the pathological case, priced
+# as bounded memory plus a counted, reported loss instead of unbounded growth.
+MAX_QUEUED_EVENTS = 512
+
 
 @dataclass(frozen=True)
 class ConferenceEmissions:
@@ -59,6 +66,7 @@ class ConferenceEmissions:
     track_video: VideoSink
     active_speaker_changed: Callable[[str, str], Awaitable[None]]
     connection_quality: Callable[[str, str, str], Awaitable[None]]
+    bot_session_ended: Callable[[BotSession, str], Awaitable[None]]
 
 
 class LiveKitBotSession:
@@ -77,9 +85,15 @@ class LiveKitBotSession:
         self._config = config
         self._emissions = emissions
         self._room: Any = rtc.Room()
-        self._events: asyncio.Queue[tuple[Callable[..., Awaitable[None]], tuple[Any, ...]]] = (
-            asyncio.Queue()
-        )
+        # The event bridge is bounded. The consumer awaits the framework's
+        # fanout — identity resolution, hooks — so a participant generating
+        # events faster than the fanout returns would otherwise grow this
+        # without limit. State events never queue more than one entry each
+        # (see `_put_state`); lifecycle events past the bound evict the
+        # oldest, counted and said out loud.
+        self._events: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+        self._pending_state: dict[Any, tuple[Callable[..., Awaitable[None]], tuple[Any, ...]]] = {}
+        self._dropped_events = 0
         self._consumer: asyncio.Task[None] | None = None
         self._announced: set[str] = set()
         self._tracks: dict[str, ConferenceTrack] = {}
@@ -95,6 +109,10 @@ class LiveKitBotSession:
         )
         self._dominant_speaker: str | None = None
         self._left = False
+        self._disconnected = False
+        # The teardown task an SFU-side disconnect runs on; the callback that
+        # learns of the loss is synchronous. Kept referenced until it ends.
+        self._ender: asyncio.Task[None] | None = None
 
     @property
     def room_id(self) -> str:
@@ -146,20 +164,29 @@ class LiveKitBotSession:
         name is on its way out. So the session going away *is* the boundary, and
         what that means here is that the queued audio goes unplayed and the
         track goes with it. Nothing is published on the way out.
+
+        A disconnect the SDK refuses *propagates*. Swallowing it here reported
+        a success to a channel whose entire departure bookkeeping — the leaving
+        ledger, ``info()``'s bot_present, the close's final raise — exists to
+        never misstate whether the bot is out of the meeting (RFC 12.10.4:
+        failing to remove a session is failing to close). The local teardown
+        that already ran stays torn down; a retry reattempts the disconnect
+        alone, and only a disconnect that returned makes later calls no-ops.
         """
-        if self._left:
+        if self._disconnected:
             return
-        self._left = True
-        if self._voice.abandon_utterance():
-            logger.debug(
-                "Conference bot %s left room %s mid-utterance; the session ends it",
-                self.session.identity,
-                self.room_id,
-            )
-        await self._stop_pumps()
-        await self._voice.close()
-        with contextlib.suppress(Exception):
-            await self._room.disconnect()
+        if not self._left:
+            self._left = True
+            if self._voice.abandon_utterance():
+                logger.debug(
+                    "Conference bot %s left room %s mid-utterance; the session ends it",
+                    self.session.identity,
+                    self.room_id,
+                )
+            await self._stop_pumps()
+            await self._voice.close()
+        await self._room.disconnect()
+        self._disconnected = True
         if self._consumer is not None:
             self._consumer.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -176,6 +203,7 @@ class LiveKitBotSession:
         """
         while not self._events.empty():
             self._events.get_nowait()
+        self._pending_state.clear()
 
     async def _stop_pumps(self) -> None:
         pumps = list(self._pumps.values())
@@ -274,9 +302,55 @@ class LiveKitBotSession:
         room.on("disconnected", self._on_disconnected)
 
     def _put(self, emit: Callable[..., Awaitable[None]], *args: Any) -> None:
+        """Queue a lifecycle event — an arrival, a departure, a track.
+
+        These carry facts the roster and the lanes must not miss, so they are
+        never coalesced. What bounds them is eviction under pathology: a
+        conference producing lifecycle events faster than the framework's
+        fanout consumes them, for longer than the queue holds, loses its
+        oldest — counted, and reported in the log, because a roster that went
+        wrong silently is the one answer it must never give.
+        """
         if self._left:
             return
-        self._events.put_nowait((emit, args))
+        self._evict_if_full()
+        self._events.put_nowait(("event", (emit, args)))
+
+    def _put_state(self, key: Any, emit: Callable[..., Awaitable[None]], *args: Any) -> None:
+        """Queue a state event, keeping only the latest value per key.
+
+        Active speaker and connection quality are *states*, not facts: only
+        the current value matters, and a consumer that fell behind should say
+        the newest one, not replay the history. One marker per key sits in
+        the queue; further updates replace the stored value in place, so a
+        participant flapping quality cannot grow the queue at all.
+        """
+        if self._left:
+            return
+        already_queued = key in self._pending_state
+        self._pending_state[key] = (emit, args)
+        if already_queued:
+            return
+        self._evict_if_full()
+        self._events.put_nowait(("state", key))
+
+    def _evict_if_full(self) -> None:
+        """Make room for one entry, dropping the oldest when none is left."""
+        if self._events.qsize() < MAX_QUEUED_EVENTS:
+            return
+        with contextlib.suppress(asyncio.QueueEmpty):
+            kind, payload = self._events.get_nowait()
+            if kind == "state":
+                self._pending_state.pop(payload, None)
+            self._dropped_events += 1
+            if self._dropped_events == 1 or self._dropped_events % 100 == 0:
+                logger.error(
+                    "The LiveKit event queue for room %s overflowed: %d event(s) dropped so "
+                    "far. The framework's fanout is not keeping up with the conference, and "
+                    "the roster may be missing what the dropped events carried",
+                    self.room_id,
+                    self._dropped_events,
+                )
 
     async def _consume(self) -> None:
         """Await the queued emissions, in order, until cancelled.
@@ -286,7 +360,14 @@ class LiveKitBotSession:
         and take the room's whole event stream with it, so it is caught here too.
         """
         while True:
-            emit, args = await self._events.get()
+            kind, payload = await self._events.get()
+            if kind == "state":
+                entry = self._pending_state.pop(payload, None)
+                if entry is None:
+                    continue
+                emit, args = entry
+            else:
+                emit, args = payload
             try:
                 await emit(*args)
             except asyncio.CancelledError:
@@ -448,22 +529,31 @@ class LiveKitBotSession:
             self._dominant_speaker = dominant
             return
         self._dominant_speaker = dominant
-        self._put(self._emissions.active_speaker_changed, self.room_id, dominant)
+        self._put_state("speaker", self._emissions.active_speaker_changed, self.room_id, dominant)
 
     def _on_connection_quality_changed(self, participant: Any, quality: Any) -> None:
         label = quality_label(getattr(quality, "name", str(quality)))
         if label is None:
             return
-        self._put(self._emissions.connection_quality, self.room_id, participant.identity, label)
+        self._put_state(
+            ("quality", participant.identity),
+            self._emissions.connection_quality,
+            self.room_id,
+            participant.identity,
+            label,
+        )
 
     def _on_disconnected(self, reason: Any = None) -> None:
-        """The SFU dropped the bot, which ends the utterance the same way.
+        """The SFU dropped the bot, which ends the session in fact.
 
-        Not the same as :meth:`leave`: nothing here was asked for, so the
-        session's own state is corrected and the framework finds out at its next
-        publish. There is nowhere to publish a boundary — a dropped connection
-        announces nothing, any more than a crashed process would (RFC section
-        12.10.4).
+        Not the same as :meth:`leave`: nothing here was asked for, and there
+        is nowhere to publish a boundary — a dropped connection announces
+        nothing, any more than a crashed process would (RFC section 12.10.4).
+        What there *is* somewhere to send is the fact itself: the session's
+        local state is torn down on a task of its own — this callback is
+        synchronous — and the end is reported through ``bot_session_ended``,
+        because a loss the framework never hears about is a bot it reports
+        present forever.
         """
         if self._voice.abandon_utterance():
             logger.warning(
@@ -475,6 +565,26 @@ class LiveKitBotSession:
             logger.info(
                 "LiveKit disconnected the conference bot in room %s (%s)", self.room_id, reason
             )
+        if self._left:
+            return
+        # Admission closes here, in the synchronous callback: a leave() racing
+        # this teardown must find the session already ended, not tear it down
+        # a second time beside it.
+        self._left = True
+        self._disconnected = True
+        self._ender = asyncio.create_task(self._ended_by_sfu(str(reason)))
+
+    async def _ended_by_sfu(self, reason: str) -> None:
+        """Tear the session down after an end nobody asked for, and say so."""
+        await self._stop_pumps()
+        await self._voice.close()
+        if self._consumer is not None:
+            self._consumer.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._consumer
+            self._consumer = None
+        self._drain_events()
+        await self._emissions.bot_session_ended(self.session, reason)
 
     # -------------------------------------------------------------------------
     # Media — one pump task per subscribed track, delivered by _livekit_media

@@ -6,12 +6,17 @@ import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels.base import Channel, FrameworkAwareChannel
-from roomkit.core.exceptions import ChannelNotFoundError, ChannelNotRegisteredError
+from roomkit.core.exceptions import (
+    ChannelNotFoundError,
+    ChannelNotRegisteredError,
+    ConferenceAlreadyAttachedError,
+)
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
+    ChannelType,
     EventType,
     HookExecution,
     HookTrigger,
@@ -188,6 +193,23 @@ class ChannelOpsMixin(HelpersMixin):
             channel = self._channels.get(channel_id)
             if channel is None:
                 raise ChannelNotRegisteredError(f"Channel {channel_id} not registered")
+            # A conference maps 1:1 to a room (RFC 12.10.1 principle 2, made
+            # normative in 12.10.4): a second conference channel is a second
+            # bot, a second transcription of every utterance and a second AI
+            # voice for the same room. Re-attaching the same channel is an
+            # ordinary attach over a live attachment and stays allowed.
+            if channel.channel_type is ChannelType.CONFERENCE:
+                for existing in await self._store.list_bindings(room_id):
+                    if (
+                        existing.channel_type is ChannelType.CONFERENCE
+                        and existing.channel_id != channel_id
+                    ):
+                        raise ConferenceAlreadyAttachedError(
+                            f"Room {room_id!r} already has conference channel "
+                            f"{existing.channel_id!r} attached, and a conference maps 1:1 "
+                            f"to a room (RFC 12.10.4) — {channel_id!r} is refused. Detach "
+                            f"{existing.channel_id!r} first."
+                        )
             binding = ChannelBinding(
                 channel_id=channel_id,
                 room_id=room_id,

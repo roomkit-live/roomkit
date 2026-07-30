@@ -76,6 +76,7 @@ INJECTABLE_EMISSIONS = frozenset(
         "track_video",
         "active_speaker_changed",
         "connection_quality",
+        "bot_session_ended",
     }
 )
 """Callback fanouts that can be made to take time. They cannot be made to fail:
@@ -367,6 +368,20 @@ class MockConferenceBackend(ConferenceBackend):
             return None
         await self._emit_participant_left(room_id, participant)
         return participant
+
+    async def simulate_bot_disconnected(
+        self, bot: BotSession, reason: str = "connection lost"
+    ) -> None:
+        """End the bot's session the way an SFU does: without a ``leave()``.
+
+        The session is forgotten first — a dropped connection is not a
+        participant, and a later ``leave()`` for it finds nothing to do — and
+        then reported, which is the order the contract promises (RFC 12.10.3).
+        """
+        if bot in self.bots:
+            self.bots.remove(bot)
+        self._open_utterances.pop(bot.id, None)
+        await self._emit_bot_session_ended(bot, reason)
 
     async def simulate_track_published(
         self,

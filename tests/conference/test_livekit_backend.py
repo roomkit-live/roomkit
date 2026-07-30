@@ -12,6 +12,8 @@ What genuinely needs a server — joining, subscribing, frames, teardown — is 
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -485,3 +487,275 @@ class TestClose:
 
     async def test_closing_a_backend_that_never_talked_to_a_server_is_quiet(self) -> None:
         await _backend().close()
+
+
+class _RefusingSession:
+    """A stand-in bot session whose disconnect the SFU refuses on demand."""
+
+    def __init__(self) -> None:
+        self.attempts = 0
+        self.refuse = True
+        self.room_id = "room-1"
+
+    async def leave(self) -> None:
+        self.attempts += 1
+        if self.refuse:
+            raise RuntimeError("the SFU refused the disconnect")
+
+
+class TestLeaveFailureIsNotSwallowed:
+    """RFC 12.10.4: failing to remove a session is failing to close. The
+    channel's entire departure bookkeeping — the leaving ledger, info()'s
+    bot_present, the close's final raise — is built on leave() telling the
+    truth, so a backend that swallows a failed disconnect defeats all of it.
+    """
+
+    async def test_a_failed_disconnect_propagates_and_keeps_the_session(self) -> None:
+        backend = _backend()
+        bot = BotSession(id="lk-1", room_id="room-1", identity="roomkit")
+        session = _RefusingSession()
+        backend._sessions[bot.id] = session  # type: ignore[assignment]
+
+        with pytest.raises(RuntimeError):
+            await backend.leave(bot)
+
+        # The registry still carries the session, so the close's retry has
+        # something to leave — popping first was how the bot got stranded.
+        assert bot.id in backend._sessions
+        session.refuse = False
+        await backend.leave(bot)
+        assert bot.id not in backend._sessions
+        assert session.attempts == 2
+
+    async def test_close_raises_for_sessions_it_could_not_take_out(self) -> None:
+        backend = _backend()
+        backend._api = _FakeAPI()
+        bot = BotSession(id="lk-1", room_id="room-1", identity="roomkit")
+        session = _RefusingSession()
+        backend._sessions[bot.id] = session  # type: ignore[assignment]
+
+        with pytest.raises(ExceptionGroup) as failure:
+            await backend.close()
+
+        assert "1 bot session(s)" in str(failure.value)
+        assert bot.id in backend._sessions, "close forgot a bot it could not remove"
+
+    async def test_the_session_itself_retries_the_disconnect(self) -> None:
+        from types import SimpleNamespace
+
+        from roomkit.conference._livekit_session import ConferenceEmissions, LiveKitBotSession
+
+        class _FakeRoom:
+            def __init__(self) -> None:
+                self.disconnects = 0
+                self.refuse = True
+                self.local_participant = None
+
+            def on(self, *args: Any, **kwargs: Any) -> None:
+                return None
+
+            async def disconnect(self) -> None:
+                self.disconnects += 1
+                if self.refuse:
+                    raise RuntimeError("signalling connection already gone")
+
+        room = _FakeRoom()
+        rtc = SimpleNamespace(Room=lambda: room)
+
+        async def _sink(*args: Any) -> None:
+            return None
+
+        session = LiveKitBotSession(
+            rtc=rtc,
+            session=BotSession(id="lk-1", room_id="room-1", identity="roomkit"),
+            config=SimpleNamespace(publish_queue_ms=200),
+            emissions=ConferenceEmissions(
+                participant_joined=_sink,
+                participant_left=_sink,
+                track_published=_sink,
+                track_unpublished=_sink,
+                track_audio=_sink,
+                track_video=_sink,
+                active_speaker_changed=_sink,
+                connection_quality=_sink,
+                bot_session_ended=_sink,
+            ),
+        )
+
+        with pytest.raises(RuntimeError):
+            await session.leave()
+        # A failed leave is not terminal: the retry reattempts the disconnect.
+        room.refuse = False
+        await session.leave()
+        assert room.disconnects == 2
+        # A *successful* one is: later calls are no-ops.
+        await session.leave()
+        assert room.disconnects == 2
+
+
+def _bridge_session() -> Any:
+    """A LiveKitBotSession with a fake rtc, for exercising the event bridge."""
+    from types import SimpleNamespace
+
+    from roomkit.conference._livekit_session import ConferenceEmissions, LiveKitBotSession
+
+    class _FakeRoom:
+        local_participant = None
+
+        def on(self, *args: Any, **kwargs: Any) -> None:
+            return None
+
+        async def disconnect(self) -> None:
+            return None
+
+    async def _sink(*args: Any) -> None:
+        return None
+
+    return LiveKitBotSession(
+        rtc=SimpleNamespace(Room=_FakeRoom),
+        session=BotSession(id="lk-1", room_id="room-1", identity="roomkit"),
+        config=SimpleNamespace(publish_queue_ms=200),
+        emissions=ConferenceEmissions(
+            participant_joined=_sink,
+            participant_left=_sink,
+            track_published=_sink,
+            track_unpublished=_sink,
+            track_audio=_sink,
+            track_video=_sink,
+            active_speaker_changed=_sink,
+            connection_quality=_sink,
+            bot_session_ended=_sink,
+        ),
+    )
+
+
+class TestTheEventBridgeIsBounded:
+    """The consumer awaits the framework's fanout — identity, hooks — so an
+    authorised participant generating control events faster than that returns
+    must cost bounded memory, never unbounded growth.
+    """
+
+    async def test_state_events_coalesce_to_one_entry_per_key(self) -> None:
+        from types import SimpleNamespace
+
+        session = _bridge_session()
+        participant = SimpleNamespace(identity="p-flappy")
+
+        for _ in range(1000):
+            session._on_connection_quality_changed(
+                participant, SimpleNamespace(name="QUALITY_EXCELLENT")
+            )
+            session._on_connection_quality_changed(
+                participant, SimpleNamespace(name="QUALITY_POOR")
+            )
+
+        assert session._events.qsize() == 1
+        assert len(session._pending_state) == 1
+
+    async def test_a_coalesced_state_delivers_its_latest_value_once(self) -> None:
+        from types import SimpleNamespace
+
+        session = _bridge_session()
+        seen: list[tuple[Any, ...]] = []
+
+        async def _record(*args: Any) -> None:
+            seen.append(args)
+
+        session._emissions = session._emissions.__class__(
+            **{**session._emissions.__dict__, "connection_quality": _record}
+        )
+        participant = SimpleNamespace(identity="p-1")
+        session._on_connection_quality_changed(participant, SimpleNamespace(name="QUALITY_POOR"))
+        session._on_connection_quality_changed(
+            participant, SimpleNamespace(name="QUALITY_EXCELLENT")
+        )
+
+        consumer = asyncio.create_task(session._consume())
+        try:
+            deadline = asyncio.get_running_loop().time() + 5.0
+            while not seen:
+                assert asyncio.get_running_loop().time() < deadline
+                await asyncio.sleep(0)
+            await asyncio.sleep(0)
+        finally:
+            consumer.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await consumer
+
+        assert seen == [("room-1", "p-1", "excellent")]
+
+    async def test_lifecycle_events_past_the_bound_evict_the_oldest_counted(self) -> None:
+        from roomkit.conference import _livekit_session as session_module
+
+        session = _bridge_session()
+
+        async def _sink(*args: Any) -> None:
+            return None
+
+        for _ in range(session_module.MAX_QUEUED_EVENTS + 50):
+            session._put(_sink, "room-1")
+
+        assert session._events.qsize() == session_module.MAX_QUEUED_EVENTS
+        assert session._dropped_events == 50
+
+
+class TestASfuSideDisconnectIsReported:
+    async def test_the_session_reports_its_own_loss_and_ends(self) -> None:
+        from types import SimpleNamespace
+
+        from roomkit.conference._livekit_session import ConferenceEmissions, LiveKitBotSession
+
+        class _FakeRoom:
+            local_participant = None
+
+            def on(self, *args: Any, **kwargs: Any) -> None:
+                return None
+
+            async def disconnect(self) -> None:
+                raise AssertionError("a dropped session has nothing to disconnect")
+
+        reported: list[tuple[Any, str]] = []
+
+        async def _ended(bot: Any, reason: str) -> None:
+            reported.append((bot, reason))
+
+        async def _sink(*args: Any) -> None:
+            return None
+
+        bot = BotSession(id="lk-1", room_id="room-1", identity="roomkit")
+        session = LiveKitBotSession(
+            rtc=SimpleNamespace(Room=_FakeRoom),
+            session=bot,
+            config=SimpleNamespace(publish_queue_ms=200),
+            emissions=ConferenceEmissions(
+                participant_joined=_sink,
+                participant_left=_sink,
+                track_published=_sink,
+                track_unpublished=_sink,
+                track_audio=_sink,
+                track_video=_sink,
+                active_speaker_changed=_sink,
+                connection_quality=_sink,
+                bot_session_ended=_ended,
+            ),
+        )
+
+        session._on_disconnected("SIGNAL_CLOSE")
+        assert session._ender is not None
+        await asyncio.wait_for(session._ender, timeout=5.0)
+
+        assert reported == [(bot, "SIGNAL_CLOSE")]
+        # The end is terminal: a later leave() has nothing to do, and the
+        # disconnect callback firing again reports nothing twice.
+        await session.leave()
+        session._on_disconnected("SIGNAL_CLOSE")
+        assert len(reported) == 1
+
+    async def test_the_backend_forgets_the_session_it_was_told_about(self) -> None:
+        backend = _backend()
+        bot = BotSession(id="lk-1", room_id="room-1", identity="roomkit")
+        backend._sessions[bot.id] = object()  # type: ignore[assignment]
+
+        await backend._bot_session_gone(bot, "connection lost")
+
+        assert bot.id not in backend._sessions

@@ -27,6 +27,7 @@ from roomkit import (
 )
 from roomkit.channels.conference import ConferenceChannel
 from roomkit.core.exceptions import (
+    ConferenceAlreadyAttachedError,
     ParticipantNotAdmittedError,
     ParticipantNotFoundError,
     RoomNotAttachedError,
@@ -1015,3 +1016,137 @@ class TestABanSurvivesTheSFU:
         participant = await kit.store.get_participant(ROOM, "p-alice")
         assert participant is not None
         assert participant.status is ParticipantStatus.LEFT
+
+
+class TestOneConferencePerRoom:
+    """RFC 12.10.1 principle 2: a conference maps 1:1 to a Room, both ways.
+    A second conference channel is a second bot, a second transcription of
+    every utterance and a second AI voice — so the attach refuses it.
+    """
+
+    async def test_a_second_conference_channel_is_refused(self) -> None:
+        backend_a = MockConferenceBackend()
+        backend_b = MockConferenceBackend()
+        kit = RoomKit()
+        kit.register_channel(ConferenceChannel("conf-a", backend=backend_a))
+        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b))
+        await kit.create_room(ROOM)
+        await kit.attach_channel(ROOM, "conf-a")
+
+        with pytest.raises(ConferenceAlreadyAttachedError) as refusal:
+            await kit.attach_channel(ROOM, "conf-b")
+
+        assert "conf-a" in str(refusal.value)
+        # The refusal came before anything reached the second backend: no
+        # duplicate SFU room was created for the same RoomKit room.
+        assert ROOM not in backend_b.rooms
+        assert [b.channel_id for b in await kit.store.list_bindings(ROOM)] == ["conf-a"]
+
+    async def test_reattaching_the_same_conference_channel_stays_ordinary(self) -> None:
+        kit = RoomKit()
+        kit.register_channel(ConferenceChannel("conf", backend=MockConferenceBackend()))
+        await kit.create_room(ROOM)
+        await kit.attach_channel(ROOM, "conf")
+        await kit.attach_channel(ROOM, "conf")
+
+        assert [b.channel_id for b in await kit.store.list_bindings(ROOM)] == ["conf"]
+
+    async def test_a_detached_conference_frees_the_slot(self) -> None:
+        backend_b = MockConferenceBackend()
+        kit = RoomKit()
+        kit.register_channel(ConferenceChannel("conf-a", backend=MockConferenceBackend()))
+        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b))
+        await kit.create_room(ROOM)
+        await kit.attach_channel(ROOM, "conf-a")
+        await kit.detach_channel(ROOM, "conf-a")
+
+        await kit.attach_channel(ROOM, "conf-b")
+
+        assert ROOM in backend_b.rooms
+
+
+class TestASpontaneousBotDisconnect:
+    """RFC 12.10.3: a backend that observes the SFU ending the bot's session
+    without a leave() reports it, and the channel treats the report as the
+    session's end in fact — off the books, announced, re-joinable.
+    """
+
+    async def test_the_loss_comes_off_the_books_and_is_announced(self) -> None:
+        kit, channel, backend = await _kit_with_channel()
+        ended: list[dict[str, object]] = []
+
+        @kit.on("conference_ended")
+        async def _ended(event) -> None:  # type: ignore[no-untyped-def]
+            ended.append(event.data)
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        bot = channel._room(ROOM).bot
+        assert bot is not None
+
+        await backend.simulate_bot_disconnected(bot, "signalling connection lost")
+
+        assert channel.info()["rooms"][ROOM]["bot_present"] is False
+        assert len(ended) == 1
+
+    async def test_the_next_need_rejoins_lazily(self) -> None:
+        _, channel, backend = await _kit_with_channel()
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        first = channel._room(ROOM).bot
+        assert first is not None
+
+        await backend.simulate_bot_disconnected(first)
+        assert backend.bots == []
+
+        await backend.simulate_participant_joined(ROOM, "p-bob")
+
+        assert len(backend.bots) == 1
+        second = channel._room(ROOM).bot
+        assert second is not None
+        assert second.id != first.id
+
+    async def test_the_lost_sessions_recordings_are_finalized(self) -> None:
+        from roomkit import ConferenceRecordingConfig
+        from roomkit.recorder.mock import MockMediaRecorder
+        from tests.conference.lane_audio import speech_frame
+        from tests.conference.test_conference_races import _until
+
+        recorder = MockMediaRecorder()
+        backend = MockConferenceBackend()
+        channel = ConferenceChannel(
+            "conf",
+            backend=backend,
+            recording=ConferenceRecordingConfig(),
+            recorder=recorder,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        await kit.create_room(ROOM)
+        await kit.attach_channel(ROOM, "conf")
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        alice = await backend.simulate_track_published(ROOM, "p-alice")
+        await backend.simulate_audio(alice, speech_frame())
+        await _until(lambda: recorder.chunks != [])
+        bot = channel._room(ROOM).bot
+        assert bot is not None
+
+        await backend.simulate_bot_disconnected(bot)
+
+        assert len(recorder.results) == 1, "the lost session left its recording open"
+
+    async def test_a_stale_report_corrects_nothing(self) -> None:
+        """A session already replaced by a re-join is not the current bot; a
+        report about it must not take the new session off the books.
+        """
+        _, channel, backend = await _kit_with_channel()
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        first = channel._room(ROOM).bot
+        assert first is not None
+        await backend.simulate_bot_disconnected(first)
+        await backend.simulate_participant_joined(ROOM, "p-bob")
+        second = channel._room(ROOM).bot
+        assert second is not None
+
+        await backend.simulate_bot_disconnected(first, "a very late report")
+
+        assert channel._room(ROOM).bot is second
+        assert channel.info()["rooms"][ROOM]["bot_present"] is True

@@ -54,6 +54,13 @@ ActiveSpeakerCallback = Callable[[str, str], Any]
 # "lost"; it is not normalised because SFUs do not agree on the scale.
 ConnectionQualityCallback = Callable[[str, str, str], Any]
 
+# The bot's own session ended without a leave(): (session, reason).
+# The SFU dropped the connection, evicted the bot, or deleted the room under
+# it. A backend that observes such an end reports it here, forgets the
+# session, and refuses further media calls for it (RFC 12.10.3); the channel
+# treats the report as the session's end in fact.
+BotSessionEndedCallback = Callable[[BotSession, str], Any]
+
 
 class ConferenceBackend(ABC):
     """Abstract base class for SFU conference backends.
@@ -86,6 +93,7 @@ class ConferenceBackend(ABC):
         self._track_video: list[TrackVideoCallback] = []
         self._active_speaker_changed: list[ActiveSpeakerCallback] = []
         self._connection_quality: list[ConnectionQualityCallback] = []
+        self._bot_session_ended: list[BotSessionEndedCallback] = []
 
     # -------------------------------------------------------------------------
     # Identity
@@ -306,6 +314,16 @@ class ConferenceBackend(ABC):
         """Register a callback for per-participant quality reports."""
         self._connection_quality.append(callback)
 
+    def on_bot_session_ended(self, callback: BotSessionEndedCallback) -> None:
+        """Register a callback for the bot's session ending without a leave().
+
+        Reported when the backend observes the end — a dropped connection, an
+        eviction, the room deleted underneath the bot. A backend that cannot
+        observe the loss reports nothing, and knowingly inherits the failure
+        mode: a dropped bot its channel goes on reporting present.
+        """
+        self._bot_session_ended.append(callback)
+
     # -------------------------------------------------------------------------
     # Emission — for backend implementations
     # -------------------------------------------------------------------------
@@ -360,3 +378,6 @@ class ConferenceBackend(ABC):
         await self._emit(
             "connection_quality", self._connection_quality, room_id, participant_id, quality
         )
+
+    async def _emit_bot_session_ended(self, bot: BotSession, reason: str) -> None:
+        await self._emit("bot_session_ended", self._bot_session_ended, bot, reason)

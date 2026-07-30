@@ -84,6 +84,18 @@ class ConferenceCapabilityError(RoomKitError):
     """
 
 
+class ConferenceAlreadyAttachedError(RoomKitError):
+    """Raised when a second conference channel is attached to a room.
+
+    A conference maps 1:1 to a Room (RFC section 12.10.1, principle 2), and
+    the attachment is where that is enforceable: a second conference channel
+    is a second bot session, a second transcription of every utterance and a
+    second AI voice speaking the same deliveries — duplicates the roster, the
+    transcript and the meeting have no way to express. Re-attaching the
+    *same* conference channel is an ordinary attach and is not refused.
+    """
+
+
 class ConferenceCloseError(RoomKitError):
     """Raised when a conference channel did not close all of its resources.
 

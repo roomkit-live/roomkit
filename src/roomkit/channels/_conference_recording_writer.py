@@ -123,12 +123,22 @@ class TrackWriter:
         track: RecordingTrack,
         room_id: str,
         max_queued_frames: int,
+        may_capture: Callable[[], bool] | None = None,
     ) -> None:
         self._id = next(_ids)
         self._recorder = recorder
         self._config = config
         self._track = track
         self._room_id = room_id
+        # Read at the instant the start announcement has been heard — the same
+        # coroutine step, so nothing can land in between: an
+        # ON_RECORDING_STARTED handler that refused has closed admission by
+        # the time it returns, and the audio buffered during the announcement
+        # is exactly what its refusal exists to keep out of the file. A detach
+        # arriving *after* the announcement is not a refusal, and the frames
+        # captured while the channel was attached still belong in the file.
+        self._may_capture = may_capture
+        self._refused_at_start = False
         self._handle: MediaRecordingHandle | None = None
         self._refused = False
         self._backlog: TrackBacklog[QueuedFrame] = TrackBacklog(
@@ -324,17 +334,51 @@ class TrackWriter:
     # -------------------------------------------------------------------------
 
     async def _run(self) -> None:
-        """Open the recording, then write what arrives in the order it arrived.
+        """Open the recording, announce it, then write in arrival order.
 
-        The announcement is started rather than awaited. It runs integrator
-        code, and this task owns the recording: a handler that closes the
-        channel would come back to cancel and await the task it is standing on,
-        which is a task awaiting itself. Off to the side, the writing also
-        carries on rather than queueing behind whatever the handler does.
+        The announcement runs on a task of its own — a handler that closes the
+        channel from inside it must be able to cancel *this* task without
+        waiting for itself — but the writing does not start until it has been
+        heard: ON_RECORDING_STARTED fires before any audio is captured
+        (RFC 17.6), which is what makes the hook a consent point rather than
+        a notification of capture already under way.
         """
         if not await self._open():
             return
         self._announce()
+        if self._announcement is not None:
+            # No frame reaches the recorder before ON_RECORDING_STARTED has
+            # been heard (RFC 17.6): the announcement is the integrator's one
+            # chance to notify participants or refuse — detach the channel,
+            # stop the recording — while nothing has yet been captured. The
+            # wait is this task's own, so a handler that closes the recording
+            # from inside the announcement cancels this task rather than
+            # deadlocking on it. Shielded, because awaiting a task couples
+            # cancellation: an unshielded wait made cancelling *this* task
+            # cancel the announcement mid-handler — a close reached from
+            # inside ON_RECORDING_STARTED took the very hook it was called
+            # from down with it. The announcement's own failure is caught
+            # inside it — a hook that raised is no reason to stop writing the
+            # file it was told about.
+            await asyncio.shield(self._announcement)
+            # The audio buffered while the announcement was being heard flows
+            # to the recorder now — unless a handler refused during it. The
+            # buffered frames were pre-consent audio, and they are dropped and
+            # counted rather than written into a file the refusal exists to
+            # prevent (RFC 17.6).
+            if self._refused_at_start:
+                stale = self._backlog.take_ready()
+                if stale:
+                    self._backlog.discard(len(stale))
+                    self._backlog.task_done(len(stale))
+                logger.info(
+                    "Conference recording %s (track=%s) was refused during its start "
+                    "announcement; the %d frame(s) buffered while it was heard were "
+                    "dropped, and are counted as dropped frames",
+                    self._handle_id(),
+                    self._track.id,
+                    len(stale),
+                )
         while True:
             batch = [await self._backlog.get()]
             batch.extend(self._backlog.take_ready())
@@ -446,6 +490,11 @@ class TrackWriter:
             )
         finally:
             _announcing.reset(token)
+            # Decided here, in the same coroutine step the last handler
+            # returned in, so a detach landing later cannot be mistaken for a
+            # refusal made during the announcement — see `_refused_at_start`.
+            if self._may_capture is not None and not self._may_capture():
+                self._refused_at_start = True
 
     async def _settle_announcement(self, timeout: float) -> None:
         """Let the opening announcement finish before the recording is closed.

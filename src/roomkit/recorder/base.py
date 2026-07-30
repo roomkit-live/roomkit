@@ -7,6 +7,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 PCM_CODECS = {1: "pcm_s8", 2: "pcm_s16le", 4: "pcm_s32le"}
 """Codec name for a PCM sample width in bytes, as :class:`RecordingTrack` names it.
@@ -102,6 +103,12 @@ class MediaRecordingConfig:
     audio_codec: str = "aac"
     audio_sample_rate: int = 16000
     format: str = "mp4"
+    metadata: dict[str, Any] = field(default_factory=dict)
+    """Caller-supplied metadata, carried to the recorder verbatim.
+
+    What a caller wants filed with the recording — a matter id, a retention
+    class — and the recorder's to interpret; the framework never reads it.
+    """
 
 
 @dataclass
