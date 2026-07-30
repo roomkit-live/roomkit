@@ -268,6 +268,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A SIP offer can no longer point the media stream anywhere it likes.** The
+  RTP destination was taken from the offer's `c=`/`m=` lines and applied with
+  no validation at all — `0.0.0.0`, port 0, loopback and multicast included —
+  and since symmetric RTP is off, nothing downstream ever corrected it by
+  observing where packets actually arrived from. `is_usable_rtp_address()` now
+  gates every point where an offer moves the destination, in the audio backend
+  and the A/V one. A hold offer no longer redirects the stream; it leaves it
+  where it was.
+
+  Note what this does *not* claim: an address that is merely wrong rather than
+  impossible — a third party's, which turns the call into an RTP reflector
+  aimed at them — is not detectable here, because a caller behind NAT
+  legitimately advertises an address its packets do not come from. Symmetric
+  RTP in the transport is the defence for that, and it belongs to aiortp.
+
+  The re-INVITE shortcut is narrowed to the case it was written for. It exists
+  because re-INVITEs on *outbound* calls reach `on_invite` rather than
+  `on_reinvite`; it was matching on Call-ID alone, so an out-of-dialog INVITE
+  that reused a known Call-ID had its SDP applied to the existing session
+  without ever being authenticated. Inbound sessions now fall through to the
+  normal path, where the UAS has already declined to treat the request as
+  in-dialog and the session-id claim refuses it.
+
 - **A SIP call that is answered and then says nothing no longer holds its port
   forever.** The RTP watchdog only judged sessions that had received at least
   one packet — it measures time since the last one, and there had been none —

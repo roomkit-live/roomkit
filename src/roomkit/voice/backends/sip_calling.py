@@ -13,6 +13,7 @@ from roomkit.voice.backends._sip_types import (
     CODEC_INFO,
     PT_PCMU,
     SIPSessionState,
+    is_usable_rtp_address,
     logger,
     parse_bye_reason,
     resolve_local_ip,
@@ -223,7 +224,16 @@ class SIPCallingMixin:
         # own _calls for existing dialogs, but outbound calls live in the
         # UAC.  If the Call-ID already maps to a session, route to the
         # re-INVITE handler instead of creating a duplicate session.
-        if call.call_id in self._call_to_session:
+        #
+        # Only for outbound calls, though. A genuine in-dialog re-INVITE on an
+        # *inbound* call is routed to on_reinvite by the UAS, which validates
+        # it by From/To tags and CSeq. Reaching here instead means it matched
+        # no live dialog — so it is a fresh out-of-dialog INVITE that merely
+        # reuses a known Call-ID, and taking this shortcut would apply its SDP
+        # to the existing session without authentication. Let it fall through
+        # to the normal path, where it is challenged and then refused for
+        # claiming a live session id.
+        if call.call_id in self._call_to_session and self._is_outbound_call(call.call_id):
             self._handle_reinvite(call)
             return
 
@@ -237,6 +247,14 @@ class SIPCallingMixin:
             await self._setup_inbound_call(call, session_id)
         finally:
             self._reserved_session_ids.discard(session_id)
+
+    def _is_outbound_call(self, call_id: str) -> bool:
+        """Whether *call_id* belongs to a call this backend placed."""
+        session_id = self._call_to_session.get(call_id)
+        if session_id is None:
+            return False
+        state = self._session_states.get(session_id)
+        return state is not None and state.outgoing_call is not None
 
     def _claim_session_id(self, call: Any) -> str | None:
         """Reserve the session id this INVITE asks for, or reject the call.
@@ -409,7 +427,19 @@ class SIPCallingMixin:
             if _pending_sdp is not None:
                 rtp_addr = _pending_sdp.rtp_address
                 if rtp_addr is not None and rtp_addr != call_session.remote_addr:
-                    call_session.update_remote(rtp_addr)
+                    if is_usable_rtp_address(rtp_addr):
+                        call_session.update_remote(rtp_addr)
+                    else:
+                        # A re-INVITE parked before the session existed still
+                        # gets its address checked — this path applies it at
+                        # the moment media starts, so an unchecked one would
+                        # redirect the call from its first packet.
+                        logger.warning(
+                            "Queued re-INVITE proposed unusable RTP target %s "
+                            "(session=%s) — ignored",
+                            rtp_addr,
+                            session.id,
+                        )
             state.pending_reinvite_sdp = None
 
         logger.info(
@@ -489,13 +519,23 @@ class SIPCallingMixin:
         if call.sdp_offer is not None:
             rtp_addr = call.sdp_offer.rtp_address
             if rtp_addr is not None and rtp_addr != call_session.remote_addr:
-                logger.info(
-                    "re-INVITE updated RTP target: %s → %s (session=%s)",
-                    call_session.remote_addr,
-                    rtp_addr,
-                    session_id,
-                )
-                call_session.update_remote(rtp_addr)
+                if not is_usable_rtp_address(rtp_addr):
+                    # Hold (0.0.0.0 / port 0) and unroutable targets are not
+                    # destinations. Keep sending where we were rather than
+                    # letting the offer redirect the stream.
+                    logger.warning(
+                        "re-INVITE proposed unusable RTP target %s (session=%s) — ignored",
+                        rtp_addr,
+                        session_id,
+                    )
+                else:
+                    logger.info(
+                        "re-INVITE updated RTP target: %s → %s (session=%s)",
+                        call_session.remote_addr,
+                        rtp_addr,
+                        session_id,
+                    )
+                    call_session.update_remote(rtp_addr)
 
         logger.info("re-INVITE accepted for session %s", session_id)
 
@@ -784,13 +824,20 @@ class SIPCallingMixin:
         if pending_sdp is not None:
             rtp_addr = pending_sdp.rtp_address
             if rtp_addr is not None and rtp_addr != call_session.remote_addr:
-                logger.info(
-                    "Applying queued re-INVITE RTP target: %s → %s (session=%s)",
-                    call_session.remote_addr,
-                    rtp_addr,
-                    session.id,
-                )
-                call_session.update_remote(rtp_addr)
+                if is_usable_rtp_address(rtp_addr):
+                    logger.info(
+                        "Applying queued re-INVITE RTP target: %s → %s (session=%s)",
+                        call_session.remote_addr,
+                        rtp_addr,
+                        session.id,
+                    )
+                    call_session.update_remote(rtp_addr)
+                else:
+                    logger.warning(
+                        "Queued re-INVITE proposed unusable RTP target %s (session=%s) — ignored",
+                        rtp_addr,
+                        session.id,
+                    )
 
         logger.info(
             "SIP outbound call established: session=%s, to=%s, call_id=%s, "

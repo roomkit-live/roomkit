@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
 import logging
 import re
 import socket
@@ -127,6 +128,43 @@ class SIPSessionState:
     pacer: Any = None
     playback_task: asyncio.Task[None] | None = None
     is_playing: bool = False
+
+
+def is_usable_rtp_address(addr: tuple[str, int] | None) -> bool:
+    """Whether an SDP media address may be used as an RTP destination.
+
+    The address is written by the remote party in the offer's ``c=``/``m=``
+    lines, and nothing downstream re-checks it: aiortp sends to whatever
+    destination it is handed, and symmetric RTP — which would correct the
+    destination by observing where packets actually arrive from — is off by
+    default. An accepted address therefore steers the outbound media stream
+    for the whole call.
+
+    This rejects the addresses that cannot be a destination under any
+    topology. What it deliberately does *not* do is require the address to
+    match where the signalling came from: a caller behind NAT legitimately
+    advertises an address its packets do not come from, so that rule would
+    reject ordinary traffic. A plausible-but-wrong address — a third party's,
+    turning the call into an RTP reflector aimed at them — is not detectable
+    here; symmetric RTP in the transport is the defence for that.
+    """
+    if addr is None:
+        return False
+    host, port = addr
+    if not 0 < port < 65536:
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # A hostname is unusual in c= but not invalid; leave it to resolution.
+        return True
+    return not (
+        ip.is_unspecified  # 0.0.0.0 / :: — RFC 3264 hold, not a destination
+        or ip.is_loopback  # would point the media stream at ourselves
+        or ip.is_multicast  # never valid for a unicast call leg
+        or ip.is_link_local
+        or ip.is_reserved
+    )
 
 
 def log_fire_and_forget_exception(task: asyncio.Task[Any]) -> None:

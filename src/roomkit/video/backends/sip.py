@@ -37,6 +37,7 @@ from roomkit.video.base import (
 )
 from roomkit.video.video_frame import VideoFrame
 from roomkit.voice.backends._sip_types import SIPSessionState as _SIPSessionState
+from roomkit.voice.backends._sip_types import is_usable_rtp_address
 from roomkit.voice.backends.sip import SIPVoiceBackend
 from roomkit.voice.base import VoiceSession, VoiceSessionState
 
@@ -327,7 +328,11 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):
             pending_sdp = getattr(pending_call, "sdp_offer", None) or state.pending_reinvite_sdp
             if pending_sdp is not None:
                 rtp_addr = pending_sdp.rtp_address
-                if rtp_addr is not None and rtp_addr != call_session.remote_addr:
+                if (
+                    rtp_addr is not None
+                    and rtp_addr != call_session.remote_addr
+                    and is_usable_rtp_address(rtp_addr)
+                ):
                     call_session.update_remote(rtp_addr)
             state.pending_reinvite_sdp = None
 
@@ -365,7 +370,11 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):
         if call.sdp_offer is not None:
             # Update audio RTP address
             rtp_addr = call.sdp_offer.rtp_address
-            if rtp_addr is not None and rtp_addr != state.call_session.remote_addr:
+            if (
+                rtp_addr is not None
+                and rtp_addr != state.call_session.remote_addr
+                and is_usable_rtp_address(rtp_addr)
+            ):
                 state.call_session.update_remote(rtp_addr)
 
             # Update video RTP address
@@ -375,6 +384,7 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):
                 video_rtp_addr is not None
                 and vcs is not None
                 and video_rtp_addr != vcs.remote_addr
+                and is_usable_rtp_address(video_rtp_addr)
             ):
                 vcs.update_remote(video_rtp_addr)
 

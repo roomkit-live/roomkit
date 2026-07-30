@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from roomkit.voice.audio_frame import AudioFrame
-from roomkit.voice.backends._sip_types import SIPSessionState
+from roomkit.voice.backends._sip_types import SIPSessionState, is_usable_rtp_address
 from roomkit.voice.base import AudioChunk, VoiceCapability, VoiceSession, VoiceSessionState
 from roomkit.voice.pipeline.dtmf.base import DTMFEvent
 
@@ -1085,6 +1085,102 @@ class TestSessionExpiry:
         st = self._state(created_at=now - 100_000.0, inbound_packets=0, last_ts=0.0)
 
         assert backend._expiry_reason("sess-1", st, now) is None
+
+
+class TestRtpAddressValidation:
+    """The SDP ``c=`` line steers outbound media, and nothing downstream rechecks it."""
+
+    @pytest.mark.parametrize(
+        "addr",
+        [
+            ("10.0.0.1", 20000),
+            ("203.0.113.9", 5004),
+            ("sip.example.com", 20000),
+        ],
+    )
+    def test_usable_addresses_accepted(self, addr: Any) -> None:
+        assert is_usable_rtp_address(addr) is True
+
+    @pytest.mark.parametrize(
+        "addr",
+        [
+            None,
+            ("0.0.0.0", 20000),  # RFC 3264 hold, not a destination
+            ("::", 20000),
+            ("127.0.0.1", 20000),  # would aim the stream at ourselves
+            ("224.0.0.1", 20000),  # multicast is never a unicast leg
+            ("169.254.1.1", 20000),
+            ("10.0.0.1", 0),  # port 0 disables the media line
+            ("10.0.0.1", 70000),
+        ],
+    )
+    def test_unusable_addresses_rejected(self, addr: Any) -> None:
+        assert is_usable_rtp_address(addr) is False
+
+    async def test_reinvite_cannot_redirect_media_to_an_unusable_address(
+        self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+        original = mock_call_session.remote_addr
+
+        reinvite = _make_mock_incoming_call()
+        reinvite.sdp_offer.rtp_address = ("127.0.0.1", 31337)
+        backend._handle_reinvite(reinvite)
+
+        mock_call_session.update_remote.assert_not_called()
+        assert mock_call_session.remote_addr == original
+
+    async def test_reinvite_still_follows_a_legitimate_move(
+        self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        call = _make_mock_incoming_call()
+        await backend._handle_invite(call)
+
+        reinvite = _make_mock_incoming_call()
+        reinvite.sdp_offer.rtp_address = ("10.0.0.9", 20002)
+        backend._handle_reinvite(reinvite)
+
+        mock_call_session.update_remote.assert_called_once_with(("10.0.0.9", 20002))
+
+
+class TestOutOfDialogInviteReusingACallId:
+    """A known Call-ID must not be a shortcut past authentication."""
+
+    async def test_inbound_call_id_reuse_is_not_treated_as_a_reinvite(
+        self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        victim = _make_mock_incoming_call(call_id="call-1", session_id="sess-1")
+        await backend._handle_invite(victim)
+        original = mock_call_session.remote_addr
+
+        # Same Call-ID, arriving at _handle_invite rather than on_reinvite —
+        # so the UAS did not recognise it as in-dialog.
+        forged = _make_mock_incoming_call(call_id="call-1", session_id="sess-1")
+        forged.sdp_offer.rtp_address = ("203.0.113.66", 40404)
+        await backend._handle_invite(forged)
+
+        mock_call_session.update_remote.assert_not_called()
+        assert mock_call_session.remote_addr == original
+        forged.reject.assert_called_once()
+        assert forged.reject.call_args[0][0] == 486
+
+    async def test_outbound_reinvite_shortcut_still_works(
+        self, backend: Any, mock_call_session: MagicMock
+    ) -> None:
+        """The case the shortcut exists for must keep working."""
+        session_id = "outbound-1"
+        state = SIPSessionState(session=MagicMock(), call_session=mock_call_session)
+        state.outgoing_call = MagicMock()
+        backend._session_states[session_id] = state
+        backend._call_to_session["call-out"] = session_id
+
+        reinvite = _make_mock_incoming_call(call_id="call-out")
+        reinvite.sdp_offer.rtp_address = ("10.0.0.9", 20002)
+        await backend._handle_invite(reinvite)
+
+        mock_call_session.update_remote.assert_called_once_with(("10.0.0.9", 20002))
+        reinvite.reject.assert_not_called()
 
 
 class TestHandleReInvite:
