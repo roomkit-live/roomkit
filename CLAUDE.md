@@ -213,7 +213,25 @@ Every new feature, provider, or channel type **must** include:
 2. **Documentation** — update or add a guide in `../roomkit-docs/docs/guides/`, add a section to `../roomkit-docs/docs/features.md`, and update `../roomkit-docs/mkdocs.yml` nav if adding a new guide page
 3. **Example** — add a runnable example in `examples/` demonstrating the feature end-to-end
 
-**New provider**: config in `providers/<name>/config.py`, implementation in `providers/<name>/<type>.py`, export from `__init__.py` and `roomkit/__init__.py`, add tests, add example in `examples/`, add to docs.
+#### Where an implementation lives
+
+**Placement follows the ABC, never the vendor.** An implementation sits with the
+contract it implements, not with the company that supplies it. The repo already
+splits two vendors this way: Twilio is in `providers/twilio/` for SMS and RCS
+*and* in `voice/backends/twilio_ws.py` for voice; ElevenLabs is in
+`providers/elevenlabs/` for realtime *and* in `voice/tts/elevenlabs.py` for
+synthesis. Each is self-contained — neither reaches into the other's directory.
+
+`providers/` is the **messaging-and-AI provider subsystem**, not a home for
+vendors. It holds its own ABCs — `providers/ai/base.py`, `providers/sms/base.py`,
+`providers/email/base.py`, `providers/rcs/base.py`, `providers/whatsapp/base.py`,
+`providers/http/base.py` — and the vendor directories that implement several of
+*those* at once, which is what earns the vendor-first grouping there and only
+there.
+
+**New provider** (messaging or AI): config in `providers/<name>/config.py`, implementation in `providers/<name>/<type>.py`, export from `__init__.py` and `roomkit/__init__.py`, add tests, add example in `examples/`, add to docs.
+
+**New backend for a subsystem ABC** (conference, voice transport, STT, TTS, recorder, store, realtime, identity): implementation beside the ABC it implements — `conference/<name>.py`, `voice/backends/<name>.py`, `voice/stt/<name>.py`, `recorder/<name>.py` — self-contained, with its own config dataclass, exported from the subsystem `__init__.py` and `roomkit/__init__.py`. Optional runtime deps get their own extra in `pyproject.toml`, named for the vendor. Add tests, example and docs as above.
 
 **New pipeline stage**: implement ABC in `voice/pipeline/<stage>/`, add mock, export from subdirectory and `voice/pipeline/__init__.py`, add tests, add guide in `../roomkit-docs/docs/guides/`, add example.
 

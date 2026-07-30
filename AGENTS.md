@@ -643,7 +643,33 @@ async def test_create_room(self) -> None:
 
 ## Common Tasks
 
+### Where an implementation lives
+
+Placement follows the **ABC**, never the vendor. `providers/` is the
+messaging-and-AI provider subsystem holding its own ABCs (`providers/ai/base.py`,
+`providers/sms/base.py`, …); every other subsystem keeps implementations beside
+its own ABC, flat, one file each:
+
+| Contract | ABC | Implementations |
+|---|---|---|
+| `AIProvider`, `SMSProvider`, `EmailProvider`, `RCSProvider`, … | `providers/<kind>/base.py` | `providers/<vendor>/<kind>.py` |
+| `ConferenceBackend` | `conference/base.py` | `conference/<name>.py` |
+| `VoiceBackend` | `voice/backends/base.py` | `voice/backends/<name>.py` |
+| `STTProvider` / `TTSProvider` | `voice/stt/base.py`, `voice/tts/base.py` | `voice/stt/<name>.py`, `voice/tts/<name>.py` |
+| `MediaRecorder` | `recorder/base.py` | `recorder/<name>.py` |
+| pipeline stages | `voice/pipeline/<stage>/base.py` | `voice/pipeline/<stage>/<name>.py` |
+
+A vendor spanning two contracts is split, not gathered — Twilio lives in
+`providers/twilio/` (SMS, RCS) *and* `voice/backends/twilio_ws.py` (voice);
+ElevenLabs in `providers/elevenlabs/` (realtime) *and* `voice/tts/elevenlabs.py`
+(synthesis). Neither implementation imports from the other's directory: each
+carries its own config dataclass. The question to ask is "which contract does
+this satisfy", never "who sells it".
+
 ### Adding a New Provider
+
+For a messaging or AI provider — one implementing an ABC that lives under
+`providers/`:
 
 1. Create config in `providers/<name>/config.py`
 2. Create provider in `providers/<name>/<type>.py`
@@ -651,6 +677,22 @@ async def test_create_room(self) -> None:
 4. Export from `__init__.py`
 5. Add to main `roomkit/__init__.py` exports
 6. Add tests in `tests/test_<name>_provider.py`
+
+### Adding a New Backend (subsystem ABC)
+
+For a `ConferenceBackend`, `VoiceBackend`, `STTProvider`, `TTSProvider`,
+`MediaRecorder`, `ConversationStore`, `RealtimeBackend` or `IdentityResolver`:
+
+1. Create the implementation beside the ABC it implements — `conference/<name>.py`,
+   `voice/stt/<name>.py`, `recorder/<name>.py` — with its own config dataclass in
+   the same file
+2. Declare capabilities honestly where the ABC has a capability flag: what is
+   wired, not what the vendor's product can do
+3. Add optional runtime deps as their own `pyproject.toml` extra, named for the
+   vendor, imported lazily behind `try/except ImportError`
+4. Export from the subsystem `__init__.py` and main `roomkit/__init__.py`
+5. Add contract tests that need no network, plus an integration suite skipped
+   when the service is absent
 
 ### Adding a New Channel Type
 
