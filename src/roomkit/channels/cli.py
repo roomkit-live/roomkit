@@ -59,6 +59,22 @@ class CLIChannel(Channel):
 
     channel_type = ChannelType.CLI
 
+    sender_is_participant = True
+    """The human at the terminal is named by the room, not addressed.
+
+    A transport usually reads its ``sender_id`` off the wire — a number, an
+    address, a handle the remote network chose. This one is the channel's own
+    default: :meth:`run` names the typist, and calls what it names a Participant
+    ID. No resolver can match that, so resolving it returns UNKNOWN for every
+    line typed, ``ON_IDENTITY_UNKNOWN`` fires per line, and a hook written to
+    refuse unknown senders — the pattern RFC §11.2 provides for — makes
+    everything typed at the keyboard vanish without trace.
+
+    ``ensure_participant`` would not settle it either: the record it creates is
+    PENDING, which stays deliberately resolvable so a PENDING sender on a text
+    channel can still be challenged or refused.
+    """
+
     def __init__(
         self,
         channel_id: str = "cli",
@@ -255,7 +271,11 @@ class CLIChannel(Channel):
             kit: The RoomKit instance (channel must already be registered
                 and attached to the room).
             room_id: Target room ID.
-            sender_id: Participant ID for the human user.
+            sender_id: Participant ID for the human user — a room
+                ``Participant.id``, not an address. This channel declares it as
+                such (``sender_is_participant``), so identity resolution never
+                runs on it; passing an address here would leave that address
+                unresolved.
             welcome: Optional welcome message printed before the loop.
             content_factory: Optional hook mapping a raw input line to the
                 inbound content. Defaults to ``TextContent(body=line)``; an

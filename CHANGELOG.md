@@ -84,6 +84,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separate continuous signals: keying on the destination would have been the
   same defect one layer down.
 
+### Fixed
+
+- **What is typed at a terminal is not an address, and is no longer resolved as
+  one.** `CLIChannel.run()` names the human at the keyboard — its `sender_id`
+  defaults to `"user"` and its own documentation calls it a Participant ID — and
+  that value went straight into the inbound pipeline as something to look up. No
+  resolver matches it, so every line came back `UNKNOWN`, `ON_IDENTITY_UNKNOWN`
+  fired per line, and the standard hook that refuses unknown senders discarded
+  everything typed, silently: a blocked event leaves nothing in the room.
+  `ensure_participant()` did not help, since the record it creates is `PENDING`
+  and a `PENDING` sender on a text channel stays deliberately resolvable.
+
+  `CLIChannel` now declares `sender_is_participant`, as `ConferenceChannel`
+  does: its `sender_id` is a room `Participant.id` rather than an address, so
+  resolution is skipped (RFC §11.6, case 1). Nothing is lost — the resolution
+  removed is one that could never answer.
+
+  The declaration belongs to a channel whose `sender_id` the framework itself
+  chooses. `WebSocketChannel` and `VoiceChannel` deliberately keep the default:
+  what reaches them comes from the integrator or from the backend — a SIP
+  session id for one call, a caller number for the next — and excluding them is
+  an integrator's call, made with `identity_channel_types` (RFC §11.4).
+
 ## [0.37.1] — 2026-07-24
 
 ### Fixed

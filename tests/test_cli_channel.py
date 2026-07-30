@@ -9,13 +9,22 @@ import pytest
 
 from roomkit.channels._cli_markdown import MarkdownStreamRenderer
 from roomkit.channels.cli import CLIChannel, _default_agent_label
+from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelMediaType, ChannelType, EventType
+from roomkit.models.enums import (
+    ChannelMediaType,
+    ChannelType,
+    EventType,
+    HookTrigger,
+)
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
+from roomkit.models.identity import IdentityHookResult, IdentityResult
 from roomkit.models.room import Room
 from roomkit.models.streaming import ThinkingDeltaMarker
+from tests.test_framework import SimpleChannel
+from tests.test_identity_pipeline import CountingIdentityResolver
 
 
 def _make_binding(channel_id: str = "cli") -> ChannelBinding:
@@ -357,6 +366,72 @@ class TestRun:
             await cli.run(kit, room_id="room-1", welcome="Welcome!")
 
         mock_print.assert_any_call("Welcome!")
+
+
+class TestTheTerminalNamesItsOwnSender:
+    """The human at the terminal is named by the room, not addressed (RFC §11.6).
+
+    ``run()`` defaults ``sender_id`` to ``"user"`` and calls it a Participant ID.
+    No resolver matches that, so resolving it returns UNKNOWN per line typed and
+    the standard refusal hook makes everything typed at the keyboard disappear.
+    """
+
+    def test_the_channel_declares_it(self) -> None:
+        assert CLIChannel("cli").sender_is_participant is True
+
+    async def test_a_hook_refusing_unknown_senders_does_not_swallow_what_is_typed(
+        self,
+    ) -> None:
+        resolver = CountingIdentityResolver()
+        kit = RoomKit(identity_resolver=resolver)
+        kit.register_channel(CLIChannel("cli"))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "cli")
+
+        @kit.identity_hook(HookTrigger.ON_IDENTITY_UNKNOWN)
+        async def refuse(
+            event: RoomEvent, context: RoomContext, id_result: IdentityResult
+        ) -> IdentityHookResult:
+            return IdentityHookResult.reject("unknown sender")
+
+        for line in ("hello", "still here", "and again"):
+            result = await kit.process_inbound(
+                InboundMessage(
+                    channel_id="cli",
+                    sender_id="user",
+                    content=TextContent(body=line),
+                )
+            )
+            assert not result.blocked
+            assert result.event is not None
+            assert result.event.source.participant_id == "user"
+
+        assert resolver.calls == []
+        stored = await kit.store.list_events("r1")
+        assert [e.content.body for e in stored if isinstance(e.content, TextContent)] == [
+            "hello",
+            "still here",
+            "and again",
+        ]
+
+    async def test_a_channel_that_carries_addresses_still_resolves(self) -> None:
+        """The declaration is the CLI's, not the kit's."""
+        resolver = CountingIdentityResolver()
+        kit = RoomKit(identity_resolver=resolver)
+        kit.register_channel(CLIChannel("cli"))
+        kit.register_channel(SimpleChannel("sms"))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "cli")
+        await kit.attach_channel("r1", "sms")
+
+        await kit.process_inbound(
+            InboundMessage(channel_id="cli", sender_id="user", content=TextContent(body="hi"))
+        )
+        await kit.process_inbound(
+            InboundMessage(channel_id="sms", sender_id="+15551234", content=TextContent(body="hi"))
+        )
+
+        assert resolver.calls == ["+15551234"]
 
 
 class TestDefaultAgentLabel:
