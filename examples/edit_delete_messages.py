@@ -60,7 +60,10 @@ async def main() -> None:
             content=EditContent(
                 target_event_id=original_id,
                 new_content=TextContent(body="Hello Bob!"),
-                edit_source="alice",
+                # "sender" | "system" — the RFC §10.3 vocabulary. Anything
+                # else is unprivileged: the framework still requires the
+                # sender to be the original author.
+                edit_source="sender",
             ),
         )
     )
