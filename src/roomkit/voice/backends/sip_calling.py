@@ -61,6 +61,9 @@ class SIPCallingHost(Protocol):
             BYEs (carrier retransmits, late counter-BYEs after our own BYE) from
             real state desync.
         _pending_reinvite_calls: Re-INVITEs pending session creation.
+        _reserved_session_ids: Session ids claimed by an INVITE still being set
+            up, so a second INVITE naming the same caller-chosen id is refused
+            rather than allowed to displace the first.
         _available_ports: Pool of available RTP ports.
         _allocated_ports: Currently allocated RTP ports.
         _transport_addr_resolved: Whether transport address has been resolved.
@@ -101,6 +104,7 @@ class SIPCallingHost(Protocol):
     _call_to_session: dict[str, str]
     _recently_ended_call_ids: dict[str, float]
     _pending_reinvite_calls: dict[str, Any]
+    _reserved_session_ids: set[str]
     _available_ports: set[int]
     _allocated_ports: set[int]
     _transport_addr_resolved: bool
@@ -153,6 +157,7 @@ class SIPCallingMixin:
     _call_to_session: dict[str, str]
     _recently_ended_call_ids: dict[str, float]
     _pending_reinvite_calls: dict[str, Any]
+    _reserved_session_ids: set[str]
     _available_ports: set[int]
     _allocated_ports: set[int]
     _transport_addr_resolved: bool
@@ -222,6 +227,45 @@ class SIPCallingMixin:
         if not await self._authorize_invite(call):
             return
 
+        session_id = self._claim_session_id(call)
+        if session_id is None:
+            return
+        try:
+            await self._setup_inbound_call(call, session_id)
+        finally:
+            self._reserved_session_ids.discard(session_id)
+
+    def _claim_session_id(self, call: Any) -> str | None:
+        """Reserve the session id this INVITE asks for, or reject the call.
+
+        The id is ``X-Session-ID`` when the caller sent one, so the caller
+        picks it. Everything downstream keys on it alone — ``send_audio``,
+        ``send_dtmf``, ``disconnect``, and the voice channel's own room
+        binding — so letting a second INVITE take a live id hands whoever
+        sent it the first call's audio path in both directions, while the
+        displaced session's RTP port, socket and RTCP task leak because
+        cleanup can no longer reach them.
+
+        A collision is therefore refused, not reconciled: a legitimate PBX
+        never reuses a live id, and we cannot tell a confused one from a
+        hostile one. The reservation is held across the awaits below so two
+        INVITEs racing on the same id cannot both pass this check.
+        """
+        session_id = call.session_id or call.call_id
+        if session_id in self._session_states or session_id in self._reserved_session_ids:
+            logger.warning(
+                "Rejecting INVITE: session id %s is already in use (call_id=%s, from=%s)",
+                session_id,
+                call.call_id,
+                call.caller,
+            )
+            call.reject(486, "Busy Here")
+            return None
+        self._reserved_session_ids.add(session_id)
+        return session_id
+
+    async def _setup_inbound_call(self, call: Any, session_id: str) -> None:
+        """Negotiate media, answer the INVITE, and register the session."""
         if call.sdp_offer is None:
             call.reject(488, "Not Acceptable Here")
             return
@@ -291,8 +335,6 @@ class SIPCallingMixin:
         # Extract routing metadata from X-headers
         room_id = call.room_id or call.call_id
         participant_id = call.session_id or call.caller
-
-        session_id = call.session_id or call.call_id
 
         # Extract display name and user from SIP From header
         from_addr = call.invite.from_addr
@@ -798,6 +840,10 @@ class SIPCallingMixin:
 
         if state.rtp_port is not None:
             self._release_rtp_port(state.rtp_port)
+
+        # A re-INVITE parked for a session that never materialised would
+        # otherwise sit here forever — one entry per INVITE, unbounded.
+        self._pending_reinvite_calls.pop(session_id, None)
 
         # Record the call_ids in the recently-ended TTL set so the next
         # late carrier BYE for them logs at DEBUG instead of WARNING.

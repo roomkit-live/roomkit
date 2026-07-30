@@ -887,6 +887,102 @@ class TestMultipleCalls:
         assert backend.list_sessions("room-b") != []
 
 
+class TestSessionIdFixation:
+    """``X-Session-ID`` is caller-chosen, so a second INVITE must not seize it.
+
+    Everything downstream — send_audio, send_dtmf, disconnect, and the voice
+    channel's room binding — is keyed on the session id alone.
+    """
+
+    async def test_second_invite_on_a_live_session_id_is_refused(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        victim = _make_mock_incoming_call(call_id="call-1", session_id="caller-123")
+        attacker = _make_mock_incoming_call(call_id="call-2", session_id="caller-123")
+
+        await backend._handle_invite(victim)
+        assert "caller-123" in backend._session_states
+        established = backend._session_states["caller-123"]
+
+        await backend._handle_invite(attacker)
+
+        attacker.reject.assert_called_once()
+        assert attacker.reject.call_args[0][0] == 486
+        attacker.accept.assert_not_called()
+        # The established session is untouched, not displaced.
+        assert backend._session_states["caller-123"] is established
+
+    async def test_refused_invite_leaks_no_rtp_port(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        victim = _make_mock_incoming_call(call_id="call-1", session_id="caller-123")
+        await backend._handle_invite(victim)
+        allocated_after_first = set(backend._allocated_ports)
+
+        for i in range(5):
+            dup = _make_mock_incoming_call(call_id=f"dup-{i}", session_id="caller-123")
+            await backend._handle_invite(dup)
+
+        assert backend._allocated_ports == allocated_after_first
+
+    async def test_refused_invite_does_not_pollute_call_mapping(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        victim = _make_mock_incoming_call(call_id="call-1", session_id="caller-123")
+        await backend._handle_invite(victim)
+
+        attacker = _make_mock_incoming_call(call_id="call-2", session_id="caller-123")
+        await backend._handle_invite(attacker)
+
+        # A BYE on the attacker's Call-ID must not resolve to the victim.
+        assert "call-2" not in backend._call_to_session
+        assert backend._call_to_session["call-1"] == "caller-123"
+
+    async def test_id_is_reusable_once_the_session_ends(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        """Refusal is about live ids — a finished call frees its id."""
+        first = _make_mock_incoming_call(call_id="call-1", session_id="caller-123")
+        await backend._handle_invite(first)
+        backend._cleanup_session("caller-123")
+
+        second = _make_mock_incoming_call(call_id="call-2", session_id="caller-123")
+        await backend._handle_invite(second)
+
+        second.reject.assert_not_called()
+        assert "caller-123" in backend._session_states
+
+    async def test_concurrent_invites_on_one_id_admit_only_one(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        """The reservation has to survive the awaits during setup."""
+        call1 = _make_mock_incoming_call(call_id="call-1", session_id="caller-123")
+        call2 = _make_mock_incoming_call(call_id="call-2", session_id="caller-123")
+
+        await asyncio.gather(backend._handle_invite(call1), backend._handle_invite(call2))
+
+        assert len(backend._session_states) == 1
+        rejects = [c.reject.called for c in (call1, call2)]
+        assert rejects.count(True) == 1
+
+    async def test_distinct_ids_are_unaffected(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        mock_rtp_bridge.CallSession.side_effect = [
+            _make_mock_call_session(),
+            _make_mock_call_session(),
+        ]
+        call1 = _make_mock_incoming_call(call_id="call-1", session_id="s1")
+        call2 = _make_mock_incoming_call(call_id="call-2", session_id="s2")
+
+        await backend._handle_invite(call1)
+        await backend._handle_invite(call2)
+
+        assert set(backend._session_states) == {"s1", "s2"}
+        call1.reject.assert_not_called()
+        call2.reject.assert_not_called()
+
+
 class TestHandleReInvite:
     async def test_reinvite_with_active_session_accepts(
         self, backend: Any, mock_call_session: MagicMock, mock_rtp_bridge: MagicMock

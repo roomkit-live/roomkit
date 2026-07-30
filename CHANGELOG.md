@@ -268,6 +268,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A SIP caller can no longer seize a live session by naming its
+  `X-Session-ID`.** The session id came from the caller's `X-Session-ID`
+  header and the backend stored it with `self._session_states[session.id] =
+  state`, overwriting whatever was there. Since `send_audio`, `send_dtmf`,
+  `disconnect` and the voice channel's own room binding all resolve on that
+  id alone, a second INVITE naming a live session took over the first call's
+  audio path: the agent's synthesised speech went to the new caller's RTP
+  address and the new caller's audio arrived in the victim's room. The
+  displaced session became unreachable — its RTP port, socket and periodic
+  RTCP task were never freed, because cleanup pops by id and the id now
+  pointed elsewhere — and its `_call_to_session` entry survived, so a BYE on
+  the old dialog tore down the *current* call.
+
+  A colliding id is now refused with `486 Busy Here` before a port is
+  allocated or a 200 OK is sent, and the claim is held across the awaits in
+  setup so two INVITEs racing on one id cannot both pass. A legitimate PBX
+  does not reuse a live id, and nothing in an INVITE distinguishes a confused
+  one from a hostile one. `SIPVideoBackend` takes the same claim on its A/V
+  path. Ending a call still frees its id.
+
 - **An `m=video` line no longer buys a SIP caller past authentication.**
   `SIPVideoBackend` overrides `_handle_invite` to dispatch offers carrying
   video to its own A/V path — and that path ran no digest challenge and no

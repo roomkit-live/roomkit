@@ -130,6 +130,16 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):
         if not await self._authorize_invite(call):
             return
 
+        session_id = self._claim_session_id(call)
+        if session_id is None:
+            return
+        try:
+            await self._setup_av_call(call, session_id)
+        finally:
+            self._reserved_session_ids.discard(session_id)
+
+    async def _setup_av_call(self, call: Any, session_id: str) -> None:
+        """Negotiate audio + video, answer the INVITE, and register the session."""
         if call.sdp_offer is None:
             call.reject(488, "Not Acceptable Here")
             return
@@ -233,7 +243,6 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):
         # Routing metadata
         room_id = call.room_id or call.call_id
         participant_id = call.session_id or call.caller
-        session_id = call.session_id or call.call_id
         from_addr = call.invite.from_addr
 
         session = VoiceSession(

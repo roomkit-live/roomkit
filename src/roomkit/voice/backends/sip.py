@@ -240,6 +240,11 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         # warnings. Bounded by an opportunistic eviction in cleanup.
         self._recently_ended_call_ids: dict[str, float] = {}
         self._pending_reinvite_calls: dict[str, Any] = {}
+        # Session ids claimed by an INVITE that is still being set up. The id
+        # comes from the caller's X-Session-ID, so two INVITEs can name the
+        # same one; this reserves it across the awaits in _handle_invite so
+        # the second is refused rather than silently overwriting the first.
+        self._reserved_session_ids: set[str] = set()
 
         # Callback registrations
         self._audio_received_callback: AudioReceivedCallback | None = None
