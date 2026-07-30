@@ -16,7 +16,7 @@ Requirements:
     pip install roomkit[sip,gemini,deepgram,elevenlabs,sherpa-onnx]
 
 Models (download once):
-    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.onnx
+    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/ten-vad.onnx
 
 Run with:
     GOOGLE_API_KEY=... DEEPGRAM_API_KEY=... ELEVENLABS_API_KEY=... \\

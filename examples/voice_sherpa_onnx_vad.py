@@ -14,7 +14,7 @@ Prerequisites:
 
 Download models:
     # VAD (required)
-    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.onnx
+    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/ten-vad.onnx
     # Denoiser (optional)
     wget https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx
 

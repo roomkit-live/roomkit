@@ -23,7 +23,7 @@ Requirements:
       tar xf sherpa-onnx-streaming-zipformer-en-20M-2023-02-17.tar.bz2
 
     VAD model:
-      wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.onnx
+      wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/ten-vad.onnx
 
     Reference audio for voice cloning:
       Record 3-15 seconds of clean speech and provide the transcript.

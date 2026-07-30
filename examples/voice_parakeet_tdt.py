@@ -19,7 +19,7 @@ Download models:
     tar xf sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2
 
     # VAD — TEN-VAD
-    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.onnx
+    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/ten-vad.onnx
 
     # TTS — VITS (Piper voices)
     wget https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2

@@ -18,7 +18,7 @@ Requirements:
       Ollama: ollama pull qwen3:8b && ollama serve
 
     VAD model:
-      wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.onnx
+      wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/ten-vad.onnx
 
 Run:
     LLM_MODEL=qwen3:8b \\

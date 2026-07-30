@@ -47,7 +47,7 @@ GPU acceleration (CUDA) for sherpa-onnx:
 
 Models (download once):
     # VAD — TEN-VAD (recommended)
-    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/vad-models/ten-vad.onnx
+    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/ten-vad.onnx
 
     # STT — Zipformer transducer (streaming)
     wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17.tar.bz2
