@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import secrets
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, runtime_checkable
 
 from roomkit.voice.backends._sip_types import NONCE_TTL, compute_digest, logger, resolve_local_ip
+
+# Sweep expired nonces only once the set is this large. Each entry is a hex
+# string plus a float, so the memory ceiling stays trivial while the sweep
+# stops being per-challenge work an attacker can drive.
+_NONCE_SWEEP_THRESHOLD = 256
 
 # Outbound registration timing: how long register() waits for the first
 # outcome, and the cadence of retries after a later failure or expiry
@@ -201,7 +207,12 @@ class SIPAuthMixin:
             return False
 
         expected = compute_digest(username, self._auth_realm, password, "INVITE", uri, nonce)
-        if response != expected:
+        # Constant-time, for consistency with every other secret comparison in
+        # the codebase. A timing oracle is not actually reachable here — the
+        # nonce is single-use, so each attempt is measured against a different
+        # expected value — but "not exploitable today" is a poor reason to be
+        # the one place that compares a credential with ==.
+        if not hmac.compare_digest(response, expected):
             call.reject(403, "Forbidden")
             return False
 
@@ -212,8 +223,13 @@ class SIPAuthMixin:
         """Send 401 Unauthorized with a WWW-Authenticate digest challenge."""
         now = time.monotonic()
 
-        # Evict expired nonces to prevent unbounded memory growth
-        self._auth_nonces = {n: exp for n, exp in self._auth_nonces.items() if exp > now}
+        # Evict expired nonces to prevent unbounded memory growth. Rebuilding
+        # the whole dict on every challenge made the cost quadratic in the
+        # challenge rate, which is the one thing an unauthenticated INVITE
+        # flood can drive for free — the very case this has to survive. Sweep
+        # only once the set has grown enough to be worth it.
+        if len(self._auth_nonces) > _NONCE_SWEEP_THRESHOLD:
+            self._auth_nonces = {n: exp for n, exp in self._auth_nonces.items() if exp > now}
 
         nonce = secrets.token_hex(16)
         self._auth_nonces[nonce] = now + NONCE_TTL

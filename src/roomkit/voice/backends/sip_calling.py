@@ -16,6 +16,7 @@ from roomkit.voice.backends._sip_types import (
     is_usable_rtp_address,
     logger,
     parse_bye_reason,
+    redact_sip_credentials,
     resolve_local_ip,
 )
 from roomkit.voice.base import VoiceSession, VoiceSessionState
@@ -451,7 +452,9 @@ class SIPCallingMixin:
 
         # Emit protocol traces for the INVITE + 200 OK
         if self._trace_emitter is not None:
-            invite_raw = call.invite.serialize() if hasattr(call, "invite") else None
+            invite_raw = redact_sip_credentials(
+                call.invite.serialize() if hasattr(call, "invite") else None
+            )
             self._trace_emitter(
                 ProtocolTrace(
                     channel_id=session.channel_id,
@@ -587,7 +590,9 @@ class SIPCallingMixin:
         # the carrier-reported Q.850 cause without re-parsing the wire.
         # We also attach it to the ProtocolTrace metadata so callers that
         # only watch traces get the same signal.
-        bye_raw = request.serialize() if hasattr(request, "serialize") else None
+        bye_raw = redact_sip_credentials(
+            request.serialize() if hasattr(request, "serialize") else None
+        )
         bye_reason = parse_bye_reason(bye_raw)
         if bye_reason is not None and session is not None:
             session.metadata["bye_reason"] = bye_reason

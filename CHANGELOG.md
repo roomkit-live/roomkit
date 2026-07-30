@@ -268,6 +268,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **SIP auth and trace hygiene.** Three small things in the same area. The
+  digest comparison used `!=`, the only credential comparison in the codebase
+  that was not constant-time; it is `hmac.compare_digest` now. (No timing
+  oracle was reachable — the nonce is single-use, so each attempt is measured
+  against a different expected value — but that is a poor reason to be the
+  exception.) The nonce table was rebuilt on *every* challenge, making the
+  sweep quadratic in the challenge rate, which is precisely what an
+  unauthenticated INVITE flood drives for free; it now sweeps once the table
+  is large enough to be worth walking. And `ProtocolTrace` carried the raw
+  INVITE including `Authorization: Digest … response="<md5>"` — not replayable,
+  the nonce having been consumed, but an offline dictionary attack on the
+  password when read beside the username, realm and nonce in the same header.
+  `response` is masked; everything else in the header stays, because the trace
+  exists to debug authentication.
+
 - **A SIP offer can no longer point the media stream anywhere it likes.** The
   RTP destination was taken from the offer's `c=`/`m=` lines and applied with
   no validation at all — `0.0.0.0`, port 0, loopback and multicast included —

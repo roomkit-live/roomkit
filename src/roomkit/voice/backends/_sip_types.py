@@ -167,6 +167,31 @@ def is_usable_rtp_address(addr: tuple[str, int] | None) -> bool:
     )
 
 
+_DIGEST_RESPONSE_RE = re.compile(rb'(response\s*=\s*")[^"]*(")', re.IGNORECASE)
+
+
+def redact_sip_credentials(raw: bytes | str | None) -> bytes | str | None:
+    """Mask the digest response in a serialised SIP message.
+
+    A ``ProtocolTrace`` carries the message verbatim, so an INVITE that
+    authenticated carries its ``Authorization: Digest … response="<md5>"``
+    into whatever consumes traces — application callbacks, hook handlers,
+    logs. The nonce is single-use, so the hash cannot be replayed, but with
+    the username, realm and nonce beside it in the same header it is an
+    offline dictionary attack on the password, against MD5.
+
+    Only ``response`` is masked: username, realm, nonce and uri stay, because
+    the trace exists to debug authentication and none of them is the secret.
+    """
+    if isinstance(raw, str):
+        return _DIGEST_RESPONSE_RE.sub(rb"\1<redacted>\2", raw.encode()).decode()
+    if isinstance(raw, bytes):
+        return _DIGEST_RESPONSE_RE.sub(rb"\1<redacted>\2", raw)
+    # Anything else (None, or a serialiser that returned something exotic)
+    # passes through: redaction must never be the reason a trace breaks.
+    return raw
+
+
 def log_fire_and_forget_exception(task: asyncio.Task[Any]) -> None:
     """Done callback — log exceptions from fire-and-forget async wrappers."""
     if task.cancelled():

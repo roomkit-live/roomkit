@@ -20,12 +20,14 @@ if "aiosipua" not in sys.modules:
     sys.modules["aiosipua"] = _fake_aiosipua
 
 from roomkit.voice.backends._sip_types import compute_digest as _compute_digest
+from roomkit.voice.backends._sip_types import redact_sip_credentials
 from roomkit.voice.backends.sip import (
     PT_G722,
     PT_PCMA,
     PT_PCMU,
     SIPVoiceBackend,
 )
+from roomkit.voice.backends.sip_auth import _NONCE_SWEEP_THRESHOLD
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -877,26 +879,79 @@ class TestInviteFilter:
 # ---------------------------------------------------------------------------
 
 
-class TestNonceEviction:
-    """Test that expired nonces are cleaned up."""
+class TestTraceRedaction:
+    """A protocol trace must not carry the digest hash off the box."""
 
-    def test_expired_nonces_evicted_on_challenge(self) -> None:
+    RAW = (
+        b"INVITE sip:bot@example.com SIP/2.0\r\n"
+        b'Authorization: Digest username="alice", realm="roomkit", '
+        b'nonce="abc123", uri="sip:bot@example.com", '
+        b'response="5f4dcc3b5aa765d61d8327deb882cf99"\r\n\r\n'
+    )
+
+    def test_digest_response_is_masked(self) -> None:
+        out = redact_sip_credentials(self.RAW)
+        assert b"5f4dcc3b5aa765d61d8327deb882cf99" not in out
+        assert b'response="<redacted>"' in out
+
+    def test_debugging_context_survives(self) -> None:
+        """Everything that is not the secret stays — the trace has a job to do."""
+        out = redact_sip_credentials(self.RAW)
+        assert b'username="alice"' in out
+        assert b'realm="roomkit"' in out
+        assert b'nonce="abc123"' in out
+
+    def test_str_and_none_round_trip(self) -> None:
+        assert redact_sip_credentials(None) is None
+        assert redact_sip_credentials('response="deadbeef"') == 'response="<redacted>"'
+
+    def test_message_without_credentials_is_untouched(self) -> None:
+        plain = b"BYE sip:bot@example.com SIP/2.0\r\n\r\n"
+        assert redact_sip_credentials(plain) == plain
+
+
+class TestNonceEviction:
+    """Expired nonces are cleaned up, without paying for it on every challenge.
+
+    Eviction is a memory bound, not a correctness one: an expired nonce is
+    rejected at validation time whether or not it is still in the dict. So the
+    sweep waits until the set is big enough to be worth walking — rebuilding it
+    per challenge made the cost quadratic in the challenge rate, which is
+    exactly what an unauthenticated INVITE flood drives for free.
+    """
+
+    def test_expired_nonces_evicted_once_the_set_grows(self) -> None:
         backend = _make_backend(auth_users={"alice": "pass123"})
         now = time.monotonic()
-        backend._auth_nonces = {
-            "old1": now - 100,
-            "old2": now - 50,
-            "fresh": now + 60,
-        }
+        backend._auth_nonces = {f"old{i}": now - 100 for i in range(_NONCE_SWEEP_THRESHOLD + 1)}
+        backend._auth_nonces["fresh"] = now + 60
 
-        call = FakeIncomingCall()
-        backend._send_auth_challenge(call)
+        backend._send_auth_challenge(FakeIncomingCall())
 
-        # old1 and old2 should be evicted, fresh + new nonce remain
-        assert "old1" not in backend._auth_nonces
-        assert "old2" not in backend._auth_nonces
+        assert not [n for n in backend._auth_nonces if n.startswith("old")]
         assert "fresh" in backend._auth_nonces
         assert len(backend._auth_nonces) == 2  # fresh + newly generated
+
+    def test_small_sets_are_not_swept_on_every_challenge(self) -> None:
+        backend = _make_backend(auth_users={"alice": "pass123"})
+        now = time.monotonic()
+        backend._auth_nonces = {"old1": now - 100, "fresh": now + 60}
+
+        backend._send_auth_challenge(FakeIncomingCall())
+
+        # Left in place — and still refused on use, which is what matters.
+        assert "old1" in backend._auth_nonces
+
+    def test_an_expired_nonce_is_refused_even_when_still_present(self) -> None:
+        backend = _make_backend(auth_users={"alice": "pass123"})
+        backend._auth_nonces = {"stale": time.monotonic() - 1.0}
+        call = FakeIncomingCall()
+        call.invite._headers_raw["authorization"] = (
+            'Digest username="alice", nonce="stale", '
+            'uri="sip:bob@example.com", response="whatever"'
+        )
+
+        assert backend._validate_invite_auth(call) is False
 
 
 # ---------------------------------------------------------------------------
