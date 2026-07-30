@@ -26,13 +26,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from roomkit.conference._livekit_mapping import (
-    SAMPLE_WIDTH,
     participant_record,
     quality_label,
-    require_publishable_pcm,
     track_record,
 )
 from roomkit.conference._livekit_media import AudioSink, VideoSink, pump_audio, pump_video
+from roomkit.conference._livekit_voice import BotVoiceTrack
 from roomkit.conference.models import (
     BotSession,
     ConferenceParticipant,
@@ -87,11 +86,13 @@ class LiveKitBotSession:
         self._publications: dict[str, Any] = {}
         self._wanted: set[str] = set()
         self._pumps: dict[str, asyncio.Task[None]] = {}
-        self._publish_lock = asyncio.Lock()
-        self._source: Any | None = None
-        self._local_track: Any | None = None
-        self._source_format: tuple[int, int] | None = None
-        self._utterance_open = False
+        self._voice = BotVoiceTrack(
+            rtc=rtc,
+            room=self._room,
+            identity=session.identity,
+            room_id=session.room_id,
+            queue_ms=config.publish_queue_ms,
+        )
         self._dominant_speaker: str | None = None
         self._left = False
 
@@ -149,15 +150,14 @@ class LiveKitBotSession:
         if self._left:
             return
         self._left = True
-        if self._utterance_open:
+        if self._voice.abandon_utterance():
             logger.debug(
                 "Conference bot %s left room %s mid-utterance; the session ends it",
                 self.session.identity,
                 self.room_id,
             )
-            self._utterance_open = False
         await self._stop_pumps()
-        await self._close_source()
+        await self._voice.close()
         with contextlib.suppress(Exception):
             await self._room.disconnect()
         if self._consumer is not None:
@@ -185,17 +185,6 @@ class LiveKitBotSession:
         for pump in pumps:
             with contextlib.suppress(asyncio.CancelledError):
                 await pump
-
-    async def _close_source(self) -> None:
-        source, self._source = self._source, None
-        local_track, self._local_track = self._local_track, None
-        self._source_format = None
-        if local_track is not None:
-            with contextlib.suppress(Exception):
-                await self._room.local_participant.unpublish_track(local_track.sid)
-        if source is not None:
-            with contextlib.suppress(Exception):
-                await source.aclose()
 
     # -------------------------------------------------------------------------
     # Subscription — the framework's set is the authoritative one
@@ -255,87 +244,16 @@ class LiveKitBotSession:
     async def publish(self, chunk: AudioChunk) -> None:
         """Put one chunk of the AI's speech on the bot's track.
 
-        ``capture_frame`` waits when the source's queue is full, so this applies
-        real backpressure: the framework is paced by the SFU rather than running
-        ahead of it.
-
-        A chunk carrying no audio only declares a boundary — there is nothing to
-        play. The queue is deliberately *not* flushed on it: an utterance cut
-        short and one that ended by itself both close this way, the two are
-        indistinguishable from here, and flushing would truncate real speech in
-        the second case. What bounds the audio still queued behind a barge-in is
-        the queue's own size (``publish_queue_ms``).
+        The track keeps the publishing contract; what the session adds is that
+        there has to be a session at all — a chunk arriving after the bot left
+        has no track to go on, and the SDK's own error for that would say
+        nothing about why.
         """
-        require_publishable_pcm(chunk)
         if self._left:
             raise RuntimeError(
                 f"the bot has left room {self.room_id!r}, so there is no track to publish on"
             )
-        if chunk.data:
-            source = await self._ensure_source(chunk)
-            await source.capture_frame(self._audio_frame(chunk))
-        self._utterance_open = not chunk.is_final
-
-    def _audio_frame(self, chunk: AudioChunk) -> Any:
-        frame_align = SAMPLE_WIDTH * chunk.channels
-        if len(chunk.data) % frame_align != 0:
-            raise ValueError(
-                f"a chunk of {len(chunk.data)} bytes is not a whole number of "
-                f"{chunk.channels}-channel 16-bit samples, so LiveKit would publish a "
-                "frame shifted by part of one"
-            )
-        return self._rtc.AudioFrame(
-            data=chunk.data,
-            sample_rate=chunk.sample_rate,
-            num_channels=chunk.channels,
-            samples_per_channel=len(chunk.data) // frame_align,
-        )
-
-    async def _ensure_source(self, chunk: AudioChunk) -> Any:
-        """The bot's audio source, created from the first chunk that has audio.
-
-        Taken from the chunk rather than configured, because the synthesizer's
-        rate is the one fact available and resampling it here is exactly what a
-        transport must not do. LiveKit's own encoder takes it from there.
-
-        A later chunk in another format is refused rather than reinterpreted: an
-        ``rtc.AudioSource`` is fixed at construction, and republishing the track
-        mid-conversation to follow a format change would drop the bot's voice
-        out of the conference for as long as the renegotiation takes.
-        """
-        fmt = (chunk.sample_rate, chunk.channels)
-        async with self._publish_lock:
-            if self._source is not None:
-                if self._source_format != fmt:
-                    raise ValueError(
-                        f"the bot's track in room {self.room_id!r} publishes "
-                        f"{self._source_format[0] if self._source_format else '?'} Hz / "
-                        f"{self._source_format[1] if self._source_format else '?'} ch and this "
-                        f"chunk is {chunk.sample_rate} Hz / {chunk.channels} ch. A source's "
-                        "format is fixed once published, and resampling belongs to the lane."
-                    )
-                return self._source
-            source = self._rtc.AudioSource(
-                chunk.sample_rate,
-                chunk.channels,
-                queue_size_ms=self._config.publish_queue_ms,
-            )
-            track = self._rtc.LocalAudioTrack.create_audio_track(
-                f"{self.session.identity}-voice", source
-            )
-            options = self._rtc.TrackPublishOptions(source=self._rtc.TrackSource.SOURCE_MICROPHONE)
-            await self._room.local_participant.publish_track(track, options)
-            self._source = source
-            self._local_track = track
-            self._source_format = fmt
-            logger.debug(
-                "Conference bot %s published its voice track in room %s at %d Hz / %d ch",
-                self.session.identity,
-                self.room_id,
-                chunk.sample_rate,
-                chunk.channels,
-            )
-            return source
+        await self._voice.publish(chunk)
 
     # -------------------------------------------------------------------------
     # Event bridge — sync handlers in, ordered emissions out
@@ -547,13 +465,12 @@ class LiveKitBotSession:
         announces nothing, any more than a crashed process would (RFC section
         12.10.4).
         """
-        if self._utterance_open:
+        if self._voice.abandon_utterance():
             logger.warning(
                 "LiveKit disconnected the conference bot in room %s mid-utterance (%s)",
                 self.room_id,
                 reason,
             )
-            self._utterance_open = False
         else:
             logger.info(
                 "LiveKit disconnected the conference bot in room %s (%s)", self.room_id, reason
