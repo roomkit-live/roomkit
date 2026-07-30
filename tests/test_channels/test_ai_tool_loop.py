@@ -460,7 +460,10 @@ class TestContextOverflowRecovery:
         response = (await ch._run_tool_loop(context)).response
 
         assert "Thinking..." in response.content
-        assert "[Agent interrupted" in response.content
+        # The partial answer survives; the provider's own error string does
+        # not — it is broadcast to the room, and carries API detail.
+        assert "[Response interrupted]" in response.content
+        assert "Internal server error" not in response.content
 
     async def test_compaction_still_overflows_raises(self) -> None:
         """When compaction doesn't help, error propagates."""

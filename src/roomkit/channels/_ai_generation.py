@@ -558,9 +558,21 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                     else:
                         accumulated = self._extract_accumulated_text(context.messages)
                         if accumulated:
+                            # The partial answer is worth keeping; the reason it
+                            # stopped is not for the room to read. `exc` is the
+                            # provider SDK's own string — status codes, request
+                            # ids, model and organisation names — and this
+                            # content is broadcast to every participant. The
+                            # detail goes to the log, where an operator can
+                            # correlate it; the delivery pipeline already
+                            # normalises its provider errors the same way
+                            # (`providers/http_errors.py`).
+                            logger.exception(
+                                "Tool loop interrupted by provider error at round %d", round_idx
+                            )
                             return ToolLoopResult(
                                 response=AIResponse(
-                                    content=accumulated + f"\n\n[Agent interrupted: {exc}]",
+                                    content=accumulated + "\n\n[Response interrupted]",
                                     tool_calls=[],
                                 ),
                                 rounds=rounds,
