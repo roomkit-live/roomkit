@@ -146,9 +146,8 @@ async def main() -> None:
     # await provider.send(event, to=conv_id)
 
     # --- aiohttp webhook handler ---------------------------------------------
-    async def handle_messages(request: web.Request) -> web.Response:
-        payload = await request.json()
-
+    async def handle_activity(payload: dict) -> None:
+        """Handle one activity whose JWT has already been validated."""
         # Always save the conversation reference (needed for proactive sends)
         await provider.save_conversation_reference(payload)
 
@@ -161,7 +160,7 @@ async def main() -> None:
             room_id = await ensure_room(conv_id)
             conv_type = activity["conversation_type"]
             print(f"Bot added to {conv_type} conversation: {conv_id} -> room {room_id}")
-            return web.Response(status=200)
+            return
 
         # --- Reactions -------------------------------------------------------
         if activity_type == "messageReaction":
@@ -171,7 +170,7 @@ async def main() -> None:
                     f"  Reaction {r['action']}: {r['emoji']} "
                     f"by {r['sender_name']} on {r['target_activity_id']}"
                 )
-            return web.Response(status=200)
+            return
 
         # --- Regular messages ------------------------------------------------
         if activity_type == "message":
@@ -180,6 +179,28 @@ async def main() -> None:
                 await ensure_room(conv_id)
                 result = await kit.process_inbound(inbound)
                 print(f"  Processed: blocked={result.blocked}")
+
+    async def handle_messages(request: web.Request) -> web.Response:
+        payload = await request.json()
+
+        # Validate the Bot Framework JWT before trusting one byte of the body.
+        # This endpoint is reachable by anyone who can resolve the host, and
+        # every field the handler reads below — sender, conversation, text —
+        # comes from the request. Skip this and the bot will happily accept
+        # forged activities impersonating any Teams user.
+        #
+        # ``process_inbound`` delegates to BotFrameworkAdapter.process_activity,
+        # which validates the token and builds the turn. Prefer it over
+        # ``provider.verify_signature``, which checks the header alone and so
+        # still accepts a captured token replayed with a forged body.
+        auth_header = request.headers.get("Authorization", "")
+        try:
+            await provider.process_inbound(
+                payload, auth_header, lambda _turn: handle_activity(payload)
+            )
+        except PermissionError as exc:
+            print(f"  Rejected unauthenticated activity: {exc}")
+            return web.Response(status=401)
 
         return web.Response(status=200)
 

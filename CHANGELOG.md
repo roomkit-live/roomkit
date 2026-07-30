@@ -217,6 +217,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separate continuous signals: keying on the destination would have been the
   same defect one layer down.
 
+### Security
+
+- **An `m=video` line no longer buys a SIP caller past authentication.**
+  `SIPVideoBackend` overrides `_handle_invite` to dispatch offers carrying
+  video to its own A/V path — and that path ran no digest challenge and no
+  invite filter. An operator who had configured `auth_users` believed the
+  port was authenticated; adding a video section to the SDP skipped the check
+  entirely, along with whatever tenant routing the invite filter enforced.
+  The gate is now a single `_authorize_invite()` that both dispatch branches
+  call before any port is allocated.
+
+- **Edit and delete authorization no longer trusts the payload that requests
+  it.** The author check only ran when `edit_source` was `None`/`"sender"` or
+  `delete_type` was `SENDER`, so any other value skipped it: on a channel
+  whose remote party controls the content — WebSocket, most transports — a
+  participant could rewrite or delete anyone's messages, the AI's included,
+  by sending `edit_source="admin"`. `delete_type=ADMIN` and `SYSTEM` were
+  likewise accepted with no authority check at all, contrary to RFC §10.3.
+
+  Authorization is now fail-closed: anything outside the RFC's
+  `"sender" | "system"` vocabulary is unprivileged and still requires the
+  sender to be the original author, `ADMIN` requires a verified `OWNER` role
+  on the room roster, and `SYSTEM` requires the event to originate from a
+  system channel. `EditContent.edit_source` stays a `str`, so callers using
+  the documented values are unaffected; moderation that legitimately outranks
+  the roster belongs on `update_event`/`delete_event`, where the host owns
+  authorization.
+
+- **The Teams bot example validates its webhook JWT.** `examples/teams_bot.py`
+  is the only example that stands up a real HTTP endpoint — on `0.0.0.0:3978`
+  — and it read the request body without ever looking at the `Authorization`
+  header, so anyone able to reach it could impersonate any Teams user. It now
+  routes the activity through `provider.process_inbound(payload, auth_header,
+  on_turn)` and answers 401 on `PermissionError`. Worth copying rather than
+  the shape it had: the validation helpers existed all along, no example
+  showed them.
+
 ### Fixed
 
 - **Sync hooks fail closed, and can rewrite every payload they are given.**
