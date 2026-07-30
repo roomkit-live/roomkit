@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.channels._tool_eviction import ToolEviction
 from roomkit.providers.ai.base import (
     AIMessage,
     AITextPart,
@@ -98,6 +99,7 @@ class AIToolLoopRulesHost(Protocol):
     _tool_loop_timeout_seconds: float | None
     _tool_loop_warn_after: int
     _max_empty_retries: int
+    _eviction: ToolEviction
 
     def _apply_tool_filters(self, tools: list[Any]) -> list[Any]: ...
     async def _publish_tool_event(
@@ -127,6 +129,7 @@ class AIToolLoopRulesMixin:
     _tool_loop_timeout_seconds: float | None
     _tool_loop_warn_after: int
     _max_empty_retries: int
+    _eviction: ToolEviction
 
     # Cross-mixin methods — Any annotations avoid MRO shadowing.
     _apply_tool_filters: Any  # see AIToolLoopRulesHost
@@ -166,10 +169,27 @@ class AIToolLoopRulesMixin:
                 context.messages.append(AIMessage(role="user", content=_FORCE_STOP_NUDGE))
                 state.force_stop_nudged = True
             return context.model_copy(update={"tools": []})
+
+        tools: list[Any] | None = None
         if loop_ctx.all_context_tools:
-            return context.model_copy(
-                update={"tools": self._apply_tool_filters(loop_ctx.all_context_tools)}
-            )
+            tools = self._apply_tool_filters(loop_ctx.all_context_tools)
+
+        # A result evicted mid-loop replaces itself with a preview that tells
+        # the model to page the full output back with ``read_stored_result`` —
+        # but that tool was only ever injected at ``_build_context`` time, i.e.
+        # on the *next inbound event*, and every round here re-filters from the
+        # frozen ``all_context_tools`` snapshot. So the tool was unreachable in
+        # the very turn whose preview recommends it, and a one-shot automation
+        # run (webhook, schedule) has no next event at all: its evicted content
+        # was simply lost. Inject the definition per round instead — the
+        # dispatch table already accepts the call unconditionally.
+        if self._eviction.has_evicted:
+            current = tools if tools is not None else list(context.tools or [])
+            if all(t.name != "read_stored_result" for t in current):
+                tools = [*current, ToolEviction.tool_definition()]
+
+        if tools is not None:
+            return context.model_copy(update={"tools": tools})
         return context
 
     def _try_empty_retry(
