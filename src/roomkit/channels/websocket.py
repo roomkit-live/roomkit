@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
@@ -73,8 +74,16 @@ class WebSocketChannel(Channel):
 
     _MAX_CONSECUTIVE_ERRORS = 3
 
-    def __init__(self, channel_id: str) -> None:
+    def __init__(self, channel_id: str, *, send_timeout: float = 5.0) -> None:
+        """Args:
+        channel_id: Channel identifier.
+        send_timeout: Seconds a single send may take before the connection is
+            treated as failing. Broadcast runs under the room lock and is
+            unbounded by design (RFC §10.1), so an unbounded send would let one
+            unresponsive socket freeze the room.
+        """
         super().__init__(channel_id)
+        self._send_timeout = send_timeout
         self._connections: dict[str, SendFn] = {}
         self._stream_send_fns: dict[str, StreamSendFn] = {}
         self._error_counts: dict[str, int] = {}
@@ -229,18 +238,43 @@ class WebSocketChannel(Channel):
             metadata=message.metadata,
         )
 
+    async def _send_one(self, conn_id: str, send_fn: SendFn, event: RoomEvent) -> None:
+        """Send to one connection, bounded in time and never raising.
+
+        The timeout is the point. A socket that is closed raises and is
+        evicted after a few tries, but one that is merely gone — a dropped
+        connection the kernel has not noticed, a client that stopped reading —
+        just never returns from ``send``. Waiting on it here holds the room
+        lock, because broadcast runs inside it and, unlike the pre-commit
+        phase, is deliberately unbounded (RFC §10.1). One dead socket would
+        stop the whole room from accepting anything.
+        """
+        try:
+            await asyncio.wait_for(send_fn(conn_id, event), timeout=self._send_timeout)
+            self._error_counts.pop(conn_id, None)
+        except TimeoutError:
+            logger.warning(
+                "WebSocket send to %s timed out after %.1fs", conn_id, self._send_timeout
+            )
+            self._handle_send_error(conn_id)
+        except Exception:
+            self._handle_send_error(conn_id)
+
     async def deliver(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
     ) -> ChannelOutput:
         # Only this room's connections. The binding names the room being
         # delivered; sending to every socket the channel holds would put one
         # room's messages into another's client.
-        for conn_id, send_fn in self._connections_in(binding.room_id):
-            try:
-                await send_fn(conn_id, event)
-                self._error_counts.pop(conn_id, None)
-            except Exception:
-                self._handle_send_error(conn_id)
+        #
+        # Concurrently, so one slow client delays only itself: sequentially,
+        # every connection waited for the ones before it.
+        await asyncio.gather(
+            *(
+                self._send_one(conn_id, send_fn, event)
+                for conn_id, send_fn in self._connections_in(binding.room_id)
+            )
+        )
         return ChannelOutput.empty()
 
     async def deliver_stream(
@@ -284,8 +318,7 @@ class WebSocketChannel(Channel):
 
         # Send stream_start to this room's streaming connections
         start_msg = StreamStart(room_id=room_id, stream_id=stream_id, source=source)
-        for conn_id in streaming_conns:
-            await self._send_stream_message(conn_id, start_msg)
+        await self._fan_out_stream(streaming_conns, start_msg)
 
         # Stream: text deltas as stream_chunk, RoomEvents as event messages
         accumulated: list[str] = []
@@ -302,20 +335,19 @@ class WebSocketChannel(Channel):
                         delta=delta,
                         text=running_text,
                     )
-                    for conn_id in streaming_conns:
-                        await self._send_stream_message(conn_id, chunk_msg)
+                    await self._fan_out_stream(streaming_conns, chunk_msg)
                 elif isinstance(delta, RoomEvent):
                     # Deliver persisted event inline during streaming
                     segment_events.append(delta)
-                    for conn_id, send_fn in room_conns:
-                        try:
-                            await send_fn(conn_id, delta)
-                        except Exception:
-                            self._handle_send_error(conn_id)
+                    await asyncio.gather(
+                        *(
+                            self._send_one(conn_id, send_fn, delta)
+                            for conn_id, send_fn in room_conns
+                        )
+                    )
         except Exception as exc:
             error_msg = StreamError(room_id=room_id, stream_id=stream_id, error=str(exc))
-            for conn_id in streaming_conns:
-                await self._send_stream_message(conn_id, error_msg)
+            await self._fan_out_stream(streaming_conns, error_msg)
             raise
 
         # Build final event — use last text segment if segments exist,
@@ -333,20 +365,27 @@ class WebSocketChannel(Channel):
 
         # Send stream_end to streaming connections
         end_msg = StreamEnd(room_id=room_id, stream_id=stream_id, event=final_event)
-        for conn_id in streaming_conns:
-            await self._send_stream_message(conn_id, end_msg)
+        await self._fan_out_stream(streaming_conns, end_msg)
 
         # Deliver final event to this room's non-streaming connections
-        for conn_id, send_fn in room_conns:
-            if conn_id in self._stream_send_fns:
-                continue
-            try:
-                await send_fn(conn_id, final_event)
-                self._error_counts.pop(conn_id, None)
-            except Exception:
-                self._handle_send_error(conn_id)
+        await asyncio.gather(
+            *(
+                self._send_one(conn_id, send_fn, final_event)
+                for conn_id, send_fn in room_conns
+                if conn_id not in self._stream_send_fns
+            )
+        )
 
         return ChannelOutput.empty()
+
+    async def _fan_out_stream(self, conn_ids: list[str], msg: StreamMessage) -> None:
+        """Send one streaming message to every connection at once.
+
+        Ordering across deltas is preserved because each fan-out is awaited
+        before the next delta is produced; within a delta the connections are
+        independent, so a slow one must not pace the others.
+        """
+        await asyncio.gather(*(self._send_stream_message(c, msg) for c in conn_ids))
 
     async def _send_stream_message(self, conn_id: str, msg: StreamMessage) -> None:
         """Send a streaming protocol message, tracking errors."""
@@ -355,8 +394,16 @@ class WebSocketChannel(Channel):
             logger.warning("_send_stream_message: no stream_send_fn for %s", conn_id)
             return
         try:
-            await stream_send_fn(conn_id, msg)
+            await asyncio.wait_for(stream_send_fn(conn_id, msg), timeout=self._send_timeout)
             self._error_counts.pop(conn_id, None)
+        except TimeoutError:
+            logger.warning(
+                "_send_stream_message: timed out for %s after %.1fs (msg type=%s)",
+                conn_id,
+                self._send_timeout,
+                msg.type,
+            )
+            self._handle_send_error(conn_id)
         except Exception:
             logger.exception(
                 "_send_stream_message: failed for %s (msg type=%s)", conn_id, msg.type

@@ -9,6 +9,8 @@ client saw them, and so did anything reading that socket.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from roomkit.channels.websocket import WebSocketChannel
@@ -176,3 +178,79 @@ class TestStreamingIsScopedToo:
         )
 
         assert {conn_id for conn_id, _ in streamed} == {"alice"}
+
+
+class TestFanOutIsBounded:
+    """A socket that hangs must not take the room with it.
+
+    Broadcast runs under the room lock and is unbounded by design (RFC §10.1),
+    so an unbounded send does not merely delay other clients — it stops the
+    room from accepting anything at all.
+    """
+
+    async def test_a_hanging_connection_does_not_block_the_others(self) -> None:
+        ws = WebSocketChannel("ws", send_timeout=0.05)
+        delivered: list[str] = []
+
+        async def hang(conn_id: str, event: RoomEvent) -> None:
+            await asyncio.sleep(30)
+
+        async def fast(conn_id: str, event: RoomEvent) -> None:
+            delivered.append(conn_id)
+
+        ws.register_connection("zombie", hang, room_id="room-a")
+        ws.register_connection("alice", fast, room_id="room-a")
+
+        started = asyncio.get_running_loop().time()
+        await ws.deliver(_event("room-a", "hi"), _binding("room-a"), _context("room-a"))
+        elapsed = asyncio.get_running_loop().time() - started
+
+        assert delivered == ["alice"]
+        assert elapsed < 1.0, f"the hung socket paced the room: {elapsed:.2f}s"
+
+    async def test_a_hanging_connection_is_eventually_evicted(self) -> None:
+        """A half-open socket never raises, so only a timeout can retire it."""
+        ws = WebSocketChannel("ws", send_timeout=0.01)
+
+        async def hang(conn_id: str, event: RoomEvent) -> None:
+            await asyncio.sleep(30)
+
+        ws.register_connection("zombie", hang, room_id="room-a")
+
+        for _ in range(WebSocketChannel._MAX_CONSECUTIVE_ERRORS):
+            await ws.deliver(_event("room-a", "x"), _binding("room-a"), _context("room-a"))
+
+        assert "zombie" not in ws._connections
+
+    async def test_a_recovering_connection_keeps_its_place(self) -> None:
+        ws = WebSocketChannel("ws", send_timeout=0.05)
+        calls = {"n": 0}
+
+        async def flaky(conn_id: str, event: RoomEvent) -> None:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                await asyncio.sleep(30)
+
+        ws.register_connection("flaky", flaky, room_id="room-a")
+
+        await ws.deliver(_event("room-a", "1"), _binding("room-a"), _context("room-a"))
+        await ws.deliver(_event("room-a", "2"), _binding("room-a"), _context("room-a"))
+
+        assert "flaky" in ws._connections
+        assert ws._error_counts.get("flaky", 0) == 0
+
+    async def test_slow_clients_do_not_add_up(self) -> None:
+        """Concurrent, not sequential: five slow sockets cost one slow socket."""
+        ws = WebSocketChannel("ws", send_timeout=5.0)
+
+        async def slow(conn_id: str, event: RoomEvent) -> None:
+            await asyncio.sleep(0.1)
+
+        for i in range(5):
+            ws.register_connection(f"c{i}", slow, room_id="room-a")
+
+        started = asyncio.get_running_loop().time()
+        await ws.deliver(_event("room-a", "hi"), _binding("room-a"), _context("room-a"))
+        elapsed = asyncio.get_running_loop().time() - started
+
+        assert elapsed < 0.3, f"fan-out was sequential: {elapsed:.2f}s"

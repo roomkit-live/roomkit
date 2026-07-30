@@ -290,6 +290,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **One unresponsive WebSocket client no longer freezes its room.** Delivery
+  fanned out sequentially with no timeout on the send. A socket that is closed
+  raises and gets evicted after a few failures, but one that is merely gone —
+  a dropped connection the kernel has not noticed, a client that stopped
+  reading — never returns, and the existing eviction counter only ever
+  incremented on exceptions, so it was blind to exactly this case. The wait
+  was not merely slow for the other clients: broadcast runs under the room
+  lock and, unlike the pre-commit phase, is unbounded by design, so the room
+  stopped accepting anything at all.
+
+  Sends now run concurrently and each is bounded by `send_timeout` (5 s by
+  default, constructor argument), with a timeout counting toward eviction like
+  any other failure. Five slow clients now cost what one costs, and a client
+  that recovers keeps its place.
+
 - **A WebSocket connection receives its rooms, and only its rooms.**
   `WebSocketChannel` held a flat `{connection_id: send_fn}` registry with no
   room dimension anywhere in its API — not on `register_connection`, not on
