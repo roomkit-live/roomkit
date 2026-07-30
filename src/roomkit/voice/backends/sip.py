@@ -32,6 +32,7 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
+from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.backends._sip_types import (
     PT_G722,
     PT_PCMA,
@@ -121,6 +122,18 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         rtp_inactivity_timeout: Seconds of RTP silence before forcing
             session disconnect (safety net for missed BYE).  Set to 0
             to disable.  Default 30.
+        rtp_establishment_timeout: Seconds an answered session may hold its
+            RTP port without ever receiving a packet.  ``rtp_inactivity_timeout``
+            cannot cover this — it measures time since the last packet, and
+            there has been none — so a caller that takes the 200 OK and then
+            stays silent would hold a port, a socket and an RTCP task for the
+            life of the process.  Set to 0 to disable.  Default 60.
+        max_sessions: Maximum concurrent sessions.  Further INVITEs are
+            answered ``503 Service Unavailable`` with a ``Retry-After``
+            rather than allowed to drain the RTP port pool.  Set to 0 for
+            no limit.  Default 0 — deployments behind a trusted PBX are
+            already bounded by it; set this whenever the port is reachable
+            more widely.
         auth_users: Optional mapping of ``username → password`` for
             inbound digest authentication.  When set, incoming INVITEs
             without valid credentials are challenged with 401.  For
@@ -172,6 +185,8 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         playout_max_delay_ms: int = 200,
         duplicate_tx: bool = False,
         rtp_inactivity_timeout: float = 30.0,
+        rtp_establishment_timeout: float = 60.0,
+        max_sessions: int = 0,
         auth_users: dict[str, str] | None = None,
         auth_realm: str = "roomkit",
         send_silence_on_answer: float = 0.0,
@@ -201,6 +216,8 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._playout_max_delay_ms = playout_max_delay_ms
         self._duplicate_tx = duplicate_tx
         self._rtp_inactivity_timeout = rtp_inactivity_timeout
+        self._rtp_establishment_timeout = rtp_establishment_timeout
+        self._max_sessions = max_sessions
         self._send_silence_on_answer = send_silence_on_answer
         self._outbound_silence_fill = outbound_silence_fill
         self._pacer_prebuffer_ms = pacer_prebuffer_ms
@@ -245,6 +262,9 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         # same one; this reserves it across the awaits in _handle_invite so
         # the second is refused rather than silently overwriting the first.
         self._reserved_session_ids: set[str] = set()
+        # Strong references to in-flight INVITE tasks; a bare create_task()
+        # result can be garbage-collected mid-flight.
+        self._invite_tasks: set[asyncio.Task[None]] = set()
 
         # Callback registrations
         self._audio_received_callback: AudioReceivedCallback | None = None
@@ -278,6 +298,23 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
     # Lifecycle
     # -------------------------------------------------------------------------
 
+    def _spawn_invite_handler(self, call: Any) -> None:
+        """Run ``_handle_invite`` as a task, and never lose its failures.
+
+        aiosipua calls this synchronously from the transport, so the work has
+        to be handed to a task. Without a done-callback the task's exception —
+        an exhausted RTP port pool raises here — surfaced only as asyncio's
+        "Task exception was never retrieved" at garbage-collection time, with
+        no call_id and nothing in the SIP log, while the caller waited out its
+        own timer having received no final response.
+        """
+        task = asyncio.get_running_loop().create_task(
+            self._handle_invite(call), name=f"sip_invite:{call.call_id}"
+        )
+        self._invite_tasks.add(task)
+        task.add_done_callback(self._invite_tasks.discard)
+        task.add_done_callback(log_task_exception)
+
     async def start(self) -> None:
         """Start the SIP listener and prepare for incoming calls."""
         transport_cls = self._aiosipua.UdpSipTransport
@@ -288,9 +325,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._uac = uac_cls(self._transport)
         self._uas = uas_cls(self._transport, user_agent=self._user_agent, uac=self._uac)
 
-        self._uas.on_invite = lambda call: asyncio.get_running_loop().create_task(
-            self._handle_invite(call)
-        )
+        self._uas.on_invite = self._spawn_invite_handler
         self._uas.on_reinvite = self._handle_reinvite
         self._uas.on_bye = self._handle_bye
 

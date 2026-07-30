@@ -64,6 +64,7 @@ class SIPCallingHost(Protocol):
         _reserved_session_ids: Session ids claimed by an INVITE still being set
             up, so a second INVITE naming the same caller-chosen id is refused
             rather than allowed to displace the first.
+        _max_sessions: Concurrent session cap; 0 disables it.
         _available_ports: Pool of available RTP ports.
         _allocated_ports: Currently allocated RTP ports.
         _transport_addr_resolved: Whether transport address has been resolved.
@@ -105,6 +106,7 @@ class SIPCallingHost(Protocol):
     _recently_ended_call_ids: dict[str, float]
     _pending_reinvite_calls: dict[str, Any]
     _reserved_session_ids: set[str]
+    _max_sessions: int
     _available_ports: set[int]
     _allocated_ports: set[int]
     _transport_addr_resolved: bool
@@ -158,6 +160,7 @@ class SIPCallingMixin:
     _recently_ended_call_ids: dict[str, float]
     _pending_reinvite_calls: dict[str, Any]
     _reserved_session_ids: set[str]
+    _max_sessions: int
     _available_ports: set[int]
     _allocated_ports: set[int]
     _transport_addr_resolved: bool
@@ -251,6 +254,21 @@ class SIPCallingMixin:
         hostile one. The reservation is held across the awaits below so two
         INVITEs racing on the same id cannot both pass this check.
         """
+        # Answer honestly when full rather than allocating into an empty pool
+        # and failing somewhere further in. Without this the caller gets no
+        # final response at all and waits out its own timer.
+        if self._max_sessions > 0:
+            live = len(self._session_states) + len(self._reserved_session_ids)
+            if live >= self._max_sessions:
+                logger.warning(
+                    "Rejecting INVITE: at capacity (%d sessions, max_sessions=%d, call_id=%s)",
+                    live,
+                    self._max_sessions,
+                    call.call_id,
+                )
+                call.reject(503, "Service Unavailable")
+                return None
+
         session_id = call.session_id or call.call_id
         if session_id in self._session_states or session_id in self._reserved_session_ids:
             logger.warning(

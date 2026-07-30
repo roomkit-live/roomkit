@@ -268,6 +268,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A SIP call that is answered and then says nothing no longer holds its port
+  forever.** The RTP watchdog only judged sessions that had received at least
+  one packet — it measures time since the last one, and there had been none —
+  so taking the 200 OK and staying silent kept an RTP port, a UDP socket and a
+  periodic RTCP task until the process exited. `SIPSessionState` had no
+  creation timestamp, so no establishment timer was even expressible. It now
+  records `created_at`, and `rtp_establishment_timeout` (default 60 s) reaps a
+  session that never received RTP.
+
+  Two more bounds close the same drain. `max_sessions` (default 0, off) answers
+  `503` past the cap instead of allocating into an exhausted pool of 5000
+  ports. And the INVITE task now carries a done-callback: the `RuntimeError`
+  raised when the pool *is* exhausted used to surface only as asyncio's "Task
+  exception was never retrieved" at collection time — no call id, nothing in
+  the SIP log, and no final response to the caller, who waited out its own
+  timer.
+
 - **A SIP caller can no longer seize a live session by naming its
   `X-Session-ID`.** The session id came from the caller's `X-Session-ID`
   header and the backend stored it with `self._session_states[session.id] =

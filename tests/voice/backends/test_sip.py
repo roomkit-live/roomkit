@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from roomkit.voice.audio_frame import AudioFrame
+from roomkit.voice.backends._sip_types import SIPSessionState
 from roomkit.voice.base import AudioChunk, VoiceCapability, VoiceSession, VoiceSessionState
 from roomkit.voice.pipeline.dtmf.base import DTMFEvent
 
@@ -981,6 +982,109 @@ class TestSessionIdFixation:
         assert set(backend._session_states) == {"s1", "s2"}
         call1.reject.assert_not_called()
         call2.reject.assert_not_called()
+
+
+class TestSessionCap:
+    """An unbounded session count is an unbounded RTP port pool drain."""
+
+    async def test_invite_past_the_cap_is_refused_with_503(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        backend._max_sessions = 2
+        mock_rtp_bridge.CallSession.side_effect = [_make_mock_call_session() for _ in range(4)]
+
+        for i in range(2):
+            call = _make_mock_incoming_call(call_id=f"call-{i}", session_id=f"s{i}")
+            await backend._handle_invite(call)
+        assert len(backend._session_states) == 2
+
+        overflow = _make_mock_incoming_call(call_id="call-x", session_id="sx")
+        await backend._handle_invite(overflow)
+
+        overflow.reject.assert_called_once()
+        assert overflow.reject.call_args[0][0] == 503
+        assert len(backend._session_states) == 2
+        assert "sx" not in backend._session_states
+
+    async def test_cap_frees_up_when_a_call_ends(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        backend._max_sessions = 1
+        mock_rtp_bridge.CallSession.side_effect = [_make_mock_call_session() for _ in range(3)]
+
+        first = _make_mock_incoming_call(call_id="call-1", session_id="s1")
+        await backend._handle_invite(first)
+        backend._cleanup_session("s1")
+
+        second = _make_mock_incoming_call(call_id="call-2", session_id="s2")
+        await backend._handle_invite(second)
+
+        second.reject.assert_not_called()
+        assert "s2" in backend._session_states
+
+    async def test_zero_means_no_limit(self, backend: Any, mock_rtp_bridge: MagicMock) -> None:
+        backend._max_sessions = 0
+        mock_rtp_bridge.CallSession.side_effect = [_make_mock_call_session() for _ in range(5)]
+
+        for i in range(5):
+            call = _make_mock_incoming_call(call_id=f"call-{i}", session_id=f"s{i}")
+            await backend._handle_invite(call)
+
+        assert len(backend._session_states) == 5
+
+
+class TestSessionExpiry:
+    """A call that never sends RTP must not hold its port forever."""
+
+    @staticmethod
+    def _state(*, created_at: float, inbound_packets: int, last_ts: float) -> Any:
+        state = SIPSessionState(session=MagicMock(), created_at=created_at)
+        state.audio_stats.inbound_packets = inbound_packets
+        state.audio_stats.inbound_last_ts = last_ts
+        return state
+
+    def test_answered_but_silent_session_expires(self, backend: Any) -> None:
+        backend._rtp_establishment_timeout = 60.0
+        now = 1000.0
+        st = self._state(created_at=now - 61.0, inbound_packets=0, last_ts=0.0)
+
+        reason = backend._expiry_reason("sess-1", st, now)
+
+        assert reason is not None
+        assert "never established" in reason
+
+    def test_answered_but_silent_session_is_given_its_grace(self, backend: Any) -> None:
+        backend._rtp_establishment_timeout = 60.0
+        now = 1000.0
+        st = self._state(created_at=now - 10.0, inbound_packets=0, last_ts=0.0)
+
+        assert backend._expiry_reason("sess-1", st, now) is None
+
+    def test_a_talking_session_is_kept(self, backend: Any) -> None:
+        backend._rtp_inactivity_timeout = 30.0
+        backend._rtp_establishment_timeout = 60.0
+        now = 1000.0
+        # Long-lived, so past the establishment threshold, but still speaking.
+        st = self._state(created_at=now - 3600.0, inbound_packets=500, last_ts=now - 1.0)
+
+        assert backend._expiry_reason("sess-1", st, now) is None
+
+    def test_a_session_that_fell_silent_expires_on_inactivity(self, backend: Any) -> None:
+        backend._rtp_inactivity_timeout = 30.0
+        now = 1000.0
+        st = self._state(created_at=now - 3600.0, inbound_packets=500, last_ts=now - 31.0)
+
+        reason = backend._expiry_reason("sess-1", st, now)
+
+        assert reason is not None
+        assert "inactivity" in reason
+
+    def test_establishment_timeout_can_be_disabled(self, backend: Any) -> None:
+        backend._rtp_establishment_timeout = 0.0
+        now = 1000.0
+        st = self._state(created_at=now - 100_000.0, inbound_packets=0, last_ts=0.0)
+
+        assert backend._expiry_reason("sess-1", st, now) is None
 
 
 class TestHandleReInvite:

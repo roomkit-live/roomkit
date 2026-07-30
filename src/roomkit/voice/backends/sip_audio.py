@@ -30,6 +30,8 @@ class SIPAudioHost(Protocol):
         _transport: The SIP UDP transport.
         _uac: The SIP User Agent Client.
         _rtp_inactivity_timeout: Seconds before RTP inactivity triggers disconnect.
+        _rtp_establishment_timeout: Seconds a session may hold its port without
+            ever receiving RTP before it is reaped.
         _session_states: Consolidated per-session state.
         _audio_received_callback: Callback for inbound audio frames.
         _dtmf_callbacks: Callbacks for DTMF digit events.
@@ -45,6 +47,7 @@ class SIPAudioHost(Protocol):
     _transport: Any
     _uac: Any
     _rtp_inactivity_timeout: float
+    _rtp_establishment_timeout: float
     _session_states: dict[str, SIPSessionState]
     _audio_received_callback: Any
     _dtmf_callbacks: list[Any]
@@ -82,6 +85,7 @@ class SIPAudioMixin:
     _transport: Any
     _uac: Any
     _rtp_inactivity_timeout: float
+    _rtp_establishment_timeout: float
     _session_states: dict[str, SIPSessionState]
     _audio_received_callback: Any
     _dtmf_callbacks: list[Any]
@@ -333,6 +337,39 @@ class SIPAudioMixin:
     # Audio diagnostics
     # -------------------------------------------------------------------------
 
+    def _expiry_reason(self, sid: str, st: SIPSessionState, now: float) -> str | None:
+        """Why this session should be reaped now, or ``None`` to keep it.
+
+        Two distinct failures, because one clock cannot measure both. A call
+        that fell silent is judged against its last inbound packet; a call
+        that was answered and never sent one has no such timestamp, and is
+        judged against when it was created. Without the second, a caller that
+        takes the 200 OK and stays mute holds its RTP port, socket and RTCP
+        task until the process exits — one leaked port per INVITE.
+        """
+        stats = st.audio_stats
+        if (
+            self._rtp_inactivity_timeout > 0
+            and stats.inbound_packets > 0
+            and (now - stats.inbound_last_ts) > self._rtp_inactivity_timeout
+        ):
+            idle = now - stats.inbound_last_ts
+            return (
+                f"RTP inactivity timeout: session={sid[:8]} idle={idle:.1f}s "
+                f"(threshold={self._rtp_inactivity_timeout:.0f}s)"
+            )
+        if (
+            self._rtp_establishment_timeout > 0
+            and stats.inbound_packets == 0
+            and (now - st.created_at) > self._rtp_establishment_timeout
+        ):
+            waited = now - st.created_at
+            return (
+                f"RTP never established: session={sid[:8]} waited={waited:.1f}s "
+                f"(threshold={self._rtp_establishment_timeout:.0f}s)"
+            )
+        return None
+
     async def _audio_stats_loop(self) -> None:
         """Periodically log per-session audio diagnostics.
 
@@ -344,7 +381,7 @@ class SIPAudioMixin:
             while True:
                 await asyncio.sleep(STATS_INTERVAL)
                 now = time.monotonic()
-                inactive_sessions: list[tuple[str, SIPSessionState]] = []
+                inactive_sessions: list[tuple[str, SIPSessionState, str]] = []
 
                 for sid, st in list(self._session_states.items()):
                     stats = st.audio_stats
@@ -396,22 +433,12 @@ class SIPAudioMixin:
                         rtp_info,
                     )
 
-                    if (
-                        self._rtp_inactivity_timeout > 0
-                        and stats.inbound_packets > 0
-                        and (now - stats.inbound_last_ts) > self._rtp_inactivity_timeout
-                    ):
-                        inactive_sessions.append((sid, st))
+                    reason = self._expiry_reason(sid, st, now)
+                    if reason is not None:
+                        inactive_sessions.append((sid, st, reason))
 
-                for sid, st in inactive_sessions:
-                    idle = now - st.audio_stats.inbound_last_ts
-                    logger.warning(
-                        "RTP inactivity timeout: session=%s idle=%.1fs "
-                        "(threshold=%.0fs) — forcing disconnect",
-                        sid[:8],
-                        idle,
-                        self._rtp_inactivity_timeout,
-                    )
+                for sid, st, reason in inactive_sessions:
+                    logger.warning("%s — forcing disconnect", reason)
                     session = st.session
                     call_session = st.call_session
 

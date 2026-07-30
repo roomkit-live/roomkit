@@ -7,6 +7,7 @@ import hashlib
 import logging
 import re
 import socket
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -105,6 +106,11 @@ class SIPSessionState:
     """Consolidated per-session state for SIP backend."""
 
     session: VoiceSession
+    # When the session was registered. The inactivity watchdog can only judge
+    # a session that has received RTP at least once; without this, a call that
+    # is answered and then never sends a packet has no clock against which to
+    # expire, and holds its port, socket and RTCP task forever.
+    created_at: float = field(default_factory=time.monotonic)
     call_session: Any = None
     incoming_call: Any = None
     outgoing_call: Any = None
