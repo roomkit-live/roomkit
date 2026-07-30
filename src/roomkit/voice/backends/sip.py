@@ -166,7 +166,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
             and the caller also chooses its own room and session via
             ``X-Room-ID`` / ``X-Session-ID``.  That is the intended shape
             behind a trusted PBX, which sets those headers itself; it is a
-            hole anywhere else.  See ``SECURITY.md``.
+            hole anywhere else.  See the Security Hardening guide.
         auth_realm: Realm string used in the ``WWW-Authenticate``
             challenge header (default ``"roomkit"``).
         send_silence_on_answer: Seconds of PCM silence to push through
