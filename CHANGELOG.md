@@ -741,6 +741,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session id for one call, a caller number for the next — and excluding them is
   an integrator's call, made with `identity_channel_types` (RFC §11.4).
 
+- **`read_stored_result` exists in the very turn that evicted.** A tool result
+  crossing the eviction threshold mid-loop replaces itself with a preview whose
+  instruction is to page the full output back with `read_stored_result` — but
+  the definition was only injected when the *next* inbound event rebuilt the
+  context, and every round of both tool loops re-filters from the turn's frozen
+  tool snapshot. So the tool did not exist exactly where its preview recommended
+  it: the model burned rounds hunting for it through its discovery tools, and a
+  one-shot automation run (webhook, schedule) has no next event at all — its
+  evicted content was unreachable for the whole run, and a model was observed
+  guessing at it instead, wrongly. The definition is now injected per round as
+  soon as the store holds anything, deduped against a context that already
+  carries it; a turn with nothing evicted is untouched.
+
 ## [0.37.1] — 2026-07-24
 
 ### Fixed
