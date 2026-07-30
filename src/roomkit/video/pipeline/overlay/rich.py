@@ -1,6 +1,6 @@
 """Rich overlay renderer using Pillow for styled text and tables.
 
-Requires ``Pillow>=10.0``::
+Requires ``Pillow>=10.3``::
 
     pip install roomkit[video-overlay]
 """

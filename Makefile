@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck security test coverage all clean docs deploy release
+.PHONY: audit install lint format typecheck security test coverage all clean docs deploy release
 
 install:
 	uv sync --extra dev
@@ -15,6 +15,14 @@ typecheck:
 
 security:
 	uv run bandit -r src/ -c pyproject.toml
+
+# Same two passes CI runs, so a new advisory can be seen before pushing:
+# the core gates, the extras only report.
+audit:
+	uv export --frozen --no-dev --no-emit-project --format requirements-txt -o /tmp/rk-core.txt
+	uvx pip-audit --requirement /tmp/rk-core.txt
+	-uv export --frozen --no-dev --no-emit-project --extra all --no-hashes --format requirements-txt -o /tmp/rk-all.txt
+	-uvx pip-audit --requirement /tmp/rk-all.txt
 
 test:
 	uv run pytest

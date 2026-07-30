@@ -68,6 +68,25 @@ jobs:
       - name: pip-audit (core runtime dependencies)
         run: uvx pip-audit --requirement requirements-core.txt
 
+      # The extras, reported but not gating. Their transitive trees are large
+      # and move on other people's schedules, so a blocking check here would
+      # be red for reasons no one in this repo can fix — and a gate that is
+      # always red is a gate nobody reads. Non-blocking still surfaces a new
+      # advisory in the run's output, which is the part that was missing:
+      # nothing outside the core was being looked at at all.
+      # `--extra all` rather than `--all-extras`: the project declares
+      # mutually exclusive extras (neutts / qwen-asr / qwen-tts pin different
+      # transformers), so `--all-extras` cannot resolve at all. `--no-hashes`
+      # because pip-audit dry-run-installs, and the exported hashes are
+      # platform-specific.
+      - name: Export optional extras
+        continue-on-error: true
+        run: uv export --frozen --no-dev --no-emit-project --extra all --no-hashes --format requirements-txt -o requirements-all.txt
+
+      - name: pip-audit (optional extras, non-blocking)
+        continue-on-error: true
+        run: uvx pip-audit --requirement requirements-all.txt
+
   typecheck:
     name: Type check
     runs-on: ubuntu-latest
