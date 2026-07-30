@@ -45,3 +45,36 @@ def redact(value: object) -> str:
     if _content_logging:
         return text
     return f"<redacted:{len(text)} chars>"
+
+
+def safe_url(url: str) -> str:
+    """Return *url* with its credential-bearing parts removed.
+
+    A source's URL travels further than the connection it opens: it is what
+    ``name`` reports, and ``name`` reaches log lines and the framework events
+    an observability exporter consumes. Putting a token in the query string is
+    the ordinary way to authenticate a WebSocket or SSE endpoint — several
+    providers document no other — so the URL as written is a credential.
+
+    The path is kept, because that is what makes a log line diagnosable; the
+    query string and any ``user:pass@`` are dropped, and a query that existed
+    is marked so a reader can tell "no parameters" from "parameters removed".
+    Unlike :func:`redact` this is not gated on ``ROOMKIT_LOG_CONTENT``: a
+    credential is not content, and there is no debugging session in which
+    logging it is the right answer.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "<unparseable-url>"
+    if not parts.scheme and not parts.netloc:
+        return url
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    if parts.username:
+        host = f"<redacted>@{host}"
+    cleaned = urlunsplit((parts.scheme, host, parts.path, "", ""))
+    return f"{cleaned}?<redacted>" if parts.query else cleaned

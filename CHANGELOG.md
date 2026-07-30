@@ -290,6 +290,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A source's URL no longer carries its token into logs and events**
+  (CWE-532). `WebSocketSource.name` and `SSESource.name` returned the URL
+  verbatim, and `name` is documented as being for logging and framework
+  events — it reached both, plus whatever observability exporter consumes
+  them, and the connection log line wrote it at INFO. Authenticating one of
+  these endpoints with a token in the query string is ordinary; several
+  providers document no other way. The new `telemetry.redaction.safe_url()`
+  keeps the scheme, host and path — what makes a log line diagnosable — and
+  drops the query string and any `user:pass@`, marking a query that existed so
+  a reader can tell "no parameters" from "parameters removed". Unlike
+  `redact()` it is not gated on `ROOMKIT_LOG_CONTENT`: a credential is not
+  content, and no debugging session justifies logging it. The connection
+  itself still dials the real URL.
+
 - **Outbound audio queues are bounded, and the binary inbound path is capped.**
   The realtime channel's per-session send queue and the Twilio backend's write
   queue were both unbounded `asyncio.Queue()`. Neither producer can be

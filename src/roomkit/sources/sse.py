@@ -12,6 +12,7 @@ from roomkit.models.channel import RateLimit
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import TextContent
 from roomkit.sources.base import BaseSourceProvider, EmitCallback, SourceStatus
+from roomkit.telemetry.redaction import safe_url
 
 # Optional dependency - import for availability check
 try:
@@ -170,7 +171,7 @@ class SSESource(BaseSourceProvider):
 
     @property
     def name(self) -> str:
-        return f"sse:{self._url}"
+        return f"sse:{safe_url(self._url)}"
 
     async def start(self, emit: EmitCallback) -> None:
         """Connect and start receiving SSE events."""
@@ -205,7 +206,7 @@ class SSESource(BaseSourceProvider):
                         params=self._params,
                     ) as event_source:
                         self._set_status(SourceStatus.CONNECTED)
-                        logger.info("Connected to SSE endpoint: %s", self._url)
+                        logger.info("Connected to SSE endpoint: %s", safe_url(self._url))
                         backoff = 1.0  # Reset on successful connection
 
                         await self._receive_loop(event_source, emit)

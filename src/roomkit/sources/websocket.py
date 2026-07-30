@@ -13,6 +13,7 @@ from roomkit.models.channel import RateLimit
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import TextContent
 from roomkit.sources.base import BaseSourceProvider, EmitCallback, SourceStatus
+from roomkit.telemetry.redaction import safe_url
 
 # Optional dependency - import for type checking and availability check
 try:
@@ -171,7 +172,7 @@ class WebSocketSource(BaseSourceProvider):
 
     @property
     def name(self) -> str:
-        return f"websocket:{self._url}"
+        return f"websocket:{safe_url(self._url)}"
 
     async def start(self, emit: EmitCallback) -> None:
         """Connect and start receiving messages.
@@ -210,7 +211,7 @@ class WebSocketSource(BaseSourceProvider):
                 async with websockets.connect(**connect_kwargs) as ws:
                     self._ws = ws
                     self._set_status(SourceStatus.CONNECTED)
-                    logger.info("Connected to %s", self._url)
+                    logger.info("Connected to %s", safe_url(self._url))
                     backoff = 1.0  # Reset on successful connection
 
                     await self._receive_loop(ws, emit)
