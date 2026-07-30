@@ -290,6 +290,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Webhook signature verification is discoverable.** The helpers were correct
+  and invisible: not one of the 164 examples called `verify_signature`, no
+  docs page mentioned it, and the parser docstrings said nothing —
+  `process_webhook`, described in its own docstring as "the simplest
+  integration method", showed an endpoint with no check at all. An opt-in
+  control nothing points at is off in practice. The parser docstrings now name
+  the header and the method, `process_webhook` states that it does not
+  authenticate, `SECURITY.md` gains a per-provider table plus the two mistakes
+  that break Twilio verification (the URL must be the public one; the body
+  must be the raw bytes), and `examples/webhook_signature_verification.py`
+  demonstrates acceptance, a tampered body, a replay to another URL and a
+  missing header — with no credentials and no network.
+
+- **`TwilioRCSProvider` can verify its webhooks.** It defined no
+  `verify_signature`, so it inherited the base's `NotImplementedError` — an
+  RCS endpoint had no way to establish that Twilio sent the request, although
+  Twilio signs RCS exactly as it signs SMS and the config already held the
+  credentials. The HMAC moves to a shared `providers/twilio/_signature.py`
+  (the shape Telnyx already uses for its own pair) and both providers call it.
+
+- **Config secrets stay out of `repr()`** (RFC §17.7). Two pydantic configs
+  and nine dataclasses carried a credential that renders in `repr()`, against
+  the repo's own convention on both sides. Latent rather than active — nothing
+  logs a config object today — but a traceback renders every local it passes.
+  `SecretStr` on the two, `field(repr=False)` on the nine, and a test that
+  fails if a new config forgets.
+
+- **The AI channel no longer prints its provider's error to the room.** A
+  provider failure in the non-streaming tool loop returned the partial answer
+  plus the SDK's own error string — status code, request id, model and
+  organisation names — as the assistant's message, committed and broadcast.
+  The partial answer stays; the reason goes to the log.
+
+- **Dependency floors raised, and the extras are audited.** The resolved
+  versions were fine; the declared minimums let a low resolution land on known
+  advisories. `mcp>=1.23.0`, `Pillow>=10.3`, `botbuilder-core>=4.17`, and
+  `onnxruntime`/`transformers` — previously the only two dependencies with no
+  constraint at all — floored at `>=1.20` / `>=4.57`. CI audited the core
+  alone, so nothing in any extra was ever looked at; it now audits them too,
+  non-blocking, and `make audit` runs the same passes locally.
+
 - **A source's URL no longer carries its token into logs and events**
   (CWE-532). `WebSocketSource.name` and `SSESource.name` returned the URL
   verbatim, and `name` is documented as being for logging and framework
