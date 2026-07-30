@@ -310,6 +310,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`symmetric_rtp` is reachable from the SIP backend.** aiortp has had RTP
+  latching all along, but `aiosipua`'s bridge forwarded eleven RTP options to
+  it and not that one, so the setting could not be turned on from RoomKit at
+  all. `aiosipua` 0.7.1 forwards it; `SIPVoiceBackend(symmetric_rtp=True)` now
+  reaches every session it creates — inbound INVITE, outbound `dial()`, and
+  the A/V backend's audio and video sessions alike. The `sip` extra floors at
+  `aiosipua[rtp]>=0.7.1`.
+
+  Default stays `False`, matching aiortp and aiosipua: latching changes how
+  media is addressed mid-call, so it is opted into. What it buys is the
+  ordinary NAT fix, plus media redirection stops being followed the moment
+  the caller sends anything of its own. What it does **not** buy — and
+  `SECURITY.md` said otherwise before this, wrongly — is protection from a
+  caller that stays silent: latching only fires on an inbound packet, so an
+  offer that advertises a third party and then sends nothing keeps the stream
+  aimed there. `rtp_establishment_timeout` bounds that one; authentication
+  prevents it.
+
+- **A SIP session is released when its 2xx is never acknowledged.** aiosipua
+  gives up on the ACK after 64×T1, drops its own call state and calls
+  `on_ack_timeout` — a hook RoomKit never set, so only aiosipua let go while
+  our session, its RTP port, its socket and its RTCP task stayed for the life
+  of the process. Answering an INVITE and never acknowledging is the cheapest
+  way to leak one: no BYE arrives, and the inactivity watchdog has no packet
+  to measure against. The handler now reuses the BYE teardown.
+
 - **Webhook signature verification is discoverable.** The helpers were correct
   and invisible: not one of the 164 examples called `verify_signature`, no
   docs page mentioned it, and the parser docstrings said nothing —

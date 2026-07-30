@@ -119,6 +119,25 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
             later (via aiortp).  Receivers dedupe by sequence number, so
             no negotiation is needed; bandwidth doubles.  The outbound
             defense for lossy links.  Default ``False``.
+        symmetric_rtp: When ``True``, follow the remote RTP address from the
+            packets that actually arrive (RFC 4961 latching, via aiortp)
+            instead of trusting the address in the SDP for the whole call.
+            Requires ``aiosipua>=0.7.1``.
+
+            Two things it buys.  It is the ordinary fix for a caller behind
+            NAT, whose advertised address is not the one its packets come
+            from.  And it limits media redirection: an offer pointing at a
+            third party stops being followed the moment the caller sends
+            anything of its own.
+
+            What it does **not** do is stop a caller that stays silent.
+            Latching only fires on an inbound packet, so an INVITE that
+            advertises someone else's address and then sends nothing keeps
+            the stream aimed there.  ``rtp_establishment_timeout`` is what
+            bounds that one, and authentication is what prevents it.
+
+            Default ``False``, matching aiortp and aiosipua, so enabling it
+            is a deliberate change to how media is addressed mid-call.
         rtp_inactivity_timeout: Seconds of RTP silence before forcing
             session disconnect (safety net for missed BYE).  Set to 0
             to disable.  Default 30.
@@ -191,6 +210,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         playout: bool = False,
         playout_max_delay_ms: int = 200,
         duplicate_tx: bool = False,
+        symmetric_rtp: bool = False,
         rtp_inactivity_timeout: float = 30.0,
         rtp_establishment_timeout: float = 60.0,
         max_sessions: int = 0,
@@ -222,6 +242,7 @@ class SIPVoiceBackend(SIPAuthMixin, SIPCallingMixin, SIPAudioMixin, VoiceBackend
         self._playout = playout
         self._playout_max_delay_ms = playout_max_delay_ms
         self._duplicate_tx = duplicate_tx
+        self._symmetric_rtp = symmetric_rtp
         self._rtp_inactivity_timeout = rtp_inactivity_timeout
         self._rtp_establishment_timeout = rtp_establishment_timeout
         self._max_sessions = max_sessions

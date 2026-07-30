@@ -100,9 +100,24 @@ does not hold:
   is an amplification primitive: the call becomes an RTP stream aimed at a
   third party.
 
-Bound the blast radius with `max_sessions` (concurrent calls, answered `503`
-past the cap) and leave `rtp_establishment_timeout` on, so a call that is
-answered and then sends nothing releases its RTP port instead of holding it.
+Three settings bound that last one, and it is worth being precise about which
+covers what, because none of them covers all of it:
+
+- `symmetric_rtp=True` follows the address the caller's packets actually come
+  from (RFC 4961), so an offer pointing elsewhere stops being followed as soon
+  as the caller sends anything of its own. It is also the ordinary fix for
+  callers behind NAT. **It does not stop a caller that stays silent**:
+  latching only fires on an inbound packet, so an INVITE that advertises a
+  third party and then sends nothing keeps the stream aimed there. Requires
+  `aiosipua>=0.7.1`; off by default, since it changes how media is addressed
+  mid-call.
+- `rtp_establishment_timeout` is what bounds the silent case — a session that
+  never receives a packet releases its port, so a reflector lasts that long
+  rather than forever. On by default (60 s).
+- `max_sessions` bounds how many can run at once, answering `503` past the cap.
+
+Authentication is what actually prevents it. The three above limit what an
+unauthenticated caller can do; they do not make the port safe to expose.
 
 Protocol traces (`on_trace`, `ON_PROTOCOL_TRACE`) carry SIP messages close to
 verbatim. The digest `response` is masked, but everything else — caller,

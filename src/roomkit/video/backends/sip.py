@@ -185,6 +185,7 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):
                 jitter_capacity=32,
                 jitter_prefetch=0,
                 skip_audio_gaps=True,
+                symmetric_rtp=self._symmetric_rtp,
             )
         except Exception:
             logger.exception("Audio SDP negotiation failed: call_id=%s", call.call_id)
@@ -203,6 +204,7 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):
                 advertised_ip=self._advertised_ip,
                 supported_video_codecs=self._supported_video_codecs,
                 session_name=self._server_name,
+                symmetric_rtp=self._symmetric_rtp,
             )
         except Exception:
             logger.warning("Video negotiation failed, audio-only: call_id=%s", call.call_id)

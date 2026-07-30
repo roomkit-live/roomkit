@@ -1443,3 +1443,52 @@ class TestAckTimeout:
         await backend.start()
         assert backend._uas.on_ack_timeout == backend._handle_ack_timeout
         await backend.close()
+
+
+class TestSymmetricRtp:
+    """Latching is reachable from roomkit, and off unless asked for.
+
+    aiosipua 0.7.1 forwards the parameter to aiortp; before that release it
+    was dropped in the bridge, so the option existed in aiortp and could not
+    be turned on from here at all.
+    """
+
+    def test_it_is_off_by_default(self, backend: Any) -> None:
+        assert backend._symmetric_rtp is False
+
+    async def test_the_default_reaches_the_bridge(
+        self, backend: Any, mock_rtp_bridge: MagicMock
+    ) -> None:
+        await backend._handle_invite(_make_mock_incoming_call())
+        assert mock_rtp_bridge.CallSession.call_args.kwargs["symmetric_rtp"] is False
+
+    async def test_enabling_it_reaches_the_bridge(
+        self, mock_aiosipua: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        with (
+            patch("roomkit.voice.backends.sip.import_aiosipua", return_value=mock_aiosipua),
+            patch("roomkit.voice.backends.sip.import_rtp_bridge", return_value=mock_rtp_bridge),
+        ):
+            from roomkit.voice.backends.sip import SIPVoiceBackend
+
+            backend = SIPVoiceBackend(
+                local_sip_addr=("0.0.0.0", 5060),
+                local_rtp_ip="10.0.0.5",
+                rtp_port_start=10000,
+                rtp_port_end=20000,
+                symmetric_rtp=True,
+            )
+
+        await backend._handle_invite(_make_mock_incoming_call())
+        assert mock_rtp_bridge.CallSession.call_args.kwargs["symmetric_rtp"] is True
+
+    async def test_the_outbound_path_carries_it_too(
+        self, mock_aiosipua: MagicMock, mock_rtp_bridge: MagicMock
+    ) -> None:
+        """dial() builds its own CallSession — an easy site to miss."""
+        import inspect
+
+        from roomkit.voice.backends import sip_calling
+
+        src = inspect.getsource(sip_calling.SIPCallingMixin.dial)
+        assert "symmetric_rtp=self._symmetric_rtp" in src

@@ -331,11 +331,11 @@ wheels = [
 
 [[package]]
 name = "aiosipua"
-version = "0.7.0"
+version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c0/61/10cd8b05006666c98db1ae4165ac8e7073893fe7edc7d896c4e21594c20a/aiosipua-0.7.0.tar.gz", hash = "sha256:8d4d7fe79adeb11c333db5b9f8def131da93a85e6cdc13fb648af32568772083", size = 149895, upload-time = "2026-06-11T14:24:10.021Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b4/de/45bca15f3bf4c91b70496b91e559418eef5753e7a875cf24ef1fad39a9de/aiosipua-0.7.1.tar.gz", hash = "sha256:fe36405f901d8c3a577ef74fce363af4aaa65098d9cd0d4a20ef03feae43e946", size = 151165, upload-time = "2026-07-30T17:58:53.859Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/a5/5ba6da966a176f7ae09a16151a9c0bfd0b15a73f927ab3f90593261a0298/aiosipua-0.7.0-py3-none-any.whl", hash = "sha256:fcc6af9146a0b06c6876c2be8cba258c064df0a5636fdbf6e61f82c5cb10bb75", size = 69841, upload-time = "2026-06-11T14:24:08.966Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/89/db65e9d976ed85fee8eed884396a819eebf7b54077db4313300b19dc95c1/aiosipua-0.7.1-py3-none-any.whl", hash = "sha256:e1790dba96991ea8101eb3d427270830523b4a888e6817a7ab319729a563c720", size = 70852, upload-time = "2026-07-30T17:58:52.401Z" },
 ]
 
 [package.optional-dependencies]
@@ -5391,8 +5391,8 @@ requires-dist = [
     { name = "aiortp", marker = "extra == 'all'", specifier = ">=0.7.0" },
     { name = "aiortp", marker = "extra == 'rtp'", specifier = ">=0.7.0" },
     { name = "aiortp", marker = "extra == 'sip'", specifier = ">=0.7.0" },
-    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'all'", specifier = ">=0.7.0" },
-    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.7.0" },
+    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'all'", specifier = ">=0.7.1" },
+    { name = "aiosipua", extras = ["rtp"], marker = "extra == 'sip'", specifier = ">=0.7.1" },
     { name = "anam", marker = "extra == 'anam'", specifier = ">=0.1" },
     { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.30" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30" },

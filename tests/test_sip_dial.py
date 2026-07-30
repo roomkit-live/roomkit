@@ -216,6 +216,7 @@ def backend() -> SIPVoiceBackend:
     b._cn = False
     b._playout = False
     b._duplicate_tx = False
+    b._symmetric_rtp = False
     b._playout_max_delay_ms = 200
     b._cn_payload_type = 13
     b._send_silence_on_answer = 0.0
