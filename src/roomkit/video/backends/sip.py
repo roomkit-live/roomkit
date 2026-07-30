@@ -108,7 +108,11 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):
     # -------------------------------------------------------------------------
 
     async def _handle_invite(self, call: Any) -> None:
-        """Dispatch: A/V for video offers, parent for audio-only."""
+        """Dispatch: A/V for video offers, parent for audio-only.
+
+        Both branches authorize the INVITE themselves — the A/V branch does
+        not inherit the parent's challenge, so it runs its own.
+        """
         if call.sdp_offer is not None and call.sdp_offer.video is not None:
             await self._handle_av_invite(call)
         else:
@@ -119,6 +123,11 @@ class SIPVideoBackend(SIPVoiceBackend, VideoBackend):
         # Detect re-INVITE for existing call
         if call.call_id in self._call_to_session:
             self._handle_reinvite(call)
+            return
+
+        # Same gate as the audio-only path: without it, adding an ``m=video``
+        # line to the offer would skip digest auth and the invite filter.
+        if not await self._authorize_invite(call):
             return
 
         if call.sdp_offer is None:

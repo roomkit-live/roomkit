@@ -172,21 +172,21 @@ class SIPCallingMixin:
     # Inbound call handling
     # -------------------------------------------------------------------------
 
-    async def _handle_invite(self, call: Any) -> None:
-        """Handle an incoming SIP INVITE."""
-        # Detect re-INVITE for an outbound call: the UAS only checks its
-        # own _calls for existing dialogs, but outbound calls live in the
-        # UAC.  If the Call-ID already maps to a session, route to the
-        # re-INVITE handler instead of creating a duplicate session.
-        if call.call_id in self._call_to_session:
-            self._handle_reinvite(call)
-            return
+    async def _authorize_invite(self, call: Any) -> bool:
+        """Challenge and filter an INVITE before any resource is committed.
 
+        Every entry point that accepts an INVITE MUST call this before
+        allocating ports or answering — a dispatch path that skips it is an
+        authentication bypass, not a shortcut.
+
+        Returns ``False`` when the call has already been challenged or
+        rejected and the caller must stop processing it.
+        """
         # Challenge unauthenticated callers when auth is configured —
         # either via the static ``auth_users`` dict or a resolver
         # installed by ``set_auth_resolver``. Both count.
         if self.has_auth() and not self._validate_invite_auth(call):
-            return
+            return False
 
         # Pre-accept filter — let the application reject with a 4xx
         # before we send 200 OK. Used for application-layer routing
@@ -201,11 +201,26 @@ class SIPCallingMixin:
             except Exception:
                 logger.exception("SIP invite filter raised — rejecting with 500")
                 call.reject(500, "Server Internal Error")
-                return
+                return False
             if decision is not None:
                 status, reason = decision
                 call.reject(status, reason)
-                return
+                return False
+
+        return True
+
+    async def _handle_invite(self, call: Any) -> None:
+        """Handle an incoming SIP INVITE."""
+        # Detect re-INVITE for an outbound call: the UAS only checks its
+        # own _calls for existing dialogs, but outbound calls live in the
+        # UAC.  If the Call-ID already maps to a session, route to the
+        # re-INVITE handler instead of creating a duplicate session.
+        if call.call_id in self._call_to_session:
+            self._handle_reinvite(call)
+            return
+
+        if not await self._authorize_invite(call):
+            return
 
         if call.sdp_offer is None:
             call.reject(488, "Not Acceptable Here")

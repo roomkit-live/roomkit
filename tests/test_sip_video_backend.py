@@ -94,6 +94,7 @@ class _FakeCall:
     x_headers: dict[str, str] = field(default_factory=dict)
     source_addr: tuple[str, int] = ("10.0.0.1", 5060)
     invite: MagicMock = field(default_factory=lambda: MagicMock(from_addr=None))
+    dialog: MagicMock = field(default_factory=MagicMock)
 
     def ringing(self) -> None:
         pass
@@ -213,6 +214,56 @@ class TestSIPVideoBackendInbound:
 
         # No video session
         assert backend.get_video_session("session-1") is None
+
+
+class TestSIPVideoBackendInviteAuthorization:
+    """An ``m=video`` line must not buy a caller past the INVITE gate.
+
+    The A/V path is a separate dispatch branch from the audio-only one, so it
+    has to run the digest challenge and the invite filter itself.
+    """
+
+    async def test_av_invite_is_challenged_when_auth_configured(
+        self, backend, mock_rtp_bridge, mock_video_bridge, av_offer
+    ):
+        backend._auth_users = {"alice": "pass123"}
+        backend._transport = MagicMock()
+        call = _FakeCall(sdp_offer=av_offer)
+        call.invite.get_header.return_value = None
+
+        await backend._handle_invite(call)
+
+        # Challenged, and nothing committed before the caller authenticates.
+        backend._transport.send_reply.assert_called_once()
+        mock_rtp_bridge.CallSession.assert_not_called()
+        mock_video_bridge.VideoCallSession.assert_not_called()
+        assert backend._allocated_ports == set()
+
+    async def test_av_invite_runs_invite_filter(
+        self, backend, mock_rtp_bridge, mock_video_bridge, av_offer
+    ):
+        backend._invite_filter = lambda _call: (403, "Forbidden")
+        call = _FakeCall(sdp_offer=av_offer)
+
+        await backend._handle_invite(call)
+
+        assert call._rejected == (403, "Forbidden")
+        mock_rtp_bridge.CallSession.assert_not_called()
+        mock_video_bridge.VideoCallSession.assert_not_called()
+        assert backend._allocated_ports == set()
+
+    async def test_authenticated_av_invite_proceeds(
+        self, backend, mock_rtp_bridge, mock_video_bridge, av_offer
+    ):
+        """The gate must not break the happy path once auth passes."""
+        backend._auth_users = {"alice": "pass123"}
+        backend._transport = MagicMock()
+        call = _FakeCall(sdp_offer=av_offer)
+        with patch.object(backend, "_validate_invite_auth", return_value=True):
+            await backend._handle_invite(call)
+
+        mock_rtp_bridge.CallSession.assert_called_once()
+        mock_video_bridge.VideoCallSession.assert_called_once()
 
 
 class TestSIPVideoBackendVideoCallbacks:
