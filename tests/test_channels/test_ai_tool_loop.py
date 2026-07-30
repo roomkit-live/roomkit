@@ -651,3 +651,78 @@ class TestExtractAccumulatedText:
         messages = [AIMessage(role="user", content="hello")]
         result = AIChannel._extract_accumulated_text(messages)
         assert result == ""
+
+
+class TestEvictionToolAvailableMidLoop:
+    """A mid-loop eviction must make ``read_stored_result`` callable
+    in the same turn.
+
+    The eviction preview tells the model to page the result back with
+    ``read_stored_result``, but the definition was only injected at
+    ``_build_context`` time — the next inbound event — while every round
+    re-filters from the frozen turn snapshot. A one-shot automation run
+    (webhook, schedule) has no next event at all, so its evicted content
+    was unreachable exactly when the preview recommended reading it, and
+    the model burned rounds hunting for a tool that did not exist.
+    """
+
+    async def test_read_stored_result_is_injected_the_round_after_eviction(self) -> None:
+        large = "\n".join(f"NEEDLE-{i} " + "x" * 80 for i in range(200))
+        provider = MockAIProvider(
+            ai_responses=[
+                _tool_response(tool_name="search"),
+                AIResponse(
+                    content="",
+                    tool_calls=[
+                        AIToolCall(
+                            id="tc2",
+                            name="read_stored_result",
+                            arguments={"result_id": "evicted_tc1"},
+                        )
+                    ],
+                ),
+                _final_response(),
+            ]
+        )
+        handler = AsyncMock(return_value=large)
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_handler=handler,
+            evict_threshold_tokens=100,
+        )
+
+        context = AIContext(messages=[AIMessage(role="user", content="go")])
+        await ch._run_tool_loop(context)
+
+        # The round *after* the eviction advertises the re-read tool…
+        assert len(provider.calls) == 3
+        round2_tools = [t.name for t in (provider.calls[1].tools or [])]
+        assert "read_stored_result" in round2_tools
+
+        # …and the call is channel-managed: the user handler ran only for
+        # the evicting tool, never for read_stored_result.
+        assert handler.await_count == 1
+
+        # The paged content actually came back into the conversation.
+        final_messages = str(provider.calls[2].messages)
+        assert "NEEDLE-0" in final_messages
+
+    async def test_no_injection_when_nothing_was_evicted(self) -> None:
+        provider = MockAIProvider(
+            ai_responses=[_tool_response(tool_name="search"), _final_response()]
+        )
+        handler = AsyncMock(return_value="small result")
+        ch = AIChannel(
+            "ai1",
+            provider=provider,
+            tool_handler=handler,
+            evict_threshold_tokens=5000,
+        )
+
+        context = AIContext(messages=[AIMessage(role="user", content="go")])
+        await ch._run_tool_loop(context)
+
+        assert len(provider.calls) == 2
+        round2_tools = [t.name for t in (provider.calls[1].tools or [])]
+        assert "read_stored_result" not in round2_tools
