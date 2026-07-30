@@ -64,6 +64,10 @@ class TestSpeexAECProviderConstructor:
         assert provider.name == "speex_aec"
         assert provider._frame_size == 320
         assert provider._filter_length == 3200
+
+        # Echo state is per stream and built on first use, not at construction.
+        mock_lib.speex_echo_state_init.assert_not_called()
+        provider.process(_make_frame(), "s1")
         mock_lib.speex_echo_state_init.assert_called_with(320, 3200)
 
     def test_custom_params(self):
@@ -85,7 +89,7 @@ class TestSpeexAECProviderProcess:
         provider, _ = _make_provider(mock_lib)
 
         frame = _make_frame()
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
 
         assert result.sample_rate == frame.sample_rate
         assert len(result.data) == len(frame.data)
@@ -97,7 +101,7 @@ class TestSpeexAECProviderProcess:
         provider, _ = _make_provider(mock_lib)
 
         frame = _make_frame(n_bytes=160)
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
         assert result is frame
         mock_lib.speex_echo_capture.assert_not_called()
 
@@ -108,7 +112,7 @@ class TestSpeexAECProviderFeedReference:
         provider, _ = _make_provider(mock_lib)
 
         frame = _make_frame()
-        provider.feed_reference(frame)
+        provider.feed_reference(frame, "s1")
         mock_lib.speex_echo_playback.assert_called_once()
 
     def test_feed_reference_size_mismatch(self):
@@ -117,32 +121,81 @@ class TestSpeexAECProviderFeedReference:
         provider, _ = _make_provider(mock_lib)
 
         frame = _make_frame(n_bytes=160)
-        provider.feed_reference(frame)
+        provider.feed_reference(frame, "s1")
         mock_lib.speex_echo_playback.assert_not_called()
 
 
-class TestSpeexAECProviderReset:
-    def test_reset_calls_state_reset(self):
+class TestSpeexAECProviderStreams:
+    def test_each_stream_gets_its_own_echo_state(self):
         mock_lib = _make_mock_speexdsp()
         provider, _ = _make_provider(mock_lib)
 
-        provider.reset()
-        mock_lib.speex_echo_state_reset.assert_called_once()
+        provider.process(_make_frame(), "alice")
+        provider.process(_make_frame(), "bob")
+
+        assert mock_lib.speex_echo_state_init.call_count == 2
+        assert set(provider._streams) == {"alice", "bob"}
+
+    def test_repeat_frames_reuse_one_state_per_stream(self):
+        mock_lib = _make_mock_speexdsp()
+        provider, _ = _make_provider(mock_lib)
+
+        for _ in range(3):
+            provider.process(_make_frame(), "alice")
+
+        mock_lib.speex_echo_state_init.assert_called_once()
+
+    def test_reference_reaches_only_its_own_stream(self):
+        mock_lib = _make_mock_speexdsp()
+        provider, _ = _make_provider(mock_lib)
+
+        provider.process(_make_frame(), "alice")
+        provider.process(_make_frame(), "bob")
+        provider.feed_reference(_make_frame(), "alice")
+
+        # Alice saw the reference; Bob's canceller must not have.
+        assert provider._streams["alice"].playback_fed is True
+        assert provider._streams["bob"].playback_fed is False
+
+
+class TestSpeexAECProviderReset:
+    def test_reset_destroys_only_that_stream(self):
+        mock_lib = _make_mock_speexdsp()
+        provider, _ = _make_provider(mock_lib)
+
+        provider.process(_make_frame(), "alice")
+        provider.process(_make_frame(), "bob")
+
+        provider.reset("alice")
+
+        mock_lib.speex_echo_state_destroy.assert_called_once()
+        assert set(provider._streams) == {"bob"}
+
+    def test_reset_unknown_stream_is_a_noop(self):
+        mock_lib = _make_mock_speexdsp()
+        provider, _ = _make_provider(mock_lib)
+
+        provider.reset("never-seen")
+        mock_lib.speex_echo_state_destroy.assert_not_called()
 
 
 class TestSpeexAECProviderClose:
-    def test_close_destroys_state(self):
+    def test_close_destroys_every_stream(self):
         mock_lib = _make_mock_speexdsp()
         provider, _ = _make_provider(mock_lib)
-        assert provider._state is not None
+
+        provider.process(_make_frame(), "alice")
+        provider.process(_make_frame(), "bob")
 
         provider.close()
-        assert provider._state is None
-        mock_lib.speex_echo_state_destroy.assert_called_once()
+
+        assert mock_lib.speex_echo_state_destroy.call_count == 2
+        assert provider._streams == {}
 
     def test_close_idempotent(self):
         mock_lib = _make_mock_speexdsp()
         provider, _ = _make_provider(mock_lib)
+        provider.process(_make_frame(), "s1")
 
         provider.close()
         provider.close()

@@ -96,6 +96,20 @@ class SherpaOnnxDenoiserConfig:
     silence_threshold: float = 0.005
 
 
+@dataclass
+class _StreamState:
+    """One stream's denoiser and its sliding context window.
+
+    GTCRN is fed a rolling window of preceding audio, so sharing the window
+    between speakers would splice one voice into the other's context — the
+    model would denoise Bob against Alice's tail.
+    """
+
+    denoiser: Any = None
+    native_rate: int = 0
+    context: Any = None  # np.ndarray, allocated on first use
+
+
 class SherpaOnnxDenoiserProvider(DenoiserProvider):
     """Denoiser provider using sherpa-onnx GTCRN speech enhancement.
 
@@ -115,21 +129,27 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
                 "Install it with: pip install roomkit[sherpa-onnx]"
             ) from exc
 
-        import numpy as np
-
         self._config = config
         self._sherpa: Any = __import__("sherpa_onnx")
-        self._denoiser: Any = None
-        self._native_rate: int = 0  # Set on first _ensure_denoiser()
-        self._context: np.ndarray[Any, Any] = np.array([], dtype=np.float32)
+        self._streams: dict[str, _StreamState] = {}
 
     @property
     def name(self) -> str:
         return "SherpaOnnxDenoiser"
 
-    def _ensure_denoiser(self) -> None:
-        """Lazily create the sherpa-onnx OfflineSpeechDenoiser."""
-        if self._denoiser is not None:
+    def _state_for(self, stream: str) -> _StreamState:
+        """Get or create this stream's state (without its denoiser)."""
+        import numpy as np
+
+        st = self._streams.get(stream)
+        if st is None:
+            st = _StreamState(context=np.array([], dtype=np.float32))
+            self._streams[stream] = st
+        return st
+
+    def _ensure_denoiser(self, st: _StreamState) -> None:
+        """Lazily create this stream's sherpa-onnx OfflineSpeechDenoiser."""
+        if st.denoiser is not None:
             return
 
         cfg = self._config
@@ -146,24 +166,26 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
         denoiser_config = sherpa.OfflineSpeechDenoiserConfig(
             model=model_config,
         )
-        self._denoiser = sherpa.OfflineSpeechDenoiser(denoiser_config)
-        self._native_rate = self._denoiser.sample_rate
+        st.denoiser = sherpa.OfflineSpeechDenoiser(denoiser_config)
+        st.native_rate = st.denoiser.sample_rate
         logger.debug(
             "SherpaOnnxDenoiser: created denoiser model=%s native_rate=%d",
             cfg.model,
-            self._native_rate,
+            st.native_rate,
         )
 
-    def process(self, frame: AudioFrame) -> AudioFrame:
+    def process(self, frame: AudioFrame, stream: str) -> AudioFrame:
         """Denoise an audio frame using GTCRN speech enhancement.
 
         Uses a sliding context window so the model sees preceding frames
         for temporal context.  Only the current frame's portion of the
         denoised output is returned — no latency is added.
         """
-        if self._denoiser is None:
+        st = self._state_for(stream)
+
+        if st.denoiser is None:
             try:
-                self._ensure_denoiser()
+                self._ensure_denoiser(st)
             except Exception:
                 logger.warning(
                     "SherpaOnnxDenoiser: failed to initialize, passing through",
@@ -180,19 +202,19 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             # Resample to the denoiser's native rate if needed.
             # This avoids sherpa-onnx creating a new LinearResample
             # object on every frame (~50/s at 20ms).
-            native_rate = self._native_rate or 16000
+            native_rate = st.native_rate or 16000
             need_resample = frame.sample_rate != native_rate and native_rate > 0
             if need_resample:
                 float_samples = _resample_linear(float_samples, frame.sample_rate, native_rate)
             n_frame = len(float_samples)
 
             # Append current frame to sliding context buffer
-            self._context = np.concatenate([self._context, float_samples])
+            st.context = np.concatenate([st.context, float_samples])
 
             # Trim to at most context_frames worth of samples
             max_context = n_frame * max(self._config.context_frames, 1)
-            if len(self._context) > max_context:
-                self._context = self._context[-max_context:]
+            if len(st.context) > max_context:
+                st.context = st.context[-max_context:]
 
             # Skip inference for near-silent frames — output silence directly.
             # The denoiser would suppress this to ~silence anyway; skipping
@@ -217,14 +239,14 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             # Padding must go at the beginning so the real audio stays at
             # the tail — we extract the last n_frame samples from the output.
             block = 256
-            remainder = len(self._context) % block
+            remainder = len(st.context) % block
             if remainder:
                 pad = np.zeros(block - remainder, dtype=np.float32)
-                to_process = np.concatenate([pad, self._context])
+                to_process = np.concatenate([pad, st.context])
             else:
-                to_process = self._context
+                to_process = st.context
 
-            result = self._denoiser.run(to_process.tolist(), native_rate)
+            result = st.denoiser.run(to_process.tolist(), native_rate)
 
             # Extract the last n_frame samples (the current frame's portion)
             denoised = result.samples
@@ -265,15 +287,10 @@ class SherpaOnnxDenoiserProvider(DenoiserProvider):
             metadata=dict(frame.metadata),
         )
 
-    def reset(self) -> None:
-        """Reset sliding context buffer."""
-        import numpy as np
-
-        self._context = np.array([], dtype=np.float32)
+    def reset(self, stream: str) -> None:
+        """Drop this stream's denoiser and its context window."""
+        self._streams.pop(stream, None)
 
     def close(self) -> None:
-        """Release the denoiser."""
-        import numpy as np
-
-        self._denoiser = None
-        self._context = np.array([], dtype=np.float32)
+        """Release every stream's denoiser."""
+        self._streams.clear()

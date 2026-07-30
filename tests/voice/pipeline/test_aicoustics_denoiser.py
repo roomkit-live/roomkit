@@ -92,7 +92,7 @@ class TestAICousticsDenoiserProviderConstructor:
         provider, _ = _make_provider(mock_mod)
 
         assert provider.name == "aicoustics"
-        assert provider._processor is None  # lazy init
+        assert provider._streams == {}  # processors are per stream, lazy
 
     def test_import_error(self):
         """Missing aic_sdk raises ImportError."""
@@ -109,12 +109,12 @@ class TestAICousticsDenoiserProviderProcess:
         """First process() call triggers lazy initialization."""
         mock_mod, processor = _make_mock_aic_sdk()
         provider, _ = _make_provider(mock_mod)
-        assert provider._processor is None
+        assert provider._streams == {}
 
         frame = _make_frame(n_bytes=320)
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
 
-        assert provider._processor is not None
+        assert provider._streams["s1"].processor is not None
         assert isinstance(result, AudioFrame)
 
     def test_process_short_frame_passthrough(self):
@@ -123,35 +123,71 @@ class TestAICousticsDenoiserProviderProcess:
         provider, _ = _make_provider(mock_mod)
 
         # Force initialization
-        with patch.dict(sys.modules, {"aic_sdk": mock_mod}):
-            provider._ensure_processor()
+        provider._ensure_processor(provider._state_for("s1"))
 
         small_frame = _make_frame(n_bytes=100)
-        result = provider.process(small_frame)
+        result = provider.process(small_frame, "s1")
         assert result is small_frame
 
 
-class TestAICousticsDenoiserProviderReset:
-    def test_reset_clears_buffer(self):
+class TestAICousticsDenoiserProviderStreams:
+    def test_each_stream_gets_its_own_processor(self):
         mock_mod, _ = _make_mock_aic_sdk()
         provider, _ = _make_provider(mock_mod)
 
-        provider._buffer = b"\x00" * 100
-        with patch.dict(sys.modules, {"aic_sdk": mock_mod}):
-            provider.reset()
-        assert provider._buffer == b""
+        provider.process(_make_frame(n_bytes=320), "alice")
+        provider.process(_make_frame(n_bytes=320), "bob")
+
+        assert set(provider._streams) == {"alice", "bob"}
+        # One Processor built per stream (the mock hands back one instance,
+        # so count the constructions rather than compare identities).
+        assert mock_mod.Processor.call_count == 2
+
+    def test_repeat_frames_reuse_one_processor_per_stream(self):
+        mock_mod, _ = _make_mock_aic_sdk()
+        provider, _ = _make_provider(mock_mod)
+
+        for _ in range(3):
+            provider.process(_make_frame(n_bytes=320), "alice")
+
+        assert mock_mod.Processor.call_count == 1
+
+    def test_buffers_do_not_bleed_between_streams(self):
+        """A partial frame on one stream must not complete another's chunk."""
+        mock_mod, _ = _make_mock_aic_sdk()
+        provider, _ = _make_provider(mock_mod)
+
+        half = _make_frame(n_bytes=160)
+        provider.process(half, "alice")
+        result = provider.process(half, "bob")
+
+        # Bob has only half a chunk of his own — passthrough, not Alice's tail.
+        assert result is half
+        assert len(provider._streams["alice"].buffer) == 160
+        assert len(provider._streams["bob"].buffer) == 160
+
+
+class TestAICousticsDenoiserProviderReset:
+    def test_reset_drops_only_that_stream(self):
+        mock_mod, _ = _make_mock_aic_sdk()
+        provider, _ = _make_provider(mock_mod)
+
+        provider._state_for("alice").buffer = b"\x00" * 100
+        provider._state_for("bob").buffer = b"\x00" * 50
+
+        provider.reset("alice")
+
+        assert "alice" not in provider._streams
+        assert provider._streams["bob"].buffer == b"\x00" * 50
 
 
 class TestAICousticsDenoiserProviderClose:
-    def test_close_releases_resources(self):
+    def test_close_releases_every_stream(self):
         mock_mod, _ = _make_mock_aic_sdk()
         provider, _ = _make_provider(mock_mod)
 
-        with patch.dict(sys.modules, {"aic_sdk": mock_mod}):
-            provider._ensure_processor()
-        assert provider._processor is not None
+        provider._ensure_processor(provider._state_for("alice"))
+        provider._ensure_processor(provider._state_for("bob"))
 
         provider.close()
-        assert provider._processor is None
-        assert provider._buffer == b""
-        assert provider._frame_size == 0
+        assert provider._streams == {}

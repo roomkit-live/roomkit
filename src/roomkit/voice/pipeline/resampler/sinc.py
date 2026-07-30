@@ -95,12 +95,18 @@ class SincResamplerProvider(ResamplerProvider):
 
     def __init__(self, taps: int = 16) -> None:
         self._taps = taps
-        # Per-direction state: keyed by (src_rate, target_rate, channels).
+        # Per-stream, per-direction state: keyed by
+        # (stream, src_rate, target_rate, channels).
         # Value: (tail, pending) where:
         #   tail = last `taps` samples per channel from the frame before pending
         #   pending = full per-channel samples from the previous frame
+        #
+        # The stream leads the key because the delay line holds one speaker's
+        # audio: without it, the frame buffered for Alice is emitted as Bob's
+        # output the moment Bob's first frame arrives at the same format, and
+        # a conference attributes her voice — and her transcript — to him.
         self._state: dict[
-            tuple[int, int, int],
+            tuple[str, int, int, int],
             tuple[list[list[int]], list[list[int]]],
         ] = {}
 
@@ -114,6 +120,7 @@ class SincResamplerProvider(ResamplerProvider):
         target_rate: int,
         target_channels: int,
         target_width: int,
+        stream: str,
     ) -> AudioFrame:
         if (
             frame.sample_rate == target_rate
@@ -154,7 +161,7 @@ class SincResamplerProvider(ResamplerProvider):
             frames_per_channel = num_samples // src_channels
             taps = self._taps
 
-            state_key = (src_rate, target_rate, src_channels)
+            state_key = (stream, src_rate, target_rate, src_channels)
             prev_state = self._state.get(state_key)
 
             # Extract per-channel samples for current frame
@@ -246,20 +253,24 @@ class SincResamplerProvider(ResamplerProvider):
         target_rate: int,
         target_channels: int,
         target_width: int,
+        stream: str,
     ) -> AudioFrame | None:
-        """Flush the pending frame using silence as look-ahead.
+        """Flush one stream's pending frame using silence as look-ahead.
 
-        Returns ``None`` if no pending frame exists for the given direction.
-        After flushing, the state entry is deleted so the next response
-        starts fresh.
+        Returns ``None`` if that stream has no pending frame for the given
+        direction. After flushing, the state entry is deleted so the next
+        response starts fresh.
+
+        Scoped to the stream for the same reason the delay line is: flushing
+        by format alone would emit whichever speaker's buffer matched first.
         """
         from roomkit.voice.audio_frame import AudioFrame as AudioFrameClass
 
-        # Find the matching state entry
-        state_key: tuple[int, int, int] | None = None
+        # Find the matching state entry for this stream
+        state_key: tuple[str, int, int, int] | None = None
         for key in self._state:
-            src_rate, tgt_rate, channels = key
-            if tgt_rate == target_rate and channels == target_channels:
+            key_stream, _, tgt_rate, channels = key
+            if key_stream == stream and tgt_rate == target_rate and channels == target_channels:
                 state_key = key
                 break
 
@@ -272,7 +283,7 @@ class SincResamplerProvider(ResamplerProvider):
         if not pending_per_ch or not pending_per_ch[0]:
             return None
 
-        src_rate, _, src_channels = state_key
+        _, src_rate, _, src_channels = state_key
         pending_fpc = len(pending_per_ch[0])
         taps = self._taps
 
@@ -324,9 +335,13 @@ class SincResamplerProvider(ResamplerProvider):
             sample_width=target_width,
         )
 
-    def reset(self) -> None:
-        """Reset internal state (clears history buffers)."""
-        self._state.clear()
+    def reset(self, stream: str | None = None) -> None:
+        """Drop the history buffers — one stream's, or every stream's."""
+        if stream is None:
+            self._state.clear()
+            return
+        for key in [k for k in self._state if k[0] == stream]:
+            del self._state[key]
 
     def close(self) -> None:
         """Release resources."""

@@ -185,7 +185,7 @@ class RealtimeResponseMixin:
         """
         if resamplers and transport_rate and transport_rate != self._output_sample_rate:
             flushed = await self._run_in_resample_executor(
-                resamplers[1].flush, transport_rate, 1, 2
+                resamplers[1].flush, transport_rate, 1, 2, session.id
             )
             if flushed and flushed.data:
                 await self._transport.send_audio(session, flushed.data)

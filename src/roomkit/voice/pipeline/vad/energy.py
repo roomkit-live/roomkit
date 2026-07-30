@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import struct
 from collections import deque
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType, VADProvider
@@ -30,6 +31,27 @@ def _rms_int16(data: bytes) -> float:
     samples = struct.unpack(f"<{n_samples}h", data[: n_samples * 2])
     sum_sq = sum(s * s for s in samples)
     return float((sum_sq / n_samples) ** 0.5)
+
+
+@dataclass
+class _StreamState:
+    """One speaker's detection state.
+
+    Per stream, because two speakers share a provider but not a voice: letting
+    one advance the other's state makes silence from one close the other's
+    utterance.
+    """
+
+    speaking: bool = False
+    silence_ms: float = 0.0
+    speech_ms: float = 0.0
+    speech_buf: bytearray = field(default_factory=bytearray)
+    pre_roll: deque[bytes] = field(default_factory=deque)
+    pre_roll_ms: float = 0.0
+    debug_frame_count: int = 0
+    debug_rms_sum: float = 0.0
+    debug_rms_max: float = 0.0
+    debug_speech_count: int = 0
 
 
 class EnergyVADProvider(VADProvider):
@@ -59,21 +81,7 @@ class EnergyVADProvider(VADProvider):
         self._speech_pad_ms = speech_pad_ms
         self._max_speech_duration_ms = max_speech_duration_ms
 
-        # State
-        self._speaking = False
-        self._silence_ms: float = 0.0
-        self._speech_ms: float = 0.0
-        self._speech_buf = bytearray()
-
-        # Pre-roll buffer (deque of raw bytes)
-        self._pre_roll: deque[bytes] = deque()
-        self._pre_roll_ms: float = 0.0
-
-        # Debug logging counters
-        self._debug_frame_count = 0
-        self._debug_rms_sum = 0.0
-        self._debug_rms_max = 0.0
-        self._debug_speech_count = 0
+        self._streams: dict[str, _StreamState] = {}
 
     @property
     def name(self) -> str:
@@ -84,95 +92,98 @@ class EnergyVADProvider(VADProvider):
         n_samples = len(frame.data) // (frame.sample_width * frame.channels)
         return (n_samples / frame.sample_rate) * 1000.0
 
-    def _push_pre_roll(self, data: bytes, duration_ms: float, sample_rate: int) -> None:
+    def _push_pre_roll(
+        self, st: _StreamState, data: bytes, duration_ms: float, sample_rate: int
+    ) -> None:
         """Maintain a rolling buffer of recent frames for pre-speech padding."""
-        self._pre_roll.append(data)
-        self._pre_roll_ms += duration_ms
-        while self._pre_roll_ms > self._speech_pad_ms and len(self._pre_roll) > 1:
-            removed = self._pre_roll.popleft()
+        st.pre_roll.append(data)
+        st.pre_roll_ms += duration_ms
+        while st.pre_roll_ms > self._speech_pad_ms and len(st.pre_roll) > 1:
+            removed = st.pre_roll.popleft()
             n_samples = len(removed) // 2  # int16
-            self._pre_roll_ms -= (n_samples / sample_rate) * 1000.0
+            st.pre_roll_ms -= (n_samples / sample_rate) * 1000.0
 
-    def process(self, frame: AudioFrame) -> VADEvent | None:
+    def process(self, frame: AudioFrame, stream: str) -> VADEvent | None:
+        st = self._streams.setdefault(stream, _StreamState())
         rms = _rms_int16(frame.data)
         duration_ms = self._frame_duration_ms(frame)
         is_speech = rms >= self._energy_threshold
 
         # Debug logging: accumulate stats and emit periodic summary
         if logger.isEnabledFor(logging.DEBUG):
-            self._debug_frame_count += 1
-            self._debug_rms_sum += rms
-            if rms > self._debug_rms_max:
-                self._debug_rms_max = rms
+            st.debug_frame_count += 1
+            st.debug_rms_sum += rms
+            if rms > st.debug_rms_max:
+                st.debug_rms_max = rms
             if is_speech:
-                self._debug_speech_count += 1
-            if self._debug_frame_count >= _DEBUG_SUMMARY_INTERVAL:
-                avg = self._debug_rms_sum / self._debug_frame_count
-                state = "speaking" if self._speaking else "idle"
+                st.debug_speech_count += 1
+            if st.debug_frame_count >= _DEBUG_SUMMARY_INTERVAL:
+                avg = st.debug_rms_sum / st.debug_frame_count
+                state = "speaking" if st.speaking else "idle"
                 logger.debug(
                     "VAD: state=%s is_speech=%d/%d rms_avg=%.0f rms_max=%.0f"
                     " silence_ms=%.0f speech_ms=%.0f",
                     state,
-                    self._debug_speech_count,
-                    self._debug_frame_count,
+                    st.debug_speech_count,
+                    st.debug_frame_count,
                     avg,
-                    self._debug_rms_max,
-                    self._silence_ms,
-                    self._speech_ms,
+                    st.debug_rms_max,
+                    st.silence_ms,
+                    st.speech_ms,
                 )
-                self._debug_frame_count = 0
-                self._debug_rms_sum = 0.0
-                self._debug_rms_max = 0.0
-                self._debug_speech_count = 0
+                st.debug_frame_count = 0
+                st.debug_rms_sum = 0.0
+                st.debug_rms_max = 0.0
+                st.debug_speech_count = 0
 
-        if not self._speaking:
+        if not st.speaking:
             # --- Idle state ---
-            self._push_pre_roll(frame.data, duration_ms, frame.sample_rate)
+            self._push_pre_roll(st, frame.data, duration_ms, frame.sample_rate)
 
             if is_speech:
-                self._speaking = True
-                self._silence_ms = 0.0
-                self._speech_ms = duration_ms
+                st.speaking = True
+                st.silence_ms = 0.0
+                st.speech_ms = duration_ms
                 # Start accumulating with pre-roll
-                self._speech_buf = bytearray()
-                for chunk in self._pre_roll:
-                    self._speech_buf.extend(chunk)
-                self._pre_roll.clear()
-                self._pre_roll_ms = 0.0
+                st.speech_buf = bytearray()
+                for chunk in st.pre_roll:
+                    st.speech_buf.extend(chunk)
+                st.pre_roll.clear()
+                st.pre_roll_ms = 0.0
                 return VADEvent(
                     type=VADEventType.SPEECH_START,
                     confidence=1.0,
-                    audio_bytes=bytes(self._speech_buf),
+                    audio_bytes=bytes(st.speech_buf),
                 )
         else:
             # --- Speaking state ---
-            self._speech_buf.extend(frame.data)
-            self._speech_ms += duration_ms
+            st.speech_buf.extend(frame.data)
+            st.speech_ms += duration_ms
 
             if is_speech:
-                self._silence_ms = 0.0
+                st.silence_ms = 0.0
             else:
-                self._silence_ms += duration_ms
+                st.silence_ms += duration_ms
 
             # Force speech-end if max duration exceeded (safety cap)
-            force_end = self._speech_ms >= self._max_speech_duration_ms
+            force_end = st.speech_ms >= self._max_speech_duration_ms
             if force_end:
                 logger.warning(
                     "Speech duration %.0fms exceeded max (%.0fms); forcing SPEECH_END",
-                    self._speech_ms,
+                    st.speech_ms,
                     self._max_speech_duration_ms,
                 )
 
-            if self._silence_ms >= self._silence_threshold_ms or force_end:
+            if st.silence_ms >= self._silence_threshold_ms or force_end:
                 # Transition to idle
-                self._speaking = False
-                speech_ms = self._speech_ms
-                audio = bytes(self._speech_buf)
+                st.speaking = False
+                speech_ms = st.speech_ms
+                audio = bytes(st.speech_buf)
 
                 # Reset accumulators
-                self._speech_buf = bytearray()
-                self._speech_ms = 0.0
-                self._silence_ms = 0.0
+                st.speech_buf = bytearray()
+                st.speech_ms = 0.0
+                st.silence_ms = 0.0
 
                 if speech_ms >= self._min_speech_duration_ms:
                     return VADEvent(
@@ -184,15 +195,6 @@ class EnergyVADProvider(VADProvider):
 
         return None
 
-    def reset(self) -> None:
-        """Reset all internal state."""
-        self._speaking = False
-        self._silence_ms = 0.0
-        self._speech_ms = 0.0
-        self._speech_buf = bytearray()
-        self._pre_roll.clear()
-        self._pre_roll_ms = 0.0
-        self._debug_frame_count = 0
-        self._debug_rms_sum = 0.0
-        self._debug_rms_max = 0.0
-        self._debug_speech_count = 0
+    def reset(self, stream: str) -> None:
+        """Drop this stream's state."""
+        self._streams.pop(stream, None)

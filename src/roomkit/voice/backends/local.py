@@ -380,7 +380,7 @@ class LocalAudioBackend(VoiceBackend):
             # thread so reference and capture timing stay synchronous.
             # The channel's pipeline skips AEC (NATIVE_AEC capability).
             if aec_ref is not None:
-                frame = aec_ref.process(frame)
+                frame = aec_ref.process(frame, session.id)
 
             if loop_ref is not None and loop_ref.is_running():
                 loop_ref.call_soon_threadsafe(callback_ref, session, frame)
@@ -561,7 +561,7 @@ class LocalAudioBackend(VoiceBackend):
             # internal ring buffer to lose sync with the actual speaker
             # output and prevents the adaptive filter from converging.
             if self._aec is not None:
-                self._aec_feed_played(bytearray(bytes(outdata)))
+                self._aec_feed_played(bytearray(bytes(outdata)), session.id)
 
             # Notify listeners about played audio (time-aligned reference
             # for pipeline AEC).  The frame is created once and shared.
@@ -918,13 +918,22 @@ class LocalAudioBackend(VoiceBackend):
                 underrun_no,
             )
 
+        # One physical speaker, so one stream owns this playback: the same
+        # session the capture callback tags its frames with.
+        session = next(iter(self._sessions.values()), None)
+
         # AEC: feed the output frame as reference — but only when audio
         # was actually written AND mic is not muted.  Feeding silence
         # confuses AEC3's nonlinear suppressor.  Feeding reference while
         # mic is muted desyncs AEC3's delay estimation (reference runs
         # ahead of capture, destroying the adaptive filter).
-        if self._aec is not None and written > 0 and not self._muted_sessions:
-            self._aec_feed_played(bytearray(bytes(outdata)))
+        if (
+            self._aec is not None
+            and session is not None
+            and written > 0
+            and not self._muted_sessions
+        ):
+            self._aec_feed_played(bytearray(bytes(outdata)), session.id)
 
         # Notify listeners about played audio — every block, silence
         # included.  The pipeline AEC reference (wired via on_audio_played)
@@ -933,8 +942,7 @@ class LocalAudioBackend(VoiceBackend):
         # re-estimate its delay after every gap — measured as ~1s echo-leak
         # windows at each response start, which Gemini's server VAD can
         # mistake for user speech (false barge-in).
-        if self._audio_played_callbacks and self._sessions:
-            session = next(iter(self._sessions.values()))
+        if self._audio_played_callbacks and session is not None:
             played_frame = AudioFrame(
                 data=bytes(outdata),
                 sample_rate=self._output_sample_rate,
@@ -975,7 +983,7 @@ class LocalAudioBackend(VoiceBackend):
     # AEC helpers
     # -------------------------------------------------------------------------
 
-    def _aec_feed_played(self, played: bytearray) -> None:
+    def _aec_feed_played(self, played: bytearray, stream: str) -> None:
         """Feed actually-played speaker bytes to the AEC as reference.
 
         Called from ``_output_callback`` so the reference is time-aligned
@@ -983,6 +991,11 @@ class LocalAudioBackend(VoiceBackend):
         them in exact block-aligned chunks.  When the output and input
         sample rates differ, each block is resampled to the input rate
         before feeding the AEC.
+
+        Args:
+            played: The speaker bytes actually written this block.
+            stream: The session this playback belongs to — the same key the
+                capture path passes to ``aec.process()``.
         """
         self._ref_buffer.extend(played)
 
@@ -1003,8 +1016,9 @@ class LocalAudioBackend(VoiceBackend):
                     self._input_sample_rate,
                     self._channels,
                     2,
+                    stream,
                 )
-                self._aec.feed_reference(ref_frame)  # ty: ignore[unresolved-attribute]
+                self._aec.feed_reference(ref_frame, stream)  # ty: ignore[unresolved-attribute]
         else:
             block = self._aec_block_bytes
             while len(self._ref_buffer) >= block:
@@ -1016,4 +1030,4 @@ class LocalAudioBackend(VoiceBackend):
                     channels=self._channels,
                     sample_width=2,
                 )
-                self._aec.feed_reference(frame)  # ty: ignore[unresolved-attribute]
+                self._aec.feed_reference(frame, stream)  # ty: ignore[unresolved-attribute]

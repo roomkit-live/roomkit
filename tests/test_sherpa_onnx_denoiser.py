@@ -84,7 +84,7 @@ class TestProcess:
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame_in = _frame(160, value=100)
-        frame_out = provider.process(frame_in)
+        frame_out = provider.process(frame_in, "s1")
 
         assert isinstance(frame_out, AudioFrame)
         assert frame_out is not frame_in
@@ -100,7 +100,7 @@ class TestProcess:
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame_in = _frame(4, value=1000)
-        frame_out = provider.process(frame_in)
+        frame_out = provider.process(frame_in, "s1")
 
         out_samples = struct.unpack("<4h", frame_out.data)
         expected = int(0.5 * 32767)
@@ -113,7 +113,7 @@ class TestProcess:
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame_in = _frame(160, timestamp_ms=42.5)
-        frame_out = provider.process(frame_in)
+        frame_out = provider.process(frame_in, "s1")
 
         assert frame_out.timestamp_ms == 42.5
 
@@ -124,7 +124,7 @@ class TestProcess:
 
         frame_in = _frame(160)
         frame_in.metadata["source"] = "test"
-        frame_out = provider.process(frame_in)
+        frame_out = provider.process(frame_in, "s1")
 
         assert frame_out.metadata["source"] == "test"
         # Mutation of output metadata must not affect input.
@@ -138,7 +138,7 @@ class TestProcess:
 
         provider.close()
         frame = _frame(160)
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
 
         # After close, _denoiser is None, _ensure_denoiser re-inits
         # but since we're mocked, it will work. Let's test the other
@@ -152,7 +152,7 @@ class TestProcess:
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame = _frame(160, value=500)
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
 
         # Should return the original frame on error
         assert result is frame
@@ -171,7 +171,7 @@ class TestSilenceGate:
 
         # value=0 → silence → should be gated
         frame = _frame(160, value=0)
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
 
         assert isinstance(result, AudioFrame)
         # Output should be all zeros
@@ -186,7 +186,7 @@ class TestSilenceGate:
 
         # value=1000 → ~0.03 RMS → above default 0.005 threshold
         frame = _frame(160, value=1000)
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
 
         assert isinstance(result, AudioFrame)
         denoiser.run.assert_called_once()
@@ -198,7 +198,7 @@ class TestSilenceGate:
 
         # Even silence should run inference when gate is disabled
         frame = _frame(160, value=0)
-        provider.process(frame)
+        provider.process(frame, "s1")
 
         denoiser.run.assert_called_once()
 
@@ -209,7 +209,7 @@ class TestSilenceGate:
 
         frame = _frame(160, value=0, timestamp_ms=99.0)
         frame.metadata["tag"] = "test"
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
 
         assert result.timestamp_ms == 99.0
         assert result.sample_rate == 16000
@@ -228,21 +228,32 @@ class TestLazyInit:
         denoiser = _denoiser_that_returns([0.0] * 160)
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
-        assert provider._denoiser is None
+        assert provider._streams == {}
 
-        provider.process(_frame(160))
-        assert provider._denoiser is not None
+        provider.process(_frame(160), "s1")
+        assert provider._streams["s1"].denoiser is not None
 
     def test_ensure_denoiser_only_creates_once(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
-        provider.process(_frame(160))
-        provider.process(_frame(160))
+        provider.process(_frame(160), "s1")
+        provider.process(_frame(160), "s1")
 
         # OfflineSpeechDenoiser constructor called only once
         sherpa.OfflineSpeechDenoiser.assert_called_once()
+
+    def test_each_stream_gets_its_own_denoiser(self) -> None:
+        sherpa = _mock_sherpa_module()
+        denoiser = _denoiser_that_returns([0.0] * 160)
+        provider = _make_provider(sherpa, denoiser, silence_threshold=0)
+
+        provider.process(_frame(160), "alice")
+        provider.process(_frame(160), "bob")
+
+        assert sherpa.OfflineSpeechDenoiser.call_count == 2
+        assert set(provider._streams) == {"alice", "bob"}
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +286,7 @@ class TestConfig:
         )
 
         # Trigger lazy init
-        provider.process(_frame(160))
+        provider.process(_frame(160), "s1")
 
         sherpa.OfflineSpeechDenoiserGtcrnModelConfig.assert_called_once_with(
             model="/path/to/gtcrn_simple.onnx",
@@ -315,26 +326,26 @@ class TestLifecycle:
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         # Reset before init — no-op
-        provider.reset()
+        provider.reset("s1")
 
         # Init and reset
-        provider.process(_frame(160))
-        provider.reset()
+        provider.process(_frame(160), "s1")
+        provider.reset("s1")
 
         # Still usable
-        result = provider.process(_frame(160))
+        result = provider.process(_frame(160), "s1")
         assert isinstance(result, AudioFrame)
 
-    def test_close_sets_denoiser_none(self) -> None:
+    def test_close_releases_every_stream(self) -> None:
         sherpa = _mock_sherpa_module()
         denoiser = _denoiser_that_returns([0.0] * 160)
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
-        provider.process(_frame(160))
-        assert provider._denoiser is not None
+        provider.process(_frame(160), "alice")
+        provider.process(_frame(160), "bob")
 
         provider.close()
-        assert provider._denoiser is None
+        assert provider._streams == {}
 
     def test_double_close(self) -> None:
         sherpa = _mock_sherpa_module()
@@ -463,7 +474,7 @@ class TestNonNativeRate:
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame_in = _frame(240, value=100, sample_rate=24000)
-        provider.process(frame_in)
+        provider.process(frame_in, "s1")
 
         # run() should be called with native rate 16000, not 24000
         assert denoiser.run.call_count == 1
@@ -477,7 +488,7 @@ class TestNonNativeRate:
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame_in = _frame(240, value=100, sample_rate=24000)
-        frame_out = provider.process(frame_in)
+        frame_out = provider.process(frame_in, "s1")
 
         assert frame_out.sample_rate == 24000
 
@@ -488,7 +499,7 @@ class TestNonNativeRate:
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame_in = _frame(240, value=100, sample_rate=24000)
-        frame_out = provider.process(frame_in)
+        frame_out = provider.process(frame_in, "s1")
 
         assert len(frame_out.data) == len(frame_in.data)
 
@@ -499,7 +510,7 @@ class TestNonNativeRate:
         provider = _make_provider(sherpa, denoiser, silence_threshold=0)
 
         frame_in = _frame(160, value=100, sample_rate=16000)
-        provider.process(frame_in)
+        provider.process(frame_in, "s1")
 
         _, called_rate = denoiser.run.call_args.args
         assert called_rate == 16000

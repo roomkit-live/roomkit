@@ -6,14 +6,18 @@ import asyncio
 import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core.task_utils import log_task_exception
 from roomkit.voice.base import VoiceCapability
+from roomkit.voice.pipeline._telemetry import _PipelineTelemetry, active_stage_names
 from roomkit.voice.pipeline.vad.base import VADEventType
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     from roomkit.voice.audio_frame import AudioFrame
     from roomkit.voice.base import VoiceSession
     from roomkit.voice.pipeline.config import AudioPipelineConfig
@@ -51,6 +55,66 @@ RecordingStartedCallback = Callable[["VoiceSession", "RecordingHandle"], Any]
 RecordingStoppedCallback = Callable[["VoiceSession", "RecordingResult"], Any]
 
 
+class _StageEnvelope:
+    """What one inbound stage runs inside: a failure it survives, and a clock.
+
+    The pipeline runs on the media path and there is no caller to unwind to, so
+    a stage that raises is logged and the frame carries on as the previous stage
+    left it — the assignment inside the block simply never happens.  Its time
+    still counts: a stage that fails slowly is worth seeing.
+
+    Only a frame inside a speech segment is timed, because that segment's span
+    is where the timings are reported and there is nowhere else to put them.
+
+    This is deliberately a plain object rather than a ``@contextmanager``
+    generator, which measured 2.3x its cost per stage for the same call site.
+    """
+
+    __slots__ = ("_stage", "_started", "_stream", "_telemetry", "_timed")
+
+    def __init__(self, telemetry: _PipelineTelemetry, stream: str, stage: str) -> None:
+        self._telemetry = telemetry
+        self._stream = stream
+        self._stage = stage
+        self._timed = telemetry.in_segment(stream)
+        self._started = time.perf_counter_ns() if self._timed else 0
+
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
+        if self._timed:
+            self._telemetry.add_stage_time(
+                self._stream, self._stage, time.perf_counter_ns() - self._started
+            )
+        if exc is None:
+            return False
+        logger.error("Pipeline stage '%s' error", self._stage, exc_info=exc)
+        return isinstance(exc, Exception)
+
+
+@dataclass
+class InboundResult:
+    """What the inbound stages produced for one frame.
+
+    Returned by :meth:`AudioPipeline.process_inbound_stream`, the pull-style
+    entry point.  A caller that owns its own lane reads the result rather than
+    registering callbacks, because the callback contract is written in terms of
+    a VoiceSession and a lane has none.
+    """
+
+    frame: AudioFrame
+    """The frame as the last stage left it."""
+
+    vad_event: VADEvent | None
+    """What the VAD said about this frame, if a VAD is configured."""
+
+
 class AudioPipeline:
     """Orchestrates audio frame processing through pipeline stages.
 
@@ -80,6 +144,8 @@ class AudioPipeline:
         self._processed_frame_callbacks: list[ProcessedFrameCallback] = []
         self._vad_event_callbacks: list[VADEventCallback] = []
         self._in_speech_sessions: set[str] = set()
+        # Streams handed to the stages — the keys reset() must release.
+        self._stage_streams: set[str] = set()
         self._speaker_change_callbacks: list[SpeakerChangeCallback] = []
         self._dtmf_callbacks: list[DTMFCallback] = []
         self._recording_started_callbacks: list[RecordingStartedCallback] = []
@@ -104,19 +170,6 @@ class AudioPipeline:
         # Separate resampler for playback AEC path (may run on audio thread)
         self._playback_aec_resampler: ResamplerProvider | None = None
         self._playback_aec_resampler_lock = threading.Lock()
-        # Telemetry counters (lightweight, emitted periodically)
-        self._telemetry = config.telemetry
-        # Speech segment telemetry spans (session_id -> span_id)
-        self._segment_spans: dict[str, str] = {}
-        # Per-stage cumulative timing in nanoseconds (session_id -> {stage: ns})
-        self._segment_stage_timings: dict[str, dict[str, int]] = {}
-        # Frame count per segment (session_id -> count)
-        self._segment_frame_counts: dict[str, int] = {}
-        # Parent span for pipeline (session_id -> voice_session_span_id)
-        self._parent_spans: dict[str, str] = {}
-        self._frame_count: dict[str, int] = {}
-        self._bytes_processed: dict[str, int] = {}
-        self._metric_interval: int = 500  # emit metrics every N frames
         # Resolve effective resampler (auto-default when contract is set)
         self._resampler: ResamplerProvider | None
         if config.resampler is not None:
@@ -125,6 +178,16 @@ class AudioPipeline:
             self._resampler = _create_default_resampler()
         else:
             self._resampler = None
+        # Spans, stage timings and counters — instrumentation, no audio.  The
+        # stage list is fixed once the config is: nothing here reads it again.
+        self._telemetry = _PipelineTelemetry(
+            config.telemetry,
+            active_stage_names(
+                config,
+                resampling=self._resampler is not None and config.contract is not None,
+                backend_capabilities=backend_capabilities,
+            ),
+        )
 
     # -----------------------------------------------------------------
     # Callback registration
@@ -173,32 +236,7 @@ class AudioPipeline:
 
     def set_parent_span(self, session_id: str, span_id: str) -> None:
         """Set the parent span (VOICE_SESSION) for pipeline spans."""
-        self._parent_spans[session_id] = span_id
-
-    def _active_stages_str(self) -> str:
-        """Return comma-separated list of active pipeline stages."""
-        stages: list[str] = []
-        if self._resampler is not None and self._config.contract is not None:
-            stages.append("resampler")
-        if self._config.dtmf is not None:
-            stages.append("dtmf")
-        if (
-            self._config.aec is not None
-            and VoiceCapability.NATIVE_AEC not in self._backend_capabilities
-        ):
-            stages.append("aec")
-        if (
-            self._config.agc is not None
-            and VoiceCapability.NATIVE_AGC not in self._backend_capabilities
-        ):
-            stages.append("agc")
-        if self._config.denoiser is not None:
-            stages.append("denoiser")
-        if self._config.vad is not None:
-            stages.append("vad")
-        if self._config.diarization is not None:
-            stages.append("diarization")
-        return ",".join(stages)
+        self._telemetry.set_parent_span(session_id, span_id)
 
     # -----------------------------------------------------------------
     # Inbound processing
@@ -217,19 +255,39 @@ class AudioPipeline:
         if dt is not None:
             dt.tap(stage, frame)
 
-    def _end_segment_span(self, session_id: str) -> None:
-        """End an active speech segment span with accumulated timings."""
-        seg_span = self._segment_spans.pop(session_id, None)
-        if seg_span and self._telemetry is not None:
-            from roomkit.telemetry.base import Attr
+    def _fanout(
+        self,
+        callbacks: Sequence[Callable[..., Any]],
+        subject: VoiceSession | None,
+        payload: Any,
+        label: str,
+    ) -> None:
+        """Notify every listener, letting none of them stop the others.
 
-            attrs: dict[str, Any] = {
-                Attr.PIPELINE_FRAMES: self._segment_frame_counts.get(session_id, 0),
-            }
-            for stage, ns in self._segment_stage_timings.pop(session_id, {}).items():
-                attrs[f"pipeline.{stage}_ms"] = round(ns / 1_000_000, 2)
-            self._segment_frame_counts.pop(session_id, None)
-            self._telemetry.end_span(seg_span, attributes=attrs)
+        ``subject`` is ``None`` for a stream-keyed caller, which reads the
+        result rather than being called back: the callbacks are typed on a
+        VoiceSession, so there is nothing honest to hand them.
+
+        One listener raising must not cost the rest their notification, nor
+        interrupt the frame that is still being processed — the pipeline runs
+        on the media path and there is no caller to unwind to.
+        """
+        if subject is None:
+            return
+        for callback in callbacks:
+            try:
+                _maybe_schedule(callback(subject, payload))
+            except Exception:
+                logger.exception("%s callback error", label)
+
+    def _timed_stage(self, stream: str, stage: str) -> _StageEnvelope:
+        """Wrap one inbound stage — see :class:`_StageEnvelope`.
+
+        Every stage wears this envelope, which is why the block under it can be
+        the stage itself: the canonical order of §12.3 reads as a list of stages
+        rather than as the plumbing around them.
+        """
+        return _StageEnvelope(self._telemetry, stream, stage)
 
     def process_inbound(self, session: VoiceSession, frame: AudioFrame) -> None:
         """Process a single inbound audio frame through the pipeline.
@@ -237,43 +295,78 @@ class AudioPipeline:
         Order: [Resampler] -> [Recorder tap] -> [DTMF] -> [AEC] -> [AGC] ->
                [Denoiser] -> [VAD] -> [Diarization]
         """
+        self._run_inbound(session.id, session, frame)
+
+    def process_inbound_stream(self, stream: str, frame: AudioFrame) -> InboundResult:
+        """Process a frame for a stream that has no VoiceSession behind it.
+
+        Same stages in the same order as :meth:`process_inbound` — there is one
+        implementation of the ordering and this shares it — but the result is
+        returned instead of fanned out to the registered callbacks, which are
+        typed on a VoiceSession.
+
+        This is what a conference lane calls.  The alternative is to fabricate
+        a VoiceSession per track, which keying the stages on a stream identity
+        exists to make unnecessary.
+
+        Args:
+            stream: Identity of the audio stream — the key the stages hold
+                their state under, and the one ``release_stream`` frees.
+            frame: The frame to process.
+
+        Returns:
+            The processed frame and the VAD event it produced, if any.
+        """
+        return self._run_inbound(stream, None, frame)
+
+    def release_stream(self, stream: str) -> None:
+        """Release everything a stream held, in the engine and in the stages.
+
+        A lane calls this when its track goes away.  Stage state is keyed by
+        stream and some of it is native memory, so a stream that is never
+        released leaks for as long as the pipeline lives.
+        """
+        self._cleanup_session_state(stream)
+
+    def _run_inbound(
+        self, stream: str, subject: VoiceSession | None, frame: AudioFrame
+    ) -> InboundResult:
+        """Run the inbound stages for one frame.
+
+        ``subject`` is what the registered callbacks are invoked with.  It is
+        ``None`` for a stream-keyed caller, which pulls the result instead, and
+        the callback fanout is skipped rather than handed something that is not
+        a session.
+        """
         current_frame = frame
-        in_segment = session.id in self._segment_spans
+
+        # Remember which streams the stages hold state for, so the blanket
+        # reset() can release every one of them.  Stage state is keyed by
+        # stream now, and the engine is the only thing that knows the keys.
+        self._stage_streams.add(stream)
 
         # Track inbound sample rate for AEC reference resampling
         if self._inbound_sample_rate is None:
             self._inbound_sample_rate = frame.sample_rate
 
-        # Increment frame count for active speech segment
-        if in_segment:
-            self._segment_frame_counts[session.id] = (
-                self._segment_frame_counts.get(session.id, 0) + 1
-            )
+        self._telemetry.count_frame(stream)
 
         # Stage 0: Inbound resampler (transport → internal format)
         if self._resampler is not None and self._config.contract is not None:
             int_fmt = self._config.contract.internal_format
             current_frame.metadata["original_sample_rate"] = current_frame.sample_rate
             current_frame.metadata["original_channels"] = current_frame.channels
-            t0 = time.perf_counter_ns() if in_segment else 0
-            try:
+            with self._timed_stage(stream, "resampler"):
                 current_frame = self._resampler.resample(
                     current_frame,
                     int_fmt.sample_rate,
                     int_fmt.channels,
                     int_fmt.sample_width,
-                )
-            except Exception:
-                logger.exception("Inbound resampler error")
-            if in_segment:
-                self._segment_stage_timings[session.id]["resampler"] = (
-                    self._segment_stage_timings[session.id].get("resampler", 0)
-                    + time.perf_counter_ns()
-                    - t0
+                    stream,
                 )
 
         # Stage 1: Recorder inbound tap
-        handle = self._recording_handles.get(session.id)
+        handle = self._recording_handles.get(stream)
         if handle is not None and self._config.recorder is not None:
             from roomkit.voice.pipeline.recorder.base import RecordingMode
 
@@ -289,107 +382,57 @@ class AudioPipeline:
                     logger.exception("Recorder inbound tap error")
 
         # Debug tap: raw (after resampler, before processing)
-        self._debug_tap(session.id, "raw", current_frame)
+        self._debug_tap(stream, "raw", current_frame)
 
         # Stage 1.5: DTMF detection (before AEC/denoiser to preserve tones)
         if self._config.dtmf is not None:
-            t0 = time.perf_counter_ns() if in_segment else 0
-            try:
-                dtmf_event = self._config.dtmf.process(current_frame)
+            with self._timed_stage(stream, "dtmf"):
+                dtmf_event = self._config.dtmf.process(current_frame, stream)
                 if dtmf_event is not None:
                     current_frame.metadata["dtmf"] = {
                         "digit": dtmf_event.digit,
                         "duration_ms": dtmf_event.duration_ms,
                     }
-                    for cb in self._dtmf_callbacks:
-                        try:
-                            result = cb(session, dtmf_event)
-                            _maybe_schedule(result)
-                        except Exception:
-                            logger.exception("DTMF callback error")
-            except Exception:
-                logger.exception("DTMF detection error")
-            if in_segment:
-                self._segment_stage_timings[session.id]["dtmf"] = (
-                    self._segment_stage_timings[session.id].get("dtmf", 0)
-                    + time.perf_counter_ns()
-                    - t0
-                )
+                    self._fanout(self._dtmf_callbacks, subject, dtmf_event, "DTMF")
 
         # Stage 2: AEC (skip if backend has NATIVE_AEC)
         if (
             self._config.aec is not None
             and VoiceCapability.NATIVE_AEC not in self._backend_capabilities
         ):
-            t0 = time.perf_counter_ns() if in_segment else 0
-            try:
-                current_frame = self._config.aec.process(current_frame)
+            with self._timed_stage(stream, "aec"):
+                current_frame = self._config.aec.process(current_frame, stream)
                 current_frame.metadata["aec"] = self._config.aec.name
-            except Exception:
-                logger.exception("AEC error")
-            if in_segment:
-                self._segment_stage_timings[session.id]["aec"] = (
-                    self._segment_stage_timings[session.id].get("aec", 0)
-                    + time.perf_counter_ns()
-                    - t0
-                )
 
         # Debug tap: post_aec
-        self._debug_tap(session.id, "post_aec", current_frame)
+        self._debug_tap(stream, "post_aec", current_frame)
 
         # Stage 3: AGC (skip if backend has NATIVE_AGC)
         if (
             self._config.agc is not None
             and VoiceCapability.NATIVE_AGC not in self._backend_capabilities
         ):
-            t0 = time.perf_counter_ns() if in_segment else 0
-            try:
-                current_frame = self._config.agc.process(current_frame)
+            with self._timed_stage(stream, "agc"):
+                current_frame = self._config.agc.process(current_frame, stream)
                 current_frame.metadata["agc"] = self._config.agc.name
-            except Exception:
-                logger.exception("AGC error")
-            if in_segment:
-                self._segment_stage_timings[session.id]["agc"] = (
-                    self._segment_stage_timings[session.id].get("agc", 0)
-                    + time.perf_counter_ns()
-                    - t0
-                )
 
         # Debug tap: post_agc
-        self._debug_tap(session.id, "post_agc", current_frame)
+        self._debug_tap(stream, "post_agc", current_frame)
 
         # Stage 4: Denoiser
         if self._config.denoiser is not None:
-            t0 = time.perf_counter_ns() if in_segment else 0
-            try:
-                current_frame = self._config.denoiser.process(current_frame)
+            with self._timed_stage(stream, "denoiser"):
+                current_frame = self._config.denoiser.process(current_frame, stream)
                 current_frame.metadata["denoiser"] = self._config.denoiser.name
-            except Exception:
-                logger.exception("Denoiser error")
-            if in_segment:
-                self._segment_stage_timings[session.id]["denoiser"] = (
-                    self._segment_stage_timings[session.id].get("denoiser", 0)
-                    + time.perf_counter_ns()
-                    - t0
-                )
 
         # Debug tap: post_denoiser
-        self._debug_tap(session.id, "post_denoiser", current_frame)
+        self._debug_tap(stream, "post_denoiser", current_frame)
 
         # Stage 5: VAD
         vad_event: VADEvent | None = None
         if self._config.vad is not None:
-            t0 = time.perf_counter_ns() if in_segment else 0
-            try:
-                vad_event = self._config.vad.process(current_frame)
-            except Exception:
-                logger.exception("VAD error")
-            if in_segment:
-                self._segment_stage_timings[session.id]["vad"] = (
-                    self._segment_stage_timings[session.id].get("vad", 0)
-                    + time.perf_counter_ns()
-                    - t0
-                )
+            with self._timed_stage(stream, "vad"):
+                vad_event = self._config.vad.process(current_frame, stream)
 
         if vad_event is not None:
             current_frame.metadata["vad"] = {
@@ -397,43 +440,21 @@ class AudioPipeline:
                 "confidence": vad_event.confidence,
             }
 
-            # Track per-session speech state for speech_frame callbacks
+            # Track per-stream speech state for speech_frame callbacks
             if vad_event.type == VADEventType.SPEECH_START:
-                self._in_speech_sessions.add(session.id)
-                # Start speech segment telemetry span
-                if self._telemetry is not None:
-                    from roomkit.telemetry.base import Attr, SpanKind
-
-                    parent = self._parent_spans.get(session.id)
-                    seg_span = self._telemetry.start_span(
-                        SpanKind.PIPELINE_SPEECH_SEGMENT,
-                        "pipeline.speech_segment",
-                        parent_id=parent,
-                        session_id=session.id,
-                        attributes={
-                            Attr.PIPELINE_STAGES: self._active_stages_str(),
-                        },
-                    )
-                    self._segment_spans[session.id] = seg_span
-                    self._segment_stage_timings[session.id] = {}
-                    self._segment_frame_counts[session.id] = 0
+                self._in_speech_sessions.add(stream)
+                self._telemetry.start_segment(stream)
             elif vad_event.type == VADEventType.SPEECH_END:
-                self._in_speech_sessions.discard(session.id)
-                # End speech segment telemetry span with accumulated timings
-                self._end_segment_span(session.id)
+                self._in_speech_sessions.discard(stream)
+                self._telemetry.end_segment(stream)
 
             # Fire VAD event callbacks
-            for vad_cb in self._vad_event_callbacks:
-                try:
-                    result = vad_cb(session, vad_event)
-                    _maybe_schedule(result)
-                except Exception:
-                    logger.exception("VAD event callback error")
+            self._fanout(self._vad_event_callbacks, subject, vad_event, "VAD event")
 
             # Fire speech_end callbacks with accumulated audio
             if vad_event.type == VADEventType.SPEECH_END and vad_event.audio_bytes is not None:
                 # Debug tap: post_vad_speech (accumulated speech segment)
-                dt = self._debug_tap_sessions.get(session.id)
+                dt = self._debug_tap_sessions.get(stream)
                 if dt is not None:
                     dt.tap_vad_speech(
                         vad_event.audio_bytes,
@@ -441,88 +462,47 @@ class AudioPipeline:
                         channels=current_frame.channels,
                         sample_width=current_frame.sample_width,
                     )
-                for se_cb in self._speech_end_callbacks:
-                    try:
-                        result = se_cb(session, vad_event.audio_bytes)
-                        _maybe_schedule(result)
-                    except Exception:
-                        logger.exception("Speech end callback error")
+                self._fanout(
+                    self._speech_end_callbacks, subject, vad_event.audio_bytes, "Speech end"
+                )
 
         # Fire speech_frame callbacks for processed frames during speech.
         # Includes the SPEECH_START frame, excludes the SPEECH_END frame.
-        if session.id in self._in_speech_sessions and self._speech_frame_callbacks:
-            for sf_cb in self._speech_frame_callbacks:
-                try:
-                    result = sf_cb(session, current_frame)
-                    _maybe_schedule(result)
-                except Exception:
-                    logger.exception("Speech frame callback error")
+        if stream in self._in_speech_sessions:
+            self._fanout(self._speech_frame_callbacks, subject, current_frame, "Speech frame")
 
         # Bridge VAD state into flat metadata keys for diarization.
         # vad_is_speech is True for all frames during speech (including the
         # SPEECH_START frame).  vad_speech_end marks the boundary frame.
-        if session.id in self._in_speech_sessions:
+        if stream in self._in_speech_sessions:
             current_frame.metadata["vad_is_speech"] = True
         if vad_event is not None and vad_event.type == VADEventType.SPEECH_END:
             current_frame.metadata["vad_speech_end"] = True
 
         # Stage 6: Diarization
         if self._config.diarization is not None:
-            # Re-check in_segment since SPEECH_START may have just created it
-            timing_segment = session.id in self._segment_spans
-            t0 = time.perf_counter_ns() if timing_segment else 0
-            try:
-                diarization_result = self._config.diarization.process(current_frame)
+            with self._timed_stage(stream, "diarization"):
+                diarization_result = self._config.diarization.process(current_frame, stream)
                 if diarization_result is not None:
                     current_frame.metadata["diarization"] = {
                         "speaker_id": diarization_result.speaker_id,
                         "confidence": diarization_result.confidence,
                     }
-                    if diarization_result.speaker_id != self._last_speaker_id.get(session.id):
-                        self._last_speaker_id[session.id] = diarization_result.speaker_id
-                        for sc_cb in self._speaker_change_callbacks:
-                            try:
-                                result = sc_cb(session, diarization_result)
-                                _maybe_schedule(result)
-                            except Exception:
-                                logger.exception("Speaker change callback error")
-            except Exception:
-                logger.exception("Diarization error")
-            if timing_segment:
-                self._segment_stage_timings[session.id]["diarization"] = (
-                    self._segment_stage_timings[session.id].get("diarization", 0)
-                    + time.perf_counter_ns()
-                    - t0
-                )
+                    if diarization_result.speaker_id != self._last_speaker_id.get(stream):
+                        self._last_speaker_id[stream] = diarization_result.speaker_id
+                        self._fanout(
+                            self._speaker_change_callbacks,
+                            subject,
+                            diarization_result,
+                            "Speaker change",
+                        )
 
         # Fire processed_frame callbacks for every frame (regardless of speech).
-        if self._processed_frame_callbacks:
-            for pf_cb in self._processed_frame_callbacks:
-                try:
-                    result = pf_cb(session, current_frame)
-                    _maybe_schedule(result)
-                except Exception:
-                    logger.exception("Processed frame callback error")
+        self._fanout(self._processed_frame_callbacks, subject, current_frame, "Processed frame")
 
-        # Telemetry metrics (lightweight, periodic) — per-session counters
-        # avoid contention when multiple sessions process concurrently.
-        sid = session.id
-        fc = self._frame_count.get(sid, 0) + 1
-        self._frame_count[sid] = fc
-        bp = self._bytes_processed.get(sid, 0) + len(frame.data)
-        self._bytes_processed[sid] = bp
-        if self._telemetry is not None and fc % self._metric_interval == 0:
-            self._telemetry.record_metric(
-                "roomkit.pipeline.frame_count",
-                float(fc),
-                attributes={"session_id": sid},
-            )
-            self._telemetry.record_metric(
-                "roomkit.pipeline.bytes_processed",
-                float(bp),
-                unit="bytes",
-                attributes={"session_id": sid},
-            )
+        self._telemetry.record_frame(stream, len(frame.data))
+
+        return InboundResult(frame=current_frame, vad_event=vad_event)
 
     # -----------------------------------------------------------------
     # Outbound processing
@@ -550,6 +530,7 @@ class AudioPipeline:
     def _process_outbound_unlocked(self, session: VoiceSession, frame: AudioFrame) -> AudioFrame:
         """Internal outbound processing (caller holds per-session lock)."""
         current_frame = frame
+        self._stage_streams.add(session.id)
 
         # Debug tap: outbound_raw (before postprocessors)
         self._debug_tap(session.id, "outbound_raw", current_frame)
@@ -557,7 +538,7 @@ class AudioPipeline:
         # Stage 1: PostProcessors
         for pp in self._config.postprocessors:
             try:
-                current_frame = pp.process(current_frame)
+                current_frame = pp.process(current_frame, session.id)
             except Exception:
                 logger.exception("PostProcessor '%s' error", pp.name)
 
@@ -603,8 +584,9 @@ class AudioPipeline:
                         target_rate,
                         ref_frame.channels,
                         ref_frame.sample_width,
+                        session.id,
                     )
-                self._config.aec.feed_reference(ref_frame)
+                self._config.aec.feed_reference(ref_frame, session.id)
             except Exception:
                 logger.exception("AEC feed_reference error")
 
@@ -617,6 +599,7 @@ class AudioPipeline:
                     out_fmt.sample_rate,
                     out_fmt.channels,
                     out_fmt.sample_width,
+                    session.id,
                 )
             except Exception:
                 logger.exception("Outbound resampler error")
@@ -636,11 +619,16 @@ class AudioPipeline:
         """
         self._playback_aec_wired = True
 
-    def feed_aec_reference(self, frame: AudioFrame) -> None:
+    def feed_aec_reference(self, frame: AudioFrame, stream: str) -> None:
         """Feed an AEC reference frame directly (from speaker output).
 
         Called by the backend's speaker callback at playback time so
         the AEC has time-aligned reference for echo cancellation.
+
+        Args:
+            frame: The audio frame the speaker is playing.
+            stream: Identity of the stream this playback belongs to — the
+                session whose canceller should model this echo.
 
         Thread-safety: may be called from the audio I/O thread.  Uses
         a separate resampler instance from ``process_outbound`` to
@@ -660,8 +648,9 @@ class AudioPipeline:
                     target_rate,
                     ref_frame.channels,
                     ref_frame.sample_width,
+                    stream,
                 )
-            self._config.aec.feed_reference(ref_frame)
+            self._config.aec.feed_reference(ref_frame, stream)
         except Exception:
             logger.exception("AEC feed_reference error (playback)")
 
@@ -670,15 +659,16 @@ class AudioPipeline:
     # -----------------------------------------------------------------
 
     def _cleanup_session_state(self, session_id: str) -> None:
-        """Remove per-session tracking state without resetting shared providers."""
+        """Release everything this session held, in the engine and in the stages.
+
+        The stages keep their own per-stream state now, so leaving them alone
+        would accumulate one speaker's worth of buffers for every session the
+        room ever had.
+        """
+        self._release_stage_streams(session_id)
         self._in_speech_sessions.discard(session_id)
-        self._end_segment_span(session_id)
-        self._parent_spans.pop(session_id, None)
+        self._telemetry.release(session_id)
         self._last_speaker_id.pop(session_id, None)
-        self._segment_stage_timings.pop(session_id, None)
-        self._segment_frame_counts.pop(session_id, None)
-        self._frame_count.pop(session_id, None)
-        self._bytes_processed.pop(session_id, None)
         self._outbound_locks.pop(session_id, None)
         handle = self._recording_handles.pop(session_id, None)
         if handle is not None and self._config.recorder is not None:
@@ -720,22 +710,53 @@ class AudioPipeline:
             except Exception:
                 logger.exception("Failed to start recording for session %s", session.id)
 
+    def _release_stage_streams(self, session_id: str) -> None:
+        """Drop one stream's state in every stage.
+
+        Stage state is keyed by stream and some of it is native — a
+        SpeexEchoState, a DenoiseState, a WebRTC AudioProcessing. Leaving it
+        behind when a speaker leaves does not fail a test, it leaks C memory
+        for every speaker a long-running room ever had.
+
+        The resamplers are released with the rest: a stateful one holds a
+        delay line of the speaker's own audio, so leaving it behind both
+        leaks and — if the stream key is ever reused, as a track id can be —
+        opens the next stream with the previous one's samples.
+        """
+        stages = (
+            self._resampler,
+            self._aec_resampler,
+            self._playback_aec_resampler,
+            self._config.vad,
+            self._config.denoiser,
+            self._config.aec,
+            self._config.agc,
+            self._config.dtmf,
+            self._config.diarization,
+            *self._config.postprocessors,
+        )
+        for stage in stages:
+            if stage is None:
+                continue
+            try:
+                stage.reset(session_id)
+            except Exception:
+                # Best effort: one stage failing to release must not strand
+                # the others, which is the leak this method exists to prevent.
+                logger.exception("Stage '%s' reset error for session %s", stage.name, session_id)
+        self._stage_streams.discard(session_id)
+
     def on_session_ended(self, session: VoiceSession) -> None:
         """Called when a voice session ends.
 
-        Stops recording and debug taps if active.
+        Releases the stages' state for this stream, then stops recording and
+        debug taps if active.
         """
+        self._release_stage_streams(session.id)
         self._in_speech_sessions.discard(session.id)
-
-        # End any active speech segment span (session ended mid-speech)
-        self._end_segment_span(session.id)
-        self._parent_spans.pop(session.id, None)
+        # Closes an active segment span too — the session may end mid-speech.
+        self._telemetry.release(session.id)
         self._last_speaker_id.pop(session.id, None)
-        # Clean up telemetry dicts that _end_segment_span may not fully clean
-        self._segment_stage_timings.pop(session.id, None)
-        self._segment_frame_counts.pop(session.id, None)
-        self._frame_count.pop(session.id, None)
-        self._bytes_processed.pop(session.id, None)
         self._outbound_locks.pop(session.id, None)
 
         # Close debug taps
@@ -763,12 +784,7 @@ class AudioPipeline:
     def reset(self) -> None:
         """Reset all pipeline stage state."""
         self._in_speech_sessions.clear()
-        self._segment_spans.clear()
-        self._segment_stage_timings.clear()
-        self._segment_frame_counts.clear()
-        self._frame_count.clear()
-        self._bytes_processed.clear()
-        self._parent_spans.clear()
+        self._telemetry.clear()
         self._outbound_locks.clear()
         self._inbound_sample_rate = None
         if self._aec_resampler is not None:
@@ -777,20 +793,10 @@ class AudioPipeline:
             self._playback_aec_resampler.reset()
         if self._resampler is not None:
             self._resampler.reset()
-        if self._config.vad is not None:
-            self._config.vad.reset()
-        if self._config.diarization is not None:
-            self._config.diarization.reset()
-        if self._config.denoiser is not None:
-            self._config.denoiser.reset()
-        if self._config.aec is not None:
-            self._config.aec.reset()
-        if self._config.agc is not None:
-            self._config.agc.reset()
-        if self._config.dtmf is not None:
-            self._config.dtmf.reset()
-        for pp in self._config.postprocessors:
-            pp.reset()
+        # Stage state is keyed by stream, so a blanket reset releases every
+        # stream the stages were given rather than one anonymous slot.
+        for stream in list(self._stage_streams):
+            self._release_stage_streams(stream)
         self._last_speaker_id.clear()
         # Stop active recordings before clearing handles
         for handle in self._recording_handles.values():

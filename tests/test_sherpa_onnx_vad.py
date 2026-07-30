@@ -81,7 +81,7 @@ class TestBasicTransitions:
         vad = _make_provider(sherpa, detector)
 
         for _ in range(20):
-            assert vad.process(_silence()) is None
+            assert vad.process(_silence(), "s1") is None
 
     def test_speech_start(self) -> None:
         sherpa = _mock_sherpa_module()
@@ -90,7 +90,7 @@ class TestBasicTransitions:
         detector.empty.return_value = True
 
         vad = _make_provider(sherpa, detector)
-        event = vad.process(_speech())
+        event = vad.process(_speech(), "s1")
 
         assert event is not None
         assert event.type == VADEventType.SPEECH_START
@@ -114,18 +114,18 @@ class TestBasicTransitions:
         )
 
         # Speech start
-        event = vad.process(_speech())
+        event = vad.process(_speech(), "s1")
         assert event is not None
         assert event.type == VADEventType.SPEECH_START
 
         # Continue speaking
         for _ in range(5):
-            assert vad.process(_speech()) is None
+            assert vad.process(_speech(), "s1") is None
 
         # Silence until SPEECH_END
         end_event = None
         for _ in range(10):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 end_event = ev
                 break
@@ -162,15 +162,15 @@ class TestAudioAccumulation:
         )
 
         # Start speech
-        vad.process(_speech())
+        vad.process(_speech(), "s1")
         # 3 more speech frames
         for _ in range(3):
-            vad.process(_speech())
+            vad.process(_speech(), "s1")
 
         # Silence until end
         end_event = None
         for _ in range(10):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 end_event = ev
                 break
@@ -204,14 +204,14 @@ class TestMinSpeechDuration:
         )
 
         # Single speech frame → SPEECH_START
-        event = vad.process(_speech())
+        event = vad.process(_speech(), "s1")
         assert event is not None
         assert event.type == VADEventType.SPEECH_START
 
         # Immediate silence → no SPEECH_END (too short)
         events = []
         for _ in range(20):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 events.append(ev)
 
@@ -235,14 +235,14 @@ class TestMinSpeechDuration:
         )
 
         # Start
-        vad.process(_speech())
+        vad.process(_speech(), "s1")
         # 10 more frames (220ms total > 100ms min)
         for _ in range(10):
-            vad.process(_speech())
+            vad.process(_speech(), "s1")
 
         end_event = None
         for _ in range(20):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 end_event = ev
                 break
@@ -276,15 +276,15 @@ class TestPreRoll:
 
         # Feed 10 silence frames (go into pre-roll)
         for _ in range(10):
-            vad.process(_silence())
+            vad.process(_silence(), "s1")
 
         # Now speech
-        vad.process(_speech())
+        vad.process(_speech(), "s1")
 
         # End with silence
         end_event = None
         for _ in range(20):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 end_event = ev
                 break
@@ -309,16 +309,16 @@ class TestReset:
         vad = _make_provider(sherpa, detector)
 
         # Start speaking
-        event = vad.process(_speech())
+        event = vad.process(_speech(), "s1")
         assert event is not None
         assert event.type == VADEventType.SPEECH_START
 
-        # Reset mid-speech
-        vad.reset()
-        detector.reset.assert_called_once()
+        # Reset mid-speech — the stream's detector and state are dropped
+        vad.reset("s1")
+        assert vad._streams == {}
 
         # Should be back to idle — next speech triggers SPEECH_START again
-        event = vad.process(_speech())
+        event = vad.process(_speech(), "s1")
         assert event is not None
         assert event.type == VADEventType.SPEECH_START
 
@@ -337,11 +337,11 @@ class TestClose:
 
         vad = _make_provider(sherpa, detector)
         # Trigger lazy init
-        vad.process(_silence())
+        vad.process(_silence(), "s1")
 
         vad.close()
         detector.flush.assert_called_once()
-        assert vad._detector is None
+        assert vad._streams == {}
 
 
 # ---------------------------------------------------------------------------
@@ -393,21 +393,21 @@ class TestMultipleUtterances:
         events = []
 
         # First utterance
-        events.append(vad.process(_speech()))
+        events.append(vad.process(_speech(), "s1"))
         for _ in range(5):
-            vad.process(_speech())
+            vad.process(_speech(), "s1")
         for _ in range(10):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 events.append(ev)
                 break
 
         # Second utterance
-        events.append(vad.process(_speech()))
+        events.append(vad.process(_speech(), "s1"))
         for _ in range(5):
-            vad.process(_speech())
+            vad.process(_speech(), "s1")
         for _ in range(10):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 events.append(ev)
                 break
@@ -436,11 +436,25 @@ class TestLazyInit:
         vad = _make_provider(sherpa, detector)
 
         # Detector should not be created yet
-        assert vad._detector is None
+        assert vad._streams == {}
 
         # After first process() it should be created
-        vad.process(_silence())
-        assert vad._detector is not None
+        vad.process(_silence(), "s1")
+        assert vad._streams["s1"].detector is not None
+
+    def test_each_stream_gets_its_own_detector(self) -> None:
+        sherpa = _mock_sherpa_module()
+        detector = MagicMock()
+        detector.empty.return_value = True
+        detector.is_speech_detected.return_value = False
+
+        vad = _make_provider(sherpa, detector)
+
+        vad.process(_silence(), "alice")
+        vad.process(_silence(), "bob")
+
+        assert sherpa.VoiceActivityDetector.call_count == 2
+        assert set(vad._streams) == {"alice", "bob"}
 
 
 # ---------------------------------------------------------------------------
@@ -465,7 +479,7 @@ class TestModelType:
         )
 
         # Trigger lazy init
-        vad.process(_silence())
+        vad.process(_silence(), "s1")
 
         # Check VadModelConfig was created and ten_vad was configured
         vad_model_config = sherpa.VadModelConfig.return_value
@@ -490,7 +504,7 @@ class TestModelType:
         )
 
         # Trigger lazy init
-        vad.process(_silence())
+        vad.process(_silence(), "s1")
 
         # Check VadModelConfig was created and silero_vad was configured
         vad_model_config = sherpa.VadModelConfig.return_value
@@ -578,6 +592,6 @@ class TestSegmentDraining:
         detector.empty.side_effect = [False, True]
 
         vad = _make_provider(sherpa, detector)
-        vad.process(_silence())
+        vad.process(_silence(), "s1")
 
         detector.pop.assert_called_once()

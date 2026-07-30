@@ -69,19 +69,28 @@ class VADProvider(ABC):
         ...
 
     @abstractmethod
-    def process(self, frame: AudioFrame) -> VADEvent | None:
+    def process(self, frame: AudioFrame, stream: str) -> VADEvent | None:
         """Process an audio frame and optionally return a VAD event.
 
         Args:
             frame: The audio frame to analyse.
+            stream: Identity of the audio stream this frame belongs to. A
+                provider keeps its state per stream: a voice session and a
+                conference track are separate speakers, and letting one advance
+                the other's detection state makes silence from one close the
+                other's utterance.
 
         Returns:
             A VADEvent if a state transition occurred, else None.
         """
         ...
 
-    def reset(self) -> None:  # noqa: B027
-        """Reset internal state (e.g. between utterances)."""
+    def reset(self, stream: str) -> None:  # noqa: B027
+        """Drop a stream's state.
+
+        Called when the stream ends, so a long-running room does not accumulate
+        the state of every speaker that ever joined.
+        """
 
     def close(self) -> None:  # noqa: B027
         """Release resources."""

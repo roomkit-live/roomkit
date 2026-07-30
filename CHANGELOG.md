@@ -5,6 +5,85 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`AudioPipeline.process_inbound_stream(stream, frame)`** — a stream-keyed
+  inbound entry point that returns what the stages produced instead of fanning
+  out to callbacks typed on a `VoiceSession`, plus `release_stream(stream)` for
+  the cleanup a lane owes when its track goes away. `process_inbound(session,
+  frame)` is unchanged and now shares the same stage chain.
+
+### Changed — BREAKING
+
+- **Audio pipeline stages now take a stream identity.** `process()` gains a
+  required `stream` argument and `reset()` is keyed by it on all seven stage
+  interfaces — `VADProvider`, `DenoiserProvider`, `AECProvider`, `AGCProvider`,
+  `DTMFDetector`, `DiarizationProvider`, `AudioPostProcessor`.
+  `AECProvider.feed_reference()` takes the key too, since each stream owns its
+  echo canceller and an unkeyed reference cannot reach the right one.
+
+  ```python
+  # before
+  def process(self, frame: AudioFrame) -> VADEvent | None: ...
+  def reset(self) -> None: ...
+
+  # after
+  def process(self, frame: AudioFrame, stream: str) -> VADEvent | None: ...
+  def reset(self, stream: str) -> None: ...
+  ```
+
+  A `VoiceChannel` holds one `AudioPipeline` for every session on the channel —
+  up to ten with `AudioBridge` — so the stages were sharing VAD hangover,
+  denoiser history and AGC gain between speakers: one speaker's silence closed
+  another's utterance. A conference lane will be another stream through the same
+  stages, so the defect was about to become structural rather than incidental.
+
+  `stream` deliberately has **no default**. A default would let a provider
+  accept the argument, ignore it, keep compiling, and mix streams silently —
+  the exact failure this change removes. Only code that *implements* a stage is
+  affected; callers go through `AudioPipeline`, which passes the session id
+  itself. `tests/voice/pipeline/stream_conformance.py` ships a check third-party
+  implementers can run against their own stage.
+
+- **The resampler takes the stream identity too.** `ResamplerProvider.resample()`
+  and `flush()` gain a required `stream` argument, and `reset()` accepts one —
+  `reset()` with no argument still clears every stream, which is what a blanket
+  pipeline reset asks for.
+
+  ```python
+  # before
+  def resample(self, frame, target_rate, target_channels, target_width): ...
+  def flush(self, target_rate, target_channels, target_width): ...
+  def reset(self) -> None: ...
+
+  # after
+  def resample(self, frame, target_rate, target_channels, target_width, stream): ...
+  def flush(self, target_rate, target_channels, target_width, stream): ...
+  def reset(self, stream: str | None = None) -> None: ...
+  ```
+
+  The resampler is stage 1 of the inbound pipeline and was the one stage the
+  key stopped short of. `SincResamplerProvider` holds a one-frame delay line for
+  look-ahead context and keyed it on audio format alone, so in a conference the
+  frame buffered for one participant was emitted as the *next* participant's
+  output — their voice, and the transcript drawn from it, attributed to someone
+  else. `LinearResamplerProvider` and `NumpyResamplerProvider` are stateless and
+  were never affected; the argument is required of them for the same reason it
+  is required of the stages, so a provider cannot quietly ignore it.
+
+  Resamplers are now covered by
+  `tests/voice/pipeline/stream_conformance.py`, which had enumerated the six
+  stage directories and left this one out — reporting full coverage over the
+  gap that hid the defect.
+
+  `AudioBridge` keys its conversions on the `source -> target` pair rather than
+  the destination alone. Both bundled resamplers are stateless so nothing leaked
+  today, but a target mixes a frame from every other participant, and those are
+  separate continuous signals: keying on the destination would have been the
+  same defect one layer down.
+
 ## [0.37.1] — 2026-07-24
 
 ### Fixed

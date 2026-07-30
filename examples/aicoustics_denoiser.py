@@ -89,7 +89,9 @@ def main() -> None:
         frames_in.append(samples)
 
         frame = AudioFrame(data=bytes(indata), sample_rate=SAMPLE_RATE, channels=1, sample_width=2)
-        result = dn.process(frame)
+        # One microphone, so one stream. A stage keeps its state per stream:
+        # pass the speaker's identity, not a constant, when there are several.
+        result = dn.process(frame, "mic")
         out_samples = struct.unpack(f"<{n}h", result.data)
         frames_out.append(out_samples)
 

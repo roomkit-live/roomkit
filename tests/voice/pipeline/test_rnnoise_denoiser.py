@@ -96,7 +96,7 @@ class TestRNNoiseDenoiserProviderProcess:
 
         # 160 samples = one chunk at 16kHz
         frame = _make_frame(n_samples=160, sample_rate=16000)
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
 
         assert result.sample_rate == 16000
         assert len(result.data) == len(frame.data)
@@ -108,34 +108,69 @@ class TestRNNoiseDenoiserProviderProcess:
 
         # 100 samples is not a multiple of 160
         frame = _make_frame(n_samples=100, sample_rate=16000)
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
         assert result is frame
         mock_lib.rnnoise_process_frame.assert_not_called()
 
 
+class TestRNNoiseDenoiserProviderStreams:
+    def test_each_stream_gets_its_own_native_state(self):
+        mock_lib = _make_mock_librnnoise()
+        provider, _ = _make_provider(mock_lib, sample_rate=16000)
+
+        provider.process(_make_frame(n_samples=160, sample_rate=16000), "alice")
+        provider.process(_make_frame(n_samples=160, sample_rate=16000), "bob")
+
+        assert mock_lib.rnnoise_create.call_count == 2
+        assert set(provider._streams) == {"alice", "bob"}
+
+    def test_repeat_frames_reuse_one_state_per_stream(self):
+        mock_lib = _make_mock_librnnoise()
+        provider, _ = _make_provider(mock_lib, sample_rate=16000)
+
+        for _ in range(3):
+            provider.process(_make_frame(n_samples=160, sample_rate=16000), "alice")
+
+        mock_lib.rnnoise_create.assert_called_once()
+
+
 class TestRNNoiseDenoiserProviderReset:
-    def test_reset_recreates_state(self):
+    def test_reset_destroys_only_that_stream(self):
+        mock_lib = _make_mock_librnnoise()
+        provider, _ = _make_provider(mock_lib, sample_rate=16000)
+
+        provider.process(_make_frame(n_samples=160, sample_rate=16000), "alice")
+        provider.process(_make_frame(n_samples=160, sample_rate=16000), "bob")
+
+        provider.reset("alice")
+
+        mock_lib.rnnoise_destroy.assert_called_once()
+        assert set(provider._streams) == {"bob"}
+
+    def test_reset_unknown_stream_is_a_noop(self):
         mock_lib = _make_mock_librnnoise()
         provider, _ = _make_provider(mock_lib)
 
-        provider.reset()
-
-        mock_lib.rnnoise_destroy.assert_called_once()
-        assert mock_lib.rnnoise_create.call_count == 2  # init + reset
+        provider.reset("never-seen")
+        mock_lib.rnnoise_destroy.assert_not_called()
 
 
 class TestRNNoiseDenoiserProviderClose:
-    def test_close_destroys_state(self):
+    def test_close_destroys_every_stream(self):
         mock_lib = _make_mock_librnnoise()
-        provider, _ = _make_provider(mock_lib)
+        provider, _ = _make_provider(mock_lib, sample_rate=16000)
+
+        provider.process(_make_frame(n_samples=160, sample_rate=16000), "alice")
+        provider.process(_make_frame(n_samples=160, sample_rate=16000), "bob")
 
         provider.close()
-        assert provider._state is None
-        mock_lib.rnnoise_destroy.assert_called_once()
+        assert provider._streams == {}
+        assert mock_lib.rnnoise_destroy.call_count == 2
 
     def test_close_idempotent(self):
         mock_lib = _make_mock_librnnoise()
-        provider, _ = _make_provider(mock_lib)
+        provider, _ = _make_provider(mock_lib, sample_rate=16000)
+        provider.process(_make_frame(n_samples=160, sample_rate=16000), "s1")
 
         provider.close()
         provider.close()

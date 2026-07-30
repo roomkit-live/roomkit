@@ -23,7 +23,7 @@ class AudioPostProcessor(ABC):
         ...
 
     @abstractmethod
-    def process(self, frame: AudioFrame) -> AudioFrame:
+    def process(self, frame: AudioFrame, stream: str) -> AudioFrame:
         """Process an audio frame.
 
         Args:
@@ -34,7 +34,7 @@ class AudioPostProcessor(ABC):
         """
         ...
 
-    def reset(self) -> None:  # noqa: B027
+    def reset(self, stream: str) -> None:  # noqa: B027
         """Reset internal state."""
 
     def close(self) -> None:  # noqa: B027

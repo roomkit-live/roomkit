@@ -19,6 +19,9 @@ class LinearResamplerProvider(ResamplerProvider):
     Handles channel conversion, sample rate conversion, and sample width
     conversion.  This is the default resampler auto-created by the pipeline
     engine when a contract is set but no explicit resampler is provided.
+
+    Each frame is converted on its own, so there is nothing held between
+    calls and nothing for the stream key to separate.
     """
 
     @property
@@ -31,6 +34,7 @@ class LinearResamplerProvider(ResamplerProvider):
         target_rate: int,
         target_channels: int,
         target_width: int,
+        stream: str,  # noqa: ARG002 — stateless: nothing to key
     ) -> AudioFrame:
         if (
             frame.sample_rate == target_rate

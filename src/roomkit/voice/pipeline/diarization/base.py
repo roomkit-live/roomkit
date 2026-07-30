@@ -34,19 +34,28 @@ class DiarizationProvider(ABC):
         ...
 
     @abstractmethod
-    def process(self, frame: AudioFrame) -> DiarizationResult | None:
+    def process(self, frame: AudioFrame, stream: str) -> DiarizationResult | None:
         """Analyse an audio frame for speaker identity.
 
         Args:
             frame: The audio frame to analyse.
+            stream: Identity of the audio stream this frame belongs to. A
+                provider keeps its state per stream: a voice session and a
+                conference track are separate speakers, and letting one advance
+                the other's detection state makes silence from one close the
+                other's utterance.
 
         Returns:
             A DiarizationResult if a speaker was identified, else None.
         """
         ...
 
-    def reset(self) -> None:  # noqa: B027
-        """Reset internal state."""
+    def reset(self, stream: str) -> None:  # noqa: B027
+        """Drop a stream's state.
+
+        Called when the stream ends, so a long-running room does not accumulate
+        the state of every speaker that ever joined.
+        """
 
     def clear_speakers(self) -> None:  # noqa: B027
         """Forget every enrolled speaker.

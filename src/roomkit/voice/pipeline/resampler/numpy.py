@@ -25,6 +25,9 @@ class NumpyResamplerProvider(ResamplerProvider):
     significantly lower CPU usage — ``np.interp`` replaces Python-level
     sample loops, and ``np.frombuffer``/``ndarray.tobytes`` replace
     ``struct.unpack``/``struct.pack``.
+
+    Stateless like the provider it replaces: each frame is converted on its
+    own, so the stream key has nothing to separate.
     """
 
     @property
@@ -37,6 +40,7 @@ class NumpyResamplerProvider(ResamplerProvider):
         target_rate: int,
         target_channels: int,
         target_width: int,
+        stream: str,  # noqa: ARG002 — stateless: nothing to key
     ) -> AudioFrame:
         if (
             frame.sample_rate == target_rate

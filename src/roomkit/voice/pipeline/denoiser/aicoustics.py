@@ -78,6 +78,21 @@ class AICousticsDenoiserConfig:
         self._resolved_license_key = self.license_key or os.environ.get("AIC_SDK_LICENSE", "")
 
 
+@dataclass
+class _StreamState:
+    """One stream's Quail processor and its chunking buffer.
+
+    The Processor carries the model's recurrent state, so two speakers
+    through one processor would each be enhanced against the other's
+    residue.  The buffer holds the sub-frame remainder between calls.
+    """
+
+    processor: Any = None
+    frame_size: int = 0
+    buffer: bytes = b""
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
 class AICousticsDenoiserProvider(DenoiserProvider):
     """Denoiser provider using ai|coustics Quail speech enhancement.
 
@@ -99,18 +114,22 @@ class AICousticsDenoiserProvider(DenoiserProvider):
 
         self._config = config or AICousticsDenoiserConfig()
         self._aic: Any = __import__("aic_sdk")
-        self._processor: Any = None
-        self._frame_size: int = 0
-        self._buffer: bytes = b""
-        self._lock = threading.Lock()
+        self._streams: dict[str, _StreamState] = {}
+        # Guards _streams itself — the per-stream lock guards its contents.
+        self._streams_lock = threading.Lock()
 
     @property
     def name(self) -> str:
         return "aicoustics"
 
-    def _ensure_processor(self) -> None:
-        """Lazily download model and create the aic_sdk Processor."""
-        if self._processor is not None:
+    def _state_for(self, stream: str) -> _StreamState:
+        """Get or create this stream's state (without its processor)."""
+        with self._streams_lock:
+            return self._streams.setdefault(stream, _StreamState())
+
+    def _ensure_processor(self, st: _StreamState) -> None:
+        """Lazily download model and create this stream's aic_sdk Processor."""
+        if st.processor is not None:
             return
 
         cfg = self._config
@@ -125,34 +144,35 @@ class AICousticsDenoiserProvider(DenoiserProvider):
             model_path,
             num_channels=cfg.num_channels,
         )
-        self._processor = aic.Processor(model_path, cfg._resolved_license_key, processor_config)
-        self._frame_size = processor_config.num_frames
+        st.processor = aic.Processor(model_path, cfg._resolved_license_key, processor_config)
+        st.frame_size = processor_config.num_frames
 
         # Set enhancement level.
-        context = self._processor.context()
+        context = st.processor.context()
         context.set_parameter("enhancement_level", cfg.enhancement_level)
 
         logger.info(
             "AICoustics: created processor model=%s frame_size=%d enhancement=%.2f",
             cfg.model,
-            self._frame_size,
+            st.frame_size,
             cfg.enhancement_level,
         )
 
-    def process(self, frame: AudioFrame) -> AudioFrame:
+    def process(self, frame: AudioFrame, stream: str) -> AudioFrame:
         """Denoise an audio frame using Quail speech enhancement.
 
         Buffers incoming PCM to match the SDK's expected frame size,
         then processes complete chunks.  Any remainder is held for
         the next call.
         """
-        with self._lock:
-            return self._process_locked(frame)
+        st = self._state_for(stream)
+        with st.lock:
+            return self._process_locked(frame, st)
 
-    def _process_locked(self, frame: AudioFrame) -> AudioFrame:
-        if self._processor is None:
+    def _process_locked(self, frame: AudioFrame, st: _StreamState) -> AudioFrame:
+        if st.processor is None:
             try:
-                self._ensure_processor()
+                self._ensure_processor(st)
             except Exception:
                 logger.warning(
                     "AICoustics: failed to initialize, passing through",
@@ -166,24 +186,24 @@ class AICousticsDenoiserProvider(DenoiserProvider):
             from roomkit.voice.audio_frame import AudioFrame
 
             # Accumulate raw PCM bytes into the buffer.
-            self._buffer += frame.data
+            st.buffer += frame.data
 
             # Each Quail frame is frame_size samples × 2 bytes (int16).
-            chunk_bytes = self._frame_size * 2 * self._config.num_channels
+            chunk_bytes = st.frame_size * 2 * self._config.num_channels
             if chunk_bytes <= 0:
                 return frame
 
             processed_parts: list[bytes] = []
 
-            while len(self._buffer) >= chunk_bytes:
-                chunk = self._buffer[:chunk_bytes]
-                self._buffer = self._buffer[chunk_bytes:]
+            while len(st.buffer) >= chunk_bytes:
+                chunk = st.buffer[:chunk_bytes]
+                st.buffer = st.buffer[chunk_bytes:]
 
                 float_samples = _pcm_s16le_to_float32(chunk)
 
                 # Quail expects shape (channels, frames).
-                samples_2d = float_samples.reshape(self._config.num_channels, self._frame_size)
-                result = self._processor.process(samples_2d)
+                samples_2d = float_samples.reshape(self._config.num_channels, st.frame_size)
+                result = st.processor.process(samples_2d)
 
                 # Result is (channels, frames) — flatten back.
                 out_flat = np.asarray(result, dtype=np.float32).flatten()
@@ -218,24 +238,16 @@ class AICousticsDenoiserProvider(DenoiserProvider):
             )
             return frame
 
-    def reset(self) -> None:
-        """Reset processor internal state and clear the buffer."""
-        with self._lock:
-            self._buffer = b""
-            if self._processor is not None:
-                # Recreate processor to clear internal state.
-                try:
-                    self._processor = None
-                    self._ensure_processor()
-                except Exception:
-                    logger.warning(
-                        "AICoustics: failed to recreate processor on reset",
-                        exc_info=True,
-                    )
+    def reset(self, stream: str) -> None:
+        """Drop this stream's processor and its buffer.
+
+        The next frame for this stream builds a fresh processor, which is
+        what clears the model's recurrent state.
+        """
+        with self._streams_lock:
+            self._streams.pop(stream, None)
 
     def close(self) -> None:
-        """Release the processor and clear resources."""
-        with self._lock:
-            self._processor = None
-            self._buffer = b""
-            self._frame_size = 0
+        """Release every stream's processor."""
+        with self._streams_lock:
+            self._streams.clear()

@@ -22,11 +22,11 @@ class MockAGCProvider(AGCProvider):
     def name(self) -> str:
         return "MockAGCProvider"
 
-    def process(self, frame: AudioFrame) -> AudioFrame:
+    def process(self, frame: AudioFrame, stream: str) -> AudioFrame:
         self.frames.append(frame)
         return frame
 
-    def reset(self) -> None:
+    def reset(self, stream: str) -> None:
         self.reset_count += 1
 
     def close(self) -> None:

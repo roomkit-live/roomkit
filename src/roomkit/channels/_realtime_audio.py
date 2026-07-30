@@ -181,6 +181,7 @@ class RealtimeAudioMixin:
         target_rate: int,
         *,
         direction: str,
+        stream: str,
     ) -> Any:
         """Resample one frame in the executor, warning past a 20 ms budget.
 
@@ -191,7 +192,9 @@ class RealtimeAudioMixin:
         src_rate = frame.sample_rate
         in_bytes = len(frame.data)
         t0 = time.monotonic()
-        result = await self._run_in_resample_executor(resampler.resample, frame, target_rate, 1, 2)
+        result = await self._run_in_resample_executor(
+            resampler.resample, frame, target_rate, 1, 2, stream
+        )
         dt_ms = (time.monotonic() - t0) * 1000
         if dt_ms > 20.0:
             logger.warning(
@@ -315,7 +318,7 @@ class RealtimeAudioMixin:
 
             f = _AudioFrame(data=audio, sample_rate=transport_rate, channels=1, sample_width=2)
             f = await self._resample_off_loop(
-                resamplers[0], f, self._input_sample_rate, direction="inbound"
+                resamplers[0], f, self._input_sample_rate, direction="inbound", stream=session.id
             )
             audio = f.data
 
@@ -514,7 +517,11 @@ class RealtimeAudioMixin:
                     sample_width=2,
                 )
                 frame = await self._resample_off_loop(
-                    resamplers[0], frame, self._input_sample_rate, direction="inbound"
+                    resamplers[0],
+                    frame,
+                    self._input_sample_rate,
+                    direction="inbound",
+                    stream=session.id,
                 )
                 audio = frame.data
 
@@ -632,7 +639,7 @@ class RealtimeAudioMixin:
                 sample_width=2,
             )
             frame = await self._resample_off_loop(
-                resamplers[1], frame, transport_rate, direction="outbound"
+                resamplers[1], frame, transport_rate, direction="outbound", stream=session.id
             )
             audio = bytes(frame.data)
         if not audio:

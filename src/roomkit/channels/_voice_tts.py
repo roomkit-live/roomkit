@@ -241,7 +241,7 @@ class VoiceTTSMixin:
         # The adaptive filter is stale and will suppress user speech.
         if self._pipeline is not None and self._pipeline._config.aec is not None:
             aec = self._pipeline._config.aec
-            aec.reset()
+            aec.reset(session_id)
             aec.set_active(False)
 
         await asyncio.sleep(_PLAYBACK_DRAIN_S)

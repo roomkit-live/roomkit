@@ -129,26 +129,26 @@ class TestMockVADProvider:
         ]
         vad = MockVADProvider(events=events)
 
-        assert vad.process(_frame(b"f1")) == events[0]
-        assert vad.process(_frame(b"f2")) is None
-        assert vad.process(_frame(b"f3")) == events[2]
+        assert vad.process(_frame(b"f1"), "s1") == events[0]
+        assert vad.process(_frame(b"f2"), "s1") is None
+        assert vad.process(_frame(b"f3"), "s1") == events[2]
         # Past the end -> None
-        assert vad.process(_frame(b"f4")) is None
+        assert vad.process(_frame(b"f4"), "s1") is None
 
     def test_tracks_frames(self) -> None:
         vad = MockVADProvider()
         frame = _frame(b"test")
-        vad.process(frame)
+        vad.process(frame, "s1")
         assert len(vad.frames) == 1
         assert vad.frames[0] is frame
 
     def test_reset(self) -> None:
         vad = MockVADProvider(events=[VADEvent(type=VADEventType.SPEECH_START)])
-        vad.process(_frame())
-        vad.reset()
+        vad.process(_frame(), "s1")
+        vad.reset("s1")
         assert vad.reset_count == 1
         # After reset, index is back to 0
-        result = vad.process(_frame())
+        result = vad.process(_frame(), "s1")
         assert result is not None
         assert result.type == VADEventType.SPEECH_START
 
@@ -167,13 +167,13 @@ class TestMockDenoiserProvider:
     def test_passthrough(self) -> None:
         denoiser = MockDenoiserProvider()
         frame = _frame(b"audio\x00")
-        result = denoiser.process(frame)
+        result = denoiser.process(frame, "s1")
         assert result is frame  # Same object (passthrough)
 
     def test_tracks_frames(self) -> None:
         denoiser = MockDenoiserProvider()
-        denoiser.process(_frame(b"f1"))
-        denoiser.process(_frame(b"f2"))
+        denoiser.process(_frame(b"f1"), "s1")
+        denoiser.process(_frame(b"f2"), "s1")
         assert len(denoiser.frames) == 2
 
     def test_close(self) -> None:
@@ -195,23 +195,23 @@ class TestMockDiarizationProvider:
         ]
         diarizer = MockDiarizationProvider(results=results)
 
-        assert diarizer.process(_frame(b"f1")) == results[0]
-        assert diarizer.process(_frame(b"f2")) is None
-        assert diarizer.process(_frame(b"f3")) == results[2]
-        assert diarizer.process(_frame(b"f4")) is None
+        assert diarizer.process(_frame(b"f1"), "s1") == results[0]
+        assert diarizer.process(_frame(b"f2"), "s1") is None
+        assert diarizer.process(_frame(b"f3"), "s1") == results[2]
+        assert diarizer.process(_frame(b"f4"), "s1") is None
 
     def test_tracks_frames(self) -> None:
         diarizer = MockDiarizationProvider()
-        diarizer.process(_frame())
+        diarizer.process(_frame(), "s1")
         assert len(diarizer.frames) == 1
 
     def test_reset(self) -> None:
         results = [DiarizationResult(speaker_id="s0", confidence=0.9, is_new_speaker=True)]
         diarizer = MockDiarizationProvider(results=results)
-        diarizer.process(_frame())
-        diarizer.reset()
+        diarizer.process(_frame(), "s1")
+        diarizer.reset("s1")
         assert diarizer.reset_count == 1
-        assert diarizer.process(_frame()) == results[0]
+        assert diarizer.process(_frame(), "s1") == results[0]
 
     def test_close(self) -> None:
         diarizer = MockDiarizationProvider()
@@ -461,6 +461,7 @@ class TestAudioPipelineReset:
         diarizer = MockDiarizationProvider()
         pipeline = AudioPipeline(AudioPipelineConfig(vad=vad, diarization=diarizer))
 
+        pipeline.process_frame(_session(), _frame())
         pipeline.reset()
 
         assert vad.reset_count == 1
@@ -604,6 +605,7 @@ class TestAudioPipelineNoVAD:
     def test_reset_without_vad(self) -> None:
         diarizer = MockDiarizationProvider()
         pipeline = AudioPipeline(AudioPipelineConfig(diarization=diarizer))
+        pipeline.process_frame(_session(), _frame())
         pipeline.reset()
         assert diarizer.reset_count == 1
 

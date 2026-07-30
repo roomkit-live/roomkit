@@ -67,11 +67,11 @@ class TestBasicTransitions:
     def test_silence_produces_no_events(self) -> None:
         vad = EnergyVADProvider(energy_threshold=300)
         for _ in range(100):
-            assert vad.process(_silence()) is None
+            assert vad.process(_silence(), "s1") is None
 
     def test_speech_start(self) -> None:
         vad = EnergyVADProvider(energy_threshold=300)
-        event = vad.process(_speech(1000))
+        event = vad.process(_speech(1000), "s1")
         assert event is not None
         assert event.type == VADEventType.SPEECH_START
 
@@ -82,18 +82,18 @@ class TestBasicTransitions:
             min_speech_duration_ms=0,
         )
         # Start speech
-        event = vad.process(_speech())
+        event = vad.process(_speech(), "s1")
         assert event is not None
         assert event.type == VADEventType.SPEECH_START
 
         # Continue speaking for a few frames
         for _ in range(5):
-            assert vad.process(_speech()) is None
+            assert vad.process(_speech(), "s1") is None
 
         # Silence until SPEECH_END (100ms = 5 frames at 20ms each)
         end_event = None
         for _ in range(10):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 end_event = ev
                 break
@@ -120,15 +120,15 @@ class TestAudioAccumulation:
             speech_pad_ms=0,
         )
         # Start speech
-        vad.process(_speech(1000))
+        vad.process(_speech(1000), "s1")
         # 3 more speech frames
         for _ in range(3):
-            vad.process(_speech(1000))
+            vad.process(_speech(1000), "s1")
 
         # Enough silence to end
         end_event = None
         for _ in range(10):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 end_event = ev
                 break
@@ -152,14 +152,14 @@ class TestMinSpeechDuration:
             speech_pad_ms=0,
         )
         # Single speech frame → SPEECH_START
-        event = vad.process(_speech())
+        event = vad.process(_speech(), "s1")
         assert event is not None
         assert event.type == VADEventType.SPEECH_START
 
         # Immediate silence → should eventually discard (no SPEECH_END)
         events = []
         for _ in range(20):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 events.append(ev)
 
@@ -174,14 +174,14 @@ class TestMinSpeechDuration:
             speech_pad_ms=0,
         )
         # Start
-        vad.process(_speech())
+        vad.process(_speech(), "s1")
         # 10 more frames (220ms total > 100ms min)
         for _ in range(10):
-            vad.process(_speech())
+            vad.process(_speech(), "s1")
 
         end_event = None
         for _ in range(20):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 end_event = ev
                 break
@@ -205,15 +205,15 @@ class TestPreRoll:
         )
         # Feed 10 silence frames (they go into pre-roll buffer)
         for _ in range(10):
-            vad.process(_silence())
+            vad.process(_silence(), "s1")
 
         # Now speech
-        vad.process(_speech())
+        vad.process(_speech(), "s1")
 
         # End with silence
         end_event = None
         for _ in range(20):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 end_event = ev
                 break
@@ -235,15 +235,15 @@ class TestReset:
         vad = EnergyVADProvider(energy_threshold=300)
 
         # Start speaking
-        event = vad.process(_speech())
+        event = vad.process(_speech(), "s1")
         assert event is not None
         assert event.type == VADEventType.SPEECH_START
 
         # Reset mid-speech
-        vad.reset()
+        vad.reset("s1")
 
         # Should be back to idle — next speech frame triggers SPEECH_START again
-        event = vad.process(_speech())
+        event = vad.process(_speech(), "s1")
         assert event is not None
         assert event.type == VADEventType.SPEECH_START
 
@@ -276,21 +276,21 @@ class TestMultipleUtterances:
         events = []
 
         # First utterance
-        events.append(vad.process(_speech()))
+        events.append(vad.process(_speech(), "s1"))
         for _ in range(5):
-            vad.process(_speech())
+            vad.process(_speech(), "s1")
         for _ in range(20):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 events.append(ev)
                 break
 
         # Second utterance
-        events.append(vad.process(_speech()))
+        events.append(vad.process(_speech(), "s1"))
         for _ in range(5):
-            vad.process(_speech())
+            vad.process(_speech(), "s1")
         for _ in range(20):
-            ev = vad.process(_silence())
+            ev = vad.process(_silence(), "s1")
             if ev is not None:
                 events.append(ev)
                 break

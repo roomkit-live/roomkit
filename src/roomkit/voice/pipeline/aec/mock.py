@@ -16,6 +16,9 @@ class MockAECProvider(AECProvider):
     def __init__(self) -> None:
         self.frames: list[AudioFrame] = []
         self.reference_frames: list[AudioFrame] = []
+        self.streams: list[str] = []
+        self.reference_streams: list[str] = []
+        self.reset_streams: list[str] = []
         self.reset_count = 0
         self.closed = False
 
@@ -23,15 +26,18 @@ class MockAECProvider(AECProvider):
     def name(self) -> str:
         return "MockAECProvider"
 
-    def process(self, frame: AudioFrame) -> AudioFrame:
+    def process(self, frame: AudioFrame, stream: str) -> AudioFrame:
         self.frames.append(frame)
+        self.streams.append(stream)
         return frame
 
-    def feed_reference(self, frame: AudioFrame) -> None:
+    def feed_reference(self, frame: AudioFrame, stream: str) -> None:
         self.reference_frames.append(frame)
+        self.reference_streams.append(stream)
 
-    def reset(self) -> None:
+    def reset(self, stream: str) -> None:
         self.reset_count += 1
+        self.reset_streams.append(stream)
 
     def close(self) -> None:
         self.closed = True

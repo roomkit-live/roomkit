@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import struct
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType, VADProvider
@@ -83,6 +83,29 @@ class SherpaOnnxVADConfig:
     provider: str = "cpu"
 
 
+@dataclass
+class _StreamState:
+    """One speaker's detector and detection state.
+
+    The sherpa detector accumulates waveform and holds its own speech
+    probability history, so it cannot be shared: two speakers through one
+    detector make silence from one close the other's utterance.
+    """
+
+    detector: Any = None
+    speaking: bool = False
+    silence_ms: float = 0.0
+    energy_silence_ms: float = 0.0
+    speech_ms: float = 0.0
+    speech_buf: bytearray = field(default_factory=bytearray)
+    pre_roll: deque[bytes] = field(default_factory=deque)
+    pre_roll_ms: float = 0.0
+    debug_frame_count: int = 0
+    debug_rms_sum: float = 0.0
+    debug_rms_max: float = 0.0
+    debug_speech_count: int = 0
+
+
 class SherpaOnnxVADProvider(VADProvider):
     """Neural VAD provider using sherpa-onnx (TEN-VAD or Silero VAD).
 
@@ -104,32 +127,19 @@ class SherpaOnnxVADProvider(VADProvider):
 
         self._config = config
         self._sherpa: Any = __import__("sherpa_onnx")
-        self._detector: Any = None
-
-        # State machine
-        self._speaking = False
-        self._silence_ms: float = 0.0
-        self._energy_silence_ms: float = 0.0
-        self._speech_ms: float = 0.0
-        self._speech_buf = bytearray()
-
-        # Pre-roll buffer
-        self._pre_roll: deque[bytes] = deque()
-        self._pre_roll_ms: float = 0.0
-
-        # Debug logging counters
-        self._debug_frame_count = 0
-        self._debug_rms_sum = 0.0
-        self._debug_rms_max = 0.0
-        self._debug_speech_count = 0
+        self._streams: dict[str, _StreamState] = {}
 
     @property
     def name(self) -> str:
         return "SherpaOnnxVAD"
 
-    def _ensure_detector(self) -> None:
-        """Lazily create the sherpa-onnx VoiceActivityDetector."""
-        if self._detector is not None:
+    def _state_for(self, stream: str) -> _StreamState:
+        """Get or create this stream's detection state."""
+        return self._streams.setdefault(stream, _StreamState())
+
+    def _ensure_detector(self, st: _StreamState) -> None:
+        """Lazily create this stream's sherpa-onnx VoiceActivityDetector."""
+        if st.detector is not None:
             return
 
         cfg = self._config
@@ -155,7 +165,7 @@ class SherpaOnnxVADProvider(VADProvider):
         vad_config.num_threads = cfg.num_threads
         vad_config.provider = cfg.provider
 
-        self._detector = sherpa.VoiceActivityDetector(vad_config)
+        st.detector = sherpa.VoiceActivityDetector(vad_config)
         logger.debug(
             "SherpaOnnxVAD: created detector model_type=%s model=%s",
             cfg.model_type,
@@ -167,98 +177,98 @@ class SherpaOnnxVADProvider(VADProvider):
         n_samples = len(frame.data) // (frame.sample_width * frame.channels)
         return (n_samples / frame.sample_rate) * 1000.0
 
-    def _push_pre_roll(self, data: bytes, duration_ms: float) -> None:
+    def _push_pre_roll(self, st: _StreamState, data: bytes, duration_ms: float) -> None:
         """Maintain a rolling buffer of recent frames for pre-speech padding."""
-        self._pre_roll.append(data)
-        self._pre_roll_ms += duration_ms
-        while self._pre_roll_ms > self._config.speech_pad_ms and len(self._pre_roll) > 1:
-            removed = self._pre_roll.popleft()
+        st.pre_roll.append(data)
+        st.pre_roll_ms += duration_ms
+        while st.pre_roll_ms > self._config.speech_pad_ms and len(st.pre_roll) > 1:
+            removed = st.pre_roll.popleft()
             n_samples = len(removed) // 2  # int16
-            self._pre_roll_ms -= (n_samples / self._config.sample_rate) * 1000.0
+            st.pre_roll_ms -= (n_samples / self._config.sample_rate) * 1000.0
 
-    def process(self, frame: AudioFrame) -> VADEvent | None:  # noqa: C901
-        self._ensure_detector()
+    def process(self, frame: AudioFrame, stream: str) -> VADEvent | None:  # noqa: C901
+        st = self._state_for(stream)
+        self._ensure_detector(st)
 
         duration_ms = self._frame_duration_ms(frame)
 
         # Feed audio to sherpa detector
         float_samples = _pcm_s16le_to_float32(frame.data)
-        self._detector.accept_waveform(float_samples)
+        st.detector.accept_waveform(float_samples)
 
         # Drain completed segments to prevent unbounded memory
-        while not self._detector.empty():
-            self._detector.pop()
+        while not st.detector.empty():
+            st.detector.pop()
 
-        is_speech = self._detector.is_speech_detected()
+        is_speech = st.detector.is_speech_detected()
 
         # Debug logging: accumulate stats and emit periodic summary
         if logger.isEnabledFor(logging.DEBUG):
             rms = _rms_int16(frame.data)
-            self._debug_frame_count += 1
-            self._debug_rms_sum += rms
-            if rms > self._debug_rms_max:
-                self._debug_rms_max = rms
+            st.debug_frame_count += 1
+            st.debug_rms_sum += rms
+            if rms > st.debug_rms_max:
+                st.debug_rms_max = rms
             if is_speech:
-                self._debug_speech_count += 1
-            if self._debug_frame_count >= _DEBUG_SUMMARY_INTERVAL:
-                avg = self._debug_rms_sum / self._debug_frame_count
-                state = "speaking" if self._speaking else "idle"
+                st.debug_speech_count += 1
+            if st.debug_frame_count >= _DEBUG_SUMMARY_INTERVAL:
+                avg = st.debug_rms_sum / st.debug_frame_count
+                state = "speaking" if st.speaking else "idle"
                 logger.debug(
                     "VAD: state=%s is_speech=%d/%d rms_avg=%.0f rms_max=%.0f"
                     " silence_ms=%.0f speech_ms=%.0f",
                     state,
-                    self._debug_speech_count,
-                    self._debug_frame_count,
+                    st.debug_speech_count,
+                    st.debug_frame_count,
                     avg,
-                    self._debug_rms_max,
-                    self._silence_ms,
-                    self._speech_ms,
+                    st.debug_rms_max,
+                    st.silence_ms,
+                    st.speech_ms,
                 )
-                self._debug_frame_count = 0
-                self._debug_rms_sum = 0.0
-                self._debug_rms_max = 0.0
-                self._debug_speech_count = 0
+                st.debug_frame_count = 0
+                st.debug_rms_sum = 0.0
+                st.debug_rms_max = 0.0
+                st.debug_speech_count = 0
 
-        if not self._speaking:
+        if not st.speaking:
             # --- Idle state ---
-            self._push_pre_roll(frame.data, duration_ms)
+            self._push_pre_roll(st, frame.data, duration_ms)
 
             if is_speech:
-                self._speaking = True
-                self._silence_ms = 0.0
-                self._speech_ms = duration_ms
+                st.speaking = True
+                st.silence_ms = 0.0
+                st.speech_ms = duration_ms
                 # Start accumulating with pre-roll
-                self._speech_buf = bytearray()
-                for chunk in self._pre_roll:
-                    self._speech_buf.extend(chunk)
-                self._pre_roll.clear()
-                self._pre_roll_ms = 0.0
+                st.speech_buf = bytearray()
+                for chunk in st.pre_roll:
+                    st.speech_buf.extend(chunk)
+                st.pre_roll.clear()
+                st.pre_roll_ms = 0.0
                 return VADEvent(
                     type=VADEventType.SPEECH_START,
                     confidence=1.0,
-                    audio_bytes=bytes(self._speech_buf),
+                    audio_bytes=bytes(st.speech_buf),
                 )
         else:
             # --- Speaking state ---
-            self._speech_buf.extend(frame.data)
-            self._speech_ms += duration_ms
+            st.speech_buf.extend(frame.data)
+            st.speech_ms += duration_ms
 
             # Force SPEECH_END if buffer exceeds max duration (safety cap)
             max_ms = self._config.max_speech_duration * 1000
-            if self._speech_ms >= max_ms:
+            if st.speech_ms >= max_ms:
                 logger.warning(
                     "Speech duration %.0fms exceeded max (%.0fms); forcing SPEECH_END",
-                    self._speech_ms,
+                    st.speech_ms,
                     max_ms,
                 )
-                audio = bytes(self._speech_buf)
-                duration = self._speech_ms
-                self._speaking = False
-                self._silence_ms = 0.0
-                self._energy_silence_ms = 0.0
-                self._speech_buf = bytearray()
-                if self._detector is not None:
-                    self._detector.reset()
+                audio = bytes(st.speech_buf)
+                duration = st.speech_ms
+                st.speaking = False
+                st.silence_ms = 0.0
+                st.energy_silence_ms = 0.0
+                st.speech_buf = bytearray()
+                st.detector.reset()
                 return VADEvent(
                     type=VADEventType.SPEECH_END,
                     confidence=1.0,
@@ -267,9 +277,9 @@ class SherpaOnnxVADProvider(VADProvider):
                 )
 
             if is_speech:
-                self._silence_ms = 0.0
+                st.silence_ms = 0.0
             else:
-                self._silence_ms += duration_ms
+                st.silence_ms += duration_ms
 
             # Energy-based fast exit: the model may stay in speech state
             # long after the user stops speaking (model inertia).  Track
@@ -279,14 +289,14 @@ class SherpaOnnxVADProvider(VADProvider):
             if rms_threshold > 0:
                 rms = _rms_int16(frame.data)
                 if rms < rms_threshold:
-                    self._energy_silence_ms += duration_ms
+                    st.energy_silence_ms += duration_ms
                 else:
-                    self._energy_silence_ms = 0.0
+                    st.energy_silence_ms = 0.0
             else:
-                self._energy_silence_ms = 0.0
+                st.energy_silence_ms = 0.0
 
-            silence_triggered = self._silence_ms >= self._config.silence_threshold_ms
-            energy_triggered = self._energy_silence_ms >= self._config.silence_threshold_ms
+            silence_triggered = st.silence_ms >= self._config.silence_threshold_ms
+            energy_triggered = st.energy_silence_ms >= self._config.silence_threshold_ms
 
             if silence_triggered or energy_triggered:
                 # Transition to idle
@@ -294,22 +304,21 @@ class SherpaOnnxVADProvider(VADProvider):
                     logger.debug(
                         "VAD: energy-based speech end (rms < %.0f for %.0fms)",
                         rms_threshold,
-                        self._energy_silence_ms,
+                        st.energy_silence_ms,
                     )
                     # Reset sherpa detector to clear stuck internal state,
                     # otherwise is_speech_detected() stays True and
                     # immediately re-triggers a false SPEECH_START.
-                    if self._detector is not None:
-                        self._detector.reset()
-                self._speaking = False
-                speech_ms = self._speech_ms
-                audio = bytes(self._speech_buf)
+                    st.detector.reset()
+                st.speaking = False
+                speech_ms = st.speech_ms
+                audio = bytes(st.speech_buf)
 
                 # Reset accumulators
-                self._speech_buf = bytearray()
-                self._speech_ms = 0.0
-                self._silence_ms = 0.0
-                self._energy_silence_ms = 0.0
+                st.speech_buf = bytearray()
+                st.speech_ms = 0.0
+                st.silence_ms = 0.0
+                st.energy_silence_ms = 0.0
 
                 if speech_ms >= self._config.min_speech_duration_ms:
                     return VADEvent(
@@ -321,24 +330,17 @@ class SherpaOnnxVADProvider(VADProvider):
 
         return None
 
-    def reset(self) -> None:
-        """Reset all internal state."""
-        self._speaking = False
-        self._silence_ms = 0.0
-        self._energy_silence_ms = 0.0
-        self._speech_ms = 0.0
-        self._speech_buf = bytearray()
-        self._pre_roll.clear()
-        self._pre_roll_ms = 0.0
-        self._debug_frame_count = 0
-        self._debug_rms_sum = 0.0
-        self._debug_rms_max = 0.0
-        self._debug_speech_count = 0
-        if self._detector is not None:
-            self._detector.reset()
+    def reset(self, stream: str) -> None:
+        """Drop this stream's detector and detection state.
+
+        Not flushed: the pending segment belongs to a stream that is over, and
+        flushing would push it out for a caller that is no longer listening.
+        """
+        self._streams.pop(stream, None)
 
     def close(self) -> None:
-        """Release resources."""
-        if self._detector is not None:
-            self._detector.flush()
-            self._detector = None
+        """Release every stream's detector."""
+        for st in self._streams.values():
+            if st.detector is not None:
+                st.detector.flush()
+        self._streams.clear()

@@ -80,7 +80,7 @@ class TestSherpaOnnxDebugLogging:
 
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.sherpa_onnx"):
             for _ in range(50):
-                vad.process(_silence())
+                vad.process(_silence(), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 1
@@ -97,7 +97,7 @@ class TestSherpaOnnxDebugLogging:
 
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.sherpa_onnx"):
             for _ in range(49):
-                vad.process(_silence())
+                vad.process(_silence(), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 0
@@ -116,7 +116,7 @@ class TestSherpaOnnxDebugLogging:
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.sherpa_onnx"):
             for i in range(50):
                 frame = _speech() if i < 30 else _silence()
-                vad.process(frame)
+                vad.process(frame, "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 1
@@ -132,7 +132,7 @@ class TestSherpaOnnxDebugLogging:
 
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.sherpa_onnx"):
             for _ in range(50):
-                vad.process(_speech(amplitude=500))
+                vad.process(_speech(amplitude=500), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 1
@@ -149,13 +149,13 @@ class TestSherpaOnnxDebugLogging:
 
         # Feed 30 frames then reset
         for _ in range(30):
-            vad.process(_silence())
-        vad.reset()
+            vad.process(_silence(), "s1")
+        vad.reset("s1")
 
         # Now feed 50 more — should log exactly once (not carry over from before)
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.sherpa_onnx"):
             for _ in range(50):
-                vad.process(_silence())
+                vad.process(_silence(), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 1
@@ -172,7 +172,7 @@ class TestSherpaOnnxDebugLogging:
 
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.sherpa_onnx"):
             for _ in range(50):
-                vad.process(_speech())
+                vad.process(_speech(), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 1
@@ -188,7 +188,7 @@ class TestSherpaOnnxDebugLogging:
 
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.sherpa_onnx"):
             for _ in range(120):
-                vad.process(_silence())
+                vad.process(_silence(), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 2
@@ -205,7 +205,7 @@ class TestEnergyDebugLogging:
 
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.energy"):
             for _ in range(50):
-                vad.process(_silence())
+                vad.process(_silence(), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 1
@@ -217,7 +217,7 @@ class TestEnergyDebugLogging:
 
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.energy"):
             for _ in range(49):
-                vad.process(_silence())
+                vad.process(_silence(), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 0
@@ -232,10 +232,10 @@ class TestEnergyDebugLogging:
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.energy"):
             # 30 speech frames (amplitude 1000 > threshold 300)
             for _ in range(30):
-                vad.process(_speech(amplitude=1000))
+                vad.process(_speech(amplitude=1000), "s1")
             # 20 silence frames
             for _ in range(20):
-                vad.process(_silence())
+                vad.process(_silence(), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 1
@@ -246,7 +246,7 @@ class TestEnergyDebugLogging:
 
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.energy"):
             for _ in range(50):
-                vad.process(_speech(amplitude=500))
+                vad.process(_speech(amplitude=500), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 1
@@ -258,13 +258,13 @@ class TestEnergyDebugLogging:
 
         # Feed 30 frames then reset
         for _ in range(30):
-            vad.process(_silence())
-        vad.reset()
+            vad.process(_silence(), "s1")
+        vad.reset("s1")
 
         # Now feed 50 more
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.energy"):
             for _ in range(50):
-                vad.process(_silence())
+                vad.process(_silence(), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 1
@@ -279,7 +279,7 @@ class TestEnergyDebugLogging:
 
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.energy"):
             for _ in range(50):
-                vad.process(_speech(amplitude=1000))
+                vad.process(_speech(amplitude=1000), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 1
@@ -290,7 +290,7 @@ class TestEnergyDebugLogging:
 
         with caplog.at_level(logging.DEBUG, logger="roomkit.voice.pipeline.vad.energy"):
             for _ in range(120):
-                vad.process(_silence())
+                vad.process(_silence(), "s1")
 
         vad_messages = [r.message for r in caplog.records if "VAD: state=" in r.message]
         assert len(vad_messages) == 2

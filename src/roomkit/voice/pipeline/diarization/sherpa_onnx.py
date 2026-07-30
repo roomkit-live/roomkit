@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from roomkit.voice.pipeline.diarization.base import DiarizationProvider, DiarizationResult
@@ -30,6 +30,20 @@ class SherpaOnnxDiarizationConfig:
     """Minimum accumulated speech (ms) before extracting an embedding."""
 
 
+@dataclass
+class _StreamState:
+    """One stream's speech accumulator and last identification.
+
+    The embedding extractor and the speaker registry are shared — they hold
+    enrolled speakers, not per-speaker progress — but the audio being
+    accumulated toward the next embedding belongs to one stream only.
+    """
+
+    speech_buffer: bytearray = field(default_factory=bytearray)
+    in_speech: bool = False
+    last_speaker_id: str = ""
+
+
 class SherpaOnnxDiarizationProvider(DiarizationProvider):
     """Speaker diarization using sherpa-onnx SpeakerEmbeddingExtractor.
 
@@ -50,44 +64,49 @@ class SherpaOnnxDiarizationProvider(DiarizationProvider):
         self._manager = sherpa_onnx.SpeakerEmbeddingManager(
             self._extractor.dim,
         )
-        self._speech_buffer = bytearray()
         self._sample_rate: int = config.sample_rate if hasattr(config, "sample_rate") else 16000  # ty: ignore[invalid-assignment]
-        self._in_speech = False
-        self._last_speaker_id = ""
         self._enrolled_embeddings: dict[str, list[float]] = {}  # for debug scoring
+        self._streams: dict[str, _StreamState] = {}
 
     @property
     def name(self) -> str:
         return "SherpaOnnxDiarizationProvider"
 
-    def process(self, frame: AudioFrame) -> DiarizationResult | None:
+    def _state_for(self, stream: str) -> _StreamState:
+        """Get or create this stream's accumulator."""
+        return self._streams.setdefault(stream, _StreamState())
+
+    def process(self, frame: AudioFrame, stream: str) -> DiarizationResult | None:
         """Accumulate speech frames and identify speaker on boundaries."""
+        st = self._state_for(stream)
         metadata = frame.metadata or {}
         is_speech = metadata.get("vad_is_speech", False)
         is_speech_end = metadata.get("vad_speech_end", False)
 
         if is_speech:
-            self._in_speech = True
-            self._speech_buffer.extend(frame.data)
+            st.in_speech = True
+            st.speech_buffer.extend(frame.data)
 
-        buffer_ms = len(self._speech_buffer) * 1000 // (self._sample_rate * 2)  # 16-bit PCM
+        buffer_ms = len(st.speech_buffer) * 1000 // (self._sample_rate * 2)  # 16-bit PCM
 
         should_extract = (is_speech_end and buffer_ms >= self._config.min_speech_ms) or (
-            self._in_speech and buffer_ms >= 2000
+            st.in_speech and buffer_ms >= 2000
         )
 
         if not should_extract:
             if is_speech_end:
-                self._speech_buffer.clear()
-                self._in_speech = False
+                st.speech_buffer.clear()
+                st.in_speech = False
             return None
 
-        result = self._identify(bytes(self._speech_buffer), self._sample_rate)
-        self._speech_buffer.clear()
-        self._in_speech = False
+        result = self._identify(st, bytes(st.speech_buffer), self._sample_rate)
+        st.speech_buffer.clear()
+        st.in_speech = False
         return result
 
-    def _identify(self, pcm_bytes: bytes, sample_rate: int) -> DiarizationResult | None:
+    def _identify(
+        self, st: _StreamState, pcm_bytes: bytes, sample_rate: int
+    ) -> DiarizationResult | None:
         """Extract embedding from PCM and search for a matching speaker."""
         import array
 
@@ -95,14 +114,16 @@ class SherpaOnnxDiarizationProvider(DiarizationProvider):
         samples.frombytes(pcm_bytes)
         float_samples = [s / 32768.0 for s in samples]
 
-        stream = self._extractor.create_stream()
-        stream.accept_waveform(sample_rate=sample_rate, waveform=float_samples)
-        stream.input_finished()
+        # sherpa's own notion of a stream — one extraction, unrelated to the
+        # pipeline stream key.
+        ex_stream = self._extractor.create_stream()
+        ex_stream.accept_waveform(sample_rate=sample_rate, waveform=float_samples)
+        ex_stream.input_finished()
 
-        if not self._extractor.is_ready(stream):
+        if not self._extractor.is_ready(ex_stream):
             return None
 
-        embedding = self._extractor.compute(stream)
+        embedding = self._extractor.compute(ex_stream)
 
         # Log scoring for debugging
         all_speakers = self._manager.all_speakers
@@ -130,11 +151,11 @@ class SherpaOnnxDiarizationProvider(DiarizationProvider):
             speaker_id = "unknown"
             confidence = 0.0
         else:
-            is_new = name != self._last_speaker_id
+            is_new = name != st.last_speaker_id
             speaker_id = name
             confidence = 1.0  # Above threshold = confident match
 
-        self._last_speaker_id = speaker_id
+        st.last_speaker_id = speaker_id
         return DiarizationResult(
             speaker_id=speaker_id,
             confidence=confidence,
@@ -185,19 +206,21 @@ class SherpaOnnxDiarizationProvider(DiarizationProvider):
         samples.frombytes(pcm_bytes)
         float_samples = [s / 32768.0 for s in samples]
 
-        stream = self._extractor.create_stream()
-        stream.accept_waveform(sample_rate=sample_rate, waveform=float_samples)
-        stream.input_finished()
+        ex_stream = self._extractor.create_stream()
+        ex_stream.accept_waveform(sample_rate=sample_rate, waveform=float_samples)
+        ex_stream.input_finished()
 
-        if not self._extractor.is_ready(stream):
+        if not self._extractor.is_ready(ex_stream):
             raise ValueError("Audio too short to extract speaker embedding")
 
-        return list(self._extractor.compute(stream))
+        return list(self._extractor.compute(ex_stream))
 
-    def reset(self) -> None:
-        self._speech_buffer.clear()
-        self._in_speech = False
-        self._last_speaker_id = ""
+    def reset(self, stream: str) -> None:
+        """Drop this stream's accumulator.
+
+        Enrolled speakers survive: they belong to the room, not the stream.
+        """
+        self._streams.pop(stream, None)
 
     def close(self) -> None:
-        self._speech_buffer.clear()
+        self._streams.clear()

@@ -91,29 +91,49 @@ class TestSherpaOnnxDiarizationProviderEnroll:
 
 
 class TestSherpaOnnxDiarizationProviderReset:
-    def test_reset_clears_state(self):
+    def test_reset_clears_only_that_stream(self):
         mock_mod, _, _ = _make_mock_sherpa_onnx()
         provider, _ = _make_provider(mock_mod)
 
-        provider._speech_buffer.extend(b"\x00" * 100)
-        provider._in_speech = True
-        provider._last_speaker_id = "bob"
+        alice = provider._state_for("alice")
+        alice.speech_buffer.extend(b"\x00" * 100)
+        alice.in_speech = True
+        alice.last_speaker_id = "bob"
 
-        provider.reset()
+        other = provider._state_for("carol")
+        other.speech_buffer.extend(b"\x00" * 50)
+        other.in_speech = True
 
-        assert len(provider._speech_buffer) == 0
-        assert provider._in_speech is False
-        assert provider._last_speaker_id == ""
+        provider.reset("alice")
+
+        assert "alice" not in provider._streams
+        # Carol kept accumulating — one speaker leaving does not truncate
+        # another's utterance.
+        assert len(provider._streams["carol"].speech_buffer) == 50
+        assert provider._streams["carol"].in_speech is True
+
+    def test_reset_keeps_enrolled_speakers(self):
+        """Enrolment belongs to the room, not to a stream."""
+        mock_mod, _, manager = _make_mock_sherpa_onnx()
+        provider, _ = _make_provider(mock_mod)
+
+        provider.enroll_speaker("alice", [0.1, 0.2])
+        provider.reset("s1")
+
+        assert "alice" in provider._enrolled_embeddings
+        manager.remove.assert_not_called()
 
 
 class TestSherpaOnnxDiarizationProviderClose:
-    def test_close_clears_buffer(self):
+    def test_close_clears_every_stream(self):
         mock_mod, _, _ = _make_mock_sherpa_onnx()
         provider, _ = _make_provider(mock_mod)
 
-        provider._speech_buffer.extend(b"\x00" * 200)
+        provider._state_for("alice").speech_buffer.extend(b"\x00" * 200)
+        provider._state_for("bob").speech_buffer.extend(b"\x00" * 200)
+
         provider.close()
-        assert len(provider._speech_buffer) == 0
+        assert provider._streams == {}
 
 
 class TestSherpaOnnxDiarizationProviderClearSpeakers:

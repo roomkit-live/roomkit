@@ -26,6 +26,8 @@ import os
 import struct
 import sys
 import threading
+from dataclasses import dataclass, field
+from typing import Any
 
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.pipeline.denoiser.base import DenoiserProvider
@@ -98,6 +100,24 @@ def _load_rnnoise() -> ctypes.CDLL:
     return _lib
 
 
+@dataclass
+class _StreamState:
+    """One stream's RNNoise state and scratch buffers.
+
+    The native DenoiseState carries the model and the filter memory in the same
+    object, so a stream cannot share it: two speakers through one state would
+    denoise each other's tail.
+    """
+
+    # None once destroyed. Cleared under `lock`, so a thread that resolved this
+    # state before a concurrent reset() sees the None instead of calling into a
+    # freed pointer.
+    state: ctypes.c_void_p | None
+    in_buf: Any
+    out_buf: Any
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
 class RNNoiseDenoiserProvider(DenoiserProvider):
     """Denoiser provider backed by RNNoise (Mozilla/Xiph).
 
@@ -113,7 +133,11 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
     """
 
     def __init__(self, sample_rate: int = 16000) -> None:
-        self._state: ctypes.c_void_p | None = None
+        self._streams: dict[str, _StreamState] = {}
+        # Guards _streams itself — the per-stream lock guards its contents.
+        # Without it, two concurrent first frames for one stream each build a
+        # native state and one of them leaks.
+        self._streams_lock = threading.Lock()
 
         # RNNoise operates at 48 kHz.  We support any rate that divides
         # evenly into 48000 (16 kHz → 3×, 24 kHz → 2×, 48 kHz → 1×).
@@ -133,15 +157,6 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
             raise RuntimeError(
                 f"rnnoise_get_frame_size() returned {frame_size}, expected {_RNNOISE_FRAME_SIZE}"
             )
-
-        self._state = self._create_state()
-
-        # Pre-allocate ctypes buffers for the 480-float RNNoise frame.
-        self._in_buf = (ctypes.c_float * _RNNOISE_FRAME_SIZE)()
-        self._out_buf = (ctypes.c_float * _RNNOISE_FRAME_SIZE)()
-
-        # Lock for RNNoise state — protects _state, _in_buf, _out_buf.
-        self._lock = threading.Lock()
 
         # Number of int16 samples per input frame at the pipeline rate.
         # e.g. 16 kHz → 160, 24 kHz → 240, 48 kHz → 480
@@ -163,15 +178,14 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
     def name(self) -> str:
         return "rnnoise"
 
-    def process(self, frame: AudioFrame) -> AudioFrame:
+    def process(self, frame: AudioFrame, stream: str) -> AudioFrame:
         """Denoise an audio frame.
 
         Accepts frames of any size that is a multiple of the internal
         chunk size (e.g. 240 samples at 24 kHz).  Larger frames are
         split into chunks, each processed by RNNoise independently.
         """
-        if self._state is None:
-            return frame
+        st = self._state_for(stream)
 
         pcm = frame.data
         n_samples = len(pcm) // 2
@@ -190,12 +204,15 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
         out_i16: list[int] = []
         factor = self._resample_factor
 
-        with self._lock:
+        with st.lock:
+            if st.state is None:
+                return frame  # reset() destroyed it between the lookup and here
+
             for offset in range(0, n_samples, chunk):
                 # Fill the 480-sample RNNoise input buffer.
                 if factor == 1:
                     for i in range(chunk):
-                        self._in_buf[i] = float(samples_i16[offset + i])
+                        st.in_buf[i] = float(samples_i16[offset + i])
                 else:
                     # Upsample with linear interpolation to avoid
                     # spectral images that corrupt the RNNoise output.
@@ -205,14 +222,14 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
                         base = i * factor
                         for j in range(factor):
                             # lerp: cur at j=0, nxt at j=factor
-                            self._in_buf[base + j] = cur + (nxt - cur) * j / factor
+                            st.in_buf[base + j] = cur + (nxt - cur) * j / factor
 
-                self._lib.rnnoise_process_frame(self._state, self._out_buf, self._in_buf)
+                self._lib.rnnoise_process_frame(st.state, st.out_buf, st.in_buf)
 
                 # Read the 480-sample output, downsampling back.
                 if factor == 1:
                     for i in range(chunk):
-                        out_i16.append(max(-32768, min(32767, int(self._out_buf[i]))))
+                        out_i16.append(max(-32768, min(32767, int(st.out_buf[i]))))
                 else:
                     # Downsample by averaging each group of `factor`
                     # samples — acts as a box-car anti-alias filter.
@@ -220,7 +237,7 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
                         base = i * factor
                         avg = 0.0
                         for j in range(factor):
-                            avg += self._out_buf[base + j]
+                            avg += st.out_buf[base + j]
                         avg /= factor
                         out_i16.append(max(-32768, min(32767, int(avg))))
 
@@ -235,18 +252,45 @@ class RNNoiseDenoiserProvider(DenoiserProvider):
             metadata=dict(frame.metadata),
         )
 
-    def reset(self) -> None:
-        """Reset the RNNoise state."""
-        if self._state is not None:
-            with self._lock:
-                self._lib.rnnoise_destroy(self._state)
-                self._state = self._create_state()
+    def _state_for(self, stream: str) -> _StreamState:
+        """Get or create this stream's native state."""
+        with self._streams_lock:
+            st = self._streams.get(stream)
+            if st is None:
+                st = _StreamState(
+                    state=self._create_state(),
+                    in_buf=(ctypes.c_float * _RNNOISE_FRAME_SIZE)(),
+                    out_buf=(ctypes.c_float * _RNNOISE_FRAME_SIZE)(),
+                )
+                self._streams[stream] = st
+            return st
+
+    def _destroy(self, st: _StreamState) -> None:
+        """Destroy one stream's native state, once, under its own lock.
+
+        Holding the lock is what makes this safe against a denoise already in
+        flight on the audio thread: it either finishes first, or finds the
+        state cleared and passes the frame through.
+        """
+        with st.lock:
+            if st.state is not None:
+                self._lib.rnnoise_destroy(st.state)
+                st.state = None
+
+    def reset(self, stream: str) -> None:
+        """Destroy this stream's native state and forget it."""
+        with self._streams_lock:
+            st = self._streams.pop(stream, None)
+        if st is not None:
+            self._destroy(st)
 
     def close(self) -> None:
-        """Destroy the RNNoise state and release resources."""
-        if self._state is not None:
-            self._lib.rnnoise_destroy(self._state)
-            self._state = None
+        """Destroy every stream's native state."""
+        with self._streams_lock:
+            states = list(self._streams.values())
+            self._streams.clear()
+        for st in states:
+            self._destroy(st)
 
     # ------------------------------------------------------------------
     # Internals

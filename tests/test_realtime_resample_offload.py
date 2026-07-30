@@ -43,16 +43,18 @@ class RecordingResampler:
         self.delay = delay
         self.seq = 0
         self.ops: list[tuple[str, str]] = []  # (op, thread name)
+        self.streams: list[str] = []
 
     def _record(self, op: str) -> None:
         self.ops.append((op, threading.current_thread().name))
 
     def resample(
-        self, frame: AudioFrame, target_rate: int, channels: int, width: int
+        self, frame: AudioFrame, target_rate: int, channels: int, width: int, stream: str
     ) -> AudioFrame:
         if self.delay:
             time.sleep(self.delay)
         self.seq += 1
+        self.streams.append(stream)
         self._record("resample")
         return AudioFrame(
             data=self.seq.to_bytes(2, "little"),
@@ -61,11 +63,12 @@ class RecordingResampler:
             sample_width=width,
         )
 
-    def flush(self, target_rate: int, channels: int, width: int) -> AudioFrame | None:
+    def flush(self, target_rate: int, channels: int, width: int, stream: str) -> AudioFrame | None:
+        self.streams.append(stream)
         self._record("flush")
         return None
 
-    def reset(self) -> None:
+    def reset(self, stream: str | None = None) -> None:
         self._record("reset")
 
     def close(self) -> None:
@@ -168,7 +171,7 @@ class TestOffLoopExecution:
         expected = []
         for chunk in chunks:
             frame = AudioFrame(data=chunk, sample_rate=24000, channels=1, sample_width=2)
-            out = reference.resample(frame, 8000, 1, 2)
+            out = reference.resample(frame, 8000, 1, 2, session.id)
             if out.data:
                 expected.append(bytes(out.data))
 

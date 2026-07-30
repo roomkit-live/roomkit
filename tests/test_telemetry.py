@@ -1795,4 +1795,4 @@ class TestPipelineSpeechSegmentTelemetry:
             pipeline.process_inbound(session, self._make_frame())
 
         # No segment spans should exist
-        assert len(pipeline._segment_spans) == 0
+        assert not pipeline._telemetry.in_segment("sess1")

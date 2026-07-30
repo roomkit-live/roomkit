@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
+from roomkit.telemetry.base import SpanKind
+from roomkit.telemetry.mock import MockTelemetryProvider
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import VoiceCapability, VoiceSession
 from roomkit.voice.pipeline.aec.mock import MockAECProvider
@@ -174,14 +178,14 @@ class TestDTMF:
         order: list[str] = []
 
         class OrderTrackingDTMF(MockDTMFDetector):
-            def process(self, frame):
+            def process(self, frame, stream):
                 order.append("dtmf")
-                return super().process(frame)
+                return super().process(frame, stream)
 
         class OrderTrackingAEC(MockAECProvider):
-            def process(self, frame):
+            def process(self, frame, stream):
                 order.append("aec")
-                return super().process(frame)
+                return super().process(frame, stream)
 
         event = DTMFEvent(digit="9", duration_ms=50.0)
         dtmf = OrderTrackingDTMF(events=[event])
@@ -334,7 +338,7 @@ class TestRecorderLifecycle:
 
 class TestResetClose:
     def test_reset_resets_all_providers(self):
-        """reset() should call reset() on all configured providers."""
+        """reset() releases every stream the stages were given."""
         aec = MockAECProvider()
         agc = MockAGCProvider()
         denoiser = MockDenoiserProvider()
@@ -344,6 +348,7 @@ class TestResetClose:
         config = AudioPipelineConfig(aec=aec, agc=agc, denoiser=denoiser, dtmf=dtmf, vad=vad)
         pipeline = AudioPipeline(config)
 
+        pipeline.process_inbound(_session(), _frame())
         pipeline.reset()
 
         assert aec.reset_count == 1
@@ -351,6 +356,29 @@ class TestResetClose:
         assert denoiser.reset_count == 1
         assert dtmf.reset_count == 1
         assert vad.reset_count == 1
+
+    def test_reset_releases_every_stream(self):
+        """Two sessions through one pipeline — both streams released."""
+        vad = MockVADProvider()
+        config = AudioPipelineConfig(vad=vad)
+        pipeline = AudioPipeline(config)
+
+        pipeline.process_inbound(_session("alice"), _frame())
+        pipeline.process_inbound(_session("bob"), _frame())
+
+        pipeline.reset()
+
+        assert vad.reset_count == 2
+
+    def test_reset_without_frames_touches_no_stage(self):
+        """No frames processed means no stream state to release."""
+        vad = MockVADProvider()
+        config = AudioPipelineConfig(vad=vad)
+        pipeline = AudioPipeline(config)
+
+        pipeline.reset()
+
+        assert vad.reset_count == 0
 
     def test_close_closes_all_providers(self):
         """close() should close all configured providers."""
@@ -515,6 +543,61 @@ class TestErrorPropagation:
 
         # Denoiser ran before VAD
         assert len(denoiser.frames) == 1
+
+    def test_failing_stage_leaves_the_frame_as_it_found_it(self):
+        """A stage that raises must not swallow the frame with it."""
+
+        class FailingDenoiser(MockDenoiserProvider):
+            def process(self, frame, stream):
+                raise RuntimeError("denoiser boom")
+
+        vad = MockVADProvider()
+        config = AudioPipelineConfig(denoiser=FailingDenoiser(), vad=vad)
+        pipeline = AudioPipeline(config)
+
+        frame = _frame(b"\x01\x02")
+        result = pipeline.process_inbound_stream("s1", frame)
+
+        # The VAD saw what the denoiser was handed, and so did the caller.
+        assert vad.frames == [frame]
+        assert result.frame is frame
+
+    def test_failing_stage_still_reports_its_timing(self):
+        """A stage that fails slowly is worth seeing on the segment span."""
+
+        class FailingDenoiser(MockDenoiserProvider):
+            def process(self, frame, stream):
+                raise RuntimeError("denoiser boom")
+
+        telemetry = MockTelemetryProvider()
+        vad = MockVADProvider(
+            events=[
+                VADEvent(type=VADEventType.SPEECH_START),
+                VADEvent(type=VADEventType.SPEECH_END),
+            ]
+        )
+        config = AudioPipelineConfig(denoiser=FailingDenoiser(), vad=vad, telemetry=telemetry)
+        pipeline = AudioPipeline(config)
+
+        pipeline.process_inbound(_session(), _frame())
+        pipeline.process_inbound(_session(), _frame())
+
+        segments = telemetry.get_spans(SpanKind.PIPELINE_SPEECH_SEGMENT)
+        assert len(segments) == 1
+        assert "pipeline.denoiser_ms" in segments[0].attributes
+
+    def test_stage_failure_does_not_swallow_base_exceptions(self):
+        """Only an Exception is a stage failure — a cancellation is not."""
+
+        class CancelledDenoiser(MockDenoiserProvider):
+            def process(self, frame, stream):
+                raise KeyboardInterrupt
+
+        config = AudioPipelineConfig(denoiser=CancelledDenoiser())
+        pipeline = AudioPipeline(config)
+
+        with pytest.raises(KeyboardInterrupt):
+            pipeline.process_inbound(_session(), _frame())
 
 
 # ---------------------------------------------------------------------------

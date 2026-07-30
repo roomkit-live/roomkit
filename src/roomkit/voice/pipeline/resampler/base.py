@@ -16,6 +16,14 @@ class ResamplerProvider(ABC):
     fixing them at construction time because the pipeline calls it in two
     directions: inbound (transport -> internal) and outbound (internal ->
     transport) with different targets.
+
+    The resampler is stage 1 of the inbound pipeline, so it is bound by the
+    same stream identity contract as every other stage (RFC 12.3): one
+    provider instance serves many streams, and any state it holds between
+    frames MUST be kept under the stream key it was given. A resampler that
+    buffers a frame for look-ahead and keys that buffer on format alone hands
+    one speaker's audio to the next stream that asks — which is the whole
+    reason the key is threaded down here rather than stopping at the VAD.
     """
 
     @property
@@ -31,6 +39,7 @@ class ResamplerProvider(ABC):
         target_rate: int,
         target_channels: int,
         target_width: int,
+        stream: str,
     ) -> AudioFrame:
         """Resample an audio frame to the target format.
 
@@ -41,6 +50,10 @@ class ResamplerProvider(ABC):
             target_rate: Target sample rate in Hz.
             target_channels: Target number of channels.
             target_width: Target bytes per sample.
+            stream: Identity of the audio stream this frame belongs to. A
+                stateless resampler ignores it; one that buffers across frames
+                keeps that buffer per stream, because a voice session and a
+                conference lane are different speakers sharing one instance.
 
         Returns:
             A new or modified AudioFrame in the target format.
@@ -52,18 +65,24 @@ class ResamplerProvider(ABC):
         target_rate: int,
         target_channels: int,
         target_width: int,
+        stream: str,
     ) -> AudioFrame | None:  # noqa: B027
-        """Flush any buffered audio remaining after end-of-stream.
+        """Flush audio buffered for one stream after its end-of-stream.
 
         Subclasses that hold a pending frame (e.g. for look-ahead context)
         should override this to emit that frame using silence as look-ahead.
 
-        Returns ``None`` when there is nothing to flush.
+        Returns ``None`` when that stream has nothing to flush.
         """
         return None
 
-    def reset(self) -> None:  # noqa: B027
-        """Reset internal state."""
+    def reset(self, stream: str | None = None) -> None:  # noqa: B027
+        """Drop buffered state — one stream's, or every stream's.
+
+        ``None`` means all of them: it is what a blanket pipeline reset asks
+        for. A stream key drops just that speaker's buffer, which is what the
+        end of a session or a conference lane asks for.
+        """
 
     def close(self) -> None:  # noqa: B027
         """Release resources."""

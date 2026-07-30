@@ -57,13 +57,13 @@ class TestAGCProvider:
     def test_mock_process(self):
         agc = MockAGCProvider()
         frame = _frame(b"\x01\x02")
-        result = agc.process(frame)
+        result = agc.process(frame, "s1")
         assert result is frame
         assert len(agc.frames) == 1
 
     def test_mock_reset(self):
         agc = MockAGCProvider()
-        agc.reset()
+        agc.reset("s1")
         assert agc.reset_count == 1
 
     def test_mock_close(self):
@@ -93,19 +93,19 @@ class TestAECProvider:
     def test_mock_process(self):
         aec = MockAECProvider()
         frame = _frame()
-        result = aec.process(frame)
+        result = aec.process(frame, "s1")
         assert result is frame
         assert len(aec.frames) == 1
 
     def test_mock_feed_reference(self):
         aec = MockAECProvider()
         frame = _frame()
-        aec.feed_reference(frame)
+        aec.feed_reference(frame, "s1")
         assert len(aec.reference_frames) == 1
 
     def test_mock_reset(self):
         aec = MockAECProvider()
-        aec.reset()
+        aec.reset("s1")
         assert aec.reset_count == 1
 
     def test_mock_close(self):
@@ -127,21 +127,21 @@ class TestDTMFDetector:
     def test_mock_process_with_event(self):
         event = DTMFEvent(digit="5", duration_ms=100.0, confidence=0.99)
         detector = MockDTMFDetector(events=[event])
-        result = detector.process(_frame())
+        result = detector.process(_frame(), "s1")
         assert result is event
         assert result.digit == "5"
 
     def test_mock_process_no_event(self):
         detector = MockDTMFDetector()
-        assert detector.process(_frame()) is None
+        assert detector.process(_frame(), "s1") is None
 
     def test_mock_reset(self):
         detector = MockDTMFDetector(events=[DTMFEvent(digit="1", duration_ms=50.0)])
-        detector.process(_frame())
-        detector.reset()
+        detector.process(_frame(), "s1")
+        detector.reset("s1")
         assert detector.reset_count == 1
         # After reset, sequence replays
-        result = detector.process(_frame())
+        result = detector.process(_frame(), "s1")
         assert result is not None and result.digit == "1"
 
     def test_dtmf_event_defaults(self):
@@ -345,7 +345,7 @@ class TestDenoiserReset:
         from roomkit.voice.pipeline.denoiser.mock import MockDenoiserProvider
 
         d = MockDenoiserProvider()
-        d.reset()
+        d.reset("s1")
         assert d.reset_count == 1
 
 

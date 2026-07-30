@@ -96,7 +96,7 @@ class VoicePipelineMixin:
 
             def _on_audio_played(session: VoiceSession, frame: AudioFrame) -> None:
                 if self._pipeline is not None:
-                    self._pipeline.feed_aec_reference(frame)
+                    self._pipeline.feed_aec_reference(frame, session.id)
 
             backend.on_audio_played(_on_audio_played)
             pipeline.enable_playback_aec_feed()

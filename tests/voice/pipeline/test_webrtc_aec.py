@@ -57,6 +57,11 @@ class TestWebRTCAECProviderConstructor:
         provider, _ = _make_provider(mock_mod)
 
         assert provider.name == "webrtc_aec3"
+
+        # Processors are per stream and built on first use.
+        ap_cls.assert_not_called()
+        provider.set_active(True)
+        provider.process(_make_frame(), "s1")
         ap_cls.assert_called_once_with(enable_aec=True, enable_ns=False, enable_agc=False)
 
     def test_custom_params(self):
@@ -71,6 +76,9 @@ class TestWebRTCAECProviderConstructor:
         )
         assert provider._sample_rate == 48000
         assert provider._stream_delay_ms == 50
+
+        provider.set_active(True)
+        provider.process(_make_frame(n_bytes=960, sample_rate=48000), "s1")
         processor.set_stream_delay.assert_called_once_with(50)
 
 
@@ -81,7 +89,7 @@ class TestWebRTCAECProviderProcess:
         provider, _ = _make_provider(mock_mod)
 
         frame = _make_frame()
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
         assert result is frame
 
     def test_process_active(self):
@@ -92,7 +100,7 @@ class TestWebRTCAECProviderProcess:
 
         # 10ms frame at 16kHz = 160 samples = 320 bytes
         frame = _make_frame(n_bytes=320)
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
         assert result.sample_rate == frame.sample_rate
         processor.process_stream.assert_called()
 
@@ -109,11 +117,12 @@ class TestWebRTCAECProviderProcess:
             channels=1,
             sample_width=2,
         )
-        provider.process(frame)
+        provider.process(frame, "s1")
 
-        assert provider._total_in_energy == 160 * 1000**2
+        st = provider._streams["s1"]
+        assert st.total_in_energy == 160 * 1000**2
         # Mock AP is passthrough, so output energy matches input exactly.
-        assert provider._total_out_energy == provider._total_in_energy
+        assert st.total_out_energy == st.total_in_energy
 
 
 class TestWebRTCAECProviderFeedReference:
@@ -122,7 +131,7 @@ class TestWebRTCAECProviderFeedReference:
         provider, _ = _make_provider(mock_mod)
 
         frame = _make_frame(n_bytes=320)
-        provider.feed_reference(frame)
+        provider.feed_reference(frame, "s1")
         processor.process_reverse_stream.assert_called()
 
 
@@ -140,25 +149,80 @@ class TestWebRTCAECProviderSetActive:
         assert provider._bypass is True
 
 
-class TestWebRTCAECProviderReset:
-    def test_reset_recreates_processor(self):
+class TestWebRTCAECProviderStreams:
+    def test_each_stream_gets_its_own_processor(self):
         mock_mod, ap_cls, _ = _make_mock_aec_module()
         provider, _ = _make_provider(mock_mod)
-        initial_call_count = ap_cls.call_count
+        provider.set_active(True)
 
-        with patch.dict(sys.modules, {"aec_audio_processing": mock_mod}):
-            provider.reset()
+        provider.process(_make_frame(), "alice")
+        provider.process(_make_frame(), "bob")
 
-        assert ap_cls.call_count == initial_call_count + 1
-        assert provider._bypass is True
-        assert provider._process_count == 0
+        assert ap_cls.call_count == 2
+        assert set(provider._streams) == {"alice", "bob"}
+
+    def test_streams_do_not_share_counters(self):
+        mock_mod, _, _ = _make_mock_aec_module()
+        provider, _ = _make_provider(mock_mod)
+        provider.set_active(True)
+
+        for _ in range(3):
+            provider.process(_make_frame(), "alice")
+        provider.process(_make_frame(), "bob")
+
+        assert provider._streams["alice"].process_count == 3
+        assert provider._streams["bob"].process_count == 1
+
+    def test_reference_reaches_only_its_own_stream(self):
+        mock_mod, _, _ = _make_mock_aec_module()
+        provider, _ = _make_provider(mock_mod)
+        provider.set_active(True)
+
+        provider.process(_make_frame(), "alice")
+        provider.process(_make_frame(), "bob")
+        provider.feed_reference(_make_frame(), "alice")
+
+        assert provider._streams["alice"].ref_fed_count == 1
+        assert provider._streams["bob"].ref_fed_count == 0
+
+
+class TestWebRTCAECProviderReset:
+    def test_reset_drops_only_that_stream(self):
+        mock_mod, ap_cls, _ = _make_mock_aec_module()
+        provider, _ = _make_provider(mock_mod)
+        provider.set_active(True)
+
+        provider.process(_make_frame(), "alice")
+        provider.process(_make_frame(), "bob")
+
+        provider.reset("alice")
+        assert set(provider._streams) == {"bob"}
+
+        # The next frame builds a fresh processor — that is what clears the
+        # stale adaptive filter after barge-in.
+        provider.process(_make_frame(), "alice")
+        assert ap_cls.call_count == 3
+        assert provider._streams["alice"].process_count == 1
 
 
 class TestWebRTCAECProviderClose:
-    def test_close_nullifies_processor(self):
+    def test_close_releases_every_stream(self):
         mock_mod, _, _ = _make_mock_aec_module()
         provider, _ = _make_provider(mock_mod)
-        assert provider._ap is not None
+        provider.set_active(True)
+
+        provider.process(_make_frame(), "alice")
+        provider.process(_make_frame(), "bob")
 
         provider.close()
-        assert provider._ap is None
+        assert provider._streams == {}
+
+    def test_process_after_close_passes_through(self):
+        mock_mod, _, _ = _make_mock_aec_module()
+        provider, _ = _make_provider(mock_mod)
+        provider.set_active(True)
+        provider.close()
+
+        frame = _make_frame()
+        assert provider.process(frame, "s1") is frame
+        assert provider._streams == {}

@@ -8,6 +8,10 @@ import struct
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.pipeline.resampler.sinc import SincResamplerProvider
 
+# These exercise one stream's delay line; isolation between streams is the
+# subject of tests/voice/pipeline/test_stream_conformance.py.
+STREAM = "s1"
+
 
 def _frame(
     data: bytes = b"\x00\x00",
@@ -32,7 +36,7 @@ class TestSincResamplerProvider:
         """Returns the exact same frame object when no conversion is needed."""
         provider = SincResamplerProvider()
         frame = _frame(b"\x01\x00\x02\x00")
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result is frame
 
     def test_first_frame_buffered(self):
@@ -43,7 +47,7 @@ class TestSincResamplerProvider:
         data = struct.pack(f"<{n}h", *samples)
         frame = _frame(data, rate=8000)
 
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result.sample_rate == 16000
         assert len(result.data) == 0
 
@@ -56,8 +60,8 @@ class TestSincResamplerProvider:
         data = struct.pack(f"<{n}h", *samples)
         frame = _frame(data, rate=8000)
 
-        provider.resample(frame, 16000, 1, 2)  # buffered
-        result = provider.resample(frame, 16000, 1, 2)  # outputs first frame
+        provider.resample(frame, 16000, 1, 2, STREAM)  # buffered
+        result = provider.resample(frame, 16000, 1, 2, STREAM)  # outputs first frame
         assert result.sample_rate == 16000
         assert result.channels == 1
         assert result.sample_width == 2
@@ -72,8 +76,8 @@ class TestSincResamplerProvider:
         data = struct.pack(f"<{n}h", *samples)
         frame = _frame(data, rate=8000)
 
-        provider.resample(frame, 16000, 1, 2)  # buffered
-        result = provider.resample(frame, 16000, 1, 2)  # outputs first frame
+        provider.resample(frame, 16000, 1, 2, STREAM)  # buffered
+        result = provider.resample(frame, 16000, 1, 2, STREAM)  # outputs first frame
         out = _decode(result.data)
         for s in out:
             assert -32768 <= s <= 32767
@@ -88,8 +92,8 @@ class TestSincResamplerProvider:
         data = struct.pack(f"<{n}h", *samples)
         frame = _frame(data, rate=16000)
 
-        provider.resample(frame, 8000, 1, 2)  # buffered
-        result = provider.resample(frame, 8000, 1, 2)  # outputs first frame
+        provider.resample(frame, 8000, 1, 2, STREAM)  # buffered
+        result = provider.resample(frame, 8000, 1, 2, STREAM)  # outputs first frame
         assert result.sample_rate == 8000
         out = _decode(result.data)
         assert len(out) == 160  # 320 * 8000/16000
@@ -102,8 +106,8 @@ class TestSincResamplerProvider:
         data = struct.pack(f"<{n}h", *samples)
         frame = _frame(data, rate=48000)
 
-        provider.resample(frame, 16000, 1, 2)  # buffered
-        result = provider.resample(frame, 16000, 1, 2)  # outputs first frame
+        provider.resample(frame, 16000, 1, 2, STREAM)  # buffered
+        result = provider.resample(frame, 16000, 1, 2, STREAM)  # outputs first frame
         assert result.sample_rate == 16000
         out = _decode(result.data)
         assert len(out) == 320  # 960 * 16000/48000
@@ -116,7 +120,7 @@ class TestSincResamplerProvider:
         data = struct.pack(f"<{len(samples)}h", *samples)
         frame = _frame(data, rate=16000, channels=2)
 
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result.channels == 1
         out = _decode(result.data)
         assert out == [150, 350]
@@ -129,7 +133,7 @@ class TestSincResamplerProvider:
         data = struct.pack(f"<{len(samples)}h", *samples)
         frame = _frame(data, rate=48000, channels=2)
 
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result.sample_rate == 16000
         assert result.channels == 1
         assert result.sample_width == 2
@@ -141,7 +145,7 @@ class TestSincResamplerProvider:
         data = struct.pack("<2h", *samples)
         frame = _frame(data, rate=16000, channels=1, width=2)
 
-        result = provider.resample(frame, 16000, 1, 4)
+        result = provider.resample(frame, 16000, 1, 4, STREAM)
         assert result.sample_width == 4
         out = _decode(result.data, width=4)
         assert len(out) == 2
@@ -157,7 +161,7 @@ class TestSincResamplerProvider:
             sample_width=2,
             timestamp_ms=42.0,
         )
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result.timestamp_ms == 42.0
 
     def test_preserves_metadata(self):
@@ -169,7 +173,7 @@ class TestSincResamplerProvider:
             sample_width=2,
             metadata={"key": "value"},
         )
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result.metadata["key"] == "value"
 
     def test_reset_and_close_clear_state(self):
@@ -180,13 +184,13 @@ class TestSincResamplerProvider:
         samples = [int(1000 * math.sin(2 * math.pi * 400 * i / 8000)) for i in range(n)]
         data = struct.pack(f"<{n}h", *samples)
         frame = _frame(data, rate=8000)
-        provider.resample(frame, 16000, 1, 2)
+        provider.resample(frame, 16000, 1, 2, STREAM)
         assert len(provider._state) > 0
 
         provider.reset()
         assert len(provider._state) == 0
 
-        provider.resample(frame, 16000, 1, 2)
+        provider.resample(frame, 16000, 1, 2, STREAM)
         provider.close()
         assert len(provider._state) == 0
 
@@ -198,8 +202,8 @@ class TestSincResamplerProvider:
         data = struct.pack(f"<{n}h", *samples)
         frame = _frame(data, rate=8000)
 
-        provider.resample(frame, 16000, 1, 2)  # buffered
-        result = provider.resample(frame, 16000, 1, 2)  # outputs first frame
+        provider.resample(frame, 16000, 1, 2, STREAM)  # buffered
+        result = provider.resample(frame, 16000, 1, 2, STREAM)  # outputs first frame
         out = _decode(result.data)
         assert len(out) == 320
 
@@ -211,8 +215,8 @@ class TestSincResamplerProvider:
         data = struct.pack(f"<{n}h", *samples)
         frame = _frame(data, rate=8000)
 
-        provider.resample(frame, 16000, 1, 2)  # buffered
-        result = provider.resample(frame, 16000, 1, 2)  # outputs first frame
+        provider.resample(frame, 16000, 1, 2, STREAM)  # buffered
+        result = provider.resample(frame, 16000, 1, 2, STREAM)  # outputs first frame
         out = _decode(result.data)
         # All output samples should be close to 500 (windowing at edges may differ)
         mid = out[20:-20]  # skip edges where kernel doesn't have full support
@@ -239,7 +243,7 @@ class TestSincResamplerProvider:
             ]
             data = struct.pack(f"<{n}h", *samples)
             frame = _frame(data, rate=8000)
-            result = provider.resample(frame, 16000, 1, 2)
+            result = provider.resample(frame, 16000, 1, 2, STREAM)
             out = _decode(result.data)
             all_output.extend(out)
 
@@ -257,7 +261,7 @@ class TestSincResamplerProvider:
         ref_data = struct.pack(f"<{n * 9}h", *ref_samples)
         ref_frame = _frame(ref_data, rate=8000)
         ref_provider = SincResamplerProvider()
-        ref_provider.resample(ref_frame, 16000, 1, 2)  # buffered
+        ref_provider.resample(ref_frame, 16000, 1, 2, STREAM)  # buffered
 
         # Flush with frame 9 to get the resampled output for frames 0-8
         flush_offset = 9 * n
@@ -266,7 +270,7 @@ class TestSincResamplerProvider:
         ]
         flush_data = struct.pack(f"<{n}h", *flush_samples)
         flush_frame = _frame(flush_data, rate=8000)
-        ref_result = ref_provider.resample(flush_frame, 16000, 1, 2)
+        ref_result = ref_provider.resample(flush_frame, 16000, 1, 2, STREAM)
         ref_output = _decode(ref_result.data)
 
         # ref_output = resampled frames 0-8 = 2880 samples at 16kHz
@@ -289,11 +293,11 @@ class TestSincResamplerProvider:
         frame = _frame(data, rate=8000)
 
         # First frame is buffered (no output)
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert len(result.data) == 0
 
         # Flush should emit the pending frame
-        flushed = provider.flush(16000, 1, 2)
+        flushed = provider.flush(16000, 1, 2, STREAM)
         assert flushed is not None
         assert flushed.sample_rate == 16000
         assert flushed.channels == 1
@@ -309,16 +313,16 @@ class TestSincResamplerProvider:
         data = struct.pack(f"<{n}h", *samples)
         frame = _frame(data, rate=8000)
 
-        provider.resample(frame, 16000, 1, 2)
+        provider.resample(frame, 16000, 1, 2, STREAM)
         assert len(provider._state) > 0
 
-        provider.flush(16000, 1, 2)
+        provider.flush(16000, 1, 2, STREAM)
         assert len(provider._state) == 0
 
     def test_flush_no_pending_returns_none(self):
         """flush() returns None when no pending frame exists."""
         provider = SincResamplerProvider()
-        assert provider.flush(16000, 1, 2) is None
+        assert provider.flush(16000, 1, 2, STREAM) is None
 
     def test_flush_after_multiple_frames(self):
         """flush() after 3 frames returns last pending frame."""
@@ -332,9 +336,9 @@ class TestSincResamplerProvider:
             ]
             data = struct.pack(f"<{n}h", *samples)
             frame = _frame(data, rate=8000)
-            provider.resample(frame, 16000, 1, 2)
+            provider.resample(frame, 16000, 1, 2, STREAM)
 
-        flushed = provider.flush(16000, 1, 2)
+        flushed = provider.flush(16000, 1, 2, STREAM)
         assert flushed is not None
         out = _decode(flushed.data)
         assert len(out) == 320  # one frame worth at 16kHz
@@ -347,8 +351,8 @@ class TestSincResamplerProvider:
         data = struct.pack(f"<{n}h", *samples)
         frame = _frame(data, rate=8000)
 
-        provider.resample(frame, 16000, 1, 2)
-        flushed = provider.flush(16000, 1, 2)
+        provider.resample(frame, 16000, 1, 2, STREAM)
+        flushed = provider.flush(16000, 1, 2, STREAM)
         assert flushed is not None
         out = _decode(flushed.data)
         for s in out:

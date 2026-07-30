@@ -8,6 +8,10 @@ from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
 from roomkit.voice.pipeline.resampler.mock import MockResamplerProvider
 
+# These exercise one stream's conversions; isolation between streams is the
+# subject of tests/voice/pipeline/test_stream_conformance.py.
+STREAM = "s1"
+
 
 def _frame(
     data: bytes = b"\x00\x00",
@@ -31,7 +35,7 @@ class TestLinearResamplerProvider:
         """Returns the exact same frame object when no conversion is needed."""
         provider = LinearResamplerProvider()
         frame = _frame(b"\x01\x00\x02\x00")
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result is frame
 
     def test_stereo_to_mono(self):
@@ -42,7 +46,7 @@ class TestLinearResamplerProvider:
         data = struct.pack(f"<{len(samples)}h", *samples)
         frame = _frame(data, rate=16000, channels=2)
 
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result.channels == 1
         assert result.sample_rate == 16000
         out_samples = list(struct.unpack(f"<{len(result.data) // 2}h", result.data))
@@ -55,7 +59,7 @@ class TestLinearResamplerProvider:
         data = struct.pack(f"<{len(samples)}h", *samples)
         frame = _frame(data, rate=16000, channels=1)
 
-        result = provider.resample(frame, 16000, 2, 2)
+        result = provider.resample(frame, 16000, 2, 2, STREAM)
         assert result.channels == 2
         out_samples = list(struct.unpack(f"<{len(result.data) // 2}h", result.data))
         assert out_samples == [100, 100, 200, 200]
@@ -68,7 +72,7 @@ class TestLinearResamplerProvider:
         data = struct.pack(f"<{len(samples)}h", *samples)
         frame = _frame(data, rate=48000, channels=1)
 
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result.sample_rate == 16000
         out_samples = list(struct.unpack(f"<{len(result.data) // 2}h", result.data))
         assert len(out_samples) == 2  # 6 * 16000/48000 = 2
@@ -80,7 +84,7 @@ class TestLinearResamplerProvider:
         data = struct.pack(f"<{len(samples)}h", *samples)
         frame = _frame(data, rate=16000, channels=1)
 
-        result = provider.resample(frame, 48000, 1, 2)
+        result = provider.resample(frame, 48000, 1, 2, STREAM)
         assert result.sample_rate == 48000
         out_samples = list(struct.unpack(f"<{len(result.data) // 2}h", result.data))
         assert len(out_samples) == 9  # 3 * 48000/16000 = 9
@@ -92,7 +96,7 @@ class TestLinearResamplerProvider:
         data = struct.pack("<2h", *samples)
         frame = _frame(data, rate=16000, channels=1, width=2)
 
-        result = provider.resample(frame, 16000, 1, 4)
+        result = provider.resample(frame, 16000, 1, 4, STREAM)
         assert result.sample_width == 4
         out_samples = list(struct.unpack(f"<{len(result.data) // 4}i", result.data))
         # Values should be scaled up proportionally
@@ -108,7 +112,7 @@ class TestLinearResamplerProvider:
         data = struct.pack(f"<{len(samples)}h", *samples)
         frame = _frame(data, rate=48000, channels=2)
 
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result.sample_rate == 16000
         assert result.channels == 1
         assert result.sample_width == 2
@@ -122,7 +126,7 @@ class TestLinearResamplerProvider:
             sample_width=2,
             timestamp_ms=42.0,
         )
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result.timestamp_ms == 42.0
 
     def test_preserves_metadata(self):
@@ -134,7 +138,7 @@ class TestLinearResamplerProvider:
             sample_width=2,
             metadata={"key": "value"},
         )
-        result = provider.resample(frame, 16000, 1, 2)
+        result = provider.resample(frame, 16000, 1, 2, STREAM)
         assert result.metadata["key"] == "value"
 
     def test_unsupported_width_rejected_by_audio_frame(self):
@@ -164,13 +168,13 @@ class TestMockResamplerProvider:
         """Mock passes frames through unchanged."""
         mock = MockResamplerProvider()
         frame = _frame(b"\x01\x00")
-        result = mock.resample(frame, 48000, 2, 4)
+        result = mock.resample(frame, 48000, 2, 4, STREAM)
         assert result is frame
 
     def test_records_calls(self):
         mock = MockResamplerProvider()
         frame = _frame()
-        mock.resample(frame, 48000, 2, 4)
+        mock.resample(frame, 48000, 2, 4, STREAM)
 
         assert len(mock.calls) == 1
         assert mock.calls[0].target_rate == 48000

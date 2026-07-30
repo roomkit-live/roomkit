@@ -23,7 +23,7 @@ class MockDiarizationProvider(DiarizationProvider):
 
     def __init__(self, results: list[DiarizationResult | None] | None = None) -> None:
         self._results = results or []
-        self._index = 0
+        self._indexes: dict[str, int] = {}
         self.frames: list[AudioFrame] = []
         self.reset_count = 0
         self.closed = False
@@ -32,17 +32,19 @@ class MockDiarizationProvider(DiarizationProvider):
     def name(self) -> str:
         return "MockDiarizationProvider"
 
-    def process(self, frame: AudioFrame) -> DiarizationResult | None:
+    def process(self, frame: AudioFrame, stream: str) -> DiarizationResult | None:
+        index = self._indexes.get(stream, 0)
         self.frames.append(frame)
-        if self._index < len(self._results):
-            result = self._results[self._index]
-            self._index += 1
+        if index < len(self._results):
+            result = self._results[index]
+            index += 1
+            self._indexes[stream] = index
             return result
         return None
 
-    def reset(self) -> None:
-        self._index = 0
+    def reset(self, stream: str) -> None:
         self.reset_count += 1
+        self._indexes.pop(stream, None)
 
     def close(self) -> None:
         self.closed = True

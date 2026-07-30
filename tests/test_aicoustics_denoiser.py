@@ -94,7 +94,7 @@ class TestProcess:
         provider = _make_provider()
 
         frame_in = _frame(_FRAME_SIZE, value=100)
-        frame_out = provider.process(frame_in)
+        frame_out = provider.process(frame_in, "s1")
 
         assert isinstance(frame_out, AudioFrame)
         assert frame_out is not frame_in
@@ -109,7 +109,7 @@ class TestProcess:
         provider = _provider_that_returns(out_array)
 
         frame_in = _frame(_FRAME_SIZE, value=1000)
-        frame_out = provider.process(frame_in)
+        frame_out = provider.process(frame_in, "s1")
 
         out_samples = struct.unpack(f"<{_FRAME_SIZE}h", frame_out.data)
         expected = int(0.5 * 32767)
@@ -120,7 +120,7 @@ class TestProcess:
         provider = _make_provider()
 
         frame_in = _frame(_FRAME_SIZE, timestamp_ms=42.5)
-        frame_out = provider.process(frame_in)
+        frame_out = provider.process(frame_in, "s1")
 
         assert frame_out.timestamp_ms == 42.5
 
@@ -129,7 +129,7 @@ class TestProcess:
 
         frame_in = _frame(_FRAME_SIZE)
         frame_in.metadata["source"] = "test"
-        frame_out = provider.process(frame_in)
+        frame_out = provider.process(frame_in, "s1")
 
         assert frame_out.metadata["source"] == "test"
         # Mutation of output must not affect input.
@@ -142,7 +142,7 @@ class TestProcess:
         provider = _make_provider(aic)
 
         frame = _frame(_FRAME_SIZE, value=500)
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
 
         # Should return the original frame on error.
         assert result is frame
@@ -161,7 +161,7 @@ class TestFrameBuffering:
         # Send half a chunk — original frame returned (pass-through).
         half = _FRAME_SIZE // 2
         frame = _frame(half, value=100)
-        result = provider.process(frame)
+        result = provider.process(frame, "s1")
 
         assert result is frame
 
@@ -172,7 +172,7 @@ class TestFrameBuffering:
         provider = _make_provider(aic)
 
         frame = _frame(_FRAME_SIZE, value=100)
-        provider.process(frame)
+        provider.process(frame, "s1")
 
         processor.process.assert_called_once()
 
@@ -186,10 +186,10 @@ class TestFrameBuffering:
         frame1 = _frame(half, value=100)
         frame2 = _frame(half, value=200)
 
-        provider.process(frame1)
+        provider.process(frame1, "s1")
         assert processor.process.call_count == 0
 
-        provider.process(frame2)
+        provider.process(frame2, "s1")
         assert processor.process.call_count == 1
 
     def test_double_chunk_processed_twice(self) -> None:
@@ -199,7 +199,7 @@ class TestFrameBuffering:
         provider = _make_provider(aic)
 
         frame = _frame(_FRAME_SIZE * 2, value=100)
-        provider.process(frame)
+        provider.process(frame, "s1")
 
         assert processor.process.call_count == 2
 
@@ -232,7 +232,7 @@ class TestConfig:
         )
 
         # Trigger lazy init.
-        provider.process(_frame(_FRAME_SIZE))
+        provider.process(_frame(_FRAME_SIZE), "s1")
 
         aic.Model.download.assert_called_once_with("quail-2.0-l-16khz", "/tmp/custom")
         aic.ProcessorConfig.optimal.assert_called_once_with(
@@ -259,19 +259,29 @@ class TestLazyInit:
     def test_processor_not_created_until_first_process(self) -> None:
         provider = _make_provider()
 
-        assert provider._processor is None
+        assert provider._streams == {}
 
-        provider.process(_frame(_FRAME_SIZE))
-        assert provider._processor is not None
+        provider.process(_frame(_FRAME_SIZE), "s1")
+        assert provider._streams["s1"].processor is not None
 
     def test_ensure_processor_only_creates_once(self) -> None:
         aic = _mock_aic_module()
         provider = _make_provider(aic)
 
-        provider.process(_frame(_FRAME_SIZE))
-        provider.process(_frame(_FRAME_SIZE))
+        provider.process(_frame(_FRAME_SIZE), "s1")
+        provider.process(_frame(_FRAME_SIZE), "s1")
 
         aic.Processor.assert_called_once()
+
+    def test_each_stream_gets_its_own_processor(self) -> None:
+        aic = _mock_aic_module()
+        provider = _make_provider(aic)
+
+        provider.process(_frame(_FRAME_SIZE), "alice")
+        provider.process(_frame(_FRAME_SIZE), "bob")
+
+        assert aic.Processor.call_count == 2
+        assert set(provider._streams) == {"alice", "bob"}
 
 
 # ---------------------------------------------------------------------------
@@ -296,33 +306,46 @@ class TestLifecycle:
 
         # Buffer a partial frame.
         half = _FRAME_SIZE // 2
-        provider.process(_frame(half, value=100))
-        assert len(provider._buffer) > 0
+        provider.process(_frame(half, value=100), "s1")
+        assert len(provider._streams["s1"].buffer) > 0
 
-        provider.reset()
-        assert provider._buffer == b""
+        provider.reset("s1")
+        assert "s1" not in provider._streams
 
     def test_reset_recreates_processor(self) -> None:
         aic = _mock_aic_module()
         provider = _make_provider(aic)
 
         # Initialize.
-        provider.process(_frame(_FRAME_SIZE))
-        assert provider._processor is not None
+        provider.process(_frame(_FRAME_SIZE), "s1")
+        assert provider._streams["s1"].processor is not None
 
-        provider.reset()
-        # Processor is recreated — Processor() called again.
+        provider.reset("s1")
+        # The next frame builds a fresh processor, clearing the model's
+        # recurrent state.
+        provider.process(_frame(_FRAME_SIZE), "s1")
         assert aic.Processor.call_count == 2
 
-    def test_close_sets_processor_none(self) -> None:
+    def test_reset_leaves_other_streams_alone(self) -> None:
         provider = _make_provider()
 
-        provider.process(_frame(_FRAME_SIZE))
-        assert provider._processor is not None
+        half = _FRAME_SIZE // 2
+        provider.process(_frame(half, value=100), "alice")
+        provider.process(_frame(half, value=100), "bob")
+
+        provider.reset("alice")
+
+        assert "alice" not in provider._streams
+        assert len(provider._streams["bob"].buffer) > 0
+
+    def test_close_releases_every_stream(self) -> None:
+        provider = _make_provider()
+
+        provider.process(_frame(_FRAME_SIZE), "alice")
+        provider.process(_frame(_FRAME_SIZE), "bob")
 
         provider.close()
-        assert provider._processor is None
-        assert provider._buffer == b""
+        assert provider._streams == {}
 
     def test_double_close(self) -> None:
         provider = _make_provider()
@@ -332,7 +355,7 @@ class TestLifecycle:
 
     def test_reset_before_init_is_safe(self) -> None:
         provider = _make_provider()
-        provider.reset()  # Must not raise.
+        provider.reset("s1")  # Must not raise.
 
 
 # ---------------------------------------------------------------------------

@@ -26,7 +26,7 @@ class MockVADProvider(VADProvider):
 
     def __init__(self, events: list[VADEvent | None] | None = None) -> None:
         self._events = events or []
-        self._index = 0
+        self._indexes: dict[str, int] = {}
         self.frames: list[AudioFrame] = []
         self.reset_count = 0
         self.closed = False
@@ -35,17 +35,19 @@ class MockVADProvider(VADProvider):
     def name(self) -> str:
         return "MockVADProvider"
 
-    def process(self, frame: AudioFrame) -> VADEvent | None:
+    def process(self, frame: AudioFrame, stream: str) -> VADEvent | None:
+        index = self._indexes.get(stream, 0)
         self.frames.append(frame)
-        if self._index < len(self._events):
-            event = self._events[self._index]
-            self._index += 1
+        if index < len(self._events):
+            event = self._events[index]
+            index += 1
+            self._indexes[stream] = index
             return event
         return None
 
-    def reset(self) -> None:
-        self._index = 0
+    def reset(self, stream: str) -> None:
         self.reset_count += 1
+        self._indexes.pop(stream, None)
 
     def close(self) -> None:
         self.closed = True
