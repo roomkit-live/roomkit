@@ -69,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     session off its books, finalizes its recordings, announces
     `conference_ended`, and re-joins on a bounded, backed-off supervisor
     while the room stays attached and collecting — the dead session was
-    what received the frames, so nothing else could produce the lazy
+    what received the frames, so no backend event could produce the lazy
     join's "next need". Past the attempts, the lazy join remains the
     fallback. A detach's own `leave()` runs on the same budget-and-grace
     discipline as the close's: a wedged SFU costs the teardown one budget,
@@ -156,6 +156,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     participant and a room the channel is leaving; a mint still in flight
     when a detach lands is taken back rather than left valid against a
     meeting the framework has left. Bans stick — no SFU event lifts one.
+    A credential that goes out also starts the lazy bot join, in the
+    background: presence is observable only through a connection, so no
+    backend callback can make the *first* join happen — the mint is the
+    framework's own advance notice that a human is about to connect (RFC
+    §12.10.3/.4), and it is what lets a meeting where humans speak first
+    be joined and transcribed without the framework having to speak. The
+    join never delays the mint's answer, and its failure never fails the
+    mint.
   - **Observability.** `conference_started` / `conference_ended` name and
     measure the bot session, and `info()` answers RFC §17.7's disclosure
     questions per room — bot present, collection permitted, STT and

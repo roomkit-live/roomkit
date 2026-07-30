@@ -5,6 +5,14 @@ the join is serialised per room, because participants arriving together is the
 normal way a meeting starts and two concurrent joins would publish the AI on two
 tracks.
 
+First need is anything that says the conference is about to matter, and one of
+its triggers must not be a backend callback: presence is observable only
+through a connection, so until the bot holds one, no arrival can report itself
+and nothing callback-shaped can start the first join (RFC 12.10.3). That
+trigger is the mint — a credential going out is the framework's own notice
+that a human is about to connect. Deliveries, and presence or track events
+from a backend able to observe them, remain triggers after it.
+
 The announcements are the delicate part. The join lock is released before the
 conference is announced, so integrator code cannot hold every other room's joins
 behind it, which leaves the announcement itself exposed to a detach landing
@@ -47,8 +55,8 @@ logger = logging.getLogger("roomkit.channels.conference")
 # How long to wait before each re-join attempt after the SFU ended the bot's
 # session, and how many to make. Bounded with backoff: a healthy SFU takes the
 # bot back on the first try, an outage should not be hammered, and past the
-# last attempt the lazy join remains — the next delivery or arrival still
-# re-joins. Read through the module so a test's monkeypatch applies.
+# last attempt the lazy join remains — the next mint, delivery or arrival
+# still re-joins. Read through the module so a test's monkeypatch applies.
 REJOIN_DELAYS_S: tuple[float, ...] = (0.5, 1.0, 2.0, 4.0, 8.0)
 
 
@@ -231,8 +239,9 @@ class ConferenceSessionMixin:
         behind for an attachment that is gone.
 
         Nothing is retried here. The bot is brought in on first need from
-        several places — the next arrival, a published track, a delivery — and
-        each of them finds ``room.bot`` still unset and tries again.
+        several places — a mint, the next arrival, a published track, a
+        delivery — and each of them finds ``room.bot`` still unset and tries
+        again.
         """
         try:
             await self._ensure_bot(room_id)
@@ -247,6 +256,43 @@ class ConferenceSessionMixin:
                 room_id,
             )
         return True
+
+    async def _ensure_bot_for_mint(self, room_id: str) -> None:
+        """Bring the bot in because a credential just went out.
+
+        A successful mint is the framework's advance notice that a human is
+        about to connect, and it is the one trigger of the lazy join that does
+        not depend on the backend's callbacks: presence is observable only
+        through a connection (RFC 12.10.3), so until the bot holds one, no
+        arrival can report itself and nothing callback-shaped can make the
+        first join happen. Without this trigger a meeting where humans speak
+        and the AI is meant to listen never gets a bot at all — the framework
+        would have to speak first.
+
+        Runs as a room task off the mint's own path, so nothing here reaches
+        back to the mint: the caller is owed its token now, not after a media
+        connection settles, and the credential belongs to the participant
+        whether or not the framework got its own session into the room (RFC
+        12.10.4).
+
+        ``RoomNotAttachedError`` is silence rather than a report: a detach won
+        the race and the join was abandoned exactly as it should be. Any other
+        failure is logged and swallowed — the next trigger finds ``room.bot``
+        still unset and tries again.
+        """
+        try:
+            await self._ensure_bot(room_id)
+        except RoomNotAttachedError:
+            return
+        except Exception:
+            logger.exception(
+                "Conference channel %r could not bring its bot into room %s after minting "
+                "conference access. The credential was returned regardless, and the "
+                "conference runs without the framework's own media session — no "
+                "transcription and no AI voice — until a later join succeeds",
+                self.channel_id,
+                room_id,
+            )
 
     async def _fire_session_started(self, room_id: str, bot: BotSession) -> None:
         """Announce the bot connection on the framework-wide session contract.
@@ -516,8 +562,8 @@ class ConferenceSessionMixin:
             return
         logger.error(
             "Conference channel %r gave up re-joining room %s after %d attempt(s). The "
-            "conference runs untranscribed and unrecorded until the next delivery or "
-            "arrival triggers the lazy join",
+            "conference runs untranscribed and unrecorded until the next mint, delivery "
+            "or arrival triggers the lazy join",
             self.channel_id,
             room_id,
             len(REJOIN_DELAYS_S),

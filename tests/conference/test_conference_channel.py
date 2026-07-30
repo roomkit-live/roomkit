@@ -796,6 +796,131 @@ class TestBotGrants:
         assert grants.publish_screen_share is True
 
 
+async def _join_settled(channel: ConferenceChannel) -> None:
+    """Wait out the room's background work — the mint's spawned join among it."""
+    room = channel._room(ROOM)
+    while room.tasks:
+        await asyncio.wait(list(room.tasks), timeout=5.0)
+
+
+class TestMintBootstrapsTheBot:
+    """A credential going out is what makes the first join happen (RMK-68).
+
+    Against a real SFU, presence is observable only through a connection: no
+    participant or track callback fires before the bot holds one, so no
+    callback can make the *first* join happen (RFC §12.10.3). The mint is the
+    one trigger the backend cannot withhold. No test here touches
+    ``simulate_*`` before asserting on the join — that absence is the point:
+    silence is exactly what a real SFU gives a channel that has not joined yet.
+    """
+
+    async def test_a_mint_alone_brings_the_bot_in(self) -> None:
+        """The main use case of a conference: humans speak, the AI listens.
+
+        Without this trigger the bot only ever entered behind a backend
+        callback or a delivery — so a meeting the framework never spoke into
+        was never joined, and never transcribed.
+        """
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+        announced: list[str] = []
+
+        @kit.on("conference_started")
+        async def _started(event: object) -> None:
+            announced.append("started")
+
+        await channel.mint_access(ROOM, "p-alice")
+        await _join_settled(channel)
+
+        assert len(backend.bots) == 1
+        assert announced == ["started"]
+
+    async def test_the_join_never_delays_or_fails_the_mint(self) -> None:
+        """The credential belongs to the participant whether or not the
+        framework got its own session into the room (RFC §12.10.4).
+        """
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+        backend.fail("join_as_bot", times=1)
+
+        access = await channel.mint_access(ROOM, "p-alice")
+        await _join_settled(channel)
+
+        assert access.token
+        assert backend.bots == []
+
+    async def test_a_later_mint_tries_the_join_again(self) -> None:
+        """Nothing is retried on a timer; the next need finds ``room.bot``
+        unset and tries again — and a second admission is a next need.
+        """
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+        await kit.ensure_participant(ROOM, "conf", "p-bob")
+        backend.fail("join_as_bot", times=1)
+        await channel.mint_access(ROOM, "p-alice")
+        await _join_settled(channel)
+
+        await channel.mint_access(ROOM, "p-bob")
+        await _join_settled(channel)
+
+        assert len(backend.bots) == 1
+
+    async def test_a_second_mint_does_not_join_twice(self) -> None:
+        """Two admissions, one bot: a second join would publish the AI on two
+        tracks.
+        """
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+        await kit.ensure_participant(ROOM, "conf", "p-bob")
+
+        await channel.mint_access(ROOM, "p-alice")
+        await _join_settled(channel)
+        await channel.mint_access(ROOM, "p-bob")
+        await _join_settled(channel)
+
+        assert len([c for c in backend.calls if c.method == "join_as_bot"]) == 1
+
+    async def test_a_refused_mint_starts_no_join(self) -> None:
+        """A refused credential admits nobody, so nobody is about to arrive."""
+        _, channel, backend = await _kit_with_channel()
+
+        with pytest.raises(ParticipantNotFoundError):
+            await channel.mint_access(ROOM, "p-typo")
+        await _join_settled(channel)
+
+        assert backend.bots == []
+        assert not [c for c in backend.calls if c.method == "join_as_bot"]
+
+    async def test_a_detach_racing_the_spawned_join_leaves_no_bot(self) -> None:
+        """The join is a room task: a detach cancels it or takes its bot out —
+        either interleaving ends with nobody left in the meeting.
+        """
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+
+        await channel.mint_access(ROOM, "p-alice")
+        await kit.detach_channel(ROOM, "conf")
+        await _settle(channel)
+
+        assert backend.bots == []
+
+    async def test_a_failed_join_after_a_mint_says_so(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Swallowed, not silenced: a conference running without transcription
+        or an AI voice must not do it without a word.
+        """
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+        backend.fail("join_as_bot")
+
+        with caplog.at_level(logging.ERROR, logger="roomkit.channels.conference"):
+            await channel.mint_access(ROOM, "p-alice")
+            await _join_settled(channel)
+
+        assert any("after minting" in record.message for record in caplog.records)
+
+
 class TestAccessMinting:
     async def test_channel_mints_access_with_its_default_grants(self) -> None:
         kit, channel, backend = await _kit_with_channel(default_grants=ConferenceGrants.observer())

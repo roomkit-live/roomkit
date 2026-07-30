@@ -77,6 +77,8 @@ class ConferenceAccessMixin:
             manager, taken around every operation this mixin starts on them
             (RFC 12.10.4).
         _room / _attached_room: the per-room record (ConferenceRoomState).
+        _ensure_bot_for_mint: the lazy join's mint trigger — see
+            ConferenceSessionMixin.
     """
 
     channel_id: str
@@ -94,6 +96,7 @@ class ConferenceAccessMixin:
     # Provided by ConferenceChannel — see the host contract above
     _room: Any
     _attached_room: Any
+    _ensure_bot_for_mint: Any
 
     async def mint_access(
         self, room_id: str, participant_id: str, *, grants: ConferenceGrants | None = None
@@ -149,6 +152,12 @@ class ConferenceAccessMixin:
         timed out, which is a five-second stall on every detach that races a
         mint. Outside, the ordering still holds: a detach that got the lock
         first has set ``attached`` to false by the time this reads it.
+
+        A credential that goes out also starts the lazy bot join, in the
+        background: a mint is the framework's advance notice that a human is
+        about to connect, and the one trigger for it that does not depend on
+        the backend's callbacks (RFC 12.10.3, 12.10.4). The join never delays
+        this call's answer, and its failure never fails the mint.
         """
         async with self._activity.track(room_id):
             await self._check_admissible(room_id, participant_id)
@@ -157,7 +166,18 @@ class ConferenceAccessMixin:
             access = await self._mint(
                 room_id, participant_id, grants or self._default_grants, generation
             )
-        return await self._hand_over(room_id, participant_id, access, generation)
+        access = await self._hand_over(room_id, participant_id, access, generation)
+        # A credential going out means someone is about to connect, and it is
+        # the one trigger of the lazy bot join that does not depend on the
+        # backend's callbacks — presence is observable only through a
+        # connection, so no arrival can start the first join (RFC 12.10.3,
+        # 12.10.4). A room task rather than an await: the caller is owed its
+        # token now, and a join failure is never the mint's. Only after the
+        # hand-over — a refused credential admits nobody.
+        room = self._room(room_id)
+        if room.bot is None:
+            room.spawn(self._ensure_bot_for_mint(room_id))
+        return access
 
     async def _hand_over(
         self, room_id: str, participant_id: str, access: ConferenceAccess, generation: int
