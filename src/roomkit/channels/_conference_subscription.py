@@ -92,7 +92,14 @@ class ConferenceSubscriptionMixin:
                 HookTrigger.ON_CONFERENCE_TRACK_PUBLISHED,
                 "conference_track_published",
                 f"Track {track.id} published",
-                {"track_id": track.id, "participant_id": track.participant_id},
+                # The kind is what an interface acts on — a VIDEO publication
+                # is "the camera came on" — and it matches the mute pair's
+                # payload, so both read the same way.
+                {
+                    "track_id": track.id,
+                    "participant_id": track.participant_id,
+                    "kind": track.kind.value,
+                },
             )
             if track.kind is TrackKind.SCREEN_SHARE:
                 await self._fire(
@@ -128,7 +135,11 @@ class ConferenceSubscriptionMixin:
                 HookTrigger.ON_CONFERENCE_TRACK_UNPUBLISHED,
                 "conference_track_unpublished",
                 f"Track {track.id} unpublished",
-                {"track_id": track.id, "participant_id": track.participant_id},
+                {
+                    "track_id": track.id,
+                    "participant_id": track.participant_id,
+                    "kind": track.kind.value,
+                },
             )
             if track.kind is TrackKind.SCREEN_SHARE:
                 await self._fire(
