@@ -67,7 +67,7 @@ class TestNoJoinWithoutANeed:
 
     async def test_an_arrival_is_recorded_without_a_join(self) -> None:
         """Recording the arrival is the unconditional MUST (RFC §12.10.4
-        step 2); the join it used to start served nothing here.
+        step 2); a join would serve nothing here, so none is started.
         """
         kit, channel, backend = await _pure_transport()
         joined: list[str] = []
