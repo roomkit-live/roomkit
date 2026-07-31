@@ -8,12 +8,16 @@ the vocabulary of that boundary — see RFC section 12.10.2.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import Flag, StrEnum, auto, unique
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.interruption import InterruptionStrategy
+
+if TYPE_CHECKING:
+    from roomkit.voice.realtime.provider import RealtimeVoiceProvider
 
 
 @unique
@@ -410,3 +414,67 @@ class ConferenceRecordingConfig:
 
     metadata: dict[str, Any] = field(default_factory=dict)
     """Recording metadata (room_id, participant_id, ...)."""
+
+
+# What answers a speech-to-speech provider's tool call: (room_id, tool name,
+# arguments) -> the result, serialized for the provider. Async because a real
+# tool does I/O, and the provider's turn waits on the answer.
+ConferenceToolHandler = Callable[[str, str, dict[str, Any]], Awaitable[str]]
+
+
+@dataclass
+class ConferenceRealtimeConfig:
+    """Composition of a speech-to-speech provider with a conference.
+
+    The realtime pattern of RFC section 12.10.12: every subscribed audio
+    track is mixed N→1 and fed to one provider session per conference, and
+    the provider's voice is published on the bot track. Attribution ends at
+    the provider boundary — the provider's own transcription of what it heard
+    names nobody and is discarded; configure ``stt`` beside this when the
+    meeting needs an attributed transcript.
+
+    Mutually exclusive with ``tts``: one bot track, one voice.
+    """
+
+    provider: RealtimeVoiceProvider
+    """The speech-to-speech provider. The channel holds one session per room."""
+
+    system_prompt: str | None = None
+    """Instructions for the provider's agent."""
+
+    voice: str | None = None
+    """Provider voice identifier."""
+
+    tools: list[dict[str, Any]] | None = None
+    """Tool definitions passed to the provider. Requires ``tool_handler``."""
+
+    tool_handler: ConferenceToolHandler | None = None
+    """Answers the provider's tool calls with ``(room_id, name, arguments)``.
+
+    Required when ``tools`` is set: a call nothing answers leaves the
+    provider's turn waiting on a result that never comes.
+    """
+
+    temperature: float | None = None
+    """Sampling temperature, where the provider supports one."""
+
+    input_sample_rate: int = 24000
+    """Rate of the mixed audio sent to the provider.
+
+    The mixed stream is resampled to this from the pipeline's internal rate.
+    24 kHz is the one rate every current provider accepts — OpenAI Realtime
+    requires it — so it is the safe cross-provider default.
+    """
+
+    output_sample_rate: int = 24000
+    """Rate the provider's audio arrives at, published as-is on the bot track."""
+
+    server_vad: bool = True
+    """Let the provider run its own turn detection on the mixed stream.
+
+    Turn-taking, not interruption: whatever the provider detects, barge-in
+    stays with the per-lane VAD and the interruption policy (RFC 12.10.12).
+    """
+
+    provider_config: dict[str, Any] | None = None
+    """Provider-specific session options, passed through opaquely."""
