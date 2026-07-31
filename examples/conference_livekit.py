@@ -251,23 +251,30 @@ def build_realtime(notes: list[str]) -> Any | None:
         "You are the meeting's voice assistant. Answer briefly — one or two "
         "spoken sentences — in the language you are addressed in."
     )
+    # None lets the provider pick its own default (Gemini: Puck, masculine).
+    # Gemini options include Kore and Aoede (feminine); OpenAI has shimmer,
+    # marin, cedar — see each provider's available_voices().
+    voice = os.getenv("ROOMKIT_VOICE")
+    spoken = voice or "provider default"
     if os.getenv("GEMINI_API_KEY"):
         from roomkit.providers.gemini.realtime import GeminiLiveProvider
 
         model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview")
-        notes.append(f"REALTIME: Gemini Live {model} — one session hears the mixed meeting")
+        notes.append(f"REALTIME: Gemini Live {model}, voice {spoken} (ROOMKIT_VOICE=)")
         return ConferenceRealtimeConfig(
             provider=GeminiLiveProvider(api_key=os.environ["GEMINI_API_KEY"], model=model),
             system_prompt=system_prompt,
+            voice=voice,
         )
     if os.getenv("OPENAI_API_KEY"):
         from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
 
         model = os.getenv("OPENAI_MODEL", "gpt-realtime-2")
-        notes.append(f"REALTIME: OpenAI {model} — one session hears the mixed meeting")
+        notes.append(f"REALTIME: OpenAI {model}, voice {spoken} (ROOMKIT_VOICE=)")
         return ConferenceRealtimeConfig(
             provider=OpenAIRealtimeProvider(api_key=os.environ["OPENAI_API_KEY"], model=model),
             system_prompt=system_prompt,
+            voice=voice,
         )
     notes.append(
         "REALTIME: requested but no key — set GEMINI_API_KEY or OPENAI_API_KEY; "
