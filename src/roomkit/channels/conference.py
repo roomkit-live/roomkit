@@ -381,8 +381,8 @@ class ConferenceChannel(
         arrival and occupancy-probe triggers of the lazy join stand down on
         this (RFC 12.10.4 step 1); the channel stays the room's admission gate
         and roster. A property rather than a flag because the configuration it
-        reads is no longer fixed at construction — plug_stt() and its family
-        change the answer while the channel runs. Read off the configuration
+        reads is not fixed at construction — plug_stt() and its family change
+        the answer while the channel runs. Read off the configuration
         and not off the bot's grants, because an explicit grant is what the
         SFU would allow, not what the channel was configured to do.
         """
