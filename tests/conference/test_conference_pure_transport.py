@@ -14,8 +14,6 @@ without ever putting a participant of its own in it.
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from roomkit import (
@@ -29,6 +27,7 @@ from roomkit.models.enums import HookExecution, HookTrigger
 from roomkit.recorder.mock import MockMediaRecorder
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
+from tests.conference.test_conference_channel import _join_settled
 
 ROOM = "room-1"
 
@@ -44,13 +43,6 @@ async def _pure_transport() -> tuple[RoomKit, ConferenceChannel, MockConferenceB
     return kit, channel, backend
 
 
-async def _room_settled(channel: ConferenceChannel) -> None:
-    """Wait out the room's background work — any spawned trigger among it."""
-    room = channel._room(ROOM)
-    while room.tasks:
-        await asyncio.wait(list(room.tasks), timeout=5.0)
-
-
 class TestNoJoinWithoutANeed:
     async def test_a_mint_starts_no_join(self) -> None:
         """The credential is the participant's; the session the join would
@@ -60,7 +52,7 @@ class TestNoJoinWithoutANeed:
         await kit.ensure_participant(ROOM, "conf", "p-alice")
 
         await channel.mint_access(ROOM, "p-alice")
-        await _room_settled(channel)
+        await _join_settled(channel)
 
         assert backend.bots == []
         assert not [c for c in backend.calls if c.method == "join_as_bot"]
@@ -77,7 +69,7 @@ class TestNoJoinWithoutANeed:
             joined.append(event.content.data["participant_id"])
 
         await backend.simulate_participant_joined(ROOM, "p-alice")
-        await _room_settled(channel)
+        await _join_settled(channel)
 
         participants = await kit.store.list_participants(ROOM)
         assert [p.id for p in participants] == ["p-alice"]
@@ -98,7 +90,7 @@ class TestNoJoinWithoutANeed:
         await kit.create_room(ROOM)
 
         await kit.attach_channel(ROOM, "conf")
-        await _room_settled(channel)
+        await _join_settled(channel)
 
         assert not [c for c in backend.calls if c.method == "list_participants"]
         assert backend.bots == []
@@ -121,7 +113,7 @@ class TestNoJoinWithoutANeed:
         await kit.ensure_participant(ROOM, "conf", "p-alice")
         await channel.mint_access(ROOM, "p-alice")
         await backend.simulate_participant_joined(ROOM, "p-alice")
-        await _room_settled(channel)
+        await _join_settled(channel)
 
         assert announced == []
 
@@ -133,7 +125,7 @@ class TestNoJoinWithoutANeed:
         await kit.ensure_participant(ROOM, "conf", "p-alice")
         await channel.mint_access(ROOM, "p-alice")
         await backend.simulate_participant_joined(ROOM, "p-alice")
-        await _room_settled(channel)
+        await _join_settled(channel)
 
         info = channel.info()
         assert info["stt_configured"] is False
@@ -151,7 +143,7 @@ class TestNoJoinWithoutANeed:
         await kit.ensure_participant(ROOM, "conf", "p-alice")
         await channel.mint_access(ROOM, "p-alice")
         await backend.simulate_participant_joined(ROOM, "p-alice")
-        await _room_settled(channel)
+        await _join_settled(channel)
 
         await kit.detach_channel(ROOM, "conf")
         await kit.close()
@@ -185,7 +177,7 @@ class TestAnyNeedRestoresTheTriggers:
         await kit.ensure_participant(ROOM, "conf", "p-alice")
 
         await channel.mint_access(ROOM, "p-alice")
-        await _room_settled(channel)
+        await _join_settled(channel)
 
         assert len(backend.bots) == 1
 
@@ -203,7 +195,7 @@ class TestAnyNeedRestoresTheTriggers:
         await kit.create_room(ROOM)
 
         await kit.attach_channel(ROOM, "conf")
-        await _room_settled(channel)
+        await _join_settled(channel)
 
         assert [c.method for c in backend.calls if c.method == "list_participants"]
         assert len(backend.bots) == 1
