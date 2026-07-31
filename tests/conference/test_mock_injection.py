@@ -67,6 +67,7 @@ def _invocations(
         "unmute_track": lambda: backend.unmute_track(ROOM, track.id),
         "join_as_bot": lambda: backend.join_as_bot(ROOM, "roomkit", ConferenceGrants()),
         "leave": lambda: backend.leave(bot),
+        "update_bot_grants": lambda: backend.update_bot_grants(bot, ConferenceGrants()),
         "subscribe_track": lambda: backend.subscribe_track(bot, track.id),
         "unsubscribe_track": lambda: backend.unsubscribe_track(bot, track.id),
         "publish_audio": lambda: backend.publish_audio(bot, AudioChunk(data=b"\x00\x00")),
@@ -93,10 +94,14 @@ class TestTheLeversCoverTheInterface:
     """
 
     def test_every_backend_call_is_injectable(self) -> None:
+        """Every public async call, not every abstract one: an optional method
+        with a concrete refusal (``update_bot_grants``) is still a backend call
+        the channel makes, and its failure paths need injecting like any other.
+        """
         calls = {
             name
-            for name in ConferenceBackend.__abstractmethods__
-            if inspect.iscoroutinefunction(getattr(ConferenceBackend, name))
+            for name, member in vars(ConferenceBackend).items()
+            if not name.startswith("_") and inspect.iscoroutinefunction(member)
         }
 
         assert calls == INJECTABLE_METHODS

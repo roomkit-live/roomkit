@@ -77,6 +77,18 @@ class ConferenceCapability(Flag):
     and require an explicit server-side opt-in. Muting is always available.
     """
 
+    BOT_GRANT_UPDATE = auto()
+    """A connected bot session's grants can be changed in place.
+
+    A server-side participant update — the SFU changes what the session may
+    do without reconnecting it. A capability because many SFUs can only set
+    permissions at admission; against those, the one way to change a live
+    bot's grants is to replace the session, and hot-plugging falls back to
+    exactly that re-join (RFC 12.10.4). What this buys is continuity: a
+    re-permission with the session, its subscriptions and the event bridge
+    intact.
+    """
+
     E2EE = auto()
     """End-to-end encryption between clients.
 

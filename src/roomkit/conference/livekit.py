@@ -67,6 +67,7 @@ from uuid import uuid4
 
 from roomkit.conference._livekit_mapping import (
     capabilities_for,
+    participant_permission_kwargs,
     participant_record,
     rtc_participant_kind_name,
     rtc_track_kind_name,
@@ -544,6 +545,32 @@ class LiveKitConferenceBackend(ConferenceBackend):
         if session is None:
             raise ValueError(f"bot session {bot.id!r} is not connected to backend {self.name!r}")
         return session
+
+    async def update_bot_grants(self, bot: BotSession, grants: ConferenceGrants) -> None:
+        """Replace the bot session's permissions on the server, in place.
+
+        ``UpdateParticipant`` re-permissions the connected session — same
+        connection, subscriptions and callbacks undisturbed — which is what
+        lets a hot-plugged voice speak without a re-join (RFC 12.10.4). The
+        session is looked up first so a session this backend no longer holds
+        is refused here rather than turned into a server call about a
+        participant that may have left.
+        """
+        self._session(bot)
+        kwargs = participant_permission_kwargs(grants, publish_data=False)
+        sources = kwargs.pop("can_publish_sources", None)
+        if sources is not None:
+            kwargs["can_publish_sources"] = [
+                self._api_module.TrackSource.Value(name) for name in sources
+            ]
+        client = await self._client()
+        await client.room.update_participant(
+            self._api_module.UpdateParticipantRequest(
+                room=bot.room_id,
+                identity=bot.identity,
+                permission=self._api_module.ParticipantPermission(**kwargs),
+            )
+        )
 
     async def leave(self, bot: BotSession) -> None:
         """Take the bot out, and forget the session only once it *is* out.

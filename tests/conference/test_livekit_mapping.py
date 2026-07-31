@@ -24,6 +24,7 @@ from roomkit.conference._livekit_mapping import (
     asserted_attributes,
     capabilities_for,
     codec_for_buffer_type,
+    participant_permission_kwargs,
     participant_record,
     publish_source_names,
     quality_label,
@@ -131,6 +132,22 @@ class TestCapabilities:
         assert ConferenceCapability.REMOTE_UNMUTE in on
         assert ConferenceCapability.SIP_GATEWAY in on
 
+    def test_grant_update_is_unconditional(self) -> None:
+        """``UpdateParticipant`` is part of the server API on every LiveKit
+        deployment — no server-side opt-in gates it, so no configuration
+        conditions the declaration (RFC 12.10.3).
+        """
+        assert ConferenceCapability.BOT_GRANT_UPDATE in capabilities_for(
+            remote_unmute=False, sip_gateway=False
+        )
+
+    def test_the_update_is_implemented_by_this_backend(self) -> None:
+        """The declaration is honoured here, not inherited from the ABC's
+        refusal: a backend that declared the capability and left the default
+        would raise on the very call it promised.
+        """
+        assert "update_bot_grants" in LiveKitConferenceBackend.__dict__
+
 
 class TestGrantTranslation:
     def test_a_permissive_human_may_publish_every_source(self) -> None:
@@ -182,6 +199,59 @@ class TestGrantTranslation:
 
         assert "hidden" not in kwargs
         assert "room_admin" not in kwargs
+
+
+class TestPermissionTranslation:
+    """The server-side twin of the token: what ``update_bot_grants`` sends.
+
+    Same decisions on another carrier (RFC 12.10.3, BOT_GRANT_UPDATE), so the
+    assertions mirror TestGrantTranslation's — down to the no-list reading of
+    "may not publish" — with the one dialect difference checked explicitly:
+    ``can_publish_sources`` carries TrackSource enum names, uppercase.
+    """
+
+    def test_a_speaking_listening_bot_gets_both_permissions(self) -> None:
+        kwargs = participant_permission_kwargs(
+            ConferenceGrants.for_bot(speaks=True), publish_data=False
+        )
+
+        assert kwargs["can_publish"] is True
+        assert kwargs["can_publish_sources"] == ["MICROPHONE"]
+        assert kwargs["can_subscribe"] is True
+        assert kwargs["can_publish_data"] is False
+
+    def test_a_listening_bot_publishes_nothing_and_asks_for_no_source_list(self) -> None:
+        kwargs = participant_permission_kwargs(ConferenceGrants.for_bot(), publish_data=False)
+
+        assert kwargs["can_publish"] is False
+        assert "can_publish_sources" not in kwargs
+        assert kwargs["can_subscribe"] is True
+
+    def test_the_source_names_are_the_server_dialect(self) -> None:
+        """Uppercase enum names, where the token carries lowercase strings —
+        they coincide up to case, and the backend converts names to values at
+        the SDK boundary.
+        """
+        kwargs = participant_permission_kwargs(
+            ConferenceGrants(publish_audio=True, publish_video=True, publish_screen_share=True),
+            publish_data=False,
+        )
+
+        assert kwargs["can_publish_sources"] == [
+            MICROPHONE.upper(),
+            CAMERA.upper(),
+            SCREEN_SHARE.upper(),
+        ]
+
+    def test_an_observer_is_hidden(self) -> None:
+        kwargs = participant_permission_kwargs(ConferenceGrants.observer(), publish_data=False)
+
+        assert kwargs["hidden"] is True
+
+    def test_a_visible_bot_does_not_send_a_hidden_claim(self) -> None:
+        kwargs = participant_permission_kwargs(ConferenceGrants.for_bot(), publish_data=False)
+
+        assert "hidden" not in kwargs
 
     def test_moderation_becomes_room_admin(self) -> None:
         kwargs = video_grant_kwargs("room-1", ConferenceGrants(moderate=True), publish_data=True)

@@ -26,6 +26,7 @@ from roomkit.conference.models import (
     ConferenceParticipant,
     ConferenceTrack,
 )
+from roomkit.core.exceptions import ConferenceCapabilityError
 from roomkit.video.video_frame import VideoFrame
 from roomkit.voice.audio_frame import AudioFrame
 from roomkit.voice.base import AudioChunk
@@ -227,6 +228,26 @@ class ConferenceBackend(ABC):
     @abstractmethod
     async def leave(self, bot: BotSession) -> None:
         """Disconnect the bot session, leaving the conference running."""
+
+    async def update_bot_grants(self, bot: BotSession, grants: ConferenceGrants) -> None:
+        """Replace a connected session's grants in place. Requires BOT_GRANT_UPDATE.
+
+        Same session, same connection, subscriptions and callbacks undisturbed —
+        the SFU changes what the session may do, which is what lets a
+        hot-plugged voice speak without a re-join (RFC 12.10.4). ``grants`` is
+        the session's whole grant set, not a delta.
+
+        Concrete rather than abstract so that a backend written before this
+        call existed keeps working: the channel only calls it on a backend
+        whose ``capabilities`` declare BOT_GRANT_UPDATE, and falls back to a
+        re-join otherwise. This default is the contract's required refusal —
+        a configuration error rather than silence or apparent success (RFC
+        12.10.3).
+        """
+        raise ConferenceCapabilityError(
+            f"update_bot_grants requires {ConferenceCapability.BOT_GRANT_UPDATE.name}, "
+            f"which backend {self.name!r} does not declare"
+        )
 
     @abstractmethod
     async def subscribe_track(self, bot: BotSession, track_id: str) -> None:

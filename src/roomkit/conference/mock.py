@@ -57,6 +57,7 @@ INJECTABLE_METHODS = frozenset(
         "unmute_track",
         "join_as_bot",
         "leave",
+        "update_bot_grants",
         "subscribe_track",
         "unsubscribe_track",
         "publish_audio",
@@ -132,6 +133,7 @@ class MockConferenceBackend(ConferenceBackend):
         self.published_video: list[VideoFrame] = []
         self.playback_stops: list[str] = []
         self.bots: list[BotSession] = []
+        self.bot_grants: dict[str, ConferenceGrants] = {}
         self.dropped_frames: list[str] = []
         self.deliveries: list[MockDelivery] = []
         self.faults = MockFaults(methods=INJECTABLE_METHODS, emissions=INJECTABLE_EMISSIONS)
@@ -266,7 +268,19 @@ class MockConferenceBackend(ConferenceBackend):
         await self._enter("join_as_bot", room_id=room_id, identity=identity, grants=grants)
         bot = BotSession(id=f"bot-{uuid4().hex[:8]}", room_id=room_id, identity=identity)
         self.bots.append(bot)
+        self.bot_grants[bot.id] = grants
         return bot
+
+    async def update_bot_grants(self, bot: BotSession, grants: ConferenceGrants) -> None:
+        """Replace a connected session's grants, as a capable SFU would.
+
+        The whole grant set, not a delta (RFC 12.10.3). ``bot_grants`` keeps
+        the last set per session, so a test can assert what the SFU currently
+        believes the bot may do — after the join and after every update.
+        """
+        await self._enter("update_bot_grants", bot=bot.id, grants=grants)
+        self._require(ConferenceCapability.BOT_GRANT_UPDATE, "Bot grant update")
+        self.bot_grants[bot.id] = grants
 
     async def leave(self, bot: BotSession) -> None:
         await self._enter("leave", bot=bot.id)

@@ -52,12 +52,14 @@ _INBOUND_VIDEO_CODECS = {
 def capabilities_for(*, remote_unmute: bool, sip_gateway: bool) -> ConferenceCapability:
     """What the LiveKit backend declares, given what the deployment allows.
 
-    Three are unconditional because this backend translates the events behind
-    them: screen-share tracks arrive on their own source, dominant-speaker
-    changes and quality reports both have handlers. Two are conditional because
-    they turn on server configuration this backend cannot read — remote unmute
-    needs ``room.enable_remote_unmute``, and a phone cannot reach a room without
-    a SIP trunk and a dispatch rule.
+    Four are unconditional. Three because this backend translates the events
+    behind them: screen-share tracks arrive on their own source,
+    dominant-speaker changes and quality reports both have handlers. And
+    ``BOT_GRANT_UPDATE`` because ``UpdateParticipant`` is part of the server
+    API on every deployment — no server-side opt-in gates it. Two are
+    conditional because they turn on server configuration this backend cannot
+    read — remote unmute needs ``room.enable_remote_unmute``, and a phone
+    cannot reach a room without a SIP trunk and a dispatch rule.
 
     Everything else is left out on purpose; see
     :attr:`LiveKitConferenceBackend.capabilities`.
@@ -66,6 +68,7 @@ def capabilities_for(*, remote_unmute: bool, sip_gateway: bool) -> ConferenceCap
         ConferenceCapability.SCREEN_SHARE
         | ConferenceCapability.ACTIVE_SPEAKER
         | ConferenceCapability.CONNECTION_QUALITY
+        | ConferenceCapability.BOT_GRANT_UPDATE
     )
     if remote_unmute:
         capabilities |= ConferenceCapability.REMOTE_UNMUTE
@@ -129,6 +132,41 @@ def video_grant_kwargs(
         kwargs["can_publish_sources"] = sources
     if grants.moderate:
         kwargs["room_admin"] = True
+    if grants.hidden:
+        kwargs["hidden"] = True
+    return kwargs
+
+
+def participant_permission_kwargs(
+    grants: ConferenceGrants,
+    *,
+    publish_data: bool,
+) -> dict[str, Any]:
+    """Translate ConferenceGrants into ``api.ParticipantPermission`` keyword arguments.
+
+    The server-side twin of :func:`video_grant_kwargs`: the same decisions on
+    another carrier. VideoGrants ride a token and are applied at admission;
+    a ParticipantPermission is what ``UpdateParticipant`` applies to a session
+    already connected (BOT_GRANT_UPDATE, RFC 12.10.3). The publish/sources
+    coupling holds here too, for the same reason: a list is sent only when
+    something may in fact be published, and no-list is not an empty list.
+
+    Two differences are the dialect's. ``can_publish_sources`` carries
+    ``TrackSource`` enum *names* (``"MICROPHONE"``) where the token carries
+    lowercase source strings — they coincide up to case, and the backend
+    converts names to enum values at the SDK boundary. And ``moderate`` has no
+    equivalent: room admin is a token grant LiveKit does not carry on a
+    session's permission, which costs nothing here — the bot's derived grants
+    never ask for it.
+    """
+    sources = [source.upper() for source in publish_source_names(grants)]
+    kwargs: dict[str, Any] = {
+        "can_publish": bool(sources),
+        "can_subscribe": grants.subscribe,
+        "can_publish_data": publish_data,
+    }
+    if sources:
+        kwargs["can_publish_sources"] = sources
     if grants.hidden:
         kwargs["hidden"] = True
     return kwargs
