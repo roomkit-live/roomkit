@@ -129,6 +129,25 @@ class TestPlugIsAFirstNeed:
         assert info["recording_configured"] is True
         assert info["rooms"][ROOM]["recording_active"] is True
 
+    async def test_plugging_stt_opens_lanes_for_already_subscribed_tracks(self) -> None:
+        """A recording channel subscribed its tracks with no lanes — nothing
+        transcribed them. Plugging stt must open a lane for each of them, not
+        only for tracks subscribed after the plug: the meeting is transcribed
+        from the plug forward (RFC §12.10.4), whoever subscribed first.
+        """
+        backend = MockConferenceBackend()
+        kit, channel = await _channel(
+            backend, recording=ConferenceRecordingConfig(), recorder=MockMediaRecorder()
+        )
+        track = await _occupied(backend, channel)
+        assert track.id in backend.subscriptions  # type: ignore[attr-defined]
+        assert channel.active_lanes == {}
+
+        await channel.plug_stt(MockSTTProvider())
+
+        assert track.id in channel.active_lanes  # type: ignore[attr-defined]
+        assert channel.info()["rooms"][ROOM]["stt_active"] is True
+
 
 class TestGrantsFollowTheConfiguration:
     async def test_a_capable_backend_widens_the_grants_in_place(self) -> None:

@@ -74,9 +74,9 @@ class ConferencePlugMixin:
             the constructor's own validation and wiring, reused so a plug can
             refuse exactly what construction refuses.
         _ensure_bot, _ensure_bot_for_resume, _apply_collection_state,
-            _unsubscribe_quietly, _stop_consuming, _close_lane_instance,
-            _leave_and_record, _announce_end: the join, subscription and
-            departure machinery every change steers.
+            _open_lane, _unsubscribe_quietly, _stop_consuming,
+            _close_lane_instance, _leave_and_record, _announce_end: the join,
+            subscription and departure machinery every change steers.
     """
 
     channel_id: str
@@ -109,6 +109,7 @@ class ConferencePlugMixin:
     _ensure_bot: Any
     _ensure_bot_for_resume: Any
     _apply_collection_state: Any
+    _open_lane: Any
     _unsubscribe_quietly: Any
     _stop_consuming: Any
     _close_lane_instance: Any
@@ -316,6 +317,15 @@ class ConferencePlugMixin:
                     await self._align_grants(room_id)
                 if room.bot is not None:
                     await self._apply_collection_state(room_id)
+                    # The re-evaluation subscribes what nothing consumed before
+                    # and opens lanes on the way — but a track subscribed *by
+                    # the recording* before this plug is skipped there, and it
+                    # is exactly the track a plugged recognizer must reach:
+                    # transcribed from the plug forward, whoever subscribed
+                    # first. _open_lane refuses duplicates and no-ops without
+                    # a pipeline, so this is the missing half and nothing more.
+                    for track in list(room.subscribed.values()):
+                        self._open_lane(room_id, track)
             except Exception:
                 logger.exception(
                     "Conference channel %r could not bring room %s in line with a newly "
