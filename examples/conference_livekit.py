@@ -417,6 +417,17 @@ async def main() -> None:
     vad = build_vad(notes)
     realtime = build_realtime(notes)
     ai = None if realtime is not None else build_ai(notes)
+    if realtime is not None and os.getenv("ROOMKIT_ATTRIBUTION") != "1":
+        # The provider owns the turn-taking; the per-track STT exists only for
+        # the attributed transcript, and its per-utterance round trip stalls
+        # the lane — and the mix rides the lane. Off by default here so the
+        # conversation stays at the provider's pace; ROOMKIT_ATTRIBUTION=1
+        # buys the named transcript back at that cost.
+        stt = None
+        notes.append(
+            "ATTRIBUTION: off — no per-track STT on the realtime path "
+            "(ROOMKIT_ATTRIBUTION=1 to get the named transcript back)"
+        )
     backend = LiveKitConferenceBackend(
         LiveKitConfig(url=URL, api_key=API_KEY, api_secret=API_SECRET)
     )
