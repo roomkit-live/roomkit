@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import Any
+from typing import Any, cast
 
 from roomkit.providers.elevenlabs.config import ElevenLabsRealtimeConfig
 from roomkit.providers.elevenlabs.voices import VOICES as _VOICES
@@ -164,7 +164,11 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             # The SDK types this parameter nominally; the bridge implements
             # the full AsyncAudioInterface contract structurally (see its
             # docstring for why it cannot subclass the optional SDK's ABC).
-            audio_interface=bridge,  # ty: ignore[invalid-argument-type]
+            # Handed over as Any rather than under a `ty: ignore`: the
+            # nominal mismatch only exists where the optional SDK is
+            # installed, so a suppression is unused — and rejected — in any
+            # environment without it.
+            audio_interface=cast(Any, bridge),
             config=init_config,
             callback_agent_response=self._make_agent_response_cb(session),
             callback_agent_response_correction=self._make_correction_cb(session),
