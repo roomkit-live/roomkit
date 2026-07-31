@@ -60,6 +60,7 @@ from roomkit.channels.base import Channel, FrameworkAwareChannel
 from roomkit.conference.base import ConferenceBackend
 from roomkit.conference.models import (
     ConferenceAccess,
+    ConferenceCapability,
     ConferenceGrants,
     ConferenceInterruptionConfig,
     ConferenceParticipant,
@@ -239,7 +240,9 @@ class ConferenceChannel(
         # explicit `bot_grants` is the caller saying their deployment knows
         # something the configuration does not, and hot-plugging never
         # rewrites it (RFC 12.10.4) — the caller who set it took coverage of
-        # the configured needs on themselves.
+        # the configured needs on themselves. Owned, not immutable: the
+        # caller replaces it, or returns to derivation, through
+        # set_bot_grants().
         self._explicit_bot_grants = bot_grants
         # Serialises plug_stt/unplug_tts/... against each other: everything a
         # change triggers — the grants derived, the subscriptions re-evaluated,
@@ -398,7 +401,9 @@ class ConferenceChannel(
         the grant and the subscriptions cannot drift apart. An explicit
         `bot_grants` still wins — the caller may know something about its
         deployment that the configuration does not say — and is never
-        rewritten by a plug or an unplug (RFC 12.10.4).
+        rewritten by a plug or an unplug (RFC 12.10.4); ``set_bot_grants()``
+        is how its owner replaces it, or hands the channel back to this
+        derivation.
         """
         if self._explicit_bot_grants is not None:
             return self._explicit_bot_grants
@@ -518,6 +523,13 @@ class ConferenceChannel(
             "backend": self._backend.name,
             "bot_identity": self._bot_identity,
             "bot_hidden": self._bot_grants.hidden,
+            # Whether set_bot_grants() reaches a live session without a
+            # re-join. Answered here, before the call, because the fallback
+            # costs the event bridge a cut — the caller weighs that against
+            # the change, and can only weigh what it can read (RFC 12.10.4).
+            "bot_grant_update_in_place": (
+                ConferenceCapability.BOT_GRANT_UPDATE in self._backend.capabilities
+            ),
             "stt_configured": self._stt is not None,
             "stt_provider": self._stt.name if self._stt is not None else None,
             # Constant because there is nothing to configure: the channel takes
@@ -598,6 +610,15 @@ class ConferenceChannel(
         return {
             "bot_present": bot is not None or bool(leaving),
             "bot_session_id": bot.id if bot is not None else None,
+            # The hidden status in force on this session — what the SFU
+            # holds, which is what a disclosure obligation asks about (RFC
+            # 17.7) and can differ transiently from the channel-level answer:
+            # grants change while a session runs (set_bot_grants), and an
+            # update that failed leaves the session on what it joined with.
+            # None when there is no live session to report on.
+            "bot_hidden": (
+                room.bot_grants.hidden if bot is not None and room.bot_grants is not None else None
+            ),
             "detaching": bool(leaving) and not room.attached,
             "leaving_session_ids": sorted(leaving),
             "leave_failed": room.leave_failures(),

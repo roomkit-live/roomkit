@@ -232,6 +232,235 @@ class TestGrantsFollowTheConfiguration:
         assert len(_calls(backend, "join_as_bot")) == 1
 
 
+class TestSetBotGrants:
+    """Runtime ownership of explicit grants (RMK-79, RFC §12.10.4).
+
+    The plugs never rewrite an explicit ``bot_grants`` — which makes the set
+    owned, not immutable. ``set_bot_grants()`` is the owner speaking: an
+    instruction applied in full, in place where the backend can, by the
+    announced re-join where it cannot — and always by the re-join for a
+    concealment, because no SFU can un-tell clients about a participant they
+    were told of (verified live against LiveKit, 2026-07-31).
+    """
+
+    async def test_a_hidden_bot_is_revealed_in_place(self) -> None:
+        """The observer who reveals itself: same session, no leave — the SFU
+        announces the newly visible participant to connected clients itself.
+        """
+        backend = MockConferenceBackend(capabilities=ConferenceCapability.BOT_GRANT_UPDATE)
+        kit, channel = await _channel(
+            backend, stt=MockSTTProvider(), bot_grants=ConferenceGrants.observer()
+        )
+        await _occupied(backend, channel)
+        bot = backend.bots[0]
+        assert backend.bot_grants[bot.id].hidden is True
+
+        await channel.set_bot_grants(ConferenceGrants.for_bot(listens=True))
+
+        assert backend.bot_grants[bot.id].hidden is False
+        assert len(_calls(backend, "update_bot_grants")) == 1
+        assert not _calls(backend, "leave")
+        assert backend.bots[0].id == bot.id
+
+    async def test_an_incapable_backend_rejoins_to_apply_the_instruction(self) -> None:
+        """Where a plug's alignment would weigh continuity, the setter obeys:
+        a session the SFU will not re-permission is replaced, each half
+        announced as the session event it is (RFC §12.10.4).
+        """
+        backend = MockConferenceBackend()
+        kit, channel = await _channel(
+            backend, stt=MockSTTProvider(), bot_grants=ConferenceGrants.observer()
+        )
+        track = await _occupied(backend, channel)
+        old_bot = backend.bots[0]
+        announced: list[str] = []
+
+        @kit.on("conference_ended")
+        async def _ended(event: object) -> None:
+            announced.append("ended")
+
+        @kit.on("conference_started")
+        async def _started(event: object) -> None:
+            announced.append("started")
+
+        await channel.set_bot_grants(ConferenceGrants.for_bot(listens=True))
+
+        assert len(_calls(backend, "leave")) == 1
+        joins = _calls(backend, "join_as_bot")
+        assert len(joins) == 2
+        assert joins[-1].args["grants"].hidden is False
+        assert backend.bots[0].id != old_bot.id
+        assert announced == ["ended", "started"]
+        assert track.id in backend.subscriptions  # type: ignore[attr-defined]
+        assert track.id in channel.active_lanes
+
+    async def test_concealing_a_visible_bot_rejoins_even_when_capable(self) -> None:
+        """Visibility does not move symmetrically: a reveal propagates in
+        place, but no interface un-tells a client — a session re-hidden in
+        place stays on every roster that saw it. The announced leave is the
+        one retraction every backend delivers (RFC §12.10.4).
+        """
+        backend = MockConferenceBackend(capabilities=ConferenceCapability.BOT_GRANT_UPDATE)
+        kit, channel = await _channel(
+            backend, stt=MockSTTProvider(), bot_grants=ConferenceGrants.for_bot(listens=True)
+        )
+        await _occupied(backend, channel)
+        old_bot = backend.bots[0]
+
+        await channel.set_bot_grants(ConferenceGrants.observer())
+
+        assert not _calls(backend, "update_bot_grants")
+        assert len(_calls(backend, "leave")) == 1
+        assert backend.bots[0].id != old_bot.id
+        assert backend.bot_grants[backend.bots[0].id].hidden is True
+
+    async def test_none_returns_the_channel_to_derivation(self) -> None:
+        """The round trip: from there the grants follow the configuration in
+        force, exactly as on a channel that never had an explicit set.
+        """
+        backend = MockConferenceBackend(capabilities=ConferenceCapability.BOT_GRANT_UPDATE)
+        kit, channel = await _channel(
+            backend, stt=MockSTTProvider(), bot_grants=ConferenceGrants.observer()
+        )
+        await _occupied(backend, channel)
+        bot = backend.bots[0]
+
+        await channel.set_bot_grants(None)
+
+        held = backend.bot_grants[bot.id]
+        assert held == ConferenceGrants.for_bot(listens=True)
+        assert backend.bots[0].id == bot.id
+
+        # Back in the derived regime, the plugs' own alignment applies again.
+        await channel.plug_tts(MockTTSProvider())
+        assert backend.bot_grants[bot.id].publish_audio is True
+
+    async def test_a_set_that_does_not_cover_the_needs_is_accepted(self) -> None:
+        """The construction-time bargain carries forward: the caller keeps
+        coverage on themselves, so ``subscribe`` withdrawn under a plugged
+        recognizer is accepted, not refused — and the next plug still does
+        not rewrite it (RFC §12.10.4).
+        """
+        backend = MockConferenceBackend(capabilities=ConferenceCapability.BOT_GRANT_UPDATE)
+        kit, channel = await _channel(backend, stt=MockSTTProvider())
+        await _occupied(backend, channel)
+        bot = backend.bots[0]
+        uncovering = ConferenceGrants(
+            publish_audio=False,
+            publish_video=False,
+            publish_screen_share=False,
+            subscribe=False,
+        )
+
+        await channel.set_bot_grants(uncovering)
+
+        assert backend.bot_grants[bot.id].subscribe is False
+
+        await channel.plug_tts(MockTTSProvider())
+        assert backend.bot_grants[bot.id] == uncovering
+
+    async def test_a_withdrawal_is_honoured_where_an_unplug_would_leave_it(self) -> None:
+        """On a backend that cannot re-permission, a plug's narrowing is left
+        standing — an unused privilege traded for continuity. The setter's is
+        not: the caller asked, so the session is replaced.
+        """
+        backend = MockConferenceBackend()
+        kit, channel = await _channel(
+            backend,
+            stt=MockSTTProvider(),
+            bot_grants=ConferenceGrants.for_bot(speaks=True, listens=True),
+        )
+        await _occupied(backend, channel)
+
+        await channel.set_bot_grants(ConferenceGrants.for_bot(listens=True))
+
+        assert len(_calls(backend, "leave")) == 1
+        joins = _calls(backend, "join_as_bot")
+        assert len(joins) == 2
+        assert joins[-1].args["grants"].publish_audio is False
+
+    async def test_a_set_with_no_session_only_stores(self) -> None:
+        """A grant set creates no need: on a pure-transport channel it
+        changes what the next session would be allowed, and joins nothing.
+        """
+        backend = MockConferenceBackend()
+        kit, channel = await _channel(backend)
+        await _occupied(backend, channel)
+        assert backend.bots == []
+
+        await channel.set_bot_grants(ConferenceGrants.for_bot(listens=True))
+
+        assert backend.bots == []
+        assert not _calls(backend, "update_bot_grants")
+        assert channel.info()["bot_hidden"] is False
+
+    async def test_an_update_failure_falls_back_to_the_rejoin(self) -> None:
+        """The instruction is applied whatever the in-place attempt did: a
+        failed ``update_bot_grants`` costs the re-join, not the change.
+        """
+        backend = MockConferenceBackend(capabilities=ConferenceCapability.BOT_GRANT_UPDATE)
+        kit, channel = await _channel(
+            backend, stt=MockSTTProvider(), bot_grants=ConferenceGrants.observer()
+        )
+        await _occupied(backend, channel)
+        old_bot = backend.bots[0]
+        backend.fail("update_bot_grants", RuntimeError("SFU refused"))
+
+        await channel.set_bot_grants(ConferenceGrants.for_bot(listens=True))
+
+        assert len(_calls(backend, "leave")) == 1
+        assert backend.bots[0].id != old_bot.id
+        assert backend.bot_grants[backend.bots[0].id].hidden is False
+
+    async def test_info_answers_before_and_after(self) -> None:
+        """§17.7: the disclosure surface reports the status in force on the
+        session, and says beforehand whether a change re-joins.
+        """
+        backend = MockConferenceBackend(capabilities=ConferenceCapability.BOT_GRANT_UPDATE)
+        kit, channel = await _channel(
+            backend, stt=MockSTTProvider(), bot_grants=ConferenceGrants.observer()
+        )
+        await _occupied(backend, channel)
+        info = channel.info()
+        assert info["bot_grant_update_in_place"] is True
+        assert info["bot_hidden"] is True
+        assert info["rooms"][ROOM]["bot_hidden"] is True
+
+        await channel.set_bot_grants(ConferenceGrants.for_bot(listens=True))
+
+        info = channel.info()
+        assert info["bot_hidden"] is False
+        assert info["rooms"][ROOM]["bot_hidden"] is False
+
+        incapable = MockConferenceBackend()
+        _, plain = await _channel(incapable, stt=MockSTTProvider())
+        assert plain.info()["bot_grant_update_in_place"] is False
+
+    async def test_the_change_is_announced_once(self) -> None:
+        """A connected session's effective grants changed — the room can
+        observe it (RFC §12.10.7). A set that changes nothing emits nothing.
+        """
+        backend = MockConferenceBackend(capabilities=ConferenceCapability.BOT_GRANT_UPDATE)
+        kit, channel = await _channel(
+            backend, stt=MockSTTProvider(), bot_grants=ConferenceGrants.observer()
+        )
+        await _occupied(backend, channel)
+        bot = backend.bots[0]
+        observed: list[dict] = []
+
+        @kit.on("conference_bot_grants_changed")
+        async def _changed(event) -> None:  # noqa: ANN001
+            observed.append(event.data)
+
+        revealed = ConferenceGrants.for_bot(listens=True)
+        await channel.set_bot_grants(revealed)
+        await channel.set_bot_grants(revealed)
+
+        assert len(observed) == 1
+        assert observed[0]["bot_session_id"] == bot.id
+        assert observed[0]["hidden"] is False
+
+
 class TestUnplugingTheLastNeed:
     async def test_the_bot_leaves_and_the_channel_stands_down(self) -> None:
         """A session kept past the last need is the silent observer §17.7

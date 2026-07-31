@@ -13,7 +13,11 @@ force at the join, so a plug that widens what a live session must do brings
 its grants in line: through the backend's ``update_bot_grants`` where the
 BOT_GRANT_UPDATE capability is declared — the session and the event bridge
 survive — and by re-joining otherwise. An explicit ``bot_grants`` is never
-rewritten; the caller who set it took coverage on themselves.
+rewritten by a plug or an unplug; the caller who set it took coverage on
+themselves. It is owned, not immutable: :meth:`set_bot_grants` is that owner
+speaking at runtime — replacing the explicit set, or returning the channel
+to derivation — and unlike the plugs' alignment it is an instruction,
+applied in full.
 
 Changes are serialised on one lock: everything a change triggers — the grants
 derived, the subscriptions re-evaluated, the join or leave decided — is read
@@ -48,7 +52,7 @@ if TYPE_CHECKING:
     from roomkit.channels._conference_recording import ConferenceRecording
     from roomkit.channels._conference_voice import ConferenceVoice
     from roomkit.conference.base import ConferenceBackend
-    from roomkit.conference.models import ConferenceRecordingConfig
+    from roomkit.conference.models import BotSession, ConferenceRecordingConfig
     from roomkit.recorder.base import MediaRecorder
     from roomkit.voice.pipeline.config import AudioPipelineConfig
     from roomkit.voice.stt.base import STTProvider
@@ -77,6 +81,8 @@ class ConferencePlugMixin:
             _open_lane, _unsubscribe_quietly, _stop_consuming,
             _close_lane_instance, _leave_and_record, _announce_end: the join,
             subscription and departure machinery every change steers.
+        _emit_framework_event: how a grant change on a connected session is
+            announced (RFC 12.10.7).
     """
 
     channel_id: str
@@ -115,6 +121,7 @@ class ConferencePlugMixin:
     _close_lane_instance: Any
     _leave_and_record: Any
     _announce_end: Any
+    _emit_framework_event: Any
 
     # -------------------------------------------------------------------------
     # Plugging — a need arrives
@@ -291,6 +298,97 @@ class ConferencePlugMixin:
             await self._finalize_unplugged_recorder(recorder)
 
     # -------------------------------------------------------------------------
+    # Explicit grants — the owner speaks
+    # -------------------------------------------------------------------------
+
+    async def set_bot_grants(self, grants: ConferenceGrants | None) -> None:
+        """Replace the explicit bot grants at runtime — or return to derivation.
+
+        The plugs never rewrite an explicit ``bot_grants``; that makes the
+        grant set owned, not immutable, and this is the owner speaking (RFC
+        12.10.4). Passing a grant set replaces the explicit one — the caller
+        keeps coverage of the configured needs on themselves, so a set that
+        does not cover them is accepted here exactly as at construction.
+        Passing ``None`` returns the channel to derivation: grants follow the
+        configuration in force from here on, as on a channel that never had
+        an explicit set. Channel-wide, like the rest of the configuration.
+
+        Unlike the alignment a plug makes, the change is an instruction and
+        is applied to every live session in full: in place where the backend
+        can (BOT_GRANT_UPDATE), and by a re-join — announced as the session
+        events it is — where it cannot, where the in-place update fails, or
+        where the change conceals a visible bot: no SFU interface exists to
+        un-tell clients about a participant they were told of, so the
+        announced leave is the one retraction every backend delivers (RFC
+        12.10.4). A reveal, by contrast, does reach connected clients in
+        place. ``info()``'s ``bot_grant_update_in_place`` says beforehand
+        which of the two this channel's backend gives.
+
+        A grant set creates no need: on a room with no session, the change
+        is what the next join reads, and nothing joins for it. Where a live
+        session's effective grants did change, ``conference_bot_grants_changed``
+        is emitted (RFC 12.10.7).
+        """
+        async with self._plug_lock:
+            self._explicit_bot_grants = grants
+            for room_id in list(self._rooms):
+                room = self._rooms.get(room_id)
+                if room is None or not room.attached or room.bot is None:
+                    continue
+                try:
+                    await self._instruct_grants(room_id)
+                except Exception:
+                    logger.exception(
+                        "Conference channel %r could not carry its new bot grants into "
+                        "room %s; the configuration stands and the next join reads it",
+                        self.channel_id,
+                        room_id,
+                    )
+
+    async def _instruct_grants(self, room_id: str) -> None:
+        """Apply the setter's change to one live session — in full.
+
+        The counterpart of ``_align_grants`` for an instruction: no change is
+        left standing for continuity's sake, because the caller asked for
+        this one. In place when the backend can and the change is not a
+        concealment; by the announced re-join otherwise — after which the
+        subscriptions are re-applied and the lanes reopened, exactly as a
+        plug's own re-join is followed up (RFC 12.10.4).
+        """
+        room = self._room(room_id)
+        bot = room.bot
+        if bot is None:
+            return
+        wanted = self._bot_grants
+        held = room.bot_grants
+        if held == wanted:
+            return
+        conceal = wanted.hidden and (held is None or not held.hidden)
+        in_place = (
+            not conceal
+            and ConferenceCapability.BOT_GRANT_UPDATE in self._backend.capabilities
+            and await self._update_grants_in_place(room_id, bot, wanted)
+        )
+        if not in_place:
+            await self._rejoin_for_grants(room_id)
+            if room.bot is not None:
+                await self._apply_collection_state(room_id)
+                for track in list(room.subscribed.values()):
+                    self._open_lane(room_id, track)
+        bot = room.bot
+        if bot is None:
+            # The re-join could not bring a replacement in, or a detach landed
+            # mid-change: the ended announcement already told the story, and
+            # there is no connected session whose grants changed.
+            return
+        await self._emit_framework_event(
+            "conference_bot_grants_changed",
+            room_id,
+            bot_session_id=bot.id,
+            hidden=wanted.hidden,
+        )
+
+    # -------------------------------------------------------------------------
     # What a change sets in motion, room by room
     # -------------------------------------------------------------------------
 
@@ -428,25 +526,11 @@ class ConferencePlugMixin:
         held = room.bot_grants
         if held == wanted:
             return
-        generation = room.generation
         if ConferenceCapability.BOT_GRANT_UPDATE in self._backend.capabilities:
-            try:
-                with self._operations.use(
-                    ConferenceResource.BACKEND,
-                    what=f"updating the bot's grants in room {room_id}",
-                ):
-                    await self._backend.update_bot_grants(bot, wanted)
-            except Exception:
-                logger.exception(
-                    "Conference channel %r could not update its bot's grants in room %s",
-                    self.channel_id,
-                    room_id,
-                )
-                if self._widens(held, wanted):
-                    await self._rejoin_for_grants(room_id)
+            if await self._update_grants_in_place(room_id, bot, wanted):
                 return
-            if room.is_current(generation, bot):
-                room.bot_grants = wanted
+            if self._widens(held, wanted):
+                await self._rejoin_for_grants(room_id)
             return
         if self._widens(held, wanted):
             await self._rejoin_for_grants(room_id)
@@ -459,6 +543,36 @@ class ConferencePlugMixin:
                 room_id,
                 self._backend.name,
             )
+
+    async def _update_grants_in_place(
+        self, room_id: str, bot: BotSession, wanted: ConferenceGrants
+    ) -> bool:
+        """Try the backend's in-place re-permission; say whether it landed.
+
+        On success the room's record follows what the SFU now holds — unless
+        the session moved on under the call, in which case the record belongs
+        to whatever replaced it. A failure is logged here, once, and the
+        caller decides what it forces: a plug weighs it against the bridge,
+        an instruction re-joins.
+        """
+        room = self._room(room_id)
+        generation = room.generation
+        try:
+            with self._operations.use(
+                ConferenceResource.BACKEND,
+                what=f"updating the bot's grants in room {room_id}",
+            ):
+                await self._backend.update_bot_grants(bot, wanted)
+        except Exception:
+            logger.exception(
+                "Conference channel %r could not update its bot's grants in room %s",
+                self.channel_id,
+                room_id,
+            )
+            return False
+        if room.is_current(generation, bot):
+            room.bot_grants = wanted
+        return True
 
     @staticmethod
     def _widens(held: ConferenceGrants | None, wanted: ConferenceGrants) -> bool:

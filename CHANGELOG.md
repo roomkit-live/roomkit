@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Conference: runtime ownership of explicit bot grants (RFC §12.10.4).**
+  The plugs never rewrite an explicit `bot_grants` — which makes the set
+  owned, not immutable — and `ConferenceChannel.set_bot_grants()` is now
+  the owner speaking at runtime: pass a new grant set to replace the
+  explicit one (the caller keeps coverage of the configured needs on
+  themselves, exactly as at construction), or `None` to return the channel
+  to derivation. Unlike a plug's alignment, the change is an instruction
+  applied to every live session in full — in place where the backend
+  declares `BOT_GRANT_UPDATE`, by the announced re-join where it cannot or
+  where the update fails. Visibility moves asymmetrically, verified live
+  against LiveKit: removing `hidden` in place makes the SFU announce the
+  bot to the clients already connected — the observer that reveals itself
+  when the host starts the notetaker — while no SFU interface can un-tell
+  them, so a visible→hidden change always replaces the session, the
+  announced leave being the one retraction every backend delivers. Each
+  effective change on a connected session emits the new
+  `conference_bot_grants_changed` framework event; `info()` gains
+  `bot_grant_update_in_place` (the price of a change, answered before the
+  call) and a per-room `bot_hidden` (the status in force on the session,
+  §17.7).
+
 - **Conference: hot-plugging intelligence (RFC §12.10.4).** The configuration
   first need is read from is no longer fixed at construction:
   `ConferenceChannel` gains `plug_stt()` / `unplug_stt()`, `plug_tts()` /

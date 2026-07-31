@@ -340,6 +340,30 @@ class TestBotSession:
 
         assert "roomkit" not in alice.room.remote_participants
 
+    async def test_a_revealed_bot_appears_to_connected_clients(
+        self, backend: LiveKitConferenceBackend, room_id: str, alice: Participant
+    ) -> None:
+        """The in-place reveal RFC §12.10.4 leans on: removing ``hidden``
+        through ``update_bot_grants()`` makes the SFU announce the session to
+        the clients already connected — no re-join needed. (The reverse is
+        not true, which is why concealment replaces the session instead.)
+        """
+        appeared: list[str] = []
+        alice.room.on(
+            "participant_connected",
+            lambda participant: appeared.append(participant.identity),
+        )
+        await alice.join(backend, room_id)
+        bot = await backend.join_as_bot(room_id, "roomkit", ConferenceGrants.observer())
+        await asyncio.sleep(QUIET_S)
+        assert "roomkit" not in alice.room.remote_participants
+        assert "roomkit" not in appeared
+
+        await backend.update_bot_grants(bot, ConferenceGrants.for_bot(listens=True))
+
+        await wait_for(lambda: "roomkit" in alice.room.remote_participants)
+        assert "roomkit" in appeared
+
 
 class TestPresenceAndTracks:
     async def test_a_participant_and_its_track_are_announced_in_order(
