@@ -232,6 +232,50 @@ def build_providers() -> tuple[Any, TTSProvider, list[str]]:
     return stt, tts, notes
 
 
+def build_realtime(notes: list[str]) -> Any | None:
+    """The speech-to-speech composition, when asked for and a key is present.
+
+    ``ROOMKIT_REALTIME=1`` swaps the STT->LLM->TTS loop for one realtime
+    provider (RFC §12.10.12): the meeting is mixed N->1 into a single
+    speech-to-speech session and the provider's voice publishes on the bot
+    track. The per-track STT stays beside it — attribution ends at the
+    provider's boundary, so the lanes are what keep the transcript naming
+    who spoke. ``tts=`` is mutually exclusive with this: one bot track, one
+    voice. The deterministic version is examples/conference_realtime_ai.py.
+    """
+    if os.getenv("ROOMKIT_REALTIME") != "1":
+        return None
+    from roomkit import ConferenceRealtimeConfig
+
+    system_prompt = (
+        "You are the meeting's voice assistant. Answer briefly — one or two "
+        "spoken sentences — in the language you are addressed in."
+    )
+    if os.getenv("GEMINI_API_KEY"):
+        from roomkit.providers.gemini.realtime import GeminiLiveProvider
+
+        model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview")
+        notes.append(f"REALTIME: Gemini Live {model} — one session hears the mixed meeting")
+        return ConferenceRealtimeConfig(
+            provider=GeminiLiveProvider(api_key=os.environ["GEMINI_API_KEY"], model=model),
+            system_prompt=system_prompt,
+        )
+    if os.getenv("OPENAI_API_KEY"):
+        from roomkit.providers.openai.realtime import OpenAIRealtimeProvider
+
+        model = os.getenv("OPENAI_MODEL", "gpt-realtime-2")
+        notes.append(f"REALTIME: OpenAI {model} — one session hears the mixed meeting")
+        return ConferenceRealtimeConfig(
+            provider=OpenAIRealtimeProvider(api_key=os.environ["OPENAI_API_KEY"], model=model),
+            system_prompt=system_prompt,
+        )
+    notes.append(
+        "REALTIME: requested but no key — set GEMINI_API_KEY or OPENAI_API_KEY; "
+        "falling back to the STT->LLM->TTS loop"
+    )
+    return None
+
+
 def build_ai(notes: list[str]) -> Any | None:
     """The real intelligence when its key is present, nothing otherwise.
 
@@ -371,7 +415,8 @@ async def main() -> None:
 
     stt, tts, notes = build_providers()
     vad = build_vad(notes)
-    ai = build_ai(notes)
+    realtime = build_realtime(notes)
+    ai = None if realtime is not None else build_ai(notes)
     backend = LiveKitConferenceBackend(
         LiveKitConfig(url=URL, api_key=API_KEY, api_secret=API_SECRET)
     )
@@ -380,7 +425,10 @@ async def main() -> None:
         "conf",
         backend=backend,
         stt=stt,
-        tts=tts,
+        # One bot track, one voice: the realtime provider replaces the TTS —
+        # and the AIChannel too, or the meeting would have two brains.
+        tts=None if realtime is not None else tts,
+        realtime=realtime,
         # Without pipeline= the channel builds an energy VAD by default; the
         # contract stays either way — it is the format normalization
         # (48 kHz browser stereo -> 16 kHz mono STT).
@@ -410,7 +458,9 @@ async def main() -> None:
         who = event.source.participant_id or "-"
         if event.source.channel_id == typed.channel_id:
             origin = "typed"
-        elif event.source.channel_id == "ai":
+        elif event.source.channel_id == "ai" or not event.source.participant_id:
+            # An AIChannel's answer, or the realtime provider's transcript —
+            # the one voice in the room no lane attributes to a human.
             origin = "AI"
         else:
             origin = "HEARD"
@@ -539,7 +589,29 @@ clicked; speak, and [HEARD * ...] must still attribute you correctly.
             access = await conference.mint_access(room.id, human)
             print(f"  - {human}:\n    {meet_url(access)}\n")
         print("=" * 74)
-        if ai is not None:
+        if realtime is not None:
+            print("""
+What to check, in order (SPEECH-TO-SPEECH, RFC §12.10.12):
+
+  1. THE BOT IS IN   - open a tab: "roomkit" must ALREADY be on the
+                       participant list.
+  2. IT HEARS YOU    - speak. [HEARD * alice] still appears HERE with the
+                       right identity — the per-track lanes attribute, the
+                       provider only gets the anonymous mix.
+  3. IT ANSWERS, FAST- keep talking: the provider answers with its OWN voice
+                       on the bot track, sub-second — no STT->LLM->TTS relay.
+                       Its words appear as [AI * -] lines.
+  4. TEXT PROMPTS    - type + Enter: injected into the provider's context,
+                       not read aloud.
+  5. INTERRUPTION    - talk over the bot: the lane VAD latches, the SFU's
+                       queue is dropped, and the provider's response is
+                       cancelled — policy stays the conference's, not the
+                       provider's.
+  6. TEARDOWN        - Ctrl-C: session closed, "roomkit" gone from the tabs.
+
+Type to prompt the bot silently, speak to converse, Ctrl-C to end.
+""")
+        elif ai is not None:
             print("""
 What to check, in order:
 
