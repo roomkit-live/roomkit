@@ -333,7 +333,9 @@ class ConferencePlugMixin:
             self._explicit_bot_grants = grants
             for room_id in list(self._rooms):
                 room = self._rooms.get(room_id)
-                if room is None or not room.attached or room.bot is None:
+                if room is None or not room.attached:
+                    continue
+                if room.bot is None and not room.joining:
                     continue
                 try:
                     await self._instruct_grants(room_id)
@@ -354,8 +356,19 @@ class ConferencePlugMixin:
         concealment; by the announced re-join otherwise — after which the
         subscriptions are re-applied and the lanes reopened, exactly as a
         plug's own re-join is followed up (RFC 12.10.4).
+
+        A join in flight is waited for, not skipped. It read the grants
+        before this instruction and will seat a session on that older set
+        with nothing left to correct it — the silent miss the instruction
+        contract rules out. The join holds the room's lock from its snapshot
+        to the seat, so taking the lock is exactly waiting for it to land.
         """
         room = self._room(room_id)
+        if room.bot is None:
+            if not room.joining:
+                return
+            async with room.lock:
+                pass
         bot = room.bot
         if bot is None:
             return

@@ -394,6 +394,29 @@ class TestSetBotGrants:
         assert not _calls(backend, "update_bot_grants")
         assert channel.info()["bot_hidden"] is False
 
+    async def test_the_instruction_covers_a_join_in_flight(self) -> None:
+        """A lazy join reads the grants before the setter lands, and would
+        seat a session on the older set with nothing left to correct it.
+        The instruction waits for the seat and covers it, rather than
+        skipping a room whose session was milliseconds away.
+        """
+        backend = MockConferenceBackend(capabilities=ConferenceCapability.BOT_GRANT_UPDATE)
+        kit, channel = await _channel(
+            backend, stt=MockSTTProvider(), bot_grants=ConferenceGrants.observer()
+        )
+        backend.delay("join_as_bot", 0.2)
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+        await channel.mint_access(ROOM, "p-alice")
+        # Let the spawned join take the room's lock and enter the delayed
+        # backend call, so the setter genuinely lands mid-join.
+        await asyncio.sleep(0.05)
+
+        await channel.set_bot_grants(ConferenceGrants.for_bot(listens=True))
+
+        await _join_settled(channel)
+        assert len(backend.bots) == 1
+        assert backend.bot_grants[backend.bots[0].id].hidden is False
+
     async def test_an_update_failure_falls_back_to_the_rejoin(self) -> None:
         """The instruction is applied whatever the in-place attempt did: a
         failed ``update_bot_grants`` costs the re-join, not the change.
