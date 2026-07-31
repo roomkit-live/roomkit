@@ -34,11 +34,22 @@ await kit.attach_channel("support", "ai-assistant", category=ChannelCategory.INT
 | Anthropic (Claude) | `AnthropicAIProvider` | `AnthropicConfig` | `roomkit[anthropic]` |
 | OpenAI (GPT) | `OpenAIAIProvider` | `OpenAIConfig` | `roomkit[openai]` |
 | Google Gemini | `GeminiAIProvider` | `GeminiConfig` | `roomkit[gemini]` |
+| Gemini on Vertex AI | `GeminiVertexProvider` | `GeminiVertexConfig` | `roomkit[gemini]` |
 | Mistral | `MistralAIProvider` | `MistralConfig` | `roomkit[mistral]` |
 | Azure OpenAI | `AzureAIProvider` | `AzureAIConfig` | `roomkit[azure]` |
+| OpenRouter (300+ models) | `OpenRouterAIProvider` | `OpenRouterConfig` | `roomkit[openrouter]` |
+| xAI (Grok) | `XAIAIProvider` | `XAIConfig` | `roomkit[xai]` |
+| PolarGrid (Canadian-hosted) | `PolarGridAIProvider` | `PolarGridConfig` | `roomkit[polargrid]` |
 | vLLM (local) | `create_vllm_provider()` | `VLLMConfig` | `roomkit[vllm]` |
 | Ollama (local) | `OllamaAIProvider` | `OllamaConfig` | `roomkit[ollama]` |
 | Mock (testing) | `MockAIProvider` | — | built-in |
+
+Provider notes:
+
+- **Gemini on Vertex AI** (`roomkit.providers.gemini.vertex`) — subclass of `GeminiAIProvider` serving the same Gemini models through a Google Cloud project with a pinned region (`GeminiVertexConfig` requires `project` and `location`, e.g. `"northamerica-northeast1"`; auth is ADC, no API key). Use it when data residency matters (Québec Law 25 / PIPEDA). Generation, streaming, thinking, and the model catalog are inherited unchanged.
+- **OpenRouter** (`roomkit.providers.openrouter`) — subclass of `OpenAIAIProvider` pointed at `https://openrouter.ai/api/v1`; `OpenRouterConfig` subclasses `OpenAIConfig` (adds `site_url`/`app_name` attribution headers) and `model` is a required slug like `"anthropic/claude-sonnet-4.5"`. Reasoning is forwarded to any upstream model via OpenRouter's unified `reasoning` object. Model-listing nuance: OpenRouter's `/models` items omit the `object`/`owned_by` fields the OpenAI SDK expects, so `list_models()` reads the raw JSON instead.
+- **xAI (Grok)** (`roomkit.providers.xai`) — subclass of `OpenAIAIProvider` pointed at `https://api.x.ai/v1`; defaults to `max_completion_tokens` and stream usage. `XAIRealtimeProvider` (Grok speech-to-speech) is a separate import from `roomkit.providers.xai.realtime`.
+- **PolarGrid** (`roomkit.providers.polargrid`) — Canadian-hosted inference network (edges in Toronto, Vancouver, Montréal) via the official `polargrid-sdk` async client; OpenAI-shaped chat-completions surface. Supports tool calling, thinking (`PolarGridConfig(thinking=True)` sets the `enable_thinking` request flag; reasoning is surfaced as `AIResponse.thinking` / `StreamThinkingDelta`), and vision (`image_url` content parts). Pin `region` in production when residency matters.
 
 Pick **Ollama** over the OpenAI-compat shim (`OpenAIAIProvider` pointed at `http://host:11434/v1` or `create_vllm_provider()` with an Ollama URL) whenever the model is a reasoning model (DeepSeek-R1, Qwen 3 thinking variants, etc.) — only the native API exposes the `think` parameter and streams the `thinking` field separately from `content`. See `docs/c7/ollama-provider.md` for the full rundown.
 
@@ -268,6 +279,8 @@ ai = AIChannel(
 )
 ```
 
+Per-provider mechanisms: Anthropic uses `thinking_budget` as above; OpenAI-family providers (OpenAI, Azure, OpenRouter, xAI) use the `reasoning_effort` config field — OpenRouter translates it into its unified `reasoning` object for any upstream model; Gemini (and Vertex) use `GeminiConfig.thinking_level`; Ollama exposes the native `think` parameter (see `docs/c7/ollama-provider.md`); PolarGrid uses `PolarGridConfig(thinking=True)` (the `enable_thinking` flag, surfaced as `AIResponse.thinking` / `StreamThinkingDelta`).
+
 ## Vision Support
 
 AI providers that support vision can process images sent as `MediaContent`:
@@ -284,6 +297,8 @@ await kit.process_inbound(
 )
 # AI sees the image and responds with analysis
 ```
+
+OpenAI-family providers (OpenAI, Azure, OpenRouter, xAI) and PolarGrid send images as OpenAI-shaped `image_url` content parts (remote URL or `data:` URI); PolarGrid and xAI gate this on the model's `supports_vision` from their curated catalogs — whether the model actually reads the image is the deployed model's capability.
 
 ## Agentic Features
 
@@ -338,15 +353,7 @@ await kit.subscribe_room("room-1", my_callback)
 # type: "custom", data: {"type": "plan_updated", "tasks": [...]}
 ```
 
-Hook into plan updates:
-
-```python
-kit.hook(
-    HookTrigger.ON_PLAN_UPDATED,
-    execution=HookExecution.ASYNC,
-    fn=lambda event, ctx: save_plan_to_db(event),
-)
-```
+The ephemeral event is the only plan-update signal — the `HookTrigger.ON_PLAN_UPDATED` enum value is reserved and not currently fired.
 
 ### SummarizingMemory
 

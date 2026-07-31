@@ -15,7 +15,7 @@ kit = RoomKit()
 
 # Create providers
 backend = MockVoiceBackend()
-stt = MockSTTProvider(transcriptions=["Hello, how can I help?"])
+stt = MockSTTProvider(transcripts=["Hello, how can I help?"])
 tts = MockTTSProvider()
 vad = MockVADProvider(events=[
     VADEvent(type=VADEventType.SPEECH_START),

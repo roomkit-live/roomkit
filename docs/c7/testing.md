@@ -129,7 +129,7 @@ backchannel = MockBackchannelDetector()
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-stt = MockSTTProvider(transcriptions=["Hello", "How are you?"])
+stt = MockSTTProvider(transcripts=["Hello", "How are you?"])
 tts = MockTTSProvider()
 ```
 
@@ -194,7 +194,7 @@ async def test_voice_pipeline() -> None:
     kit = RoomKit()
 
     backend = MockVoiceBackend()
-    stt = MockSTTProvider(transcriptions=["Hello"])
+    stt = MockSTTProvider(transcripts=["Hello"])
     tts = MockTTSProvider()
     vad = MockVADProvider(events=[
         VADEvent(type=VADEventType.SPEECH_START),

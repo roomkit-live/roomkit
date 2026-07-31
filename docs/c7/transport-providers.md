@@ -171,6 +171,78 @@ telegram = TelegramChannel("telegram", provider=TelegramBotProvider(TelegramConf
 
 Webhook parser: `parse_telegram_webhook(request_data, channel_id="telegram")` — returns `list[InboundMessage]`.
 
+## Discord
+
+Discord has no webhook parser — it is a source + provider pair sharing one persistent gateway connection. `DiscordGatewaySource` owns the `discord.Client` (inbound); `DiscordBotProvider` reuses that client for outbound sends.
+
+```python
+from roomkit import DiscordChannel, RoomKit
+from roomkit.providers.discord import DiscordBotProvider, DiscordConfig
+from roomkit.sources.discord import DiscordGatewaySource
+
+config = DiscordConfig(
+    bot_token="...",               # SecretStr
+    intents_message_content=True,  # privileged intent — enable in the Developer Portal
+    ignore_bots=True,              # drop inbound messages authored by other bots
+)
+source = DiscordGatewaySource(config, channel_id="discord-main")
+provider = DiscordBotProvider(source)  # sends through the source's client
+
+kit = RoomKit()
+kit.register_channel(DiscordChannel("discord-main", provider=provider))
+await kit.attach_source("discord-main", source, auto_restart=True)  # connects the gateway
+```
+
+Requires `pip install roomkit[discord]` (discord.py). The Message Content intent is privileged: enable it under Bot > Privileged Gateway Intents in the Discord Developer Portal, or every inbound `message.content` arrives empty.
+
+- Recipient key `discord_channel_id` resolves the target Discord channel snowflake at delivery time.
+- Capabilities: text + rich + media, `max_length=2000`, threading and reactions. `RichContent` is sent as an embed; `MediaContent` with an http(s) URL rides in the message content (Discord auto-embeds), a `data:` URI is decoded and uploaded as a file.
+- Threading: outbound `channel_data.thread_id` (a message snowflake) becomes a reply reference; inbound reply references become `InboundMessage.thread_id`.
+- Inbound parsing: `parse_discord_message(message, channel_id, bot_user_id=..., ignore_bots=True)` returns `InboundMessage | None` — the bot's own messages (and other bots, by default) are dropped, so echo hooks never loop. Metadata carries `guild_id`, `channel_id`, `channel_name`, `author_name`, `author_bot`, `message_id`. Override via `DiscordGatewaySource(..., parser=...)`.
+- Reactions: `provider.send_reaction(channel_id, message_id, emoji)` outbound; inbound reaction add/remove events reach the source's `on_event` callback as normalized dicts (`action`, `emoji`, `user_id`, `message_id`, `channel_id`) — outside the message pipeline.
+- Testing: `MockDiscordProvider` records `sent` and `reactions` without the `discord` dependency. ABC: `DiscordProvider`.
+
+Runnable example: `examples/discord_bot.py`.
+
+## Buzz (Nostr)
+
+Buzz (Block's Nostr-based team workspace) follows the same source + provider pairing: `BuzzRelaySource` owns a `buzzkit.BuzzClient` — NIP-42 authentication plus a realtime channel subscription — and `BuzzProvider` reuses that client for outbound sends over the relay's HTTP bridge, so one Nostr identity serves both directions.
+
+```python
+from roomkit import BuzzChannel, RoomKit
+from roomkit.providers.buzz import BuzzConfig, BuzzProvider
+from roomkit.sources.buzz import BuzzRelaySource
+
+config = BuzzConfig(
+    relay_url="wss://your-community.communities.buzz.xyz",
+    private_key="nsec1...",   # agent's Nostr secret (nsec or hex) — signs events, authenticates (NIP-42)
+    ignore_own=True,          # drop the agent's own events (echo guard)
+    auto_join=True,           # NIP-29 self-join (kind 9000, role=bot) on connect
+    announce_presence=True,   # kind 20001 "online" on connect + periodic heartbeat
+    auth_tag=None,            # optional NIP-OA owner attestation (buzzkit.compute_auth_tag)
+)
+source = BuzzRelaySource(config, channel_id="buzz-main", relay_channel_id="<channel-uuid>")
+provider = BuzzProvider(source)  # sends through the source's client
+
+kit = RoomKit()
+kit.register_channel(BuzzChannel("buzz-main", provider=provider))
+await kit.create_room(room_id="buzz-room")
+await kit.attach_channel("buzz-room", "buzz-main", metadata={"buzz_channel_id": "<channel-uuid>"})
+await kit.attach_source("buzz-main", source, auto_restart=True)  # connects + subscribes
+```
+
+Requires `pip install roomkit[buzz]` (installs `buzzkit`, a compiled wheel kept out of the aggregate extras). Hosted Buzz communities are closed relays: the agent's key must be a member first — claim an invite once with `buzzkit`'s `claim_invite`, then copy the channel UUID from the Buzz app.
+
+- Recipient key `buzz_channel_id` resolves the target Buzz relay channel UUID at delivery time. Each source subscribes to a single relay channel — register one source per Buzz channel and bind each to its room.
+- Capabilities: text only, `max_length=65536`, threading and reactions advertised.
+- Inbound parsing: `parse_buzz_event(event, channel_id, own_pubkey=..., ignore_own=True)` converts a kind-9 Nostr event dict to an `InboundMessage` — sender pubkey becomes `sender_id`, the Nostr event id becomes `external_id` and `idempotency_key`, metadata carries `nostr_event_id`, `nostr_kind`, `buzz_channel_id`. Subscribe to other event kinds with `BuzzRelaySource(..., kinds=[...], parser=...)`.
+- `provider.send(event, to=channel_uuid)` publishes a kind-9 channel message signed with the agent's key; the returned `ProviderResult.provider_message_id` is the Nostr event id. HTTP-bridge sends succeed even while the inbound WebSocket is mid-reconnect; the source reconnects with exponential backoff (1 s doubling to a 30 s cap).
+- Testing: `MockBuzzProvider` records `sent` without the `buzzkit` dependency. ABC: `BuzzRelayProvider`.
+
+Runnable example: `examples/buzz_bot.py`.
+
+Buzz huddles (live voice calls in ephemeral channels) are handled by the voice subsystem, not this transport: `BuzzHuddleBackend` (`roomkit.voice.backends.buzz_huddle`) is a `VoiceBackend` carrying huddle Opus audio for a `RealtimeVoiceChannel`, and `BuzzHuddleWatcher` owns the announcement-to-call lifecycle, watching the parent channel for kind-48100 announcements (`KIND_HUDDLE_STARTED` / `huddle_announcement_parser` in `roomkit.sources.buzz`) and bridging each huddle. See `examples/buzz_voice_agent.py`.
+
 ## Microsoft Teams
 
 ```python

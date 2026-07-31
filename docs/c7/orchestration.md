@@ -203,6 +203,20 @@ updated_room = set_conversation_state(room, new_state)
 await kit.store.update_room(updated_room)
 ```
 
+### PhaseTransition Audit Record
+
+Each transition creates an immutable `PhaseTransition`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `from_phase` | `str` | Previous phase |
+| `to_phase` | `str` | New phase |
+| `from_agent` | `str \| None` | Previous agent channel ID |
+| `to_agent` | `str \| None` | New agent channel ID |
+| `reason` | `str` | Why the transition occurred |
+| `timestamp` | `datetime` | When the transition occurred (UTC) |
+| `metadata` | `dict[str, Any]` | Arbitrary metadata for this transition |
+
 ### Using State in Hooks
 
 ```python
@@ -307,6 +321,22 @@ router = ConversationRouter(
     ],
     default_agent_id="general-agent",
     supervisor_id="supervisor-agent",
+)
+```
+
+### Combined Conditions
+
+Combine multiple conditions (all are ANDed):
+
+```python
+# Only route SMS messages during billing phase to the billing specialist
+RoutingRule(
+    agent_id="sms-billing-agent",
+    conditions=RoutingConditions(
+        phases={"billing"},
+        channel_types={ChannelType.SMS},
+    ),
+    priority=0,
 )
 ```
 

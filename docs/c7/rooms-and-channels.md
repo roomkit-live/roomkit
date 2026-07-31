@@ -39,24 +39,34 @@ transitioned = await kit.check_all_timers()
 
 ## Channel Types
 
-RoomKit ships with these channel types:
+The `ChannelType` enum defines 23 values: `SMS`, `MMS`, `RCS`, `EMAIL`, `WHATSAPP`, `WHATSAPP_PERSONAL`, `WEBSOCKET`, `AI`, `VOICE`, `REALTIME_VOICE`, `REALTIME_AUDIO_VIDEO`, `PUSH`, `MESSENGER`, `TELEGRAM`, `TEAMS`, `DISCORD`, `BUZZ`, `WEBHOOK`, `VIDEO`, `AUDIO_VIDEO`, `CONFERENCE`, `CLI`, `SYSTEM`. RoomKit ships with these factories and channel classes:
 
 | Channel | Factory / Class | Category | Use Case |
 |---------|----------------|----------|----------|
-| SMS | `SMSChannel(id, provider=...)` | TRANSPORT | Text messages via Twilio, Telnyx, Sinch |
-| RCS | `RCSChannel(id, provider=...)` | TRANSPORT | Rich messaging via Twilio, Telnyx |
+| SMS | `SMSChannel(id, provider=...)` | TRANSPORT | Text messages via Twilio, Telnyx, Sinch, VoiceMeUp |
+| RCS | `RCSChannel(id, provider=..., fallback=True)` | TRANSPORT | Rich messaging via Twilio, Telnyx |
 | Email | `EmailChannel(id, provider=...)` | TRANSPORT | Email via ElasticEmail, SendGrid |
 | WhatsApp | `WhatsAppChannel(id, provider=...)` | TRANSPORT | WhatsApp Business API |
 | WhatsApp Personal | `WhatsAppPersonalChannel(id, provider=...)` | TRANSPORT | WhatsApp via neonize |
 | Messenger | `MessengerChannel(id, provider=...)` | TRANSPORT | Facebook Messenger |
 | Telegram | `TelegramChannel(id, provider=...)` | TRANSPORT | Telegram Bot API |
 | Teams | `TeamsChannel(id, provider=...)` | TRANSPORT | Microsoft Teams Bot Framework |
-| HTTP | `HTTPChannel(id, provider=...)` | TRANSPORT | Generic webhook |
+| Discord | `DiscordChannel(id, provider=...)` | TRANSPORT | Discord bot (recipient key `discord_channel_id`) |
+| Buzz | `BuzzChannel(id, provider=...)` | TRANSPORT | Nostr relay channels (recipient key `buzz_channel_id`) |
+| Webhook | `HTTPChannel(id, provider=...)` | TRANSPORT | Generic HTTP webhook (`ChannelType.WEBHOOK`) |
 | WebSocket | `WebSocketChannel(id)` | TRANSPORT | Real-time bidirectional |
+| CLI | `CLIChannel(id)` | TRANSPORT | Interactive terminal (stdin/stdout REPL) |
 | AI | `AIChannel(id, provider=...)` | INTELLIGENCE | LLM responses |
 | Agent | `Agent(id, provider=...)` | INTELLIGENCE | Agent with tools + greeting |
+| ACP | `ACPChannel(id, command, cwd=...)` | INTELLIGENCE | External coding agent via Agent Client Protocol (`channel_type` is `AI`; one session per room) |
 | Voice | `VoiceChannel(id, stt=..., tts=..., backend=...)` | TRANSPORT | Real-time audio |
-| Realtime Voice | `RealtimeVoiceChannel(id, provider=...)` | INTELLIGENCE | Speech-to-speech AI |
+| Realtime Voice | `RealtimeVoiceChannel(id, provider=...)` | TRANSPORT | Speech-to-speech AI |
+| Video | `VideoChannel(id, backend=..., vision=...)` | TRANSPORT | Video track with vision analysis |
+| Audio+Video | `AudioVideoChannel(id, backend=..., stt=..., tts=...)` | TRANSPORT | Combined voice + video |
+| Realtime Audio+Video | `RealtimeAudioVideoChannel(id, provider=..., transport=...)` | TRANSPORT | Speech-to-speech AI with video |
+| Conference | `ConferenceChannel(id, backend=...)` | TRANSPORT | Multi-party SFU conference with AI bot (LiveKit or mock backend) |
+
+`MMS`, `PUSH`, and `SYSTEM` have no factory: `MMS` is set automatically when an SMS channel carries media, `SYSTEM` marks framework-generated events, and `PUSH` is reserved.
 
 ## Registering and Attaching Channels
 
@@ -257,6 +267,22 @@ ws_caps = ChannelCapabilities(
 | `TemplateContent` | TEMPLATE in media_types → pass | `TextContent(body or "[Template: {id}]")` |
 | `EditContent` | `supports_edit` → pass | Transcode `new_content` + prefix "Correction:" |
 | `DeleteContent` | `supports_delete` → pass | `TextContent("[Message deleted]")` |
+
+### Multichannel Transcoding Example
+
+A single event gets adapted differently for each channel:
+
+```python
+# User sends a rich message with an image from WebSocket
+content = CompositeContent(parts=[
+    RichContent(body="**Check this out!**", format="markdown", plain_text="Check this out!"),
+    MediaContent(url="https://example.com/photo.jpg", mime_type="image/jpeg", caption="Sunset"),
+])
+
+# WebSocket channel: receives CompositeContent as-is (supports RICH + MEDIA)
+# SMS channel: receives TextContent("Check this out!\n[Media: Sunset]")
+# Voice channel (TTS): receives TextContent("Check this out!\n[Media: Sunset]")
+```
 
 ### Custom Content Transcoder
 

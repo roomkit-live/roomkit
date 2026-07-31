@@ -7,8 +7,8 @@ RoomKit is a pure async Python library for building multi-channel conversation s
 ## Key Concepts
 
 - **Room** — A container for a conversation. Holds participants, channel bindings, and an ordered event timeline.
-- **Channel** — A communication endpoint (SMS, Email, Voice, AI, WebSocket, etc.). Registered once, attached to many rooms.
-- **Hook** — A function that intercepts events at specific points in the pipeline. Can block, modify, or observe messages.
+- **Channel** — A communication endpoint (SMS, Email, WhatsApp, Telegram, Discord, Buzz/Nostr, Voice, Video, Conference/SFU, AI, ACP coding agents, WebSocket, CLI, etc. — 23 `ChannelType` values). Registered once, attached to many rooms.
+- **Hook** — A function that intercepts events at specific points in the pipeline (76 triggers). Can block, modify, or observe messages.
 - **Event Router** — Broadcasts events to all channels attached to a room, with content transcoding per channel capabilities.
 - **Identity Pipeline** — Maps external sender IDs to known participants with challenge/response flows.
 - **Realtime Events** — Ephemeral events (typing, presence, reactions) that are not stored in history.
@@ -37,6 +37,9 @@ Inbound Message
 - **Multi-agent pipelines** where specialized agents hand off conversations
 - **Notification systems** that bridge channels (SMS + Email + push)
 - **Speech-to-speech AI** with Gemini Live, OpenAI Realtime, or Grok
+- **AI conference participants** — a bot that joins a multi-party SFU video conference (LiveKit) with STT/TTS, transcription, and recording
+- **Coding-agent frontends** — drive Claude Code or any Agent Client Protocol agent from SMS, Telegram, or the terminal via `ACPChannel`
+- **Nostr workspace bots** — chat and huddle voice over Buzz relay channels
 
 ## Design Principles
 

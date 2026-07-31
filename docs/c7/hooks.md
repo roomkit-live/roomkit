@@ -151,12 +151,28 @@ await kit.remove_room_hook("vip-room", "vip_filter")
 
 ## Complete Hook Trigger Reference
 
+All 76 `HookTrigger` enum values (`src/roomkit/models/enums.py`). **Execution** is how
+the engine invokes the trigger: SYNC triggers run through the sequential,
+priority-ordered sync pipeline (can block/modify); ASYNC triggers run
+concurrently, fire-and-forget, errors logged. Registration mode is forgiving in
+both directions: ASYNC-registered hooks on a SYNC trigger fire as observers
+after the sync pass; SYNC-registered hooks (the default) on an ASYNC trigger
+fire like any other observer. Triggers marked *Reserved* exist in the enum but
+are not fired by any built-in code.
+
 ### Event Pipeline
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
 | `BEFORE_BROADCAST` | SYNC | `(event, ctx) -> HookResult` | Before event is stored and broadcast. Can block/modify. |
 | `AFTER_BROADCAST` | ASYNC | `(event, ctx) -> None` | After event is broadcast. Fire-and-forget side effects. |
+
+### Event Mutation (edit/delete)
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_EVENT_UPDATED` | ASYNC | `(event, ctx) -> None` | A persisted event's stored state changed — inbound `EditContent` or `kit.update_event()`. Payload is the updated event (`metadata.edited=True` on the edit path). |
+| `ON_EVENT_DELETED` | ASYNC | `(event, ctx) -> None` | A persisted event was deleted — inbound `DeleteContent` (soft, `metadata.deleted=True`) or `kit.delete_event()` (hard; payload is the pre-delete snapshot). |
 
 ### Channel Lifecycle
 
@@ -183,52 +199,75 @@ await kit.remove_room_hook("vip-room", "vip_filter")
 | `ON_IDENTITY_UNKNOWN` | SYNC | `(event, ctx) -> IdentityHookResult` | No identity match found |
 | `ON_PARTICIPANT_IDENTIFIED` | ASYNC | `(event, ctx) -> None` | Participant was successfully identified |
 
+### Membership
+
+Synthetic system events (`SystemContent`, `visibility=INTERNAL`), fired by the
+member management API.
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_PARTICIPANT_JOINED` | ASYNC | `(event, ctx) -> None` | Member added via `kit.add_member()`. `content.data`: `participant_id`, `identity_id`. |
+| `ON_PARTICIPANT_LEFT` | ASYNC | `(event, ctx) -> None` | Member removed via `kit.remove_member()` — soft status flip to LEFT/BANNED. `content.data`: `participant_id`, `status`. |
+| `ON_PARTICIPANT_UPDATED` | ASYNC | `(event, ctx) -> None` | Member renamed via `kit.rename_member()` (display name only; identity never changes). |
+
 ### Delivery
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_DELIVERY_STATUS` | ASYNC | `(status) -> None` | Delivery status update from provider |
+| `ON_DELIVERY_STATUS` | ASYNC | `(DeliveryStatus, ctx) -> None` | Provider delivery receipt dispatched by `kit.process_delivery_status()` / `kit.process_webhook()`. The `@kit.on_delivery_status` decorator registers a `(status)`-only callback on this trigger. |
+| `BEFORE_DELIVER` | ASYNC | `(event, ctx) -> None` | Before a proactive `kit.deliver()` strategy executes (in-process and worker paths). Payload is a synthetic INTERNAL system-source event describing the delivery. Observational — invoked through the async pipeline, cannot block (RFC §9 lists it SYNC; code invokes it ASYNC). |
+| `AFTER_DELIVER` | ASYNC | `(event, ctx) -> None` | After the delivery strategy completes. Same payload shape with status DELIVERED/FAILED and `metadata.error` set on failure. |
 
 ### Side Effects
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_TASK_CREATED` | ASYNC | `(event, ctx) -> None` | AI extracted a task from conversation |
-| `ON_ERROR` | ASYNC | `(event, ctx) -> None` | Error occurred during processing |
+| `ON_TASK_CREATED` | ASYNC | `(event, ctx) -> None` | A `Task` returned in `HookResult.tasks` was persisted. Payload event has type `TASK_CREATED` and `metadata.task_id`/`task_title`. Fires once per persisted task. |
+| `ON_ERROR` | ASYNC | `(event, ctx) -> None` | Error during processing (every provider/inference failure path funnels here). Payload event carries `metadata.error`, `error_type`, `error_category`. |
+
+### Session Lifecycle
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_SESSION_STARTED` | ASYNC | `(SessionStartedEvent, ctx) -> None` | A session began: voice session bound, realtime session opened, conference bot connected (`event.session` = the session/bot), or first inbound on an auto-created text room. On the inbound path, internal (`_`-prefixed) hooks are awaited (greeting gate ordering) and user hooks fire in the background. Auto-greeting is an internal hook on this trigger. |
 
 ### Voice
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_SPEECH_START` | ASYNC | `(event, ctx) -> None` | VAD detected speech start |
-| `ON_SPEECH_END` | ASYNC | `(event, ctx) -> None` | VAD detected speech end |
-| `ON_TRANSCRIPTION` | ASYNC | `(event, ctx) -> None` | STT produced a transcription |
-| `BEFORE_TTS` | SYNC | `(event, ctx) -> HookResult` | Before text is sent to TTS. Can block/modify. |
-| `AFTER_TTS` | ASYNC | `(event, ctx) -> None` | After TTS audio is generated |
+| `ON_SPEECH_START` | ASYNC | `(VoiceSession, ctx) -> None` | VAD detected speech start (VoiceChannel, RealtimeVoiceChannel). Conference lanes fire it per track with a synthetic system event. |
+| `ON_SPEECH_END` | ASYNC | `(VoiceSession, ctx) -> None` | VAD detected speech end. Same per-lane conference behavior. |
+| `ON_TRANSCRIPTION` | SYNC | `(event, ctx) -> HookResult` | STT produced a final transcript. Can block/modify; **fails closed** — a hook that raises/times out blocks publication. Payload: `TranscriptionEvent` (VoiceChannel), `RealtimeTranscriptionEvent` (RealtimeVoiceChannel), `ConferenceTranscription` (ConferenceChannel). Modify by returning the same type (voice/realtime also accept a plain `str`) with the new text. |
+| `ON_PARTIAL_TRANSCRIPTION` | ASYNC | `(PartialTranscriptionEvent, ctx) -> None` | Streaming interim STT result. Hot path — skipped entirely when no hooks are registered. |
+| `BEFORE_TTS` | SYNC | `(text: str, ctx) -> HookResult` | Before text is synthesized. Payload is the text `str`; modify with a `str`. Can block; **fails closed**. |
+| `AFTER_TTS` | ASYNC | `(text: str, ctx) -> None` | After TTS audio was sent. Payload is the final synthesized text. |
 
 ### Voice Pipeline
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_VAD_SILENCE` | ASYNC | `(event, ctx) -> None` | VAD detected silence |
-| `ON_VAD_AUDIO_LEVEL` | ASYNC | `(event, ctx) -> None` | Audio level update from VAD |
-| `ON_SPEAKER_CHANGE` | ASYNC | `(event, ctx) -> None` | Diarization detected speaker change |
-| `ON_BARGE_IN` | ASYNC | `(event, ctx) -> None` | User interrupted TTS playback |
-| `ON_TTS_CANCELLED` | ASYNC | `(event, ctx) -> None` | TTS playback was cancelled |
-| `ON_DTMF` | ASYNC | `(event, ctx) -> None` | DTMF tone detected |
-| `ON_TURN_COMPLETE` | ASYNC | `(event, ctx) -> None` | Turn detector says turn is complete |
-| `ON_TURN_INCOMPLETE` | ASYNC | `(event, ctx) -> None` | Turn detector says turn is incomplete |
-| `ON_BACKCHANNEL` | ASYNC | `(event, ctx) -> None` | Backchannel detected (uh-huh, yeah) |
-| `ON_RECORDING_STARTED` | ASYNC | `(event, ctx) -> None` | Audio recording started |
-| `ON_RECORDING_STOPPED` | ASYNC | `(event, ctx) -> None` | Audio recording stopped |
-| `ON_INPUT_AUDIO_LEVEL` | ASYNC | `(event, ctx) -> None` | Input audio level update |
-| `ON_OUTPUT_AUDIO_LEVEL` | ASYNC | `(event, ctx) -> None` | Output audio level update |
+| `ON_VAD_SILENCE` | ASYNC | `(VADSilenceEvent, ctx) -> None` | VAD detected silence |
+| `ON_VAD_AUDIO_LEVEL` | ASYNC | `(VADAudioLevelEvent, ctx) -> None` | Audio level update from VAD (high-frequency; telemetry-suppressed) |
+| `ON_SPEAKER_CHANGE` | ASYNC | `(SpeakerChangeEvent, ctx) -> None` | Diarization detected speaker change |
+| `ON_BARGE_IN` | ASYNC | `(BargeInEvent, ctx) -> None` | User interrupted TTS playback; carries `interrupted_text`, `audio_position_ms` |
+| `ON_TTS_CANCELLED` | ASYNC | `(TTSCancelledEvent, ctx) -> None` | TTS playback was cancelled (barge-in or explicit interrupt) |
+| `ON_DTMF` | ASYNC | `(DTMFDetectedEvent, ctx) -> None` | DTMF tone detected |
+| `ON_TURN_COMPLETE` | ASYNC | `(TurnCompleteEvent, ctx) -> None` | Turn detector says turn is complete; carries combined text + confidence |
+| `ON_TURN_INCOMPLETE` | ASYNC | `(TurnIncompleteEvent, ctx) -> None` | Turn detector says turn is incomplete |
+| `ON_BACKCHANNEL` | ASYNC | `(BackchannelEvent, ctx) -> None` | Backchannel detected (uh-huh, yeah) |
+| `ON_RECORDING_STARTED` | ASYNC | `(RecordingStartedEvent, ctx) -> None` | Audio recording started (voice session or conference track) |
+| `ON_RECORDING_STOPPED` | ASYNC | `(RecordingStoppedEvent, ctx) -> None` | Audio recording stopped, result available |
+| `ON_INPUT_AUDIO_LEVEL` | ASYNC | `(AudioLevelEvent, ctx) -> None` | Inbound audio level (throttled; telemetry-suppressed) |
+| `ON_OUTPUT_AUDIO_LEVEL` | ASYNC | `(AudioLevelEvent, ctx) -> None` | Outbound audio level (throttled; telemetry-suppressed) |
+| `BEFORE_BRIDGE_AUDIO` | SYNC | `(BridgeAudioEvent, ctx) -> HookResult` | Before an audio frame is forwarded across an audio bridge. Can block/modify the frame. Only invoked when hooks are registered — otherwise frames bypass the event loop for latency. |
 
 ### Tool Execution
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_TOOL_CALL` | ASYNC | `(event, ctx) -> None` | AI invoked a tool (fires from AIChannel and RealtimeVoiceChannel) |
+| `BEFORE_TOOL_USE` | SYNC | `(ToolCallEvent, ctx) -> HookResult` | Before a tool executes (AIChannel, realtime channels, external/ACP tools). Block denies the call. Fails closed: if room context cannot be built, the call is denied. |
+| `ON_TOOL_CALL` | SYNC | `(ToolCallEvent, ctx) -> HookResult` | A tool call executed (AIChannel, RealtimeVoiceChannel, skills, external/ACP tools). Block returns an error result to the model; `HookResult(metadata={"result": ...})` supplies or overrides the tool result (`event.result is None` means the hook must provide it). RFC §9 lists this ASYNC; code invokes it through the sync pipeline. |
+| `ON_USER_INPUT_REQUIRED` | SYNC | `(PendingInputEvent, ctx) -> HookResult` | A `HumanInputHandler`-backed tool paused awaiting human input. Sync so the notification (e.g. WebSocket push) lands before `wait()` starts blocking; block auto-rejects the pending request. |
 
 ### Realtime Voice
 
@@ -236,17 +275,76 @@ await kit.remove_room_hook("vip-room", "vip_filter")
 |---------|-----------|-----------|-------------|
 | `ON_REALTIME_TEXT_INJECTED` | ASYNC | `(event, ctx) -> None` | Text was injected into realtime session |
 
-### AI Response
+### AI Generation
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
+| `BEFORE_AI_GENERATION` | SYNC | `(AIGenerationEvent, ctx) -> HookResult` | Before the AI provider is invoked. `event.ai_context` (messages, system prompt, tools) may be mutated in place; block skips generation. |
+| `ON_AI_THINKING` | — | — | Reserved — defined in the enum, not fired by any built-in code (RFC §9 marks it Implemented). |
 | `ON_AI_RESPONSE` | ASYNC | `(AIResponseEvent, ctx) -> None` | AI generation completed. Carries response content, usage, latency, tool call count. |
+
+### Protocol Observability
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_PROTOCOL_TRACE` | ASYNC | `(ProtocolTrace, ctx) -> None` | Transport-level protocol trace (SIP, RTP, …) forwarded from a channel. Traces arriving before the room exists are buffered and replayed on attach. |
+
+### Orchestration (multi-agent)
+
+Handoff triggers fire from the `HandoffCoordinator` with a synthetic INTERNAL
+system event (AI-channel source; `metadata`: `from_agent`, `to_agent`,
+`accepted`, `new_phase`).
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_HANDOFF` | ASYNC | `(event, ctx) -> None` | Agent handoff accepted and executed. |
+| `ON_HANDOFF_REJECTED` | ASYNC | `(event, ctx) -> None` | Agent handoff was rejected (`metadata.accepted=False`). |
+| `ON_PHASE_TRANSITION` | ASYNC | `(event, ctx) -> None` | Fired alongside `ON_HANDOFF` after an accepted handoff, carrying the new phase. |
+| `ON_STATUS_POSTED` | — | — | Reserved — StatusBus posts emit the `status_posted` framework event instead; no hook fires (RFC §9 marks it Implemented). |
+
+### Delegation (background tasks)
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_TASK_DELEGATED` | ASYNC | `(event, ctx) -> None` | `kit.delegate()` dispatched a task to a child room. INTERNAL event, type `TASK_DELEGATED`; `metadata`: `task_id`, `child_room_id`, `agent_id`. |
+| `ON_TASK_COMPLETED` | ASYNC | `(event, ctx) -> None` | A delegated task finished. Fires in the parent room; type `TASK_COMPLETED`, body = output or error. |
+
+### Video
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `BEFORE_BRIDGE_VIDEO` | SYNC | `(BridgeVideoEvent, ctx) -> HookResult` | Before a video frame is forwarded across a bridge. Can block/modify the frame. Only invoked when hooks are registered (fast path bypasses the event loop). |
+| `ON_VIDEO_SESSION_STARTED` | ASYNC | `(SessionStartedEvent, ctx) -> None` | Video path live (VideoChannel, AVChannel, RealtimeAVChannel). `event.session` is the Video/VoiceSession. |
+| `ON_VIDEO_SESSION_ENDED` | ASYNC | `(SessionStartedEvent, ctx) -> None` | Video session ended (same payload shape). |
+| `ON_VIDEO_TRACK_ADDED` | — | — | Reserved — defined in the enum, not fired by built-in channels. |
+| `ON_VIDEO_TRACK_REMOVED` | — | — | Reserved — defined in the enum, not fired by built-in channels. |
+| `ON_VISION_RESULT` | SYNC | `(VisionEvent, ctx) -> HookResult` | A VisionProvider analyzed a frame. Block discards the result; modify rewrites the description before event injection and AI context update. RFC §9 lists this ASYNC; code invokes it through the sync pipeline. |
+| `ON_SCREEN_SHARE_STARTED` | ASYNC | `(event, ctx) -> None` | ConferenceChannel: a SCREEN_SHARE track was published. `content.data`: `track_id`, `participant_id`. |
+| `ON_SCREEN_SHARE_STOPPED` | ASYNC | `(event, ctx) -> None` | ConferenceChannel: a SCREEN_SHARE track was unpublished. |
+| `ON_VIDEO_DETECTION` | ASYNC | `(VideoDetectionEvent, ctx) -> None` | Video pipeline filter emitted a detection event (object, face, …). |
+
+### Conference (SFU)
+
+All fired by `ConferenceChannel` as synthetic system events
+(`SystemContent` with a `data` dict including `channel_id`); the channel's own
+bot never triggers them.
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_CONFERENCE_PARTICIPANT_JOINED` | ASYNC | `(event, ctx) -> None` | Participant joined the conference media session. `data`: `participant_id`. |
+| `ON_CONFERENCE_PARTICIPANT_LEFT` | ASYNC | `(event, ctx) -> None` | Participant left the conference media session. |
+| `ON_CONFERENCE_TRACK_PUBLISHED` | ASYNC | `(event, ctx) -> None` | Participant published a track. `data`: `track_id`, `participant_id`, `kind` (audio/video/screen_share). |
+| `ON_CONFERENCE_TRACK_UNPUBLISHED` | ASYNC | `(event, ctx) -> None` | A track was unpublished (same `data` shape). |
+| `ON_CONFERENCE_TRACK_MUTED` | ASYNC | `(event, ctx) -> None` | Publisher muted a track — "camera off" is usually a muted VIDEO track, not an unpublish. |
+| `ON_CONFERENCE_TRACK_UNMUTED` | ASYNC | `(event, ctx) -> None` | Publisher unmuted a track. |
+| `ON_ACTIVE_SPEAKER_CHANGED` | ASYNC | `(event, ctx) -> None` | SFU reported a dominant-speaker change. `data`: `participant_id`. |
+| `ON_CONNECTION_QUALITY_CHANGED` | ASYNC | `(event, ctx) -> None` | SFU reported a participant's connection quality. `data`: `participant_id`, `quality`. |
 
 ### Planning
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_PLAN_UPDATED` | ASYNC | `(event, ctx) -> None` | AI updated its task plan via `_plan_tasks` tool (requires `enable_planning=True`) |
+| `ON_PLAN_UPDATED` | — | — | Reserved — not fired by any built-in code. The `plan_tasks` tool (`enable_planning=True`) publishes an ephemeral realtime event `{"type": "plan_updated"}` instead (RFC §9 marks the hook Implemented). |
 
 ### Feedback
 

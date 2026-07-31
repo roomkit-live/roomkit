@@ -1,6 +1,6 @@
 # API Reference
 
-RoomKit exports **71 symbols** from `roomkit`. Providers and voice types import from subpackages.
+RoomKit exports **170 symbols** from `roomkit`. Providers and voice types import from subpackages.
 
 ## Top-Level Imports (`from roomkit import ...`)
 
@@ -9,16 +9,27 @@ RoomKit exports **71 symbols** from `roomkit`. Providers and voice types import 
 | Symbol | Description |
 |--------|-------------|
 | `RoomKit` | Central orchestrator — rooms, channels, hooks, storage |
+| `RoomKitConsole` | Full-screen terminal dashboard for voice agent development (optional, requires `rich`) |
+| `__version__` | Package version string |
+| `content_logging_enabled` | Whether raw message content may be written to logs (default False) |
+| `set_content_logging` | Enable/disable process-wide logging of raw message content |
 
 ### Channels
 
 | Symbol | Description |
 |--------|-------------|
+| `ACPChannel` | Connects a room to an external ACP coding agent over stdio |
 | `Agent` | AI agent with role, description, greeting, tools |
 | `AIChannel` | Intelligence layer for AI responses |
+| `AIChannelTurnConfig` | Per-turn generation overrides for AIChannel (None fields keep channel defaults) |
 | `AudioVideoChannel` | Combined audio + video channel |
+| `BuzzChannel` | Buzz (Nostr relay) transport channel factory |
 | `Channel` | Base class for all channels |
+| `CLIChannel` | Interactive terminal channel |
+| `ConferenceChannel` | Multi-party conference channel backed by an external SFU |
+| `DiscordChannel` | Discord bot transport channel factory |
 | `EmailChannel` | Email transport channel factory |
+| `FrameworkAwareChannel` | Channel base handed the framework it is registered with |
 | `HTTPChannel` | HTTP webhook transport channel factory |
 | `MessengerChannel` | Facebook Messenger transport channel factory |
 | `RCSChannel` | RCS transport channel factory |
@@ -34,28 +45,63 @@ RoomKit exports **71 symbols** from `roomkit`. Providers and voice types import 
 | `WhatsAppChannel` | WhatsApp Business API channel factory |
 | `WhatsAppPersonalChannel` | WhatsApp Personal (neonize) channel factory |
 
+### Conference
+
+| Symbol | Description |
+|--------|-------------|
+| `BotSession` | The framework's own connection to a conference |
+| `ConferenceAccess` | Credentials a client uses to join the conference directly |
+| `ConferenceBackend` | ABC for SFU conference backends |
+| `ConferenceBargeIn` | Event: a participant spoke over the bot and was allowed to interrupt it |
+| `ConferenceCapability` | Flag enum of capabilities a ConferenceBackend can support |
+| `ConferenceGrants` | Permissions encoded into a participant's conference access |
+| `ConferenceInterruptionConfig` | Multi-party interruption policy |
+| `ConferenceInterruptionScope` | Who may interrupt the bot while it is speaking |
+| `ConferenceParticipant` | A participant's media presence in a conference |
+| `ConferenceRealtimeConfig` | Composes a speech-to-speech provider with a conference |
+| `ConferenceRecordingConfig` | Configuration for recording a conference |
+| `ConferenceRecordingMode` | Where a conference recording is produced |
+| `ConferenceRecordingStarted` | Event: a track's recording has opened |
+| `ConferenceRecordingStopped` | Event: a track's recording has closed, with its destination |
+| `ConferenceToolHandler` | Callable type for conference tool invocation |
+| `ConferenceTrack` | A single media stream published by a conference participant |
+| `ConferenceTranscription` | What a lane produced, before it enters the room |
+| `TrackKind` | Kind of media carried by a conference track |
+| `LiveKitConferenceBackend` | ConferenceBackend backed by a LiveKit SFU |
+| `LiveKitConfig` | Connection and behaviour settings for LiveKitConferenceBackend |
+| `MockConferenceBackend` | Conference backend that scripts SFU events for tests |
+| `MockDelivery` | Mock media timing — how long one frame took to reach every subscriber |
+| `MockFaults` | Per-operation failures and delays for the mock backend |
+| `MockTrackFormat` | Audio format a participant negotiated for one track (mock) |
+| `MockUtterance` | Chunks published for one utterance on one bot's track (mock) |
+| `CONFERENCE_ADDRESS_KEYS` | Participant-attribute keys read as a caller's address, most specific first |
+| `CONFERENCE_METADATA_KEY` | `Participant.metadata` key a conference nests provider data under (`"conference"`) |
+| `CONFERENCE_UNASSERTED_METADATA_KEY` | Metadata key nesting client-claimed (unverified) participant attributes |
+
+### Video
+
+| Symbol | Description |
+|--------|-------------|
+| `VideoDetectionEvent` | Detection event emitted by video pipeline filters |
+| `FaceTouchFilter` | Detects hand-to-face contact using MediaPipe landmarks |
+| `FaceTouchConfig` | Configuration for face touch detection |
+| `FaceTouchSensitivity` | Sensitivity presets controlling detection thresholds |
+| `FaceZone` | Face zones that can be monitored for touch detection |
+| `MockFaceTouchFilter` | Mock filter emitting pre-configured detection events at specific frames |
+
 ### Enums
 
 | Symbol | Description |
 |--------|-------------|
 | `Access` | Channel access levels: READ_WRITE, READ_ONLY, WRITE_ONLY, NONE |
 | `ChannelCategory` | TRANSPORT or INTELLIGENCE |
-| `ChannelType` | SMS, EMAIL, WHATSAPP, VOICE, AI, WEBSOCKET, etc. |
-| `EventStatus` | DELIVERED, BLOCKED, etc. |
-| `EventType` | MESSAGE, SYSTEM, EDIT, DELETE, etc. |
+| `ChannelType` | 23 values: SMS, MMS, RCS, EMAIL, WHATSAPP, WHATSAPP_PERSONAL, WEBSOCKET, AI, VOICE, REALTIME_VOICE, REALTIME_AUDIO_VIDEO, PUSH, MESSENGER, TELEGRAM, TEAMS, DISCORD, BUZZ, WEBHOOK, VIDEO, AUDIO_VIDEO, CONFERENCE, CLI, SYSTEM |
+| `EventStatus` | PENDING, DELIVERED, READ, FAILED, BLOCKED |
+| `EventType` | 27 values (MESSAGE, SYSTEM, EDIT, DELETE, TOOL_CALL_START, DTMF, etc.) |
 | `HookExecution` | SYNC or ASYNC |
-| `HookTrigger` | 40+ hook triggers (BEFORE_BROADCAST, AFTER_BROADCAST, etc.) |
+| `HookTrigger` | 76 hook triggers — full list in hooks.md |
 | `RoomStatus` | ACTIVE, PAUSED, CLOSED, ARCHIVED |
-
-### Orchestration
-
-| Symbol | Description |
-|--------|-------------|
-| `Loop` | Producer/reviewer cycle strategy |
-| `Orchestration` | ABC for orchestration strategies |
-| `Pipeline` | Linear agent chain strategy |
-| `Supervisor` | Supervisor delegates to workers strategy |
-| `Swarm` | Bidirectional handoff strategy |
+| `Visibility` | Scope keywords for an event's `visibility` field: ALL, NONE, TRANSPORT, INTELLIGENCE, INTERNAL |
 
 ### Models
 
@@ -64,8 +110,6 @@ RoomKit exports **71 symbols** from `roomkit`. Providers and voice types import 
 | `ChannelBinding` | Binding of a channel to a room |
 | `ChannelCapabilities` | Declared capabilities of a channel |
 | `ChannelOutput` | Output of a channel delivery |
-| `DeliveryResult` | Result of delivering a message |
-| `DeliveryStatus` | Delivery status from provider webhook |
 | `EventSource` | Source attribution for an event |
 | `FrameworkEvent` | Lightweight framework lifecycle event |
 | `HookResult` | Result from sync hooks: `.allow()`, `.block(reason)`, `.modify(event)` |
@@ -80,11 +124,90 @@ RoomKit exports **71 symbols** from `roomkit`. Providers and voice types import 
 | `RoomTimers` | Timer configuration for room inactivity |
 | `SessionStartedEvent` | Event fired when a voice session starts |
 | `TextContent` | Plain text content |
+| `get_current_voice_session` | Get the current voice session from context |
+
+### Tools, Callbacks & Human Input
+
+| Symbol | Description |
+|--------|-------------|
 | `Tool` | Base class for tool definitions |
+| `ToolHandler` | Tool handler type for realtime voice |
+| `ToolPolicy` | Per-agent allow/deny rules for tool access |
+| `RoleOverride` | Per-role tool policy override |
 | `ToolCallCallback` | Callback type for tool call events |
 | `ToolCallEvent` | Tool call event model |
-| `ToolHandler` | Tool handler type for realtime voice |
-| `get_current_voice_session` | Get the current voice session from context |
+| `ToolCallContent` | Content for TOOL_CALL_START and TOOL_CALL_END events |
+| `AIGenerationEvent` | Payload for BEFORE_AI_GENERATION hooks, before AI provider invocation |
+| `AIResponseEvent` | Payload for ON_AI_RESPONSE hooks, after AI generation completes |
+| `BeforeGenerationCallback` | Async callback type receiving AIGenerationEvent |
+| `AfterResponseCallback` | Async callback type receiving AIResponseEvent |
+| `HumanInputHandler` | Manages pending human input requests |
+| `HumanInputToolHandler` | ToolHandler wrapper that blocks on human input for specified tools |
+| `PendingInput` | A pending human input request |
+| `PendingInputEvent` | Event fired through ON_USER_INPUT_REQUIRED hooks |
+| `PendingInputStatus` | Status of a pending human input request |
+
+### Delivery
+
+| Symbol | Description |
+|--------|-------------|
+| `DeliveryStrategy` | ABC controlling when and how content is delivered to a channel |
+| `Immediate` | Deliver now; may interrupt ongoing TTS playback |
+| `Queued` | Add to queue, deliver at the next idle window |
+| `WaitForIdle` | Wait for TTS/speech to finish, then send |
+| `DeliveryBackend` | ABC for persistent delivery queue backends |
+| `DeliveryItem` | Serializable delivery request — the unit of work in the queue |
+| `DeliveryItemStatus` | Lifecycle status of a delivery item |
+| `InMemoryDeliveryBackend` | Asyncio-queue delivery backend (single process, no persistence) |
+| `DeliveryResult` | Result of delivering a message |
+| `DeliveryStatus` | Delivery status from provider webhook |
+
+### Storage & Locking
+
+| Symbol | Description |
+|--------|-------------|
+| `ConversationStore` | ABC for persistent room/event/binding/participant storage |
+| `InMemoryStore` | Dict-based in-memory store for development and testing |
+| `RoomLockManager` | ABC for per-room locking |
+| `InMemoryLockManager` | In-process per-room asyncio locks with LRU eviction |
+| `EventFilter` | Filter criteria for querying room events |
+| `PersistencePolicy` | Controls which event types are persisted to the store |
+
+### Orchestration
+
+| Symbol | Description |
+|--------|-------------|
+| `Loop` | Producer/reviewer cycle strategy |
+| `Orchestration` | ABC for orchestration strategies |
+| `Pipeline` | Linear agent chain strategy |
+| `Supervisor` | Supervisor delegates to workers strategy |
+| `Swarm` | Bidirectional handoff strategy |
+| `ConversationPhase` | Built-in conversation phases (StrEnum) |
+| `ConversationState` | Tracks conversation progress within a room |
+| `ConversationRouter` | Routes events to the appropriate agent |
+| `ConversationPipeline` | Generates routing rules for sequential agent workflows |
+| `PipelineStage` | A stage in a ConversationPipeline |
+| `RoutingRule` | Routing rule mapping conditions to an agent |
+| `RoutingConditions` | Conditions for a routing rule to match |
+| `get_conversation_state` | Extract typed ConversationState from room metadata |
+| `set_conversation_state` | Return a room copy with updated conversation state |
+| `HandoffHandler` | Processes handoff tool calls |
+| `HandoffRequest` | Parsed from an agent's handoff tool call arguments |
+| `HandoffResult` | Result returned to the calling agent after a handoff |
+| `HANDOFF_TOOL` | AITool definition for transferring a conversation to another agent |
+| `setup_handoff` | Wires handoff into an AIChannel's tool chain |
+
+### Memory, Skills & Sandbox
+
+| Symbol | Description |
+|--------|-------------|
+| `MemoryProvider` | ABC for pluggable memory backends feeding AI context construction |
+| `Skill` | Full skill definition including instructions body |
+| `SkillMetadata` | Lightweight metadata parsed from SKILL.md frontmatter |
+| `SkillRegistry` | Discovers, loads, and manages Agent Skills |
+| `ScriptExecutor` | ABC for executing skill scripts with integrator-defined policy |
+| `SandboxExecutor` | ABC for executing commands in a sandboxed environment |
+| `SandboxResult` | Result of executing a sandbox command |
 
 ### Errors
 
@@ -92,14 +215,20 @@ RoomKit exports **71 symbols** from `roomkit`. Providers and voice types import 
 |--------|-------------|
 | `RoomKitError` | Base exception |
 | `RoomNotFoundError` | Room does not exist |
+| `RoomClosedError` | Room's status refuses new events (RFC §5.1) |
+| `RoomNotAttachedError` | Channel acted on a room it is no longer attached to |
 | `ChannelNotFoundError` | Channel not attached to room |
 | `ChannelNotRegisteredError` | Channel not registered with framework |
 | `ParticipantNotFoundError` | Participant not found in room |
+| `ParticipantNotAdmittedError` | Participant barred from what was asked for them |
 | `IdentityNotFoundError` | Identity not found |
 | `SourceAlreadyAttachedError` | Source already attached |
 | `SourceNotFoundError` | No source attached |
 | `VoiceBackendNotConfiguredError` | Voice backend not configured |
 | `VoiceNotConfiguredError` | Voice (STT/TTS) not configured |
+| `ConferenceAlreadyAttachedError` | Second conference channel attached to a room |
+| `ConferenceCapabilityError` | Conference operation needs a capability the backend lacks |
+| `ConferenceCloseError` | Conference channel did not close all of its resources |
 
 ### AI Documentation Helpers
 
@@ -114,21 +243,26 @@ RoomKit exports **71 symbols** from `roomkit`. Providers and voice types import 
 
 ```python
 kit = RoomKit(
-    store=InMemoryStore(),                 # ConversationStore implementation
-    identity_resolver=None,                # IdentityResolver implementation
-    identity_channel_types=None,           # Channel types to resolve identity for
-    inbound_router=None,                   # InboundRoomRouter implementation
-    lock_manager=None,                     # RoomLockManager implementation
-    realtime=None,                         # RealtimeBackend implementation
-    max_chain_depth=5,                     # AI-to-AI loop prevention
-    identity_timeout=10.0,                 # Identity resolution timeout (seconds)
-    process_timeout=30.0,                  # Inbound processing timeout (seconds)
-    task_runner=None,                      # Background task runner
-    delivery_strategy=None,                # Delivery strategy
-    status_bus=None,                       # Status bus for orchestration
-    telemetry=None,                        # TelemetryProvider
-    inbound_rate_limit=None,               # Framework-level rate limit
-    orchestration=None,                    # Orchestration strategy
+    store=None,                    # ConversationStore (default: InMemoryStore)
+    identity_resolver=None,        # IdentityResolver for identifying inbound senders
+    identity_channel_types=None,   # Restrict identity resolution to these ChannelTypes (None = all)
+    inbound_router=None,           # InboundRoomRouter (default: DefaultInboundRoomRouter)
+    lock_manager=None,             # RoomLockManager (default: InMemoryLockManager)
+    realtime=None,                 # RealtimeBackend for ephemeral events (default: InMemoryRealtime)
+    max_chain_depth=5,             # Max reentry chain depth — AI-to-AI loop prevention
+    identity_timeout=10.0,         # Identity resolution timeout (seconds)
+    process_timeout=30.0,          # Locked inbound processing timeout (seconds)
+    stt=None,                      # STTProvider for transcription
+    tts=None,                      # TTSProvider for synthesis
+    voice=None,                    # VoiceBackend for real-time audio transport
+    task_runner=None,              # TaskRunner for delegated background tasks (default: InMemoryTaskRunner)
+    delivery_strategy=None,        # DeliveryStrategy | str — proactive delivery of task results
+    delivery_backend=None,         # DeliveryBackend — persistent queue for deliver() (None = in-process)
+    status_bus=None,               # StatusBus for multi-agent coordination (default: in-memory)
+    telemetry=None,                # TelemetryProvider or TelemetryConfig (default: no-op)
+    inbound_rate_limit=None,       # RateLimit applied to inbound messages, keyed per channel_id
+    orchestration=None,            # Default Orchestration strategy for create_room()
+    persistence_policy=None,       # PersistencePolicy — which event types are persisted (None = all)
 )
 ```
 

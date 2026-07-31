@@ -29,9 +29,11 @@ with distributed implementations (Redis, PostgreSQL, etc.) for production deploy
 ## Channels
 
 - [Channel ABC](docs/api/channel.md): Base class for all channels - handle_inbound, deliver, on_event, capabilities
-- [Built-in Channels](docs/api/channels.md): SMSChannel, EmailChannel, AIChannel, WebSocketChannel, VoiceChannel, RealtimeVoiceChannel, MessengerChannel, TeamsChannel, HTTPChannel, WhatsAppChannel, WhatsAppPersonalChannel
+- [Built-in Channels](docs/api/channels.md): SMSChannel, RCSChannel, EmailChannel, WhatsAppChannel, WhatsAppPersonalChannel, MessengerChannel, TelegramChannel, TeamsChannel, DiscordChannel, BuzzChannel, HTTPChannel, WebSocketChannel, AIChannel, VoiceChannel, RealtimeVoiceChannel, VideoChannel, AudioVideoChannel, RealtimeAudioVideoChannel, ConferenceChannel, ACPChannel, CLIChannel
 - [Voice Channel](docs/api/providers-voice.md): VoiceBackend ABC, STTProvider, TTSProvider, DeepgramSTTProvider, ElevenLabsTTSProvider, FastRTCVoiceBackend - real-time voice with barge-in support
 - [Realtime Voice](docs/api/providers-realtime-voice.md): RealtimeVoiceChannel, RealtimeVoiceProvider ABC, GeminiLiveProvider, OpenAIRealtimeProvider, WebSocketRealtimeTransport, FastRTCRealtimeTransport (WebRTC passthrough) - speech-to-speech AI with tool calling, text injection, auto-reconnect
+- [Conference](docs/api/conference.md): ConferenceChannel + ConferenceBackend ABC (LiveKit SFU, Mock) - multi-party audio/video conferences with an AI bot participant (STT/TTS)
+- [Event Sources](docs/api/sources.md): source-driven ingestion powering Discord, Buzz (Nostr), WhatsApp Personal and custom WebSocket/SSE integrations
 
 ## Key Concepts (in llms-full.txt)
 
@@ -51,15 +53,31 @@ with distributed implementations (Redis, PostgreSQL, etc.) for production deploy
 
 ## Providers
 
-- [AI Providers](docs/api/providers-ai.md): AIProvider ABC, AnthropicAIProvider, OpenAIAIProvider, GeminiAIProvider, MockAIProvider - context building, vision support
+- [AI Providers](docs/api/providers-ai.md): AIProvider ABC, AnthropicAIProvider, OpenAIAIProvider, AzureAIProvider, GeminiAIProvider, GeminiVertexProvider (Vertex AI), MistralAIProvider, OllamaAIProvider, OpenRouterAIProvider, PolarGridAIProvider, XAIAIProvider (Grok), vLLM, MockAIProvider - context building, tool calling, vision, thinking/reasoning
 - [SMS Providers](docs/api/providers-sms.md): SMSProvider ABC, TwilioSMSProvider, TelnyxSMSProvider, SinchSMSProvider, VoiceMeUpSMSProvider - webhook parsing, signature verification, MMS support
-- [Email Providers](docs/api/providers-email.md): EmailProvider ABC, ElasticEmailProvider
+- [RCS Providers](docs/api/providers-rcs.md): RCSProvider ABC, Twilio and Telnyx implementations - rich cards, carousels, suggested replies
+- [Email Providers](docs/api/providers-email.md): EmailProvider ABC, ElasticEmailProvider, SendGridProvider
+- [Telegram Providers](docs/api/providers-telegram.md): TelegramProvider ABC, TelegramBotProvider (Telegram Bot API)
+- [Discord Providers](docs/api/providers-discord.md): DiscordProvider ABC, DiscordBotProvider (Discord Bot API)
+- [Buzz Providers](docs/api/providers-buzz.md): BuzzRelayProvider ABC, BuzzProvider - Buzz (Nostr relay) workspace messaging via buzzkit
 - [HTTP Providers](docs/api/providers-http.md): HTTPProvider ABC, WebhookHTTPProvider - generic webhook integration
 - [Messenger Providers](docs/api/providers-messenger.md): MessengerProvider ABC, FacebookMessengerProvider
 - [Teams Providers](docs/api/providers-teams.md): TeamsProvider ABC, BotFrameworkTeamsProvider, ConversationReferenceStore, parse_teams_activity, is_bot_added - Bot Framework SDK integration with proactive messaging, bot mention detection, lifecycle events
 - [Voice Providers](docs/api/providers-voice.md): VoiceBackend, STTProvider (Deepgram), TTSProvider (ElevenLabs), FastRTCVoiceBackend
 - [Realtime Voice Providers](docs/api/providers-realtime-voice.md): GeminiLiveProvider (speech-to-speech via Gemini Live API), OpenAIRealtimeProvider (speech-to-speech via OpenAI Realtime API), WebSocketRealtimeTransport (browser audio via WebSocket), FastRTCRealtimeTransport (browser audio via WebRTC)
 - [WhatsApp Providers](docs/api/providers-whatsapp.md): WhatsAppProvider (Business API), WhatsAppPersonalProvider (neonize - unofficial multidevice protocol with typing indicators, read receipts, media handling)
+
+## Agentic AI & Voice Internals
+
+- [Memory](docs/api/memory.md): SlidingWindowMemory, SummarizingMemory (two-tier context budget), RetrievalMemory - AI context management
+- [Knowledge (RAG)](docs/api/knowledge.md): KnowledgeSource ABC, PostgresKnowledgeSource (full-text search) - retrieval-augmented context
+- [Tools](docs/api/tools.md): Tool ABC, tool handlers, MCP tool provider, Tool Search (progressive disclosure)
+- [Skills](docs/api/skills.md): reusable agent skill packages with availability gating
+- [Scoring](docs/api/scoring.md): ScoringHook, ConversationScorer - automatic response quality scoring; user feedback via kit.submit_feedback()
+- [Delegation](docs/api/delegation.md): agent-to-agent task delegation over the status bus
+- [Voice Pipeline](docs/api/voice-pipeline.md): pluggable stages - VAD, AEC, AGC, denoiser, diarization, DTMF, recorder, resampler, turn detection
+- [SIP Backend](docs/api/sip-backend.md) / [RTP Backend](docs/api/rtp-backend.md): telephony voice transports
+- [Telemetry](docs/api/telemetry.md): TelemetryProvider - latency and usage instrumentation
 
 ## Optional
 

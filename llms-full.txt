@@ -1,20 +1,20 @@
 # RoomKit
 
-> Minimum version: 0.38.0 | Python 3.12+
-
 > RoomKit is a pure async Python library for building multi-channel conversation
 > systems. It provides room-based abstractions for managing conversations across
 > SMS, Email, Voice, WebSocket, AI, and other channels with pluggable storage,
 > identity resolution, hooks, and realtime events.
-> Pydantic 2.x, fully typed, zero required dependencies beyond Pydantic.
+> Python 3.12+, Pydantic 2.x, fully typed, zero required dependencies beyond Pydantic.
+
+> Minimum version: 0.38.0 | Python 3.12+
 
 RoomKit is a pure async Python library for building multi-channel conversation systems. It provides a **room-based abstraction** where conversations happen in rooms, participants communicate through channels, and hooks let you intercept and modify the flow.
 
 ## Key Concepts
 
 - **Room** — A container for a conversation. Holds participants, channel bindings, and an ordered event timeline.
-- **Channel** — A communication endpoint (SMS, Email, Voice, AI, WebSocket, etc.). Registered once, attached to many rooms.
-- **Hook** — A function that intercepts events at specific points in the pipeline. Can block, modify, or observe messages.
+- **Channel** — A communication endpoint (SMS, Email, WhatsApp, Telegram, Discord, Buzz/Nostr, Voice, Video, Conference/SFU, AI, ACP coding agents, WebSocket, CLI, etc. — 23 `ChannelType` values). Registered once, attached to many rooms.
+- **Hook** — A function that intercepts events at specific points in the pipeline (76 triggers). Can block, modify, or observe messages.
 - **Event Router** — Broadcasts events to all channels attached to a room, with content transcoding per channel capabilities.
 - **Identity Pipeline** — Maps external sender IDs to known participants with challenge/response flows.
 - **Realtime Events** — Ephemeral events (typing, presence, reactions) that are not stored in history.
@@ -43,6 +43,9 @@ Inbound Message
 - **Multi-agent pipelines** where specialized agents hand off conversations
 - **Notification systems** that bridge channels (SMS + Email + push)
 - **Speech-to-speech AI** with Gemini Live, OpenAI Realtime, or Grok
+- **AI conference participants** — a bot that joins a multi-party SFU video conference (LiveKit) with STT/TTS, transcription, and recording
+- **Coding-agent frontends** — drive Claude Code or any Agent Client Protocol agent from SMS, Telegram, or the terminal via `ACPChannel`
+- **Nostr workspace bots** — chat and huddle voice over Buzz relay channels
 
 ## Design Principles
 
@@ -355,7 +358,7 @@ Channels have two categories:
 
 ## Channel-to-AI Message Flow (Reentry Loop)
 
-When you send a message from a transport channel, it flows to the AI and back automatically. Here's the complete flow:
+When you send a message from a transport channel, it flows to the AI and back automatically:
 
 ```
 1. Transport channel (SMS/WS/Voice) → kit.process_inbound(InboundMessage)
@@ -377,11 +380,10 @@ When you send a message from a transport channel, it flows to the AI and back au
 
 **Key insight**: The "pipeline" is a reentry loop — not a linear chain. AI responses go back through the same BEFORE_BROADCAST hooks, content transcoding, and broadcast cycle as user messages.
 
-### Connecting Channel to AI — Minimal Example
+### Minimal Channel→AI Example
 
 ```python
-from roomkit import RoomKit, WebSocketChannel, ChannelCategory, InboundMessage, TextContent
-from roomkit.channels.ai import AIChannel
+from roomkit import RoomKit, AIChannel, WebSocketChannel, ChannelCategory, InboundMessage, TextContent
 from roomkit.providers.anthropic.ai import AnthropicAIProvider
 from roomkit.providers.anthropic.config import AnthropicConfig
 
@@ -407,12 +409,11 @@ await kit.attach_channel("chat", "ai", category=ChannelCategory.INTELLIGENCE)
 await kit.process_inbound(
     InboundMessage(channel_id="ws-user", sender_id="user", content=TextContent(body="Hi!"))
 )
-# on_recv callback fires with the AI's response
 ```
 
 ### Pipeline vs Pipeline
 
-RoomKit uses "Pipeline" in two contexts — don't confuse them:
+RoomKit uses "Pipeline" in two contexts:
 
 | Term | What It Is | Where |
 |------|-----------|-------|
@@ -510,7 +511,7 @@ from roomkit import RoomKit
 
 kit = RoomKit()
 
-# Create room with auto-pause and auto-close timers
+# Create room
 room = await kit.create_room(room_id="session-1")
 
 # Update metadata
@@ -525,24 +526,34 @@ transitioned = await kit.check_all_timers()
 
 ## Channel Types
 
-RoomKit ships with these channel types:
+The `ChannelType` enum defines 23 values: `SMS`, `MMS`, `RCS`, `EMAIL`, `WHATSAPP`, `WHATSAPP_PERSONAL`, `WEBSOCKET`, `AI`, `VOICE`, `REALTIME_VOICE`, `REALTIME_AUDIO_VIDEO`, `PUSH`, `MESSENGER`, `TELEGRAM`, `TEAMS`, `DISCORD`, `BUZZ`, `WEBHOOK`, `VIDEO`, `AUDIO_VIDEO`, `CONFERENCE`, `CLI`, `SYSTEM`. RoomKit ships with these factories and channel classes:
 
 | Channel | Factory / Class | Category | Use Case |
 |---------|----------------|----------|----------|
-| SMS | `SMSChannel(id, provider=...)` | TRANSPORT | Text messages via Twilio, Telnyx, Sinch |
-| RCS | `RCSChannel(id, provider=...)` | TRANSPORT | Rich messaging via Twilio, Telnyx |
+| SMS | `SMSChannel(id, provider=...)` | TRANSPORT | Text messages via Twilio, Telnyx, Sinch, VoiceMeUp |
+| RCS | `RCSChannel(id, provider=..., fallback=True)` | TRANSPORT | Rich messaging via Twilio, Telnyx |
 | Email | `EmailChannel(id, provider=...)` | TRANSPORT | Email via ElasticEmail, SendGrid |
 | WhatsApp | `WhatsAppChannel(id, provider=...)` | TRANSPORT | WhatsApp Business API |
 | WhatsApp Personal | `WhatsAppPersonalChannel(id, provider=...)` | TRANSPORT | WhatsApp via neonize |
 | Messenger | `MessengerChannel(id, provider=...)` | TRANSPORT | Facebook Messenger |
 | Telegram | `TelegramChannel(id, provider=...)` | TRANSPORT | Telegram Bot API |
 | Teams | `TeamsChannel(id, provider=...)` | TRANSPORT | Microsoft Teams Bot Framework |
-| HTTP | `HTTPChannel(id, provider=...)` | TRANSPORT | Generic webhook |
+| Discord | `DiscordChannel(id, provider=...)` | TRANSPORT | Discord bot (recipient key `discord_channel_id`) |
+| Buzz | `BuzzChannel(id, provider=...)` | TRANSPORT | Nostr relay channels (recipient key `buzz_channel_id`) |
+| Webhook | `HTTPChannel(id, provider=...)` | TRANSPORT | Generic HTTP webhook (`ChannelType.WEBHOOK`) |
 | WebSocket | `WebSocketChannel(id)` | TRANSPORT | Real-time bidirectional |
+| CLI | `CLIChannel(id)` | TRANSPORT | Interactive terminal (stdin/stdout REPL) |
 | AI | `AIChannel(id, provider=...)` | INTELLIGENCE | LLM responses |
 | Agent | `Agent(id, provider=...)` | INTELLIGENCE | Agent with tools + greeting |
+| ACP | `ACPChannel(id, command, cwd=...)` | INTELLIGENCE | External coding agent via Agent Client Protocol (`channel_type` is `AI`; one session per room) |
 | Voice | `VoiceChannel(id, stt=..., tts=..., backend=...)` | TRANSPORT | Real-time audio |
-| Realtime Voice | `RealtimeVoiceChannel(id, provider=...)` | INTELLIGENCE | Speech-to-speech AI |
+| Realtime Voice | `RealtimeVoiceChannel(id, provider=...)` | TRANSPORT | Speech-to-speech AI |
+| Video | `VideoChannel(id, backend=..., vision=...)` | TRANSPORT | Video track with vision analysis |
+| Audio+Video | `AudioVideoChannel(id, backend=..., stt=..., tts=...)` | TRANSPORT | Combined voice + video |
+| Realtime Audio+Video | `RealtimeAudioVideoChannel(id, provider=..., transport=...)` | TRANSPORT | Speech-to-speech AI with video |
+| Conference | `ConferenceChannel(id, backend=...)` | TRANSPORT | Multi-party SFU conference with AI bot (LiveKit or mock backend) |
+
+`MMS`, `PUSH`, and `SYSTEM` have no factory: `MMS` is set automatically when an SMS channel carries media, `SYSTEM` marks framework-generated events, and `PUSH` is reserved.
 
 ## Registering and Attaching Channels
 
@@ -663,52 +674,31 @@ Events carry typed content. RoomKit supports 11 content types, all discriminated
 
 ```python
 from roomkit.models.event import (
-    TextContent,
-    RichContent,
-    MediaContent,
-    AudioContent,
-    VideoContent,
-    LocationContent,
-    CompositeContent,
-    TemplateContent,
-    SystemContent,
-    EditContent,
-    DeleteContent,
+    TextContent, RichContent, MediaContent, AudioContent, VideoContent,
+    LocationContent, CompositeContent, TemplateContent, SystemContent,
+    EditContent, DeleteContent,
 )
 
 # Plain text
 TextContent(body="Hello!")
 
 # Rich content with buttons and Markdown
-RichContent(
-    body="Choose an option:",
-    format="markdown",
-    plain_text="Choose an option:",
-    buttons=[{"text": "Option A", "payload": "a"}, {"text": "Option B", "payload": "b"}],
-)
+RichContent(body="Choose:", format="markdown", plain_text="Choose:", buttons=[{"text": "A", "payload": "a"}])
 
-# Media attachment
-MediaContent(url="https://example.com/image.png", mime_type="image/png", caption="Product photo")
-
-# Audio with transcript
+# Media, Audio, Location, Template
+MediaContent(url="https://example.com/image.png", mime_type="image/png", caption="Photo")
 AudioContent(url="https://example.com/voice.ogg", mime_type="audio/ogg", transcript="Hello there")
+LocationContent(latitude=40.7128, longitude=-74.0060, label="NYC Office")
+TemplateContent(template_id="order_confirm", language="en", parameters={"1": "ORD-123"})
 
-# Location
-LocationContent(latitude=40.7128, longitude=-74.0060, label="NYC Office", address="New York, NY")
-
-# Template (WhatsApp Business)
-TemplateContent(template_id="order_confirmation", language="en", parameters={"1": "ORD-123"})
-
-# Multi-part message (max depth 5)
+# Multi-part (max depth 5)
 CompositeContent(parts=[
     TextContent(body="Here's the photo:"),
     MediaContent(url="https://example.com/photo.jpg", mime_type="image/jpeg"),
 ])
 
-# Edit a previous message
+# Edit and Delete
 EditContent(target_event_id="evt-abc", new_content=TextContent(body="Corrected text"))
-
-# Delete a message
 DeleteContent(target_event_id="evt-abc", delete_type="sender", reason="User retracted")
 ```
 
@@ -721,7 +711,7 @@ When broadcasting events, the EventRouter automatically **transcodes** content t
 1. Event broadcast starts → EventRouter iterates over all target channel bindings
 2. For each target, call `ContentTranscoder.transcode(content, source_binding, target_binding)`
 3. Transcoder checks `target_binding.capabilities.media_types` to decide if content passes through or needs conversion
-4. If transcode returns `None` → delivery is skipped for that channel (content cannot be represented)
+4. If transcode returns `None` → delivery is skipped for that channel
 
 ### Channel Capabilities
 
@@ -740,25 +730,17 @@ sms_caps = ChannelCapabilities(
 # WebSocket channel: rich content, media, audio, video
 ws_caps = ChannelCapabilities(
     media_types=[
-        ChannelMediaType.TEXT,
-        ChannelMediaType.RICH,
-        ChannelMediaType.MEDIA,
-        ChannelMediaType.AUDIO,
-        ChannelMediaType.VIDEO,
-        ChannelMediaType.LOCATION,
+        ChannelMediaType.TEXT, ChannelMediaType.RICH, ChannelMediaType.MEDIA,
+        ChannelMediaType.AUDIO, ChannelMediaType.VIDEO, ChannelMediaType.LOCATION,
     ],
     supports_edit=True,
     supports_delete=True,
-    supports_reactions=True,
-    supports_typing=True,
 )
 ```
 
-`ChannelMediaType` enum values: `TEXT`, `RICH`, `MEDIA`, `AUDIO`, `VIDEO`, `LOCATION`, `TEMPLATE`.
+`ChannelMediaType` enum: `TEXT`, `RICH`, `MEDIA`, `AUDIO`, `VIDEO`, `LOCATION`, `TEMPLATE`.
 
 ### Default Fallback Chain
-
-The `DefaultContentTranscoder` applies these fallback rules:
 
 | Content Type | If Target Supports It | Fallback |
 |-------------|----------------------|----------|
@@ -772,6 +754,22 @@ The `DefaultContentTranscoder` applies these fallback rules:
 | `TemplateContent` | TEMPLATE in media_types → pass | `TextContent(body or "[Template: {id}]")` |
 | `EditContent` | `supports_edit` → pass | Transcode `new_content` + prefix "Correction:" |
 | `DeleteContent` | `supports_delete` → pass | `TextContent("[Message deleted]")` |
+
+### Multichannel Transcoding Example
+
+A single event gets adapted differently for each channel:
+
+```python
+# User sends a rich message with an image from WebSocket
+content = CompositeContent(parts=[
+    RichContent(body="**Check this out!**", format="markdown", plain_text="Check this out!"),
+    MediaContent(url="https://example.com/photo.jpg", mime_type="image/jpeg", caption="Sunset"),
+])
+
+# WebSocket channel: receives CompositeContent as-is (supports RICH + MEDIA)
+# SMS channel: receives TextContent("Check this out!\n[Media: Sunset]")
+# Voice channel (TTS): receives TextContent("Check this out!\n[Media: Sunset]")
+```
 
 ### Custom Content Transcoder
 
@@ -804,28 +802,11 @@ class MyTranscoder(ContentTranscoder):
             if max_len and len(content.body) > max_len:
                 return TextContent(body=content.body[: max_len - 3] + "...")
 
-        # Fall through to default behavior for other types
         return content
 
 # Override the default transcoder on the RoomKit instance
 kit = RoomKit()
 kit._transcoder = MyTranscoder()
-```
-
-### Multichannel Transcoding Example
-
-A single event gets adapted differently for each channel:
-
-```python
-# User sends a rich message with an image from WebSocket
-content = CompositeContent(parts=[
-    RichContent(body="**Check this out!**", format="markdown", plain_text="Check this out!"),
-    MediaContent(url="https://example.com/photo.jpg", mime_type="image/jpeg", caption="Sunset"),
-])
-
-# WebSocket channel: receives CompositeContent as-is (supports RICH + MEDIA)
-# SMS channel: receives TextContent("Check this out!\n[Media: Sunset]")
-# Voice channel (TTS): receives TextContent("Check this out!\n[Media: Sunset]")
 ```
 
 ## Detaching Channels
@@ -897,6 +878,49 @@ modified = event.model_copy(update={"content": TextContent(body="[REDACTED]")})
 HookResult.modify(modified)
 ```
 
+### What happens when a hook fails
+
+A hook that does not produce a usable result — it raises, it exceeds its
+timeout, it returns something that is not a `HookResult`, or it returns a
+`modify` whose payload is the wrong type for the trigger — is treated as
+**allow**, and the error is logged. A broken hook must not be able to take a
+room down, so the event goes through.
+
+**Two triggers invert that**, because their payload is content a hook may
+exist to withhold:
+
+| Trigger | On hook failure |
+|---|---|
+| `BEFORE_TTS` | **Blocked** — the text is not synthesised |
+| `ON_TRANSCRIPTION` | **Blocked** — the transcript is not published |
+| every other sync trigger | Allowed, error logged |
+
+All four failure modes block on those two, not just exceptions: a rule that
+covered exceptions but allowed timeouts would leak through the timeout.
+
+The consequence for `BEFORE_BROADCAST` is worth being explicit about, since
+it is the trigger most often used for moderation: **a moderation hook that
+crashes lets the content through.** That is deliberate (RFC §9.3), not an
+oversight. Two levers exist if you need more, and their exact scope matters:
+
+- The `hook_error` framework event is emitted by the **inbound pipeline's**
+  `BEFORE_BROADCAST` pass only. Other sync-hook passes (`ON_TRANSCRIPTION`,
+  `BEFORE_TTS`, the re-entry path) and every async trigger report failures
+  in the log, not through `hook_error` — do not build monitoring for those
+  on this event.
+- To make additional triggers fail closed, extend the set the engine reads
+  through its instance — RoomKit builds its own `HookEngine`, so there is
+  no constructor to subclass into:
+
+  ```python
+  kit.hook_engine.FAIL_CLOSED_TRIGGERS = kit.hook_engine.FAIL_CLOSED_TRIGGERS | {
+      HookTrigger.BEFORE_BROADCAST,
+  }
+  ```
+
+  Weigh it first: fail-closed moderation means an outage in your hook is an
+  outage of the room.
+
 ## Hook Priority
 
 Lower priority numbers run first. Default is 0.
@@ -965,12 +989,28 @@ await kit.remove_room_hook("vip-room", "vip_filter")
 
 ## Complete Hook Trigger Reference
 
+All 76 `HookTrigger` enum values (`src/roomkit/models/enums.py`). **Execution** is how
+the engine invokes the trigger: SYNC triggers run through the sequential,
+priority-ordered sync pipeline (can block/modify); ASYNC triggers run
+concurrently, fire-and-forget, errors logged. Registration mode is forgiving in
+both directions: ASYNC-registered hooks on a SYNC trigger fire as observers
+after the sync pass; SYNC-registered hooks (the default) on an ASYNC trigger
+fire like any other observer. Triggers marked *Reserved* exist in the enum but
+are not fired by any built-in code.
+
 ### Event Pipeline
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
 | `BEFORE_BROADCAST` | SYNC | `(event, ctx) -> HookResult` | Before event is stored and broadcast. Can block/modify. |
 | `AFTER_BROADCAST` | ASYNC | `(event, ctx) -> None` | After event is broadcast. Fire-and-forget side effects. |
+
+### Event Mutation (edit/delete)
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_EVENT_UPDATED` | ASYNC | `(event, ctx) -> None` | A persisted event's stored state changed — inbound `EditContent` or `kit.update_event()`. Payload is the updated event (`metadata.edited=True` on the edit path). |
+| `ON_EVENT_DELETED` | ASYNC | `(event, ctx) -> None` | A persisted event was deleted — inbound `DeleteContent` (soft, `metadata.deleted=True`) or `kit.delete_event()` (hard; payload is the pre-delete snapshot). |
 
 ### Channel Lifecycle
 
@@ -997,52 +1037,75 @@ await kit.remove_room_hook("vip-room", "vip_filter")
 | `ON_IDENTITY_UNKNOWN` | SYNC | `(event, ctx) -> IdentityHookResult` | No identity match found |
 | `ON_PARTICIPANT_IDENTIFIED` | ASYNC | `(event, ctx) -> None` | Participant was successfully identified |
 
+### Membership
+
+Synthetic system events (`SystemContent`, `visibility=INTERNAL`), fired by the
+member management API.
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_PARTICIPANT_JOINED` | ASYNC | `(event, ctx) -> None` | Member added via `kit.add_member()`. `content.data`: `participant_id`, `identity_id`. |
+| `ON_PARTICIPANT_LEFT` | ASYNC | `(event, ctx) -> None` | Member removed via `kit.remove_member()` — soft status flip to LEFT/BANNED. `content.data`: `participant_id`, `status`. |
+| `ON_PARTICIPANT_UPDATED` | ASYNC | `(event, ctx) -> None` | Member renamed via `kit.rename_member()` (display name only; identity never changes). |
+
 ### Delivery
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_DELIVERY_STATUS` | ASYNC | `(status) -> None` | Delivery status update from provider |
+| `ON_DELIVERY_STATUS` | ASYNC | `(DeliveryStatus, ctx) -> None` | Provider delivery receipt dispatched by `kit.process_delivery_status()` / `kit.process_webhook()`. The `@kit.on_delivery_status` decorator registers a `(status)`-only callback on this trigger. |
+| `BEFORE_DELIVER` | ASYNC | `(event, ctx) -> None` | Before a proactive `kit.deliver()` strategy executes (in-process and worker paths). Payload is a synthetic INTERNAL system-source event describing the delivery. Observational — invoked through the async pipeline, cannot block (RFC §9 lists it SYNC; code invokes it ASYNC). |
+| `AFTER_DELIVER` | ASYNC | `(event, ctx) -> None` | After the delivery strategy completes. Same payload shape with status DELIVERED/FAILED and `metadata.error` set on failure. |
 
 ### Side Effects
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_TASK_CREATED` | ASYNC | `(event, ctx) -> None` | AI extracted a task from conversation |
-| `ON_ERROR` | ASYNC | `(event, ctx) -> None` | Error occurred during processing |
+| `ON_TASK_CREATED` | ASYNC | `(event, ctx) -> None` | A `Task` returned in `HookResult.tasks` was persisted. Payload event has type `TASK_CREATED` and `metadata.task_id`/`task_title`. Fires once per persisted task. |
+| `ON_ERROR` | ASYNC | `(event, ctx) -> None` | Error during processing (every provider/inference failure path funnels here). Payload event carries `metadata.error`, `error_type`, `error_category`. |
+
+### Session Lifecycle
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_SESSION_STARTED` | ASYNC | `(SessionStartedEvent, ctx) -> None` | A session began: voice session bound, realtime session opened, conference bot connected (`event.session` = the session/bot), or first inbound on an auto-created text room. On the inbound path, internal (`_`-prefixed) hooks are awaited (greeting gate ordering) and user hooks fire in the background. Auto-greeting is an internal hook on this trigger. |
 
 ### Voice
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_SPEECH_START` | ASYNC | `(event, ctx) -> None` | VAD detected speech start |
-| `ON_SPEECH_END` | ASYNC | `(event, ctx) -> None` | VAD detected speech end |
-| `ON_TRANSCRIPTION` | ASYNC | `(event, ctx) -> None` | STT produced a transcription |
-| `BEFORE_TTS` | SYNC | `(event, ctx) -> HookResult` | Before text is sent to TTS. Can block/modify. |
-| `AFTER_TTS` | ASYNC | `(event, ctx) -> None` | After TTS audio is generated |
+| `ON_SPEECH_START` | ASYNC | `(VoiceSession, ctx) -> None` | VAD detected speech start (VoiceChannel, RealtimeVoiceChannel). Conference lanes fire it per track with a synthetic system event. |
+| `ON_SPEECH_END` | ASYNC | `(VoiceSession, ctx) -> None` | VAD detected speech end. Same per-lane conference behavior. |
+| `ON_TRANSCRIPTION` | SYNC | `(event, ctx) -> HookResult` | STT produced a final transcript. Can block/modify; **fails closed** — a hook that raises/times out blocks publication. Payload: `TranscriptionEvent` (VoiceChannel), `RealtimeTranscriptionEvent` (RealtimeVoiceChannel), `ConferenceTranscription` (ConferenceChannel). Modify by returning the same type (voice/realtime also accept a plain `str`) with the new text. |
+| `ON_PARTIAL_TRANSCRIPTION` | ASYNC | `(PartialTranscriptionEvent, ctx) -> None` | Streaming interim STT result. Hot path — skipped entirely when no hooks are registered. |
+| `BEFORE_TTS` | SYNC | `(text: str, ctx) -> HookResult` | Before text is synthesized. Payload is the text `str`; modify with a `str`. Can block; **fails closed**. |
+| `AFTER_TTS` | ASYNC | `(text: str, ctx) -> None` | After TTS audio was sent. Payload is the final synthesized text. |
 
 ### Voice Pipeline
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_VAD_SILENCE` | ASYNC | `(event, ctx) -> None` | VAD detected silence |
-| `ON_VAD_AUDIO_LEVEL` | ASYNC | `(event, ctx) -> None` | Audio level update from VAD |
-| `ON_SPEAKER_CHANGE` | ASYNC | `(event, ctx) -> None` | Diarization detected speaker change |
-| `ON_BARGE_IN` | ASYNC | `(event, ctx) -> None` | User interrupted TTS playback |
-| `ON_TTS_CANCELLED` | ASYNC | `(event, ctx) -> None` | TTS playback was cancelled |
-| `ON_DTMF` | ASYNC | `(event, ctx) -> None` | DTMF tone detected |
-| `ON_TURN_COMPLETE` | ASYNC | `(event, ctx) -> None` | Turn detector says turn is complete |
-| `ON_TURN_INCOMPLETE` | ASYNC | `(event, ctx) -> None` | Turn detector says turn is incomplete |
-| `ON_BACKCHANNEL` | ASYNC | `(event, ctx) -> None` | Backchannel detected (uh-huh, yeah) |
-| `ON_RECORDING_STARTED` | ASYNC | `(event, ctx) -> None` | Audio recording started |
-| `ON_RECORDING_STOPPED` | ASYNC | `(event, ctx) -> None` | Audio recording stopped |
-| `ON_INPUT_AUDIO_LEVEL` | ASYNC | `(event, ctx) -> None` | Input audio level update |
-| `ON_OUTPUT_AUDIO_LEVEL` | ASYNC | `(event, ctx) -> None` | Output audio level update |
+| `ON_VAD_SILENCE` | ASYNC | `(VADSilenceEvent, ctx) -> None` | VAD detected silence |
+| `ON_VAD_AUDIO_LEVEL` | ASYNC | `(VADAudioLevelEvent, ctx) -> None` | Audio level update from VAD (high-frequency; telemetry-suppressed) |
+| `ON_SPEAKER_CHANGE` | ASYNC | `(SpeakerChangeEvent, ctx) -> None` | Diarization detected speaker change |
+| `ON_BARGE_IN` | ASYNC | `(BargeInEvent, ctx) -> None` | User interrupted TTS playback; carries `interrupted_text`, `audio_position_ms` |
+| `ON_TTS_CANCELLED` | ASYNC | `(TTSCancelledEvent, ctx) -> None` | TTS playback was cancelled (barge-in or explicit interrupt) |
+| `ON_DTMF` | ASYNC | `(DTMFDetectedEvent, ctx) -> None` | DTMF tone detected |
+| `ON_TURN_COMPLETE` | ASYNC | `(TurnCompleteEvent, ctx) -> None` | Turn detector says turn is complete; carries combined text + confidence |
+| `ON_TURN_INCOMPLETE` | ASYNC | `(TurnIncompleteEvent, ctx) -> None` | Turn detector says turn is incomplete |
+| `ON_BACKCHANNEL` | ASYNC | `(BackchannelEvent, ctx) -> None` | Backchannel detected (uh-huh, yeah) |
+| `ON_RECORDING_STARTED` | ASYNC | `(RecordingStartedEvent, ctx) -> None` | Audio recording started (voice session or conference track) |
+| `ON_RECORDING_STOPPED` | ASYNC | `(RecordingStoppedEvent, ctx) -> None` | Audio recording stopped, result available |
+| `ON_INPUT_AUDIO_LEVEL` | ASYNC | `(AudioLevelEvent, ctx) -> None` | Inbound audio level (throttled; telemetry-suppressed) |
+| `ON_OUTPUT_AUDIO_LEVEL` | ASYNC | `(AudioLevelEvent, ctx) -> None` | Outbound audio level (throttled; telemetry-suppressed) |
+| `BEFORE_BRIDGE_AUDIO` | SYNC | `(BridgeAudioEvent, ctx) -> HookResult` | Before an audio frame is forwarded across an audio bridge. Can block/modify the frame. Only invoked when hooks are registered — otherwise frames bypass the event loop for latency. |
 
 ### Tool Execution
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
-| `ON_TOOL_CALL` | ASYNC | `(event, ctx) -> None` | AI invoked a tool (fires from AIChannel and RealtimeVoiceChannel) |
+| `BEFORE_TOOL_USE` | SYNC | `(ToolCallEvent, ctx) -> HookResult` | Before a tool executes (AIChannel, realtime channels, external/ACP tools). Block denies the call. Fails closed: if room context cannot be built, the call is denied. |
+| `ON_TOOL_CALL` | SYNC | `(ToolCallEvent, ctx) -> HookResult` | A tool call executed (AIChannel, RealtimeVoiceChannel, skills, external/ACP tools). Block returns an error result to the model; `HookResult(metadata={"result": ...})` supplies or overrides the tool result (`event.result is None` means the hook must provide it). RFC §9 lists this ASYNC; code invokes it through the sync pipeline. |
+| `ON_USER_INPUT_REQUIRED` | SYNC | `(PendingInputEvent, ctx) -> HookResult` | A `HumanInputHandler`-backed tool paused awaiting human input. Sync so the notification (e.g. WebSocket push) lands before `wait()` starts blocking; block auto-rejects the pending request. |
 
 ### Realtime Voice
 
@@ -1050,7 +1113,78 @@ await kit.remove_room_hook("vip-room", "vip_filter")
 |---------|-----------|-----------|-------------|
 | `ON_REALTIME_TEXT_INJECTED` | ASYNC | `(event, ctx) -> None` | Text was injected into realtime session |
 
-### Observability
+### AI Generation
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `BEFORE_AI_GENERATION` | SYNC | `(AIGenerationEvent, ctx) -> HookResult` | Before the AI provider is invoked. `event.ai_context` (messages, system prompt, tools) may be mutated in place; block skips generation. |
+| `ON_AI_THINKING` | — | — | Reserved — defined in the enum, not fired by any built-in code (RFC §9 marks it Implemented). |
+| `ON_AI_RESPONSE` | ASYNC | `(AIResponseEvent, ctx) -> None` | AI generation completed. Carries response content, usage, latency, tool call count. |
+
+### Protocol Observability
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_PROTOCOL_TRACE` | ASYNC | `(ProtocolTrace, ctx) -> None` | Transport-level protocol trace (SIP, RTP, …) forwarded from a channel. Traces arriving before the room exists are buffered and replayed on attach. |
+
+### Orchestration (multi-agent)
+
+Handoff triggers fire from the `HandoffCoordinator` with a synthetic INTERNAL
+system event (AI-channel source; `metadata`: `from_agent`, `to_agent`,
+`accepted`, `new_phase`).
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_HANDOFF` | ASYNC | `(event, ctx) -> None` | Agent handoff accepted and executed. |
+| `ON_HANDOFF_REJECTED` | ASYNC | `(event, ctx) -> None` | Agent handoff was rejected (`metadata.accepted=False`). |
+| `ON_PHASE_TRANSITION` | ASYNC | `(event, ctx) -> None` | Fired alongside `ON_HANDOFF` after an accepted handoff, carrying the new phase. |
+| `ON_STATUS_POSTED` | — | — | Reserved — StatusBus posts emit the `status_posted` framework event instead; no hook fires (RFC §9 marks it Implemented). |
+
+### Delegation (background tasks)
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_TASK_DELEGATED` | ASYNC | `(event, ctx) -> None` | `kit.delegate()` dispatched a task to a child room. INTERNAL event, type `TASK_DELEGATED`; `metadata`: `task_id`, `child_room_id`, `agent_id`. |
+| `ON_TASK_COMPLETED` | ASYNC | `(event, ctx) -> None` | A delegated task finished. Fires in the parent room; type `TASK_COMPLETED`, body = output or error. |
+
+### Video
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `BEFORE_BRIDGE_VIDEO` | SYNC | `(BridgeVideoEvent, ctx) -> HookResult` | Before a video frame is forwarded across a bridge. Can block/modify the frame. Only invoked when hooks are registered (fast path bypasses the event loop). |
+| `ON_VIDEO_SESSION_STARTED` | ASYNC | `(SessionStartedEvent, ctx) -> None` | Video path live (VideoChannel, AVChannel, RealtimeAVChannel). `event.session` is the Video/VoiceSession. |
+| `ON_VIDEO_SESSION_ENDED` | ASYNC | `(SessionStartedEvent, ctx) -> None` | Video session ended (same payload shape). |
+| `ON_VIDEO_TRACK_ADDED` | — | — | Reserved — defined in the enum, not fired by built-in channels. |
+| `ON_VIDEO_TRACK_REMOVED` | — | — | Reserved — defined in the enum, not fired by built-in channels. |
+| `ON_VISION_RESULT` | SYNC | `(VisionEvent, ctx) -> HookResult` | A VisionProvider analyzed a frame. Block discards the result; modify rewrites the description before event injection and AI context update. RFC §9 lists this ASYNC; code invokes it through the sync pipeline. |
+| `ON_SCREEN_SHARE_STARTED` | ASYNC | `(event, ctx) -> None` | ConferenceChannel: a SCREEN_SHARE track was published. `content.data`: `track_id`, `participant_id`. |
+| `ON_SCREEN_SHARE_STOPPED` | ASYNC | `(event, ctx) -> None` | ConferenceChannel: a SCREEN_SHARE track was unpublished. |
+| `ON_VIDEO_DETECTION` | ASYNC | `(VideoDetectionEvent, ctx) -> None` | Video pipeline filter emitted a detection event (object, face, …). |
+
+### Conference (SFU)
+
+All fired by `ConferenceChannel` as synthetic system events
+(`SystemContent` with a `data` dict including `channel_id`); the channel's own
+bot never triggers them.
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_CONFERENCE_PARTICIPANT_JOINED` | ASYNC | `(event, ctx) -> None` | Participant joined the conference media session. `data`: `participant_id`. |
+| `ON_CONFERENCE_PARTICIPANT_LEFT` | ASYNC | `(event, ctx) -> None` | Participant left the conference media session. |
+| `ON_CONFERENCE_TRACK_PUBLISHED` | ASYNC | `(event, ctx) -> None` | Participant published a track. `data`: `track_id`, `participant_id`, `kind` (audio/video/screen_share). |
+| `ON_CONFERENCE_TRACK_UNPUBLISHED` | ASYNC | `(event, ctx) -> None` | A track was unpublished (same `data` shape). |
+| `ON_CONFERENCE_TRACK_MUTED` | ASYNC | `(event, ctx) -> None` | Publisher muted a track — "camera off" is usually a muted VIDEO track, not an unpublish. |
+| `ON_CONFERENCE_TRACK_UNMUTED` | ASYNC | `(event, ctx) -> None` | Publisher unmuted a track. |
+| `ON_ACTIVE_SPEAKER_CHANGED` | ASYNC | `(event, ctx) -> None` | SFU reported a dominant-speaker change. `data`: `participant_id`. |
+| `ON_CONNECTION_QUALITY_CHANGED` | ASYNC | `(event, ctx) -> None` | SFU reported a participant's connection quality. `data`: `participant_id`, `quality`. |
+
+### Planning
+
+| Trigger | Execution | Signature | Description |
+|---------|-----------|-----------|-------------|
+| `ON_PLAN_UPDATED` | — | — | Reserved — not fired by any built-in code. The `plan_tasks` tool (`enable_planning=True`) publishes an ephemeral realtime event `{"type": "plan_updated"}` instead (RFC §9 marks the hook Implemented). |
+
+### Feedback
 
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
@@ -1107,10 +1241,24 @@ await kit.attach_channel("support", "ai-assistant", category=ChannelCategory.INT
 | Anthropic (Claude) | `AnthropicAIProvider` | `AnthropicConfig` | `roomkit[anthropic]` |
 | OpenAI (GPT) | `OpenAIAIProvider` | `OpenAIConfig` | `roomkit[openai]` |
 | Google Gemini | `GeminiAIProvider` | `GeminiConfig` | `roomkit[gemini]` |
+| Gemini on Vertex AI | `GeminiVertexProvider` | `GeminiVertexConfig` | `roomkit[gemini]` |
 | Mistral | `MistralAIProvider` | `MistralConfig` | `roomkit[mistral]` |
 | Azure OpenAI | `AzureAIProvider` | `AzureAIConfig` | `roomkit[azure]` |
+| OpenRouter (300+ models) | `OpenRouterAIProvider` | `OpenRouterConfig` | `roomkit[openrouter]` |
+| xAI (Grok) | `XAIAIProvider` | `XAIConfig` | `roomkit[xai]` |
+| PolarGrid (Canadian-hosted) | `PolarGridAIProvider` | `PolarGridConfig` | `roomkit[polargrid]` |
 | vLLM (local) | `create_vllm_provider()` | `VLLMConfig` | `roomkit[vllm]` |
+| Ollama (local) | `OllamaAIProvider` | `OllamaConfig` | `roomkit[ollama]` |
 | Mock (testing) | `MockAIProvider` | — | built-in |
+
+Provider notes:
+
+- **Gemini on Vertex AI** (`roomkit.providers.gemini.vertex`) — subclass of `GeminiAIProvider` serving the same Gemini models through a Google Cloud project with a pinned region (`GeminiVertexConfig` requires `project` and `location`, e.g. `"northamerica-northeast1"`; auth is ADC, no API key). Use it when data residency matters (Québec Law 25 / PIPEDA). Generation, streaming, thinking, and the model catalog are inherited unchanged.
+- **OpenRouter** (`roomkit.providers.openrouter`) — subclass of `OpenAIAIProvider` pointed at `https://openrouter.ai/api/v1`; `OpenRouterConfig` subclasses `OpenAIConfig` (adds `site_url`/`app_name` attribution headers) and `model` is a required slug like `"anthropic/claude-sonnet-4.5"`. Reasoning is forwarded to any upstream model via OpenRouter's unified `reasoning` object. Model-listing nuance: OpenRouter's `/models` items omit the `object`/`owned_by` fields the OpenAI SDK expects, so `list_models()` reads the raw JSON instead.
+- **xAI (Grok)** (`roomkit.providers.xai`) — subclass of `OpenAIAIProvider` pointed at `https://api.x.ai/v1`; defaults to `max_completion_tokens` and stream usage. `XAIRealtimeProvider` (Grok speech-to-speech) is a separate import from `roomkit.providers.xai.realtime`.
+- **PolarGrid** (`roomkit.providers.polargrid`) — Canadian-hosted inference network (edges in Toronto, Vancouver, Montréal) via the official `polargrid-sdk` async client; OpenAI-shaped chat-completions surface. Supports tool calling, thinking (`PolarGridConfig(thinking=True)` sets the `enable_thinking` request flag; reasoning is surfaced as `AIResponse.thinking` / `StreamThinkingDelta`), and vision (`image_url` content parts). Pin `region` in production when residency matters.
+
+Pick **Ollama** over the OpenAI-compat shim (`OpenAIAIProvider` pointed at `http://host:11434/v1` or `create_vllm_provider()` with an Ollama URL) whenever the model is a reasoning model (DeepSeek-R1, Qwen 3 thinking variants, etc.) — only the native API exposes the `think` parameter and streams the `thinking` field separately from `content`. See `docs/c7/ollama-provider.md` for the full rundown.
 
 ```python
 # OpenAI
@@ -1236,6 +1384,58 @@ await mcp.initialize()
 ai = AIChannel("ai", provider=provider, tools=mcp.tools())
 ```
 
+## Tool Search (Progressive Tool Disclosure)
+
+When an agent has dozens of tools, sending every schema to the model on
+every turn burns context and makes smaller models hallucinate tool names.
+**Tool Search** hides the catalogue behind two discovery tools and lets the
+model reveal only what it needs:
+
+- `find_tools(query)` — search the catalogue by natural language; the
+  matches become directly invocable for the rest of the turn.
+- `list_tools(category=None)` — list the catalogue (name + short description).
+
+```python
+ai = AIChannel(
+    "ai",
+    provider=provider,
+    tool_handler=handle_tools,
+    tools=big_catalogue,              # e.g. 60+ MCP tools
+    tool_search=None,                 # None = auto, True/False = force
+    tool_search_threshold_pct=10.0,   # auto-enable above this % of the window
+    tool_search_threshold=20,         # fallback tool count when window unknown
+    tool_search_pinned=["get_help"],  # always visible, never searched for
+)
+```
+
+How it works:
+
+1. The model first sees only `find_tools`/`list_tools` plus the pinned set —
+   the discretionary catalogue is hidden.
+2. It calls `find_tools("send a text message")`; the matches are scored and
+   returned, and their names are recorded for the turn.
+3. On the **next** tool-loop round the matched tools are visible and directly
+   callable. The text loop re-sends its (re-filtered) tool list every round,
+   so no provider reconfigure is needed — this works on **any** text/HTTP
+   provider. (The realtime voice channel offers the same feature via
+   `provider.reconfigure`.)
+
+Notes:
+
+- **Activation auto-tunes to the model.** In `auto` mode it defers when the
+  *deferrable* (non-pinned) tools would cost more than `tool_search_threshold_pct`
+  % of the model's context window (default 10%) — a large model is a no-op, a
+  small one defers early. When the window is unknown (custom / local model ids
+  absent from the provider catalog) it falls back to the `tool_search_threshold`
+  tool count. Below the threshold Tool Search is a no-op and every tool is sent.
+- **Pinned tools** stay visible without a search. The discovery tools always
+  pass tool-policy and skill gating, so they work even under a restrictive
+  `tool_policy`.
+- A second `find_tools` call **swaps** the revealed window (keeping the visible
+  surface small); `list_tools` reveals nothing — it is purely informational.
+
+See `examples/ai_tool_search.py` for a runnable, no-API-key walkthrough.
+
 ## Per-Room Configuration
 
 Override AI settings per room via binding metadata:
@@ -1286,6 +1486,8 @@ ai = AIChannel(
 )
 ```
 
+Per-provider mechanisms: Anthropic uses `thinking_budget` as above; OpenAI-family providers (OpenAI, Azure, OpenRouter, xAI) use the `reasoning_effort` config field — OpenRouter translates it into its unified `reasoning` object for any upstream model; Gemini (and Vertex) use `GeminiConfig.thinking_level`; Ollama exposes the native `think` parameter (see `docs/c7/ollama-provider.md`); PolarGrid uses `PolarGridConfig(thinking=True)` (the `enable_thinking` flag, surfaced as `AIResponse.thinking` / `StreamThinkingDelta`).
+
 ## Vision Support
 
 AI providers that support vision can process images sent as `MediaContent`:
@@ -1303,6 +1505,157 @@ await kit.process_inbound(
 # AI sees the image and responds with analysis
 ```
 
+OpenAI-family providers (OpenAI, Azure, OpenRouter, xAI) and PolarGrid send images as OpenAI-shaped `image_url` content parts (remote URL or `data:` URI); PolarGrid and xAI gate this on the model's `supports_vision` from their curated catalogs — whether the model actually reads the image is the deployed model's capability.
+
+## Agentic Features
+
+### Dangling Tool Call Recovery
+
+When a user sends a new message while the AI is mid-tool-execution (barge-in), tool calls can be left without matching results. AIChannel automatically detects these orphaned calls and injects synthetic cancellation results before the next AI turn, preventing provider API rejections.
+
+This is fully automatic — no configuration needed.
+
+### Large Output Eviction
+
+When tool results are very large (database queries, file dumps, API responses), they consume significant context budget. AIChannel can evict large results to a side buffer and replace them with a preview:
+
+```python
+ai = AIChannel(
+    "ai-agent",
+    provider=provider,
+    system_prompt="You are a data analyst.",
+    evict_threshold_tokens=5000,  # default: 5000 tokens
+    tools=[QueryDatabase()],
+)
+```
+
+When a tool result exceeds the threshold:
+1. The full result is stored in a FIFO-bounded buffer (max 50 entries)
+2. A head/tail preview (first 5 + last 5 lines) replaces the result in context
+3. A `_read_tool_result` tool is auto-injected so the agent can paginate through the full output
+
+### Planning Tools
+
+Enable structured task planning so agents can break down complex work and track progress:
+
+```python
+ai = AIChannel(
+    "ai-agent",
+    provider=provider,
+    system_prompt="You are a research assistant.",
+    enable_planning=True,
+)
+```
+
+When enabled, the AI gets a `_plan_tasks` tool that accepts a list of tasks with `title` and `status` (`pending`, `in_progress`, `completed`, `blocked`). The current plan is:
+- Injected into the system prompt on each turn (so the AI sees its progress)
+- Published as an ephemeral `CUSTOM` event with `data.type = "plan_updated"` for real-time UI rendering
+
+Subscribe to plan updates for UI:
+
+```python
+await kit.subscribe_room("room-1", my_callback)
+
+# Callback receives ephemeral event with:
+# type: "custom", data: {"type": "plan_updated", "tasks": [...]}
+```
+
+The ephemeral event is the only plan-update signal — the `HookTrigger.ON_PLAN_UPDATED` enum value is reserved and not currently fired.
+
+### SummarizingMemory
+
+For long conversations, use `SummarizingMemory` to proactively manage context budget with two tiers:
+
+```python
+from roomkit.memory import SummarizingMemory, SlidingWindowMemory
+
+ai = AIChannel(
+    "ai-agent",
+    provider=main_provider,
+    memory=SummarizingMemory(
+        inner=SlidingWindowMemory(max_events=100),
+        provider=summary_provider,       # lightweight model (e.g. Haiku)
+        max_context_tokens=128_000,
+        tier1_ratio=0.50,                # truncate old events at 50%
+        tier2_ratio=0.85,                # LLM summarization at 85%
+    ),
+)
+```
+
+- **Tier 1** (~50% capacity): Truncates large text bodies in older events to 2000 chars. No LLM call — cheap and fast.
+- **Tier 2** (~85% capacity): Calls the summary provider to summarize older events into a concise paragraph. Keeps recent events at full fidelity. Supports chained summaries (prior summary is incorporated into the new one).
+
+### Knowledge Retrieval (RAG)
+
+Enrich AI context with external knowledge sources using `RetrievalMemory`:
+
+```python
+from roomkit.knowledge import KnowledgeSource, KnowledgeResult
+from roomkit.memory import RetrievalMemory, SlidingWindowMemory
+
+# Implement your own knowledge source (vector store, search engine, etc.)
+class FAQSource(KnowledgeSource):
+    async def search(self, query, *, room_id=None, limit=5):
+        results = await my_vector_db.search(query, top_k=limit)
+        return [KnowledgeResult(content=r.text, score=r.score, source="faq") for r in results]
+
+ai = AIChannel(
+    "ai-agent",
+    provider=provider,
+    memory=RetrievalMemory(
+        sources=[FAQSource()],
+        inner=SlidingWindowMemory(max_events=50),
+        max_results=5,
+    ),
+)
+```
+
+`RetrievalMemory` searches all sources concurrently, deduplicates results, and prepends relevant knowledge as a context message. When `ingest()` is called (automatic on every inbound event), it also indexes content in all sources.
+
+#### Built-in: PostgreSQL Full-Text Search
+
+For production use without a vector database, use `PostgresKnowledgeSource`:
+
+```python
+from roomkit.knowledge.postgres import PostgresKnowledgeSource
+
+source = PostgresKnowledgeSource(dsn="postgresql://localhost/mydb")
+await source.init()
+
+# Or share the pool with PostgresStore:
+source = PostgresKnowledgeSource(pool=store._pool, source_name="faq")
+await source.init()
+```
+
+Uses PostgreSQL `tsvector` with `ts_rank_cd` for relevance scoring. Auto-creates schema, supports room-scoped queries, and upserts on conflict.
+
+### Response Scoring
+
+Score AI responses automatically using the `ScoringHook`:
+
+```python
+from roomkit.scoring import ScoringHook, ConversationScorer, Score
+
+class QualityScorer(ConversationScorer):
+    async def score(self, *, response_content, query, room_id, channel_id, **kwargs):
+        # Your scoring logic (LLM-as-judge, rules, heuristics)
+        return [Score(value=0.9, dimension="relevance", reason="On topic")]
+
+hook = ScoringHook(scorers=[QualityScorer()])
+hook.attach(kit)
+
+# Scores are stored as Observations and accessible via hook.recent_scores
+```
+
+### User Feedback
+
+Collect user quality ratings:
+
+```python
+await kit.submit_feedback("room-1", rating=0.9, comment="Very helpful", dimension="helpfulness")
+# Stored as Observation in ConversationStore, fires ON_FEEDBACK hook
+```
+
 ## Tool Call Events
 
 AIChannel automatically broadcasts ephemeral `TOOL_CALL_START` and `TOOL_CALL_END` events when executing tools. Subscribe to these for UI indicators:
@@ -1314,6 +1667,269 @@ await kit.subscribe_room("room-1", my_callback)
 # TOOL_CALL_START: {tool_calls: [{id, name, arguments}], round, channel_id}
 # TOOL_CALL_END: {tool_calls: [{id, name, result}], round, channel_id, duration_ms}
 ```
+---
+
+`OllamaAIProvider` talks to the native Ollama `/api/chat` endpoint
+through the official `ollama-python` SDK. Use it when you want
+features the OpenAI-compatible shim hides — chiefly the `think`
+parameter and streamed `thinking` deltas.
+
+## Install
+
+```bash
+pip install roomkit[ollama]
+```
+
+## When to use this vs OpenAI-compat
+
+Ollama also exposes an OpenAI-compatible endpoint at
+`http://host:11434/v1/chat/completions`, which works fine with
+`OpenAIAIProvider` (or `create_vllm_provider`). Pick `OllamaAIProvider`
+when **any** of these matter:
+
+| You want | OpenAI-compat | `OllamaAIProvider` |
+|---|---|---|
+| Disable reasoning on a thinking model (`think=False`) | Silently ignored | Honored |
+| Force reasoning on a non-default model (`think=True`) | Silently ignored | Honored |
+| Stream reasoning tokens to a UI as they arrive | Returned in a non-streamed `reasoning` field that the SDK consumer doesn't split out | Streamed as `StreamThinkingDelta` events token-by-token |
+| Pass `keep_alive`, `num_ctx`, or `num_predict` cleanly | Awkward via `extra_body` | First-class config |
+
+For plain non-reasoning models (`llama3.2`, `gemma2`, etc.) either
+provider works.
+
+## Quick start
+
+```python
+from roomkit.providers.ollama import OllamaAIProvider, OllamaConfig
+
+provider = OllamaAIProvider(OllamaConfig(
+    host="http://localhost:11434",
+    model="qwen3:8b",
+))
+
+# Use exactly like any other AIProvider — pass it to AIChannel, etc.
+```
+
+## Config knobs
+
+```python
+OllamaConfig(
+    host="http://localhost:11434",   # Ollama server
+    model="qwen3:8b",                # any pulled model
+    max_tokens=None,                 # → options.num_predict
+    temperature=0.7,                 # → options.temperature
+    timeout=120.0,                   # long: cold-start + reasoning is slow
+    think=None,                      # None = model default, True/False = explicit
+    keep_alive="5m",                 # how long the model stays loaded
+    num_ctx=8192,                    # context window override
+)
+```
+
+## How `think` is resolved
+
+Per-request precedence (highest first):
+
+1. **`AIContext.thinking_budget`** — if set, this wins:
+   - `None` or `0` → `think=False`
+   - any `>0` → `think=True`
+2. **`OllamaConfig.think`** — fallback when `thinking_budget` is unset.
+3. **Omit `think`** — let the model decide its default (reasoning
+   models think, others don't).
+
+This makes the "Leave empty to disable" semantics in higher-level
+agent configs actually honor themselves: a missing/zero
+`thinking_budget` at the agent layer reaches the provider as
+`think=False` and the model genuinely skips the reasoning phase
+instead of just having its reasoning silently discarded.
+
+## Streamed events
+
+`generate_structured_stream()` yields:
+
+- `StreamThinkingDelta(thinking="...")` — one per `message.thinking`
+  delta chunk from Ollama. Arrives **token-by-token**, which is the
+  whole reason this provider exists.
+- `StreamTextDelta(text="...")` — one per `message.content` delta.
+- `StreamToolCall(id, name, arguments)` — collected from
+  `message.tool_calls` and yielded after the text/thinking deltas
+  for the same chunk (Ollama doesn't fragment tool-call arguments
+  across chunks the way OpenAI does).
+- `StreamDone(finish_reason, usage)` — terminator.
+
+## History round-trip
+
+The provider preserves `AIThinkingPart` in the message history by
+sending it back to Ollama as a top-level `thinking` field on the
+assistant message — no `<think>...</think>` tag wrapping needed.
+This keeps reasoning models honest across tool-loop rounds: they
+see their own prior chain-of-thought when computing the next turn.
+
+## Tool calls
+
+Ollama's tool-call format is essentially OpenAI's, so the standard
+`AITool` definitions pass through unchanged. The one quirk: Ollama
+doesn't issue stable `id` fields on tool calls, so the provider
+synthesizes ones like `call_<name>_<index>` so consumers can pair
+calls with their results.
+
+## Interactive test bed
+
+`examples/ollama_cli.py` exercises every knob in one place — `--think`,
+`--no-think`, `--stream`, `--no-stream`, `--mcp <url>` for MCP tool
+discovery — with a Rich-powered display that labels thinking output
+in italics and answer output in bold.
+
+```bash
+# Default: model decides whether to think, streams tokens, no tools
+uv run python examples/ollama_cli.py --model qwen3:8b
+
+# Force thinking off — fast, single-pass response
+uv run python examples/ollama_cli.py --model qwen3:8b --no-think
+
+# Wire in MCP tools
+uv run python examples/ollama_cli.py --model qwen3:8b \
+    --mcp http://localhost:8080/mcp
+```
+
+At the prompt, `/think on|off` and `/stream on|off` toggle the
+behavior mid-session; `/tools` lists what's available; `/reset`
+clears history; `/quit` exits.
+
+## Errors
+
+`ollama.ResponseError` maps to `ProviderError(retryable=...)` where
+`retryable=True` for `429`, `500`, `502`, `503`. Transport/connection
+errors (timeouts, refused connections) get marked retryable so the
+calling `RetryPolicy` decides whether to act.
+
+## What this provider doesn't do
+
+- **Image input**: `supports_vision` reports `True` and image parts
+  reach the wire, but it's the server-side model that decides whether
+  to honor them. Unsupported models 400 the request — RoomKit
+  surfaces that as a non-retryable `ProviderError`.
+- **Embeddings**: out of scope. Use `ollama.AsyncClient().embeddings()`
+  directly if you need them.
+---
+
+`ACPChannel` makes RoomKit an **Agent Client Protocol client**: an external coding agent (Claude Code, Codex CLI, Gemini CLI, any registry-listed ACP agent) runs as a subprocess speaking ACP v1 over stdio; each Room becomes one session of that agent. The reverse direction — exposing a RoomKit agent as an ACP *server* — is out of scope. `CLIChannel` is the interactive terminal transport playing the human side in local sessions.
+
+```bash
+pip install "roomkit[acp]"      # agent-client-protocol>=0.11.0,<0.12
+pip install "roomkit[console]"  # rich>=13.0, for CLIChannel(markdown=True)
+```
+
+The SDK is imported lazily: `import roomkit` works without the extra; the first connection raises an actionable `ImportError`. RoomKit pins stable ACP wire protocol v1 and rejects any other negotiated `protocolVersion`.
+
+## ACPChannel
+
+```python
+from roomkit import ACPChannel
+
+agent = ACPChannel(
+    "coding-agent",
+    command=["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.61.0"],
+    cwd="/srv/workspaces/my-project",  # required, absolute
+    additional_directories=None,       # extra absolute dirs for the session
+    env=None,                          # added to the SDK's restricted env
+    mcp_servers=None,                  # ACP MCP-server descriptors (SDK types)
+    authentication_method=None,        # optional ACP auth method id
+    external_tool_handler=None,        # permission policy; None = reject all
+)
+```
+
+`command` is an argument vector executed directly, **no shell**; a bare string, empty/non-string args, or non-absolute `cwd`/`additional_directories` raise `ValueError`. Class attrs: `channel_type = ChannelType.AI`, `category = ChannelCategory.INTELLIGENCE`, `direction = BIDIRECTIONAL`; capabilities TEXT + RICH. `handle_inbound()` raises `NotImplementedError` — the channel reacts to Room events via `on_event()`.
+
+### Process and session model
+
+One agent **process** per channel, started lazily on the first prompt; one ACP **session** per Room, created on demand and tagged with extension key `roomkit.live/roomId`. Prompts are serialized per Room (per-room lock); different Rooms progress concurrently through the same connection. If the subprocess dies, the next prompt respawns it and clears all session mappings. The client declares no fs/terminal capabilities: `fs/*`, `terminal/*`, and `session/request_input` (elicitation) requests get `method_not_found` — `ON_USER_INPUT_REQUIRED` never fires from ACP.
+
+Methods: `session_id(room_id)` returns the process-local session id or `None`; `cancel(room_id)` cancels the active turn (`True` if a cancel was sent); `close_session(room_id)` closes and forgets one Room's session; `close()` cancels turns, closes sessions, stops the subprocess and handler. The `info` property reports `{transport, protocol_version, sdk_version, connected, agent, session_count}`.
+
+### How agent output enters the room
+
+For each non-self text event, `on_event()` returns `ChannelOutput(responded=True, response_stream=...)` (TOOL_CALL_START/END events are skipped). The prompt (tagged `roomkit.live/eventId`) yields a `StreamDelta` stream consumed by the inbound-streaming pipeline:
+
+- `agent_message_chunk` → `str` deltas → streamed to transports, persisted as the response event.
+- `agent_thought_chunk` → `ThinkingDeltaMarker` in the stream, plus ephemeral `THINKING_START` / `THINKING_DELTA` (thinking truncated to 1000 chars) / `THINKING_END`.
+- `tool_call` / `tool_call_update` → `ToolCallStartMarker` / `ToolCallEndMarker` in the stream (persisted as `TOOL_CALL_START`/`TOOL_CALL_END` RoomEvents) plus matching ephemeral events (`result` truncated to 500 chars, `duration_ms`); non-terminal progress → ephemeral `CUSTOM` `{"type": "acp_tool_progress"}`.
+- `plan` / `plan_update` / `plan_removed` → ephemeral `CUSTOM` `{"type": "acp_plan_update", session_id, update}`. **Not** `ON_PLAN_UPDATED` — that hook belongs to AIChannel's `_plan_tasks` tool.
+- `usage_update` → ephemeral `CUSTOM` `{"type": "acp_usage"}`.
+
+`register_channel()` wires `kit`'s realtime backend in automatically. A failed prompt surfaces as `ProviderError(provider="acp")`; cancellation ends the stream silently and closes any open thinking block.
+
+### Permission flow
+
+Every agent `session/request_permission` goes to the `external_tool_handler` (`ExternalToolHandler` ABC from `roomkit.tools`, with `PolicyExternalToolHandler` and `ToolDecision`):
+
+1. `process_tool_call(tool_name, tool_input, *, tool_call_id, session_id, room_id, ...)` → `ToolDecision(approved=...)`. Calling `self._fire_before_hook(...)` fires **`BEFORE_TOOL_USE`** sync hooks (callbacks injected at `register_channel`).
+2. Approved → RoomKit selects the agent's `allow_once`/`allow_always` option; denied → `reject_once`/`reject_always`; no matching option → `DeniedOutcome(outcome="cancelled")`.
+3. **No handler ⇒ every permission request is rejected.** `ToolDecision.modified_input`/`result` overrides cannot be applied over ACP — setting them logs a warning and rejects the call.
+4. On tool completion, `on_tool_result(...)` runs; via `_fire_on_tool_hook` it fires **`ON_TOOL_CALL`** hooks.
+
+## CLIChannel
+
+Interactive terminal transport (`channel_type = ChannelType.CLI`, TEXT only): reads stdin, prints agent output to stdout with ANSI colors.
+
+```python
+cli = CLIChannel(
+    "cli",                      # channel_id, default "cli"
+    prompt="You: ",
+    user_color="\033[33m",      # yellow
+    agent_color="\033[36m",     # cyan
+    thinking_color="\033[2;3m", # dim italic
+    use_color=None,             # None = auto-detect TTY
+    agent_label=None,           # channel_id -> display name ("agent-researcher" -> "Researcher")
+    show_thinking=False,        # render ThinkingDeltaMarker chunks
+    markdown=False,             # live Markdown rendering, requires roomkit[console]
+)
+```
+
+- `sender_is_participant = True`: `run()`'s `sender_id` is a room **Participant ID**, not an address — identity resolution is skipped for typed lines.
+- `deliver()` skips self-echo and prints `Label: text`. `supports_streaming_delivery` is `True`; `deliver_stream()` renders text deltas as they arrive, thinking above the answer, tool events inline (`🔧 name {args}`, `✓`/`✗ name (N ms)`).
+- `run(kit, room_id, *, sender_id="user", welcome=None, content_factory=None)` — input loop in a worker thread; each line becomes `kit.process_inbound(...)` with `TextContent(body=line)`, or `content_factory(line)` (`None` skips the line). `quit`/`exit`/`q` or Ctrl+D exits.
+
+## Example: terminal → Claude Code
+
+Condensed from `examples/acp_claude_code.py` (requires `roomkit[acp,console]`, Node.js 22+):
+
+```python
+from roomkit import ACPChannel, ChannelCategory, CLIChannel, RoomKit
+from roomkit.tools import ExternalToolHandler, ToolDecision
+
+class TerminalPermissionHandler(ExternalToolHandler):
+    async def process_tool_call(self, tool_name, tool_input, *, tool_call_id="",
+                                room_id=None, **kwargs) -> ToolDecision:
+        if not await self._fire_before_hook(tool_name, tool_input,
+                                            tool_call_id=tool_call_id, room_id=room_id):
+            return ToolDecision(approved=False, reason="Denied by BEFORE_TOOL_USE hook")
+        answer = await asyncio.to_thread(input, f"Allow {tool_name}? [y/N] ")
+        return ToolDecision(approved=answer.strip().casefold() in {"y", "yes"})
+
+    async def on_tool_result(self, tool_name, tool_input, result, **kwargs) -> None:
+        await self._fire_on_tool_hook(tool_name, tool_input, result)  # ON_TOOL_CALL hooks
+
+kit = RoomKit()
+cli = CLIChannel("you", show_thinking=True, markdown=True,
+                 agent_label=lambda _cid: "Claude Code")
+claude = ACPChannel(
+    "claude-code",
+    command=["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.61.0"],
+    cwd=workspace,  # absolute Path to the project
+    env={"ANTHROPIC_API_KEY": api_key, "MAX_THINKING_TOKENS": "1024"},
+    external_tool_handler=TerminalPermissionHandler(),
+)
+kit.register_channel(cli)
+kit.register_channel(claude)
+await kit.create_room(room_id="claude-code-cli")
+await kit.attach_channel("claude-code-cli", "you")
+await kit.attach_channel("claude-code-cli", "claude-code",
+                         category=ChannelCategory.INTELLIGENCE)
+await cli.run(kit, room_id="claude-code-cli")  # blocks until quit/Ctrl+D
+await kit.close()
+```
+
+Flow: terminal line → `CLIChannel` inbound → Room broadcast → `ACPChannel.on_event` → ACP prompt to Claude Code; deltas, thinking, and tool activity stream back through the Room and render live in the terminal, each permission approved once at the prompt.
 ---
 
 VoiceChannel handles real-time audio conversations with speech-to-text, text-to-speech, and an audio processing pipeline.
@@ -1331,7 +1947,7 @@ kit = RoomKit()
 
 # Create providers
 backend = MockVoiceBackend()
-stt = MockSTTProvider(transcriptions=["Hello, how can I help?"])
+stt = MockSTTProvider(transcripts=["Hello, how can I help?"])
 tts = MockTTSProvider()
 vad = MockVADProvider(events=[
     VADEvent(type=VADEventType.SPEECH_START),
@@ -2000,6 +2616,281 @@ async def on_inject(event, ctx):
 ```
 ---
 
+Real-time video channels with pluggable processing pipelines, vision AI, bridging, recording, and avatar output.
+
+## Video Channels
+
+| Channel | ChannelType | Use Case |
+|---------|-------------|----------|
+| `VideoChannel` | `VIDEO` | Video-only transport (webcam, screen, WebSocket, WebRTC) |
+| `AudioVideoChannel` | `AUDIO_VIDEO` | Combined A/V backends (SIP, RTP, FastRTC); extends `VoiceChannel` |
+| `RealtimeAudioVideoChannel` | `REALTIME_AUDIO_VIDEO` | Speech-to-speech AI with video (e.g. Anam avatar); extends `RealtimeVoiceChannel` |
+
+```python
+from roomkit import RoomKit, VideoChannel
+from roomkit.video import VideoPipelineConfig
+from roomkit.video.backends.local import LocalVideoBackend
+from roomkit.video.vision.mock import MockVisionProvider
+
+kit = RoomKit()
+video = VideoChannel(
+    "video-main",
+    backend=LocalVideoBackend(device=0, fps=30, width=640, height=480),
+    pipeline=VideoPipelineConfig(vision=MockVisionProvider()),
+    vision_interval_ms=2000,    # vision analysis throttle
+    bridge=True,                # optional: or VideoBridgeConfig
+)
+kit.register_channel(video)
+
+@kit.on("video_vision_result")
+async def on_vision(event):
+    print(event.data["description"], event.data.get("labels"))
+
+session = await kit.join("webcam-demo", "video-main", participant_id="local-user")
+await video.backend.start_capture(session)   # LocalVideoBackend-specific
+# ... later
+await kit.leave(session)
+```
+
+`AudioVideoChannel` adds `video_pipeline=`, `vision=`, `vision_interval_ms=`, `avatar=`, `avatar_encoder=`, `video_bridge=` to the `VoiceChannel` kwargs; its `backend` must implement both `VoiceBackend` and `VideoBackend`. `RealtimeAudioVideoChannel` adds `video_pipeline=`, `vision=`, `vision_interval_ms=`; its provider must implement `RealtimeAudioVideoProvider.on_video()`.
+
+## VideoFrame
+
+Inbound frames are `VideoFrame` dataclasses: `data: bytes`, `codec="h264"`, `width=640`, `height=480`, `timestamp_ms`, `keyframe=False`, `sequence`, `metadata`. Encoded codecs: `h264`, `vp8`, `vp9`, `av1`; raw: `raw_rgb24`, `raw_bgr24`, `raw_yuv420p`, `raw_nv12` (`is_encoded`/`is_raw` properties). Outbound streaming uses `VideoChunk` (encoded only).
+
+## Video Pipeline
+
+Inbound order: `[Decoder] -> [Resizer] -> [Transforms...] -> [Filters...] -> taps/bridge/vision`. All stages optional; decoder, resizer, and vision are singular, transforms and filters are chained lists. Vision runs async on its own throttled schedule; the rest is synchronous per-frame.
+
+```python
+from roomkit.video.pipeline.decoder.pyav import PyAVVideoDecoder
+from roomkit.video.pipeline.resizer.pyav import PyAVVideoResizer
+
+pipeline = VideoPipelineConfig(
+    decoder=PyAVVideoDecoder(output_format="rgb24"),
+    resizer=PyAVVideoResizer(width=640, height=480, keep_aspect=True),
+    transforms=[], filters=[], vision=vision,
+    recorder=recorder,
+    recording_config=VideoRecordingConfig(storage="./recordings", format="mp4",
+                                          codec="auto", fps=15.0),
+)
+```
+
+| Stage | Role | Implementations |
+|-------|------|-----------------|
+| Decoder (`VideoDecoderProvider`) | Encoded → raw pixels; returns `None` until keyframe | `PyAVVideoDecoder`, mock |
+| Resizer (`VideoResizerProvider`) | Downscale raw frames to fit target box | `PyAVVideoResizer`, mock |
+| Transform (`VideoTransformProvider`) | Per-frame pixel modification (fast, sync) | `VideoEffectTransform(effect=...)`: grayscale, sepia, invert, blur, cartoon, edges, sketch, pixelate; mock |
+| Filter (`VideoFilterProvider`) | Inspect/replace frames via `FilterContext` (latest vision result); emit `FilterEvent`s | `YOLODetectorFilter`, `WatermarkFilter`, `CensorVideoFilter`, `FaceTouchFilter` (MediaPipe), `OverlayFilter`, mocks |
+| Vision (`VisionProvider`) | Async frame analysis → `VisionResult` | `OpenAIVisionProvider`, `GeminiVisionProvider`, mock |
+| Recorder (`VideoRecorder`) | Tap every frame to file | `PyAVVideoRecorder`, `OpenCVVideoRecorder`, mock |
+| Encoder (`VideoEncoderProvider`) | Outbound: raw → H.264 NALs (avatar path) | `PyAVVideoEncoder(width=512, height=512, fps=30, codec="libx264")` |
+
+Key filters: `YOLODetectorFilter(model="yolo26n.pt", confidence=0.5, classes=None, every_n_frames=1, draw_boxes=False)`; `CensorVideoFilter(blocked_labels, replacement="black", grace_frames=0)` blanks frames while vision reports a blocked label; `FaceTouchFilter` emits `face_touch` detections. Overlays (`roomkit.video.pipeline.overlay`): `TextOverlayRenderer`, `ImageOverlayRenderer`, `SubtitleManager`/`subtitle_overlay` for live subtitles.
+
+## Video Backends
+
+`VideoBackend` ABC: `connect()`, `accept()`, `disconnect()`, `send_video()`, `send_video_sync()`, `request_keyframe()`, `set_video_passthrough()`; callbacks `on_video_received`, `on_session_ready`, `on_client_disconnected`; `capabilities` flags: `SIMULCAST`, `SVC`, `SCREEN_SHARE`, `RECORDING`, `BANDWIDTH_ESTIMATION`.
+
+| Backend | Class | Extra |
+|---------|-------|-------|
+| WebSocket | `WebSocketVideoBackend` | fastapi only |
+| WebRTC | `FastRTCVideoBackend` (combined A/V) | `roomkit[fastrtc]` |
+| RTP | `RTPVideoBackend` (combined A/V) | `roomkit[rtp]` |
+| SIP | `SIPVideoBackend` (combined A/V) | `roomkit[sip]` |
+| Webcam | `LocalVideoBackend(device=0, fps=30, width=640, height=480)` | `roomkit[local-video]` |
+| Screen | `ScreenCaptureBackend(monitor=1, region=None, fps=5, scale=1.0, diff_threshold=0.0)` | `roomkit[screen-capture]` |
+| Mock | `MockVideoBackend` | built-in |
+
+`WebSocketVideoBackend` mounts on FastAPI via `mount_websocket_video(app, backend, path=...)` and auto-creates sessions via `set_session_factory()`. Each backend has a `get_*` lazy loader in `roomkit.video` (e.g. `get_sip_video_backend()`).
+
+## Vision Providers
+
+```python
+from roomkit.video import OpenAIVisionConfig, OpenAIVisionProvider
+
+# Defaults target Ollama: base_url="http://localhost:11434/v1", model="qwen3.5"
+vision = OpenAIVisionProvider(OpenAIVisionConfig(
+    api_key="sk-...", base_url="https://api.openai.com/v1",
+    model="gpt-4o", detail="low", max_tokens=100,
+))
+# GeminiVisionProvider(GeminiVisionConfig(api_key="AIza...", model="gemini-3.1-flash-lite"))
+```
+
+`await provider.analyze_frame(frame, prompt=None)` returns `VisionResult(description, labels, confidence, faces, text, metadata)` — `text` is OCR, `faces` are `FaceDetection` boxes. Results are cached per session (`channel.get_last_vision_result(session_id)`), emitted as `video_vision_result` framework events, and auto-injected into the system prompt of any `AIChannel` in the same room. For realtime voice, `setup_realtime_vision(kit, room_id, voice_channel_id)` injects via `inject_text(silent=True)`. On-demand tools: `DescribeWebcamTool`, `DescribeScreenTool`, `ListWebcamsTool`.
+
+## Video Hook Triggers
+
+| Trigger | Fires When | Execution |
+|---------|-----------|-----------|
+| `ON_VIDEO_SESSION_STARTED` | Backend signals video path live and session bound | async |
+| `ON_VIDEO_SESSION_ENDED` | Session unbound / client disconnected | async |
+| `ON_VISION_RESULT` | Vision analysis completed (`VisionEvent`) — can block or modify the description | sync |
+| `ON_VIDEO_DETECTION` | Pipeline filter emitted a detection (`VideoDetectionEvent`: `kind`, `labels`, `confidence`, `metadata`) | async |
+| `BEFORE_BRIDGE_VIDEO` | Frame about to be bridge-forwarded (`BridgeVideoEvent`); `HookResult.block()` drops it | sync |
+| `ON_SCREEN_SHARE_STARTED` / `STOPPED` | ConferenceChannel: `SCREEN_SHARE`-kind track published/unpublished | async |
+| `ON_VIDEO_TRACK_ADDED` / `REMOVED` | Reserved — defined in `HookTrigger`, not yet fired by built-in channels | — |
+
+## Video Bridge
+
+`bridge=True` (or `VideoBridgeConfig(enabled=True, max_participants=10, forwarding_strategy="forward", keyframe_interval_s=5.0)`) forwards frames between sessions in the same room for human-to-human video, requesting keyframes (PLI) from sources periodically and when receivers join. `channel.set_bridge_filter(fn)` installs a synchronous per-frame filter `(source_session, frame) -> frame | None` — the fast-path alternative to `BEFORE_BRIDGE_VIDEO`.
+
+## Avatars
+
+`AvatarProvider` (`roomkit.video.avatar`) generates lip-synced video from TTS audio on `AudioVideoChannel`: `MuseTalkAvatarProvider` (local GPU), `WebSocketAvatarProvider` (remote inference), `MockAvatarProvider`. Pair with `avatar_encoder=PyAVVideoEncoder(...)` for RTP/SIP output. Cloud avatar A/V (Anam) uses `RealtimeAudioVideoChannel` instead.
+
+## Optional Extras
+
+`roomkit[video]` (PyAV stages: av, numpy) · `[local-video]` (webcam, effects, OpenCV recorder) · `[screen-capture]` (mss) · `[screen-input]` (pyautogui) · `[yolo]` (ultralytics) · `[mediapipe]` · `[video-overlay]` (Pillow) · `[fastrtc]`/`[rtp]`/`[sip]`/`[anam]` (transports / cloud avatar).
+---
+
+ConferenceChannel bridges an external SFU conference into a RoomKit room. The SFU carries all human-to-human media; RoomKit joins as a single bot participant for transcription, AI voice, recording, and speech-to-speech — it never proxies human media (RFC §12.10).
+
+## Constructor
+
+```python
+ConferenceChannel(
+    channel_id,
+    *,
+    backend,                 # ConferenceBackend (required)
+    stt=None,                # STTProvider — per-track transcription
+    tts=None,                # TTSProvider — the bot's voice
+    realtime=None,           # ConferenceRealtimeConfig — speech-to-speech (excludes tts)
+    pipeline=None,           # default: 16 kHz mono contract + EnergyVADProvider
+    interruption=None,       # ConferenceInterruptionConfig
+    recording=None, recorder=None,   # ConferenceRecordingConfig + MediaRecorder, both or neither
+    bot_identity="roomkit",
+    bot_grants=None,         # explicit ConferenceGrants; default derived via for_bot()
+    default_grants=None,     # what mint_access() grants humans; default ConferenceGrants()
+    e2ee=False, close_room_on_detach=False,
+    speak_text_events=False, # off: only AI-channel text events are spoken
+    close_providers=True,
+    max_queued_frames=100,   # per-track backpressure bound (lane + recording)
+    identity_address_keys=None, identity_trusts_unasserted_metadata=False,
+)
+```
+
+Refused at construction (and identically at plug time): `e2ee=True` with stt/recording/realtime (bot receives ciphertext); `ConferenceRecordingMode.EGRESS` (only `FRAMEWORK` is implemented); `tts` + `realtime` together (one bot track, one voice); `realtime.tools` without `tool_handler`; a `pipeline` without a VAD when stt/realtime is set.
+
+Public surface: `mint_access()`, `plug_*/unplug_*()`, `set_bot_grants()`, `may_interrupt(participant_id)`, `active_lanes` (dict `track_id -> ConferenceLane`; `drain()`, `dropped_frames`), `info()`, `close()`.
+
+## How the Bridge Works
+
+The bot joins lazily, only when the channel has a need (stt/tts/recording/realtime) and someone is coming: a `mint_access()`, an arrival, an occupancy probe. With no need configured the channel is pure transport — admission gate and roster, no bot in the meeting.
+
+- **Inbound**: each subscribed AUDIO track gets its own `ConferenceLane` (queue + task + VAD state). The VAD segments utterances; one utterance → one STT call → one `RoomEvent` attributed to the track's `participant_id` (track identity replaces diarization). A full lane drops oldest frames.
+- **Outbound**: `deliver()` speaks AI-channel TextContent on the single bot track via TTS (all text events if `speak_text_events=True`); with `realtime`, text is injected into the provider's context instead.
+- **Video**: never subscribed — `capabilities()` announces AUDIO only.
+
+```python
+from roomkit import ConferenceTranscription, HookResult, HookTrigger
+
+@kit.hook(HookTrigger.ON_TRANSCRIPTION)   # sync, runs BEFORE the room; block/modify = redaction
+async def on_text(payload: ConferenceTranscription, ctx) -> HookResult:
+    # payload: track_id, participant_id, room_id, text
+    return HookResult.allow()
+```
+
+## Conference Hooks
+
+SYSTEM lifecycle events; payload in `event.content.data` (always includes `channel_id`).
+
+| Trigger | Fired when | Data |
+|---------|-----------|------|
+| `ON_CONFERENCE_PARTICIPANT_JOINED` / `_LEFT` | SFU reports arrival/departure | `participant_id` |
+| `ON_CONFERENCE_TRACK_PUBLISHED` / `_UNPUBLISHED` | Track publish/unpublish | `track_id`, `participant_id`, `kind` |
+| `ON_CONFERENCE_TRACK_MUTED` / `_UNMUTED` | Publisher (un)mutes; muted VIDEO = camera off | `track_id`, `participant_id`, `kind` |
+| `ON_SCREEN_SHARE_STARTED` / `_STOPPED` | SCREEN_SHARE track published/unpublished | `track_id`, `participant_id` |
+| `ON_ACTIVE_SPEAKER_CHANGED` | Dominant speaker (`ACTIVE_SPEAKER` capability) | `participant_id` |
+| `ON_CONNECTION_QUALITY_CHANGED` | Quality report (backend label, not normalized) | `participant_id`, `quality` |
+
+`ON_SPEECH_START`/`ON_SPEECH_END` fire per lane at VAD edges. `ON_BARGE_IN` carries `ConferenceBargeIn(room_id, track_id, participant_id, interrupted_text, audio_position_ms)`.
+
+## ConferenceBackend ABC (`roomkit.conference`)
+
+- Control plane: `ensure_room(room_id, metadata=None, e2ee=False)`, `close_room()`, `mint_access(room_id, participant_id, grants, *, display_name=None) -> ConferenceAccess`, `list_participants()`, `remove_participant()`, `mute_track()`, `unmute_track()` (needs `REMOTE_UNMUTE`).
+- Bot session: `join_as_bot(room_id, identity, grants) -> BotSession`, `leave(bot)`, `update_bot_grants(bot, grants)` (needs `BOT_GRANT_UPDATE`, else `ConferenceCapabilityError`), `subscribe_track(bot, track_id)`, `unsubscribe_track()`, `publish_audio(bot, chunk)` (PCM `AudioChunk`; `is_final` ends the utterance), `stop_playback(bot)` (barge-in: discard queued unplayed audio; utterance still ends on `is_final`; no-op for a gone session), `publish_video()` (needs `VIDEO_PUBLISH`), `close()`.
+- Callbacks (what drives the channel): `on_participant_joined/left`, `on_track_published/unpublished/muted/unmuted`, `on_track_audio`, `on_track_video`, `on_active_speaker_changed`, `on_connection_quality`, `on_bot_session_ended` (SFU dropped the bot without a `leave()`).
+- `ConferenceCapability` flags: `SCREEN_SHARE`, `EGRESS_RECORDING`, `SIP_GATEWAY`, `ACTIVE_SPEAKER`, `CONNECTION_QUALITY`, `VIDEO_PUBLISH`, `REMOTE_UNMUTE`, `BOT_GRANT_UPDATE`, `E2EE`.
+
+## Backends
+
+| Backend | Class | Config | Extra |
+|---------|-------|--------|-------|
+| LiveKit | `LiveKitConferenceBackend` | `LiveKitConfig` | `roomkit[livekit]` |
+| Mock | `MockConferenceBackend` | `capabilities=` kwarg | built-in |
+
+```python
+from roomkit.conference.livekit import LiveKitConfig, LiveKitConferenceBackend
+
+backend = LiveKitConferenceBackend(LiveKitConfig(url="wss://my-project.livekit.cloud"))
+```
+
+`LiveKitConfig`: `url`/`api_key`/`api_secret` fall back to `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`; `access_ttl=timedelta(minutes=15)`, `audio_sample_rate=48_000`, `audio_channels=1`, `publish_queue_ms=300`, `remote_unmute=False`, `sip_gateway=False`, `room_metadata_key="roomkit"`. Declares `SCREEN_SHARE | ACTIVE_SPEAKER | CONNECTION_QUALITY | BOT_GRANT_UPDATE` (+`REMOTE_UNMUTE`/`SIP_GATEWAY` when configured).
+
+`MockConferenceBackend` scripts SFU events: `simulate_participant_joined/left`, `simulate_track_published(room_id, participant_id, kind=TrackKind.AUDIO)`, `simulate_track_unpublished`, `simulate_audio(track, frame)`, `simulate_track_muted/unmuted`, `simulate_active_speaker`, `simulate_connection_quality`, `simulate_bot_disconnected(bot, reason)`; fault injection `fail(method, exc)` / `delay(method, seconds)`; assertion state `calls`, `published_audio`, `utterances`, `subscriptions`, `playback_stops`.
+
+## Models & Grants
+
+- `ConferenceGrants(publish_audio=True, publish_video=True, publish_screen_share=True, subscribe=True, moderate=False, hidden=False)` — human defaults. `ConferenceGrants.for_bot(speaks=False, listens=True)` = least privilege; `ConferenceGrants.observer()` = subscribe-only + hidden.
+- `ConferenceAccess(url, token, expires_at, provider_data)` — opaque client credential; `token` excluded from repr.
+- `BotSession(id, room_id, identity, joined_at, metadata)`; `ConferenceTrack(id, room_id, participant_id, kind, muted, metadata)`; `ConferenceParticipant(participant_id, display_name, connected_at, tracks, metadata, asserted_metadata)`; `TrackKind.AUDIO/VIDEO/SCREEN_SHARE`.
+- `ConferenceInterruptionConfig(strategy=InterruptionStrategy.IMMEDIATE, scope=ConferenceInterruptionScope.ANY, allowlist=[])` — scope `ANY`/`NONE`/`ALLOWLIST` decides who may barge in.
+- `ConferenceRealtimeConfig(provider, system_prompt=None, voice=None, tools=None, tool_handler=None, temperature=None, input_sample_rate=24000, output_sample_rate=24000, server_vad=True, provider_config=None)` — lanes mixed N→1 into one speech-to-speech session per room; the provider speaks on the bot track.
+
+## Hot-Plugging
+
+Effects are in force when the plug returns: occupied conferences joined, published tracks subscribed, bot grants realigned (in place with `BOT_GRANT_UPDATE`, announced re-join otherwise). An occupied slot is refused — swap = unplug, then plug. Unplugging the last need makes the bot leave every conference.
+
+```python
+await channel.plug_stt(stt)          # optional pipeline=; joins an existing pipeline
+await channel.plug_tts(tts)
+await channel.plug_recording(ConferenceRecordingConfig(), recorder=recorder)
+await channel.plug_realtime(config)
+await channel.unplug_stt(); await channel.unplug_tts()
+await channel.unplug_recording(); await channel.unplug_realtime()
+await channel.set_bot_grants(ConferenceGrants.observer())  # None returns to derivation
+```
+
+## Shutdown Semantics (RFC §12.10.4)
+
+`close()` runs exactly one shutdown per channel (`ConferenceShutdownCoordinator`): concurrent callers join the same shielded task and the terminal result is replayed on later calls. Order: close admission → stop playbacks → wait teardowns/joins → disconnect realtime sessions → bots leave every conference → close lanes → finalize recordings → close backend → close providers → settle roster writes. Every backend/provider call holds an operation lease; a resource still leased is **retained**, not closed — it closes in the background when its last lease returns, and the close **fails**: `ConferenceCloseError` aggregates structured `CloseIssue`s (`component`, `operation`, `status` in `FAILED`/`TIMED_OUT`/`ABANDONED`/`RETAINED`, `step`, `detail`) plus any bot session that could not be removed (still reported by `info()`). All waits are bounded — a slow store never holds a bot in a meeting.
+
+`info()` answers RFC §17.7 disclosure per room: `bot_present`, `bot_hidden`, `stt_active`, `realtime_active`, `recording_active`, `recording_dropped_frames`, `active_lanes`, `collecting`, `leave_failed`.
+
+## Minimal Example
+
+```python
+import asyncio
+from roomkit import MockConferenceBackend, RoomKit
+from roomkit.channels.conference import ConferenceChannel
+from roomkit.voice.stt.mock import MockSTTProvider
+
+async def main() -> None:
+    backend = MockConferenceBackend()
+    channel = ConferenceChannel("conf", backend=backend, stt=MockSTTProvider(transcripts=["Hi."]))
+    kit = RoomKit()
+    kit.register_channel(channel)
+    await kit.create_room("standup")
+    await kit.attach_channel("standup", "conf")
+
+    # Mint SFU credentials for a human client; the mint also starts the lazy bot join
+    await kit.ensure_participant("standup", "conf", "alice", display_name="Alice")
+    access = await channel.mint_access("standup", "alice")  # hand access.url/token to the client
+
+    # With a real backend, SFU events drive these
+    await backend.simulate_participant_joined("standup", "alice", display_name="Alice")
+    mic = await backend.simulate_track_published("standup", "alice")
+    # feed AudioFrames: simulate_audio(mic, frame) — speech, then silence — then
+    # await channel.active_lanes[mic.id].drain() and read kit.store.list_events("standup")
+    await kit.close()
+
+asyncio.run(main())
+```
+
+Runnable references: `examples/conference_quickstart.py`, `conference_ai_meeting.py`, `conference_realtime_ai.py`, `conference_livekit.py`.
+---
+
 RoomKit provides four declarative orchestration strategies for multi-agent workflows. Pass a strategy to `RoomKit(orchestration=...)` or `create_room(orchestration=...)` — agents, routing, handoff tools, and conversation state are wired automatically.
 
 ## Strategies
@@ -2120,16 +3011,15 @@ The handoff:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `phase` | `str` | `"intake"` | Current conversation phase. Can be any string — not restricted to built-in phases. |
+| `phase` | `str` | `"intake"` | Current conversation phase. Can be any string. |
 | `active_agent_id` | `str \| None` | `None` | Channel ID of the currently active agent. |
-| `previous_agent_id` | `str \| None` | `None` | Agent that was active before the last transition. |
+| `previous_agent_id` | `str \| None` | `None` | Agent before the last transition. |
 | `handoff_count` | `int` | `0` | Total number of agent handoffs. |
-| `phase_started_at` | `datetime` | now | Timestamp when the current phase started. |
+| `phase_started_at` | `datetime` | now | When the current phase started. |
 | `phase_history` | `list[PhaseTransition]` | `[]` | Immutable audit trail of all transitions. |
-| `context` | `dict[str, Any]` | `{}` | **Arbitrary user data** — store any custom key-value pairs across turns. |
+| `context` | `dict[str, Any]` | `{}` | **Arbitrary user data** — store custom key-value pairs across turns. |
 
-Built-in phase constants (use any string — these are convenience defaults):
-`ConversationPhase.INTAKE`, `QUALIFICATION`, `HANDLING`, `ESCALATION`, `RESOLUTION`, `FOLLOWUP`.
+Built-in phases: `ConversationPhase.INTAKE`, `QUALIFICATION`, `HANDLING`, `ESCALATION`, `RESOLUTION`, `FOLLOWUP`.
 
 ### Reading State
 
@@ -2144,23 +3034,22 @@ print(state.active_agent_id)  # "billing-agent"
 print(state.handoff_count)    # 2
 print(state.context)          # {"customer_tier": "premium", "issue_type": "refund"}
 
-# Phase transition history (audit trail)
+# Audit trail
 for t in state.phase_history:
     print(f"{t.from_phase} -> {t.to_phase} by {t.from_agent} -> {t.to_agent} ({t.reason})")
 ```
 
 ### Persisting Custom Data Across Turns
 
-Use `state.context` to store arbitrary data that survives across conversation turns. Update state via `set_conversation_state()` + `store.update_room()`:
+Use `state.context` to store arbitrary data that survives across conversation turns:
 
 ```python
 from roomkit.orchestration.state import get_conversation_state, set_conversation_state
 
-# Read current state
 room = await kit.get_room("support")
 state = get_conversation_state(room)
 
-# Store custom data in context (immutable update pattern)
+# Store custom data in context (immutable update)
 updated_state = state.model_copy(update={
     "context": {
         **state.context,
@@ -2178,17 +3067,15 @@ await kit.store.update_room(updated_room)
 ### Retrieving Custom Data on Later Turns
 
 ```python
-# In a hook or handler on a subsequent turn:
 room = await kit.get_room("support")
 state = get_conversation_state(room)
-
 tier = state.context.get("customer_tier", "standard")
 attempts = state.context.get("attempts", 0)
 ```
 
 ### Programmatic Phase Transitions
 
-Use `state.transition()` to change phase and record an audit entry. It returns a new immutable state:
+Use `state.transition()` to change phase and record an audit entry:
 
 ```python
 from roomkit.orchestration.state import get_conversation_state, set_conversation_state
@@ -2196,50 +3083,15 @@ from roomkit.orchestration.state import get_conversation_state, set_conversation
 room = await kit.get_room("support")
 state = get_conversation_state(room)
 
-# Transition to a new phase with reason and agent
 new_state = state.transition(
     to_phase="escalation",
     to_agent="supervisor-agent",
     reason="Customer requested manager",
     metadata={"escalation_priority": "high"},
 )
-# new_state.phase == "escalation"
-# new_state.active_agent_id == "supervisor-agent"
-# new_state.previous_agent_id == <old agent>
-# new_state.handoff_count incremented if agent changed
 
-# Persist
 updated_room = set_conversation_state(room, new_state)
 await kit.store.update_room(updated_room)
-```
-
-### Using State in Hooks
-
-A common pattern — persist data via a BEFORE_BROADCAST hook:
-
-```python
-from roomkit import HookTrigger, HookResult, RoomEvent, RoomContext, TextContent
-from roomkit.orchestration.state import get_conversation_state, set_conversation_state
-
-@kit.hook(HookTrigger.BEFORE_BROADCAST)
-async def track_sentiment(event: RoomEvent, ctx: RoomContext) -> HookResult:
-    if not isinstance(event.content, TextContent):
-        return HookResult.allow()
-
-    state = get_conversation_state(ctx.room)
-
-    # Update context with per-turn data
-    updated_state = state.model_copy(update={
-        "context": {
-            **state.context,
-            "last_message_length": len(event.content.body),
-            "message_count": state.context.get("message_count", 0) + 1,
-        }
-    })
-    updated_room = set_conversation_state(ctx.room, updated_state)
-    await kit.store.update_room(updated_room)
-
-    return HookResult.allow()
 ```
 
 ### PhaseTransition Audit Record
@@ -2253,16 +3105,38 @@ Each transition creates an immutable `PhaseTransition`:
 | `from_agent` | `str \| None` | Previous agent channel ID |
 | `to_agent` | `str \| None` | New agent channel ID |
 | `reason` | `str` | Why the transition occurred |
-| `timestamp` | `datetime` | When the transition occurred |
+| `timestamp` | `datetime` | When the transition occurred (UTC) |
 | `metadata` | `dict[str, Any]` | Arbitrary metadata for this transition |
+
+### Using State in Hooks
+
+```python
+from roomkit import HookTrigger, HookResult, RoomEvent, RoomContext, TextContent
+from roomkit.orchestration.state import get_conversation_state, set_conversation_state
+
+@kit.hook(HookTrigger.BEFORE_BROADCAST)
+async def track_sentiment(event: RoomEvent, ctx: RoomContext) -> HookResult:
+    if not isinstance(event.content, TextContent):
+        return HookResult.allow()
+    state = get_conversation_state(ctx.room)
+    updated_state = state.model_copy(update={
+        "context": {
+            **state.context,
+            "message_count": state.context.get("message_count", 0) + 1,
+        }
+    })
+    updated_room = set_conversation_state(ctx.room, updated_state)
+    await kit.store.update_room(updated_room)
+    return HookResult.allow()
+```
 
 ## Conversation Router (Advanced)
 
-`ConversationRouter` dynamically routes incoming messages to different agents based on conversation state, message content, origin channel, or custom logic. It works as a BEFORE_BROADCAST hook that stamps routing metadata on events.
+`ConversationRouter` dynamically routes incoming messages to different agents based on conversation state, message content, origin channel, or custom logic.
 
 ### RoutingConditions Reference
 
-All conditions are ANDed — every non-None field must match for the rule to fire:
+All conditions are ANDed — every non-None field must match:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -2270,7 +3144,7 @@ All conditions are ANDed — every non-None field must match for the rule to fir
 | `channel_types` | `set[ChannelType] \| None` | Match when sender's channel type is in this set |
 | `intents` | `set[str] \| None` | Match when `event.metadata["intent"]` is in this set |
 | `source_channel_ids` | `set[str] \| None` | Match when sender's channel ID is in this set |
-| `custom` | `Callable \| None` | Custom function `(event, context, state) -> bool` for arbitrary logic |
+| `custom` | `Callable \| None` | Custom `(event, context, state) -> bool` for arbitrary logic |
 
 ### Routing by Phase
 
@@ -2279,16 +3153,8 @@ from roomkit.orchestration.router import ConversationRouter, RoutingRule, Routin
 
 router = ConversationRouter(
     rules=[
-        RoutingRule(
-            agent_id="billing-agent",
-            conditions=RoutingConditions(phases={"billing"}),
-            priority=0,
-        ),
-        RoutingRule(
-            agent_id="shipping-agent",
-            conditions=RoutingConditions(phases={"shipping"}),
-            priority=0,
-        ),
+        RoutingRule(agent_id="billing-agent", conditions=RoutingConditions(phases={"billing"})),
+        RoutingRule(agent_id="shipping-agent", conditions=RoutingConditions(phases={"shipping"})),
     ],
     default_agent_id="triage-agent",
 )
@@ -2296,21 +3162,13 @@ router = ConversationRouter(
 
 ### Routing by Channel Type (Origin)
 
-Route messages to different agents based on where they came from:
-
 ```python
 from roomkit.models.enums import ChannelType
 
 router = ConversationRouter(
     rules=[
-        RoutingRule(
-            agent_id="voice-specialist",
-            conditions=RoutingConditions(channel_types={ChannelType.VOICE}),
-        ),
-        RoutingRule(
-            agent_id="sms-agent",
-            conditions=RoutingConditions(channel_types={ChannelType.SMS, ChannelType.WHATSAPP}),
-        ),
+        RoutingRule(agent_id="voice-specialist", conditions=RoutingConditions(channel_types={ChannelType.VOICE})),
+        RoutingRule(agent_id="sms-agent", conditions=RoutingConditions(channel_types={ChannelType.SMS, ChannelType.WHATSAPP})),
     ],
     default_agent_id="general-agent",
 )
@@ -2331,46 +3189,29 @@ async def classify_intent(event: RoomEvent, ctx: RoomContext) -> HookResult:
     return HookResult.allow()
 
 router = ConversationRouter(
-    rules=[
-        RoutingRule(
-            agent_id="billing-agent",
-            conditions=RoutingConditions(intents={"billing"}),
-        ),
-    ],
+    rules=[RoutingRule(agent_id="billing-agent", conditions=RoutingConditions(intents={"billing"}))],
     default_agent_id="general-agent",
 )
 ```
 
 ### Routing with Custom Logic
 
-Use a custom callable for complex routing decisions, including content-based or state-based logic:
-
 ```python
-def is_high_value_customer(event: RoomEvent, ctx: RoomContext, state: ConversationState) -> bool:
+def is_high_value_customer(event, ctx, state):
     return state.context.get("customer_tier") == "premium"
 
-def contains_urgency(event: RoomEvent, ctx: RoomContext, state: ConversationState) -> bool:
+def contains_urgency(event, ctx, state):
     if isinstance(event.content, TextContent):
-        return any(word in event.content.body.lower() for word in ["urgent", "emergency", "asap"])
+        return any(w in event.content.body.lower() for w in ["urgent", "emergency", "asap"])
     return False
 
 router = ConversationRouter(
     rules=[
-        # Premium customers with urgent messages -> senior agent
-        RoutingRule(
-            agent_id="senior-agent",
-            conditions=RoutingConditions(custom=is_high_value_customer),
-            priority=-1,  # Check first
-        ),
-        # Any urgent message -> escalation agent
-        RoutingRule(
-            agent_id="escalation-agent",
-            conditions=RoutingConditions(custom=contains_urgency),
-            priority=0,
-        ),
+        RoutingRule(agent_id="senior-agent", conditions=RoutingConditions(custom=is_high_value_customer), priority=-1),
+        RoutingRule(agent_id="escalation-agent", conditions=RoutingConditions(custom=contains_urgency), priority=0),
     ],
     default_agent_id="general-agent",
-    supervisor_id="supervisor-agent",  # Always observes all conversations
+    supervisor_id="supervisor-agent",
 )
 ```
 
@@ -2393,24 +3234,19 @@ RoutingRule(
 ### Installing the Router
 
 ```python
-# Option 1: Manual hook installation
-kit.hook(
-    HookTrigger.BEFORE_BROADCAST,
-    execution=HookExecution.SYNC,
-    priority=-100,
-)(router.as_hook())
+# Option 1: Manual hook
+kit.hook(HookTrigger.BEFORE_BROADCAST, execution=HookExecution.SYNC, priority=-100)(router.as_hook())
 
-# Option 2: Use install() which also sets up handoff tools
+# Option 2: install() — also sets up handoff tools
 handler = router.install(kit, agents=[billing_agent, shipping_agent, triage_agent])
 ```
 
 ### Routing Selection Priority
 
-The router evaluates in this order:
-1. **Agent affinity** — if `state.active_agent_id` is set and the agent is still attached, stick with it
-2. **Rules** — evaluate `RoutingRule` list in ascending `priority` order; first match wins
+1. **Agent affinity** — if `state.active_agent_id` is set and attached, stick with it
+2. **Rules** — evaluate in ascending `priority` order; first match wins
 3. **Fallback** — return `default_agent_id`
-4. **Loop prevention** — events FROM intelligence channels are never routed (returns `None`)
+4. **Loop prevention** — events FROM intelligence channels are never routed
 
 ## Conversation Pipeline (Advanced)
 
@@ -2537,7 +3373,7 @@ Each SMS provider has a webhook parser:
 from roomkit.providers.twilio.sms import parse_twilio_webhook
 from roomkit.providers.telnyx.sms import parse_telnyx_webhook
 from roomkit.providers.sinch.sms import parse_sinch_webhook
-from roomkit.providers.voicemeup.sms import parse_voicemeup_webhook
+from roomkit.providers.voicemeup.sms import VoiceMeUpSMSProvider  # use provider.parse_inbound()
 
 # Or use the universal webhook parser
 message = await kit.process_webhook(meta=request_data, channel_id="sms-twilio")
@@ -2641,6 +3477,78 @@ telegram = TelegramChannel("telegram", provider=TelegramBotProvider(TelegramConf
 
 Webhook parser: `parse_telegram_webhook(request_data, channel_id="telegram")` — returns `list[InboundMessage]`.
 
+## Discord
+
+Discord has no webhook parser — it is a source + provider pair sharing one persistent gateway connection. `DiscordGatewaySource` owns the `discord.Client` (inbound); `DiscordBotProvider` reuses that client for outbound sends.
+
+```python
+from roomkit import DiscordChannel, RoomKit
+from roomkit.providers.discord import DiscordBotProvider, DiscordConfig
+from roomkit.sources.discord import DiscordGatewaySource
+
+config = DiscordConfig(
+    bot_token="...",               # SecretStr
+    intents_message_content=True,  # privileged intent — enable in the Developer Portal
+    ignore_bots=True,              # drop inbound messages authored by other bots
+)
+source = DiscordGatewaySource(config, channel_id="discord-main")
+provider = DiscordBotProvider(source)  # sends through the source's client
+
+kit = RoomKit()
+kit.register_channel(DiscordChannel("discord-main", provider=provider))
+await kit.attach_source("discord-main", source, auto_restart=True)  # connects the gateway
+```
+
+Requires `pip install roomkit[discord]` (discord.py). The Message Content intent is privileged: enable it under Bot > Privileged Gateway Intents in the Discord Developer Portal, or every inbound `message.content` arrives empty.
+
+- Recipient key `discord_channel_id` resolves the target Discord channel snowflake at delivery time.
+- Capabilities: text + rich + media, `max_length=2000`, threading and reactions. `RichContent` is sent as an embed; `MediaContent` with an http(s) URL rides in the message content (Discord auto-embeds), a `data:` URI is decoded and uploaded as a file.
+- Threading: outbound `channel_data.thread_id` (a message snowflake) becomes a reply reference; inbound reply references become `InboundMessage.thread_id`.
+- Inbound parsing: `parse_discord_message(message, channel_id, bot_user_id=..., ignore_bots=True)` returns `InboundMessage | None` — the bot's own messages (and other bots, by default) are dropped, so echo hooks never loop. Metadata carries `guild_id`, `channel_id`, `channel_name`, `author_name`, `author_bot`, `message_id`. Override via `DiscordGatewaySource(..., parser=...)`.
+- Reactions: `provider.send_reaction(channel_id, message_id, emoji)` outbound; inbound reaction add/remove events reach the source's `on_event` callback as normalized dicts (`action`, `emoji`, `user_id`, `message_id`, `channel_id`) — outside the message pipeline.
+- Testing: `MockDiscordProvider` records `sent` and `reactions` without the `discord` dependency. ABC: `DiscordProvider`.
+
+Runnable example: `examples/discord_bot.py`.
+
+## Buzz (Nostr)
+
+Buzz (Block's Nostr-based team workspace) follows the same source + provider pairing: `BuzzRelaySource` owns a `buzzkit.BuzzClient` — NIP-42 authentication plus a realtime channel subscription — and `BuzzProvider` reuses that client for outbound sends over the relay's HTTP bridge, so one Nostr identity serves both directions.
+
+```python
+from roomkit import BuzzChannel, RoomKit
+from roomkit.providers.buzz import BuzzConfig, BuzzProvider
+from roomkit.sources.buzz import BuzzRelaySource
+
+config = BuzzConfig(
+    relay_url="wss://your-community.communities.buzz.xyz",
+    private_key="nsec1...",   # agent's Nostr secret (nsec or hex) — signs events, authenticates (NIP-42)
+    ignore_own=True,          # drop the agent's own events (echo guard)
+    auto_join=True,           # NIP-29 self-join (kind 9000, role=bot) on connect
+    announce_presence=True,   # kind 20001 "online" on connect + periodic heartbeat
+    auth_tag=None,            # optional NIP-OA owner attestation (buzzkit.compute_auth_tag)
+)
+source = BuzzRelaySource(config, channel_id="buzz-main", relay_channel_id="<channel-uuid>")
+provider = BuzzProvider(source)  # sends through the source's client
+
+kit = RoomKit()
+kit.register_channel(BuzzChannel("buzz-main", provider=provider))
+await kit.create_room(room_id="buzz-room")
+await kit.attach_channel("buzz-room", "buzz-main", metadata={"buzz_channel_id": "<channel-uuid>"})
+await kit.attach_source("buzz-main", source, auto_restart=True)  # connects + subscribes
+```
+
+Requires `pip install roomkit[buzz]` (installs `buzzkit`, a compiled wheel kept out of the aggregate extras). Hosted Buzz communities are closed relays: the agent's key must be a member first — claim an invite once with `buzzkit`'s `claim_invite`, then copy the channel UUID from the Buzz app.
+
+- Recipient key `buzz_channel_id` resolves the target Buzz relay channel UUID at delivery time. Each source subscribes to a single relay channel — register one source per Buzz channel and bind each to its room.
+- Capabilities: text only, `max_length=65536`, threading and reactions advertised.
+- Inbound parsing: `parse_buzz_event(event, channel_id, own_pubkey=..., ignore_own=True)` converts a kind-9 Nostr event dict to an `InboundMessage` — sender pubkey becomes `sender_id`, the Nostr event id becomes `external_id` and `idempotency_key`, metadata carries `nostr_event_id`, `nostr_kind`, `buzz_channel_id`. Subscribe to other event kinds with `BuzzRelaySource(..., kinds=[...], parser=...)`.
+- `provider.send(event, to=channel_uuid)` publishes a kind-9 channel message signed with the agent's key; the returned `ProviderResult.provider_message_id` is the Nostr event id. HTTP-bridge sends succeed even while the inbound WebSocket is mid-reconnect; the source reconnects with exponential backoff (1 s doubling to a 30 s cap).
+- Testing: `MockBuzzProvider` records `sent` without the `buzzkit` dependency. ABC: `BuzzRelayProvider`.
+
+Runnable example: `examples/buzz_bot.py`.
+
+Buzz huddles (live voice calls in ephemeral channels) are handled by the voice subsystem, not this transport: `BuzzHuddleBackend` (`roomkit.voice.backends.buzz_huddle`) is a `VoiceBackend` carrying huddle Opus audio for a `RealtimeVoiceChannel`, and `BuzzHuddleWatcher` owns the announcement-to-call lifecycle, watching the parent channel for kind-48100 announcements (`KIND_HUDDLE_STARTED` / `huddle_announcement_parser` in `roomkit.sources.buzz`) and bridging each huddle. See `examples/buzz_voice_agent.py`.
+
 ## Microsoft Teams
 
 ```python
@@ -2690,12 +3598,22 @@ from roomkit import WebSocketChannel
 
 ws = WebSocketChannel("ws-client")
 
-# Register a connection
-ws.register_connection("conn-1", on_receive_callback)
+# Register a connection — room_id says which conversation this socket is for
+ws.register_connection("conn-1", on_receive_callback, room_id="room-1")
 
 # In production, connect to the framework
-await kit.connect_websocket("ws-client", "conn-1", send_fn)
+await kit.connect_websocket("ws-client", "conn-1", send_fn, room_id="room-1")
 await kit.disconnect_websocket("ws-client", "conn-1")
+```
+
+One channel instance can serve several rooms, so a connection has to say which
+one it belongs to: the channel delivers a room's events only to the
+connections registered for it. A client holding several conversations open on
+one socket subscribes to the extra rooms rather than opening more sockets:
+
+```python
+kit.subscribe_websocket("ws-client", "conn-1", "room-2")
+kit.unsubscribe_websocket("ws-client", "conn-1", "room-2")
 ```
 
 ## Phone Number Utilities
@@ -2891,8 +3809,7 @@ RoomKit provides built-in resilience patterns for production deployments: rate l
 Apply rate limits per channel binding:
 
 ```python
-from roomkit import RoomKit
-from roomkit.models.channel import RateLimit
+from roomkit import RoomKit, RateLimit
 
 kit = RoomKit()
 
@@ -2904,8 +3821,7 @@ await kit.attach_channel("room-1", "sms-out",
 Framework-level inbound rate limiting:
 
 ```python
-from roomkit import RoomKit
-from roomkit.models.channel import RateLimit
+from roomkit import RoomKit, RateLimit
 
 kit = RoomKit(inbound_rate_limit=RateLimit(max_per_second=10.0))
 ```
@@ -2934,7 +3850,7 @@ States: CLOSED (normal) -> OPEN (failing, fast-reject) -> HALF_OPEN (testing rec
 Retry failed operations with exponential backoff:
 
 ```python
-from roomkit.models.channel import RetryPolicy
+from roomkit import RetryPolicy
 from roomkit.core.retry import retry_with_backoff
 
 policy = RetryPolicy(
@@ -2969,7 +3885,7 @@ When an AI response triggers another AI response, chain depth increments. Proces
 Auto-transition rooms based on inactivity:
 
 ```python
-from roomkit import RoomKit
+from roomkit import RoomKit, RoomTimers
 
 kit = RoomKit()
 
@@ -3006,8 +3922,7 @@ await kit.process_delivery_status(status)
 ## Production Setup Example
 
 ```python
-from roomkit import RoomKit
-from roomkit.models.channel import RateLimit, RetryPolicy
+from roomkit import RoomKit, RateLimit, RetryPolicy
 from roomkit.store.postgres import PostgresStore
 
 kit = RoomKit(
@@ -3058,7 +3973,7 @@ from roomkit import RoomKit
 from roomkit.store.postgres import PostgresStore
 
 store = PostgresStore("postgresql://user:pass@localhost/roomkit")
-await store.init()  # Creates tables if they don't exist
+await store.init()  # Creates connection pool and tables
 
 kit = RoomKit(store=store)
 ```
@@ -3120,7 +4035,7 @@ from roomkit.store.postgres import PostgresStore
 
 async def main() -> None:
     store = PostgresStore(os.environ["DATABASE_URL"])
-    await store.init()
+    await store.initialize()
 
     kit = RoomKit(store=store)
 
@@ -3297,7 +4212,7 @@ backchannel = MockBackchannelDetector()
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 
-stt = MockSTTProvider(transcriptions=["Hello", "How are you?"])
+stt = MockSTTProvider(transcripts=["Hello", "How are you?"])
 tts = MockTTSProvider()
 ```
 
@@ -3362,7 +4277,7 @@ async def test_voice_pipeline() -> None:
     kit = RoomKit()
 
     backend = MockVoiceBackend()
-    stt = MockSTTProvider(transcriptions=["Hello"])
+    stt = MockSTTProvider(transcripts=["Hello"])
     tts = MockTTSProvider()
     vad = MockVADProvider(events=[
         VADEvent(type=VADEventType.SPEECH_START),
@@ -3419,7 +4334,7 @@ modified = event.model_copy(update={"content": TextContent(body="new")})
 ```
 ---
 
-RoomKit exports **73 symbols** from `roomkit`. Providers and voice types import from subpackages.
+RoomKit exports **170 symbols** from `roomkit`. Providers and voice types import from subpackages.
 
 ## Top-Level Imports (`from roomkit import ...`)
 
@@ -3428,17 +4343,27 @@ RoomKit exports **73 symbols** from `roomkit`. Providers and voice types import 
 | Symbol | Description |
 |--------|-------------|
 | `RoomKit` | Central orchestrator — rooms, channels, hooks, storage |
+| `RoomKitConsole` | Full-screen terminal dashboard for voice agent development (optional, requires `rich`) |
+| `__version__` | Package version string |
+| `content_logging_enabled` | Whether raw message content may be written to logs (default False) |
+| `set_content_logging` | Enable/disable process-wide logging of raw message content |
 
 ### Channels
 
 | Symbol | Description |
 |--------|-------------|
+| `ACPChannel` | Connects a room to an external ACP coding agent over stdio |
 | `Agent` | AI agent with role, description, greeting, tools |
 | `AIChannel` | Intelligence layer for AI responses |
+| `AIChannelTurnConfig` | Per-turn generation overrides for AIChannel (None fields keep channel defaults) |
 | `AudioVideoChannel` | Combined audio + video channel |
+| `BuzzChannel` | Buzz (Nostr relay) transport channel factory |
 | `Channel` | Base class for all channels |
-| `CLIChannel` | CLI/terminal interactive channel |
+| `CLIChannel` | Interactive terminal channel |
+| `ConferenceChannel` | Multi-party conference channel backed by an external SFU |
+| `DiscordChannel` | Discord bot transport channel factory |
 | `EmailChannel` | Email transport channel factory |
+| `FrameworkAwareChannel` | Channel base handed the framework it is registered with |
 | `HTTPChannel` | HTTP webhook transport channel factory |
 | `MessengerChannel` | Facebook Messenger transport channel factory |
 | `RCSChannel` | RCS transport channel factory |
@@ -3454,28 +4379,63 @@ RoomKit exports **73 symbols** from `roomkit`. Providers and voice types import 
 | `WhatsAppChannel` | WhatsApp Business API channel factory |
 | `WhatsAppPersonalChannel` | WhatsApp Personal (neonize) channel factory |
 
+### Conference
+
+| Symbol | Description |
+|--------|-------------|
+| `BotSession` | The framework's own connection to a conference |
+| `ConferenceAccess` | Credentials a client uses to join the conference directly |
+| `ConferenceBackend` | ABC for SFU conference backends |
+| `ConferenceBargeIn` | Event: a participant spoke over the bot and was allowed to interrupt it |
+| `ConferenceCapability` | Flag enum of capabilities a ConferenceBackend can support |
+| `ConferenceGrants` | Permissions encoded into a participant's conference access |
+| `ConferenceInterruptionConfig` | Multi-party interruption policy |
+| `ConferenceInterruptionScope` | Who may interrupt the bot while it is speaking |
+| `ConferenceParticipant` | A participant's media presence in a conference |
+| `ConferenceRealtimeConfig` | Composes a speech-to-speech provider with a conference |
+| `ConferenceRecordingConfig` | Configuration for recording a conference |
+| `ConferenceRecordingMode` | Where a conference recording is produced |
+| `ConferenceRecordingStarted` | Event: a track's recording has opened |
+| `ConferenceRecordingStopped` | Event: a track's recording has closed, with its destination |
+| `ConferenceToolHandler` | Callable type for conference tool invocation |
+| `ConferenceTrack` | A single media stream published by a conference participant |
+| `ConferenceTranscription` | What a lane produced, before it enters the room |
+| `TrackKind` | Kind of media carried by a conference track |
+| `LiveKitConferenceBackend` | ConferenceBackend backed by a LiveKit SFU |
+| `LiveKitConfig` | Connection and behaviour settings for LiveKitConferenceBackend |
+| `MockConferenceBackend` | Conference backend that scripts SFU events for tests |
+| `MockDelivery` | Mock media timing — how long one frame took to reach every subscriber |
+| `MockFaults` | Per-operation failures and delays for the mock backend |
+| `MockTrackFormat` | Audio format a participant negotiated for one track (mock) |
+| `MockUtterance` | Chunks published for one utterance on one bot's track (mock) |
+| `CONFERENCE_ADDRESS_KEYS` | Participant-attribute keys read as a caller's address, most specific first |
+| `CONFERENCE_METADATA_KEY` | `Participant.metadata` key a conference nests provider data under (`"conference"`) |
+| `CONFERENCE_UNASSERTED_METADATA_KEY` | Metadata key nesting client-claimed (unverified) participant attributes |
+
+### Video
+
+| Symbol | Description |
+|--------|-------------|
+| `VideoDetectionEvent` | Detection event emitted by video pipeline filters |
+| `FaceTouchFilter` | Detects hand-to-face contact using MediaPipe landmarks |
+| `FaceTouchConfig` | Configuration for face touch detection |
+| `FaceTouchSensitivity` | Sensitivity presets controlling detection thresholds |
+| `FaceZone` | Face zones that can be monitored for touch detection |
+| `MockFaceTouchFilter` | Mock filter emitting pre-configured detection events at specific frames |
+
 ### Enums
 
 | Symbol | Description |
 |--------|-------------|
 | `Access` | Channel access levels: READ_WRITE, READ_ONLY, WRITE_ONLY, NONE |
 | `ChannelCategory` | TRANSPORT or INTELLIGENCE |
-| `ChannelType` | SMS, EMAIL, WHATSAPP, VOICE, AI, WEBSOCKET, etc. |
-| `EventStatus` | DELIVERED, BLOCKED, etc. |
-| `EventType` | MESSAGE, SYSTEM, EDIT, DELETE, etc. |
+| `ChannelType` | 23 values: SMS, MMS, RCS, EMAIL, WHATSAPP, WHATSAPP_PERSONAL, WEBSOCKET, AI, VOICE, REALTIME_VOICE, REALTIME_AUDIO_VIDEO, PUSH, MESSENGER, TELEGRAM, TEAMS, DISCORD, BUZZ, WEBHOOK, VIDEO, AUDIO_VIDEO, CONFERENCE, CLI, SYSTEM |
+| `EventStatus` | PENDING, DELIVERED, READ, FAILED, BLOCKED |
+| `EventType` | 27 values (MESSAGE, SYSTEM, EDIT, DELETE, TOOL_CALL_START, DTMF, etc.) |
 | `HookExecution` | SYNC or ASYNC |
-| `HookTrigger` | 40+ hook triggers (BEFORE_BROADCAST, AFTER_BROADCAST, etc.) |
+| `HookTrigger` | 76 hook triggers — full list in hooks.md |
 | `RoomStatus` | ACTIVE, PAUSED, CLOSED, ARCHIVED |
-
-### Orchestration
-
-| Symbol | Description |
-|--------|-------------|
-| `Loop` | Producer/reviewer cycle strategy |
-| `Orchestration` | ABC for orchestration strategies |
-| `Pipeline` | Linear agent chain strategy |
-| `Supervisor` | Supervisor delegates to workers strategy |
-| `Swarm` | Bidirectional handoff strategy |
+| `Visibility` | Scope keywords for an event's `visibility` field: ALL, NONE, TRANSPORT, INTELLIGENCE, INTERNAL |
 
 ### Models
 
@@ -3484,8 +4444,6 @@ RoomKit exports **73 symbols** from `roomkit`. Providers and voice types import 
 | `ChannelBinding` | Binding of a channel to a room |
 | `ChannelCapabilities` | Declared capabilities of a channel |
 | `ChannelOutput` | Output of a channel delivery |
-| `DeliveryResult` | Result of delivering a message |
-| `DeliveryStatus` | Delivery status from provider webhook |
 | `EventSource` | Source attribution for an event |
 | `FrameworkEvent` | Lightweight framework lifecycle event |
 | `HookResult` | Result from sync hooks: `.allow()`, `.block(reason)`, `.modify(event)` |
@@ -3500,11 +4458,90 @@ RoomKit exports **73 symbols** from `roomkit`. Providers and voice types import 
 | `RoomTimers` | Timer configuration for room inactivity |
 | `SessionStartedEvent` | Event fired when a voice session starts |
 | `TextContent` | Plain text content |
+| `get_current_voice_session` | Get the current voice session from context |
+
+### Tools, Callbacks & Human Input
+
+| Symbol | Description |
+|--------|-------------|
 | `Tool` | Base class for tool definitions |
+| `ToolHandler` | Tool handler type for realtime voice |
+| `ToolPolicy` | Per-agent allow/deny rules for tool access |
+| `RoleOverride` | Per-role tool policy override |
 | `ToolCallCallback` | Callback type for tool call events |
 | `ToolCallEvent` | Tool call event model |
-| `ToolHandler` | Tool handler type for realtime voice |
-| `get_current_voice_session` | Get the current voice session from context |
+| `ToolCallContent` | Content for TOOL_CALL_START and TOOL_CALL_END events |
+| `AIGenerationEvent` | Payload for BEFORE_AI_GENERATION hooks, before AI provider invocation |
+| `AIResponseEvent` | Payload for ON_AI_RESPONSE hooks, after AI generation completes |
+| `BeforeGenerationCallback` | Async callback type receiving AIGenerationEvent |
+| `AfterResponseCallback` | Async callback type receiving AIResponseEvent |
+| `HumanInputHandler` | Manages pending human input requests |
+| `HumanInputToolHandler` | ToolHandler wrapper that blocks on human input for specified tools |
+| `PendingInput` | A pending human input request |
+| `PendingInputEvent` | Event fired through ON_USER_INPUT_REQUIRED hooks |
+| `PendingInputStatus` | Status of a pending human input request |
+
+### Delivery
+
+| Symbol | Description |
+|--------|-------------|
+| `DeliveryStrategy` | ABC controlling when and how content is delivered to a channel |
+| `Immediate` | Deliver now; may interrupt ongoing TTS playback |
+| `Queued` | Add to queue, deliver at the next idle window |
+| `WaitForIdle` | Wait for TTS/speech to finish, then send |
+| `DeliveryBackend` | ABC for persistent delivery queue backends |
+| `DeliveryItem` | Serializable delivery request — the unit of work in the queue |
+| `DeliveryItemStatus` | Lifecycle status of a delivery item |
+| `InMemoryDeliveryBackend` | Asyncio-queue delivery backend (single process, no persistence) |
+| `DeliveryResult` | Result of delivering a message |
+| `DeliveryStatus` | Delivery status from provider webhook |
+
+### Storage & Locking
+
+| Symbol | Description |
+|--------|-------------|
+| `ConversationStore` | ABC for persistent room/event/binding/participant storage |
+| `InMemoryStore` | Dict-based in-memory store for development and testing |
+| `RoomLockManager` | ABC for per-room locking |
+| `InMemoryLockManager` | In-process per-room asyncio locks with LRU eviction |
+| `EventFilter` | Filter criteria for querying room events |
+| `PersistencePolicy` | Controls which event types are persisted to the store |
+
+### Orchestration
+
+| Symbol | Description |
+|--------|-------------|
+| `Loop` | Producer/reviewer cycle strategy |
+| `Orchestration` | ABC for orchestration strategies |
+| `Pipeline` | Linear agent chain strategy |
+| `Supervisor` | Supervisor delegates to workers strategy |
+| `Swarm` | Bidirectional handoff strategy |
+| `ConversationPhase` | Built-in conversation phases (StrEnum) |
+| `ConversationState` | Tracks conversation progress within a room |
+| `ConversationRouter` | Routes events to the appropriate agent |
+| `ConversationPipeline` | Generates routing rules for sequential agent workflows |
+| `PipelineStage` | A stage in a ConversationPipeline |
+| `RoutingRule` | Routing rule mapping conditions to an agent |
+| `RoutingConditions` | Conditions for a routing rule to match |
+| `get_conversation_state` | Extract typed ConversationState from room metadata |
+| `set_conversation_state` | Return a room copy with updated conversation state |
+| `HandoffHandler` | Processes handoff tool calls |
+| `HandoffRequest` | Parsed from an agent's handoff tool call arguments |
+| `HandoffResult` | Result returned to the calling agent after a handoff |
+| `HANDOFF_TOOL` | AITool definition for transferring a conversation to another agent |
+| `setup_handoff` | Wires handoff into an AIChannel's tool chain |
+
+### Memory, Skills & Sandbox
+
+| Symbol | Description |
+|--------|-------------|
+| `MemoryProvider` | ABC for pluggable memory backends feeding AI context construction |
+| `Skill` | Full skill definition including instructions body |
+| `SkillMetadata` | Lightweight metadata parsed from SKILL.md frontmatter |
+| `SkillRegistry` | Discovers, loads, and manages Agent Skills |
+| `ScriptExecutor` | ABC for executing skill scripts with integrator-defined policy |
+| `SandboxExecutor` | ABC for executing commands in a sandboxed environment |
+| `SandboxResult` | Result of executing a sandbox command |
 
 ### Errors
 
@@ -3512,14 +4549,20 @@ RoomKit exports **73 symbols** from `roomkit`. Providers and voice types import 
 |--------|-------------|
 | `RoomKitError` | Base exception |
 | `RoomNotFoundError` | Room does not exist |
+| `RoomClosedError` | Room's status refuses new events (RFC §5.1) |
+| `RoomNotAttachedError` | Channel acted on a room it is no longer attached to |
 | `ChannelNotFoundError` | Channel not attached to room |
 | `ChannelNotRegisteredError` | Channel not registered with framework |
 | `ParticipantNotFoundError` | Participant not found in room |
+| `ParticipantNotAdmittedError` | Participant barred from what was asked for them |
 | `IdentityNotFoundError` | Identity not found |
 | `SourceAlreadyAttachedError` | Source already attached |
 | `SourceNotFoundError` | No source attached |
 | `VoiceBackendNotConfiguredError` | Voice backend not configured |
 | `VoiceNotConfiguredError` | Voice (STT/TTS) not configured |
+| `ConferenceAlreadyAttachedError` | Second conference channel attached to a room |
+| `ConferenceCapabilityError` | Conference operation needs a capability the backend lacks |
+| `ConferenceCloseError` | Conference channel did not close all of its resources |
 
 ### AI Documentation Helpers
 
@@ -3534,24 +4577,26 @@ RoomKit exports **73 symbols** from `roomkit`. Providers and voice types import 
 
 ```python
 kit = RoomKit(
-    store=InMemoryStore(),                 # ConversationStore implementation
-    identity_resolver=None,                # IdentityResolver implementation
-    identity_channel_types=None,           # Channel types to resolve identity for
-    inbound_router=None,                   # InboundRoomRouter implementation
-    lock_manager=None,                     # RoomLockManager implementation
-    realtime=None,                         # RealtimeBackend implementation
-    max_chain_depth=5,                     # AI-to-AI loop prevention
-    identity_timeout=10.0,                 # Identity resolution timeout (seconds)
-    process_timeout=30.0,                  # Inbound processing timeout (seconds)
-    stt=None,                              # STTProvider for transcription
-    tts=None,                              # TTSProvider for synthesis
-    voice=None,                            # VoiceBackend for audio transport
-    task_runner=None,                      # Background task runner
-    delivery_strategy=None,                # Delivery strategy
-    status_bus=None,                       # Status bus for orchestration
-    telemetry=None,                        # TelemetryProvider
-    inbound_rate_limit=None,               # Framework-level rate limit
-    orchestration=None,                    # Orchestration strategy
+    store=None,                    # ConversationStore (default: InMemoryStore)
+    identity_resolver=None,        # IdentityResolver for identifying inbound senders
+    identity_channel_types=None,   # Restrict identity resolution to these ChannelTypes (None = all)
+    inbound_router=None,           # InboundRoomRouter (default: DefaultInboundRoomRouter)
+    lock_manager=None,             # RoomLockManager (default: InMemoryLockManager)
+    realtime=None,                 # RealtimeBackend for ephemeral events (default: InMemoryRealtime)
+    max_chain_depth=5,             # Max reentry chain depth — AI-to-AI loop prevention
+    identity_timeout=10.0,         # Identity resolution timeout (seconds)
+    process_timeout=30.0,          # Locked inbound processing timeout (seconds)
+    stt=None,                      # STTProvider for transcription
+    tts=None,                      # TTSProvider for synthesis
+    voice=None,                    # VoiceBackend for real-time audio transport
+    task_runner=None,              # TaskRunner for delegated background tasks (default: InMemoryTaskRunner)
+    delivery_strategy=None,        # DeliveryStrategy | str — proactive delivery of task results
+    delivery_backend=None,         # DeliveryBackend — persistent queue for deliver() (None = in-process)
+    status_bus=None,               # StatusBus for multi-agent coordination (default: in-memory)
+    telemetry=None,                # TelemetryProvider or TelemetryConfig (default: no-op)
+    inbound_rate_limit=None,       # RateLimit applied to inbound messages, keyed per channel_id
+    orchestration=None,            # Default Orchestration strategy for create_room()
+    persistence_policy=None,       # PersistencePolicy — which event types are persisted (None = all)
 )
 ```
 
