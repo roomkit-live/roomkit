@@ -99,7 +99,7 @@ async def _kit_with_channel(
     # consume or say never joins. These tests exercise the join's mechanics,
     # not which need armed it, so a recognizer stands in unless the test
     # brought a need of its own. Pure transport has its own file.
-    if not {"stt", "tts", "recording"} & channel_kwargs.keys():
+    if not {"stt", "tts", "recording", "realtime"} & channel_kwargs.keys():
         channel_kwargs["stt"] = MockSTTProvider()
     channel = ConferenceChannel("conf", backend=backend, **channel_kwargs)  # type: ignore[arg-type]
     kit = RoomKit(identity_resolver=resolver)

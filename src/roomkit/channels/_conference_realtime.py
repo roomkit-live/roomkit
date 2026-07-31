@@ -361,6 +361,12 @@ class ConferenceRealtime:
         self._open_utterance(room, session.room_id)
 
     def _open_utterance(self, room: _RoomRealtime, room_id: str) -> _Utterance:
+        # A response the provider never closed is closed here: its pump would
+        # otherwise wait forever on a queue nothing feeds, holding the floor
+        # against the response that just started.
+        previous = room.utterance
+        if previous is not None and not previous.discarded:
+            previous.finish()
         utterance = _Utterance()
         room.utterance = utterance
         room.spawn(self._speak(room_id, utterance))

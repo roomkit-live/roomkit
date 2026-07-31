@@ -1288,9 +1288,10 @@ class ConferenceChannel(
         for room in self._rooms.values():
             room.forget_subscriptions()
         # All lanes receive cancellation together and share the same grace
-        # period. A survivor keeps its lease on the pipeline and the STT, which
-        # is what stops those providers being closed underneath its runaway
-        # task — the leases are the retention; nothing here has to remember it.
+        # period. A survivor keeps its lease on the pipeline — and a
+        # transcription in flight its per-call lease on the STT — which is
+        # what stops those providers being closed underneath a runaway task:
+        # the leases are the retention; nothing here has to remember it.
         lanes = list(self._lanes.values())
         self._lanes.clear()
         lane_results = await asyncio.gather(

@@ -86,17 +86,19 @@ class ConferenceLanesMixin:
     def _open_lane(self, room_id: str, track: ConferenceTrack) -> None:
         """Start a processing lane for a subscribed track.
 
-        The lane holds a lease on the shared pipeline — and the recognizer,
-        when there is one — from before it starts until nothing of its own can
-        still be inside either. The lease, not any list the channel keeps, is
-        what stops a close from freeing those providers under a lane whose
-        provider call ignored its cancellation.
+        The lane holds a lease on the shared pipeline from before it starts
+        until nothing of its own can still be inside it. The lease, not any
+        list the channel keeps, is what stops a close from freeing the
+        pipeline under a lane whose provider call ignored its cancellation.
+        The recognizer is leased per transcription call instead
+        (:meth:`_on_lane_utterance`): a lane outlives the recognizer when a
+        realtime provider still consumes it (RFC 12.10.12), so a lane-long
+        STT lease would hold the unplugged recognizer open for as long as
+        the meeting runs.
         """
         if self._pipeline is None or track.id in self._lanes:
             return
         resources = [ConferenceResource.PIPELINE]
-        if self._stt is not None:
-            resources.append(ConferenceResource.STT)
         lane = ConferenceLane(
             track_id=track.id,
             room_id=room_id,
@@ -131,9 +133,9 @@ class ConferenceLanesMixin:
         """Close one lane, and say whether its task outlived the grace.
 
         An abandoned lane needs no tracking here: it holds its lease on the
-        shared pipeline and recognizer until its task truly ends, and the
-        close retains those providers for exactly as long as any lease on
-        them remains.
+        shared pipeline until its task truly ends — and a transcription in
+        flight its per-call lease on the recognizer — and the close retains
+        those providers for exactly as long as any lease on them remains.
         """
         return await lane.aclose()
 
@@ -306,9 +308,11 @@ class ConferenceLanesMixin:
         room = self._attached_room(lane.room_id)
         if room is None or not room.may_collect():
             return
-        # A per-call lease besides the lane's own: a lane opened before
-        # recognition was plugged holds no STT lease of its own, and this is
-        # what keeps the recognizer from being closed under its call.
+        # The recognizer is leased per call, not per lane: this window is the
+        # only time a lane is inside it, and it is what keeps the recognizer
+        # from being closed under the call — while letting an unplugged one
+        # close as soon as the calls in flight return, however long the lanes
+        # themselves live on for the realtime mix.
         with self._operations.use(
             ConferenceResource.STT, what=f"transcribing track {lane.track_id}"
         ):

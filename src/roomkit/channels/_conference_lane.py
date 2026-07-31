@@ -131,11 +131,12 @@ class ConferenceLane:
         self.room_id = room_id
         self.participant_id = participant_id
 
-        # The lane's hold on the shared pipeline and recognizer, released the
-        # moment no task of this lane's can still be inside either — which for
-        # an abandoned task is when it truly ends, not when it was given up
-        # on. What keeps the channel from closing those providers under a
-        # runaway recognizer call is this lease and nothing else.
+        # The lane's hold on the shared pipeline, released the moment no task
+        # of this lane's can still be inside it — which for an abandoned task
+        # is when it truly ends, not when it was given up on. What keeps the
+        # channel from closing the pipeline under a runaway stage call is
+        # this lease and nothing else; the recognizer has a per-call lease of
+        # its own where the transcription happens.
         self._lease = lease
         self._pipeline = pipeline
         self._on_speech = on_speech
