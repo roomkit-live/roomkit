@@ -18,7 +18,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING
@@ -26,7 +26,11 @@ from typing import TYPE_CHECKING
 from roomkit.channels import _conference_activity
 from roomkit.channels._conference_activity import RoomActivity
 from roomkit.channels._conference_lane import ConferenceBargeIn
-from roomkit.channels._conference_operations import ConferenceOperations, ConferenceResource
+from roomkit.channels._conference_operations import (
+    ConferenceOperations,
+    ConferenceResource,
+    OperationLease,
+)
 from roomkit.conference.models import ConferenceInterruptionScope
 from roomkit.core.task_utils import log_task_exception
 from roomkit.models.enums import HookTrigger
@@ -246,6 +250,12 @@ class ConferenceVoice:
         )
         self._speaking: dict[str, _RoomVoice] = {}
         self._framework: RoomKit | None = None
+        # Awaited when a barge-in lands, with the room it landed in. This is
+        # how an interruption reaches a speech-to-speech provider: the latch
+        # stops the chunk stream and stop_playback drops what the transport
+        # holds, but the provider generating the response knows neither — the
+        # tap is where the cancellation crosses to it (RFC 12.10.12).
+        self._on_interrupted: Callable[[str], Awaitable[None]] | None = None
         # Terminal chunks being published for utterances whose own task was
         # cancelled, by room. Kept because two things wait for them: the next
         # utterance in that room, which must not start before the previous one
@@ -281,6 +291,18 @@ class ConferenceVoice:
         wired to an unplugged recorder would feed chunks to a closed file.
         """
         self._on_published = callback
+
+    def set_on_interrupted(self, callback: Callable[[str], Awaitable[None]] | None) -> None:
+        """Point the barge-in tap at a speech-to-speech provider, or at nothing.
+
+        Follows the provider being plugged and unplugged. The latch and
+        ``stop_playback`` end the utterance on this side of the backend; the
+        tap is what tells the provider to stop *generating* it (RFC 12.10.12).
+        Best-effort by construction: it is awaited inside the barge-in path,
+        and a callback that fails there has lost only the upstream
+        cancellation — the room has already gone quiet.
+        """
+        self._on_interrupted = callback
 
     def _require_supported_strategy(self) -> InterruptionStrategy:
         """Reject an interruption strategy a lane cannot honour."""
@@ -367,6 +389,53 @@ class ConferenceVoice:
             return
         await self._run_after_tts(room_id, spoken)
 
+    async def speak_stream(
+        self,
+        room_id: str,
+        chunks: AsyncIterator[AudioChunk],
+        *,
+        on_playback: Callable[[ConferencePlayback], None] | None = None,
+    ) -> None:
+        """Publish one ready-made utterance on the bot track.
+
+        The speech-to-speech entry point (RFC 12.10.12): the audio arrives
+        synthesized — a realtime provider's response — so there is no text to
+        run BEFORE_TTS over and nothing for AFTER_TTS to report; those are
+        text-synthesis hooks and this utterance never was text. Everything
+        else is :meth:`speak`: the same floor, the same closings wait, the
+        same latch and terminal chunk, so a provider response and a TTS
+        answer are indistinguishable to the backend and to a barge-in.
+
+        ``on_playback`` hands the caller the utterance's record as soon as it
+        exists — before the floor, so a barge-in landing while the response
+        still waits its turn latches a record the caller already holds. The
+        caller uses it to keep ``text`` abreast of the provider's transcript,
+        which is what ON_BARGE_IN reports as ``interrupted_text``; absent a
+        transcript it stays ``""``, and the event says nothing was known to
+        have been heard.
+        """
+        room = self._speaking.get(room_id)
+        if room is None:
+            room = self._speaking[room_id] = _RoomVoice()
+        playback = ConferencePlayback(room_id=room_id, text="")
+        room.playbacks.append(playback)
+        if on_playback is not None:
+            on_playback(playback)
+        try:
+            async with room.floor:
+                if not await self._clear_to_publish(room, playback):
+                    return
+                bot = await self._ensure_bot(room_id)
+                playback.bot = bot
+                playback.begin()
+                lease = self._operations.acquire(
+                    ConferenceResource.REALTIME,
+                    what=f"provider utterance for room {room_id}",
+                )
+                await self._pump(playback, bot, chunks, lease)
+        finally:
+            self._forget(playback)
+
     async def _take_the_floor(
         self, room: _RoomVoice, playback: ConferencePlayback, tts: TTSProvider
     ) -> str | None:
@@ -380,31 +449,7 @@ class ConferenceVoice:
         """
         room_id = playback.room_id
         async with room.floor:
-            if playback.abandoned or playback.interrupted:
-                logger.info("Conference answer dropped before its turn in room %s", room_id)
-                return None
-            # Inside the floor, before anything is published on it: an utterance
-            # a cancellation left to be closed is publishing its boundary on a
-            # task of its own, and it no longer holds the floor to keep this one
-            # off. Waiting here is what keeps the two from interleaving — the
-            # end of the previous turn goes out before the start of this one.
-            #
-            # And when the wait runs out, this answer is dropped rather than
-            # published. The previous utterance has no boundary yet, so anything
-            # sent now is heard as its continuation and the boundary still to
-            # come lands in the middle of it — the interleaving RFC section
-            # 12.10.4 forbids outright, arrived at by waiting instead of by
-            # racing. Both endings are within what the RFC leaves to the
-            # implementation, and the one that goes unheard is the one that
-            # cannot corrupt the track.
-            if not await self._settle_closings(room_id) or room.unterminated is not None:
-                logger.warning(
-                    "Conference answer dropped in room %s: the previous utterance has not "
-                    "been closed (%s), and publishing this one would be heard as its "
-                    "continuation",
-                    room_id,
-                    room.unterminated or "still closing",
-                )
+            if not await self._clear_to_publish(room, playback):
                 return None
             text = await self._run_before_tts(room_id, playback.text)
             if not text:
@@ -416,10 +461,63 @@ class ConferenceVoice:
             await self._publish(playback, bot, tts)
             return text
 
+    async def _clear_to_publish(self, room: _RoomVoice, playback: ConferencePlayback) -> bool:
+        """Inside the floor: whether this utterance may go out on the track.
+
+        An utterance stopped while it waited — abandoned by a detach, latched
+        by a barge-in — is dropped here, before anything of it is published.
+
+        The rest is the previous turn. An utterance a cancellation left to be
+        closed is publishing its boundary on a task of its own, and it no
+        longer holds the floor to keep this one off. Waiting here is what
+        keeps the two from interleaving — the end of the previous turn goes
+        out before the start of this one.
+
+        And when the wait runs out, this answer is dropped rather than
+        published. The previous utterance has no boundary yet, so anything
+        sent now is heard as its continuation and the boundary still to
+        come lands in the middle of it — the interleaving RFC section
+        12.10.4 forbids outright, arrived at by waiting instead of by
+        racing. Both endings are within what the RFC leaves to the
+        implementation, and the one that goes unheard is the one that
+        cannot corrupt the track.
+        """
+        room_id = playback.room_id
+        if playback.abandoned or playback.interrupted:
+            logger.info("Conference answer dropped before its turn in room %s", room_id)
+            return False
+        if not await self._settle_closings(room_id) or room.unterminated is not None:
+            logger.warning(
+                "Conference answer dropped in room %s: the previous utterance has not "
+                "been closed (%s), and publishing this one would be heard as its "
+                "continuation",
+                room_id,
+                room.unterminated or "still closing",
+            )
+            return False
+        return True
+
     async def _publish(
         self, playback: ConferencePlayback, bot: BotSession, tts: TTSProvider
     ) -> None:
-        """Publish one utterance on the bot track, until it ends or is stopped.
+        """Synthesize one utterance and pump it onto the bot track."""
+        # The synthesizer is in use for the whole of the loop — the iterator
+        # is suspended inside the provider between chunks — so the lease
+        # covers it all: a close must not free the synthesizer under a stream
+        # a provider is still producing.
+        lease = self._operations.acquire(
+            ConferenceResource.TTS, what=f"synthesis for room {playback.room_id}"
+        )
+        await self._pump(playback, bot, tts.synthesize_stream(playback.text), lease)
+
+    async def _pump(
+        self,
+        playback: ConferencePlayback,
+        bot: BotSession,
+        chunks: AsyncIterator[AudioChunk],
+        lease: OperationLease,
+    ) -> None:
+        """Publish one utterance's chunks on the bot track, until it ends or is stopped.
 
         Cancelled counts as ended, and still owes the backend a boundary. The
         conference is live and the bot is in it — an orchestration that dropped
@@ -435,17 +533,16 @@ class ConferenceVoice:
         it, and the utterance the cancellation was supposed to end would end
         nowhere. Shielded, this call gives up on the wait and the closing does
         not give up on the chunk.
+
+        The lease arrives held — taken by the caller against the resource the
+        chunks are drawn from, the synthesizer or the realtime provider — and
+        is released when the loop ends: a close must not free that resource
+        under a stream still producing into it. The terminal chunk needs no
+        part of it; publishing the boundary leases the backend on its own.
         """
         room_id = playback.room_id
-        # The synthesizer is in use for the whole of the loop — the iterator
-        # is suspended inside the provider between chunks — so the lease
-        # covers it all: a close must not free the synthesizer under a stream
-        # a provider is still producing.
-        lease = self._operations.acquire(
-            ConferenceResource.TTS, what=f"synthesis for room {room_id}"
-        )
         try:
-            async for chunk in tts.synthesize_stream(playback.text):
+            async for chunk in chunks:
                 # Re-read every chunk: synthesis awaits between them, and that
                 # is the window a detach lands in.
                 if playback.abandoned:
@@ -822,7 +919,28 @@ class ConferenceVoice:
         for playback in pending:
             playback.interrupted = True
         await self._stop_playback(speaking)
+        await self._interrupt_upstream(lane.room_id)
         await self._fire_barge_in(lane, speaking)
+
+    async def _interrupt_upstream(self, room_id: str) -> None:
+        """Carry a landed barge-in to the speech-to-speech provider, if one is wired.
+
+        Contained like :meth:`_stop_playback`, and for the same reason: the
+        barge-in has already landed on this side of the backend, and a
+        provider that could not cancel its generation has lost only audio the
+        latch will never publish. ON_BARGE_IN still owes the room its event.
+        """
+        if self._on_interrupted is None:
+            return
+        try:
+            await self._on_interrupted(room_id)
+        except Exception:
+            logger.warning(
+                "The speech-to-speech provider could not be told about the barge-in in "
+                "room %s; the response it is still generating will be discarded unheard",
+                room_id,
+                exc_info=True,
+            )
 
     async def _stop_playback(self, playback: ConferencePlayback) -> None:
         """Tell the backend to drop the interrupted utterance's queued audio.
@@ -914,13 +1032,14 @@ class ConferenceVoice:
         the usual budget, so the caller gets a track that is genuinely quiet
         rather than one still publishing its endings.
         """
-        for room in list(self._speaking.values()):
+        for room_id, room in list(self._speaking.items()):
             pending = [p for p in room.playbacks if not p.interrupted]
             speaking = next((p for p in pending if p.speaking), None)
             for playback in pending:
                 playback.interrupted = True
             if speaking is not None:
                 await self._stop_playback(speaking)
+                await self._interrupt_upstream(room_id)
         await self._settle_closings()
 
     def abandon_all(self) -> None:

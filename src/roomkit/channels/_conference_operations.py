@@ -43,6 +43,7 @@ class ConferenceResource(Enum):
     PIPELINE = "pipeline"
     STT = "stt"
     TTS = "tts"
+    REALTIME = "realtime"
 
 
 class ConferenceResourceClosedError(RuntimeError):
