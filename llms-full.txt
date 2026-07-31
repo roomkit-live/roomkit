@@ -1,6 +1,6 @@
 # RoomKit
 
-> Minimum version: 0.7.0 | Python 3.12+
+> Minimum version: 0.38.0 | Python 3.12+
 
 > RoomKit is a pure async Python library for building multi-channel conversation
 > systems. It provides room-based abstractions for managing conversations across

@@ -1,6 +1,6 @@
 # RoomKit
 
-> Minimum version: 0.7.0 | Python 3.12+
+> Minimum version: 0.38.0 | Python 3.12+
 
 > Full documentation: [llms-full.txt](llms-full.txt)
 

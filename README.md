@@ -6,7 +6,7 @@
 
 **Pure async Python 3.12+ framework for multi-channel conversation orchestration.**
 
-RoomKit gives you one abstraction — the **room** — to wire together any combination of SMS, WhatsApp, Email, Teams, Telegram, Voice, Video, WebSocket, and AI channels. Messages flow in, pass through a hook pipeline, get routed to the right agent, and broadcast out to every attached channel. You focus on the conversation logic; the framework handles routing, transcoding, audio processing, video processing, and agent handoffs.
+RoomKit gives you one abstraction — the **room** — to wire together any combination of SMS, WhatsApp, Email, Teams, Telegram, Discord, Voice, Video, Conference, WebSocket, and AI channels. Messages flow in, pass through a hook pipeline, get routed to the right agent, and broadcast out to every attached channel. You focus on the conversation logic; the framework handles routing, transcoding, audio processing, video processing, and agent handoffs.
 
 **Website:** [roomkit.live](https://www.roomkit.live) &nbsp;|&nbsp; **Docs:** [roomkit.live/docs](https://www.roomkit.live/docs/) &nbsp;|&nbsp; **API Reference:** [roomkit.live/docs/api](https://www.roomkit.live/docs/api/)
 
@@ -289,7 +289,7 @@ async def check(event: RoomEvent, ctx: RoomContext) -> HookResult:
     return HookResult.allow()
 ```
 
-**65 hook triggers** across the full lifecycle: event pipeline (`BEFORE_BROADCAST`, `AFTER_BROADCAST`), room lifecycle, channel lifecycle, identity resolution and membership (join/leave), voice events (speech start/end, transcription, barge-in, VAD, DTMF, speaker change), TTS events, tool execution, video, orchestration (phase transitions, handoffs), and side effects (delivery status, errors, protocol traces).
+**76 hook triggers** across the full lifecycle: event pipeline (`BEFORE_BROADCAST`, `AFTER_BROADCAST`), room lifecycle, channel lifecycle, identity resolution and membership (join/leave), voice events (speech start/end, transcription, barge-in, VAD, DTMF, speaker change), TTS events, tool execution, video, conference (participants, tracks, active speaker, connection quality), orchestration (phase transitions, handoffs), and side effects (delivery status, errors, protocol traces).
 
 Hooks support filtering by channel type, channel ID, and direction.
 
@@ -305,13 +305,18 @@ Hooks support filtering by channel type, channel ID, and direction.
 | Messenger | text, rich, templates | Facebook Messenger |
 | Teams | text, rich | Bot Framework |
 | Telegram | text, rich, media | Telegram Bot API |
+| Discord | text, rich, media | Discord Bot API |
+| Buzz | text | Nostr relays (buzzkit) |
 | WebSocket | text, rich, media | Built-in |
 | HTTP | text, rich | Generic webhook |
+| CLI | text | Built-in terminal |
 | Voice | audio ↔ text | STT/TTS pipeline |
 | Realtime Voice | audio (S2S) | Gemini Live, OpenAI Realtime |
 | Video | video | SIP/RTP, Webcam, Screen capture |
 | Audio+Video | audio + video | SIP A/V (VP9/H.264) |
+| Conference | multi-party audio + video (SFU) | LiveKit |
 | AI / Agent | text, rich | Claude, GPT, Gemini, Mistral, vLLM |
+| ACP | text, rich | External coding agents (Claude Code) |
 
 Every AI and transport provider has a **mock counterpart** for testing without credentials.
 
