@@ -211,9 +211,21 @@ def build_providers() -> tuple[Any, TTSProvider, list[str]]:
         from roomkit.voice.tts.elevenlabs import ElevenLabsConfig, ElevenLabsTTSProvider
 
         tts: TTSProvider = ElevenLabsTTSProvider(
-            ElevenLabsConfig(api_key=os.environ["ELEVENLABS_API_KEY"])
+            ElevenLabsConfig(
+                api_key=os.environ["ELEVENLABS_API_KEY"],
+                # Not the provider's mp3 default: the conference backend
+                # publishes decoded PCM and refuses encoded audio — encoding
+                # belongs to the backend (RFC §12.10.1 principle 6). The
+                # LiveKit publisher takes the chunk's declared rate as-is,
+                # and pcm_24000 is available on every ElevenLabs tier.
+                output_format="pcm_24000",
+                voice_id=os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
+            )
         )
-        notes.append("TTS: ElevenLabs (the bot will really speak)")
+        notes.append(
+            "TTS: ElevenLabs pcm_24000 (the bot really speaks; "
+            "ELEVENLABS_VOICE_ID to pick the voice)"
+        )
     else:
         tts = BeepTTS()
         notes.append("TTS: 440 Hz beep — no key, but audibility tests the same")
