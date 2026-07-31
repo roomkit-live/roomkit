@@ -144,7 +144,9 @@ async def main() -> None:
     await channel.unplug_stt()
     await channel.unplug_recording()
     print(f"      {disclosure(channel)}")
-    print(f"      recordings finalized: {len(recorder.results)}, recorder closed: {recorder.closed}")
+    print(
+        f"      recordings finalized: {len(recorder.results)}, recorder closed: {recorder.closed}"
+    )
 
     # The meeting carries on, purely human again — same channel, same room.
     await kit.ensure_participant(ROOM, "conf", "carol", display_name="Carol")
