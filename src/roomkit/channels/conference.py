@@ -275,6 +275,8 @@ class ConferenceChannel(
         backend.on_participant_left(self._on_participant_left)
         backend.on_track_published(self._on_track_published)
         backend.on_track_unpublished(self._on_track_unpublished)
+        backend.on_track_muted(self._on_track_muted)
+        backend.on_track_unmuted(self._on_track_unmuted)
         backend.on_track_audio(self._on_track_audio)
         backend.on_active_speaker_changed(self._on_active_speaker_changed)
         backend.on_connection_quality(self._on_connection_quality)

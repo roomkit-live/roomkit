@@ -520,6 +520,8 @@ class LiveKitConferenceBackend(ConferenceBackend):
             participant_left=self._emit_participant_left,
             track_published=self._emit_track_published,
             track_unpublished=self._emit_track_unpublished,
+            track_muted=self._emit_track_muted,
+            track_unmuted=self._emit_track_unmuted,
             track_audio=self._emit_track_audio,
             track_video=self._emit_track_video,
             active_speaker_changed=self._emit_active_speaker_changed,

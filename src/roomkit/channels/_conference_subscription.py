@@ -139,6 +139,49 @@ class ConferenceSubscriptionMixin:
                     {"track_id": track.id, "participant_id": track.participant_id},
                 )
 
+    async def _on_track_muted(self, room_id: str, track: ConferenceTrack) -> None:
+        """Relay a publisher muting their track — "camera off" included.
+
+        Presence, not media: most clients express a camera toggle as a muted
+        VIDEO track rather than an unpublish, so this pair and the track's
+        kind are what a management interface reads its microphone and camera
+        indicators from (RFC 12.10.4). Not gated by the binding's collection
+        state, like the other SFU signals; the bot's own tracks are excluded
+        exactly as they are from every other track event.
+        """
+        await self._relay_mute(
+            room_id, track, HookTrigger.ON_CONFERENCE_TRACK_MUTED, "conference_track_muted"
+        )
+
+    async def _on_track_unmuted(self, room_id: str, track: ConferenceTrack) -> None:
+        await self._relay_mute(
+            room_id, track, HookTrigger.ON_CONFERENCE_TRACK_UNMUTED, "conference_track_unmuted"
+        )
+
+    async def _relay_mute(
+        self, room_id: str, track: ConferenceTrack, trigger: HookTrigger, code: str
+    ) -> None:
+        room = self._attached_room(room_id)
+        if room is None:
+            return
+        if self._is_own_bot(room_id, track.participant_id):
+            return
+        async with self._activity.track(room_id):
+            if not room.attached:
+                return
+            await self._fire(
+                room_id,
+                trigger,
+                code,
+                f"Track {track.id} of {track.participant_id} is "
+                f"{'muted' if track.muted else 'unmuted'}",
+                {
+                    "track_id": track.id,
+                    "participant_id": track.participant_id,
+                    "kind": track.kind.value,
+                },
+            )
+
     async def _release_track(self, bot: BotSession | None, track_id: str) -> None:
         """Stop a track arriving, and close what it was feeding.
 

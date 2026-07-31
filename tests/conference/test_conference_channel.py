@@ -1081,7 +1081,7 @@ class TestSpeechEdges:
         assert edges == [("start", "p-alice", track.id), ("end", "p-alice", track.id)]
 
     async def test_the_end_is_announced_before_the_transcription(self) -> None:
-        """"They stopped speaking" is true the moment the VAD closes the
+        """ "They stopped speaking" is true the moment the VAD closes the
         utterance; recognition is a round trip that has not happened yet.
         """
         kit, channel, backend = await _kit_with_channel(stt=MockSTTProvider())
@@ -1137,6 +1137,86 @@ class TestConnectionQualityRelay:
         await kit.detach_channel(ROOM, "conf")
         await _settle(channel)
         await backend.simulate_connection_quality(ROOM, "p-alice", "poor")
+
+        assert seen == []
+
+
+class TestTrackMuteRelay:
+    """A publisher's mute reaches its hooks, kind included (RFC §12.10.4).
+
+    Presence, not media: most clients express a camera toggle as a muted
+    VIDEO track rather than an unpublish, so microphone and camera
+    indicators both read from this pair and the track's kind — no
+    subscription required, which is what keeps a camera indicator free on
+    a channel that consumes no video.
+    """
+
+    async def test_a_mute_and_unmute_reach_their_hooks(self) -> None:
+        kit, channel, backend = await _kit_with_channel()
+        seen: list[tuple[str, str, str]] = []
+
+        @kit.hook(HookTrigger.ON_CONFERENCE_TRACK_MUTED)
+        async def muted(event: Any, ctx: Any) -> None:
+            data = event.content.data
+            seen.append(("muted", data["participant_id"], data["kind"]))
+
+        @kit.hook(HookTrigger.ON_CONFERENCE_TRACK_UNMUTED)
+        async def unmuted(event: Any, ctx: Any) -> None:
+            data = event.content.data
+            seen.append(("unmuted", data["participant_id"], data["kind"]))
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice", TrackKind.VIDEO)
+        await backend.simulate_track_muted(track.id)
+        await backend.simulate_track_unmuted(track.id)
+        await _settle(channel)
+
+        assert seen == [("muted", "p-alice", "video"), ("unmuted", "p-alice", "video")]
+
+    async def test_a_moderation_mute_is_reported_like_any_other(self) -> None:
+        """The SFU observes its own moderation; the room hears one story."""
+        kit, channel, backend = await _kit_with_channel()
+        seen: list[str] = []
+
+        @kit.hook(HookTrigger.ON_CONFERENCE_TRACK_MUTED)
+        async def muted(event: Any, ctx: Any) -> None:
+            seen.append(event.content.data["track_id"])
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+        await backend.mute_track(ROOM, track.id)
+        await _settle(channel)
+
+        assert seen == [track.id]
+
+    async def test_the_bots_own_track_mute_is_not_relayed(self) -> None:
+        kit, channel, backend = await _kit_with_channel(tts=MockTTSProvider())
+        seen: list[str] = []
+
+        @kit.hook(HookTrigger.ON_CONFERENCE_TRACK_MUTED)
+        async def muted(event: Any, ctx: Any) -> None:
+            seen.append(event.content.data["track_id"])
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        echoed = await backend.simulate_bot_echo(backend.bots[0])
+        await backend.simulate_track_muted(echoed.id)
+        await _settle(channel)
+
+        assert seen == []
+
+    async def test_a_detached_room_relays_no_mute(self) -> None:
+        kit, channel, backend = await _kit_with_channel()
+        seen: list[str] = []
+
+        @kit.hook(HookTrigger.ON_CONFERENCE_TRACK_MUTED)
+        async def muted(event: Any, ctx: Any) -> None:
+            seen.append(event.content.data["track_id"])
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+        await kit.detach_channel(ROOM, "conf")
+        await _settle(channel)
+        await backend.simulate_track_muted(track.id)
 
         assert seen == []
 

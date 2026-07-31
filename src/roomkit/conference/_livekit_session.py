@@ -80,6 +80,8 @@ class ConferenceEmissions:
     participant_left: Callable[[str, ConferenceParticipant], Awaitable[None]]
     track_published: Callable[[str, ConferenceTrack], Awaitable[None]]
     track_unpublished: Callable[[str, ConferenceTrack], Awaitable[None]]
+    track_muted: Callable[[str, ConferenceTrack], Awaitable[None]]
+    track_unmuted: Callable[[str, ConferenceTrack], Awaitable[None]]
     track_audio: AudioSink
     track_video: VideoSink
     active_speaker_changed: Callable[[str, str], Awaitable[None]]
@@ -586,15 +588,20 @@ class LiveKitBotSession:
         self._set_muted(publication.sid, False)
 
     def _set_muted(self, track_id: str, muted: bool) -> None:
-        """Keep the record's mute flag true to the publisher's own state.
+        """Keep the record's mute flag true to the publisher's own state, and say so.
 
-        The interface has no mute event, so nothing is emitted. What this buys
-        is that a caller reading ``ConferenceTrack.muted`` — a roster, a
-        moderation view — reads the publisher's current state rather than
-        whatever it was when the track appeared.
+        The record is updated before the report goes out, which is the order
+        the contract promises (RFC 12.10.3): a callback that re-reads
+        ``ConferenceTrack.muted`` reads the state it was told about. A mute is
+        a state, not a fact — only the current value matters, so a consumer
+        that fell behind hears the newest transition per track rather than a
+        replay of the toggling.
         """
-        if (record := self._tracks.get(track_id)) is not None:
-            record.muted = muted
+        if (record := self._tracks.get(track_id)) is None:
+            return
+        record.muted = muted
+        emit = self._emissions.track_muted if muted else self._emissions.track_unmuted
+        self._put_state(("mute", track_id), emit, self.room_id, record)
 
     def _on_active_speakers_changed(self, speakers: list[Any]) -> None:
         """Report the dominant speaker, when it is a different one.

@@ -89,6 +89,8 @@ class ConferenceBackend(ABC):
         self._participant_left: list[ParticipantCallback] = []
         self._track_published: list[TrackCallback] = []
         self._track_unpublished: list[TrackCallback] = []
+        self._track_muted: list[TrackCallback] = []
+        self._track_unmuted: list[TrackCallback] = []
         self._track_audio: list[TrackAudioCallback] = []
         self._track_video: list[TrackVideoCallback] = []
         self._active_speaker_changed: list[ActiveSpeakerCallback] = []
@@ -335,6 +337,19 @@ class ConferenceBackend(ABC):
         """Register a callback for tracks being unpublished."""
         self._track_unpublished.append(callback)
 
+    def on_track_muted(self, callback: TrackCallback) -> None:
+        """Register a callback for a publisher muting their track.
+
+        The track record's ``muted`` flag is already updated when the callback
+        runs. Presence, not media: a muted VIDEO track is how most clients
+        express "camera off" (RFC 12.10.3).
+        """
+        self._track_muted.append(callback)
+
+    def on_track_unmuted(self, callback: TrackCallback) -> None:
+        """Register a callback for a publisher unmuting their track."""
+        self._track_unmuted.append(callback)
+
     def on_track_audio(self, callback: TrackAudioCallback) -> None:
         """Register a callback for decoded audio from subscribed tracks."""
         self._track_audio.append(callback)
@@ -394,6 +409,12 @@ class ConferenceBackend(ABC):
 
     async def _emit_track_published(self, room_id: str, track: ConferenceTrack) -> None:
         await self._emit("track_published", self._track_published, room_id, track)
+
+    async def _emit_track_muted(self, room_id: str, track: ConferenceTrack) -> None:
+        await self._emit("track_muted", self._track_muted, room_id, track)
+
+    async def _emit_track_unmuted(self, room_id: str, track: ConferenceTrack) -> None:
+        await self._emit("track_unmuted", self._track_unmuted, room_id, track)
 
     async def _emit_track_unpublished(self, room_id: str, track: ConferenceTrack) -> None:
         await self._emit("track_unpublished", self._track_unpublished, room_id, track)

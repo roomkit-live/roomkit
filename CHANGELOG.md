@@ -183,7 +183,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the real-time "who is speaking right now" the SFU's dominant-speaker
     signal (relayed on `ON_ACTIVE_SPEAKER_CHANGED`) cannot give, having no
     way to say that nobody is. The SFU's view of each participant's
-    connection is relayed on `ON_CONNECTION_QUALITY_CHANGED`. And the name
+    connection is relayed on `ON_CONNECTION_QUALITY_CHANGED`. A publisher
+    muting or unmuting a track is relayed on `ON_CONFERENCE_TRACK_MUTED` /
+    `ON_CONFERENCE_TRACK_UNMUTED`, naming the track's kind — a muted VIDEO
+    track is how most clients say "camera off", so microphone and camera
+    indicators both read from this pair; screen share keeps its own
+    `ON_SCREEN_SHARE_STARTED`/`STOPPED`. And the name
     a room gave a participant rides the minted credential: LiveKit renders
     it in its own clients, reports it back on `list_participants()` and the
     catch-up, and a roster record without a name takes the reported one —

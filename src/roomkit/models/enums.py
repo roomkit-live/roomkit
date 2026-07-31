@@ -284,6 +284,8 @@ class HookTrigger(StrEnum):
     ON_CONFERENCE_PARTICIPANT_LEFT = "on_conference_participant_left"
     ON_CONFERENCE_TRACK_PUBLISHED = "on_conference_track_published"
     ON_CONFERENCE_TRACK_UNPUBLISHED = "on_conference_track_unpublished"
+    ON_CONFERENCE_TRACK_MUTED = "on_conference_track_muted"
+    ON_CONFERENCE_TRACK_UNMUTED = "on_conference_track_unmuted"
     ON_ACTIVE_SPEAKER_CHANGED = "on_active_speaker_changed"
     ON_CONNECTION_QUALITY_CHANGED = "on_connection_quality_changed"
     # Planning (agentic task tracking)

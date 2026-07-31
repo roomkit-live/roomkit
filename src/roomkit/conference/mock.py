@@ -73,6 +73,8 @@ INJECTABLE_EMISSIONS = frozenset(
         "participant_left",
         "track_published",
         "track_unpublished",
+        "track_muted",
+        "track_unmuted",
         "track_audio",
         "track_video",
         "active_speaker_changed",
@@ -240,12 +242,16 @@ class MockConferenceBackend(ConferenceBackend):
         await self._enter("mute_track", room_id=room_id, track_id=track_id)
         if (track := self.tracks.get(track_id)) is not None:
             track.muted = True
+            # A server-side mute is a mute transition like any other: the SFU
+            # observes its own moderation and reports it (RFC 12.10.3).
+            await self._emit_track_muted(room_id, track)
 
     async def unmute_track(self, room_id: str, track_id: str) -> None:
         await self._enter("unmute_track", room_id=room_id, track_id=track_id)
         self._require(ConferenceCapability.REMOTE_UNMUTE, "Remote unmute")
         if (track := self.tracks.get(track_id)) is not None:
             track.muted = False
+            await self._emit_track_unmuted(room_id, track)
 
     # -------------------------------------------------------------------------
     # Bot participant
@@ -511,6 +517,17 @@ class MockConferenceBackend(ConferenceBackend):
                     elapsed=loop.time() - started_at,
                 )
             )
+
+    async def simulate_track_muted(self, track_id: str) -> None:
+        """The publisher mutes their own track — a camera toggled off included."""
+        track = self.tracks[track_id]
+        track.muted = True
+        await self._emit_track_muted(track.room_id, track)
+
+    async def simulate_track_unmuted(self, track_id: str) -> None:
+        track = self.tracks[track_id]
+        track.muted = False
+        await self._emit_track_unmuted(track.room_id, track)
 
     async def simulate_active_speaker(self, room_id: str, participant_id: str) -> None:
         await self._emit_active_speaker_changed(room_id, participant_id)
