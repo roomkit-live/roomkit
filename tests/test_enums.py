@@ -69,7 +69,7 @@ class TestEventType:
         assert EventType.MESSAGE == "message"
 
     def test_count(self) -> None:
-        assert len(EventType) == 26
+        assert len(EventType) == 27
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):
@@ -149,7 +149,7 @@ class TestHookTrigger:
         assert HookTrigger.ON_EVENT_DELETED == "on_event_deleted"
 
     def test_count(self) -> None:
-        assert len(HookTrigger) == 72
+        assert len(HookTrigger) == 74
 
     def test_invalid_raises(self) -> None:
         with pytest.raises(ValueError):

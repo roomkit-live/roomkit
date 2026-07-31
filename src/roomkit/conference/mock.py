@@ -212,9 +212,15 @@ class MockConferenceBackend(ConferenceBackend):
         room_id: str,
         participant_id: str,
         grants: ConferenceGrants,
+        *,
+        display_name: str | None = None,
     ) -> ConferenceAccess:
         await self._enter(
-            "mint_access", room_id=room_id, participant_id=participant_id, grants=grants
+            "mint_access",
+            room_id=room_id,
+            participant_id=participant_id,
+            grants=grants,
+            display_name=display_name,
         )
         return ConferenceAccess(
             url="wss://mock.conference.invalid",
@@ -348,6 +354,7 @@ class MockConferenceBackend(ConferenceBackend):
         room_id: str,
         participant_id: str,
         *,
+        display_name: str | None = None,
         metadata: dict[str, Any] | None = None,
         client_metadata: dict[str, Any] | None = None,
         asserts_provenance: bool = True,
@@ -368,6 +375,7 @@ class MockConferenceBackend(ConferenceBackend):
         surfaced = {**(client_metadata or {}), **asserted}
         participant = ConferenceParticipant(
             participant_id=participant_id,
+            display_name=display_name,
             metadata=surfaced,
             asserted_metadata=asserted if asserts_provenance else None,
         )

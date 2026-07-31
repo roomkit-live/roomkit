@@ -279,6 +279,9 @@ def participant_record(
     asserted["livekit.kind"] = kind_name
     record = ConferenceParticipant(
         participant_id=identity,
+        # First-class as well as surfaced: the field is presentation the
+        # roster and a management interface read directly (RFC 12.10.3).
+        display_name=name or None,
         metadata=surfaced,
         asserted_metadata=asserted,
     )

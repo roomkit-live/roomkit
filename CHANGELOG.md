@@ -177,6 +177,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     questions per room — bot present, collection permitted, STT and
     recording *active* as distinct from configured — keeping a session on
     its way out visible until it has actually left.
+  - **Management surface.** What an interface reflecting the meeting reads,
+    live. The lanes announce the VAD's utterance boundaries on
+    `ON_SPEECH_START`/`ON_SPEECH_END`, named per participant and track —
+    the real-time "who is speaking right now" the SFU's dominant-speaker
+    signal (relayed on `ON_ACTIVE_SPEAKER_CHANGED`) cannot give, having no
+    way to say that nobody is. The SFU's view of each participant's
+    connection is relayed on `ON_CONNECTION_QUALITY_CHANGED`. And the name
+    a room gave a participant rides the minted credential: LiveKit renders
+    it in its own clients, reports it back on `list_participants()` and the
+    catch-up, and a roster record without a name takes the reported one —
+    never overwriting one the integrator set — which is how a roster
+    rebuilt after a restart gets its names back.
   - **Shutdown.** There is one logical shutdown per channel: concurrent
     `close()` calls join the same shielded task, a caller cancelled mid-wait
     abandons only its own wait, and once the shutdown reaches its terminal
@@ -219,6 +231,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `examples/conference_identity_provenance.py`,
   `examples/conference_recording_result.py`, and RFC §12.10 for the
   contracts.
+
+- **`rename_member()`.** Change what a member is called — never who they
+  are (RFC §5.5). `add_member()` on an ACTIVE member is deliberately a
+  no-op, so a display name set at join stayed put with no first-class way
+  to change it and no event for an interface to react to. The new verb
+  updates `display_name` in place, emits the new `PARTICIPANT_UPDATED`
+  event and fires `ON_PARTICIPANT_UPDATED`; a rename to the name already
+  held is a no-op — no write, no event. `id` and `identity_id` are what
+  attribution and correlation stand on, and no rename touches them.
 
 - **`AudioPipeline.process_inbound_stream(stream, frame)`** — a stream-keyed
   inbound entry point that returns what the stages produced instead of fanning

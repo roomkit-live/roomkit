@@ -144,6 +144,60 @@ class TestMembership:
         assert await kit.is_member("r1", "u1") is False
 
 
+class TestRenameMember:
+    """Change what a member is called — never who they are (RMK-73, RFC §5.5).
+
+    ``add_member()`` on an ACTIVE member is deliberately a no-op, so a display
+    name set at join stays put; ``rename_member()`` is the verb that changes
+    it in place, with the event and hook an interface reflects the room from.
+    """
+
+    async def test_rename_changes_the_display_name_in_place(self, kit: RoomKit) -> None:
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1", display_name="Alice")
+        renamed = await kit.rename_member("r1", "u1", "Alice Tremblay")
+        assert renamed.display_name == "Alice Tremblay"
+        members = await kit.list_members("r1")
+        assert members[0].display_name == "Alice Tremblay"
+        # presentation only: who they are is untouched
+        assert renamed.id == "u1"
+        assert renamed.identity_id == "u1"
+
+    async def test_rename_emits_updated_event_and_fires_the_hook(self, kit: RoomKit) -> None:
+        fired: list[RoomEvent] = []
+
+        async def on_updated(event: RoomEvent, ctx: RoomContext) -> None:
+            fired.append(event)
+
+        kit.hook_engine.register(_async_hook(HookTrigger.ON_PARTICIPANT_UPDATED, on_updated))
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1", display_name="Alice")
+        await kit.rename_member("r1", "u1", "Alice T.")
+        events = await kit.store.list_events("r1")
+        assert any(e.type == EventType.PARTICIPANT_UPDATED for e in events)
+        assert len(fired) == 1
+        assert fired[0].content.data["display_name"] == "Alice T."
+
+    async def test_rename_to_the_name_already_held_is_a_noop(self, kit: RoomKit) -> None:
+        fired: list[RoomEvent] = []
+
+        async def on_updated(event: RoomEvent, ctx: RoomContext) -> None:
+            fired.append(event)
+
+        kit.hook_engine.register(_async_hook(HookTrigger.ON_PARTICIPANT_UPDATED, on_updated))
+        await kit.create_room(room_id="r1")
+        await kit.add_member("r1", "ws:u1:r1", "u1", identity_id="u1", display_name="Alice")
+        await kit.rename_member("r1", "u1", "Alice")
+        events = await kit.store.list_events("r1")
+        assert not any(e.type == EventType.PARTICIPANT_UPDATED for e in events)
+        assert fired == []
+
+    async def test_rename_of_an_unknown_member_raises(self, kit: RoomKit) -> None:
+        await kit.create_room(room_id="r1")
+        with pytest.raises(ParticipantNotFoundError):
+            await kit.rename_member("r1", "ghost", "Nobody")
+
+
 class TestReadMarkerAggregation:
     async def test_list_read_markers_empty(self, kit: RoomKit) -> None:
         await kit.create_room(room_id="r1")

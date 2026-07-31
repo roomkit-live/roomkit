@@ -71,6 +71,7 @@ class EventType(StrEnum):
     PARTICIPANT_JOINED = "participant_joined"
     PARTICIPANT_LEFT = "participant_left"
     PARTICIPANT_IDENTIFIED = "participant_identified"
+    PARTICIPANT_UPDATED = "participant_updated"
     # Channel lifecycle (RFC §3.7)
     CHANNEL_ATTACHED = "channel_attached"
     CHANNEL_DETACHED = "channel_detached"
@@ -205,6 +206,7 @@ class HookTrigger(StrEnum):
     ON_PARTICIPANT_IDENTIFIED = "on_participant_identified"
     ON_PARTICIPANT_JOINED = "on_participant_joined"
     ON_PARTICIPANT_LEFT = "on_participant_left"
+    ON_PARTICIPANT_UPDATED = "on_participant_updated"
     # Side effects
     ON_TASK_CREATED = "on_task_created"
     # Delivery status (outbound message tracking)
@@ -283,6 +285,7 @@ class HookTrigger(StrEnum):
     ON_CONFERENCE_TRACK_PUBLISHED = "on_conference_track_published"
     ON_CONFERENCE_TRACK_UNPUBLISHED = "on_conference_track_unpublished"
     ON_ACTIVE_SPEAKER_CHANGED = "on_active_speaker_changed"
+    ON_CONNECTION_QUALITY_CHANGED = "on_connection_quality_changed"
     # Planning (agentic task tracking)
     ON_PLAN_UPDATED = "on_plan_updated"
     # Feedback (user quality ratings)

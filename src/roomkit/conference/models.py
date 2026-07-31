@@ -131,6 +131,16 @@ class ConferenceParticipant:
     admission — it is the backend's own stable identity.
     """
 
+    display_name: str | None = None
+    """Human-readable name, when the SFU carries one.
+
+    Presentation, never identity: attribution rides ``participant_id`` alone
+    (RFC 12.10.2), and this is what the SFU's own clients render. It usually
+    rode in on the credential ``mint_access()`` issued, which is what lets a
+    roster rebuilt from the join's catch-up get its names back after a
+    restart — the credential outlives the process that minted it.
+    """
+
     connected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     """When the participant joined the media session."""
 

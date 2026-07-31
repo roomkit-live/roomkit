@@ -1111,7 +1111,9 @@ class _ShieldedMintBackend(MockConferenceBackend):
         self.minting = asyncio.Event()
         self.issued: list[str] = []
 
-    async def mint_access(self, room_id, participant_id, grants):  # type: ignore[no-untyped-def]
+    async def mint_access(  # type: ignore[no-untyped-def]
+        self, room_id, participant_id, grants, *, display_name=None
+    ):
         return await asyncio.shield(self._mint(room_id, participant_id, grants))
 
     async def _mint(self, room_id, participant_id, grants):  # type: ignore[no-untyped-def]
@@ -1192,11 +1194,11 @@ class TestMintDuringDetach:
         gate = asyncio.Event()
         original = backend.mint_access
 
-        async def held(room_id, participant_id, grants):  # type: ignore[no-untyped-def]
+        async def held(room_id, participant_id, grants, **kwargs):  # type: ignore[no-untyped-def]
             entered.set()
             await gate.wait()
             order.append("minted")
-            return await original(room_id, participant_id, grants)
+            return await original(room_id, participant_id, grants, **kwargs)
 
         backend.mint_access = held  # type: ignore[method-assign, assignment]
 

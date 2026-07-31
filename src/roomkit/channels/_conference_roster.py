@@ -98,6 +98,19 @@ class ConferenceRoster:
         with self._lease():
             return await self._store.get_participant(room_id, participant_id) is not None
 
+    async def display_name(self, room_id: str, participant_id: str) -> str | None:
+        """The name the room gave a participant, for a credential to carry.
+
+        ``None`` says the room never named them — or has no store to have
+        named them in — and the mint goes out nameless. Presentation only:
+        nothing downstream depends on the answer.
+        """
+        if self._store is None:
+            return None
+        with self._lease():
+            participant = await self._store.get_participant(room_id, participant_id)
+        return participant.display_name if participant is not None else None
+
     async def standing(self, room_id: str, participant_id: str) -> ParticipantStatus | None:
         """The status this room's roster holds for a participant, or ``None``.
 
@@ -170,6 +183,12 @@ class ConferenceRoster:
                     id=participant.participant_id,
                     room_id=room_id,
                     channel_id=self._channel_id,
+                    # The name the SFU carries is presentation the credential
+                    # brought back (RFC 12.10.3) — a record being created
+                    # fresh has no integrator-set name for it to overwrite,
+                    # and after a restart this is how the roster gets its
+                    # names back.
+                    display_name=participant.display_name,
                     external_id=participant.participant_id,
                     identification=IdentificationStatus.UNKNOWN,
                     metadata={} if attributes is None else {CONFERENCE_METADATA_KEY: attributes},
@@ -186,6 +205,10 @@ class ConferenceRoster:
         update: dict[str, Any] = {}
         if existing.status is ParticipantStatus.LEFT:
             update["status"] = ParticipantStatus.ACTIVE
+        # Fill, never overwrite: a name the integrator set is theirs, and the
+        # SFU's copy only stands in where the record has none (RFC 12.10.3).
+        if existing.display_name is None and participant.display_name is not None:
+            update["display_name"] = participant.display_name
         attributes = _attributes(participant, existing.metadata.get(CONFERENCE_METADATA_KEY))
         if attributes is not None:
             # One key replaced, never a flat merge: what the integrator put

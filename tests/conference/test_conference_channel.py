@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
@@ -1046,6 +1047,149 @@ class TestAttachResumesALiveConference:
         await _settle(channel)
 
         assert backend.bots == []
+
+
+class TestSpeechEdges:
+    """The lanes announce the VAD's utterance boundaries (RMK-73).
+
+    ``ON_SPEECH_START`` / ``ON_SPEECH_END`` per participant and track — the
+    real-time "who is speaking right now" a management interface reads (RFC
+    §12.10.4). The SFU's dominant-speaker signal cannot say that nobody is
+    speaking, and the transcription arrives only after the recognizer's
+    round trip.
+    """
+
+    async def test_a_lane_announces_both_edges_of_an_utterance(self) -> None:
+        kit, channel, backend = await _kit_with_channel(stt=MockSTTProvider())
+        edges: list[tuple[str, str, str]] = []
+
+        @kit.hook(HookTrigger.ON_SPEECH_START)
+        async def started(event: Any, ctx: Any) -> None:
+            data = event.content.data
+            edges.append(("start", data["participant_id"], data["track_id"]))
+
+        @kit.hook(HookTrigger.ON_SPEECH_END)
+        async def ended(event: Any, ctx: Any) -> None:
+            data = event.content.data
+            edges.append(("end", data["participant_id"], data["track_id"]))
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+        await say(backend, track)
+        await drain(channel, track.id)
+
+        assert edges == [("start", "p-alice", track.id), ("end", "p-alice", track.id)]
+
+    async def test_the_end_is_announced_before_the_transcription(self) -> None:
+        """"They stopped speaking" is true the moment the VAD closes the
+        utterance; recognition is a round trip that has not happened yet.
+        """
+        kit, channel, backend = await _kit_with_channel(stt=MockSTTProvider())
+        order: list[str] = []
+
+        @kit.hook(HookTrigger.ON_SPEECH_END)
+        async def ended(event: Any, ctx: Any) -> None:
+            order.append("end")
+
+        @kit.hook(HookTrigger.AFTER_BROADCAST)
+        async def heard(event: Any, ctx: Any) -> None:
+            order.append("heard")
+
+        await backend.simulate_participant_joined(ROOM, "p-alice")
+        track = await backend.simulate_track_published(ROOM, "p-alice")
+        await say(backend, track)
+        await drain(channel, track.id)
+        await _settle(channel)
+
+        assert order == ["end", "heard"]
+
+
+class TestConnectionQualityRelay:
+    """The SFU's view of a participant's connection reaches its hook (RMK-73).
+
+    Not collection — no media is read to relay it — so it is not gated by the
+    binding's collection state, exactly like the active-speaker signal (RFC
+    §12.10.4). A quality bar in a management interface is the consumer.
+    """
+
+    async def test_the_quality_report_reaches_its_hook(self) -> None:
+        kit, channel, backend = await _kit_with_channel()
+        seen: list[tuple[str, str]] = []
+
+        @kit.hook(HookTrigger.ON_CONNECTION_QUALITY_CHANGED)
+        async def quality(event: Any, ctx: Any) -> None:
+            data = event.content.data
+            seen.append((data["participant_id"], data["quality"]))
+
+        await backend.simulate_connection_quality(ROOM, "p-alice", "poor")
+        await _settle(channel)
+
+        assert seen == [("p-alice", "poor")]
+
+    async def test_a_detached_room_relays_nothing(self) -> None:
+        kit, channel, backend = await _kit_with_channel()
+        seen: list[str] = []
+
+        @kit.hook(HookTrigger.ON_CONNECTION_QUALITY_CHANGED)
+        async def quality(event: Any, ctx: Any) -> None:
+            seen.append(event.content.data["participant_id"])
+
+        await kit.detach_channel(ROOM, "conf")
+        await _settle(channel)
+        await backend.simulate_connection_quality(ROOM, "p-alice", "poor")
+
+        assert seen == []
+
+
+class TestDisplayNameRidesTheCredential:
+    """The name the room gave a participant travels with the mint (RMK-73).
+
+    Presentation, never identity (RFC §12.10.3): attribution rides the
+    participant id alone. The SFU renders the name, reports it back on its
+    participants, and a roster record that has none takes it — which is how
+    a roster rebuilt from the join's catch-up gets its names back after a
+    restart.
+    """
+
+    async def test_the_mint_carries_the_rooms_name(self) -> None:
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice", display_name="Alice")
+
+        await channel.mint_access(ROOM, "p-alice")
+
+        mint = [c for c in backend.calls if c.method == "mint_access"][-1]
+        assert mint.args["display_name"] == "Alice"
+
+    async def test_a_nameless_record_mints_nameless(self) -> None:
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice")
+
+        await channel.mint_access(ROOM, "p-alice")
+
+        mint = [c for c in backend.calls if c.method == "mint_access"][-1]
+        assert mint.args["display_name"] is None
+
+    async def test_a_reported_name_fills_an_empty_roster_record(self) -> None:
+        """A dial-in — or a roster rebuilt from catch-up after a restart —
+        arrives carrying the SFU's name, with no record of its own to meet.
+        """
+        kit, channel, backend = await _kit_with_channel()
+
+        await backend.simulate_participant_joined(ROOM, "p-dialin", display_name="Bob Landry")
+
+        participant = await kit.store.get_participant(ROOM, "p-dialin")
+        assert participant is not None
+        assert participant.display_name == "Bob Landry"
+
+    async def test_a_reported_name_never_overwrites_the_integrators(self) -> None:
+        kit, channel, backend = await _kit_with_channel()
+        await kit.ensure_participant(ROOM, "conf", "p-alice", display_name="Alice")
+
+        await backend.simulate_participant_joined(ROOM, "p-alice", display_name="alice2")
+
+        participant = await kit.store.get_participant(ROOM, "p-alice")
+        assert participant is not None
+        assert participant.display_name == "Alice"
 
 
 class TestAccessMinting:

@@ -164,6 +164,53 @@ class MembershipMixin(HelpersMixin):
             )
             return participant
 
+    async def rename_member(
+        self,
+        room_id: str,
+        participant_id: str,
+        display_name: str,
+    ) -> Participant:
+        """Change what a member is called — never who they are (RFC §5.5).
+
+        ``add_member()`` on an ACTIVE member is deliberately a no-op, so a
+        display name set at join stays put; this is the verb that changes it
+        in place. Presentation only: ``id`` and ``identity_id`` are what
+        attribution, correlation and moderation stand on, and no rename
+        touches them. Emits ``PARTICIPANT_UPDATED`` and fires
+        ``ON_PARTICIPANT_UPDATED`` so an interface reflecting the room learns
+        of the change the same way it learned of the join. A rename to the
+        name already held is a no-op — no write, no event. Raises
+        :class:`ParticipantNotFoundError` when the participant is unknown.
+        """
+        async with self._lock_manager.locked(room_id):
+            participant = await self._store.get_participant(room_id, participant_id)
+            if participant is None:
+                raise ParticipantNotFoundError(
+                    f"Participant {participant_id} not found in room {room_id}"
+                )
+            if participant.display_name == display_name:
+                return participant
+            participant = participant.model_copy(update={"display_name": display_name})
+            await self._store.update_participant(participant)
+
+            data = {"participant_id": participant_id, "display_name": display_name}
+            await self._emit_system_event(
+                room_id,
+                EventType.PARTICIPANT_UPDATED,
+                code="participant_updated",
+                message=f"Participant {participant_id} is now displayed as {display_name!r}",
+                data=data,
+            )
+            await self._fire_lifecycle_hook(
+                room_id,
+                HookTrigger.ON_PARTICIPANT_UPDATED,
+                EventType.PARTICIPANT_UPDATED,
+                code="participant_updated",
+                message="Participant renamed",
+                data=data,
+            )
+            return participant
+
     async def list_members(
         self,
         room_id: str,

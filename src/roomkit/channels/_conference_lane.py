@@ -81,6 +81,12 @@ SpeechCallback = Callable[["ConferenceLane", float], Awaitable[None]]
 # Called once per utterance, with the accumulated speech and its sample rate.
 UtteranceCallback = Callable[["ConferenceLane", bytes, int], Awaitable[None]]
 
+# Called at the VAD's utterance boundaries: once when the track goes from
+# silence to speech, once when the utterance closes. The channel announces
+# them on the speech hooks — the real-time "who is speaking right now" a
+# management interface reads (RFC 12.10.4).
+EdgeCallback = Callable[["ConferenceLane"], Awaitable[None]]
+
 
 class ConferenceLane:
     """One AUDIO track's processing lane.
@@ -109,6 +115,8 @@ class ConferenceLane:
         pipeline: AudioPipeline,
         on_speech: SpeechCallback,
         on_utterance: UtteranceCallback,
+        on_speech_start: EdgeCallback,
+        on_speech_end: EdgeCallback,
         max_queued_frames: int = 100,
         lease: OperationLease | None = None,
     ) -> None:
@@ -125,6 +133,8 @@ class ConferenceLane:
         self._pipeline = pipeline
         self._on_speech = on_speech
         self._on_utterance = on_utterance
+        self._on_speech_start = on_speech_start
+        self._on_speech_end = on_speech_end
         self._backlog: TrackBacklog[AudioFrame] = TrackBacklog(
             maxsize=max_queued_frames, on_overflow=self._report_overflow
         )
@@ -286,6 +296,7 @@ class ConferenceLane:
         if event is not None and event.type is VADEventType.SPEECH_START:
             self._speaking = True
             self._speech_ms = 0.0
+            await self._on_speech_start(self)
 
         if self._speaking:
             self._speech_ms += _frame_duration_ms(result.frame)
@@ -296,6 +307,9 @@ class ConferenceLane:
 
         self._speaking = False
         self._speech_ms = 0.0
+        # Before the utterance is handed on, not after: recognition is a round
+        # trip, and "they stopped speaking" is true now.
+        await self._on_speech_end(self)
         if event.audio_bytes:
             await self._on_utterance(self, event.audio_bytes, result.frame.sample_rate)
 

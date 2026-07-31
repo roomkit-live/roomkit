@@ -316,6 +316,8 @@ class LiveKitConferenceBackend(ConferenceBackend):
         room_id: str,
         participant_id: str,
         grants: ConferenceGrants,
+        *,
+        display_name: str | None = None,
     ) -> ConferenceAccess:
         """Mint a join credential for a participant the framework named.
 
@@ -323,8 +325,15 @@ class LiveKitConferenceBackend(ConferenceBackend):
         the value comes back on every participant and track LiveKit reports.
         That is rule 2 of RFC section 12.10.2 satisfied by the SFU itself rather
         than by a mapping table this backend would have to keep.
+
+        ``display_name`` rides the token as LiveKit's participant ``name`` —
+        what LiveKit's own clients render — and comes back on every
+        ``ParticipantInfo`` the server reports, which is how a roster rebuilt
+        after a restart gets its names back (RFC 12.10.3).
         """
-        return self._access(room_id, participant_id, grants, publish_data=True)
+        return self._access(
+            room_id, participant_id, grants, publish_data=True, display_name=display_name
+        )
 
     def _access(
         self,
@@ -333,6 +342,7 @@ class LiveKitConferenceBackend(ConferenceBackend):
         grants: ConferenceGrants,
         *,
         publish_data: bool,
+        display_name: str | None = None,
     ) -> ConferenceAccess:
         video_grants = self._api_module.VideoGrants(
             **video_grant_kwargs(room_id, grants, publish_data=publish_data)
@@ -343,6 +353,8 @@ class LiveKitConferenceBackend(ConferenceBackend):
             .with_grants(video_grants)
             .with_ttl(self._config.access_ttl)
         )
+        if display_name is not None:
+            token = token.with_name(display_name)
         return ConferenceAccess(
             url=self._url,
             token=token.to_jwt(),

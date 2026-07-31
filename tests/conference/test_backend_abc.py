@@ -47,7 +47,12 @@ class _Stub(ConferenceBackend):
         return None
 
     async def mint_access(
-        self, room_id: str, participant_id: str, grants: ConferenceGrants
+        self,
+        room_id: str,
+        participant_id: str,
+        grants: ConferenceGrants,
+        *,
+        display_name: str | None = None,
     ) -> ConferenceAccess:
         return ConferenceAccess(url="wss://stub", token="t")
 

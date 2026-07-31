@@ -151,6 +151,8 @@ class ConferenceBackend(ABC):
         room_id: str,
         participant_id: str,
         grants: ConferenceGrants,
+        *,
+        display_name: str | None = None,
     ) -> ConferenceAccess:
         """Mint credentials for a participant to join the SFU directly.
 
@@ -159,6 +161,14 @@ class ConferenceBackend(ABC):
         and translate at this boundary, because every attribution guarantee
         downstream depends on ``participant_id`` meaning the same thing on both
         sides.
+
+        ``display_name`` is presentation, never identity: a backend that can
+        carry it should put it in the credential so the SFU's own clients
+        render the participant as the room named them, and report it back on
+        ``ConferenceParticipant.display_name`` — which is what returns names
+        to a roster rebuilt from the join's catch-up after a restart (RFC
+        12.10.3). One that cannot simply ignores it; attribution never
+        depends on it.
 
         The returned credential is opaque to the framework: the integrator
         hands it to its client application, and the provider's SDK consumes it.

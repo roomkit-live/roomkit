@@ -56,6 +56,7 @@ class ConferenceLanesMixin:
         _lanes: open lanes by track id, channel-wide because a frame arrives
             with a track and not a room.
         _room / _attached_room: the per-room record (ConferenceRoomState).
+        _fire: how the speech edges are announced on their lifecycle hooks.
     """
 
     channel_id: str
@@ -74,6 +75,7 @@ class ConferenceLanesMixin:
     # Provided by ConferenceChannel — see the host contract above
     _room: Any
     _attached_room: Any
+    _fire: Any
 
     def _lane_ids(self, room_id: str) -> list[str]:
         """Tracks with a lane in a room, as a snapshot safe to close over."""
@@ -100,6 +102,8 @@ class ConferenceLanesMixin:
             pipeline=self._pipeline,
             on_speech=self._voice.consider_interruption,
             on_utterance=self._on_lane_utterance,
+            on_speech_start=self._on_lane_speech_start,
+            on_speech_end=self._on_lane_speech_end,
             max_queued_frames=self._max_queued_frames,
             lease=self._operations.acquire(*resources, what=f"lane for track {track.id}"),
         )
@@ -224,6 +228,61 @@ class ConferenceLanesMixin:
             chunk.data,
             TrackFormat.of_chunk(chunk),
         )
+
+    async def _on_lane_speech_start(self, lane: ConferenceLane) -> None:
+        """Announce that a lane's track went from silence to speech.
+
+        The real-time half of "who is speaking right now" (RFC 12.10.4): the
+        SFU's dominant-speaker signal cannot say that nobody is, and the
+        transcription arrives only after the recognizer's round trip. Named
+        per participant and track, because a management interface lights an
+        indicator on a person, not on a room.
+        """
+        await self._announce_speech_edge(
+            lane, HookTrigger.ON_SPEECH_START, "speech_start", "started speaking"
+        )
+
+    async def _on_lane_speech_end(self, lane: ConferenceLane) -> None:
+        """Announce that a lane's utterance closed — before it is transcribed.
+
+        "They stopped speaking" is true the moment the VAD closes the
+        utterance; recognition is a round trip that has not happened yet.
+        """
+        await self._announce_speech_edge(
+            lane, HookTrigger.ON_SPEECH_END, "speech_end", "stopped speaking"
+        )
+
+    async def _announce_speech_edge(
+        self, lane: ConferenceLane, trigger: HookTrigger, code: str, what: str
+    ) -> None:
+        """Fire one speech-boundary hook, without costing the lane its frame.
+
+        Runs on the lane's own task, upstream of the utterance hand-off: an
+        error escaping here would be caught by the lane's per-frame guard and
+        cost the utterance behind it, so nothing is allowed to escape. The
+        announcement registers as room activity like every other, so a detach
+        drains it rather than contradicting it.
+        """
+        room = self._attached_room(lane.room_id)
+        if room is None:
+            return
+        try:
+            async with self._activity.track(lane.room_id):
+                if not room.attached:
+                    return
+                await self._fire(
+                    lane.room_id,
+                    trigger,
+                    code,
+                    f"Participant {lane.participant_id} {what}",
+                    {"participant_id": lane.participant_id, "track_id": lane.track_id},
+                )
+        except Exception:
+            logger.exception(
+                "Conference channel %r could not announce a speech boundary of track %s",
+                self.channel_id,
+                lane.track_id,
+            )
 
     async def _on_lane_utterance(
         self, lane: ConferenceLane, audio: bytes, sample_rate: int

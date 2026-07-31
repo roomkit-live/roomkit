@@ -163,8 +163,14 @@ class ConferenceAccessMixin:
             await self._check_admissible(room_id, participant_id)
             self._require_attached(room_id)
             generation = self._room(room_id).generation
+            # The name the room gave this participant rides the credential:
+            # it is what the SFU's own clients render, and what a roster
+            # rebuilt from the join's catch-up gets its names back from after
+            # a restart (RFC 12.10.3). Presentation only — attribution rides
+            # the participant id.
+            display_name = await self._roster.display_name(room_id, participant_id)
             access = await self._mint(
-                room_id, participant_id, grants or self._default_grants, generation
+                room_id, participant_id, grants or self._default_grants, generation, display_name
             )
         access = await self._hand_over(room_id, participant_id, access, generation)
         # A credential going out means someone is about to connect, and it is
@@ -220,7 +226,12 @@ class ConferenceAccessMixin:
                 return access
 
     async def _mint(
-        self, room_id: str, participant_id: str, grants: ConferenceGrants, generation: int
+        self,
+        room_id: str,
+        participant_id: str,
+        grants: ConferenceGrants,
+        generation: int,
+        display_name: str | None = None,
     ) -> ConferenceAccess:
         """Ask the backend for the credential, on a request a detach can take back.
 
@@ -252,7 +263,9 @@ class ConferenceAccessMixin:
         :meth:`_hand_over`, in the same queue the roster's writers are in.
         """
         room = self._room(room_id)
-        request = asyncio.ensure_future(self._mint_on_backend(room_id, participant_id, grants))
+        request = asyncio.ensure_future(
+            self._mint_on_backend(room_id, participant_id, grants, display_name)
+        )
         room.mints.add(request)
         try:
             access = await request
@@ -272,7 +285,11 @@ class ConferenceAccessMixin:
         return access
 
     async def _mint_on_backend(
-        self, room_id: str, participant_id: str, grants: ConferenceGrants
+        self,
+        room_id: str,
+        participant_id: str,
+        grants: ConferenceGrants,
+        display_name: str | None,
     ) -> ConferenceAccess:
         """Ask the backend for a credential, under a lease on the backend.
 
@@ -284,7 +301,9 @@ class ConferenceAccessMixin:
         with self._operations.use(
             ConferenceResource.BACKEND, what=f"minting access for {participant_id}"
         ):
-            return await self._backend.mint_access(room_id, participant_id, grants)
+            return await self._backend.mint_access(
+                room_id, participant_id, grants, display_name=display_name
+            )
 
     def _refuse_mint(self, room_id: str, participant_id: str) -> RoomNotAttachedError:
         """Withhold a credential for a conference the channel has left."""

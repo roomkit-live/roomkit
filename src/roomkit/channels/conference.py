@@ -277,6 +277,7 @@ class ConferenceChannel(
         backend.on_track_unpublished(self._on_track_unpublished)
         backend.on_track_audio(self._on_track_audio)
         backend.on_active_speaker_changed(self._on_active_speaker_changed)
+        backend.on_connection_quality(self._on_connection_quality)
         backend.on_bot_session_ended(self._on_bot_session_ended)
 
     def _resolve_recorder(

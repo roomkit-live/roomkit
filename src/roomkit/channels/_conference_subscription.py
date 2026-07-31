@@ -189,6 +189,30 @@ class ConferenceSubscriptionMixin:
                 {"participant_id": participant_id},
             )
 
+    async def _on_connection_quality(
+        self, room_id: str, participant_id: str, quality: str
+    ) -> None:
+        """Relay the SFU's view of a participant's connection, per participant.
+
+        Not collection — no media is read to relay it — so it is not gated by
+        the binding's collection state, exactly like the active-speaker signal
+        above (RFC 12.10.4). A quality bar in a management interface is the
+        consumer.
+        """
+        room = self._attached_room(room_id)
+        if room is None:
+            return
+        async with self._activity.track(room_id):
+            if not room.attached:
+                return
+            await self._fire(
+                room_id,
+                HookTrigger.ON_CONNECTION_QUALITY_CHANGED,
+                "conference_connection_quality",
+                f"Connection quality of {participant_id} is {quality}",
+                {"participant_id": participant_id, "quality": quality},
+            )
+
     async def _apply_collection_state(self, room_id: str) -> None:
         """Bring subscriptions in line with what the binding now allows."""
         room = self._room(room_id)
