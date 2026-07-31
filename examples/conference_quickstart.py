@@ -8,9 +8,13 @@ recording (RFC §12.10). This example runs that whole arrangement against
 
 Three things to watch for in the output:
 
-1. **The bot joins lazily.** Minting an access credential is the framework's
-   advance notice that a human is about to connect, and it is what brings the
-   bot in — no one has to speak first.
+1. **The bot joins lazily, because this channel has a need.** Minting an
+   access credential is the framework's advance notice that a human is about
+   to connect, and it is what brings the bot in — no one has to speak first.
+   It brings the bot in *here* because this channel transcribes; a channel
+   with no stt, tts or recording never joins at all — RoomKit stays the
+   room's admission gate and roster, with no participant of its own in the
+   meeting (pure transport, RFC §12.10.4).
 2. **One utterance becomes one event, not one per frame.** Audio arrives as
    20 ms frames; the VAD finds the utterance boundary and the whole utterance
    goes to the STT as one block. The frame counts printed next to each
@@ -110,8 +114,9 @@ async def main() -> None:
     # Mint access for a room participant (RFC §12.10.2): the credential is what
     # a real client would use to connect to the SFU directly — RoomKit is the
     # gate for issuing tokens, not for the connection itself. The mint also
-    # starts the lazy bot join: it is the framework's own advance notice that
-    # a human is about to arrive.
+    # starts the lazy bot join — it is the framework's own advance notice that
+    # a human is about to arrive, and this channel has an stt to feed. Without
+    # stt, tts or recording the mint would admit alice and bring no bot in.
     await kit.ensure_participant(ROOM, "conf", "alice", display_name="Alice")
     access = await channel.mint_access(ROOM, "alice")
     print(f"alice's credential: {access.url} token={access.token}")

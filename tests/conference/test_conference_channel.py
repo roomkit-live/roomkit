@@ -95,6 +95,12 @@ async def _kit_with_channel(
     **channel_kwargs: object,
 ) -> tuple[RoomKit, ConferenceChannel, MockConferenceBackend]:
     backend = backend or MockConferenceBackend()
+    # A need is what arms the lazy join (RMK-75): a channel with nothing to
+    # consume or say never joins. These tests exercise the join's mechanics,
+    # not which need armed it, so a recognizer stands in unless the test
+    # brought a need of its own. Pure transport has its own file.
+    if not {"stt", "tts", "recording"} & channel_kwargs.keys():
+        channel_kwargs["stt"] = MockSTTProvider()
     channel = ConferenceChannel("conf", backend=backend, **channel_kwargs)  # type: ignore[arg-type]
     kit = RoomKit(identity_resolver=resolver)
     kit.register_channel(channel)
@@ -309,7 +315,11 @@ class TestSelectiveSubscription:
         assert track.id in backend.subscriptions
 
     async def test_audio_track_is_not_subscribed_without_a_consumer(self) -> None:
-        _, _, backend = await _kit_with_channel()
+        """A speaking channel is in the meeting for its voice, not for the
+        audio: with no stt and no recording, nothing reads what a subscription
+        would deliver.
+        """
+        _, _, backend = await _kit_with_channel(tts=MockTTSProvider())
         await backend.simulate_participant_joined(ROOM, "p-alice")
 
         track = await backend.simulate_track_published(ROOM, "p-alice", TrackKind.AUDIO)
@@ -960,7 +970,7 @@ class TestAttachResumesALiveConference:
         """
         backend = MockConferenceBackend()
         self._occupied(backend, "p-alice")
-        channel = ConferenceChannel("conf", backend=backend)
+        channel = ConferenceChannel("conf", backend=backend, stt=MockSTTProvider())
         kit = RoomKit()
         kit.register_channel(channel)
         await kit.create_room(ROOM)
@@ -1505,8 +1515,8 @@ class TestOneConferencePerRoom:
         backend_a = MockConferenceBackend()
         backend_b = MockConferenceBackend()
         kit = RoomKit()
-        kit.register_channel(ConferenceChannel("conf-a", backend=backend_a))
-        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b))
+        kit.register_channel(ConferenceChannel("conf-a", backend=backend_a, stt=MockSTTProvider()))
+        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b, stt=MockSTTProvider()))
         await kit.create_room(ROOM)
         await kit.attach_channel(ROOM, "conf-a")
 
@@ -1521,7 +1531,9 @@ class TestOneConferencePerRoom:
 
     async def test_reattaching_the_same_conference_channel_stays_ordinary(self) -> None:
         kit = RoomKit()
-        kit.register_channel(ConferenceChannel("conf", backend=MockConferenceBackend()))
+        kit.register_channel(
+            ConferenceChannel("conf", backend=MockConferenceBackend(), stt=MockSTTProvider())
+        )
         await kit.create_room(ROOM)
         await kit.attach_channel(ROOM, "conf")
         await kit.attach_channel(ROOM, "conf")
@@ -1531,8 +1543,10 @@ class TestOneConferencePerRoom:
     async def test_a_detached_conference_frees_the_slot(self) -> None:
         backend_b = MockConferenceBackend()
         kit = RoomKit()
-        kit.register_channel(ConferenceChannel("conf-a", backend=MockConferenceBackend()))
-        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b))
+        kit.register_channel(
+            ConferenceChannel("conf-a", backend=MockConferenceBackend(), stt=MockSTTProvider())
+        )
+        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b, stt=MockSTTProvider()))
         await kit.create_room(ROOM)
         await kit.attach_channel(ROOM, "conf-a")
         await kit.detach_channel(ROOM, "conf-a")
@@ -1664,8 +1678,8 @@ class TestTheConferenceSlotOutlivesTheBinding:
         backend_a = _GatedLeaveBackend()
         backend_b = MockConferenceBackend()
         kit = RoomKit()
-        kit.register_channel(ConferenceChannel("conf-a", backend=backend_a))
-        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b))
+        kit.register_channel(ConferenceChannel("conf-a", backend=backend_a, stt=MockSTTProvider()))
+        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b, stt=MockSTTProvider()))
         await kit.create_room(ROOM)
         await kit.attach_channel(ROOM, "conf-a")
         await backend_a.simulate_participant_joined(ROOM, "p-alice")
@@ -1689,9 +1703,9 @@ class TestTheConferenceSlotOutlivesTheBinding:
         backend_a = MockConferenceBackend()
         backend_b = MockConferenceBackend()
         kit = RoomKit()
-        channel_a = ConferenceChannel("conf-a", backend=backend_a)
+        channel_a = ConferenceChannel("conf-a", backend=backend_a, stt=MockSTTProvider())
         kit.register_channel(channel_a)
-        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b))
+        kit.register_channel(ConferenceChannel("conf-b", backend=backend_b, stt=MockSTTProvider()))
         await kit.create_room(ROOM)
         await kit.attach_channel(ROOM, "conf-a")
         refusals: list[BaseException] = []

@@ -95,6 +95,11 @@ async def _kit(
     **kwargs: object,
 ) -> tuple[RoomKit, ConferenceChannel, MockConferenceBackend]:
     backend = backend or MockConferenceBackend()
+    # A need is what arms the lazy join (RMK-75). These are races around the
+    # join and the teardown, not around which need armed them, so a
+    # recognizer stands in unless the test brought a need of its own.
+    if not {"stt", "tts", "recording"} & kwargs.keys():
+        kwargs["stt"] = MockSTTProvider()
     channel = ConferenceChannel("conf", backend=backend, **kwargs)  # type: ignore[arg-type]
     kit = RoomKit(identity_resolver=resolver)
     kit.register_channel(channel)
@@ -2140,7 +2145,7 @@ class TestARosterWriteOutlivingTheChannel:
         store = _ClosingStore()
         locks = _ClosingLocks()
         backend = MockConferenceBackend()
-        channel = ConferenceChannel("conf", backend=backend)
+        channel = ConferenceChannel("conf", backend=backend, stt=MockSTTProvider())
         kit = RoomKit(store=store, lock_manager=locks)
         kit.register_channel(channel)
         await kit.create_room(ROOM)
@@ -2372,8 +2377,8 @@ class TestOneChannelsStoreIsNotAnothersMedia:
     ) -> tuple[RoomKit, tuple[ConferenceChannel, ...], tuple[MockConferenceBackend, ...]]:
         backends = (MockConferenceBackend(), MockConferenceBackend())
         channels = (
-            ConferenceChannel("conf-a", backend=backends[0]),
-            ConferenceChannel("conf-b", backend=backends[1]),
+            ConferenceChannel("conf-a", backend=backends[0], stt=MockSTTProvider()),
+            ConferenceChannel("conf-b", backend=backends[1], stt=MockSTTProvider()),
         )
         kit = RoomKit(store=store, lock_manager=locks)
         for channel, room_id in zip(channels, (ROOM, OTHER), strict=True):
@@ -2463,7 +2468,7 @@ class TestOneChannelsStoreIsNotAnothersMedia:
         store = _ClosingStore()
         locks = _HeldAcquisitionLocks()
         backend = MockConferenceBackend()
-        channel = ConferenceChannel("conf", backend=backend)
+        channel = ConferenceChannel("conf", backend=backend, stt=MockSTTProvider())
         kit = RoomKit(store=store, lock_manager=locks)
         kit.register_channel(channel)
         await kit.create_room(ROOM)
@@ -2507,7 +2512,7 @@ class TestOneChannelsStoreIsNotAnothersMedia:
         store = _ClosingStore()
         locks = _ClosingLocks()
         backend = MockConferenceBackend()
-        channel = ConferenceChannel("conf", backend=backend)
+        channel = ConferenceChannel("conf", backend=backend, stt=MockSTTProvider())
         kit = RoomKit(store=store, lock_manager=locks, identity_resolver=_InstantResolver())
         kit.register_channel(channel)
         await kit.create_room(ROOM)
@@ -2587,7 +2592,7 @@ class TestACallbackResumingAfterTheShutdown:
         store = _ClosingStore()
         locks = _ClosingLocks()
         backend = _AbandonedJoinBackend()
-        channel = ConferenceChannel("conf", backend=backend)
+        channel = ConferenceChannel("conf", backend=backend, stt=MockSTTProvider())
         kit = RoomKit(store=store, lock_manager=locks, identity_resolver=_InstantResolver())
         kit.register_channel(channel)
         await kit.create_room(ROOM)
@@ -2645,8 +2650,8 @@ class TestTheMediaPlaneIsBoundedToo:
         backend_a: MockConferenceBackend, backend_b: MockConferenceBackend
     ) -> tuple[RoomKit, tuple[ConferenceChannel, ConferenceChannel]]:
         channels = (
-            ConferenceChannel("conf-a", backend=backend_a),
-            ConferenceChannel("conf-b", backend=backend_b),
+            ConferenceChannel("conf-a", backend=backend_a, stt=MockSTTProvider()),
+            ConferenceChannel("conf-b", backend=backend_b, stt=MockSTTProvider()),
         )
         kit = RoomKit()
         for channel, room_id in zip(channels, (ROOM, OTHER), strict=True):

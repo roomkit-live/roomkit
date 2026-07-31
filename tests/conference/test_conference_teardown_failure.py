@@ -67,6 +67,11 @@ async def _conference(
     **channel_kwargs: Any,
 ) -> tuple[RoomKit, ConferenceChannel, MockConferenceBackend]:
     backend = backend or MockConferenceBackend()
+    # A need is what arms the lazy join (RMK-75). Departures presuppose a
+    # session, so a recognizer stands in unless the test brought a need of
+    # its own.
+    if not {"stt", "tts", "recording"} & channel_kwargs.keys():
+        channel_kwargs["stt"] = MockSTTProvider()
     channel = ConferenceChannel("conf", backend=backend, **channel_kwargs)
     kit = RoomKit()
     kit.register_channel(channel)

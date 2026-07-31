@@ -243,6 +243,14 @@ class ConferenceChannel(
             speaks=tts is not None,
             listens=any(self._consumes(kind) for kind in TrackKind),
         )
+        # Pure transport: nothing configured consumes a track and nothing can
+        # speak, so a bot session would be a participant with no function. The
+        # mint, arrival and occupancy-probe triggers of the lazy join stand
+        # down on this (RFC 12.10.4 step 1); the channel stays the room's
+        # admission gate and roster. Read off the configuration and not off
+        # `_bot_grants`, because an explicit grant is what the SFU would
+        # allow, not what the channel was configured to do.
+        self._transport_only = tts is None and not any(self._consumes(kind) for kind in TrackKind)
         self._default_grants = default_grants or ConferenceGrants()
         self._e2ee = e2ee
         self._close_room_on_detach = close_room_on_detach

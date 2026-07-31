@@ -36,6 +36,10 @@ ROOM = "room-1"
 
 async def _kit(**kwargs: object) -> tuple[RoomKit, ConferenceChannel, MockConferenceBackend]:
     backend = MockConferenceBackend()
+    # A need is what arms the lazy join (RMK-75), so a recognizer stands in
+    # unless the test brought a need of its own.
+    if not {"stt", "tts", "recording"} & kwargs.keys():
+        kwargs["stt"] = MockSTTProvider()
     channel = ConferenceChannel("conf", backend=backend, **kwargs)  # type: ignore[arg-type]
     kit = RoomKit()
     kit.register_channel(channel)
@@ -203,7 +207,7 @@ class TestJoinRace:
                 return await super().join_as_bot(room_id, identity, grants)
 
         backend = _SlowBackend()
-        channel = ConferenceChannel("conf", backend=backend)
+        channel = ConferenceChannel("conf", backend=backend, stt=MockSTTProvider())
         kit = RoomKit()
         kit.register_channel(channel)
         await kit.create_room(ROOM)

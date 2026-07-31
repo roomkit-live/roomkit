@@ -17,6 +17,15 @@ re-attaches with no mint left to wait for and asks ``list_participants()``
 instead. Deliveries, and presence or track events from a backend able to
 observe them, remain triggers after them.
 
+A need is only a need when something configured on the channel can use the
+connection — an stt or a recording to consume with, a tts to speak with. A
+channel with none of these is pure transport: the join exists for the
+intelligence (RFC 12.10.1 principle 4), so its mint, arrival and probe
+triggers stand down, and the channel stays what such a deployment asks it to
+be — the room's admission gate and roster, with no bot in the meeting (RFC
+12.10.4 step 1). The delivery and track-published triggers need no guard of
+their own: each already answers to what is configured.
+
 The announcements are the delicate part. The join lock is released before the
 conference is announced, so integrator code cannot hold every other room's joins
 behind it, which leaves the announcement itself exposed to a detach landing
@@ -102,6 +111,8 @@ class ConferenceSessionMixin:
         channel_id, channel_type, _backend, _activity, _framework: the channel
             and what it talks to.
         _bot_identity, _bot_grants: what the bot joins as.
+        _transport_only: nothing configured consumes or speaks, so the mint,
+            arrival and probe triggers stand down (RFC 12.10.4 step 1).
         _backend_closed: set once the backend is gone, so nothing that outlived
             a close's budget calls into it afterwards.
         _rooms / _room: the per-room records (ConferenceRoomState).
@@ -118,6 +129,7 @@ class ConferenceSessionMixin:
     _framework: RoomKit | None
     _bot_identity: str
     _bot_grants: ConferenceGrants
+    _transport_only: bool
     _backend_closed: bool
 
     # Provided by ConferenceChannel — see the host contract above
@@ -246,7 +258,14 @@ class ConferenceSessionMixin:
         several places — a mint, the next arrival, a published track, a
         delivery — and each of them finds ``room.bot`` still unset and tries
         again.
+
+        A pure-transport channel does not try at all, and still answers
+        ``True``: the arrival is recorded — that is the unconditional MUST —
+        and the join it would have started has no function to serve (RFC
+        12.10.4 step 1).
         """
+        if self._transport_only:
+            return True
         try:
             await self._ensure_bot(room_id)
         except RoomNotAttachedError:
@@ -283,7 +302,19 @@ class ConferenceSessionMixin:
         the race and the join was abandoned exactly as it should be. Any other
         failure is logged and swallowed — the next trigger finds ``room.bot``
         still unset and tries again.
+
+        A pure-transport channel never joins on it: the credential is the
+        participant's either way, and the session the join would open has
+        nothing to consume and nothing to say (RFC 12.10.4 step 1).
         """
+        if self._transport_only:
+            logger.debug(
+                "Conference channel %r is not joining room %s on this mint: nothing "
+                "configured on the channel consumes or speaks (pure transport)",
+                self.channel_id,
+                room_id,
+            )
+            return
         try:
             await self._ensure_bot(room_id)
         except RoomNotAttachedError:
@@ -333,7 +364,20 @@ class ConferenceSessionMixin:
         the race and the join was abandoned exactly as it should be. Any other
         failure — the probe's or the join's — is logged and swallowed, and the
         lazy join remains: the next mint, delivery or arrival tries again.
+
+        A pure-transport channel skips the probe entirely, not merely the
+        join: the join is the only consequence a probe can have, so with
+        nothing configured to consume or speak there is nothing to ask the
+        control plane (RFC 12.10.4 step 1).
         """
+        if self._transport_only:
+            logger.debug(
+                "Conference channel %r is not probing room %s's occupancy at attach: "
+                "nothing configured on the channel consumes or speaks (pure transport)",
+                self.channel_id,
+                room_id,
+            )
+            return
         room = self._room(room_id)
         if room.generation != generation or room.bot is not None:
             return

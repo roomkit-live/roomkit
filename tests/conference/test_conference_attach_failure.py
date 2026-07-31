@@ -20,6 +20,7 @@ from roomkit.channels.conference import ConferenceChannel
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import HookExecution, HookTrigger
 from roomkit.models.event import RoomEvent
+from roomkit.voice.stt.mock import MockSTTProvider
 
 ROOM = "room-1"
 
@@ -37,7 +38,9 @@ async def _kit_with_unreachable_sfu(
 ) -> tuple[RoomKit, ConferenceChannel, MockConferenceBackend]:
     backend = MockConferenceBackend()
     backend.fail("ensure_room", SFUUnreachableError("cannot reach the SFU"), times=times)
-    channel = ConferenceChannel("conf", backend=backend)
+    # A need arms the lazy join (RMK-75); these tests watch the join follow
+    # a recovered attach, so the channel has to have one.
+    channel = ConferenceChannel("conf", backend=backend, stt=MockSTTProvider())
     kit = RoomKit()
     kit.register_channel(channel)
     await kit.create_room(ROOM)
@@ -115,7 +118,7 @@ class TestRefusedReattach:
         self,
     ) -> tuple[RoomKit, ConferenceChannel, MockConferenceBackend]:
         backend = MockConferenceBackend()
-        channel = ConferenceChannel("conf", backend=backend)
+        channel = ConferenceChannel("conf", backend=backend, stt=MockSTTProvider())
         kit = RoomKit()
         kit.register_channel(channel)
         await kit.create_room(ROOM)

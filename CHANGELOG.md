@@ -171,7 +171,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `list_participants()`, off its own path, and anyone in there who is
     not the channel's own bot starts the same lazy join. An empty
     conference stays unjoined, and the probe's failure is never the
-    attach's.
+    attach's. Both triggers answer to a need: the join exists for the
+    intelligence, so a channel configured with no stt, no tts and no
+    recording — pure transport — never joins on a mint or an arrival and
+    skips the probe entirely. RoomKit stays the meeting's admission gate
+    and roster with no participant of its own in it, at the stated price
+    that the bot's connection was the event bridge: no real-time
+    participant, track, speaker or quality callbacks from a backend that
+    observes presence only through a connection (RFC §12.10.4).
   - **Observability.** `conference_started` / `conference_ended` name and
     measure the bot session, and `info()` answers RFC §17.7's disclosure
     questions per room — bot present, collection permitted, STT and
