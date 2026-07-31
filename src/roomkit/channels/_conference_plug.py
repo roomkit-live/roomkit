@@ -1,8 +1,8 @@
 """Hot-plugging intelligence into a running conference channel.
 
-The configuration first need is read from — stt, tts, recording — is not fixed
-at construction (RFC 12.10.4): each can be plugged into and unplugged from a
-channel that is serving live conferences. A plug is a first need in its own
+The configuration first need is read from — stt, tts, realtime, recording — is
+not fixed at construction (RFC 12.10.4): each can be plugged into and
+unplugged from a channel that is serving live conferences. A plug is a first need in its own
 right — the occupancy probe is re-run, an occupied conference is joined at
 once, and the tracks already published are subscribed — and unplugging the
 last need takes the bot out: a session kept past the last consumer and the
@@ -52,9 +52,14 @@ if TYPE_CHECKING:
     from roomkit.channels._conference_recording import ConferenceRecording
     from roomkit.channels._conference_voice import ConferenceVoice
     from roomkit.conference.base import ConferenceBackend
-    from roomkit.conference.models import BotSession, ConferenceRecordingConfig
+    from roomkit.conference.models import (
+        BotSession,
+        ConferenceRealtimeConfig,
+        ConferenceRecordingConfig,
+    )
     from roomkit.recorder.base import MediaRecorder
     from roomkit.voice.pipeline.config import AudioPipelineConfig
+    from roomkit.voice.realtime.provider import RealtimeVoiceProvider
     from roomkit.voice.stt.base import STTProvider
     from roomkit.voice.tts.base import TTSProvider
 
@@ -106,6 +111,9 @@ class ConferencePlugMixin:
     _rooms: Any
     _room: Any
     _lanes: Any
+    _realtime: Any
+    _realtime_config: Any
+    _validate_realtime: Any
     _bot_grants: Any
     _transport_only: Any
     _consumes: Any
@@ -160,10 +168,24 @@ class ConferencePlugMixin:
                     "transcribe noise. The constructor's refusal holds identically at "
                     "the plug (RFC 12.10.4)."
                 )
-            config = self._resolve_pipeline(pipeline, stt)
-            self._stt = stt
-            self._pipeline_config = config
-            self._pipeline = AudioPipeline(config) if config is not None else None
+            if self._pipeline is not None:
+                # A realtime plug already built the lanes' pipeline, and the
+                # lanes hold per-track stream state on it. The recognizer
+                # joins that pipeline; swapping one in under open lanes would
+                # be the teardown-and-rebuild a plug refuses to hide.
+                if pipeline is not None:
+                    raise ValueError(
+                        "The lanes are already running a pipeline (built for the "
+                        "realtime provider), and a recognizer plugs into it. To "
+                        "change the pipeline, unplug everything that uses it "
+                        "first (RFC 12.10.4)."
+                    )
+                self._stt = stt
+            else:
+                config = self._resolve_pipeline(pipeline, stt)
+                self._stt = stt
+                self._pipeline_config = config
+                self._pipeline = AudioPipeline(config) if config is not None else None
             await self._wake_rooms()
 
     async def plug_tts(self, tts: TTSProvider) -> None:
@@ -181,6 +203,12 @@ class ConferencePlugMixin:
                     "A synthesizer is already plugged into this channel; call "
                     "unplug_tts() first. A swap is two operations on purpose "
                     "(RFC 12.10.4)."
+                )
+            if self._realtime_config is not None:
+                raise ValueError(
+                    "A realtime provider is plugged into this channel, and tts and "
+                    "realtime are mutually exclusive: both publish on the one bot "
+                    "track (RFC 12.10.12). Call unplug_realtime() first."
                 )
             self._voice.set_tts(tts)
             await self._wake_rooms()
@@ -211,6 +239,48 @@ class ConferencePlugMixin:
             self._voice.set_on_published(self._record_bot_audio)
             await self._wake_rooms()
 
+    async def plug_realtime(
+        self,
+        config: ConferenceRealtimeConfig,
+        *,
+        pipeline: AudioPipelineConfig | None = None,
+    ) -> None:
+        """Plug a speech-to-speech provider into the running channel.
+
+        A first need and a voice at once (RFC 12.10.12): every occupied
+        conference is joined before this returns, the published tracks are
+        subscribed and their lanes opened — the mixer hears the meeting from
+        the plug forward — and a bot already sitting in a room has its grants
+        widened to speak, in place where the backend can.
+
+        Refuses what the constructor refuses, before touching any state: a
+        slot already holding a provider, a synthesizer plugged beside it (one
+        bot track, one voice), an E2EE conference, tools with no handler. The
+        lanes need a VAD-bearing pipeline — the interruption policy's sensor —
+        so one is built here exactly as at construction; a pipeline already
+        built for recognition is joined, not replaced.
+        """
+        async with self._plug_lock:
+            if self._realtime_config is not None:
+                raise ValueError(
+                    "A realtime provider is already plugged into this channel; call "
+                    "unplug_realtime() first. A swap is a teardown and a rebuild "
+                    "whatever single verb offers it (RFC 12.10.4)."
+                )
+            self._validate_realtime(config, tts=self._voice.tts, e2ee=self._e2ee)
+            if self._pipeline is None:
+                resolved = self._resolve_pipeline(pipeline, None, realtime=config)
+                self._pipeline_config = resolved
+                self._pipeline = AudioPipeline(resolved) if resolved is not None else None
+            elif pipeline is not None:
+                raise ValueError(
+                    "The lanes are already running a pipeline (built for the "
+                    "recognizer), and the realtime provider joins it. To change the "
+                    "pipeline, unplug everything that uses it first (RFC 12.10.4)."
+                )
+            self._realtime.configure(config)
+            await self._wake_rooms()
+
     # -------------------------------------------------------------------------
     # Unplugging — a need leaves
     # -------------------------------------------------------------------------
@@ -218,20 +288,34 @@ class ConferencePlugMixin:
     async def unplug_stt(self) -> None:
         """Unplug speech recognition. Idempotent: an empty slot is left as asked.
 
-        The lanes close — all of them, they exist only for recognition — and
-        the tracks nothing else consumes are unsubscribed. When recognition
-        was the last need, the bot leaves every conference it was in, with
-        ``conference_ended`` announced: the channel is pure transport again
-        (RFC 12.10.4). The recognizer and the pipeline are closed when the
-        channel owns its providers (``close_providers``), once nothing the
-        channel admitted still runs inside them.
+        The lanes close — all of them — unless a realtime provider still
+        consumes them, in which case they and their pipeline stay and only
+        the recognizer retires (RFC 12.10.12). The tracks nothing else
+        consumes are unsubscribed. When recognition was the last need, the
+        bot leaves every conference it was in, with ``conference_ended``
+        announced: the channel is pure transport again (RFC 12.10.4). The
+        recognizer and the pipeline are closed when the channel owns its
+        providers (``close_providers``), once nothing the channel admitted
+        still runs inside them.
         """
         async with self._plug_lock:
             if self._stt is None:
                 return
             stt = self._stt
-            pipeline = self._pipeline
             self._stt = None
+            if self._realtime_config is not None:
+                # The lanes outlive the recognizer: the realtime mix still
+                # consumes every one of them (RFC 12.10.12), so the pipeline
+                # and the lanes stay, and only the recognizer retires.
+                await self._settle_rooms()
+                if self._close_providers:
+                    await self._close_retired(
+                        resources=(ConferenceResource.STT,),
+                        closer=stt.close,
+                        what="the unplugged recognizer",
+                    )
+                return
+            pipeline = self._pipeline
             self._pipeline = None
             self._pipeline_config = None
             lanes = list(self._lanes.values())
@@ -276,6 +360,60 @@ class ConferencePlugMixin:
                     resources=(ConferenceResource.TTS,),
                     closer=tts.close,
                     what="the unplugged synthesizer",
+                )
+
+    async def unplug_realtime(self) -> None:
+        """Unplug the speech-to-speech provider. Idempotent, like every unplug.
+
+        Deactivation comes first: the mixer stops feeding and every provider
+        callback finds no configuration and stands down, so nothing races the
+        teardown. A response in flight is then ended the way a barge-in ends
+        one — ``stop_playback`` and a terminal chunk — because the conference
+        is live and the bot may be staying in it (RFC 12.10.4). The sessions
+        are disconnected with the provider this verb still holds; the lanes
+        and their pipeline close unless a recognizer still consumes them; and
+        when the provider was the last need, the bot leaves, with
+        ``conference_ended`` announced. The provider itself is closed when
+        the channel owns its providers.
+        """
+        async with self._plug_lock:
+            config = self._realtime_config
+            if config is None:
+                return
+            sessions = self._realtime.deactivate()
+            await self._voice.interrupt_all()
+            await self._realtime.disconnect_sessions(config.provider, sessions)
+            pipeline: AudioPipeline | None = None
+            if self._stt is None:
+                # The lanes existed for the mix (and recording feeds off the
+                # subscription, not the lanes): with no recognizer left they
+                # close, and the pipeline retires with them.
+                pipeline = self._pipeline
+                self._pipeline = None
+                self._pipeline_config = None
+                lanes = list(self._lanes.values())
+                self._lanes.clear()
+                results = await asyncio.gather(
+                    *(self._close_lane_instance(lane) for lane in lanes), return_exceptions=True
+                )
+                for lane, result in zip(lanes, results, strict=True):
+                    if isinstance(result, BaseException):
+                        logger.error(
+                            "Conference channel %r could not close the lane of track %s "
+                            "while unplugging its realtime provider: %s",
+                            self.channel_id,
+                            lane.track_id,
+                            result,
+                        )
+            await self._settle_rooms()
+            if self._close_providers:
+                resources = (ConferenceResource.REALTIME,) + (
+                    (ConferenceResource.PIPELINE,) if pipeline is not None else ()
+                )
+                await self._close_retired(
+                    resources=resources,
+                    closer=partial(self._close_realtime_pair, config.provider, pipeline),
+                    what="the unplugged realtime provider",
                 )
 
     async def unplug_recording(self) -> None:
@@ -508,6 +646,13 @@ class ConferencePlugMixin:
             # session it opened.
             return
         self._voice.forget_room(room_id)
+        # The provider session hung on this bot's connection; it goes with it.
+        # Usually already off the books — an unplug deactivates before it
+        # settles the rooms — so this covers the retire a grant re-join asks
+        # for, where the next need mints a fresh session lazily.
+        realtime_session = self._realtime.detach_room(room_id)
+        if realtime_session is not None:
+            await self._realtime.disconnect_detached(realtime_session)
         track_ids = room.forget_subscriptions()
         for track_id in track_ids:
             await self._unsubscribe_quietly(bot, track_id)
@@ -684,6 +829,28 @@ class ConferencePlugMixin:
             await closer()
         except Exception:
             logger.exception("Conference channel %r could not close %s", self.channel_id, what)
+
+    async def _close_realtime_pair(
+        self, provider: RealtimeVoiceProvider, pipeline: AudioPipeline | None
+    ) -> None:
+        """Close an unplugged realtime provider and the pipeline built for it.
+
+        The mirror of :meth:`_close_stt_pair`, and independent the same way:
+        a pipeline provider that fails to close is logged, and the realtime
+        provider is still closed behind it.
+        """
+        if pipeline is not None:
+            try:
+                await asyncio.to_thread(pipeline.close)
+            except BaseExceptionGroup as failures:
+                logger.error(
+                    "Conference channel %r could not close %d provider(s) of the unplugged "
+                    "pipeline; the others were closed",
+                    self.channel_id,
+                    len(failures.exceptions),
+                    exc_info=failures,
+                )
+        await provider.close()
 
     async def _close_stt_pair(self, stt: STTProvider, pipeline: AudioPipeline | None) -> None:
         """Close an unplugged recognizer and the pipeline built for it.

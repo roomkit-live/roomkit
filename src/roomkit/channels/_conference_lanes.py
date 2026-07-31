@@ -32,6 +32,7 @@ from roomkit.voice.audio_frame import AudioFrame
 
 if TYPE_CHECKING:
     from roomkit.channels._conference_activity import RoomActivity
+    from roomkit.channels._conference_realtime import ConferenceRealtime
     from roomkit.channels._conference_recording import ConferenceRecording, TrackRecording
     from roomkit.channels._conference_recording_events import ConferenceRecordingEvents
     from roomkit.channels._conference_voice import ConferenceVoice
@@ -63,6 +64,7 @@ class ConferenceLanesMixin:
     _framework: RoomKit | None
     _activity: RoomActivity
     _voice: ConferenceVoice
+    _realtime: ConferenceRealtime
     _stt: STTProvider | None
     _pipeline: AudioPipeline | None
     _recorder: ConferenceRecording | None
@@ -104,6 +106,10 @@ class ConferenceLanesMixin:
             on_utterance=self._on_lane_utterance,
             on_speech_start=self._on_lane_speech_start,
             on_speech_end=self._on_lane_speech_end,
+            # Wired unconditionally: the tap is a no-op while no realtime
+            # provider is configured, and a provider plugged mid-meeting must
+            # hear the lanes that were already open (RFC 12.10.12).
+            on_frame=self._realtime.mixer.feed,
             max_queued_frames=self._max_queued_frames,
             lease=self._operations.acquire(*resources, what=f"lane for track {track.id}"),
         )
@@ -138,6 +144,9 @@ class ConferenceLanesMixin:
         the recording opens on the first one, so a participant who stayed
         silent leaves no file to report.
         """
+        lane = self._lanes.get(track_id)
+        if lane is not None:
+            self._realtime.mixer.drop_track(lane.room_id, track_id)
         await self._close_lane(track_id)
         if self._recorder is None:
             return
@@ -297,7 +306,13 @@ class ConferenceLanesMixin:
         room = self._attached_room(lane.room_id)
         if room is None or not room.may_collect():
             return
-        result = await self._stt.transcribe(AudioFrame(data=audio, sample_rate=sample_rate))
+        # A per-call lease besides the lane's own: a lane opened before
+        # recognition was plugged holds no STT lease of its own, and this is
+        # what keeps the recognizer from being closed under its call.
+        with self._operations.use(
+            ConferenceResource.STT, what=f"transcribing track {lane.track_id}"
+        ):
+            result = await self._stt.transcribe(AudioFrame(data=audio, sample_rate=sample_rate))
         if not room.may_collect() or lane.track_id not in self._lanes:
             return
         text = (result.text or "").strip()

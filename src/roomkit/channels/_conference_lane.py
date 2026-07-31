@@ -87,6 +87,12 @@ UtteranceCallback = Callable[["ConferenceLane", bytes, int], Awaitable[None]]
 # management interface reads (RFC 12.10.4).
 EdgeCallback = Callable[["ConferenceLane"], Awaitable[None]]
 
+# Called with every processed frame, synchronously — it runs on the lane's own
+# task inside the frame path, so anything slow here stalls this lane's VAD and
+# recognition behind it. The one consumer is the speech-to-speech mix (RFC
+# 12.10.12), which appends to a ring buffer and returns.
+FrameCallback = Callable[["ConferenceLane", "AudioFrame"], None]
+
 
 class ConferenceLane:
     """One AUDIO track's processing lane.
@@ -117,6 +123,7 @@ class ConferenceLane:
         on_utterance: UtteranceCallback,
         on_speech_start: EdgeCallback,
         on_speech_end: EdgeCallback,
+        on_frame: FrameCallback | None = None,
         max_queued_frames: int = 100,
         lease: OperationLease | None = None,
     ) -> None:
@@ -135,6 +142,7 @@ class ConferenceLane:
         self._on_utterance = on_utterance
         self._on_speech_start = on_speech_start
         self._on_speech_end = on_speech_end
+        self._on_frame = on_frame
         self._backlog: TrackBacklog[AudioFrame] = TrackBacklog(
             maxsize=max_queued_frames, on_overflow=self._report_overflow
         )
@@ -292,6 +300,12 @@ class ConferenceLane:
         """Run one frame through the stages and act on what the VAD said."""
         result = self._pipeline.process_inbound_stream(self.track_id, frame)
         event = result.vad_event
+
+        # After the stages, so every track contributes to the mix in the
+        # contract format; before the VAD gates anything, because the mix
+        # wants the audio itself, not only the speech the VAD keeps.
+        if self._on_frame is not None:
+            self._on_frame(self, result.frame)
 
         if event is not None and event.type is VADEventType.SPEECH_START:
             self._speaking = True

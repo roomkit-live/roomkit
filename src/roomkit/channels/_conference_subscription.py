@@ -52,6 +52,7 @@ class ConferenceSubscriptionMixin:
     _activity: RoomActivity
     _stt: STTProvider | None
     _recording: ConferenceRecordingConfig | None
+    _realtime_config: Any
 
     # Provided by ConferenceChannel and ConferenceLanesMixin — see above
     _room: Any
@@ -70,7 +71,11 @@ class ConferenceSubscriptionMixin:
         frames nobody reads.
         """
         if kind is TrackKind.AUDIO:
-            return self._stt is not None or self._recording is not None
+            return (
+                self._stt is not None
+                or self._recording is not None
+                or self._realtime_config is not None
+            )
         return False
 
     async def _on_track_published(self, room_id: str, track: ConferenceTrack) -> None:

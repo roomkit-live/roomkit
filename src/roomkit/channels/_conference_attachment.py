@@ -46,12 +46,14 @@ from roomkit.core.task_utils import log_task_exception
 if TYPE_CHECKING:
     from roomkit.channels._conference_activity import RoomActivity
     from roomkit.channels._conference_lane import ConferenceLane
+    from roomkit.channels._conference_realtime import ConferenceRealtime
     from roomkit.channels._conference_recording import ConferenceRecording, TrackRecording
     from roomkit.channels._conference_recording_events import ConferenceRecordingEvents
     from roomkit.channels._conference_voice import ConferenceVoice
     from roomkit.conference.base import ConferenceBackend
     from roomkit.conference.models import BotSession
     from roomkit.models.channel import ChannelBinding
+    from roomkit.voice.base import VoiceSession
 
 logger = logging.getLogger("roomkit.channels.conference")
 
@@ -102,6 +104,7 @@ class ConferenceAttachmentMixin:
     _activity: RoomActivity
     _operations: Any
     _voice: ConferenceVoice
+    _realtime: ConferenceRealtime
     _recorder: ConferenceRecording | None
     _recording_events: ConferenceRecordingEvents
     _lanes: dict[str, ConferenceLane]
@@ -269,8 +272,12 @@ class ConferenceAttachmentMixin:
         room.binding = None
         # Before the bot leaves, not after: the synthesis loop publishes on
         # this session, and a loop still running would go on speaking into a
-        # conference the channel has left.
+        # conference the channel has left. The realtime session comes off the
+        # books at the same moment and by value, for the same reason as the
+        # lanes below: a teardown deferred past a re-attach must disconnect
+        # this attachment's session, never the one a new attachment minted.
         self._voice.forget_room(room_id)
+        realtime_session = self._realtime.detach_room(room_id)
         # Out of routing immediately — `_on_track_audio` finds nothing to hand a
         # frame to from here on. They are closed in the destructive phase, since
         # closing is what releases the pipeline stage state and finalizes the
@@ -296,9 +303,11 @@ class ConferenceAttachmentMixin:
             room.start_leaving(bot)
         enclosing = self._activity.enclosing(room_id)
         if enclosing:
-            self._defer_teardown(room_id, bot, lanes, recordings, generation, enclosing)
+            self._defer_teardown(
+                room_id, bot, lanes, recordings, realtime_session, generation, enclosing
+            )
             return
-        await self._teardown(room_id, bot, lanes, recordings, generation)
+        await self._teardown(room_id, bot, lanes, recordings, realtime_session, generation)
 
     def _defer_teardown(
         self,
@@ -306,6 +315,7 @@ class ConferenceAttachmentMixin:
         bot: BotSession | None,
         lanes: list[ConferenceLane],
         recordings: list[TrackRecording],
+        realtime_session: VoiceSession | None,
         generation: int,
         enclosing: list[asyncio.Event],
     ) -> None:
@@ -326,7 +336,9 @@ class ConferenceAttachmentMixin:
         :meth:`_settle_previous_attachment`.
         """
         task = asyncio.create_task(
-            self._teardown(room_id, bot, lanes, recordings, generation, after=enclosing)
+            self._teardown(
+                room_id, bot, lanes, recordings, realtime_session, generation, after=enclosing
+            )
         )
         self._teardowns.add(task)
         self._room(room_id).pending_teardown = task
@@ -346,6 +358,7 @@ class ConferenceAttachmentMixin:
         bot: BotSession | None,
         lanes: list[ConferenceLane],
         recordings: list[TrackRecording],
+        realtime_session: VoiceSession | None,
         generation: int,
         *,
         after: list[asyncio.Event] = [],  # noqa: B006 — read-only, never mutated
@@ -400,6 +413,20 @@ class ConferenceAttachmentMixin:
             # when it runs out: a credential still being minted would admit
             # someone to the conference this is about to leave.
             self._abandon_mints(room_id)
+            if realtime_session is not None:
+                # Before the bot leaves: the provider session's audio publishes
+                # into the bot session, and disconnecting first stops the
+                # source before the track it speaks on goes away. Already
+                # contained inside — the helper logs and swallows — but held
+                # to the same discipline as every step here.
+                await self._best_effort(
+                    self._realtime.disconnect_detached(realtime_session),
+                    "Conference channel %r could not disconnect the realtime session of "
+                    "room %s. The rest of the teardown is going ahead: the provider may "
+                    "still hold the session, the bot is not staying for it",
+                    self.channel_id,
+                    room_id,
+                )
             for lane in lanes:
                 await self._best_effort(
                     self._close_lane_instance(lane),

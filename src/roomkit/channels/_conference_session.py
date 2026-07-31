@@ -137,6 +137,7 @@ class ConferenceSessionMixin:
     _room: Any
     _attached_room: Any
     _voice: Any
+    _realtime: Any
     _stop_consuming: Any
     _emit_framework_event: Any
     _announce_end: Any
@@ -660,6 +661,12 @@ class ConferenceSessionMixin:
         room.bump()
         room.bot = None
         self._voice.forget_room(bot.room_id)
+        # The provider session hung on that connection: its audio published on
+        # the dead bot's track. Off the books now, disconnected in the
+        # background — the re-join's first need mints a fresh one.
+        realtime_session = self._realtime.detach_room(bot.room_id)
+        if realtime_session is not None:
+            room.spawn(self._realtime.disconnect_detached(realtime_session))
         for track_id in room.forget_subscriptions():
             await self._stop_consuming(track_id)
         await self._announce_end(bot.room_id, bot)

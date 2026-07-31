@@ -5,10 +5,13 @@ per-track processing lanes, and represents the AI's voice in the conference. It
 never carries media between human participants: the SFU does that, and the
 channel's only media connection is the bot session it joins with.
 
-See RFC section 12.10.4. Vision, speech-to-speech composition and bot video are
-out of scope here; this is the audio core those build on. Framework-side
-recording is in scope and runs on the same collection gate as transcription
-(RFC section 12.10.8).
+See RFC section 12.10.4. Vision and bot video are out of scope here; this is
+the audio core those build on. Framework-side recording is in scope and runs
+on the same collection gate as transcription (RFC section 12.10.8), and so is
+speech-to-speech composition (RFC section 12.10.12): a realtime provider
+plugged in as the conference's intelligence hears the lanes mixed N→1 and
+speaks on the bot track — see ``_conference_realtime`` and
+``_conference_mixer``.
 
 Which is why the channel announces AUDIO alone. Vision is a SHOULD in RFC
 section 12.10.11, so an audio-only conference conforms; announcing a media type
@@ -44,6 +47,7 @@ from roomkit.channels._conference_lanes import ConferenceLanesMixin
 from roomkit.channels._conference_metadata import CONFERENCE_METADATA_KEY
 from roomkit.channels._conference_operations import ConferenceOperations, ConferenceResource
 from roomkit.channels._conference_plug import ConferencePlugMixin
+from roomkit.channels._conference_realtime import ConferenceRealtime
 from roomkit.channels._conference_recording import ConferenceRecording
 from roomkit.channels._conference_recording_events import (
     ConferenceRecordingEvents,
@@ -64,6 +68,7 @@ from roomkit.conference.models import (
     ConferenceGrants,
     ConferenceInterruptionConfig,
     ConferenceParticipant,
+    ConferenceRealtimeConfig,
     ConferenceRecordingConfig,
     ConferenceRecordingMode,
     TrackKind,
@@ -151,6 +156,7 @@ class ConferenceChannel(
         backend: ConferenceBackend,
         stt: STTProvider | None = None,
         tts: TTSProvider | None = None,
+        realtime: ConferenceRealtimeConfig | None = None,
         pipeline: AudioPipelineConfig | None = None,
         interruption: ConferenceInterruptionConfig | None = None,
         recording: ConferenceRecordingConfig | None = None,
@@ -189,6 +195,8 @@ class ConferenceChannel(
                 "backend capability RoomKit does not yet model, so pass e2ee=False "
                 "to transcribe, or drop stt= to keep the conference encrypted."
             )
+        if realtime is not None:
+            self._validate_realtime(realtime, tts=tts, e2ee=e2ee)
         self._backend = backend
         self._stt = stt
         self._recording = recording
@@ -199,7 +207,7 @@ class ConferenceChannel(
         # awaits — it is synchronous throughout, which is why it runs on a
         # worker thread — and announcing does.
         self._recording_events = ConferenceRecordingEvents(channel_id)
-        self._pipeline_config = self._resolve_pipeline(pipeline, stt)
+        self._pipeline_config = self._resolve_pipeline(pipeline, stt, realtime=realtime)
         self._pipeline = (
             AudioPipeline(self._pipeline_config) if self._pipeline_config is not None else None
         )
@@ -222,6 +230,19 @@ class ConferenceChannel(
             operations=self._operations,
             on_published=None if self._recorder is None else self._record_bot_audio,
         )
+        # The speech-to-speech composition (RFC 12.10.12), built inert and
+        # activated by configuration: its mixer taps every lane either way,
+        # which is what lets a provider plugged mid-meeting hear the tracks
+        # already open.
+        self._realtime = ConferenceRealtime(
+            channel_id=channel_id,
+            bot_identity=bot_identity,
+            voice=self._voice,
+            operations=self._operations,
+            ensure_bot=self._ensure_bot,
+        )
+        if realtime is not None:
+            self._realtime.configure(realtime)
         self._roster = ConferenceRoster(channel_id)
         # `identity_trusts_unasserted_metadata` widens what an arrival may be
         # identified on, from what the SFU asserts to every attribute it
@@ -376,6 +397,44 @@ class ConferenceChannel(
         room = self._attached_room(room_id)
         return room is not None and room.may_collect()
 
+    def _validate_realtime(
+        self, realtime: ConferenceRealtimeConfig, *, tts: TTSProvider | None, e2ee: bool
+    ) -> None:
+        """Refuse a speech-to-speech configuration that cannot work.
+
+        One voice per bot (RFC 12.10.12): a synthesizer and a realtime
+        provider both publish on the one bot track, and no floor discipline
+        turns two intelligences into one voice. The E2EE refusal is the same
+        key-holder gap as STT's — the mix would be ciphertext. And tools
+        without a handler are a conversation that wedges: the provider's
+        turn waits on a result nothing will ever submit.
+        """
+        if tts is not None:
+            raise ValueError(
+                "tts= and realtime= are mutually exclusive: both publish on the one "
+                "bot track, and two components answering the same room answer over "
+                "each other (RFC 12.10.12). Configure one, or trade them at runtime "
+                "through unplug_tts()/plug_realtime()."
+            )
+        if e2ee:
+            raise ValueError(
+                "A speech-to-speech provider cannot run on an end-to-end encrypted "
+                "conference: the bot receives ciphertext it has no key for, so the "
+                "mix it hears would be noise. Pass e2ee=False, or drop realtime= to "
+                "keep the conference encrypted."
+            )
+        if realtime.tools and realtime.tool_handler is None:
+            raise ValueError(
+                "realtime.tools were configured with no tool_handler: the provider's "
+                "turn waits on a result nothing will ever submit. Pass "
+                "tool_handler=, or drop tools=."
+            )
+
+    @property
+    def _realtime_config(self) -> ConferenceRealtimeConfig | None:
+        """The speech-to-speech configuration in force, if one is plugged."""
+        return self._realtime.config
+
     @property
     def _transport_only(self) -> bool:
         """Pure transport: nothing plugged in consumes a track or can speak.
@@ -408,7 +467,7 @@ class ConferenceChannel(
         if self._explicit_bot_grants is not None:
             return self._explicit_bot_grants
         return ConferenceGrants.for_bot(
-            speaks=self._voice.tts is not None,
+            speaks=self._voice.tts is not None or self._realtime_config is not None,
             listens=any(self._consumes(kind) for kind in TrackKind),
         )
 
@@ -434,24 +493,31 @@ class ConferenceChannel(
         )
 
     def _resolve_pipeline(
-        self, config: AudioPipelineConfig | None, stt: STTProvider | None
+        self,
+        config: AudioPipelineConfig | None,
+        stt: STTProvider | None,
+        realtime: ConferenceRealtimeConfig | None = None,
     ) -> AudioPipelineConfig | None:
         """Settle what the lanes will run, or refuse a configuration that cannot work.
 
-        ``stt`` is a parameter rather than a read of ``self._stt`` because the
-        two callers stand on opposite sides of the assignment: the constructor
-        resolves what it is about to install, and ``plug_stt`` must refuse a
-        bad configuration *before* touching the channel's state.
+        ``stt`` and ``realtime`` are parameters rather than reads of ``self``
+        because the two callers stand on opposite sides of the assignment: the
+        constructor resolves what it is about to install, and the plugs must
+        refuse a bad configuration *before* touching the channel's state.
 
-        There is no pipeline without speech recognition: nothing else consumes
-        an audio track today, so building one would load a VAD for frames the
-        channel never subscribes to.
+        There is no pipeline without a consumer that needs one: recognition
+        and speech-to-speech are the two, and without either, building one
+        would load a VAD for frames the channel never subscribes to.
 
-        With speech recognition, a VAD is not optional (RFC 12.10.4): without
-        segmentation the lane calls the recognizer once per 20 ms frame and
-        produces a transcript cut at frame boundaries. So an unconfigured
-        channel gets a working default, and a configuration that names its
-        stages but omits the VAD is refused rather than degraded into that.
+        With either, a VAD is not optional. For recognition (RFC 12.10.4):
+        without segmentation the lane calls the recognizer once per 20 ms
+        frame and produces a transcript cut at frame boundaries. For
+        speech-to-speech (RFC 12.10.12): the per-lane VAD is the interruption
+        policy's one sensor — the provider's own detection hears the mix and
+        can name no interrupting participant — so without it the bot cannot
+        be barged in on at all. So an unconfigured channel gets a working
+        default, and a configuration that names its stages but omits the VAD
+        is refused rather than degraded into that.
 
         Format normalisation is not optional either, and unlike the VAD it has
         an obvious default, so a configuration without a contract gets one
@@ -464,7 +530,7 @@ class ConferenceChannel(
         so neither is needed — but the specification says MUST NOT be
         required, not MUST NOT be configured.
         """
-        if stt is None:
+        if stt is None and realtime is None:
             return None
         # The default contract's internal format is 16 kHz mono 16-bit, which
         # is what every track is resampled to before the stages run.
@@ -472,10 +538,12 @@ class ConferenceChannel(
             return AudioPipelineConfig(vad=EnergyVADProvider(), contract=AudioPipelineContract())
         if config.vad is None:
             raise ValueError(
-                "A conference lane requires a VAD when STT is configured: without "
-                "segmentation the lane transcribes every frame instead of every "
-                "utterance. Pass AudioPipelineConfig(vad=...), or omit the pipeline "
-                "argument to get the default one."
+                "A conference lane requires a VAD when STT or a realtime provider is "
+                "configured: without segmentation the lane transcribes every frame "
+                "instead of every utterance, and without speech detection the "
+                "interruption policy has no sensor (RFC 12.10.12). Pass "
+                "AudioPipelineConfig(vad=...), or omit the pipeline argument to get "
+                "the default one."
             )
         if config.contract is None:
             # Copied rather than mutated: the caller may share this config.
@@ -532,6 +600,10 @@ class ConferenceChannel(
             ),
             "stt_configured": self._stt is not None,
             "stt_provider": self._stt.name if self._stt is not None else None,
+            "realtime_configured": self._realtime_config is not None,
+            "realtime_provider": (
+                self._realtime_config.provider.name if self._realtime_config is not None else None
+            ),
             # Constant because there is nothing to configure: the channel takes
             # no VisionProvider and announces no VIDEO. The key stays so the
             # disclosure surface answers the question rather than omitting it —
@@ -625,6 +697,17 @@ class ConferenceChannel(
             "collecting": collecting,
             "active_lanes": len(lanes),
             "stt_active": self._stt is not None and live and bool(lanes),
+            # Active means connected: a session is established on the first
+            # mixed window or injection, so a conference where nobody has
+            # spoken yet answers no — nothing has reached the provider.
+            "realtime_active": (
+                self._realtime_config is not None
+                and live
+                and self._realtime.session_for(room_id) is not None
+            ),
+            # Audio the mix discarded to stay near-live, in whole windows
+            # (RFC 12.10.4 asks for loss to be exposed, not only logged).
+            "realtime_dropped_windows": self._realtime.mixer.dropped_windows(room_id),
             # No video track is ever subscribed here, so no room can be an
             # exception to `vision_configured` above.
             "vision_active": False,
@@ -649,6 +732,7 @@ class ConferenceChannel(
         """
         self._framework = framework
         self._voice.set_framework(framework)
+        self._realtime.set_framework(framework)
         self._roster.set_store(
             framework.store, framework.lock_manager, lease=framework._resource_lease
         )
@@ -1078,6 +1162,16 @@ class ConferenceChannel(
             return ChannelOutput.empty()
         if not self._speak_text_events and event.source.channel_type is not ChannelType.AI:
             return ChannelOutput.empty()
+        if self._realtime_config is not None:
+            # The realtime counterpart of speaking: the provider is the
+            # room's voice, so a text event joins its conversation context
+            # rather than being synthesized over it (RFC 12.10.12).
+            await self._realtime.deliver_text(
+                event.room_id,
+                event.content.body,
+                role=str(event.metadata.get("inject_role", "system")),
+            )
+            return ChannelOutput.empty()
         await self._voice.speak(event.room_id, event.content.body)
         return ChannelOutput.empty()
 
@@ -1122,8 +1216,13 @@ class ConferenceChannel(
         # Playbacks are stopped before the bots leave, for the same reason the
         # detach path does it: a synthesis loop still running would publish on
         # a session that is on its way out. The synthesizer itself is closed at
-        # the end, once nothing can still be drawing on it.
+        # the end, once nothing can still be drawing on it. The realtime rooms
+        # come off the books at the same moment — the mixer stops feeding and
+        # every response in flight is given its end — and their sessions are
+        # disconnected below, before the bots leave the conferences their
+        # audio was published into.
         self._voice.abandon_all()
+        realtime_sessions = self._realtime.abandon_all()
         for room in self._rooms.values():
             room.cancel_tasks()
         # A detach may still be finishing on its own task — the deferred case —
@@ -1158,6 +1257,19 @@ class ConferenceChannel(
                 status=CloseStatus.ABANDONED,
                 step="waiting for conference joins",
                 detail="join(s) still running for room(s) " + ", ".join(sorted(unsettled_joins)),
+            )
+        # The provider sessions go before the bots leave: each one's audio
+        # publishes into a bot session, and disconnecting first is what stops
+        # the source before the track it speaks on goes away. Best-effort per
+        # session inside, on one bounded budget out here.
+        if realtime_sessions and self._realtime_config is not None:
+            await self._shutdown.spend(
+                self._realtime.disconnect_sessions(
+                    self._realtime_config.provider, realtime_sessions
+                ),
+                "disconnecting the realtime provider's sessions",
+                component="realtime",
+                operation="disconnect",
             )
         # Every session the channel still has in a conference, not only the one
         # in `bot`: a detach whose `leave()` the backend refused left its bot
@@ -1232,6 +1344,11 @@ class ConferenceChannel(
                 ConferenceResource.TTS,
                 self._voice.close_tts,
                 step="closing the TTS provider",
+            )
+            await self._shutdown.close_resource(
+                ConferenceResource.REALTIME,
+                self._realtime.close_provider,
+                step="closing the realtime provider",
             )
         # Last, and after the media: the bookkeeping a participant callback was
         # in the middle of — waited for *here* rather than at the top because a
