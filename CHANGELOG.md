@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Conference: speech-to-speech composition (RFC §12.10.12).** A realtime
+  provider (Gemini Live, OpenAI Realtime, …) can now be the conference's
+  intelligence: `ConferenceChannel(realtime=ConferenceRealtimeConfig(...))`
+  mixes every subscribed audio track N→1 (additive, `1/√k` headroom, 20 ms
+  windows, silence-only windows never forwarded), feeds one provider session
+  per conference, and publishes the provider's voice on the bot track under
+  the ordinary utterance contract — floor, terminal `is_final`, barge-in
+  included. Attribution ends at the provider boundary: its user-side
+  transcriptions are discarded (configure `stt=` beside it for the attributed
+  transcript — the lanes run in parallel with the mix), while its assistant
+  finals become room events attributed to the channel. The per-lane VAD stays
+  the interruption sensor: `ConferenceInterruptionConfig` scope is enforced
+  on it, and a landed barge-in also cancels the provider's response
+  (best-effort — documented no-op on Gemini Live). `tts=` and `realtime=`
+  are mutually exclusive (one bot track, one voice); inbound text events are
+  injected into the provider's context rather than synthesized. The slot
+  hot-plugs like the others — `plug_realtime()` / `unplug_realtime()`, first
+  need, occupied-slot refusal, last-need retirement — and the lanes it
+  shares with a recognizer survive whichever of the two unplugs first.
+  `info()` gains `realtime_configured` / `realtime_provider` and per-room
+  `realtime_active` / `realtime_dropped_windows`. New example:
+  `examples/conference_realtime_ai.py`.
+
 - **Conference: runtime ownership of explicit bot grants (RFC §12.10.4).**
   The plugs never rewrite an explicit `bot_grants` — which makes the set
   owned, not immutable — and `ConferenceChannel.set_bot_grants()` is now

@@ -99,6 +99,7 @@ CONSOLE=1 uv run python examples/<example>.py
 | `conference_quickstart.py` | Conference | End-to-end conference on the mock backend: mint, lanes, attributed transcriptions |
 | `conference_livekit.py` | Conference | A real conference on a LiveKit SFU: two humans, one bot, resume mode |
 | `conference_ai_meeting.py` | Conference | The real STT→LLM→TTS loop: a human speaks, the AI answers on the bot's track |
+| `conference_realtime_ai.py` | Conference | Speech-to-speech N→1: one realtime session hears the mixed meeting and speaks on the bot's track |
 | `conference_notetaker_on_demand.py` | Conference | Hot-plugging intelligence: a purely human meeting gains its notetaker on demand |
 | `conference_identity_provenance.py` | Conference | Who a conference believes when it identifies a participant |
 | `conference_fault_injection.py` | Conference | Testing a conference against a backend that fails, lags and varies its audio formats |
