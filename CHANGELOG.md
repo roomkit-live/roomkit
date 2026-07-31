@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Skills: unavailable skills stay visible with a reason.**
+  `SkillRegistry.mark_unavailable(name, reason)` records a skill that exists
+  but cannot be used in the current context (e.g. a `requires` gate whose
+  tools are not granted); `unavailable_skills` / `get_unavailable_reason()`
+  expose the mapping, `register()` clears a stale mark. `to_prompt_xml()`
+  emits an `<unavailable_skills>` block with per-skill `<reason>` (rendered
+  even when no skill is available), and the `activate_skill` /
+  `read_skill_reference` / `run_skill_script` handlers — AIChannel and
+  realtime voice alike — answer `Skill 'X' is unavailable in this context:
+  <reason>` instead of a misleading "not found". The AIChannel tools-hint
+  fallback ("X is not a skill, but these TOOLS match") no longer fires for a
+  known-but-unavailable skill.
+
 - **Conference: speech-to-speech composition (RFC §12.10.12).** A realtime
   provider (Gemini Live, OpenAI Realtime, …) can now be the conference's
   intelligence: `ConferenceChannel(realtime=ConferenceRealtimeConfig(...))`

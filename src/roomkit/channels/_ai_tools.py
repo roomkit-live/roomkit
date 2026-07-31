@@ -417,22 +417,25 @@ class AIToolsMixin:
         result_str, skill_name = await handle_activate_skill(arguments, self._skills)
         loop_ctx = self._get_loop_ctx()
         if skill_name and self._skills.get_skill(skill_name) is None:
-            # Small models routinely confuse skills with TOOLS ("activate the
-            # Spotify skill" when SpotifySearch/... are tools). Turn the dead
-            # end into the right outcome: reveal the matching tools and say so.
-            wanted = skill_name.lower()
-            matching = sorted(
-                t.name for t in loop_ctx.all_context_tools if wanted in t.name.lower()
-            )
-            if matching:
-                loop_ctx.revealed_tools.update(matching)
-                data = json.loads(result_str)
-                data["tools_hint"] = (
-                    f"{skill_name!r} is not a skill, but these TOOLS match and are "
-                    f"now in your tool list — call one directly instead: "
-                    f"{', '.join(matching[:8])}."
+            # A known-but-unavailable skill already carries its reason in the
+            # error — a "this is not a skill" tools hint would contradict it.
+            if self._skills.get_unavailable_reason(skill_name) is None:
+                # Small models routinely confuse skills with TOOLS ("activate the
+                # Spotify skill" when SpotifySearch/... are tools). Turn the dead
+                # end into the right outcome: reveal the matching tools and say so.
+                wanted = skill_name.lower()
+                matching = sorted(
+                    t.name for t in loop_ctx.all_context_tools if wanted in t.name.lower()
                 )
-                result_str = json.dumps(data)
+                if matching:
+                    loop_ctx.revealed_tools.update(matching)
+                    data = json.loads(result_str)
+                    data["tools_hint"] = (
+                        f"{skill_name!r} is not a skill, but these TOOLS match and are "
+                        f"now in your tool list — call one directly instead: "
+                        f"{', '.join(matching[:8])}."
+                    )
+                    result_str = json.dumps(data)
             return result_str
         # Track activation so gated tools become visible on next round
         loop_ctx.activated_skills.add(skill_name)

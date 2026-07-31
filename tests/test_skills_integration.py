@@ -312,6 +312,35 @@ class TestActivateSkillHandler:
         assert "not found" in result_json["error"]
         assert "known" in result_json["available_skills"]
 
+    async def test_activate_unavailable_skill_reports_reason(self, tmp_path: Path) -> None:
+        """A skill marked unavailable answers with its reason, not "not found"."""
+        _make_skill_dir(tmp_path, "known")
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+        registry.mark_unavailable(
+            "gated-skill", "requires tool 'artifacts' which is not granted in this context"
+        )
+
+        provider = ToolCallMockProvider(
+            tool_calls=[
+                AIToolCall(
+                    id="tc1",
+                    name="activate_skill",
+                    arguments={"name": "gated-skill"},
+                )
+            ],
+        )
+        ch = AIChannel("ai1", provider=provider, skills=registry)
+        await ch.on_event(make_event(body="go", channel_id="sms1"), _binding(), _ctx())
+
+        messages = provider.calls[1].messages
+        tool_msg = [m for m in messages if m.role == "tool"]
+        result_json = json.loads(tool_msg[0].content[0].result)
+        assert "unavailable in this context" in result_json["error"]
+        assert "requires tool 'artifacts'" in result_json["error"]
+        assert "not found" not in result_json["error"]
+        assert result_json["available_skills"] == ["known"]
+
 
 class TestReadReferenceHandler:
     """Test the read_skill_reference tool handler."""

@@ -25,6 +25,7 @@ from roomkit.channels._skill_constants import (
 from roomkit.channels._skill_handlers import (
     handle_read_reference,
     handle_run_script,
+    missing_skill_error,
 )
 from roomkit.skills.registry import SkillRegistry
 
@@ -259,7 +260,7 @@ class RealtimeSkillSupport:
         if skill is None:
             return json.dumps(
                 {
-                    "error": f"Skill {skill_name!r} not found",
+                    "error": missing_skill_error(self._skills, skill_name),
                     "available_skills": self._skills.skill_names,
                 }
             )

@@ -488,6 +488,35 @@ class TestSkillToolHandling:
         assert "error" in result
         assert "nonexistent" in result["error"]
 
+    async def test_activate_unavailable_skill_returns_reason(
+        self,
+        tmp_path: Path,
+        provider: MockRealtimeProvider,
+        transport: MockRealtimeTransport,
+    ) -> None:
+        registry = _registry_with_skill(tmp_path)
+        registry.mark_unavailable("gated-skill", "requires tool 'artifacts' not granted")
+        channel = RealtimeVoiceChannel(
+            "rt-skill",
+            provider=provider,
+            transport=transport,
+            skills=registry,
+        )
+        kit = RoomKit()
+        kit.register_channel(channel)
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "rt-skill")
+
+        session = await channel.start_session(room.id, "user-1", "fake-ws")
+        await provider.simulate_tool_call(
+            session, "call-2", "activate_skill", {"name": "gated-skill"}
+        )
+        await asyncio.sleep(0.1)
+
+        result = json.loads(provider.tool_results[0][2])
+        assert "unavailable in this context" in result["error"]
+        assert "requires tool 'artifacts'" in result["error"]
+
     async def test_read_skill_reference(
         self,
         tmp_path: Path,

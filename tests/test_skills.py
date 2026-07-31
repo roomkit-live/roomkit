@@ -394,6 +394,52 @@ class TestSkillRegistry:
         assert "&lt;b&gt;" in xml
         assert "&amp;" in xml
 
+    def test_mark_unavailable_removes_from_available(self, tmp_path: Path) -> None:
+        skill_dir = _make_skill_dir(tmp_path, "gated")
+        registry = SkillRegistry()
+        registry.register(skill_dir)
+
+        registry.mark_unavailable("gated", "requires tool 'artifacts' not granted")
+
+        assert registry.get_skill("gated") is None
+        assert registry.get_metadata("gated") is None
+        assert "gated" not in registry.skill_names
+        assert registry.get_unavailable_reason("gated") == "requires tool 'artifacts' not granted"
+        assert registry.unavailable_skills == {"gated": "requires tool 'artifacts' not granted"}
+
+    def test_register_clears_unavailable_mark(self, tmp_path: Path) -> None:
+        skill_dir = _make_skill_dir(tmp_path, "revived")
+        registry = SkillRegistry()
+        registry.mark_unavailable("revived", "some reason")
+        registry.register(skill_dir)
+
+        assert registry.get_unavailable_reason("revived") is None
+        assert registry.get_skill("revived") is not None
+
+    def test_to_prompt_xml_unavailable_block(self, tmp_path: Path) -> None:
+        _make_skill_dir(tmp_path, "usable")
+        registry = SkillRegistry()
+        registry.discover(tmp_path)
+        registry.mark_unavailable("gated", "requires tool <artifacts> & friends")
+
+        xml = registry.to_prompt_xml()
+        assert "<available_skills>" in xml
+        assert 'name="usable"' in xml
+        assert "<unavailable_skills>" in xml
+        assert 'name="gated"' in xml
+        # Reason is escaped and present
+        assert "<reason>requires tool &lt;artifacts&gt; &amp; friends</reason>" in xml
+
+    def test_to_prompt_xml_unavailable_only(self) -> None:
+        """A registry with only unavailable skills still renders — the gap
+        must stay visible instead of collapsing to an empty manifest."""
+        registry = SkillRegistry()
+        registry.mark_unavailable("gated", "missing tool")
+        xml = registry.to_prompt_xml()
+        assert "<available_skills>" not in xml
+        assert "<unavailable_skills>" in xml
+        assert 'name="gated"' in xml
+
     def test_discover_skips_invalid(self, tmp_path: Path) -> None:
         """Invalid skills are warned and skipped."""
         # Valid skill

@@ -13,6 +13,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.channels.skills")
 
 
+def missing_skill_error(skills: SkillRegistry, skill_name: str) -> str:
+    """Error line for a skill ``get_skill()`` could not return.
+
+    A skill marked unavailable gets its reason (e.g. a required tool is
+    not granted in this context) instead of a misleading "not found".
+    """
+    reason = skills.get_unavailable_reason(skill_name)
+    if reason is not None:
+        return f"Skill {skill_name!r} is unavailable in this context: {reason}"
+    return f"Skill {skill_name!r} not found"
+
+
 async def handle_activate_skill(
     arguments: dict[str, Any],
     skills: SkillRegistry,
@@ -28,7 +40,7 @@ async def handle_activate_skill(
     if skill is None:
         error_json = json.dumps(
             {
-                "error": f"Skill {skill_name!r} not found",
+                "error": missing_skill_error(skills, skill_name),
                 "available_skills": skills.skill_names,
             }
         )
@@ -57,7 +69,7 @@ async def handle_read_reference(
     filename = arguments.get("filename", "")
     skill = skills.get_skill(skill_name)
     if skill is None:
-        return json.dumps({"error": f"Skill {skill_name!r} not found"})
+        return json.dumps({"error": missing_skill_error(skills, skill_name)})
 
     try:
         content = skill.read_reference(filename)
@@ -80,7 +92,7 @@ async def handle_run_script(
 
     skill = skills.get_skill(skill_name)
     if skill is None:
-        return json.dumps({"error": f"Skill {skill_name!r} not found"})
+        return json.dumps({"error": missing_skill_error(skills, skill_name)})
 
     try:
         result = await script_executor.execute(skill, script_name, arguments=script_args)
