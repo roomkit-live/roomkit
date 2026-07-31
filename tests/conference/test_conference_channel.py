@@ -948,8 +948,15 @@ class TestAttachResumesALiveConference:
             identity: ConferenceParticipant(participant_id=identity) for identity in identities
         }
 
-    async def test_an_attach_over_a_live_conference_brings_the_bot_in(self) -> None:
-        """The service restarted mid-meeting; the meeting must get its bot back."""
+    async def test_an_attach_over_a_live_conference_brings_the_bot_in(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The service restarted mid-meeting; the meeting must get its bot back.
+
+        And it says why: a bot joining a meeting where nobody minted,
+        delivered or spoke looks spontaneous unless the probe names its
+        reason.
+        """
         backend = MockConferenceBackend()
         self._occupied(backend, "p-alice")
         channel = ConferenceChannel("conf", backend=backend)
@@ -962,11 +969,13 @@ class TestAttachResumesALiveConference:
         async def _started(event: object) -> None:
             announced.append("started")
 
-        await kit.attach_channel(ROOM, "conf")
-        await _join_settled(channel)
+        with caplog.at_level(logging.INFO, logger="roomkit.channels.conference"):
+            await kit.attach_channel(ROOM, "conf")
+            await _join_settled(channel)
 
         assert len(backend.bots) == 1
         assert announced == ["started"]
+        assert any("already in room" in record.message for record in caplog.records)
 
     async def test_an_attach_over_an_empty_conference_stays_lazy(self) -> None:
         """A room nobody confers in costs one control-plane call and nothing

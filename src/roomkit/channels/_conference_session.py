@@ -352,10 +352,21 @@ class ConferenceSessionMixin:
                 room_id,
             )
             return
-        if not any(p.participant_id != self._bot_identity for p in participants):
+        occupants = [p for p in participants if p.participant_id != self._bot_identity]
+        if not occupants:
             return
         if room.generation != generation or room.bot is not None:
             return
+        # Said out loud because nothing else explains what follows: a bot
+        # joining a meeting where nobody has minted, delivered or spoken looks
+        # spontaneous to an operator unless the probe names its reason.
+        logger.info(
+            "Conference channel %r found %d participant(s) already in room %s's conference "
+            "at attach; resuming the meeting and joining as the bot",
+            self.channel_id,
+            len(occupants),
+            room_id,
+        )
         try:
             await self._ensure_bot(room_id)
         except RoomNotAttachedError:
