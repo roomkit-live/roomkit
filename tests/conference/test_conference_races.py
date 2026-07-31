@@ -1063,11 +1063,19 @@ class TestReattachWhileTheRoomIsBeingDestroyed:
         monkeypatch.setattr(activity_module, "DRAIN_TIMEOUT_S", 0.05)
         backend = _SlowLeaveBackend()
         kit, channel, _ = await _kit(backend, close_room_on_detach=True)
+        detached = False
 
+        # Genuinely once: the re-attach below lands over a conference p-alice
+        # is still in, so its occupancy probe brings the bot back and announces
+        # a second conference_started (RMK-71). That one belongs to the new
+        # attachment and must not be detached — this test is about the old
+        # teardown, not the new conference.
         @kit.on("conference_started")
         async def _detach_once(event: object) -> None:
-            if not channel._room(ROOM).attached:
+            nonlocal detached
+            if detached or not channel._room(ROOM).attached:
                 return
+            detached = True
             backend.slow = True
             await kit.detach_channel(ROOM, "conf")
 

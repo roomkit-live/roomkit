@@ -5,13 +5,17 @@ the join is serialised per room, because participants arriving together is the
 normal way a meeting starts and two concurrent joins would publish the AI on two
 tracks.
 
-First need is anything that says the conference is about to matter, and one of
-its triggers must not be a backend callback: presence is observable only
-through a connection, so until the bot holds one, no arrival can report itself
-and nothing callback-shaped can start the first join (RFC 12.10.3). That
-trigger is the mint — a credential going out is the framework's own notice
-that a human is about to connect. Deliveries, and presence or track events
-from a backend able to observe them, remain triggers after it.
+First need is anything that says the conference is about to matter, and its
+triggers cannot all be backend callbacks: presence is observable only through
+a connection, so until the bot holds one, no arrival can report itself and
+nothing callback-shaped can start the first join (RFC 12.10.3). Two triggers
+reach the channel without the backend's help. The mint — a credential going
+out is the framework's own notice that a human is about to connect — covers
+the conference nobody has been admitted to yet; the attach's occupancy probe
+covers the one already underway, because a channel restarted mid-meeting
+re-attaches with no mint left to wait for and asks ``list_participants()``
+instead. Deliveries, and presence or track events from a backend able to
+observe them, remain triggers after them.
 
 The announcements are the delicate part. The join lock is released before the
 conference is announced, so integrator code cannot hold every other room's joins
@@ -290,6 +294,78 @@ class ConferenceSessionMixin:
                 "conference access. The credential was returned regardless, and the "
                 "conference runs without the framework's own media session — no "
                 "transcription and no AI voice — until a later join succeeds",
+                self.channel_id,
+                room_id,
+            )
+
+    async def _ensure_bot_for_resume(self, room_id: str, generation: int) -> None:
+        """Bring the bot in when the attach landed over a conference already underway.
+
+        The mint bootstraps a conference nobody has been admitted to yet; it
+        cannot resume one already running. A channel restarted mid-meeting
+        re-attaches above participants an earlier life admitted, and every
+        other trigger is out of reach — any re-join supervisor died with the
+        process, no callback can arrive without a connection (RFC 12.10.3),
+        and the humans already in the room may never mint again nor be
+        delivered to. So the attach asks the one question that needs no
+        connection: ``list_participants()``, control-plane, one call per
+        attach. Anyone in there who is not the channel's own bot — a session
+        an earlier life left behind is not occupancy — is first need, and the
+        join happens exactly as it would for a mint (RFC 12.10.4). An empty
+        conference stays unjoined: the laziness is preserved, and the probe
+        is all an idle room ever costs.
+
+        Nothing is written to the roster from here. The join's own catch-up
+        (RFC 12.10.3) redelivers everyone through the ordinary callbacks; the
+        probe only decides whether there is a meeting to join.
+
+        Runs as a room task off the attach's own path: the attach is owed its
+        answer now, and a detach cancels this like any other room work. The
+        probe answers for the attachment that spawned it — ``generation`` is
+        handed in by the attach rather than read here, because a spawned task
+        can sit unscheduled while the world moves on. It re-reads that world
+        before every step, the re-join supervisor's own discipline: a bumped
+        generation or a bot already in means a loss, a re-attach or a faster
+        trigger got there first, and this probe is someone else's late
+        duplicate. It stands down; whoever moved the world owns the join now.
+
+        ``RoomNotAttachedError`` is silence rather than a report: a detach won
+        the race and the join was abandoned exactly as it should be. Any other
+        failure — the probe's or the join's — is logged and swallowed, and the
+        lazy join remains: the next mint, delivery or arrival tries again.
+        """
+        room = self._room(room_id)
+        if room.generation != generation or room.bot is not None:
+            return
+        try:
+            with self._operations.use(
+                ConferenceResource.BACKEND, what=f"probing room {room_id} for participants"
+            ):
+                participants = await self._backend.list_participants(room_id)
+        except Exception:
+            logger.exception(
+                "Conference channel %r could not ask who is in room %s's conference at "
+                "attach. If a meeting is already underway there, it runs without the "
+                "framework's own media session — no transcription and no AI voice — until "
+                "a mint, delivery or arrival triggers the lazy join",
+                self.channel_id,
+                room_id,
+            )
+            return
+        if not any(p.participant_id != self._bot_identity for p in participants):
+            return
+        if room.generation != generation or room.bot is not None:
+            return
+        try:
+            await self._ensure_bot(room_id)
+        except RoomNotAttachedError:
+            return
+        except Exception:
+            logger.exception(
+                "Conference channel %r found a conference already underway in room %s at "
+                "attach but could not bring its bot in. The conference runs without the "
+                "framework's own media session — no transcription and no AI voice — until "
+                "a later join succeeds",
                 self.channel_id,
                 room_id,
             )

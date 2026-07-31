@@ -21,6 +21,7 @@ from roomkit import (
     ConferenceGrants,
     ConferenceInterruptionConfig,
     ConferenceInterruptionScope,
+    ConferenceParticipant,
     MockConferenceBackend,
     RoomKit,
     TrackKind,
@@ -919,6 +920,123 @@ class TestMintBootstrapsTheBot:
             await _join_settled(channel)
 
         assert any("after minting" in record.message for record in caplog.records)
+
+
+class TestAttachResumesALiveConference:
+    """An attach over a conference already underway is itself a first need (RMK-71).
+
+    The mint bootstraps a conference nobody has been admitted to yet; it
+    cannot resume one already running. A channel restarted mid-meeting
+    re-attaches above participants an earlier life admitted, and every other
+    trigger is out of reach: the re-join supervisor died with the process, no
+    callback can arrive without a connection (RFC §12.10.3), and the humans
+    already in the room may never mint again nor be delivered to. So the
+    attach probes the conference's occupancy — ``list_participants()`` is
+    control-plane and needs no connection — and a non-empty answer starts the
+    lazy join (RFC §12.10.4 step 1).
+    """
+
+    @staticmethod
+    def _occupied(backend: MockConferenceBackend, *identities: str) -> None:
+        """Put participants in the SFU's conference before the channel attaches.
+
+        Written straight into the backend's state, not simulated through its
+        callbacks: this is what a restart leaves behind — people connected to
+        a conference nobody on this side of it has ever observed.
+        """
+        backend.participants[ROOM] = {
+            identity: ConferenceParticipant(participant_id=identity) for identity in identities
+        }
+
+    async def test_an_attach_over_a_live_conference_brings_the_bot_in(self) -> None:
+        """The service restarted mid-meeting; the meeting must get its bot back."""
+        backend = MockConferenceBackend()
+        self._occupied(backend, "p-alice")
+        channel = ConferenceChannel("conf", backend=backend)
+        kit = RoomKit()
+        kit.register_channel(channel)
+        await kit.create_room(ROOM)
+        announced: list[str] = []
+
+        @kit.on("conference_started")
+        async def _started(event: object) -> None:
+            announced.append("started")
+
+        await kit.attach_channel(ROOM, "conf")
+        await _join_settled(channel)
+
+        assert len(backend.bots) == 1
+        assert announced == ["started"]
+
+    async def test_an_attach_over_an_empty_conference_stays_lazy(self) -> None:
+        """A room nobody confers in costs one control-plane call and nothing
+        more (RFC §12.10.4 step 1)."""
+        _, channel, backend = await _kit_with_channel()
+        await _join_settled(channel)
+
+        assert len([c for c in backend.calls if c.method == "list_participants"]) == 1
+        assert not [c for c in backend.calls if c.method == "join_as_bot"]
+        assert backend.bots == []
+
+    async def test_a_conference_holding_only_a_stale_bot_is_not_occupied(self) -> None:
+        """A restart can leave the previous process's bot sitting in the SFU;
+        a session an earlier life left behind is not occupancy.
+        """
+        backend = MockConferenceBackend()
+        self._occupied(backend, "ai-bot")
+        _, channel, backend = await _kit_with_channel(backend, bot_identity="ai-bot")
+        await _join_settled(channel)
+
+        assert backend.bots == []
+        assert not [c for c in backend.calls if c.method == "join_as_bot"]
+
+    async def test_a_failed_probe_never_fails_the_attach(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The probe's failure is never the attach's: the binding stands, and
+        the lazy join remains for the next mint, delivery or arrival.
+        """
+        backend = MockConferenceBackend()
+        self._occupied(backend, "p-alice")
+        backend.fail("list_participants")
+
+        with caplog.at_level(logging.ERROR, logger="roomkit.channels.conference"):
+            kit, channel, _ = await _kit_with_channel(backend)
+            await _join_settled(channel)
+
+        assert channel._room(ROOM).attached
+        assert backend.bots == []
+        assert any("could not ask who is in" in record.message for record in caplog.records)
+
+    async def test_a_failed_join_after_a_positive_probe_says_so(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Swallowed, not silenced: a meeting resuming untranscribed must not
+        do it without a word.
+        """
+        backend = MockConferenceBackend()
+        self._occupied(backend, "p-alice")
+        backend.fail("join_as_bot")
+
+        with caplog.at_level(logging.ERROR, logger="roomkit.channels.conference"):
+            _, channel, _ = await _kit_with_channel(backend)
+            await _join_settled(channel)
+
+        assert backend.bots == []
+        assert any("could not bring its bot in" in record.message for record in caplog.records)
+
+    async def test_a_detach_racing_the_probe_leaves_no_bot(self) -> None:
+        """The probe is a room task: a detach cancels it or takes its bot out —
+        either interleaving ends with nobody left in the meeting.
+        """
+        backend = MockConferenceBackend()
+        self._occupied(backend, "p-alice")
+        kit, channel, _ = await _kit_with_channel(backend)
+
+        await kit.detach_channel(ROOM, "conf")
+        await _settle(channel)
+
+        assert backend.bots == []
 
 
 class TestAccessMinting:

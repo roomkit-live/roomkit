@@ -163,7 +163,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     §12.10.3/.4), and it is what lets a meeting where humans speak first
     be joined and transcribed without the framework having to speak. The
     join never delays the mint's answer, and its failure never fails the
-    mint.
+    mint. An attach is the other trigger that owes nothing to the
+    backend's callbacks: it may be landing over a conference already
+    underway — a channel restarted mid-meeting re-attaches above
+    participants an earlier life admitted, with no mint left to wait
+    for — so it probes the conference's occupancy with
+    `list_participants()`, off its own path, and anyone in there who is
+    not the channel's own bot starts the same lazy join. An empty
+    conference stays unjoined, and the probe's failure is never the
+    attach's.
   - **Observability.** `conference_started` / `conference_ended` name and
     measure the bot session, and `info()` answers RFC §17.7's disclosure
     questions per room — bot present, collection permitted, STT and

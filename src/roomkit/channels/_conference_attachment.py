@@ -93,6 +93,8 @@ class ConferenceAttachmentMixin:
         _room: the per-room record (ConferenceRoomState).
         _apply_collection_state, _abandon_mints, _leave_and_record, _close_room,
             _emit_framework_event: what the two halves of a detach reach for.
+        _ensure_bot_for_resume: the lazy join's attach trigger — the probe an
+            attach spawns to resume a conference already underway.
     """
 
     channel_id: str
@@ -115,6 +117,7 @@ class ConferenceAttachmentMixin:
     _leave_and_record: Any
     _close_room: Any
     _emit_framework_event: Any
+    _ensure_bot_for_resume: Any
     _shutdown: Any
 
     def update_binding(self, room_id: str, binding: ChannelBinding) -> None:
@@ -151,6 +154,14 @@ class ConferenceAttachmentMixin:
         the teardown reads the generation on the far side of this, sees the room
         it is closing is no longer the current one, and leaves the new
         conference alone.
+
+        The attach may also be landing over a conference already underway — a
+        channel restarted mid-meeting re-attaches above participants an
+        earlier life admitted, and no mint, delivery or callback may ever come
+        again (RFC 12.10.4 step 1). So the last thing an attach does is ask,
+        off its own path: a room task probes the conference's occupancy and
+        starts the lazy join if anyone is in there. The attach is owed its
+        answer now, and the probe's failure is never the attach's.
         """
         await self._settle_previous_attachment(room_id)
         room = self._room(room_id)
@@ -165,6 +176,12 @@ class ConferenceAttachmentMixin:
             room.binding = binding
         finally:
             room.sfu_room.release()
+        # The generation is handed over rather than read by the probe itself:
+        # a spawned task can sit unscheduled while the world moves on, and the
+        # probe must answer for *this* attachment, not for whatever it wakes
+        # up over.
+        if room.bot is None:
+            room.spawn(self._ensure_bot_for_resume(room_id, room.generation))
 
     async def _hold_sfu_room(self, room_id: str) -> None:
         """Take the room's create/destroy lock, or refuse the attachment.
