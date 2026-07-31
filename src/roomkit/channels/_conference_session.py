@@ -158,6 +158,11 @@ class ConferenceSessionMixin:
                     f"Channel {self.channel_id!r} is not attached to room {room_id!r}"
                 )
             generation = room.generation
+            # Read once, before the join, and recorded beside the session it
+            # was applied to: derived grants follow the configuration (RFC
+            # 12.10.4), so what the SFU holds for this session is this
+            # snapshot, not whatever the configuration says later.
+            grants = self._bot_grants
             # Marked for the whole of the join, not just the network call: the
             # bot is not recognisable by its session until the record carries
             # it, and a backend that echoes the bot back mid-join arrives inside
@@ -170,9 +175,7 @@ class ConferenceSessionMixin:
                 with self._operations.use(
                     ConferenceResource.BACKEND, what=f"joining room {room_id} as the bot"
                 ):
-                    bot = await self._backend.join_as_bot(
-                        room_id, self._bot_identity, self._bot_grants
-                    )
+                    bot = await self._backend.join_as_bot(room_id, self._bot_identity, grants)
                     _settle_clock(bot, self._backend.name)
                     if room.generation != generation:
                         # Recorded rather than plain, because the detach that
@@ -186,6 +189,7 @@ class ConferenceSessionMixin:
                             f"{room_id!r} while joining"
                         )
                     room.bot = bot
+                    room.bot_grants = grants
             finally:
                 room.joining = False
         # The lock is released before the conference is announced, because
@@ -329,8 +333,16 @@ class ConferenceSessionMixin:
                 room_id,
             )
 
-    async def _ensure_bot_for_resume(self, room_id: str, generation: int) -> None:
+    async def _ensure_bot_for_resume(
+        self, room_id: str, generation: int, *, trigger: str = "attach"
+    ) -> None:
         """Bring the bot in when the attach landed over a conference already underway.
+
+        ``trigger`` names what asked, in the logs alone: a hot-plug re-runs
+        this very probe — plugging a need makes the join once more the
+        consequence a probe can have (RFC 12.10.4) — and an operator reading
+        "at attach" about a join no attach started would go looking for the
+        wrong event.
 
         The mint bootstraps a conference nobody has been admitted to yet; it
         cannot resume one already running. A channel restarted mid-meeting
@@ -389,11 +401,12 @@ class ConferenceSessionMixin:
         except Exception:
             logger.exception(
                 "Conference channel %r could not ask who is in room %s's conference at "
-                "attach. If a meeting is already underway there, it runs without the "
+                "%s. If a meeting is already underway there, it runs without the "
                 "framework's own media session — no transcription and no AI voice — until "
                 "a mint, delivery or arrival triggers the lazy join",
                 self.channel_id,
                 room_id,
+                trigger,
             )
             return
         occupants = [p for p in participants if p.participant_id != self._bot_identity]
@@ -406,10 +419,11 @@ class ConferenceSessionMixin:
         # spontaneous to an operator unless the probe names its reason.
         logger.info(
             "Conference channel %r found %d participant(s) already in room %s's conference "
-            "at attach; resuming the meeting and joining as the bot",
+            "at %s; resuming the meeting and joining as the bot",
             self.channel_id,
             len(occupants),
             room_id,
+            trigger,
         )
         try:
             await self._ensure_bot(room_id)
@@ -418,11 +432,12 @@ class ConferenceSessionMixin:
         except Exception:
             logger.exception(
                 "Conference channel %r found a conference already underway in room %s at "
-                "attach but could not bring its bot in. The conference runs without the "
+                "%s but could not bring its bot in. The conference runs without the "
                 "framework's own media session — no transcription and no AI voice — until "
                 "a later join succeeds",
                 self.channel_id,
                 room_id,
+                trigger,
             )
 
     async def _fire_session_started(self, room_id: str, bot: BotSession) -> None:

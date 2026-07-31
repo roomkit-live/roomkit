@@ -43,6 +43,7 @@ from roomkit.channels._conference_lane import (
 from roomkit.channels._conference_lanes import ConferenceLanesMixin
 from roomkit.channels._conference_metadata import CONFERENCE_METADATA_KEY
 from roomkit.channels._conference_operations import ConferenceOperations, ConferenceResource
+from roomkit.channels._conference_plug import ConferencePlugMixin
 from roomkit.channels._conference_recording import ConferenceRecording
 from roomkit.channels._conference_recording_events import (
     ConferenceRecordingEvents,
@@ -110,6 +111,7 @@ class ConferenceChannel(
     ConferenceSessionMixin,
     ConferenceAccessMixin,
     ConferenceSubscriptionMixin,
+    ConferencePlugMixin,
     ConferenceLanesMixin,
     FrameworkAwareChannel,
     Channel,
@@ -196,7 +198,7 @@ class ConferenceChannel(
         # awaits — it is synchronous throughout, which is why it runs on a
         # worker thread — and announcing does.
         self._recording_events = ConferenceRecordingEvents(channel_id)
-        self._pipeline_config = self._resolve_pipeline(pipeline)
+        self._pipeline_config = self._resolve_pipeline(pipeline, stt)
         self._pipeline = (
             AudioPipeline(self._pipeline_config) if self._pipeline_config is not None else None
         )
@@ -233,24 +235,18 @@ class ConferenceChannel(
         )
         self._max_queued_frames = max_queued_frames
         self._bot_identity = bot_identity
-        # Derived rather than defaulted: the framework knows what it configured
-        # the bot to do, so asking the SFU for more is privilege nobody will
-        # use. `listens` is asked in the same terms `_consumes` answers in, so
-        # the grant and the subscriptions cannot drift apart. An explicit
-        # `bot_grants` still wins — the caller may know something about its
-        # deployment that the configuration does not say.
-        self._bot_grants = bot_grants or ConferenceGrants.for_bot(
-            speaks=tts is not None,
-            listens=any(self._consumes(kind) for kind in TrackKind),
-        )
-        # Pure transport: nothing configured consumes a track and nothing can
-        # speak, so a bot session would be a participant with no function. The
-        # mint, arrival and occupancy-probe triggers of the lazy join stand
-        # down on this (RFC 12.10.4 step 1); the channel stays the room's
-        # admission gate and roster. Read off the configuration and not off
-        # `_bot_grants`, because an explicit grant is what the SFU would
-        # allow, not what the channel was configured to do.
-        self._transport_only = tts is None and not any(self._consumes(kind) for kind in TrackKind)
+        # Kept apart from the derivation rather than merged into it: an
+        # explicit `bot_grants` is the caller saying their deployment knows
+        # something the configuration does not, and hot-plugging never
+        # rewrites it (RFC 12.10.4) — the caller who set it took coverage of
+        # the configured needs on themselves.
+        self._explicit_bot_grants = bot_grants
+        # Serialises plug_stt/unplug_tts/... against each other: everything a
+        # change triggers — the grants derived, the subscriptions re-evaluated,
+        # the join or leave decided — is read from the configuration as a
+        # whole, so two changes interleaving would act on a configuration
+        # neither of them describes (RFC 12.10.4).
+        self._plug_lock = asyncio.Lock()
         self._default_grants = default_grants or ConferenceGrants()
         self._e2ee = e2ee
         self._close_room_on_detach = close_room_on_detach
@@ -262,6 +258,11 @@ class ConferenceChannel(
         # guarantees are written across it — see ConferenceRoomState.
         self._rooms: dict[str, ConferenceRoomState] = {}
         self._teardowns: set[asyncio.Task[None]] = set()
+        # Providers an unplug retired while an operation that outlived its own
+        # grace was still inside them: each closes in the background once its
+        # last lease is back, off both the unplug's clock and the shutdown's
+        # (RFC 12.10.4). See ConferencePlugMixin._close_retired.
+        self._deferred_closes: set[asyncio.Task[None]] = set()
         # Participant callbacks in flight. Not room activity — that is what a
         # teardown drains, and these hold the lock a teardown holds across that
         # drain — so `close()` has its own barrier. See `_participant_callback`.
@@ -372,6 +373,40 @@ class ConferenceChannel(
         room = self._attached_room(room_id)
         return room is not None and room.may_collect()
 
+    @property
+    def _transport_only(self) -> bool:
+        """Pure transport: nothing plugged in consumes a track or can speak.
+
+        A bot session would be a participant with no function, so the mint,
+        arrival and occupancy-probe triggers of the lazy join stand down on
+        this (RFC 12.10.4 step 1); the channel stays the room's admission gate
+        and roster. A property rather than a flag because the configuration it
+        reads is no longer fixed at construction — plug_stt() and its family
+        change the answer while the channel runs. Read off the configuration
+        and not off the bot's grants, because an explicit grant is what the
+        SFU would allow, not what the channel was configured to do.
+        """
+        return self._voice.tts is None and not any(self._consumes(kind) for kind in TrackKind)
+
+    @property
+    def _bot_grants(self) -> ConferenceGrants:
+        """What the bot joins with, as the configuration stands right now.
+
+        Derived rather than defaulted: the framework knows what it configured
+        the bot to do, so asking the SFU for more is privilege nobody will
+        use. `listens` is asked in the same terms `_consumes` answers in, so
+        the grant and the subscriptions cannot drift apart. An explicit
+        `bot_grants` still wins — the caller may know something about its
+        deployment that the configuration does not say — and is never
+        rewritten by a plug or an unplug (RFC 12.10.4).
+        """
+        if self._explicit_bot_grants is not None:
+            return self._explicit_bot_grants
+        return ConferenceGrants.for_bot(
+            speaks=self._voice.tts is not None,
+            listens=any(self._consumes(kind) for kind in TrackKind),
+        )
+
     def _holds_conference(self, room_id: str) -> bool:
         """Whether this channel still holds the room's one conference slot.
 
@@ -393,8 +428,15 @@ class ConferenceChannel(
             or (room.pending_teardown is not None and not room.pending_teardown.done())
         )
 
-    def _resolve_pipeline(self, config: AudioPipelineConfig | None) -> AudioPipelineConfig | None:
+    def _resolve_pipeline(
+        self, config: AudioPipelineConfig | None, stt: STTProvider | None
+    ) -> AudioPipelineConfig | None:
         """Settle what the lanes will run, or refuse a configuration that cannot work.
+
+        ``stt`` is a parameter rather than a read of ``self._stt`` because the
+        two callers stand on opposite sides of the assignment: the constructor
+        resolves what it is about to install, and ``plug_stt`` must refuse a
+        bad configuration *before* touching the channel's state.
 
         There is no pipeline without speech recognition: nothing else consumes
         an audio track today, so building one would load a VAD for frames the
@@ -417,7 +459,7 @@ class ConferenceChannel(
         so neither is needed — but the specification says MUST NOT be
         required, not MUST NOT be configured.
         """
-        if self._stt is None:
+        if stt is None:
             return None
         # The default contract's internal format is 16 kHz mono 16-bit, which
         # is what every track is resampled to before the stages run.

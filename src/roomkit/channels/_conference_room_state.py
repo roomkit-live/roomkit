@@ -30,7 +30,12 @@ from roomkit.core.task_utils import log_task_exception
 from roomkit.models.enums import Access
 
 if TYPE_CHECKING:
-    from roomkit.conference.models import BotSession, ConferenceAccess, ConferenceTrack
+    from roomkit.conference.models import (
+        BotSession,
+        ConferenceAccess,
+        ConferenceGrants,
+        ConferenceTrack,
+    )
     from roomkit.models.channel import ChannelBinding
 
 
@@ -92,6 +97,11 @@ class ConferenceRoomState:
         self.attached = False
         self.binding: ChannelBinding | None = None
         self.bot: BotSession | None = None
+        # What the SFU applied to `bot` when it joined — the grants the session
+        # actually holds, kept so a hot-plug can tell whether the session must
+        # be re-permissioned or replaced (RFC 12.10.4). Written at every join;
+        # meaningful only while `bot` is.
+        self.bot_grants: ConferenceGrants | None = None
         # Set for the whole of a join. The bot exists in the conference before
         # it exists here, and that gap is the only reason the configured
         # identity has to stand in for the session's.

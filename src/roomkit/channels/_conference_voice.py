@@ -257,6 +257,31 @@ class ConferenceVoice:
         """Wire the hooks this fires — BEFORE_TTS, AFTER_TTS, ON_BARGE_IN."""
         self._framework = framework
 
+    @property
+    def tts(self) -> TTSProvider | None:
+        """The synthesizer currently plugged in, if any."""
+        return self._tts
+
+    def set_tts(self, tts: TTSProvider | None) -> TTSProvider | None:
+        """Swap the synthesizer, returning the one it replaces.
+
+        The hot-plug seam (RFC 12.10.4). Setting it does not touch utterances
+        already in flight — each ``speak`` captured its provider on entry — so
+        an unplug latches them separately (:meth:`interrupt_all`); what this
+        changes is every ``speak`` from now on.
+        """
+        previous, self._tts = self._tts, tts
+        return previous
+
+    def set_on_published(self, callback: PublishedCallback | None) -> None:
+        """Point the published-audio tap at a recorder, or at nothing.
+
+        Follows the recording being plugged and unplugged: the tap is how the
+        bot's own speech reaches the conference recording, and a callback left
+        wired to an unplugged recorder would feed chunks to a closed file.
+        """
+        self._on_published = callback
+
     def _require_supported_strategy(self) -> InterruptionStrategy:
         """Reject an interruption strategy a lane cannot honour."""
         strategy = self._interruption.strategy
@@ -876,6 +901,27 @@ class ConferenceVoice:
             return
         for playback in room.playbacks:
             playback.abandoned = True
+
+    async def interrupt_all(self) -> None:
+        """Stop every room's playbacks the way a barge-in does, and wait it out.
+
+        The unplug's ending, distinct from :meth:`abandon_all` on exactly the
+        point RFC 12.10.4 turns on: the conference is live and the bot stays
+        in it, so every utterance cut here still owes the backend its
+        boundary. The latch stops each loop at its next chunk and the loop's
+        own closing publishes the terminal chunk; ``stop_playback`` drops what
+        the transport had already queued. The closings are then waited for on
+        the usual budget, so the caller gets a track that is genuinely quiet
+        rather than one still publishing its endings.
+        """
+        for room in list(self._speaking.values()):
+            pending = [p for p in room.playbacks if not p.interrupted]
+            speaking = next((p for p in pending if p.speaking), None)
+            for playback in pending:
+                playback.interrupted = True
+            if speaking is not None:
+                await self._stop_playback(speaking)
+        await self._settle_closings()
 
     def abandon_all(self) -> None:
         """Stop every room's playbacks, without closing anything.

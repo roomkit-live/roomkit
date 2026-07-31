@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Conference: hot-plugging intelligence (RFC §12.10.4).** The configuration
+  first need is read from is no longer fixed at construction:
+  `ConferenceChannel` gains `plug_stt()` / `unplug_stt()`, `plug_tts()` /
+  `unplug_tts()` and `plug_recording()` / `unplug_recording()`. Plugging a
+  need is a first need — the attach's occupancy probe is re-run, an occupied
+  conference is joined at once, and the tracks already published are
+  subscribed retroactively, so a meeting is transcribed from the plug
+  forward. Unplugging the last need takes the bot out (`conference_ended`
+  announced): the channel returns to pure transport, same channel, same
+  room. A plug refuses exactly what construction refuses (E2EE × stt,
+  E2EE × recording, an already-filled slot); unplugging an empty slot is a
+  no-op; an unplugged provider is closed under the existing
+  `close_providers` rule. The bot's derived grants now follow the
+  configuration in force at each join, and a change that widens what a live
+  session must do is applied in place through the new optional backend
+  surface `ConferenceBackend.update_bot_grants()` (capability
+  `ConferenceCapability.BOT_GRANT_UPDATE` — declared unconditionally by the
+  LiveKit backend, which implements it over `UpdateParticipant`), falling
+  back to an announced re-join on backends that cannot re-permission a
+  connected session. `info()` answers §17.7 with the configuration in
+  force, not the constructor's. The notetaker-on-demand flow is the use
+  case: see `examples/conference_notetaker_on_demand.py`.
+
 - **xAI (Grok) chat provider.** `XAIAIProvider` + `XAIConfig`
   (`pip install roomkit[xai]`) put Grok's text models on the same footing as
   every other AI provider. xAI serves the OpenAI Chat Completions API verbatim,
