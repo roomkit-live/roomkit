@@ -39,17 +39,56 @@ class BuzzProvider(BuzzRelayProvider):
         return "buzz"
 
     async def send(self, event: RoomEvent, to: str) -> ProviderResult:
-        """Post ``event`` to Buzz channel ``to`` (a relay channel UUID)."""
+        """Post ``event`` to Buzz channel ``to`` (a relay channel UUID).
+
+        ``channel_data.thread_id`` (the thread-root Nostr event id, as set by
+        the inbound parser) threads the message as a NIP-10 reply — the same
+        provider-native contract Discord and Teams use.
+        """
         client: Any = self._source.client
         if client is None:
             return ProviderResult(success=False, error="buzz_not_ready")
         text = extract_event_text(event)
         if not text:
             return ProviderResult(success=False, error="empty_message")
+        thread_id = event.channel_data.thread_id if event.channel_data else None
         try:
-            result = await client.send_message(to, text)
+            if thread_id:
+                result = await client.send_message(to, text, reply_to=thread_id)
+            else:
+                result = await client.send_message(to, text)
         except Exception as exc:
             logger.warning("Buzz send failed: %s", exc)
+            return ProviderResult(success=False, error=str(exc))
+        return ProviderResult(
+            success=bool(result.get("accepted", False)),
+            provider_message_id=result.get("event_id"),
+        )
+
+    async def send_reaction(self, target_event_id: str, emoji: str) -> ProviderResult:
+        """React to a relay event (kind 7) through the shared client."""
+        client: Any = self._source.client
+        if client is None:
+            return ProviderResult(success=False, error="buzz_not_ready")
+        try:
+            result = await client.react(target_event_id, emoji)
+        except Exception as exc:
+            logger.warning("Buzz reaction failed: %s", exc)
+            return ProviderResult(success=False, error=str(exc))
+        return ProviderResult(
+            success=bool(result.get("accepted", False)),
+            provider_message_id=result.get("event_id"),
+        )
+
+    async def remove_reaction(self, reaction_event_id: str) -> ProviderResult:
+        """Retract our own reaction (kind 5) through the shared client."""
+        client: Any = self._source.client
+        if client is None:
+            return ProviderResult(success=False, error="buzz_not_ready")
+        try:
+            result = await client.remove_reaction(reaction_event_id)
+        except Exception as exc:
+            logger.warning("Buzz reaction removal failed: %s", exc)
             return ProviderResult(success=False, error=str(exc))
         return ProviderResult(
             success=bool(result.get("accepted", False)),

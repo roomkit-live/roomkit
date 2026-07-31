@@ -19,7 +19,16 @@ class MockBuzzProvider(BuzzRelayProvider):
 
     def __init__(self) -> None:
         self.sent: list[dict[str, Any]] = []
+        self.reactions: list[dict[str, Any]] = []
 
     async def send(self, event: RoomEvent, to: str) -> ProviderResult:
         self.sent.append({"event": event, "to": to})
+        return ProviderResult(success=True, provider_message_id=uuid4().hex)
+
+    async def send_reaction(self, target_event_id: str, emoji: str) -> ProviderResult:
+        self.reactions.append({"action": "add", "target": target_event_id, "emoji": emoji})
+        return ProviderResult(success=True, provider_message_id=uuid4().hex)
+
+    async def remove_reaction(self, reaction_event_id: str) -> ProviderResult:
+        self.reactions.append({"action": "remove", "target": reaction_event_id})
         return ProviderResult(success=True, provider_message_id=uuid4().hex)

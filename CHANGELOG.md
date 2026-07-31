@@ -5,6 +5,48 @@ All notable changes to RoomKit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Buzz: threaded replies (NIP-10).** The inbound parser reads a message's
+  NIP-10 `e`-tags and sets `InboundMessage.thread_id` to the thread root
+  (plus `metadata["nostr_reply_to"]` for the immediate parent), and
+  `BuzzProvider.send` threads outbound messages under
+  `channel_data.thread_id` via `send_message(..., reply_to=...)` — the same
+  provider-native threading contract Discord and Teams use.
+
+- **Buzz: reactions.** `BuzzRelaySource(on_event=...)` surfaces NIP-25
+  reactions (kind 7 → `action: "add"`) and their retractions (kind 5 →
+  `action: "remove"`) as normalised dicts outside the message pipeline —
+  matching the Discord/WhatsApp-personal reaction contract — and widens the
+  default subscription to kinds 9 + 7 + 5. Outbound,
+  `BuzzRelayProvider.send_reaction(target_event_id, emoji)` /
+  `remove_reaction(reaction_event_id)` publish through the shared client
+  (`MockBuzzProvider` records them). New pure helper `parse_buzz_reaction`
+  and kind constants `KIND_STREAM_MESSAGE` / `KIND_REACTION` /
+  `KIND_DELETION` in `roomkit.sources.buzz`.
+
+- **Buzz: `BuzzConfig.leave_on_stop`.** Opt-in NIP-29 leave (kind 9022) when
+  the source stops. Off by default: on a private channel the membership was
+  granted by an admin and self-join cannot get it back, so leaving on every
+  shutdown would lock the agent out.
+
+### Changed
+
+- **Buzz: graceful relay restarts reconnect quietly.** The source checks
+  `BuzzClient.close_code` — a 1012 close (relay restart) reconnects at the
+  initial backoff with an INFO log instead of counting as an error; replayed
+  events were already deduped by id.
+
+- **Buzz: presence heartbeat every 30 s (was 55 s).** Relays at buzz >= 0.5.x
+  hold presence for a 180 s TTL and expect a beat every 60 s; older relays
+  used 90 s / 30 s. 30 s is the cadence buzzkit documents as safe on both.
+
+- The `buzz` extra now requires `buzzkit>=0.2.1` (reply threading, reactions,
+  `close_code`, kind-9022 leave; 0.2.1 surfaces the HTTP bridge's error body
+  on rejected sends).
+
 ## [0.38.0] — 2026-07-31
 
 ### Added

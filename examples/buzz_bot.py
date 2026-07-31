@@ -4,6 +4,13 @@ One ``buzzkit.BuzzClient`` is owned by the source (inbound: NIP-42 auth +
 real-time subscribe) and reused by the provider for outbound sends — one Nostr
 identity, both directions.
 
+Demonstrates the buzzkit 0.2.x surface:
+- **Threaded echo** — the reply carries ``channel_data.thread_id`` (the NIP-10
+  thread root), so it lands in the sender's thread instead of top-level.
+- **Reactions** — every inbound message gets a 👀 reaction; reactions from
+  other members are surfaced through the source's ``on_event`` callback,
+  outside the message pipeline (same contract as Discord and WhatsApp).
+
 Setup:
     The agent's Nostr key must be a member of the target Buzz community. Create
     an invite in the Buzz app (Community > Members > Create invite link) and
@@ -11,7 +18,7 @@ Setup:
     the channel UUID.
 
 Requires:
-    pip install roomkit[buzz]
+    pip install roomkit[buzz]  (buzzkit>=0.2.1)
 
 Run with:
     BUZZ_RELAY_URL=wss://your-community.communities.buzz.xyz \
@@ -42,7 +49,7 @@ from roomkit import (
     TextContent,
 )
 from roomkit.models.enums import ChannelType
-from roomkit.models.event import EventSource
+from roomkit.models.event import ChannelData, EventSource
 from roomkit.providers.buzz import BuzzConfig, BuzzProvider
 from roomkit.sources.buzz import BuzzRelaySource
 
@@ -55,8 +62,18 @@ async def main() -> None:
     relay_channel_id = env["BUZZ_CHANNEL_ID"]
 
     # --- Source + Provider + Channel -----------------------------------------
+    # ``on_event`` receives reaction add/remove dicts out of band; providing it
+    # widens the subscription to kinds 9 + 7 + 5.
+    def on_relay_event(data: dict) -> None:
+        logger.info("Reaction %s by %s: %s", data["action"], data["user_id"][:8], data)
+
     config = BuzzConfig(relay_url=env["BUZZ_RELAY_URL"], private_key=env["BUZZ_NSEC"])
-    source = BuzzRelaySource(config, channel_id=channel_id, relay_channel_id=relay_channel_id)
+    source = BuzzRelaySource(
+        config,
+        channel_id=channel_id,
+        relay_channel_id=relay_channel_id,
+        on_event=on_relay_event,
+    )
     provider = BuzzProvider(source)
 
     kit = RoomKit()
@@ -66,7 +83,7 @@ async def main() -> None:
         "buzz-echo", channel_id, metadata={"buzz_channel_id": relay_channel_id}
     )
 
-    # --- Echo hook — reply in the same Buzz channel --------------------------
+    # --- Echo hook — threaded reply + reaction in the same Buzz channel ------
     # The source drops the agent's own events, so echoing never loops.
     @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC, name="echo_reply")
     async def echo_reply(event: RoomEvent, ctx: RoomContext) -> HookResult:
@@ -74,7 +91,16 @@ async def main() -> None:
         content = event.content
         if isinstance(content, TextContent):
             logger.info("[%s] %s", event.source.participant_id, content.body)
-            await provider.send(_reply(f"echo: {content.body}"), to=buzz_channel)
+            # React to the message, then echo INTO its thread: the thread root
+            # is the inbound message's existing thread (channel_data.thread_id)
+            # or the message itself when it was top-level.
+            nostr_id = event.source.external_id
+            if nostr_id:
+                await provider.send_reaction(nostr_id, "👀")
+            thread_root = (event.channel_data.thread_id or nostr_id) if nostr_id else None
+            await provider.send(
+                _reply(f"echo: {content.body}", thread_root=thread_root), to=buzz_channel
+            )
         return HookResult.allow()
 
     # --- Attach and run ------------------------------------------------------
@@ -86,12 +112,17 @@ async def main() -> None:
     await run_until_stopped(kit)
 
 
-def _reply(text: str) -> RoomEvent:
-    """Build a minimal outbound RoomEvent carrying ``text``."""
+def _reply(text: str, *, thread_root: str | None = None) -> RoomEvent:
+    """Build a minimal outbound RoomEvent carrying ``text``.
+
+    ``thread_root`` (a Nostr event id) threads the message under that root —
+    the provider reads ``channel_data.thread_id``, same as Discord/Teams.
+    """
     return RoomEvent(
         room_id="buzz-echo",
         source=EventSource(channel_id="buzz-main", channel_type=ChannelType.BUZZ),
         content=TextContent(body=text),
+        channel_data=ChannelData(thread_id=thread_root),
     )
 
 

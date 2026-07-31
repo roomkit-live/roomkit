@@ -28,3 +28,9 @@ class BuzzConfig(BaseModel):
     # the relay record the agent's owner. Generate it with the owner's key via
     # ``buzzkit.compute_auth_tag``. Requires buzzkit>=0.1.2.
     auth_tag: str | None = None
+    # Leave the channel (NIP-29 kind 9022) when the source stops. Off by
+    # default: on a private channel the membership was granted by an admin and
+    # self-join cannot get it back, so leaving on every shutdown would lock the
+    # agent out. Enable only for open channels where auto_join can re-enter.
+    # Requires buzzkit>=0.2.0.
+    leave_on_stop: bool = False
