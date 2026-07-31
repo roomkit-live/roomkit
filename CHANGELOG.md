@@ -232,7 +232,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     every closing budget — is refused with a clear error rather than run
     against a released resource (RFC §12.10.4).
 
-  See `examples/conference_fault_injection.py`,
+  See `examples/conference_quickstart.py` (the whole arrangement on the mock
+  backend, deterministic), `examples/conference_livekit.py` (the same against
+  a real LiveKit SFU), `examples/conference_fault_injection.py`,
   `examples/conference_identity_provenance.py`,
   `examples/conference_recording_result.py`, and RFC §12.10 for the
   contracts.

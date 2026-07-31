@@ -1,0 +1,488 @@
+"""A real conference: two humans, one bot, a LiveKit SFU.
+
+The mock quickstart (``conference_quickstart.py``) proves the wiring; this
+example is what you run to see the thing work. Your browser connects straight
+to the SFU — RoomKit is never in the media path between humans (RFC §12.10.1).
+It is the participant named "roomkit" that joins your meeting, subscribes to
+your microphone, transcribes what you say attributed to who said it, and
+publishes the AI's audio as its own track.
+
+Start a LiveKit dev server (dev credentials: ``devkey`` / ``secret``):
+
+    cat > livekit.yaml <<'EOF'
+    port: 7880
+    rtc:
+      tcp_port: 7881
+      udp_port: 7882
+      use_external_ip: false
+      node_ip: 127.0.0.1
+    EOF
+    docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \\
+        -e LIVEKIT_CONFIG="$(cat livekit.yaml)" \\
+        livekit/livekit-server --dev --bind 0.0.0.0
+
+Then run this script (``pip install roomkit[livekit]``):
+
+    uv run python examples/conference_livekit.py
+
+It prints one meeting URL per human — open each in a browser tab. Everything
+works without a single API key: the STT is stubbed (your real audio still
+crosses the resampler and the VAD, and the ATTRIBUTION is real) and the TTS is
+a 440 Hz beep (either you hear the bot or you don't, which is the question).
+Export ``DEEPGRAM_API_KEY`` and/or ``ELEVENLABS_API_KEY`` to use the real
+providers.
+
+The default energy-threshold VAD loses softly-spoken words and never closes an
+utterance over background noise. For real utterance boundaries, drop a neural
+VAD model next to this script (sherpa-onnx extra required; pin 1.13.3 — the
+1.13.4 macOS arm64 wheel is broken):
+
+    curl -sL https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/ten-vad.onnx \\
+        -o examples/models/ten-vad.onnx
+
+Resume mode (a restart over a live meeting): run once, keep a browser tab
+open, Ctrl-C here — the bot leaves, YOU stay — then:
+
+    ROOMKIT_RESUME=1 uv run python examples/conference_livekit.py
+
+In resume mode the script mints nothing and creates no participant: the only
+possible join trigger is the attach's occupancy probe (RFC §12.10.4 step 1),
+and the roster can only refill through the join's catch-up. The bot must come
+back, and the participants still in the meeting must reappear on the roster —
+rebuilt from scratch, in a fresh process, with no persistent store.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import math
+import os
+import sys
+from array import array
+from collections.abc import AsyncIterator
+from typing import Any
+from urllib.parse import quote
+
+from roomkit import RoomKit
+from roomkit.channels.base import Channel
+from roomkit.channels.conference import ConferenceChannel
+from roomkit.conference.livekit import LiveKitConferenceBackend, LiveKitConfig
+from roomkit.models.channel import ChannelBinding, ChannelOutput
+from roomkit.models.context import RoomContext
+from roomkit.models.delivery import InboundMessage
+from roomkit.models.enums import ChannelType, HookTrigger
+from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.voice.base import AudioChunk
+from roomkit.voice.pipeline.config import AudioPipelineConfig, AudioPipelineContract
+from roomkit.voice.tts.base import TTSProvider
+
+URL = os.getenv("ROOMKIT_LIVEKIT_URL", "ws://127.0.0.1:7880")
+API_KEY = os.getenv("ROOMKIT_LIVEKIT_API_KEY", "devkey")
+API_SECRET = os.getenv("ROOMKIT_LIVEKIT_API_SECRET", "secret")
+ROOM_ID = os.getenv("ROOMKIT_ROOM", "demo-meeting")
+RESUME = os.getenv("ROOMKIT_RESUME") == "1"
+
+SAMPLE_RATE = 48_000
+HUMANS = ("alice", "bob")
+
+
+class AISource(Channel):
+    """Stands in for an AIChannel, so the bot has something to say.
+
+    The conference speaks AI events aloud — that is the channel's rule, not
+    this script's: a meeting is not a place to read other channels' traffic
+    aloud. Here the "AI" is you, typing on stdin.
+    """
+
+    @property
+    def channel_type(self) -> ChannelType:
+        return ChannelType.AI
+
+    async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
+        return RoomEvent(
+            room_id=context.room.id,
+            source=EventSource(channel_id=self.channel_id, channel_type=ChannelType.AI),
+            content=message.content,
+        )
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        return ChannelOutput.empty()
+
+
+class BeepTTS(TTSProvider):
+    """A "synthesizer" that emits a 440 Hz beep. No key, no model.
+
+    It says nothing intelligible on purpose: the question it answers is "does
+    the audio the bot publishes reach an ear", not "is the voice pretty". The
+    duration follows the text's length so a long sentence is audible long
+    enough to talk over — that is what makes interruption testable by ear.
+    """
+
+    @property
+    def name(self) -> str:
+        return "beep"
+
+    async def synthesize(self, text: str, *, voice: str | None = None) -> Any:
+        raise NotImplementedError("BeepTTS only streams")
+
+    async def synthesize_stream(
+        self, text: str, *, voice: str | None = None
+    ) -> AsyncIterator[AudioChunk]:
+        frames = max(20, min(len(text) * 12, 1500))  # 200 ms to 15 s, in 10 ms steps
+        per_frame = SAMPLE_RATE // 100
+        for index in range(frames):
+            samples = array("h")
+            for n in range(per_frame):
+                position = index * per_frame + n
+                fade = min(1.0, (frames - index) / 10)  # avoid the closing click
+                samples.append(
+                    int(0.25 * 32767 * fade * math.sin(2 * math.pi * 440 * position / SAMPLE_RATE))
+                )
+            yield AudioChunk(
+                data=samples.tobytes(),
+                sample_rate=SAMPLE_RATE,
+                channels=1,
+                is_final=(index == frames - 1),
+            )
+            # No sleep here, deliberately. Pacing a 10 ms frame with
+            # asyncio.sleep(0.01) actually costs ~11 ms (scheduler
+            # granularity): production runs at 0.89x real time, the source's
+            # queue starves, and LiveKit plays silence between frames — it
+            # sounds choppy. The backend's backpressure (capture_frame
+            # blocking when its queue is full) is what sets the pace.
+
+
+def build_providers() -> tuple[Any, TTSProvider, list[str]]:
+    """Real providers when their keys are present, stubs otherwise.
+
+    The STT is not decorative: without one the channel consumes no audio
+    tracks, so it does not bring the bot in when you publish your microphone —
+    subscription is selective by design. A stubbed STT is enough to open the
+    door: the bot joins, subscribes, and your real audio crosses the resampler
+    and the VAD. Only the produced text is scripted.
+    """
+    notes: list[str] = []
+    if os.getenv("DEEPGRAM_API_KEY"):
+        from roomkit.voice.stt.deepgram import DeepgramConfig, DeepgramSTTProvider
+
+        # language= is not optional in practice: the provider's default is
+        # "en", and speaking anything else at it transcribes gibberish.
+        language = os.getenv("DEEPGRAM_LANGUAGE", "en")
+        stt: Any = DeepgramSTTProvider(
+            DeepgramConfig(api_key=os.environ["DEEPGRAM_API_KEY"], language=language)
+        )
+        notes.append(f"STT: Deepgram ({language}) — transcriptions will be real words")
+    else:
+        from roomkit.voice.stt.mock import MockSTTProvider
+
+        stt = MockSTTProvider(transcripts=["(stubbed text — set DEEPGRAM_API_KEY)"])
+        notes.append(
+            "STT: stub — the text is fake, but the bot joins, subscribes, and your\n"
+            "        real audio crosses the resampler and the VAD. The ATTRIBUTION is real."
+        )
+
+    if os.getenv("ELEVENLABS_API_KEY"):
+        from roomkit.voice.tts.elevenlabs import ElevenLabsConfig, ElevenLabsTTSProvider
+
+        tts: TTSProvider = ElevenLabsTTSProvider(
+            ElevenLabsConfig(api_key=os.environ["ELEVENLABS_API_KEY"])
+        )
+        notes.append("TTS: ElevenLabs (the bot will really speak)")
+    else:
+        tts = BeepTTS()
+        notes.append("TTS: 440 Hz beep — no key, but audibility tests the same")
+    return stt, tts, notes
+
+
+def build_vad(notes: list[str]) -> Any:
+    """The neural VAD when its model is around, calibrated energy otherwise.
+
+    The VAD is what answers "when does the audio go to the STT": nothing is
+    sent while you speak, the lane accumulates, and the whole utterance leaves
+    in one block once the VAD has seen silence_threshold_ms of consecutive
+    silence. The utterance boundary is the VAD's call.
+    """
+    model = os.getenv("VAD_MODEL") or os.path.join(
+        os.path.dirname(__file__), "models", "ten-vad.onnx"
+    )
+    if os.path.exists(model):
+        from roomkit.voice.pipeline.vad.sherpa_onnx import (
+            SherpaOnnxVADConfig,
+            SherpaOnnxVADProvider,
+        )
+
+        notes.append(f"VAD: TEN-VAD (sherpa-onnx), 700 ms silence — {os.path.basename(model)}")
+        # threshold 0.5: the provider's recommendation without a denoiser.
+        # silence 700 ms: conversational speech pauses longer than the 500 ms
+        # default — the knob to turn (500-800) if your sentences get cut short
+        # or drag on.
+        return SherpaOnnxVADProvider(
+            SherpaOnnxVADConfig(model=model, threshold=0.5, silence_threshold_ms=700)
+        )
+
+    from roomkit.voice.pipeline.vad.energy import EnergyVADProvider
+
+    notes.append(
+        "VAD: energy (RMS) — fallback. For real utterance boundaries:\n"
+        "        curl -sL https://github.com/k2-fsa/sherpa-onnx/releases/download/"
+        "asr-models/ten-vad.onnx -o examples/models/ten-vad.onnx"
+    )
+    return EnergyVADProvider(silence_threshold_ms=700)
+
+
+def meet_url(access: Any) -> str:
+    """The LiveKit web client's URL, pre-filled with the minted credential."""
+    return (
+        "https://meet.livekit.io/custom"
+        f"?liveKitUrl={quote(access.url, safe='')}&token={quote(access.token, safe='')}"
+    )
+
+
+async def show_conference_state(kit: RoomKit, conference: ConferenceChannel, backend: Any) -> None:
+    """The full conference state, through the three APIs a UI would read.
+
+    Three different authorities, deliberately not one aggregate call:
+
+    1. ``backend.list_participants()`` — MEDIA presence, the SFU's truth: who
+       is connected, since when, with which tracks (kind, mute) and which
+       metadata the SFU asserts (a dial-in carries its number here).
+    2. ``kit.store.list_participants()`` — the room ROSTER RoomKit keeps:
+       role, status, identification, resolved identity. In resume mode it was
+       rebuilt by the join's catch-up (RFC §12.10.3) into a store born empty.
+    3. ``conference.info()`` — the RFC §17.7 DISCLOSURE: the bot (present,
+       session, hidden) and what is being done with the media — collection,
+       STT active, recording active — at the moment you ask.
+    """
+    deadline = asyncio.get_running_loop().time() + 15.0
+    roster = await kit.store.list_participants(ROOM_ID)
+    while not roster and asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.5)
+        roster = await kit.store.list_participants(ROOM_ID)
+
+    info = conference.info()
+    bot_identity = info["bot_identity"]
+
+    print("\n" + "-" * 74)
+    print("  1) MEDIA PRESENCE — backend.list_participants() (the SFU's truth)")
+    for p in await backend.list_participants(ROOM_ID):
+        tag = " (the channel's bot)" if p.participant_id == bot_identity else ""
+        print(
+            f"    * {p.participant_id}{tag} — shown as {p.display_name or '(no name)'!r}"
+            f" — connected since {p.connected_at:%H:%M:%S}"
+        )
+        for track in p.tracks:
+            state = "muted" if track.muted else "open"
+            print(f"        {track.kind.value} track [{state}] id={track.id}")
+
+    print("\n  2) ROOM ROSTER — kit.store.list_participants() (RoomKit's records)")
+    for r in roster:
+        print(
+            f"    * {r.id} — role {r.role.value}, status {r.status.value},"
+            f" identification {r.identification.value}"
+        )
+        print(f"        display: {r.display_name or '-'}, joined at {r.joined_at:%H:%M:%S}")
+
+    print("\n  3) RFC §17.7 DISCLOSURE — conference.info()")
+    print(
+        f"    backend {info['backend']!r}, bot {bot_identity!r}"
+        f" (hidden: {info['bot_hidden']}), stt {info['stt_provider'] or 'none'},"
+        f" recording configured: {info['recording_configured']}"
+    )
+    for key, value in (info["rooms"].get(ROOM_ID) or {}).items():
+        print(f"    {key}: {value}")
+    print("-" * 74)
+
+
+async def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(name)s: %(message)s")
+
+    stt, tts, notes = build_providers()
+    vad = build_vad(notes)
+    backend = LiveKitConferenceBackend(
+        LiveKitConfig(url=URL, api_key=API_KEY, api_secret=API_SECRET)
+    )
+    kit = RoomKit()
+    conference = ConferenceChannel(
+        "conf",
+        backend=backend,
+        stt=stt,
+        tts=tts,
+        # Without pipeline= the channel builds an energy VAD by default; the
+        # contract stays either way — it is the format normalization
+        # (48 kHz browser stereo -> 16 kHz mono STT).
+        pipeline=AudioPipelineConfig(vad=vad, contract=AudioPipelineContract()),
+    )
+    kit.register_channel(conference)
+    kit.register_channel(AISource("ai"))
+
+    # What the bot heard, attributed. source.participant_id is the identity
+    # the lane attributed the voice to — it must say alice or bob, never
+    # "unknown", never the other one.
+    @kit.hook(HookTrigger.AFTER_BROADCAST)
+    async def heard(event: Any, ctx: Any) -> None:
+        body = getattr(event.content, "body", None)
+        if not body:
+            return
+        who = event.source.participant_id or "-"
+        origin = "typed" if event.source.channel_id == "ai" else "HEARD"
+        print(f"\n  [{origin} * {who}] {body}\n> ", end="", flush=True)
+
+    # The VAD's speech edges, per participant and track: the real-time
+    # "X started / X finished", without waiting for the STT round-trip.
+    @kit.hook(HookTrigger.ON_SPEECH_START)
+    async def speech_start(event: Any, ctx: Any) -> None:
+        who = event.content.data.get("participant_id", "?")
+        print(f"\n  [speech] {who} starts speaking\n> ", end="", flush=True)
+
+    @kit.hook(HookTrigger.ON_SPEECH_END)
+    async def speech_end(event: Any, ctx: Any) -> None:
+        who = event.content.data.get("participant_id", "?")
+        print(f"\n  [speech] {who} finished\n> ", end="", flush=True)
+
+    # The SFU's dominant speaker — server-side energy detection, no track
+    # subscription needed. It cannot say that nobody is speaking; the end of a
+    # turn is the VAD's ON_SPEECH_END above.
+    @kit.hook(HookTrigger.ON_ACTIVE_SPEAKER_CHANGED)
+    async def speaking(event: Any, ctx: Any) -> None:
+        who = event.content.data.get("participant_id", "?")
+        print(f"\n  [speech] {who} is speaking\n> ", end="", flush=True)
+
+    # Connection quality as the SFU sees it — a management UI's quality bars.
+    # The bot itself is included: this is the notetaker's own health signal.
+    @kit.hook(HookTrigger.ON_CONNECTION_QUALITY_CHANGED)
+    async def network(event: Any, ctx: Any) -> None:
+        data = event.content.data
+        print(
+            f"\n  [network] {data.get('participant_id', '?')}: {data.get('quality', '?')}\n> ",
+            end="",
+            flush=True,
+        )
+
+    # Mute/unmute per track, kind included: a muted VIDEO track is how most
+    # clients say "camera off" — microphone and camera indicators both read
+    # from this pair. No subscription required.
+    kinds = {"audio": "microphone", "video": "camera", "screen_share": "screen share"}
+
+    @kit.hook(HookTrigger.ON_CONFERENCE_TRACK_MUTED)
+    async def track_muted(event: Any, ctx: Any) -> None:
+        data = event.content.data
+        what = kinds.get(data.get("kind", ""), "track")
+        print(
+            f"\n  [media] {data.get('participant_id', '?')} mutes {what}\n> ", end="", flush=True
+        )
+
+    @kit.hook(HookTrigger.ON_CONFERENCE_TRACK_UNMUTED)
+    async def track_unmuted(event: Any, ctx: Any) -> None:
+        data = event.content.data
+        what = kinds.get(data.get("kind", ""), "track")
+        print(
+            f"\n  [media] {data.get('participant_id', '?')} unmutes {what}\n> ", end="", flush=True
+        )
+
+    @kit.hook(HookTrigger.ON_CONFERENCE_TRACK_PUBLISHED)
+    async def track_on(event: Any, ctx: Any) -> None:
+        data = event.content.data
+        what = kinds.get(data.get("kind", ""), "track")
+        print(
+            f"\n  [media] {data.get('participant_id', '?')} publishes {what}\n> ",
+            end="",
+            flush=True,
+        )
+
+    @kit.hook(HookTrigger.ON_SCREEN_SHARE_STARTED)
+    async def screen_on(event: Any, ctx: Any) -> None:
+        who = event.content.data.get("participant_id", "?")
+        print(f"\n  [media] {who} shares their screen\n> ", end="", flush=True)
+
+    @kit.hook(HookTrigger.ON_SCREEN_SHARE_STOPPED)
+    async def screen_off(event: Any, ctx: Any) -> None:
+        who = event.content.data.get("participant_id", "?")
+        print(f"\n  [media] {who} stops sharing\n> ", end="", flush=True)
+
+    # Roster movements, live. Registered BEFORE the attach: in resume mode the
+    # join started by the occupancy probe redelivers the humans still
+    # connected within its first seconds (the catch-up, RFC §12.10.3), and a
+    # listener registered after the attach would miss them.
+    @kit.on("conference_started")
+    async def bot_in(event: Any) -> None:
+        print(f"\n  [roster] bot joined (session {event.data.get('bot_session_id', '?')})")
+
+    @kit.on("conference_ended")
+    async def bot_out(event: Any) -> None:
+        print(f"\n  [roster] bot left (after {event.data.get('duration_ms', '?')} ms)")
+
+    @kit.on("conference_participant_joined")
+    async def human_in(event: Any) -> None:
+        print(f"\n  [roster] + {event.data.get('participant_id', '?')}")
+
+    @kit.on("conference_participant_left")
+    async def human_out(event: Any) -> None:
+        print(f"\n  [roster] - {event.data.get('participant_id', '?')}")
+
+    room = await kit.create_room(ROOM_ID)
+    await kit.attach_channel(room.id, "conf")
+    await kit.attach_channel(room.id, "ai")
+
+    print("\n" + "=" * 74)
+    for note in notes:
+        print(f"  {note}")
+    print("=" * 74)
+
+    if RESUME:
+        print("""
+RESUME MODE (no mint, no participant created by this process). The only
+possible join trigger is the attach's occupancy probe — the INFO log
+"found N participant(s) already in ... at attach" above names it. In the tab
+you kept open, "roomkit" must be back without anyone having spoken, minted or
+clicked; speak, and [HEARD * ...] must still attribute you correctly.
+""")
+        await show_conference_state(kit, conference, backend)
+    else:
+        print("\nOpen BOTH links, each in its own tab (or one on your phone):\n")
+        for human in HUMANS:
+            # Access is minted for a ROOM participant (RFC §12.10.2): that is
+            # what gives transcriptions and hooks someone to attribute speech
+            # to. The mint is also the lazy join's trigger — by the time you
+            # open the tab, "roomkit" is already on the participant list.
+            await kit.ensure_participant(room.id, "conf", human, display_name=human.capitalize())
+            access = await conference.mint_access(room.id, human)
+            print(f"  - {human}:\n    {meet_url(access)}\n")
+        print("=" * 74)
+        print("""
+What to check, in order:
+
+  1. THE BOT IS IN   - open a tab: "roomkit" must ALREADY be on the
+                       participant list. The mint brought it in, not a word.
+  2. IT HEARS YOU    - speak. A [HEARD * alice] line must appear HERE, with
+                       the RIGHT identity — never "unknown", never the other.
+  3. YOU HEAR IT     - type a sentence + Enter. It must sound in both tabs.
+  4. INTERRUPTION    - type a long sentence, then talk over it. It stops.
+  5. TEARDOWN        - Ctrl-C here: "roomkit" must vanish from both tabs.
+  6. RESUME          - keep a tab open and rerun with ROOMKIT_RESUME=1.
+
+Type a sentence to make the bot speak, or Ctrl-C to end.
+""")
+
+    loop = asyncio.get_running_loop()
+    try:
+        while True:
+            line = await loop.run_in_executor(None, sys.stdin.readline)
+            if not line:
+                break
+            if text := line.strip():
+                await kit.send_event(room.id, "ai", TextContent(body=text))
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        pass
+    finally:
+        print("\nBot leaving...")
+        await kit.close()
+        print("Done. Check the tabs: 'roomkit' must be gone.")
+
+
+if __name__ == "__main__":
+    with contextlib.suppress(KeyboardInterrupt):
+        asyncio.run(main())

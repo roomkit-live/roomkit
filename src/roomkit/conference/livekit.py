@@ -19,7 +19,7 @@ Requires the ``livekit`` optional dependency::
 
 Usage::
 
-    from roomkit.channels import ConferenceChannel
+    from roomkit import ConferenceChannel
     from roomkit.conference.livekit import LiveKitConfig, LiveKitConferenceBackend
 
     backend = LiveKitConferenceBackend(
