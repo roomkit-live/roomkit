@@ -161,7 +161,10 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
             client,
             self._config.agent_id,
             requires_auth=self._config.requires_auth,
-            audio_interface=bridge,
+            # The SDK types this parameter nominally; the bridge implements
+            # the full AsyncAudioInterface contract structurally (see its
+            # docstring for why it cannot subclass the optional SDK's ABC).
+            audio_interface=bridge,  # ty: ignore[invalid-argument-type]
             config=init_config,
             callback_agent_response=self._make_agent_response_cb(session),
             callback_agent_response_correction=self._make_correction_cb(session),
@@ -307,8 +310,12 @@ class ElevenLabsRealtimeProvider(RealtimeVoiceProvider):
 class _AsyncBridgeAudioInterface:
     """Bridges the ElevenLabs SDK's AsyncAudioInterface to RoomKit callbacks.
 
-    All methods are async, matching the SDK's ``AsyncAudioInterface`` contract.
-    Runs in the same event loop as the rest of RoomKit — no thread bridging.
+    Implements the SDK's ``AsyncAudioInterface`` contract structurally —
+    ``start``, ``stop``, ``output``, ``interrupt``, all async — without
+    subclassing it: the SDK is an optional dependency this module must stay
+    importable without, and importing it at module scope trips the
+    deprecated-websockets warning its own import raises. Runs in the same
+    event loop as the rest of RoomKit — no thread bridging.
     """
 
     def __init__(

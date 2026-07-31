@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import (
@@ -370,7 +370,13 @@ class WhatsAppPersonalSourceProvider(BaseSourceProvider):
             DeviceProps,
         )
 
-        platform_type = self.PLATFORMS.get(self._device_platform, DeviceProps.CHROME)
+        # The stub types the field as a NewType over int with no runtime
+        # constructor (protobuf keeps `ValueType` stub-only), so the honest
+        # spelling of "this int is one of the enum's values" is a cast.
+        platform_type = cast(
+            "DeviceProps.PlatformType.ValueType",
+            self.PLATFORMS.get(self._device_platform, DeviceProps.CHROME),
+        )
         props = DeviceProps(os=self._device_name, platformType=platform_type)
         client = NewAClient(self._db, props=props)
         self._client = client
