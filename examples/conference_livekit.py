@@ -32,6 +32,15 @@ a 440 Hz beep (either you hear the bot or you don't, which is the question).
 Export ``DEEPGRAM_API_KEY`` and/or ``ELEVENLABS_API_KEY`` to use the real
 providers.
 
+Export ``ANTHROPIC_API_KEY`` as well and the loop closes for real: a live
+``AIChannel`` answers what the meeting says — you speak, the model reads the
+attributed transcription like any other RoomEvent, and the bot says the answer
+on its own track (STT -> LLM -> TTS, no extra wiring; the deterministic
+version of this loop is ``conference_ai_meeting.py``). Typed text then becomes
+a silent prompt to the model instead of the bot's script. All three keys
+together make it a conversation; without the AI key, what you type is what
+the bot says.
+
 The default energy-threshold VAD loses softly-spoken words and never closes an
 utterance over background noise. For real utterance boundaries, drop a neural
 VAD model next to this script (sherpa-onnx extra required; pin 1.13.3 — the
@@ -88,22 +97,30 @@ SAMPLE_RATE = 48_000
 HUMANS = ("alice", "bob")
 
 
-class AISource(Channel):
-    """Stands in for an AIChannel, so the bot has something to say.
+class TextSource(Channel):
+    """A channel that turns stdin lines into room events.
 
-    The conference speaks AI events aloud — that is the channel's rule, not
-    this script's: a meeting is not a place to read other channels' traffic
-    aloud. Here the "AI" is you, typing on stdin.
+    Its type decides what the conference does with them, because the
+    conference speaks only AI-typed events aloud — that is the channel's rule,
+    not this script's: a meeting is not a place to read other channels'
+    traffic aloud. As ``ChannelType.AI`` this stands in for an AIChannel and
+    what you type is what the bot says; as any other type (the real-AI mode
+    below) it is a silent inlet — what you type prompts the model instead of
+    being read out.
     """
+
+    def __init__(self, channel_id: str, *, channel_type: ChannelType = ChannelType.AI) -> None:
+        super().__init__(channel_id)
+        self._channel_type = channel_type
 
     @property
     def channel_type(self) -> ChannelType:
-        return ChannelType.AI
+        return self._channel_type
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         return RoomEvent(
             room_id=context.room.id,
-            source=EventSource(channel_id=self.channel_id, channel_type=ChannelType.AI),
+            source=EventSource(channel_id=self.channel_id, channel_type=self._channel_type),
             content=message.content,
         )
 
@@ -196,6 +213,35 @@ def build_providers() -> tuple[Any, TTSProvider, list[str]]:
         tts = BeepTTS()
         notes.append("TTS: 440 Hz beep — no key, but audibility tests the same")
     return stt, tts, notes
+
+
+def build_ai(notes: list[str]) -> Any | None:
+    """The real intelligence when its key is present, nothing otherwise.
+
+    This is the whole STT -> LLM -> TTS wiring: registering the AIChannel *is*
+    the loop. Transcriptions are RoomEvents (RFC §12.10.1 principle 2), the
+    model answers them like any other room traffic, and the conference speaks
+    AI events on the bot's track. See examples/conference_ai_meeting.py for
+    the same loop deterministic on the mock backend.
+    """
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        notes.append(
+            "AI: none — the bot does not answer; what you type is what it says\n"
+            "        (set ANTHROPIC_API_KEY to talk WITH the bot instead)"
+        )
+        return None
+    from roomkit.channels.ai import AIChannel
+    from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
+
+    notes.append("AI: Anthropic — speak to the meeting and the bot answers out loud")
+    return AIChannel(
+        "ai",
+        provider=AnthropicAIProvider(AnthropicConfig(api_key=os.environ["ANTHROPIC_API_KEY"])),
+        system_prompt=(
+            "You are the meeting's voice assistant. Answer briefly — one or two "
+            "spoken sentences — in the language you are addressed in."
+        ),
+    )
 
 
 def build_vad(notes: list[str]) -> Any:
@@ -302,6 +348,7 @@ async def main() -> None:
 
     stt, tts, notes = build_providers()
     vad = build_vad(notes)
+    ai = build_ai(notes)
     backend = LiveKitConferenceBackend(
         LiveKitConfig(url=URL, api_key=API_KEY, api_secret=API_SECRET)
     )
@@ -317,7 +364,17 @@ async def main() -> None:
         pipeline=AudioPipelineConfig(vad=vad, contract=AudioPipelineContract()),
     )
     kit.register_channel(conference)
-    kit.register_channel(AISource("ai"))
+    if ai is not None:
+        # The real loop: the model answers what the meeting says, and stdin
+        # becomes a silent side-inlet to it — typed text prompts the model
+        # without being read aloud (a non-AI source is not spoken).
+        kit.register_channel(ai)
+        typed = TextSource("host", channel_type=ChannelType.WEBSOCKET)
+    else:
+        # No key: stdin stands in for the AI, and what you type is what the
+        # bot says.
+        typed = TextSource("ai")
+    kit.register_channel(typed)
 
     # What the bot heard, attributed. source.participant_id is the identity
     # the lane attributed the voice to — it must say alice or bob, never
@@ -328,7 +385,12 @@ async def main() -> None:
         if not body:
             return
         who = event.source.participant_id or "-"
-        origin = "typed" if event.source.channel_id == "ai" else "HEARD"
+        if event.source.channel_id == typed.channel_id:
+            origin = "typed"
+        elif event.source.channel_id == "ai":
+            origin = "AI"
+        else:
+            origin = "HEARD"
         print(f"\n  [{origin} * {who}] {body}\n> ", end="", flush=True)
 
     # The VAD's speech edges, per participant and track: the real-time
@@ -425,7 +487,9 @@ async def main() -> None:
 
     room = await kit.create_room(ROOM_ID)
     await kit.attach_channel(room.id, "conf")
-    await kit.attach_channel(room.id, "ai")
+    if ai is not None:
+        await kit.attach_channel(room.id, "ai")
+    await kit.attach_channel(room.id, typed.channel_id)
 
     print("\n" + "=" * 74)
     for note in notes:
@@ -452,7 +516,26 @@ clicked; speak, and [HEARD * ...] must still attribute you correctly.
             access = await conference.mint_access(room.id, human)
             print(f"  - {human}:\n    {meet_url(access)}\n")
         print("=" * 74)
-        print("""
+        if ai is not None:
+            print("""
+What to check, in order:
+
+  1. THE BOT IS IN   - open a tab: "roomkit" must ALREADY be on the
+                       participant list. The mint brought it in, not a word.
+  2. IT HEARS YOU    - speak. A [HEARD * alice] line must appear HERE, with
+                       the RIGHT identity — never "unknown", never the other.
+  3. IT ANSWERS YOU  - keep talking: an [AI * -] line appears and the bot
+                       SAYS it in both tabs. This is the whole loop — lane,
+                       transcription, AIChannel, TTS, bot track.
+  4. TEXT PROMPTS    - type a sentence + Enter: it is NOT read aloud (silent
+                       inlet), the model answers it out loud instead.
+  5. INTERRUPTION    - talk over the bot mid-answer. It stops.
+  6. TEARDOWN        - Ctrl-C here: "roomkit" must vanish from both tabs.
+
+Type to prompt the bot silently, speak to converse, Ctrl-C to end.
+""")
+        else:
+            print("""
 What to check, in order:
 
   1. THE BOT IS IN   - open a tab: "roomkit" must ALREADY be on the
@@ -474,7 +557,7 @@ Type a sentence to make the bot speak, or Ctrl-C to end.
             if not line:
                 break
             if text := line.strip():
-                await kit.send_event(room.id, "ai", TextContent(body=text))
+                await kit.send_event(room.id, typed.channel_id, TextContent(body=text))
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass
     finally:

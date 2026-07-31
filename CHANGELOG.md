@@ -285,7 +285,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   See `examples/conference_quickstart.py` (the whole arrangement on the mock
   backend, deterministic), `examples/conference_livekit.py` (the same against
-  a real LiveKit SFU), `examples/conference_fault_injection.py`,
+  a real LiveKit SFU — with `ANTHROPIC_API_KEY`, a live AIChannel answers the
+  meeting out loud), `examples/conference_ai_meeting.py` (the STT → LLM → TTS
+  loop deterministic on the mock: the AI answers a spoken question, BEFORE_TTS
+  holds an answer back, and both anti-loop protections are measured),
+  `examples/conference_notetaker_on_demand.py`,
+  `examples/conference_fault_injection.py`,
   `examples/conference_identity_provenance.py`,
   `examples/conference_recording_result.py`, and RFC §12.10 for the
   contracts.
