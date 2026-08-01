@@ -13,10 +13,11 @@ logger = logging.getLogger("roomkit.channels.ai")
 
 _MAX_EVICTED = 50
 
-# Chars reserved per read_stored_result page for the JSON envelope plus a
-# margin, so worst-case escaping of the content still leaves the page under
-# the re-eviction bound (4 * threshold_tokens chars). See handle_read.
-_PAGE_ENVELOPE_CHARS = 128
+# Chars reserved per read_stored_result page for the JSON envelope — fixed
+# keys plus the partial-page warning prose (~350 chars escaped, worst case) —
+# and a margin, so worst-case escaping of the content still leaves the page
+# under the re-eviction bound (4 * threshold_tokens chars). See handle_read.
+_PAGE_ENVELOPE_CHARS = 512
 
 
 class ToolEviction:
@@ -120,16 +121,25 @@ class ToolEviction:
             used += len(line) + 1
 
         has_more = (offset + len(page)) < total_lines
-        return json.dumps(
-            {
-                "content": "\n".join(page),
-                "offset": offset,
-                "lines_returned": len(page),
-                "total_lines": total_lines,
-                "has_more": has_more,
-                "next_offset": offset + len(page) if has_more else None,
-            }
-        )
+        envelope: dict[str, Any] = {
+            "content": "\n".join(page),
+            "offset": offset,
+            "lines_returned": len(page),
+            "total_lines": total_lines,
+            "has_more": has_more,
+            "next_offset": offset + len(page) if has_more else None,
+        }
+        if has_more:
+            # Small models read `content` and skip the pagination fields, then
+            # assert "X is not in the result" off one page. Make the partiality
+            # impossible to miss and the consequence explicit.
+            envelope["warning"] = (
+                f"PARTIAL CONTENT — lines {offset + 1}-{offset + len(page)} of "
+                f"{total_lines}. Never conclude that something is absent or that "
+                f"this is the complete result until you have read EVERY page; "
+                f"continue with offset={offset + len(page)}."
+            )
+        return json.dumps(envelope)
 
     @staticmethod
     def _paginable_lines(text: str, budget: int) -> list[str]:

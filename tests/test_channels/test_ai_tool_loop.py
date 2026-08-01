@@ -400,6 +400,27 @@ class TestEvictedResultReading:
         assert out["has_more"] is True
         assert out["next_offset"] == 15
 
+    def test_partial_page_carries_explicit_warning_final_page_does_not(self) -> None:
+        """A partial page must warn in prose — small models skip the bare
+        pagination fields and conclude absence from one page; the final page
+        must NOT warn (a spurious warning would send the model looping)."""
+        provider = MockAIProvider()
+        ch = AIChannel("ai1", provider=provider, evict_threshold_tokens=5000)
+        large = "\n".join(f"line {i} " + "x" * 50 for i in range(500))
+        ch._maybe_truncate_result(large, "tc1")
+
+        partial = json.loads(
+            ch._eviction.handle_read({"result_id": "evicted_tc1", "offset": 0, "limit": 5})
+        )
+        assert "Never conclude" in partial["warning"]
+        assert "offset=5" in partial["warning"]
+
+        final = json.loads(
+            ch._eviction.handle_read({"result_id": "evicted_tc1", "offset": 495, "limit": 5})
+        )
+        assert final["has_more"] is False
+        assert "warning" not in final
+
 
 class TestContextOverflowRecovery:
     async def test_overflow_triggers_compaction(self) -> None:
