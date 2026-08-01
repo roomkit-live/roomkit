@@ -180,6 +180,9 @@ class ToolCallContent(BaseModel):
     status: Literal["pending", "completed", "failed"] = "pending"
     duration_ms: int | None = None
     error: str | None = None
+    # MCP CallToolResult.structuredContent, captured before large-result
+    # eviction rewrote ``result`` — UI surfaces read their data from it.
+    structured_content: dict[str, Any] | None = None
 
 
 EventContent = Annotated[

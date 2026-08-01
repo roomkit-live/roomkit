@@ -76,6 +76,11 @@ class AIToolResultPart(BaseModel):
     tool_call_id: str
     name: str
     result: str | list[AITextPart | AIImagePart]
+    # MCP CallToolResult.structuredContent, captured before the LLM-facing
+    # string is flattened and possibly evicted. Never rendered to providers —
+    # it rides the part so tool-call events can hand it to UI surfaces
+    # (MCP Apps widgets) verbatim.
+    structured_content: dict[str, Any] | None = None
 
     def as_text(self) -> str:
         """Flatten the result to plain text for providers without image support.

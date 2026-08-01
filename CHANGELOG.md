@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP: `structuredContent` survives result flattening and eviction.**
+  `MCPToolProvider.call_tool` publishes a successful call's
+  `CallToolResult.structuredContent` (dict, ≤512KB serialized) on the active
+  `ToolCallContext`, and the AI channel carries it through
+  `AIToolResultPart` → `ToolCallEndMarker` → `ToolCallContent.structured_content`
+  on both the streaming and non-streaming paths. The LLM-facing string is
+  unchanged (large results still evict to a placeholder); UI surfaces that
+  render from structured tool output (MCP Apps widgets) read the field off
+  the persisted `TOOL_CALL_END` event instead of re-parsing — or losing —
+  the text form.
+
 - **Buzz: threaded replies (NIP-10).** The inbound parser reads a message's
   NIP-10 `e`-tags and sets `InboundMessage.thread_id` to the thread root
   (plus `metadata["nostr_reply_to"]` for the immediate parent), and

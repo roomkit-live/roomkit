@@ -77,11 +77,20 @@ OnInputRequiredCallback = Callable[[PendingInputEvent], Awaitable[bool]]
 
 @dataclass
 class ToolCallContext:
-    """Contextvar payload carrying tool-call metadata."""
+    """Contextvar payload carrying tool-call metadata.
+
+    ``structured_content`` is the reverse channel: the ToolHandler contract
+    returns only a string, but MCP tools can produce a structured result
+    (``CallToolResult.structuredContent``) that UI surfaces need verbatim —
+    the LLM-facing string may be truncated/evicted when large. A handler
+    that has one sets it here; ``_run_one()`` reads it back after the call
+    and carries it on the tool-call events untouched by eviction.
+    """
 
     room_id: str = ""
     tool_call_id: str = ""
     channel_id: str = ""
+    structured_content: dict[str, Any] | None = None
 
 
 _current_tool_call: contextvars.ContextVar[ToolCallContext | None] = contextvars.ContextVar(

@@ -391,6 +391,7 @@ class AIGenerationMixin(AIToolLoopRulesMixin):
                             status="failed" if is_error else "completed",
                             duration_ms=rnd.duration_ms,
                             error=result_val if is_error else None,
+                            structured_content=getattr(rp, "structured_content", None),
                         ),
                         chain_depth=chain_depth,
                         correlation_id=correlation_id,

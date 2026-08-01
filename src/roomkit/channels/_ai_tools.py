@@ -260,6 +260,7 @@ class AIToolsMixin:
                 parent_id=parent_span_id,
                 attributes={"tool.name": tc.name, "tool.id": tc.id},
             )
+            structured_content: dict[str, Any] | None = None
             try:
                 # Set contextvar so HumanInputToolHandler can read
                 # room_id / tool_call_id / channel_id without protocol changes.
@@ -273,6 +274,10 @@ class AIToolsMixin:
                     result = await handler(tc.name, tc.arguments)
                 finally:
                     _current_tool_call.reset(_tc_tok)
+                # Capture the handler's structured result (MCP structuredContent)
+                # BEFORE eviction — the string below may become a placeholder,
+                # but UI surfaces need the structured payload verbatim.
+                structured_content = _tc_ctx.structured_content
                 result = self._maybe_truncate_result(result, tc.id)
 
                 # Fire unified ON_TOOL_CALL hook (if framework injected callback)
@@ -305,6 +310,7 @@ class AIToolsMixin:
                 tool_call_id=tc.id,
                 name=tc.name,
                 result=result,
+                structured_content=structured_content,
             )
 
         results = await asyncio.gather(*[_run_one(tc) for tc in tool_calls])

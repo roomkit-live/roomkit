@@ -14,6 +14,39 @@ logger = logging.getLogger("roomkit.tools.mcp")
 
 ToolHandler = Callable[[str, dict[str, Any]], Awaitable[str]]
 
+# Upper bound for publishing a structured result on the tool-call context
+# (serialized size). Tool-call events ride the room event pipeline — DB rows,
+# WebSocket broadcasts, audit — so a pathological multi-megabyte payload must
+# not tag along; every realistic widget payload is far below this.
+_STRUCTURED_CONTENT_MAX_BYTES = 512 * 1024
+
+
+def _publish_structured_content(result: Any) -> None:
+    """Expose ``CallToolResult.structuredContent`` to the tool-call context.
+
+    The ToolHandler contract flattens results to the LLM-facing string, which
+    large-result eviction may later replace with a placeholder. UI surfaces
+    (MCP Apps widgets) need the structured payload verbatim, so it travels
+    out-of-band on the ToolCallContext when one is active.
+    """
+    structured = getattr(result, "structuredContent", None)
+    if not isinstance(structured, dict):
+        return
+    from roomkit.tools.human_input import _current_tool_call
+
+    ctx = _current_tool_call.get()
+    if ctx is None:
+        return
+    try:
+        if len(json.dumps(structured)) > _STRUCTURED_CONTENT_MAX_BYTES:
+            logger.warning(
+                "structuredContent dropped: exceeds %d bytes", _STRUCTURED_CONTENT_MAX_BYTES
+            )
+            return
+    except (TypeError, ValueError):
+        return
+    ctx.structured_content = structured
+
 
 class MCPToolProvider:
     """Discover and invoke tools from an MCP server.
@@ -190,6 +223,8 @@ class MCPToolProvider:
         if result.isError:
             parts = [getattr(c, "text", str(c)) for c in result.content]
             return json.dumps({"error": " ".join(parts)})
+
+        _publish_structured_content(result)
 
         # Extract text from content parts
         texts = []

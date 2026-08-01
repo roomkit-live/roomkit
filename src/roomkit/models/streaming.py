@@ -44,6 +44,8 @@ class ToolCallEndMarker:
     status: Literal["completed", "failed"] = "completed"
     duration_ms: int = 0
     error: str | None = None
+    # MCP structuredContent captured before result eviction (see AIToolResultPart).
+    structured_content: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)

@@ -212,6 +212,7 @@ class InboundStreamingMixin(HelpersMixin):
                     status=marker.status,
                     duration_ms=marker.duration_ms,
                     error=marker.error,
+                    structured_content=marker.structured_content,
                 ),
                 status=EventStatus.DELIVERED,
                 chain_depth=chain_depth,

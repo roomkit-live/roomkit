@@ -676,6 +676,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         status="failed" if is_error else "completed",
                         duration_ms=duration_ms,
                         error=result_val if is_error else None,
+                        structured_content=getattr(rp, "structured_content", None),
                     )
                 if room_id:
                     await self._publish_tool_event(
