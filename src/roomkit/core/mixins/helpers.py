@@ -513,6 +513,48 @@ class HelpersMixin:
                 skip_event_filter=True,
             )
 
+    def _build_tool_usage_loader(self) -> Any:
+        """Build the tool-usage hydration loader for an AIChannel.
+
+        Fetches a room's most recent persisted ``TOOL_CALL_END`` events so the
+        channel's in-memory ToolUsageMemory (digest + re-reveal set) survives
+        channel-object lifetimes — the store dies with the object (process
+        restart, cache expiry) while conversations outlive it. Called at most
+        once per room per process (the channel marks the room hydrated).
+        """
+        from roomkit.models.enums import EventType
+        from roomkit.models.store_filter import EventFilter
+
+        kit_ref = self
+        # Enough to refill both windows (digest 8 + reveal 12) after the
+        # infra-tool rows are filtered out by ToolUsageMemory.record().
+        limit = 30
+
+        async def _load(room_id: str) -> list[dict[str, Any]]:
+            with kit_ref._resource_lease():
+                events = await kit_ref._store.get_timeline(
+                    room_id,
+                    event_filter=EventFilter(event_types=[EventType.TOOL_CALL_END]),
+                    limit=limit,
+                    newest_first=True,  # most recent N, returned ascending
+                )
+            calls: list[dict[str, Any]] = []
+            for ev in events:
+                content = ev.content
+                name = getattr(content, "tool_name", "")
+                if not name:
+                    continue
+                calls.append(
+                    {
+                        "name": name,
+                        "arguments": getattr(content, "arguments", {}) or {},
+                        "result": getattr(content, "result", "") or "",
+                    }
+                )
+            return calls
+
+        return _load
+
     def _build_tool_call_hook(self, channel_id: str) -> Any:
         """Build a ToolCallCallback closure for an AIChannel.
 

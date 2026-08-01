@@ -23,6 +23,7 @@ from roomkit.channels._skill_handlers import (
 )
 from roomkit.channels._tool_search import (
     normalize_max_results,
+    related_family_tools,
     render_find_payload,
     render_list_payload,
     search_catalogue,
@@ -494,11 +495,19 @@ class AIToolsMixin:
         exclude = self._tool_search_pinned | TOOL_SEARCH_INFRA_TOOL_NAMES
         matches = search_catalogue(catalogue, query, max_results, exclude_names=exclude)
         loop_ctx.revealed_tools = {m["name"] for m in matches if m.get("name")}
+        # Reveals persist across turns via ToolUsageMemory (the tool's own
+        # description promises "the rest of the session") — a tool found in
+        # turn N is often only called in turn N+1, after the user confirms.
+        self._tool_usage.record_revealed(self._current_room_id, loop_ctx.revealed_tools)
         # Compact result (name + short description). The matched tools' full
         # schemas reach the model via the next round's re-filtered tool list
         # (loop_ctx.revealed_tools), so inlining them here would only risk
         # overflowing the tool-result size limit on verbose tools.
-        return render_find_payload(matches, miss_hint=self._tool_search_miss_hint)
+        return render_find_payload(
+            matches,
+            miss_hint=self._tool_search_miss_hint,
+            related=related_family_tools(catalogue, matches),
+        )
 
     async def _handle_list_tools(self, arguments: dict[str, Any]) -> str:
         """List the turn's catalogue (name + short description). Reveals nothing."""

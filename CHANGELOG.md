@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tool Search: conversation-scoped tool memory.** Three legs, one goal —
+  an agent's working knowledge of its tools now spans the conversation, not
+  the turn or the process:
+  - `find_tools` reveals persist across turns via `ToolUsageMemory.record_revealed`
+    (the tool's description already promised "the rest of the session"; the
+    code now honours it — a tool found in turn N is often only called in
+    turn N+1).
+  - `ToolUsageMemory` hydrates from the persisted event store on first use
+    per room: the framework injects a loader (`register_channel`) that reads
+    the room's recent `TOOL_CALL_END` events, so a process restart or channel
+    cache expiry no longer wipes the digest + re-reveal set mid-conversation.
+  - `find_tools` results list unmatched same-family tool names
+    (`related_tools_same_source`, name-prefix family, both text and realtime
+    paths) — peripheral vision so a model that found `get-menu` knows the
+    same source also does carts instead of refusing the next in-domain ask.
+
+- **`read_stored_result`: explicit partial-page warning.** Small models skip
+  the bare `has_more`/`next_offset` fields and conclude absence off one page;
+  a partial page now carries a prose `warning` ("PARTIAL CONTENT … never
+  conclude something is absent until you have read EVERY page"), and the page
+  envelope allowance grew to keep the warning from re-evicting the page.
+
 - **MCP: `structuredContent` survives result flattening and eviction.**
   `MCPToolProvider.call_tool` publishes a successful call's
   `CallToolResult.structuredContent` (dict, ≤512KB serialized) on the active

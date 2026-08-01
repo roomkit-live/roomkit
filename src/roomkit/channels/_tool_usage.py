@@ -11,11 +11,13 @@ gaps, which have DIFFERENT shapes and costs, so each is bounded on its own axis:
 * a compact **digest** (tool name + arguments + a short result preview) is added
   to the system prompt so the model knows what it did — bounded by recent
   *calls* (``_DIGEST_MAX_CALLS``): a short, readable "what you did" block;
-* the set of distinct **tool names** it called is re-revealed each turn (see
-  ``_build_context``) so a tool used once stays callable while Tool Search hides
-  the rest — bounded by recent distinct *tools* (``_REVEAL_MAX_TOOLS``): this is
-  the part that costs full tool schemas, so it's bounded by the conversation's
-  recent working set of tools, not by call count.
+* the set of distinct **tool names** it called — or that ``find_tools`` already
+  revealed (``record_revealed``) — is re-revealed each turn (see
+  ``_build_context``) so a tool used or found once stays callable while Tool
+  Search hides the rest — bounded by recent distinct *tools*
+  (``_REVEAL_MAX_TOOLS``): this is the part that costs full tool schemas, so
+  it's bounded by the conversation's recent working set of tools, not by call
+  count.
 
 Scoped per room on a channel object shared by every room it serves — same shape
 and lifetime as :class:`ToolEviction`. In-memory only: a process restart clears
@@ -68,6 +70,9 @@ class _RoomMemory:
     # early then not since must still stay callable even if newer calls pushed it
     # out of the digest window.
     tools: OrderedDict[str, None] = field(default_factory=OrderedDict)
+    # Whether persisted history was already loaded (or attempted) for this room —
+    # hydration is a one-shot per room per process, even when it finds nothing.
+    hydrated: bool = False
 
 
 class ToolUsageMemory:
@@ -110,8 +115,65 @@ class ToolUsageMemory:
         while len(self._by_room) > _MAX_ROOMS:
             self._by_room.popitem(last=False)
 
+    def needs_hydration(self, room_id: str | None) -> bool:
+        """Whether persisted history should be loaded for this room.
+
+        True only while the room has no live entries and no prior hydration
+        attempt — a room already carrying live calls must not be re-seeded
+        with stale history, and an empty history must not be re-queried
+        every turn.
+        """
+        if not room_id:
+            return False
+        mem = self._by_room.get(room_id)
+        return mem is None or (not mem.hydrated and not mem.calls and not mem.tools)
+
+    def seed(self, room_id: str | None, calls: Any) -> None:
+        """Seed the room from persisted history (oldest → newest).
+
+        Marks the room hydrated even when ``calls`` is empty, so a room with
+        no history is not re-queried on every turn. Entries flow through
+        :meth:`record`, so infra filtering, previews, dedup and bounds apply
+        exactly as they do for live calls.
+        """
+        if not room_id:
+            return
+        mem = self._by_room.setdefault(room_id, _RoomMemory())
+        mem.hydrated = True
+        for call in calls:
+            name = call.get("name", "")
+            if not name:
+                continue
+            self.record(room_id, name, call.get("arguments") or {}, call.get("result", ""))
+
+    def record_revealed(self, room_id: str | None, names: Any) -> None:
+        """Mark tools revealed by ``find_tools`` as part of the room's working set.
+
+        ``find_tools`` tells the model its matches are "invocable for the rest
+        of the session" — honouring that requires the reveal to outlive the
+        loop, not just the turn (a tool found in turn N is often only called
+        in turn N+1, after the user confirms). Revealed-but-not-yet-called
+        tools share the called-tools recency window (``_REVEAL_MAX_TOOLS``):
+        a reveal burst can age older entries out, and a tool actually used
+        re-enters on use. They never enter the digest — a reveal is not work
+        the agent did.
+        """
+        if not room_id:
+            return
+        mem = self._by_room.setdefault(room_id, _RoomMemory())
+        self._by_room.move_to_end(room_id)
+        for name in names:
+            if not name or name in _INFRA_NAMES:
+                continue
+            mem.tools.pop(name, None)
+            mem.tools[name] = None
+        while len(mem.tools) > self._reveal_max_tools:
+            mem.tools.popitem(last=False)
+        while len(self._by_room) > _MAX_ROOMS:
+            self._by_room.popitem(last=False)
+
     def tool_names(self, room_id: str | None) -> set[str]:
-        """Distinct tools called in this room — used to re-reveal them per turn."""
+        """Distinct tools called or revealed in this room — re-revealed per turn."""
         if not room_id:
             return set()
         mem = self._by_room.get(room_id)

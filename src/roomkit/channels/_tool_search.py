@@ -145,7 +145,51 @@ def search_catalogue(
     return [tool for s, tool in scored if s >= cutoff][:max_results]
 
 
-def render_find_payload(matches: list[dict[str, Any]], *, miss_hint: str | None = None) -> str:
+# Same-family siblings surfaced per find_tools result (names only). Small —
+# the point is peripheral vision ("this source also does carts"), not a second
+# catalogue dump.
+_RELATED_MAX_NAMES = 10
+
+
+def related_family_tools(
+    catalogue: list[dict[str, Any]],
+    matches: list[dict[str, Any]],
+    *,
+    limit: int = _RELATED_MAX_NAMES,
+) -> list[str]:
+    """Names of unmatched catalogue tools sharing a match's name-prefix family.
+
+    Family = the segment before the first ``_`` (the MCP-gateway convention:
+    ``square_get-menu`` → ``square``); a name without ``_`` has no family.
+    Gives the model the matched source's wider action space — without it, a
+    model that found ``get-menu`` has no idea the same source also does carts,
+    and refuses the next in-domain ask instead of searching (observed with
+    small models).
+    """
+    matched_names = {m.get("name") for m in matches}
+    families = {
+        name.split("_", 1)[0] for name in matched_names if isinstance(name, str) and "_" in name
+    }
+    if not families:
+        return []
+    related: list[str] = []
+    for entry in catalogue:
+        name = entry.get("name") or ""
+        if name in matched_names or "_" not in name:
+            continue
+        if name.split("_", 1)[0] in families:
+            related.append(name)
+            if len(related) >= limit:
+                break
+    return related
+
+
+def render_find_payload(
+    matches: list[dict[str, Any]],
+    *,
+    miss_hint: str | None = None,
+    related: list[str] | None = None,
+) -> str:
     """JSON result for a ``find_tools`` call — compact: name + truncated
     description per match.
 
@@ -172,6 +216,14 @@ def render_find_payload(matches: list[dict[str, Any]], *, miss_hint: str | None 
             "unless none of these fit."
         ),
     }
+    if matches and related:
+        payload["related_tools_same_source"] = related
+        payload["_note"] += (
+            " related_tools_same_source lists MORE tools from the same source "
+            "(NOT yet invocable) — run find_tools for one of those when the "
+            "user's next ask falls in this domain, instead of assuming you "
+            "cannot do it."
+        )
     if not matches:
         note = (
             "No tools matched. Try a different query, or call list_tools "

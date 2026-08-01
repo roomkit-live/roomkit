@@ -86,6 +86,7 @@ class AIContextHost(Protocol):
     _memory: MemoryProvider
     _eviction: ToolEviction
     _tool_usage: ToolUsageMemory
+    _tool_usage_loader: Any
     _planner: TaskPlanner | None
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
@@ -122,6 +123,7 @@ class AIContextMixin:
     _memory: MemoryProvider
     _eviction: ToolEviction
     _tool_usage: ToolUsageMemory
+    _tool_usage_loader: Any
     _planner: TaskPlanner | None
     _user_tools: list[AITool]
     _injected_tools: list[AITool]
@@ -247,6 +249,19 @@ class AIContextMixin:
                 system_prompt = (system_prompt or "") + TaskPlanner.format_plan_prompt(
                     self._planner.current_plan
                 )
+
+        # Rebuild the tool-usage working memory from persisted history the
+        # first time this process serves the room — the in-memory store dies
+        # with the channel object (restart, cache expiry) while conversations
+        # outlive it; without this the agent restarts amnesic mid-conversation
+        # (re-find_tools, re-fetches of data it already had).
+        if self._tool_usage_loader is not None and self._tool_usage.needs_hydration(event.room_id):
+            try:
+                past_calls = await self._tool_usage_loader(event.room_id)
+            except Exception:
+                logger.exception("Tool-usage hydration failed for room %s", event.room_id)
+                past_calls = []
+            self._tool_usage.seed(event.room_id, past_calls)
 
         # "Tools you've already used" digest — the rebuilt context drops
         # tool-call events, so without this the model forgets, across turns,

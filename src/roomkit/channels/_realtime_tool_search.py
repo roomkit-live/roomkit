@@ -30,6 +30,7 @@ from typing import Any
 
 from roomkit.channels._tool_search import (
     normalize_max_results,
+    related_family_tools,
     render_find_payload,
     render_list_payload,
     search_catalogue,
@@ -154,7 +155,9 @@ class RealtimeToolSearchSupport:
         # across multiple find_tools calls.
         self._exposed[session_id] = {tool.get("name", "") for tool in matches}
 
-        result_str = render_find_payload(matches)
+        result_str = render_find_payload(
+            matches, related=related_family_tools(self._catalogue, matches)
+        )
         if not matches:
             return result_str, None
         # Caller pushes this updated tool list via provider.reconfigure

@@ -112,11 +112,12 @@ class _ToolLoopContext:
     # reads it and force-ends the turn with a plain-text answer instead of
     # letting the model hammer the same call to the round limit.
     force_stop: bool = False
-    # Tools the agent already CALLED this conversation, seeded once per turn in
-    # ``_build_context`` from ToolUsageMemory. Unlike ``revealed_tools`` (per-loop
-    # find_tools discovery, starts empty), these are INHERITED across for_loop and
-    # unioned into the Tool Search keep-set by ``_apply_tool_filters`` — so a tool
-    # used once stays callable without the model having to re-run find_tools.
+    # Tools the agent already CALLED — or that find_tools already REVEALED —
+    # this conversation, seeded once per turn in ``_build_context`` from
+    # ToolUsageMemory. Unlike ``revealed_tools`` (per-loop find_tools swap
+    # window, starts empty), these are INHERITED across for_loop and unioned
+    # into the Tool Search keep-set by ``_apply_tool_filters`` — so a tool
+    # used or found once stays callable without re-running find_tools.
     sticky_tools: set[str] = field(default_factory=set)
     all_context_tools: list[Any] = field(default_factory=list)
     # Whether Tool Search is active for this turn (catalogue over threshold).
@@ -331,6 +332,11 @@ class AIChannel(
         self._after_response_hook: Any = None
         # BEFORE_AI_GENERATION hook callback (injected by framework on register_channel)
         self._before_generation_hook: Any = None
+        # Tool-usage hydration loader (injected by framework on register_channel):
+        # fetches a room's persisted TOOL_CALL_END history so ToolUsageMemory
+        # survives channel-object lifetimes (restarts, cache expiry) — the
+        # in-memory store dies with the object while conversations outlive it.
+        self._tool_usage_loader: Any = None
         # Current room ID (set per on_event invocation for tool hook context)
         self._current_room_id: str | None = None
         # External tool handler for provider-executed tools (e.g. Claude Code)
