@@ -139,3 +139,14 @@ class AudioPipelineConfig:
 
     telemetry: TelemetryProvider | None = None
     """Optional telemetry provider for pipeline metrics."""
+
+    inbound_dsp_threads: int | None = None
+    """Run the inbound stage chain on a thread pool of this size.
+
+    ``None`` (default) processes each frame on the caller's thread —
+    usually the event loop, which caps concurrent sessions at one core
+    and lets one slow stage delay every session. With a pool, frames of
+    one session stay strictly FIFO while sessions spread across the
+    workers; the native stages release the GIL, so the ceiling scales
+    with cores. See :class:`roomkit.voice.pipeline.offload.InboundFrameOffload`.
+    """

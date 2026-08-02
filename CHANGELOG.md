@@ -97,6 +97,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lock now fails it); the framework's concurrent mute/access test asserts
   both writes land (lost-update proof) instead of `muted in (True, False)`.
 
+### Added
+
+- **Inbound DSP off the event loop: `AudioPipelineConfig.inbound_dsp_threads`.**
+  With a pool size set, each session's stage chain (resampler → AEC →
+  denoiser → VAD → …) runs on a small thread pool instead of the event
+  loop: frames of one session stay strictly FIFO, sessions spread across
+  workers, and the native stages release the GIL — so the concurrent-call
+  ceiling scales with cores instead of one, and a slow stage no longer
+  delays every other session and all message traffic. Backpressure is per
+  stream and bounded (drop-oldest, counted). Applies to `VoiceChannel` and
+  `RealtimeVoiceChannel`; unset (default) keeps inline processing.
+  Measured 3.9× on 4 workers in the stress bench (`make stress`).
+
 ### Changed
 
 - **The WAV recorder is off the frame path.** Its taps now only enqueue:

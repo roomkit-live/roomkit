@@ -312,7 +312,8 @@ class WavWriterThread:
 
         mode = ws.config.channels
         if mode == RecordingChannelMode.SEPARATE:
-            for writer, label in ((ws.inbound_writer, "inbound"), (ws.outbound_writer, "outbound")):
+            writers = ((ws.inbound_writer, "inbound"), (ws.outbound_writer, "outbound"))
+            for writer, label in writers:
                 if writer is not None:
                     writer.close()
                     _account(Path(f"{ws.handle.path}_{label}.wav"))

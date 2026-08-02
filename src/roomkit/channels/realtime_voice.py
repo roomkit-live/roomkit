@@ -1266,6 +1266,10 @@ class RealtimeVoiceChannel(
             self._resample_executor.shutdown(wait=False)
             self._resample_executor = None
 
+        # Drain the inbound DSP pool; sessions are ended, nothing new queues.
+        if self._inbound_offload is not None:
+            await asyncio.to_thread(self._pipeline_offload_shutdown)
+
         try:
             await self._provider.close()
         except Exception:

@@ -405,8 +405,7 @@ class VoiceChannel(
                 if count > self._max_fps:
                     return
 
-        if self._pipeline is not None:
-            self._pipeline.process_inbound(session, frame)
+        self._pipeline_submit_inbound(session, frame)
 
     def _on_pipeline_speech_end(self, session: VoiceSession, audio: bytes) -> None:
         """Handle speech end from pipeline — fire hooks and transcribe."""
@@ -1308,7 +1307,10 @@ class VoiceChannel(
         if self._scheduled_tasks:
             await asyncio.gather(*self._scheduled_tasks, return_exceptions=True)
         self._scheduled_tasks.clear()
-        # 3. Close pipeline (stops audio processing)
+        # 3. Drain the DSP pool first — in-flight frames finish against
+        #    live stage state — then close the pipeline that owns it.
+        if self._inbound_offload is not None:
+            await asyncio.to_thread(self._pipeline_offload_shutdown)
         if self._pipeline is not None:
             self._pipeline.close()
         # 3b. Close audio bridge

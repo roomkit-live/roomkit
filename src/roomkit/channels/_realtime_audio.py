@@ -138,6 +138,7 @@ class RealtimeAudioMixin:
     _barge_in_active: set[str]
 
     _track_task: Any  # see RealtimeAudioHost — cross-mixin
+    _pipeline_submit_inbound: Any  # see VoicePipelineMixin — cross-mixin
     _flush_and_signal_end: Any  # see RealtimeResponseMixin — cross-mixin
     _fire_audio_level_task: Any  # see RealtimeAudioHost — cross-mixin
     _update_idle_event: Any  # see RealtimeAudioHost — cross-mixin
@@ -281,8 +282,7 @@ class RealtimeAudioMixin:
         ):
             return
 
-        if self._pipeline is not None:
-            self._pipeline.process_inbound(session, frame)
+        self._pipeline_submit_inbound(session, frame)
 
     def _on_pipeline_processed_frame(
         self,

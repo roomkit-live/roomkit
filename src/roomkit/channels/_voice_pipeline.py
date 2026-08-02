@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.models.enums import Access
 from roomkit.voice.pipeline.engine import AudioPipeline
+from roomkit.voice.pipeline.offload import InboundFrameOffload
 
 if TYPE_CHECKING:
     from roomkit.voice.audio_frame import AudioFrame
@@ -59,6 +60,9 @@ class VoicePipelineMixin:
     # match the default format should override _pipeline_on_audio_received.
     _session_bindings: dict[str, Any]
     _pipeline: AudioPipeline | None
+    # Class-level default so channels that never build a pipeline still have
+    # the attribute; _create_pipeline sets the instance one from the config.
+    _inbound_offload: InboundFrameOffload | None = None
 
     def _create_pipeline(
         self,
@@ -82,6 +86,8 @@ class VoicePipelineMixin:
             backend_feeds_aec_reference=backend.feeds_aec_reference,
         )
         self._pipeline = pipeline
+        threads = config.inbound_dsp_threads
+        self._inbound_offload = InboundFrameOffload(threads) if threads else None
 
         # Backend delivers raw AudioFrame → pipeline processes it
         backend.on_audio_received(self._pipeline_on_audio_received)
@@ -120,8 +126,27 @@ class VoicePipelineMixin:
             if binding.access in (Access.READ_ONLY, Access.NONE) or binding.muted:
                 return
 
-        if self._pipeline is not None:
-            self._pipeline.process_inbound(session, frame)
+        self._pipeline_submit_inbound(session, frame)
+
+    def _pipeline_submit_inbound(self, session: VoiceSession, frame: AudioFrame) -> None:
+        """Feed one gated frame to the pipeline, inline or via the DSP pool.
+
+        With ``AudioPipelineConfig.inbound_dsp_threads`` unset the stage
+        chain runs on the caller's thread exactly as before. With a pool,
+        the frame is queued FIFO under the session's stream and processed
+        by one worker at a time — the RFC §12 stage order is untouched,
+        only *where* the chain executes moves. The pipeline callbacks
+        (VAD, speech end, audio level) were already thread-tolerant:
+        every production backend may deliver audio from its own thread.
+        """
+        pipeline = self._pipeline
+        if pipeline is None:
+            return
+        offload = self._inbound_offload
+        if offload is None:
+            pipeline.process_inbound(session, frame)
+        else:
+            offload.submit(session.id, pipeline.process_inbound, session, frame)
 
     def _pipeline_session_active(self, session: VoiceSession) -> None:
         """Notify the pipeline that a session is active.
@@ -136,7 +161,17 @@ class VoicePipelineMixin:
         """Notify the pipeline that a session has ended.
 
         Call this when a voice session disconnects.  Stops recording
-        and cleans up per-session state.
+        and cleans up per-session state. Frames still queued on the DSP
+        pool for this session are dropped first — audio for a session
+        that ended has nowhere to go.
         """
+        if self._inbound_offload is not None:
+            self._inbound_offload.release(session.id)
         if self._pipeline is not None:
             self._pipeline.on_session_ended(session)
+
+    def _pipeline_offload_shutdown(self) -> None:
+        """Drain and stop the DSP pool. Call from the channel's close()."""
+        if self._inbound_offload is not None:
+            self._inbound_offload.shutdown()
+            self._inbound_offload = None

@@ -664,9 +664,7 @@ class TestWriterThread:
     def test_stop_drains_every_pending_frame(self, tmp_path: Path) -> None:
         """stop() queues behind the frames, so the file it reports is complete."""
         recorder = WavFileRecorder()
-        config = RecordingConfig(
-            storage=str(tmp_path), channels=RecordingChannelMode.SEPARATE
-        )
+        config = RecordingConfig(storage=str(tmp_path), channels=RecordingChannelMode.SEPARATE)
         handle = recorder.start(_session(), config)
         n_frames, samples_per_frame = 200, 320
         for _ in range(n_frames):

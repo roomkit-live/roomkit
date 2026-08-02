@@ -125,7 +125,9 @@ class TestMulawEncode:
     def test_negative_positive_asymmetry_is_preserved(self) -> None:
         """The reference's arithmetic >>2 rounds negatives differently —
         a magnitude-indexed table would erase this; the codec must not."""
-        asymmetric = [v for v in range(1, 8192) if _ref_linear2ulaw(v) ^ 0x80 != _ref_linear2ulaw(-v)]
+        asymmetric = [
+            v for v in range(1, 8192) if _ref_linear2ulaw(v) ^ 0x80 != _ref_linear2ulaw(-v)
+        ]
         assert asymmetric, "reference lost its documented asymmetry"
         v = asymmetric[0]
         pcm = struct.pack("<2h", v, -v)
