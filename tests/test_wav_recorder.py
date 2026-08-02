@@ -391,7 +391,7 @@ class TestResetAndClose:
         recorder.reset()
 
         # Session should be gone
-        assert handle.id not in recorder._sessions
+        assert handle.id not in recorder._active
 
     def test_close_stops_all(self, tmp_path: Path) -> None:
         recorder = WavFileRecorder()
@@ -399,7 +399,7 @@ class TestResetAndClose:
         recorder.start(_session("s1"), config)
         recorder.start(_session("s2"), config)
         recorder.close()
-        assert len(recorder._sessions) == 0
+        assert len(recorder._active) == 0
 
 
 class TestAllMode:
@@ -656,3 +656,60 @@ class TestImport:
         from roomkit.voice import WavFileRecorder as W
 
         assert W is WavFileRecorder
+
+
+class TestWriterThread:
+    """The taps only enqueue; the writer thread owns every disk touch."""
+
+    def test_stop_drains_every_pending_frame(self, tmp_path: Path) -> None:
+        """stop() queues behind the frames, so the file it reports is complete."""
+        recorder = WavFileRecorder()
+        config = RecordingConfig(
+            storage=str(tmp_path), channels=RecordingChannelMode.SEPARATE
+        )
+        handle = recorder.start(_session(), config)
+        n_frames, samples_per_frame = 200, 320
+        for _ in range(n_frames):
+            recorder.tap_inbound(handle, _frame(_pcm_tone(samples_per_frame)))
+        result = recorder.stop(handle)
+        recorder.close()
+
+        assert result.urls
+        with wave.open(result.urls[0], "rb") as w:
+            assert w.getnframes() == n_frames * samples_per_frame
+
+    def test_mixed_mode_spools_to_disk_and_cleans_up(self, tmp_path: Path) -> None:
+        """MIXED memory stays flat: directions spool to .raw files that the
+        finalisation consumes and deletes."""
+        recorder = WavFileRecorder()
+        config = RecordingConfig(storage=str(tmp_path), channels=RecordingChannelMode.MIXED)
+        handle = recorder.start(_session(), config)
+        for _ in range(50):
+            recorder.tap_inbound(handle, _frame(_pcm_tone(320)))
+            recorder.tap_outbound(handle, _frame(_pcm_tone(320)))
+        result = recorder.stop(handle)
+        recorder.close()
+
+        assert result.urls and Path(result.urls[0]).exists()
+        assert not list(tmp_path.glob("*.raw"))
+
+    def test_a_full_queue_drops_frames_instead_of_blocking(self) -> None:
+        """Recording observes the call; it must never become a brake on it."""
+        from roomkit.voice.pipeline.recorder._wav_writer import (
+            WavWriterThread,
+            make_frame_op,
+        )
+
+        writer = WavWriterThread()
+        # Never started: nothing drains, so a tiny queue fills deterministically.
+        import queue as _queue
+
+        writer._queue = _queue.Queue(maxsize=2)
+        op = make_frame_op(
+            "rec-1", inbound=True, data=b"\x00\x00", sample_rate=16000, channels=1, sample_width=2
+        )
+        writer.submit_frame(op)
+        writer.submit_frame(op)
+        writer.submit_frame(op)  # refused: queue full
+        writer.submit_frame(op)  # refused again
+        assert writer.tap_drops["rec-1"] == 2

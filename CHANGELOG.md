@@ -99,6 +99,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The WAV recorder is off the frame path.** Its taps now only enqueue:
+  all disk I/O — file opens, `writeframes`, spooling, mixing — runs on a
+  dedicated writer thread behind a bounded queue (a full queue drops the
+  frame with a counted warning; recording observes the call, it never
+  brakes it). MIXED/STEREO/ALL directions spool to raw files instead of
+  accumulating ~1.9 MB/min/session in RAM, and the stop-time mix — a
+  per-sample Python loop on the event loop, ~9.6 M iterations for a
+  10-minute call — is vectorised and runs on the writer thread. `stop()`
+  queues behind the session's remaining frames, so the files it reports
+  are complete when it returns.
+
 - **The voice frame path sheds its residual per-sample Python** (measured
   per 20 ms frame on Apple Silicon): Speex AEC energy diagnostics are
   DEBUG-gated and computed outside the stream lock (−28 µs/frame in

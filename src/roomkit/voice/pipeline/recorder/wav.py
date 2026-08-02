@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import logging
 import re
-import struct
 import tempfile
-import time
 import uuid
-import wave
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from roomkit.voice.pipeline.recorder._wav_writer import (
+    WavWriterThread,
+    _OpOpen,
+    _WriterSession,
+    make_frame_op,
+)
 from roomkit.voice.pipeline.recorder.base import (
     AudioRecorder,
     RecordingChannelMode,
@@ -39,55 +41,6 @@ def _sanitize_filename_component(value: str) -> str:
     return _SAFE_FILENAME_RE.sub("_", value)
 
 
-@dataclass
-class _WavSession:
-    """Internal state for an active WAV recording."""
-
-    handle: RecordingHandle
-    config: RecordingConfig
-    sample_rate: int = 0
-    channels: int = 1
-    sample_width: int = 2
-    output_dir: Path = field(default_factory=lambda: Path(tempfile.gettempdir()))
-
-    # SEPARATE mode: open wave files
-    inbound_writer: wave.Wave_write | None = None
-    outbound_writer: wave.Wave_write | None = None
-
-    # MIXED/STEREO/ALL mode: byte buffers
-    inbound_buf: bytearray = field(default_factory=bytearray)
-    outbound_buf: bytearray = field(default_factory=bytearray)
-
-    # Tracking
-    inbound_frames: int = 0
-    outbound_frames: int = 0
-
-    # Timestamp tracking for silence insertion (monotonic seconds)
-    _started_at: float = 0.0
-    _last_inbound_ts: float = 0.0
-    _last_outbound_ts: float = 0.0
-
-    # Minimum gap (seconds) before inserting silence. Gaps below this
-    # threshold are processing jitter, not real silence. Audio frames
-    # typically arrive every 20ms, so 30ms accommodates jitter without
-    # swallowing real pauses.
-    SILENCE_GAP_THRESHOLD: float = 0.03  # 30ms
-
-    def _init_format(self, frame: AudioFrame) -> None:
-        """Capture format from the first frame seen."""
-        if self.sample_rate == 0:
-            self.sample_rate = frame.sample_rate
-            self.channels = frame.channels
-            self.sample_width = frame.sample_width
-
-    def _silence_bytes(self, duration_secs: float) -> bytes:
-        """Generate silence (zero bytes) for the given duration."""
-        if self.sample_rate == 0 or duration_secs <= 0:
-            return b""
-        num_samples = int(duration_secs * self.sample_rate)
-        return b"\x00" * (num_samples * self.sample_width * self.channels)
-
-
 class WavFileRecorder(AudioRecorder):
     """Debug WAV file recorder using Python's stdlib ``wave`` module.
 
@@ -100,10 +53,19 @@ class WavFileRecorder(AudioRecorder):
     - **MIXED**: single mono WAV with inbound + outbound averaged together.
     - **SEPARATE**: two WAV files (``*_inbound.wav`` and ``*_outbound.wav``).
     - **STEREO**: single stereo WAV (inbound=left, outbound=right).
+
+    The taps run on the realtime frame path, so they only enqueue: all
+    disk I/O — file opens, writes, spooling, mixing — happens on a
+    dedicated writer thread (:mod:`._wav_writer`). ``stop()`` queues
+    behind the session's remaining frames and waits, so the files it
+    reports are complete when it returns.
     """
 
     def __init__(self) -> None:
-        self._sessions: dict[str, _WavSession] = {}
+        self._writer = WavWriterThread()
+        # Tap-side view: enough to gate a frame without touching writer
+        # state. Keyed by recording id; removed by stop().
+        self._active: dict[str, tuple[RecordingHandle, RecordingConfig]] = {}
 
     @property
     def name(self) -> str:
@@ -150,270 +112,56 @@ class WavFileRecorder(AudioRecorder):
             path=path,
         )
 
-        ws = _WavSession(handle=handle, config=config, output_dir=output_dir)
-        ws._started_at = time.monotonic()
-        # _last_inbound_ts / _last_outbound_ts stay at 0.0 (sentinel)
-        # so the first frame in each direction skips silence insertion.
-        self._sessions[rec_id] = ws
-
-        # For SEPARATE mode, we can't open writers yet — we need the
-        # sample format from the first frame.  They'll be opened lazily
-        # in tap_inbound / tap_outbound.
-
+        self._active[rec_id] = (handle, config)
+        self._writer.ensure_started()
+        self._writer.submit(
+            _OpOpen(_WriterSession(handle=handle, config=config, output_dir=output_dir))
+        )
         return handle
 
     def stop(self, handle: RecordingHandle) -> RecordingResult:
-        ws = self._sessions.pop(handle.id, None)
-        if ws is None:
+        entry = self._active.pop(handle.id, None)
+        if entry is None:
             return RecordingResult(id=handle.id)
-
         handle.state = "stopped"
-        urls: list[str] = []
-        total_size = 0
-
-        if ws.config.channels == RecordingChannelMode.SEPARATE:
-            # Close the open wave writers
-            for writer, label in [
-                (ws.inbound_writer, "inbound"),
-                (ws.outbound_writer, "outbound"),
-            ]:
-                if writer is not None:
-                    writer.close()
-                    p = Path(f"{ws.handle.path}_{label}.wav")
-                    urls.append(str(p))
-                    total_size += p.stat().st_size
-
-        elif ws.config.channels == RecordingChannelMode.ALL:
-            # Write all three: inbound, outbound, and mixed
-            for label, buf in [("inbound", ws.inbound_buf), ("outbound", ws.outbound_buf)]:
-                if buf:
-                    p = Path(f"{ws.handle.path}_{label}.wav")
-                    self._write_mono(ws, bytes(buf), p)
-                    urls.append(str(p))
-                    total_size += p.stat().st_size
-
-            mixed_path = Path(f"{ws.handle.path}_mixed.wav")
-            self._write_mixed(ws, mixed_path)
-            if mixed_path.exists():
-                urls.append(str(mixed_path))
-                total_size += mixed_path.stat().st_size
-
-        elif ws.config.channels == RecordingChannelMode.MIXED:
-            path = Path(ws.handle.path)
-            self._write_mixed(ws, path)
-            if path.exists():
-                urls.append(str(path))
-                total_size = path.stat().st_size
-
-        elif ws.config.channels == RecordingChannelMode.STEREO:
-            path = Path(ws.handle.path)
-            self._write_stereo(ws, path)
-            if path.exists():
-                urls.append(str(path))
-                total_size = path.stat().st_size
-
-        duration = 0.0
-        # Compute duration from byte lengths
-        if ws.sample_rate > 0 and ws.sample_width > 0:
-            if ws.config.channels in (RecordingChannelMode.SEPARATE, RecordingChannelMode.ALL):
-                # Duration is the longer of the two streams
-                in_samples = ws.inbound_frames
-                out_samples = ws.outbound_frames
-                duration = max(in_samples, out_samples) / ws.sample_rate
-            else:
-                # Use buffer lengths
-                in_samples = len(ws.inbound_buf) // (ws.sample_width * ws.channels)
-                out_samples = len(ws.outbound_buf) // (ws.sample_width * ws.channels)
-                duration = max(in_samples, out_samples) / ws.sample_rate
-
-        return RecordingResult(
-            id=handle.id,
-            urls=urls,
-            duration_seconds=duration,
-            format="wav",
-            mode=ws.config.channels,
-            size_bytes=total_size,
-        )
+        result = self._writer.stop_session(handle.id)
+        if result is None:
+            # The writer could not finalise (wedged disk); report what is
+            # known rather than pretending the files exist.
+            return RecordingResult(id=handle.id, format="wav", mode=entry[1].channels)
+        return result
 
     def tap_inbound(self, handle: RecordingHandle, frame: AudioFrame) -> None:
-        ws = self._sessions.get(handle.id)
-        if ws is None or handle.state != "recording":
-            return
-
-        if ws.config.mode == RecordingMode.OUTBOUND_ONLY:
-            return
-
-        ws._init_format(frame)
-
-        # Insert silence only for significant gaps (not processing jitter).
-        # First frame (sentinel _last_inbound_ts == 0) skips silence insertion.
-        now = time.monotonic()
-        silence = b""
-        if ws._last_inbound_ts > 0:
-            gap = now - ws._last_inbound_ts
-            frame_duration = (
-                len(frame.data) / (ws.sample_rate * ws.sample_width * ws.channels)
-                if ws.sample_rate
-                else 0
-            )
-            silence_duration = gap - frame_duration
-            if silence_duration > ws.SILENCE_GAP_THRESHOLD:
-                silence = ws._silence_bytes(silence_duration)
-
-        if ws.config.channels == RecordingChannelMode.SEPARATE:
-            if ws.inbound_writer is None:
-                ws.inbound_writer = self._open_writer(Path(f"{ws.handle.path}_inbound.wav"), ws)
-            if silence:
-                ws.inbound_writer.writeframes(silence)
-                ws.inbound_frames += len(silence) // (ws.sample_width * ws.channels)
-            ws.inbound_writer.writeframes(frame.data)
-            ws.inbound_frames += len(frame.data) // (ws.sample_width * ws.channels)
-        else:
-            if silence:
-                ws.inbound_buf.extend(silence)
-                ws.inbound_frames += len(silence) // (ws.sample_width * ws.channels)
-            ws.inbound_buf.extend(frame.data)
-            ws.inbound_frames += len(frame.data) // (ws.sample_width * ws.channels)
-
-        ws._last_inbound_ts = now
+        self._tap(handle, frame, inbound=True)
 
     def tap_outbound(self, handle: RecordingHandle, frame: AudioFrame) -> None:
-        ws = self._sessions.get(handle.id)
-        if ws is None or handle.state != "recording":
+        self._tap(handle, frame, inbound=False)
+
+    def _tap(self, handle: RecordingHandle, frame: AudioFrame, *, inbound: bool) -> None:
+        entry = self._active.get(handle.id)
+        if entry is None or handle.state != "recording":
             return
-
-        if ws.config.mode == RecordingMode.INBOUND_ONLY:
+        config = entry[1]
+        skip = RecordingMode.OUTBOUND_ONLY if inbound else RecordingMode.INBOUND_ONLY
+        if config.mode == skip:
             return
-
-        ws._init_format(frame)
-
-        # Insert silence only for significant gaps (not processing jitter).
-        # First frame (sentinel _last_outbound_ts == 0) skips silence insertion.
-        now = time.monotonic()
-        silence = b""
-        if ws._last_outbound_ts > 0:
-            gap = now - ws._last_outbound_ts
-            frame_duration = (
-                len(frame.data) / (ws.sample_rate * ws.sample_width * ws.channels)
-                if ws.sample_rate
-                else 0
+        self._writer.submit_frame(
+            make_frame_op(
+                handle.id,
+                inbound=inbound,
+                data=frame.data,
+                sample_rate=frame.sample_rate,
+                channels=frame.channels,
+                sample_width=frame.sample_width,
             )
-            silence_duration = gap - frame_duration
-            if silence_duration > ws.SILENCE_GAP_THRESHOLD:
-                silence = ws._silence_bytes(silence_duration)
-
-        if ws.config.channels == RecordingChannelMode.SEPARATE:
-            if ws.outbound_writer is None:
-                ws.outbound_writer = self._open_writer(Path(f"{ws.handle.path}_outbound.wav"), ws)
-            if silence:
-                ws.outbound_writer.writeframes(silence)
-                ws.outbound_frames += len(silence) // (ws.sample_width * ws.channels)
-            ws.outbound_writer.writeframes(frame.data)
-            ws.outbound_frames += len(frame.data) // (ws.sample_width * ws.channels)
-        else:
-            if silence:
-                ws.outbound_buf.extend(silence)
-                ws.outbound_frames += len(silence) // (ws.sample_width * ws.channels)
-            ws.outbound_buf.extend(frame.data)
-            ws.outbound_frames += len(frame.data) // (ws.sample_width * ws.channels)
-
-        ws._last_outbound_ts = now
+        )
 
     def reset(self) -> None:
         # Stop all active sessions
-        for rec_id in list(self._sessions):
-            handle = self._sessions[rec_id].handle
+        for rec_id in list(self._active):
+            handle = self._active[rec_id][0]
             self.stop(handle)
 
     def close(self) -> None:
         self.reset()
-
-    # ---- internal helpers ----
-
-    @staticmethod
-    def _write_mono(ws: _WavSession, data: bytes, path: Path) -> None:
-        """Write raw PCM data to a mono WAV file."""
-        if not data:
-            return
-        with wave.open(str(path), "wb") as w:
-            w.setnchannels(ws.channels)
-            w.setsampwidth(ws.sample_width)
-            w.setframerate(ws.sample_rate)
-            w.writeframes(data)
-
-    @staticmethod
-    def _open_writer(path: Path, ws: _WavSession) -> wave.Wave_write:
-        """Open a new WAV file writer with the session's audio format."""
-        w = wave.open(str(path), "wb")  # noqa: SIM115
-        w.setnchannels(ws.channels)
-        w.setsampwidth(ws.sample_width)
-        w.setframerate(ws.sample_rate)
-        return w
-
-    @staticmethod
-    def _write_mixed(ws: _WavSession, path: Path) -> None:
-        """Mix inbound + outbound into a single mono WAV."""
-        if not ws.inbound_buf and not ws.outbound_buf:
-            return
-
-        sw = ws.sample_width
-        has_inbound = bool(ws.inbound_buf)
-        has_outbound = bool(ws.outbound_buf)
-
-        # If only one direction has data, write it directly (no mixing)
-        if has_inbound and not has_outbound:
-            data = bytes(ws.inbound_buf)
-        elif has_outbound and not has_inbound:
-            data = bytes(ws.outbound_buf)
-        else:
-            # Both directions present — mix by summing with clamp
-            max_len = max(len(ws.inbound_buf), len(ws.outbound_buf))
-            inb = bytes(ws.inbound_buf).ljust(max_len, b"\x00")
-            outb = bytes(ws.outbound_buf).ljust(max_len, b"\x00")
-
-            fmt = "<h" if sw == 2 else "<b"
-            sample_count = max_len // sw
-            min_val = -(1 << (sw * 8 - 1))
-            max_val = (1 << (sw * 8 - 1)) - 1
-            mixed = bytearray(max_len)
-
-            for i in range(sample_count):
-                offset = i * sw
-                a = struct.unpack_from(fmt, inb, offset)[0]
-                b = struct.unpack_from(fmt, outb, offset)[0]
-                struct.pack_into(fmt, mixed, offset, max(min_val, min(max_val, a + b)))
-
-            data = bytes(mixed)
-
-        with wave.open(str(path), "wb") as w:
-            w.setnchannels(ws.channels)
-            w.setsampwidth(sw)
-            w.setframerate(ws.sample_rate)
-            w.writeframes(data)
-
-    @staticmethod
-    def _write_stereo(ws: _WavSession, path: Path) -> None:
-        """Write inbound (left) + outbound (right) as a stereo WAV."""
-        if not ws.inbound_buf and not ws.outbound_buf:
-            return
-
-        sw = ws.sample_width
-        max_len = max(len(ws.inbound_buf), len(ws.outbound_buf))
-        inb = bytes(ws.inbound_buf).ljust(max_len, b"\x00")
-        outb = bytes(ws.outbound_buf).ljust(max_len, b"\x00")
-
-        # Interleave: L R L R ...
-        sample_count = max_len // sw
-        stereo = bytearray(max_len * 2)
-
-        for i in range(sample_count):
-            src_offset = i * sw
-            dst_offset = i * sw * 2
-            stereo[dst_offset : dst_offset + sw] = inb[src_offset : src_offset + sw]
-            stereo[dst_offset + sw : dst_offset + sw * 2] = outb[src_offset : src_offset + sw]
-
-        with wave.open(str(path), "wb") as w:
-            w.setnchannels(2)
-            w.setsampwidth(sw)
-            w.setframerate(ws.sample_rate)
-            w.writeframes(bytes(stereo))
+        self._writer.shutdown()
