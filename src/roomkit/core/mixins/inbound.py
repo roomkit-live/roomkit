@@ -300,15 +300,12 @@ class InboundMixin(HelpersMixin):
                     room_just_created = True
                 else:
                     # Room exists — ensure channel is attached, unless the
-                    # integrator detached it. Auto-attach is a convenience for
-                    # a channel that was never bound; re-granting access that
-                    # was explicitly revoked is not its job (RFC §7.5-7). The
-                    # revocation is read from room metadata — recorded there by
-                    # detach_channel() — so it holds across process restarts
-                    # and across workers sharing the store.
+                    # integrator detached it (RFC §7.5-7). The unlocked read
+                    # keeps the common case (already bound) free; the actual
+                    # decision runs under the room lock in _maybe_auto_attach.
                     binding = await self._store.get_binding(room_id, message.channel_id)
-                    if binding is None and not is_channel_detached(room, message.channel_id):
-                        await self.attach_channel(room_id, message.channel_id)
+                    if binding is None:
+                        await self._maybe_auto_attach(room_id, message.channel_id)
             telemetry.end_span(route_span, attributes={"room_id": room_id or ""})
         except Exception as exc:
             telemetry.end_span(route_span, status="error", error_message=str(exc))
@@ -322,6 +319,27 @@ class InboundMixin(HelpersMixin):
             telemetry.set_attribute(inbound_span_id, "session_id", voice_session_id)
 
         return room_id, room_just_created
+
+    async def _maybe_auto_attach(self, room_id: str, channel_id: str) -> None:
+        """Attach *channel_id* if it was never bound — not if it was revoked.
+
+        Auto-attach is a convenience for a channel that was never bound;
+        re-granting access that was explicitly revoked is not its job
+        (RFC §7.5-7). The decision runs under the room lock against fresh
+        reads: detach_channel() writes its tombstone and removes the binding
+        under the same lock, so this sees either the binding or the
+        revocation — a detach landing concurrently with an in-flight message
+        can never be undone by it. The tombstone lives in room metadata, so
+        the check holds across restarts and across workers sharing the
+        store. attach_channel() re-acquires the lock reentrantly.
+        """
+        async with self._lock_manager.locked(room_id):
+            room = await self._store.get_room(room_id)
+            if room is None:
+                return
+            binding = await self._store.get_binding(room_id, channel_id)
+            if binding is None and not is_channel_detached(room, channel_id):
+                await self.attach_channel(room_id, channel_id)
 
     async def _fire_text_session_started(
         self,

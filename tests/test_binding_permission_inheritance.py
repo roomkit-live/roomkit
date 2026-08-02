@@ -7,6 +7,8 @@ and by re-attaching a channel that was deliberately detached.
 
 from __future__ import annotations
 
+import asyncio
+
 from roomkit.channels.base import Channel
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelOutput
@@ -150,6 +152,34 @@ class TestDetachIsNotUndoneByAutoAttach:
         )
 
         assert await kit._store.get_binding("r1", "ws") is not None
+
+    async def test_a_detach_racing_an_inbound_message_is_final(self) -> None:
+        """Both serial orders end detached; there is no third outcome.
+
+        Auto-attach first → the detach removes the binding after it. Detach
+        first → the tombstone blocks the auto-attach. The bug this guards
+        against is the non-serial interleaving: the message re-attaching a
+        channel whose detach landed mid-flight, because the revocation was
+        read from a snapshot taken before the detach committed.
+        """
+        for round_no in range(20):
+            kit = RoomKit()
+            kit.register_channel(_Transport("ws"))
+            await kit.create_room(room_id="r1")
+            await kit.attach_channel("r1", "ws")
+
+            await asyncio.gather(
+                kit.detach_channel("r1", "ws"),
+                kit.process_inbound(
+                    InboundMessage(
+                        channel_id="ws", sender_id="mallory", content=TextContent(body="hi")
+                    ),
+                    room_id="r1",
+                ),
+                return_exceptions=True,
+            )
+            binding = await kit._store.get_binding("r1", "ws")
+            assert binding is None, f"round {round_no}: the message undid the detach"
 
 
 class TestDetachSurvivesTheProcess:
