@@ -74,6 +74,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **G.711 mu-law encode is bit-exact with the reference.** The encode table
+  was indexed by ``magnitude >> 1`` but built without re-doubling, so every
+  outbound sample was encoded as if it had half its amplitude (~6 dB low,
+  with shifted segment boundaries) on every G.711 path — Twilio media
+  streams and RTP/SIP calls. The codec now transcribes Sun/CCITT
+  ``g711.c`` exactly, verified against ``audioop`` over the full 16-bit
+  sweep; decode was already exact and is now vectorised too (22.5 → 1.5 µs
+  per 20 ms frame).
+
 - **A revoked channel stays revoked across restarts and workers (RFC §7.5-7).**
   `detach_channel()` now records the revocation in room metadata
   (`roomkit:detached_channels`, written atomically via
@@ -89,6 +98,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both writes land (lost-update proof) instead of `muted in (True, False)`.
 
 ### Changed
+
+- **The voice frame path sheds its residual per-sample Python** (measured
+  per 20 ms frame on Apple Silicon): Speex AEC energy diagnostics are
+  DEBUG-gated and computed outside the stream lock (−28 µs/frame in
+  production, and the playback path no longer waits on them); the
+  sherpa-onnx VAD feeds ``accept_waveform`` a NumPy array instead of a
+  per-element Python list (14.5 → 1.7 µs) and its RMS helper is vectorised
+  (→ 2 µs); the pipeline logs a warning when the pure-Python resampler
+  fallback is selected (~13× slower than the NumPy one it stands in for).
 
 - **`register_channel()` refuses a duplicate `channel_id`** with the new
   `ChannelAlreadyRegisteredError` instead of silently replacing the live

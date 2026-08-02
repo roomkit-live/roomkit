@@ -8,12 +8,12 @@ SPEECH_START events and pre-roll buffering.
 from __future__ import annotations
 
 import logging
-import struct
 from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType, VADProvider
+from roomkit.voice.utils import _get_np
 
 if TYPE_CHECKING:
     from roomkit.voice.audio_frame import AudioFrame
@@ -25,20 +25,29 @@ _DEBUG_SUMMARY_INTERVAL = 50  # frames (~1s at 20ms/frame)
 
 
 def _rms_int16(data: bytes) -> float:
-    """Compute RMS of int16 little-endian PCM data."""
+    """Compute RMS of int16 little-endian PCM data.
+
+    Vectorised: this runs per frame on the energy-silence path, and
+    sherpa-onnx already guarantees numpy is installed.
+    """
     n_samples = len(data) // 2
     if n_samples == 0:
         return 0.0
-    samples = struct.unpack(f"<{n_samples}h", data[: n_samples * 2])
-    sum_sq = sum(s * s for s in samples)
-    return float((sum_sq / n_samples) ** 0.5)
+    np = _get_np()
+    samples = np.frombuffer(data[: n_samples * 2], dtype="<i2").astype(np.int64)
+    return float(np.sqrt((samples @ samples) / n_samples))
 
 
-def _pcm_s16le_to_float32(data: bytes) -> list[float]:
-    """Convert PCM signed 16-bit little-endian bytes to float32 list in [-1, 1]."""
+def _pcm_s16le_to_float32(data: bytes) -> Any:
+    """Convert PCM signed 16-bit little-endian bytes to float32 in [-1, 1].
+
+    Returns a numpy float32 array — ``accept_waveform`` converts it to its
+    ``std::vector<float>`` at C speed, where a Python list pays a per-element
+    conversion on every frame.
+    """
+    np = _get_np()
     n = len(data) // 2
-    samples = struct.unpack(f"<{n}h", data[: n * 2])
-    return [s / 32768.0 for s in samples]
+    return np.frombuffer(data[: n * 2], dtype="<i2").astype(np.float32) / 32768.0
 
 
 @dataclass

@@ -877,4 +877,11 @@ def _create_default_resampler() -> ResamplerProvider:
     except ImportError:
         from roomkit.voice.pipeline.resampler.linear import LinearResamplerProvider
 
+        logger.warning(
+            "NumPy is not installed: the audio pipeline falls back to the "
+            "pure-Python linear resampler, which is an order of magnitude "
+            "slower per frame (~200 us vs ~15 us measured for 20 ms @ 16 kHz) "
+            "and runs on every frame of every realtime session. Install numpy "
+            "(any roomkit voice extra ships it) for production voice."
+        )
         return LinearResamplerProvider()

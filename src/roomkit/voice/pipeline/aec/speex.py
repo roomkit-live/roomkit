@@ -262,16 +262,22 @@ class SpeexAECProvider(AECProvider):
             with self._stderr:
                 self._lib.speex_echo_capture(st.state, st.in_buf, st.out_buf)
 
-            # Accumulate energy over the full interval so the log
-            # reflects average behaviour, not a single-frame snapshot.
-            in_energy = sum(st.in_buf[i] * st.in_buf[i] for i in range(self._frame_size))
-            out_energy = sum(st.out_buf[i] * st.out_buf[i] for i in range(self._frame_size))
-            st.total_in_energy += in_energy
-            st.total_out_energy += out_energy
-
             st.process_count += 1
             should_log = st.process_count % _LOG_INTERVAL == 0
             out_data = bytes(st.out_buf)
+
+        # Energy diagnostics feed a DEBUG-level log, so production pays
+        # nothing for them — the per-sample sums cost more than the echo
+        # canceller's own numpy-free glue. Computed OUTSIDE the lock from the
+        # in/out bytes: feed_reference() blocks on this lock from the
+        # playback path, and the diagnostic must not extend its wait.
+        # Accumulated over the full interval so the log reflects average
+        # behaviour, not a single-frame snapshot.
+        if logger.isEnabledFor(logging.DEBUG):
+            in_view = memoryview(pcm_in)[: self._frame_bytes].cast("h")
+            out_view = memoryview(out_data).cast("h")
+            st.total_in_energy += sum(s * s for s in in_view)
+            st.total_out_energy += sum(s * s for s in out_view)
 
         if should_log:
             self._log_stats(stream, st)
