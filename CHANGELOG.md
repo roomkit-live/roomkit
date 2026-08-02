@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] — 2026-08-02
+
 ### Added
 
 - **Tool Search: conversation-scoped tool memory.** Three legs, one goal —
@@ -3189,7 +3191,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/roomkit-live/roomkit/compare/v0.38.0...v0.39.0
 [0.19.0]: https://github.com/roomkit-live/roomkit/compare/v0.18.0...v0.19.0
 [0.10.0]: https://github.com/roomkit-live/roomkit/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/roomkit-live/roomkit/compare/v0.9.0...v0.9.1
