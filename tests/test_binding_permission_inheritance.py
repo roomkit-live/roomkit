@@ -14,6 +14,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import Access, ChannelType, Visibility
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.store.memory import InMemoryStore
 
 
 class _Transport(Channel):
@@ -148,4 +149,106 @@ class TestDetachIsNotUndoneByAutoAttach:
             room_id="r1",
         )
 
+        assert await kit._store.get_binding("r1", "ws") is not None
+
+
+class TestDetachSurvivesTheProcess:
+    """The revocation lives in the store, not in framework memory (RFC §7.5-7).
+
+    A restart — or another worker sharing the store — must see an explicit
+    detach exactly as the process that performed it does. These tests share
+    one store between two RoomKit instances: the second instance stands in
+    for a restarted process or a sibling worker.
+    """
+
+    async def test_detach_survives_a_restart(self) -> None:
+        store = InMemoryStore()
+        kit1 = RoomKit(store=store)
+        kit1.register_channel(_Transport("ws"))
+        await kit1.create_room(room_id="r1")
+        await kit1.attach_channel("r1", "ws")
+        await kit1.detach_channel("r1", "ws")
+
+        # "Restart": a fresh framework over the same store.
+        kit2 = RoomKit(store=store)
+        kit2.register_channel(_Transport("ws"))
+        await kit2.process_inbound(
+            InboundMessage(channel_id="ws", sender_id="mallory", content=TextContent(body="hi")),
+            room_id="r1",
+        )
+
+        assert await store.get_binding("r1", "ws") is None
+
+    async def test_detach_on_one_worker_is_seen_by_another(self) -> None:
+        store = InMemoryStore()
+        kit1 = RoomKit(store=store)
+        kit2 = RoomKit(store=store)
+        for kit in (kit1, kit2):
+            kit.register_channel(_Transport("ws"))
+        await kit1.create_room(room_id="r1")
+        await kit1.attach_channel("r1", "ws")
+
+        await kit1.detach_channel("r1", "ws")
+
+        # The other worker's inbound path must not re-grant the access.
+        await kit2.process_inbound(
+            InboundMessage(channel_id="ws", sender_id="mallory", content=TextContent(body="hi")),
+            room_id="r1",
+        )
+        assert await store.get_binding("r1", "ws") is None
+
+    async def test_explicit_reattach_after_a_restart_re_grants(self) -> None:
+        store = InMemoryStore()
+        kit1 = RoomKit(store=store)
+        kit1.register_channel(_Transport("ws"))
+        await kit1.create_room(room_id="r1")
+        await kit1.attach_channel("r1", "ws")
+        await kit1.detach_channel("r1", "ws")
+
+        kit2 = RoomKit(store=store)
+        kit2.register_channel(_Transport("ws"))
+        await kit2.attach_channel("r1", "ws")
+
+        assert await store.get_binding("r1", "ws") is not None
+        # And auto-attach works again for it after another detach-less inbound.
+        await kit2.process_inbound(
+            InboundMessage(channel_id="ws", sender_id="u1", content=TextContent(body="hi")),
+            room_id="r1",
+        )
+        assert await store.get_binding("r1", "ws") is not None
+
+    async def test_the_tombstone_leaves_no_trace_once_cleared(self) -> None:
+        """Metadata carries the mechanism only while a revocation stands."""
+        from roomkit.core.mixins.channel_ops import DETACHED_CHANNELS_KEY
+
+        store = InMemoryStore()
+        kit = RoomKit(store=store)
+        kit.register_channel(_Transport("ws"))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "ws")
+
+        await kit.detach_channel("r1", "ws")
+        room = await kit.get_room("r1")
+        assert room.metadata.get(DETACHED_CHANNELS_KEY) == ["ws"]
+
+        await kit.attach_channel("r1", "ws")
+        room = await kit.get_room("r1")
+        assert DETACHED_CHANNELS_KEY not in room.metadata
+
+    async def test_detaching_a_never_attached_channel_leaves_no_tombstone(self) -> None:
+        """A no-op detach must not block future auto-attach."""
+        from roomkit.core.mixins.channel_ops import DETACHED_CHANNELS_KEY
+
+        kit = RoomKit()
+        kit.register_channel(_Transport("ws"))
+        await kit.create_room(room_id="r1")
+
+        assert await kit.detach_channel("r1", "ws") is False
+        room = await kit.get_room("r1")
+        assert DETACHED_CHANNELS_KEY not in room.metadata
+
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws", sender_id="u1", content=TextContent(body="hi")),
+            room_id="r1",
+        )
         assert await kit._store.get_binding("r1", "ws") is not None

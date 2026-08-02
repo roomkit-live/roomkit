@@ -21,16 +21,49 @@ class TestInMemoryLockManager:
         assert lock1 is not lock2
 
     async def test_serialization(self) -> None:
+        """Mutual exclusion, asserted for real: overlap inside the critical
+        section fails the test — a no-op lock would report max_concurrent == 5.
+        """
         mgr = InMemoryLockManager()
+        in_critical = 0
+        max_concurrent = 0
         order: list[int] = []
 
         async def task(n: int) -> None:
+            nonlocal in_critical, max_concurrent
             async with mgr.locked("r1"):
+                in_critical += 1
+                max_concurrent = max(max_concurrent, in_critical)
                 order.append(n)
-                await asyncio.sleep(0.01)
+                # Yield inside the critical section so a broken lock lets the
+                # other tasks in and the overlap is observed.
+                await asyncio.sleep(0.001)
+                in_critical -= 1
 
-        await asyncio.gather(task(1), task(2))
-        assert len(order) == 2
+        await asyncio.gather(*(task(n) for n in range(5)))
+        assert max_concurrent == 1
+        assert len(order) == 5
+
+    async def test_different_rooms_do_not_serialize(self) -> None:
+        """The lock is per-room: two rooms' critical sections may overlap."""
+        mgr = InMemoryLockManager()
+        in_critical = 0
+        max_concurrent = 0
+        gate = asyncio.Event()
+
+        async def task(room: str, first: bool) -> None:
+            nonlocal in_critical, max_concurrent
+            async with mgr.locked(room):
+                in_critical += 1
+                max_concurrent = max(max_concurrent, in_critical)
+                if first:
+                    await gate.wait()
+                else:
+                    gate.set()
+                in_critical -= 1
+
+        await asyncio.gather(task("r1", True), task("r2", False))
+        assert max_concurrent == 2
 
     async def test_lru_eviction(self) -> None:
         mgr = InMemoryLockManager(max_locks=2)

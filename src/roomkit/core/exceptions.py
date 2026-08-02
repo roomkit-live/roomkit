@@ -32,6 +32,15 @@ class ChannelNotRegisteredError(RoomKitError):
     """Channel type not registered."""
 
 
+class ChannelAlreadyRegisteredError(RoomKitError):
+    """A channel with this ID is already registered.
+
+    Silently replacing a live channel would leave existing room bindings
+    routing to an object the framework no longer knows about. Call
+    ``unregister_channel()`` first to swap an implementation deliberately.
+    """
+
+
 class ParticipantNotFoundError(RoomKitError):
     """Participant not found in room."""
 

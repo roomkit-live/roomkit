@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core.exceptions import ChannelNotRegisteredError
+from roomkit.core.mixins.channel_ops import is_channel_detached
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.core.mixins.inbound_identity import _IdentityBlockedError
 from roomkit.models.context import RoomContext
@@ -58,7 +59,6 @@ class InboundHost(Protocol):
 
     _store: ConversationStore
     _channels: dict[str, Channel]
-    _detached_bindings: set[tuple[str, str]]
     _lock_manager: RoomLockManager
     _identity_resolver: IdentityResolver | None
     _identity_channel_types: set[ChannelType] | None
@@ -79,7 +79,6 @@ class InboundMixin(HelpersMixin):
 
     _store: ConversationStore
     _channels: dict[str, Channel]
-    _detached_bindings: set[tuple[str, str]]
     _lock_manager: RoomLockManager
     _identity_resolver: IdentityResolver | None
     _identity_channel_types: set[ChannelType] | None
@@ -303,11 +302,12 @@ class InboundMixin(HelpersMixin):
                     # Room exists — ensure channel is attached, unless the
                     # integrator detached it. Auto-attach is a convenience for
                     # a channel that was never bound; re-granting access that
-                    # was explicitly revoked is not its job (RFC §7.5-7).
+                    # was explicitly revoked is not its job (RFC §7.5-7). The
+                    # revocation is read from room metadata — recorded there by
+                    # detach_channel() — so it holds across process restarts
+                    # and across workers sharing the store.
                     binding = await self._store.get_binding(room_id, message.channel_id)
-                    if binding is None and (room_id, message.channel_id) not in (
-                        self._detached_bindings
-                    ):
+                    if binding is None and not is_channel_detached(room, message.channel_id):
                         await self.attach_channel(room_id, message.channel_id)
             telemetry.end_span(route_span, attributes={"room_id": room_id or ""})
         except Exception as exc:

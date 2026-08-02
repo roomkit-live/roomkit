@@ -8,8 +8,10 @@ import pytest
 
 from roomkit.channels.base import Channel
 from roomkit.core.framework import (
+    ChannelAlreadyRegisteredError,
     ChannelNotRegisteredError,
     RoomKit,
+    RoomKitError,
     RoomNotFoundError,
 )
 from roomkit.models.channel import ChannelBinding, ChannelOutput
@@ -482,21 +484,34 @@ class TestIdempotencyRace:
 
 class TestConcurrentLocking:
     async def test_concurrent_close_room(self, kit: RoomKit) -> None:
-        """Two concurrent close_room calls should not corrupt state."""
+        """Two concurrent close_room calls converge on one CLOSED room."""
         await kit.create_room(room_id="r1")
         results = await asyncio.gather(
             kit.close_room("r1"),
             kit.close_room("r1"),
             return_exceptions=True,
         )
-        # Both should succeed (or one raises, both valid)
-        closed = [r for r in results if isinstance(r, Exception) is False]
+        # Whatever each call reported, the store's answer is a closed room.
+        room = await kit.get_room("r1")
+        assert room.status == RoomStatus.CLOSED
+        # At least one call succeeded, and any failure is a domain error,
+        # not corruption surfacing as an arbitrary exception.
+        closed = [r for r in results if not isinstance(r, Exception)]
         assert len(closed) >= 1
         for r in closed:
             assert r.status == RoomStatus.CLOSED
+        for r in results:
+            if isinstance(r, Exception):
+                assert isinstance(r, RoomKitError)
 
-    async def test_concurrent_mute_unmute(self, kit: RoomKit) -> None:
-        """Concurrent mute/unmute should not corrupt binding state."""
+    async def test_concurrent_mute_and_set_access_both_apply(self, kit: RoomKit) -> None:
+        """Concurrent single-field mutations must not lose each other's write.
+
+        mute() and set_access() both read-modify-write the binding; without
+        the room lock one write clobbers the other (lost update). Both fields
+        landing is the falsifiable proof of serialization — unlike asserting
+        a boolean is a boolean.
+        """
         ch = SimpleChannel("sms1")
         kit.register_channel(ch)
         await kit.create_room(room_id="r1")
@@ -504,11 +519,11 @@ class TestConcurrentLocking:
 
         await asyncio.gather(
             kit.mute("r1", "sms1"),
-            kit.unmute("r1", "sms1"),
+            kit.set_access("r1", "sms1", Access.READ_ONLY),
         )
-        # Should not raise; final state is deterministic within lock
         binding = await kit.get_binding("r1", "sms1")
-        assert binding.muted in (True, False)
+        assert binding.muted is True
+        assert binding.access == Access.READ_ONLY
 
     async def test_concurrent_set_access_set_visibility(self, kit: RoomKit) -> None:
         """Concurrent access and visibility changes should not corrupt state."""
@@ -526,8 +541,8 @@ class TestConcurrentLocking:
         assert binding.access == Access.READ_ONLY
         assert binding.visibility == "transport"
 
-    async def test_concurrent_attach_detach(self, kit: RoomKit) -> None:
-        """Concurrent attach and detach should not leave inconsistent state."""
+    async def test_concurrent_attach_of_two_channels(self, kit: RoomKit) -> None:
+        """Two concurrent attaches of different channels both land."""
         ch1 = SimpleChannel("sms1")
         ch2 = SimpleChannel("ws1")
         kit.register_channel(ch1)
@@ -541,6 +556,31 @@ class TestConcurrentLocking:
         bindings = await kit.list_bindings("r1")
         assert len(bindings) == 2
 
+    async def test_concurrent_attach_detach_same_channel_is_consistent(self, kit: RoomKit) -> None:
+        """Attach racing detach settles on one of the two serial outcomes.
+
+        Whichever order the lock imposes, the store must agree with itself:
+        the binding either exists (detach ran first) or is absent with the
+        revocation recorded (attach ran first) — never a half state where
+        list_bindings and get_binding disagree.
+        """
+        ch = SimpleChannel("sms1")
+        kit.register_channel(ch)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+
+        await asyncio.gather(
+            kit.attach_channel("r1", "sms1"),
+            kit.detach_channel("r1", "sms1"),
+            return_exceptions=True,
+        )
+        binding = await kit._store.get_binding("r1", "sms1")
+        listed = {b.channel_id for b in await kit.list_bindings("r1")}
+        if binding is None:
+            assert "sms1" not in listed
+        else:
+            assert "sms1" in listed
+
     async def test_concurrent_update_metadata(self, kit: RoomKit) -> None:
         """Concurrent metadata updates should not lose data."""
         await kit.create_room(room_id="r1")
@@ -552,6 +592,36 @@ class TestConcurrentLocking:
         room = await kit.get_room("r1")
         assert "a" in room.metadata
         assert "b" in room.metadata
+
+
+class TestLifecycleGuards:
+    async def test_registering_a_duplicate_channel_id_is_refused(self, kit: RoomKit) -> None:
+        kit.register_channel(SimpleChannel("sms1"))
+        with pytest.raises(ChannelAlreadyRegisteredError):
+            kit.register_channel(SimpleChannel("sms1"))
+
+    async def test_the_first_registration_survives_a_refused_duplicate(self, kit: RoomKit) -> None:
+        first = SimpleChannel("sms1")
+        kit.register_channel(first)
+        with pytest.raises(ChannelAlreadyRegisteredError):
+            kit.register_channel(SimpleChannel("sms1"))
+        assert kit._channels["sms1"] is first
+
+    async def test_unregister_then_register_swaps_deliberately(self, kit: RoomKit) -> None:
+        first = SimpleChannel("sms1")
+        kit.register_channel(first)
+        assert kit.unregister_channel("sms1") is first
+        second = SimpleChannel("sms1")
+        kit.register_channel(second)
+        assert kit._channels["sms1"] is second
+
+    async def test_close_is_idempotent(self) -> None:
+        kit = RoomKit()
+        kit.register_channel(SimpleChannel("sms1"))
+        await kit.create_room(room_id="r1")
+        await kit.close()
+        # A second close is a no-op, not a second teardown.
+        await kit.close()
 
 
 # -- Changeset 4: Identity resolution idempotency --

@@ -72,6 +72,7 @@ from roomkit.core.exceptions import (
     RoomNotAttachedError,
 )
 from roomkit.core.framework import (
+    ChannelAlreadyRegisteredError,
     ChannelNotFoundError,
     ChannelNotRegisteredError,
     IdentityNotFoundError,
@@ -210,6 +211,7 @@ __all__ = [
     "RoomClosedError",
     "RoomNotFoundError",
     "ChannelNotFoundError",
+    "ChannelAlreadyRegisteredError",
     "ChannelNotRegisteredError",
     "ParticipantNotFoundError",
     "ParticipantNotAdmittedError",

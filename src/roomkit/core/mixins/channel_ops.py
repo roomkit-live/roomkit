@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels.base import Channel, FrameworkAwareChannel
 from roomkit.core.exceptions import (
+    ChannelAlreadyRegisteredError,
     ChannelNotFoundError,
     ChannelNotRegisteredError,
     ConferenceAlreadyAttachedError,
@@ -27,12 +28,26 @@ if TYPE_CHECKING:
     from roomkit.core.event_router import EventRouter
     from roomkit.core.hooks import HookEngine
     from roomkit.core.locks import RoomLockManager
+    from roomkit.models.room import Room
     from roomkit.realtime.base import RealtimeBackend
     from roomkit.store.base import ConversationStore
     from roomkit.telemetry.base import TelemetryProvider
     from roomkit.tools.external import ExternalToolHandler
 
 logger = logging.getLogger("roomkit.framework")
+
+# Room-metadata key recording channels whose binding was explicitly revoked
+# via detach_channel(). The inbound path's auto-attach consults it so a
+# revocation cannot be undone by the next message (RFC §7.5-7). It lives in
+# room metadata — not framework memory — because the revocation must survive
+# process restarts and be visible to every process sharing the store.
+DETACHED_CHANNELS_KEY = "roomkit:detached_channels"
+
+
+def is_channel_detached(room: Room, channel_id: str) -> bool:
+    """Whether *channel_id* was explicitly detached from *room* (RFC §7.5-7)."""
+    detached = room.metadata.get(DETACHED_CHANNELS_KEY)
+    return isinstance(detached, list) and channel_id in detached
 
 
 @runtime_checkable
@@ -42,8 +57,6 @@ class ChannelOpsHost(Protocol):
     Attributes provided by the host's ``__init__``:
         _store: Conversation persistence backend.
         _channels: Registry of channel-id to :class:`Channel` instances.
-        _detached_bindings: (room_id, channel_id) pairs explicitly detached,
-            so auto-attach cannot re-grant revoked access (RFC §7.5-7).
         _lock_manager: Per-room lock for serialised mutation.
         _event_router: Cached event router (or ``None`` to rebuild).
         _hook_engine: Engine for hook execution.
@@ -61,7 +74,6 @@ class ChannelOpsHost(Protocol):
 
     _store: ConversationStore
     _channels: dict[str, Channel]
-    _detached_bindings: set[tuple[str, str]]
     _lock_manager: RoomLockManager
     _event_router: EventRouter | None
     _hook_engine: HookEngine
@@ -77,7 +89,6 @@ class ChannelOpsMixin(HelpersMixin):
 
     _store: ConversationStore
     _channels: dict[str, Channel]
-    _detached_bindings: set[tuple[str, str]]
     _lock_manager: RoomLockManager
     _event_router: EventRouter | None
     _hook_engine: HookEngine
@@ -93,7 +104,25 @@ class ChannelOpsMixin(HelpersMixin):
     _force_clear_greeting_gate: Any  # see ChannelOpsHost
 
     def register_channel(self, channel: Channel) -> None:
-        """Register a channel implementation by its ID."""
+        """Register a channel implementation by its ID.
+
+        A duplicate ``channel_id`` is refused: silently replacing a live
+        channel would leave existing room bindings routing to an object the
+        framework no longer delivers to, and the first registration's wiring
+        (hooks, telemetry, realtime) would keep firing on the orphan. Call
+        :meth:`unregister_channel` first to swap an implementation
+        deliberately.
+
+        Raises:
+            ChannelAlreadyRegisteredError: a channel with this ID is
+                already registered.
+        """
+        if channel.channel_id in self._channels:
+            raise ChannelAlreadyRegisteredError(
+                f"Channel {channel.channel_id!r} is already registered. "
+                f"Call unregister_channel({channel.channel_id!r}) first to "
+                f"replace it deliberately."
+            )
         self._channels[channel.channel_id] = channel
         self._event_router = None  # Reset router cache
 
@@ -190,7 +219,7 @@ class ChannelOpsMixin(HelpersMixin):
     ) -> ChannelBinding:
         """Attach a registered channel to a room."""
         async with self._lock_manager.locked(room_id):
-            await self.get_room(room_id)
+            room = await self.get_room(room_id)
             channel = self._channels.get(channel_id)
             if channel is None:
                 raise ChannelNotRegisteredError(f"Channel {channel_id} not registered")
@@ -247,7 +276,7 @@ class ChannelOpsMixin(HelpersMixin):
             result = await self._store.add_binding(binding)
             # An explicit attach is the integrator re-granting access, so the
             # revocation recorded by detach_channel() no longer applies.
-            self._detached_bindings.discard((room_id, channel_id))
+            await self._clear_detach_tombstone(room, channel_id)
             # Before the attachment is announced, not after: what the channel
             # establishes here is what the binding claims exists, and a channel
             # that cannot establish it has not been attached. Left to the
@@ -367,12 +396,19 @@ class ChannelOpsMixin(HelpersMixin):
     async def detach_channel(self, room_id: str, channel_id: str) -> bool:
         """Detach a channel from a room."""
         async with self._lock_manager.locked(room_id):
+            if await self._store.get_binding(room_id, channel_id) is None:
+                return False
+            # Record the revocation before the binding goes: the tombstone in
+            # room metadata is what keeps the inbound path's auto-attach from
+            # undoing an explicit detach (RFC §7.5-7), and it must survive
+            # restarts and be visible to every process sharing the store — an
+            # in-memory set is neither. Written first so a store failure
+            # leaves the binding in place rather than an unrecorded
+            # revocation. An explicit attach_channel() clears it —
+            # re-granting access is the integrator's call.
+            await self._record_detach_tombstone(room_id, channel_id)
             removed = await self._store.remove_binding(room_id, channel_id)
             if removed:
-                # Remember the revocation so the inbound path's auto-attach
-                # cannot undo it (RFC §7.5-7). An explicit attach_channel()
-                # clears it — re-granting access is the integrator's call.
-                self._detached_bindings.add((room_id, channel_id))
                 await self._emit_system_event(
                     room_id,
                     EventType.CHANNEL_DETACHED,
@@ -403,6 +439,38 @@ class ChannelOpsMixin(HelpersMixin):
                 if refusal is not None:
                     raise refusal
             return removed
+
+    async def _record_detach_tombstone(self, room_id: str, channel_id: str) -> None:
+        """Persist the revocation of *channel_id*'s binding (RFC §7.5-7).
+
+        Appends the channel to the room's ``DETACHED_CHANNELS_KEY`` metadata
+        list via ``patch_room_metadata`` — atomic on persistent backends, so
+        two processes detaching different channels do not clobber each other.
+        Runs under the room lock like every binding mutation.
+        """
+        room = await self.get_room(room_id)
+        detached = room.metadata.get(DETACHED_CHANNELS_KEY)
+        current = list(detached) if isinstance(detached, list) else []
+        if channel_id in current:
+            return
+        current.append(channel_id)
+        await self._store.patch_room_metadata(room_id, {DETACHED_CHANNELS_KEY: current})
+
+    async def _clear_detach_tombstone(self, room: Room, channel_id: str) -> None:
+        """Drop *channel_id* from the room's detach tombstones, if present.
+
+        The key itself is unset when the last tombstone goes, so a room that
+        never saw a detach — or whose detaches were all undone — carries no
+        trace of the mechanism in its metadata.
+        """
+        detached = room.metadata.get(DETACHED_CHANNELS_KEY)
+        if not isinstance(detached, list) or channel_id not in detached:
+            return
+        remaining = [c for c in detached if c != channel_id]
+        if remaining:
+            await self._store.patch_room_metadata(room.id, {DETACHED_CHANNELS_KEY: remaining})
+        else:
+            await self._store.patch_room_metadata(room.id, {}, unset=[DETACHED_CHANNELS_KEY])
 
     async def _announce_detach(
         self, room_id: str, channel_id: str, refusal: Exception | None = None
