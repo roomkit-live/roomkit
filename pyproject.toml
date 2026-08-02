@@ -210,6 +210,13 @@ artifacts = [
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+# Stress tests are opt-in: `make stress` (or `pytest -m stress`, whose -m
+# overrides this one). The default run — and CI's coverage run — skips them.
+addopts = "-m 'not stress'"
+markers = [
+    "stress: load/contention tests, excluded from the default run (run with `make stress`)",
+    "wallclock: asserts real elapsed-time budgets; deselect on loaded CI runners",
+]
 filterwarnings = [
     "error",
     "ignore:connect_voice\\(\\) is deprecated:DeprecationWarning",

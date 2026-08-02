@@ -30,6 +30,9 @@ test:
 coverage:
 	uv run pytest --cov=roomkit --cov-report=term-missing
 
+stress:
+	uv run pytest -m stress -v
+
 llms-full:
 	uv run python scripts/build_llms_full.py
 

@@ -65,7 +65,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   granted by an admin and self-join cannot get it back, so leaving on every
   shutdown would lock the agent out.
 
+- **Stress lane.** `make stress` (pytest marker `stress`) runs load/contention
+  tests excluded from the default run: 100 rooms × 5 concurrent turns, 50
+  turns racing into one room, flaky delivery under load, and a 1000-turn
+  conversation asserting the framework's transient state stays flat. The
+  `wallclock` marker is registered for timing-sensitive tests so loaded CI
+  runners can deselect them.
+
+### Fixed
+
+- **A revoked channel stays revoked across restarts and workers (RFC §7.5-7).**
+  `detach_channel()` now records the revocation in room metadata
+  (`roomkit:detached_channels`, written atomically via
+  `patch_room_metadata`) instead of a per-process in-memory set. Previously a
+  process restart — or a sibling worker sharing the store — lost the record,
+  and the next inbound message silently re-attached the detached channel at
+  default permissions. An explicit `attach_channel()` still clears it, and
+  the metadata key is removed when its last tombstone goes.
+
+- **Dishonest concurrency tests now assert their invariant.** The lock
+  manager's serialization test measures critical-section overlap (a no-op
+  lock now fails it); the framework's concurrent mute/access test asserts
+  both writes land (lost-update proof) instead of `muted in (True, False)`.
+
 ### Changed
+
+- **`register_channel()` refuses a duplicate `channel_id`** with the new
+  `ChannelAlreadyRegisteredError` instead of silently replacing the live
+  channel (which left existing bindings routing to an orphan). Call
+  `unregister_channel()` first to swap an implementation deliberately.
+
+- **`RoomKit.close()` is idempotent.** A second call returns immediately
+  instead of re-running the teardown against already-released resources.
 
 - **Buzz: graceful relay restarts reconnect quietly.** The source checks
   `BuzzClient.close_code` — a 1012 close (relay restart) reconnects at the
