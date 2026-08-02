@@ -78,3 +78,12 @@ __all__ = [
     "SessionAuditEntry",
     "SessionAuditor",
 ]
+
+# RedisStatusBackend requires redis>=5.0.1 (optional dep).
+# Import fails cleanly at construction time if redis is absent.
+try:
+    from roomkit.orchestration.status_redis import RedisStatusBackend
+
+    __all__ += ["RedisStatusBackend"]
+except ImportError:
+    pass

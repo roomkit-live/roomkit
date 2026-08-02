@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Distributed ephemeral backends: Redis realtime + Redis status bus.**
+  The two surfaces that stayed process-local after the scale-out work now
+  cross process boundaries. `RedisRealtimeBackend` distributes ephemeral
+  events (typing, presence, reactions, thinking deltas, tool-call markers)
+  over Redis pub/sub — single shared reader per process, per-subscription
+  bounded queues so a slow callback never stalls the rest (same isolation
+  as `InMemoryRealtime`), and `subscribe()` only returns once the server
+  confirmed the subscription. `RedisStatusBackend` gives the multi-agent
+  `StatusBus` a shared capped history (`LPUSH`/`LTRIM`) plus cross-process
+  notifications (pub/sub) — every worker observes every agent's entries and
+  `recent()` reads the same log everywhere. Both follow the
+  `RedisDeliveryBackend` conventions (URL or injected client, lazy import,
+  `roomkit[redis]` extra) and are re-exported from `roomkit.realtime` /
+  `roomkit.orchestration`. New example `examples/realtime_redis.py`
+  (two-terminal cross-process demo). The `redis` extra floor moves to
+  `>=5.0.1` — the delivery backend already called `Redis.aclose()`, which
+  only exists from that release.
+
 ## [0.39.0] — 2026-08-02
 
 ### Added
