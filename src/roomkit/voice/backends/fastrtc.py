@@ -115,6 +115,9 @@ class FastRTCVoiceBackend(VoiceBackend):
 
         # Session tracking: session_id -> VoiceSession
         self._sessions: dict[str, VoiceSession] = {}
+        # websocket/webrtc id -> session: the audio path resolves the
+        # session once per frame, so it must be a lookup, not a scan.
+        self._ws_sessions: dict[str, VoiceSession] = {}
 
         # Authenticated WebRTC offer metadata: webrtc_id -> auth meta dict.
         # Populated by register_webrtc_offer_auth() when an offer passes auth;
@@ -202,6 +205,7 @@ class FastRTCVoiceBackend(VoiceBackend):
         ws_id = session.metadata.get("websocket_id")
         if ws_id:
             self._emit_queues.pop(ws_id, None)
+            self._ws_sessions.pop(ws_id, None)
         self._websockets.pop(session.id, None)
         logger.info("Voice session ended: session=%s", session.id)
 
@@ -499,6 +503,7 @@ class FastRTCVoiceBackend(VoiceBackend):
         if session:
             session.metadata["websocket_id"] = websocket_id
             session.metadata["transport"] = "websocket"
+            self._ws_sessions[websocket_id] = session
             # Audio path is now live — fire session ready callbacks
             for cb in self._session_ready_callbacks:
                 cb(session)
@@ -509,15 +514,13 @@ class FastRTCVoiceBackend(VoiceBackend):
         if session:
             session.metadata["websocket_id"] = webrtc_id
             session.metadata["transport"] = "webrtc"
+            self._ws_sessions[webrtc_id] = session
             self._emit_queues[webrtc_id] = asyncio.Queue(maxsize=self._audio_queue_maxsize)
             for cb in self._session_ready_callbacks:
                 cb(session)
 
     def _find_session_by_websocket_id(self, websocket_id: str) -> VoiceSession | None:
-        for session in self._sessions.values():
-            if session.metadata.get("websocket_id") == websocket_id:
-                return session
-        return None
+        return self._ws_sessions.get(websocket_id)
 
 
 def mount_fastrtc_voice(

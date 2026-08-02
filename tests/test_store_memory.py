@@ -594,3 +594,106 @@ class TestDeleteRoomCleanup:
         assert await store.list_observations("r1") == []
         assert await store.list_bindings("r1") == []
         assert await store.list_participants("r1") == []
+
+
+class TestFindLatestRoomIndex:
+    """The participant→rooms candidate index behind find_latest_room.
+
+    The index only narrows the candidate set; the full predicate re-runs
+    per candidate, so these tests pin the observable behaviour through
+    every write that maintains it.
+    """
+
+    async def _room_with_binding(
+        self, store: InMemoryStore, room_id: str, participant_id: str
+    ) -> None:
+        await store.create_room(Room(id=room_id))
+        await store.add_binding(
+            ChannelBinding(
+                channel_id=f"ch-{room_id}",
+                room_id=room_id,
+                channel_type=ChannelType.SMS,
+                participant_id=participant_id,
+            )
+        )
+
+    async def test_finds_via_binding_participant(self, store: InMemoryStore) -> None:
+        await self._room_with_binding(store, "r1", "alice")
+        room = await store.find_latest_room("alice", channel_type="sms")
+        assert room is not None and room.id == "r1"
+
+    async def test_channel_type_filter_applies_to_binding_matches(
+        self, store: InMemoryStore
+    ) -> None:
+        await self._room_with_binding(store, "r1", "alice")
+        assert await store.find_latest_room("alice", channel_type="email") is None
+
+    async def test_participant_row_match_ignores_channel_type(self, store: InMemoryStore) -> None:
+        """A Participant row is membership; the channel_type filter only
+        narrows binding-based matches. Pinned: the index must not change it."""
+        await store.create_room(Room(id="r1"))
+        await store.add_participant(Participant(id="alice", room_id="r1", channel_id="ch-any"))
+        room = await store.find_latest_room("alice", channel_type="email")
+        assert room is not None and room.id == "r1"
+
+    async def test_latest_wins_across_rooms(self, store: InMemoryStore) -> None:
+        await self._room_with_binding(store, "r1", "alice")
+        await self._room_with_binding(store, "r2", "alice")
+        room = await store.find_latest_room("alice")
+        assert room is not None and room.id == "r2"
+
+    async def test_removed_binding_no_longer_matches(self, store: InMemoryStore) -> None:
+        await self._room_with_binding(store, "r1", "alice")
+        await store.remove_binding("r1", "ch-r1")
+        assert await store.find_latest_room("alice") is None
+
+    async def test_removed_binding_keeps_participant_row_match(self, store: InMemoryStore) -> None:
+        await self._room_with_binding(store, "r1", "alice")
+        await store.add_participant(Participant(id="alice", room_id="r1", channel_id="ch-any"))
+        await store.remove_binding("r1", "ch-r1")
+        room = await store.find_latest_room("alice")
+        assert room is not None and room.id == "r1"
+
+    async def test_deleted_room_no_longer_matches(self, store: InMemoryStore) -> None:
+        await self._room_with_binding(store, "r1", "alice")
+        await store.delete_room("r1")
+        assert await store.find_latest_room("alice") is None
+
+    async def test_unknown_participant_is_a_fast_none(self, store: InMemoryStore) -> None:
+        await self._room_with_binding(store, "r1", "alice")
+        assert await store.find_latest_room("mallory") is None
+
+    async def test_update_binding_reassigning_participant_matches_new_pid(
+        self, store: InMemoryStore
+    ) -> None:
+        await self._room_with_binding(store, "r1", "alice")
+        binding = await store.get_binding("r1", "ch-r1")
+        assert binding is not None
+        await store.update_binding(binding.model_copy(update={"participant_id": "bob"}))
+        room = await store.find_latest_room("bob")
+        assert room is not None and room.id == "r1"
+
+
+class TestEventOwnership:
+    """RFC §14.4: the store owns stored events; reads share immutable snapshots."""
+
+    async def test_mutating_a_written_event_does_not_reach_the_log(
+        self, store: InMemoryStore
+    ) -> None:
+        await store.create_room(Room(id="r1"))
+        event = make_event(room_id="r1", body="original")
+        await store.commit_event("r1", event)
+        # The caller's retained reference is theirs, not the log's.
+        event.content.body = "tampered"  # type: ignore[union-attr]
+        stored = (await store.get_conversation("r1", limit=10))[0]
+        assert stored.content.body == "original"  # type: ignore[union-attr]
+
+    async def test_reads_may_share_the_stored_snapshot(self, store: InMemoryStore) -> None:
+        """Two reads can return the same object — callers rely on neither
+        aliasing nor isolation, only on immutability (RFC §14.4)."""
+        await store.create_room(Room(id="r1"))
+        await store.commit_event("r1", make_event(room_id="r1", body="hello"))
+        first = (await store.get_conversation("r1", limit=10))[0]
+        second = (await store.get_conversation("r1", limit=10))[0]
+        assert first.id == second.id
+        assert first.content.body == second.content.body  # type: ignore[union-attr]

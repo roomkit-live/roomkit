@@ -112,6 +112,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The messaging path stops paying O(rooms) and O(events) store costs**
+  (measured at 5 000 rooms / 50-event contexts, Apple Silicon):
+  - `find_latest_room` — called once per inbound message — resolves
+    through a participant→rooms candidate index instead of scanning every
+    room and binding: 1 467 → 23 µs (64×). The index only narrows
+    candidates; the full match predicate re-runs per candidate, so
+    behaviour is unchanged.
+  - `InMemoryStore` event reads share the stored snapshot instead of
+    deep-copying every event on every read: `get_conversation(50)`
+    1 757 → 6.6 µs (266×), a full `RoomContext` build 1 607 → 80 µs
+    (20×). The copy moved to the write side — the store deep-copies once
+    per `add_event`/`commit_event`/`update_event`, so a caller's later
+    mutation of a written object still cannot reach the log. Committed
+    events are immutable (RFC §4); the new RFC §14.4 makes the
+    returned-object ownership explicit: treat read events as frozen,
+    rely on neither aliasing nor isolation. Rooms, bindings and
+    participants keep their caller-owned copies.
+  - FastRTC resolves websocket→session through a dict maintained at
+    registration instead of scanning all sessions per audio frame.
+  - The stress lane pins both budgets (`test_stress_messaging.py`).
+
 - **The WAV recorder is off the frame path.** Its taps now only enqueue:
   all disk I/O — file opens, `writeframes`, spooling, mixing — runs on a
   dedicated writer thread behind a bounded queue (a full queue drops the

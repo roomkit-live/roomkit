@@ -1,4 +1,10 @@
-"""InMemoryStore deep-copy isolation on read, and store lifecycle close()."""
+"""InMemoryStore object-ownership contract (RFC §14.4), and store close().
+
+Rooms are caller-owned copies on read. Events flipped direction: the
+store copies ON WRITE and shares the immutable snapshot on read — a
+caller's mutation of the object it *wrote* must not reach the log, and a
+read object is treated as frozen (its isolation is not promised).
+"""
 
 from __future__ import annotations
 
@@ -18,16 +24,17 @@ async def test_read_room_is_deep_copy() -> None:
     assert again.metadata["nested"]["x"] == 1  # stored object untouched
 
 
-async def test_read_event_is_deep_copy() -> None:
+async def test_written_event_is_copied_in() -> None:
+    """The store owns its stored representation from the moment the write
+    returns (RFC §14.4): the writer's retained reference is not the log's."""
     store = InMemoryStore()
     await store.create_room(Room(id="r1"))
-    await store.add_event(make_event(room_id="r1", id="e1", metadata={"nested": {"a": 1}}))
-    got = await store.get_event("e1")
-    assert got is not None
-    got.metadata["nested"]["a"] = 999
+    event = make_event(room_id="r1", id="e1", metadata={"nested": {"a": 1}})
+    await store.add_event(event)
+    event.metadata["nested"]["a"] = 999  # the caller mutates ITS object
     again = await store.get_event("e1")
     assert again is not None
-    assert again.metadata["nested"]["a"] == 1
+    assert again.metadata["nested"]["a"] == 1  # the log never saw it
 
 
 async def test_store_close_is_idempotent_noop() -> None:

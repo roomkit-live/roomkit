@@ -312,6 +312,10 @@ class ConversationStore(ABC):
 
         Use :meth:`get_timeline` to retrieve the full activity log
         including tool calls.
+
+        Returned events are immutable snapshots (RFC §14.4): treat them
+        as frozen. A store may share objects between reads or return
+        fresh ones — rely on neither.
         """
         return await self.list_events(
             room_id,

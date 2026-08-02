@@ -31,7 +31,7 @@ class TestAVChannelFastRTC:
         binding_result = await kit.attach_channel(room.id, "av")
 
         session = await backend.connect(room.id, "user-1", "av")
-        session.metadata["websocket_id"] = "ws-test"
+        backend._register_webrtc("ws-test", session.id)
         av.bind_session(session, room.id, binding_result)
 
         # Register a video tap

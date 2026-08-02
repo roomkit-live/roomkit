@@ -69,7 +69,7 @@ class TestFastRTCVideoBackendCallbacks:
     async def test_on_video_received_callback(self):
         backend = FastRTCVideoBackend()
         session = await backend.connect("room-1", "user-1", "voice")
-        session.metadata["websocket_id"] = "test-ws-id"
+        backend._register_webrtc("test-ws-id", session.id)
 
         received = []
         backend.on_video_received(lambda s, f: received.append((s, f)))
@@ -89,7 +89,7 @@ class TestFastRTCVideoBackendCallbacks:
     async def test_video_tap(self):
         backend = FastRTCVideoBackend()
         session = await backend.connect("room-1", "user-1", "voice")
-        session.metadata["websocket_id"] = "test-ws-id"
+        backend._register_webrtc("test-ws-id", session.id)
 
         tapped = []
         backend.add_video_tap(lambda s, f: tapped.append((s, f)))
@@ -102,7 +102,7 @@ class TestFastRTCVideoBackendCallbacks:
     async def test_frame_sequence_increments(self):
         backend = FastRTCVideoBackend()
         session = await backend.connect("room-1", "user-1", "voice")
-        session.metadata["websocket_id"] = "test-ws-id"
+        backend._register_webrtc("test-ws-id", session.id)
 
         received = []
         backend.on_video_received(lambda s, f: received.append(f))
@@ -119,7 +119,7 @@ class TestFastRTCVideoBackendCallbacks:
     async def test_no_callback_no_crash(self):
         backend = FastRTCVideoBackend()
         session = await backend.connect("room-1", "user-1", "voice")
-        session.metadata["websocket_id"] = "test-ws-id"
+        backend._register_webrtc("test-ws-id", session.id)
 
         # No callbacks registered — should not crash
         video_data = np.zeros((480, 640, 3), dtype=np.uint8)

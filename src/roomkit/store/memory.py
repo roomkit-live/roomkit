@@ -35,6 +35,46 @@ class InMemoryStore(ConversationStore):
         self._room_observations: dict[str, list[str]] = {}
         # Per-room locks for atomic index assignment
         self._room_locks: dict[str, asyncio.Lock] = {}
+        # find_latest_room candidate index: participant id -> rooms where that
+        # participant appears (as a Participant row or on a binding). Turns
+        # the per-inbound-message room scan into a lookup over the handful of
+        # rooms the sender actually touches. Over-inclusion is harmless — the
+        # read re-checks the full predicate per candidate — so writes only
+        # ever add, except the two spots that can name what they invalidate
+        # (remove_binding, delete_room).
+        self._participant_room_index: dict[str, set[str]] = {}
+
+    def _index_participant(self, pid: str | None, room_id: str) -> None:
+        if pid:
+            self._participant_room_index.setdefault(pid, set()).add(room_id)
+
+    def _unindex_participant(self, pid: str | None, room_id: str) -> None:
+        """Drop pid→room when nothing in the room references pid anymore."""
+        if not pid:
+            return
+        if pid in self._participants.get(room_id, {}):
+            return
+        for b in self._bindings.get(room_id, {}).values():
+            if b.participant_id == pid:
+                return
+        rooms = self._participant_room_index.get(pid)
+        if rooms is not None:
+            rooms.discard(room_id)
+            if not rooms:
+                del self._participant_room_index[pid]
+
+    def _unindex_room(self, room_id: str) -> None:
+        """Remove a deleted room from every participant's candidate set."""
+        pids = set(self._participants.get(room_id, {}).keys())
+        pids.update(
+            b.participant_id for b in self._bindings.get(room_id, {}).values() if b.participant_id
+        )
+        for pid in pids:
+            rooms = self._participant_room_index.get(pid)
+            if rooms is not None:
+                rooms.discard(room_id)
+                if not rooms:
+                    del self._participant_room_index[pid]
 
     def _lock_for(self, room_id: str) -> asyncio.Lock:
         """Return (or create) the asyncio.Lock for a room."""
@@ -68,6 +108,7 @@ class InMemoryStore(ConversationStore):
     async def delete_room(self, room_id: str) -> bool:
         if room_id not in self._rooms:
             return False
+        self._unindex_room(room_id)
         del self._rooms[room_id]
         # Clean up events
         event_ids = self._room_events.pop(room_id, [])
@@ -120,8 +161,14 @@ class InMemoryStore(ConversationStore):
         channel_type: str | None = None,
         status: str | None = None,
     ) -> Room | None:
+        candidates = self._participant_room_index.get(participant_id)
+        if not candidates:
+            return None
         best: Room | None = None
-        for room in self._rooms.values():
+        for room_id in candidates:
+            room = self._rooms.get(room_id)
+            if room is None:
+                continue
             if status is not None and room.status.value != status:
                 continue
             # Check if participant is in this room
@@ -169,6 +216,12 @@ class InMemoryStore(ConversationStore):
     # Event operations
 
     async def add_event(self, event: RoomEvent) -> RoomEvent:
+        # Copy-in: the store owns its stored representation from the moment
+        # the write returns (RFC 14.4) — a caller's later mutation of the
+        # object it passed must not reach the log. One deep copy per write
+        # is what lets every read share the stored object instead of paying
+        # a deep copy per event per read.
+        event = event.model_copy(deep=True)
         self._events[event.id] = event
         self._room_events.setdefault(event.room_id, []).append(event.id)
         if event.idempotency_key:
@@ -176,10 +229,13 @@ class InMemoryStore(ConversationStore):
         return event
 
     async def get_event(self, event_id: str) -> RoomEvent | None:
-        event = self._events.get(event_id)
-        return event.model_copy(deep=True) if event is not None else None
+        # Committed events are immutable (RFC 4, 14.4): reads share the
+        # stored snapshot instead of deep-copying it — the caller must
+        # treat it as frozen.
+        return self._events.get(event_id)
 
     async def update_event(self, event: RoomEvent) -> RoomEvent:
+        event = event.model_copy(deep=True)
         self._events[event.id] = event
         return event
 
@@ -246,18 +302,17 @@ class InMemoryStore(ConversationStore):
             events = self._apply_event_filter(events, event_filter)
 
         if before_index is not None:
-            tail = events[-limit:] if limit < len(events) else events
-            return [e.model_copy(deep=True) for e in tail]
+            return events[-limit:] if limit < len(events) else events
         if after_index is not None:
-            return [e.model_copy(deep=True) for e in events[:limit]]
+            return events[:limit]
         if newest_first:
             # Newest ``limit`` events (offset counted from the newest end),
             # returned oldest-first so the snapshot reads chronologically.
             # Mirrors the ``before_index`` tail slice.
             end = max(0, len(events) - offset)
             start = max(0, end - limit)
-            return [e.model_copy(deep=True) for e in events[start:end]]
-        return [e.model_copy(deep=True) for e in events[offset : offset + limit]]
+            return events[start:end]
+        return events[offset : offset + limit]
 
     @staticmethod
     def _apply_event_filter(events: list[RoomEvent], ef: EventFilter) -> list[RoomEvent]:
@@ -314,7 +369,7 @@ class InMemoryStore(ConversationStore):
         """Atomically assign index = len(room_events) and append."""
         async with self._lock_for(room_id):
             events = self._room_events.setdefault(room_id, [])
-            indexed = event.model_copy(update={"index": len(events)})
+            indexed = event.model_copy(update={"index": len(events)}, deep=True)
             self._events[indexed.id] = indexed
             events.append(indexed.id)
             if indexed.idempotency_key:
@@ -328,7 +383,7 @@ class InMemoryStore(ConversationStore):
         async with self._lock_for(room_id):
             events = self._room_events.setdefault(room_id, [])
             index = len(events)
-            indexed = event.model_copy(update={"index": index})
+            indexed = event.model_copy(update={"index": index}, deep=True)
             self._events[indexed.id] = indexed
             events.append(indexed.id)
             if indexed.idempotency_key:
@@ -349,6 +404,7 @@ class InMemoryStore(ConversationStore):
 
     async def add_binding(self, binding: ChannelBinding) -> ChannelBinding:
         self._bindings.setdefault(binding.room_id, {})[binding.channel_id] = binding
+        self._index_participant(binding.participant_id, binding.room_id)
         return binding
 
     async def get_binding(self, room_id: str, channel_id: str) -> ChannelBinding | None:
@@ -357,13 +413,15 @@ class InMemoryStore(ConversationStore):
 
     async def update_binding(self, binding: ChannelBinding) -> ChannelBinding:
         self._bindings.setdefault(binding.room_id, {})[binding.channel_id] = binding
+        self._index_participant(binding.participant_id, binding.room_id)
         return binding
 
     async def remove_binding(self, room_id: str, channel_id: str) -> bool:
         room_bindings = self._bindings.get(room_id, {})
         if channel_id not in room_bindings:
             return False
-        del room_bindings[channel_id]
+        removed = room_bindings.pop(channel_id)
+        self._unindex_participant(removed.participant_id, room_id)
         return True
 
     async def list_bindings(self, room_id: str) -> list[ChannelBinding]:
@@ -373,6 +431,7 @@ class InMemoryStore(ConversationStore):
 
     async def add_participant(self, participant: Participant) -> Participant:
         self._participants.setdefault(participant.room_id, {})[participant.id] = participant
+        self._index_participant(participant.id, participant.room_id)
         return participant
 
     async def get_participant(self, room_id: str, participant_id: str) -> Participant | None:
@@ -381,6 +440,7 @@ class InMemoryStore(ConversationStore):
 
     async def update_participant(self, participant: Participant) -> Participant:
         self._participants.setdefault(participant.room_id, {})[participant.id] = participant
+        self._index_participant(participant.id, participant.room_id)
         return participant
 
     async def list_participants(self, room_id: str) -> list[Participant]:
