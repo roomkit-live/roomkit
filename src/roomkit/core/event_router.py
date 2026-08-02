@@ -10,6 +10,7 @@ from typing import Any
 
 from roomkit.channels.base import Channel
 from roomkit.core.circuit_breaker import CircuitBreaker
+from roomkit.core.lanes import DeliveryPlan
 from roomkit.core.rate_limiter import TokenBucketRateLimiter
 from roomkit.core.retry import retry_with_backoff
 from roomkit.core.transcoder import DefaultContentTranscoder
@@ -146,27 +147,66 @@ class EventRouter:
         """Look up a channel by ID."""
         return self._channels.get(channel_id)
 
-    async def broadcast(
+    def plan(
         self,
         event: RoomEvent,
         source_binding: ChannelBinding,
         context: RoomContext,
         *,
         exclude_delivery: set[str] | None = None,
-    ) -> BroadcastResult:
-        """Broadcast an event to all eligible channels in the room.
+    ) -> DeliveryPlan:
+        """Resolve an event's delivery set (RFC §10.1 step 12).
+
+        Pure — no I/O, no awaits — so it runs under the room lock: the target
+        set is consistent with the committed timeline. Execution
+        (:meth:`execute_plan`) does not require the lock.
+
+        A source that cannot write (RFC §7.5 — guards reentry events and
+        direct broadcast callers; inbound events from non-writable sources
+        are blocked before broadcast) yields an empty delivery set.
+        """
+        if not source_binding.can_write:
+            logger.debug(
+                "Source %s cannot write (access=%s, muted=%s) — not broadcasting",
+                source_binding.channel_id,
+                source_binding.access,
+                source_binding.muted,
+                extra={"room_id": event.room_id, "channel_id": source_binding.channel_id},
+            )
+            targets: list[ChannelBinding] = []
+        else:
+            # Stamp visibility from source binding
+            if event.visibility == Visibility.ALL and source_binding.visibility != Visibility.ALL:
+                event = event.model_copy(update={"visibility": source_binding.visibility})
+            # Target bindings include muted channels — they can still read.
+            targets = self._filter_targets(event, source_binding, context.bindings)
+        return DeliveryPlan(
+            event=event,
+            source_binding=source_binding,
+            context=context,
+            targets=targets,
+            exclude_delivery=exclude_delivery,
+        )
+
+    async def execute_plan(self, plan: DeliveryPlan) -> BroadcastResult:
+        """Execute a plan's delivery set (RFC §10.1 step 14).
 
         RFC §3.8: For each target channel:
         - on_event(): all channels react (intelligence generates, observers analyze)
         - deliver(): only transport channels push to external recipients
 
-        Args:
-            exclude_delivery: Channel IDs to skip delivery for (already
-                received content via streaming).
+        Runs without the room lock; per-room ordering is the caller's
+        contract (the delivery lane, or an inline caller running to
+        completion).
         """
         from roomkit.telemetry.base import Attr, SpanKind
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
         from roomkit.telemetry.noop import NoopTelemetryProvider
+
+        event = plan.event
+        source_binding = plan.source_binding
+        context = plan.context
+        exclude_delivery = plan.exclude_delivery
 
         telemetry = self._telemetry or NoopTelemetryProvider()
         session_id = (event.metadata or {}).get("voice_session_id")
@@ -176,7 +216,7 @@ class EventRouter:
             parent_id=get_current_span(),
             room_id=event.room_id,
             session_id=session_id,
-            attributes={Attr.CHANNEL_ID: source_binding.channel_id},
+            attributes={Attr.CHANNEL_ID: source_binding.channel_id if source_binding else ""},
         )
         # Propagate backend-specific context for robust parent linking
         broadcast_token = set_current_span(
@@ -184,30 +224,12 @@ class EventRouter:
         )
 
         result = BroadcastResult()
+        targets = plan.targets
 
-        # Check source can write (RFC §7.5). Inbound events from non-writable
-        # sources are already blocked before broadcast in the inbound pipeline;
-        # this guards reentry events and any direct broadcast callers.
-        if not source_binding.can_write:
-            logger.debug(
-                "Source %s cannot write (access=%s, muted=%s) — not broadcasting",
-                source_binding.channel_id,
-                source_binding.access,
-                source_binding.muted,
-                extra={"room_id": event.room_id, "channel_id": source_binding.channel_id},
-            )
-            reset_span(broadcast_token)
-            telemetry.end_span(span_id, attributes={"target_count": 0})
-            return result
-
-        # Stamp visibility from source binding
-        if event.visibility == Visibility.ALL and source_binding.visibility != Visibility.ALL:
-            event = event.model_copy(update={"visibility": source_binding.visibility})
-
-        # Determine target bindings (includes muted channels — they can still read)
-        targets = self._filter_targets(event, source_binding, context.bindings)
-
-        if not targets:
+        # An injected plan (bare on_event/deliver, no transcode, no reentry)
+        # is executed by the framework host, never here; a plan with no
+        # source binding has nothing to transcode from either way.
+        if not targets or source_binding is None:
             reset_span(broadcast_token)
             telemetry.end_span(span_id, attributes={"target_count": 0})
             return result
@@ -466,6 +488,29 @@ class EventRouter:
         )
 
         return result
+
+    async def broadcast(
+        self,
+        event: RoomEvent,
+        source_binding: ChannelBinding,
+        context: RoomContext,
+        *,
+        exclude_delivery: set[str] | None = None,
+    ) -> BroadcastResult:
+        """Plan and execute in one call — the inline path.
+
+        Running to completion where the caller stands trivially satisfies
+        per-room order (RFC §10.2). The inbound pipeline instead calls
+        :meth:`plan` under the room lock and hands execution to the room's
+        delivery lane.
+
+        Args:
+            exclude_delivery: Channel IDs to skip delivery for (already
+                received content via streaming).
+        """
+        return await self.execute_plan(
+            self.plan(event, source_binding, context, exclude_delivery=exclude_delivery)
+        )
 
     def _filter_targets(
         self,
