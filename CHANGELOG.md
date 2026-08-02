@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Buzz presence heartbeat no longer dies on a transient failure.**
+  `BuzzRelaySource._presence_loop` returned (silently, DEBUG-only) on the
+  first failed kind-20001 publish, leaving a live agent showing offline
+  until the next reconnect. Presence is the only liveness signal a Buzz
+  agent has (Buzz's remote-agents spec makes it the status, with a
+  relay-side TTL), so the loop now logs a WARNING and retries at the next
+  beat — a dead socket still ends the loop via the subscribe failure and
+  reconnect.
+
+- **Buzz agents now flip to offline on a deliberate stop.**
+  `BuzzRelaySource.stop()` publishes presence `"offline"` (best-effort,
+  gated on `announce_presence`) before leaving/closing, so a stopped agent's
+  dot turns grey immediately instead of lingering "online" until the
+  relay-side presence TTL lapses — the avoidable half of the staleness
+  window Buzz's remote-agents spec (I3) bounds.
+
 ### Added
 
 - **Distributed ephemeral backends: Redis realtime + Redis status bus.**

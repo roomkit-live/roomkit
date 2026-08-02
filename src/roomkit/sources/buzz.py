@@ -292,8 +292,14 @@ class BuzzRelaySource(BaseSourceProvider):
             try:
                 await self._client.publish_presence("online")
             except Exception as exc:
-                logger.debug("Buzz presence publish failed: %s", exc)
-                return
+                if self._should_stop():
+                    return
+                # Presence is the only liveness signal a Buzz agent has: one
+                # missed beat and the relay-side TTL lapses, showing the agent
+                # offline while it still serves. Keep beating — if the socket
+                # is truly dead the subscribe loop fails too, cancelling this
+                # task and reconnecting, so retrying here cannot run away.
+                logger.warning("Buzz presence publish failed (retrying next beat): %s", exc)
             await asyncio.sleep(_PRESENCE_INTERVAL)
 
     async def start(self, emit: EmitCallback) -> None:
@@ -353,6 +359,12 @@ class BuzzRelaySource(BaseSourceProvider):
     async def stop(self) -> None:
         """Stop receiving and close the relay connection."""
         await super().stop()
+        if self._config.announce_presence:
+            # Published while the socket may still be up: a deliberate stop
+            # flips the agent's dot to offline at once instead of leaving it
+            # "online" until the relay-side presence TTL lapses.
+            with contextlib.suppress(Exception):
+                await self._client.publish_presence("offline")
         if self._config.leave_on_stop:
             # Best-effort NIP-29 leave (kind 9022) while the socket may still
             # be up. Opt-in: see ``BuzzConfig.leave_on_stop`` for the private-

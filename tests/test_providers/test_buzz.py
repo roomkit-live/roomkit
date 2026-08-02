@@ -316,6 +316,8 @@ class FakeBuzzClient:
         self.subscribe_kinds: Any = "unset"
         self.joined: list[str] = []
         self.left: list[str] = []
+        self.presence: list[str] = []
+        self.presence_error: Exception | None = None  # raised once, then cleared
         self.released = asyncio.Event()
 
     async def connect(self) -> None: ...
@@ -329,6 +331,10 @@ class FakeBuzzClient:
         return {"accepted": True, "message": ""}
 
     async def publish_presence(self, status: str = "online") -> dict[str, Any]:
+        if self.presence_error is not None:
+            exc, self.presence_error = self.presence_error, None
+            raise exc
+        self.presence.append(status)
         return {}
 
     async def subscribe_channel(self, channel_id: str, *, kinds: Any = None) -> Any:
@@ -453,6 +459,35 @@ class TestBuzzRelaySourceLifecycle:
         leaving = buzz_source(config=config)
         await leaving.stop()
         assert leaving.client.left == ["chan-uuid"]
+
+    async def test_presence_failure_retries_next_beat(
+        self, buzz_source, monkeypatch, caplog
+    ) -> None:
+        """One failed heartbeat must not silently kill the presence loop."""
+        import roomkit.sources.buzz as buzz_module
+
+        monkeypatch.setattr(buzz_module, "_PRESENCE_INTERVAL", 0.01)
+        source = buzz_source()
+        source.client.presence_error = ConnectionError("beat lost")
+        with caplog.at_level("WARNING", logger="roomkit.sources.buzz"):
+            await _run_source_once(source)
+        # The first beat failed, later beats landed ("online"), then stop()
+        # published "offline" — the loop survived the failure.
+        assert "online" in source.client.presence
+        assert "retrying next beat" in caplog.text
+
+    async def test_stop_publishes_offline(self, buzz_source) -> None:
+        """A deliberate stop flips presence to offline instead of lapsing by TTL."""
+        source = buzz_source()
+        await _run_source_once(source)
+        assert source.client.presence[0] == "online"
+        assert source.client.presence[-1] == "offline"
+
+    async def test_no_offline_when_presence_disabled(self, buzz_source) -> None:
+        config = BuzzConfig(relay_url="wss://relay", private_key="nsec1x", announce_presence=False)
+        source = buzz_source(config=config)
+        await _run_source_once(source)
+        assert source.client.presence == []
 
 
 class TestHuddleAnnouncementParser:

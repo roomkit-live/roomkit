@@ -22,7 +22,9 @@ class BuzzConfig(BaseModel):
     # autocomplete. Requires buzzkit>=0.1.1.
     auto_join: bool = True
     # Announce presence (kind 20001 "online") on connect + periodic heartbeat,
-    # so the agent shows as online while it runs. Requires buzzkit>=0.1.2.
+    # so the agent shows as online while it runs; a deliberate stop() publishes
+    # "offline" so the agent's dot flips immediately instead of waiting out the
+    # relay-side presence TTL. Requires buzzkit>=0.1.2.
     announce_presence: bool = True
     # Optional NIP-OA owner-attestation tag JSON (``["auth", <owner>, …]``) — makes
     # the relay record the agent's owner. Generate it with the owner's key via
