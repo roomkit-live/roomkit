@@ -38,8 +38,41 @@ class ConversationStore(ABC):
 
     @abstractmethod
     async def update_room(self, room: Room) -> Room:
-        """Update an existing room."""
+        """Update an existing room.
+
+        ``Room.delivered_index`` is store-managed (see
+        :meth:`advance_delivered_index`): implementations SHOULD NOT let a
+        caller's stale copy rewind it. The shipped stores exclude it from
+        this write path.
+        """
         ...
+
+    async def advance_delivered_index(
+        self, room_id: str, index: int, *, force: bool = False
+    ) -> bool:
+        """Advance the room's delivered index to *index* (RFC §10.1 step 14).
+
+        Compare-and-set: succeeds only from ``index - 1`` — the strict
+        per-room delivery order — unless *force*, the delivery-gap skip
+        policy, which advances from any lower value. Returns True if the
+        cursor moved.
+
+        This default is read-check-write through :meth:`get_room` /
+        :meth:`update_room`; it is only correct under the room's delivery
+        claim, and only for stores whose ``update_room`` persists
+        ``delivered_index`` as given. A store that shields the field there
+        (as the shipped stores do) MUST override this with an atomic
+        conditional write.
+        """
+        room = await self.get_room(room_id)
+        if room is None:
+            return False
+        if room.delivered_index >= index:
+            return False
+        if not force and room.delivered_index != index - 1:
+            return False
+        await self.update_room(room.model_copy(update={"delivered_index": index}))
+        return True
 
     async def patch_room_metadata(
         self,

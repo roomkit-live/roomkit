@@ -423,6 +423,32 @@ class PostgresStore(ConversationStore):
                 )
         return room
 
+    async def advance_delivered_index(
+        self, room_id: str, index: int, *, force: bool = False
+    ) -> bool:
+        """Atomic CAS on the delivery-lane cursor (RFC §10.1 step 14).
+
+        ``delivered_index`` is deliberately absent from :meth:`update_room`'s
+        column list — only this conditional write moves it, so a stale Room
+        copy can never rewind the lane.
+        """
+        with self._query_span("advance_delivered_index", "rooms"):
+            async with self._acquire() as conn:
+                if force:
+                    tag = await conn.execute(
+                        "UPDATE rooms SET delivered_index=$2 WHERE id=$1 AND delivered_index < $2",
+                        room_id,
+                        index,
+                    )
+                else:
+                    tag = await conn.execute(
+                        "UPDATE rooms SET delivered_index=$2"
+                        " WHERE id=$1 AND delivered_index = $2 - 1",
+                        room_id,
+                        index,
+                    )
+        return bool(tag == "UPDATE 1")
+
     async def patch_room_metadata(
         self,
         room_id: str,

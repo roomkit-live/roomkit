@@ -25,6 +25,7 @@ def _row_to_room(row: Any) -> Room:
         status=row["status"],
         event_count=row["event_count"],
         latest_index=row["latest_index"],
+        delivered_index=row["delivered_index"],
         metadata=(
             json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
         ),

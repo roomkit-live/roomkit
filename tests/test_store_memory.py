@@ -34,6 +34,58 @@ class TestRoomOperations:
         assert result is not None
         assert result.status == RoomStatus.CLOSED
 
+    async def test_delivered_index_defaults_to_minus_one(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        room = await store.get_room("r1")
+        assert room is not None
+        assert room.delivered_index == -1
+
+    async def test_advance_delivered_index_in_order(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        assert await store.advance_delivered_index("r1", 0) is True
+        assert await store.advance_delivered_index("r1", 1) is True
+        room = await store.get_room("r1")
+        assert room is not None
+        assert room.delivered_index == 1
+
+    async def test_advance_delivered_index_refuses_gap(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        assert await store.advance_delivered_index("r1", 2) is False
+        room = await store.get_room("r1")
+        assert room is not None
+        assert room.delivered_index == -1
+
+    async def test_advance_delivered_index_refuses_regress(self, store: InMemoryStore) -> None:
+        await store.create_room(Room(id="r1"))
+        await store.advance_delivered_index("r1", 0)
+        await store.advance_delivered_index("r1", 1)
+        assert await store.advance_delivered_index("r1", 1) is False
+        assert await store.advance_delivered_index("r1", 0) is False
+
+    async def test_advance_delivered_index_force_skips_gap(self, store: InMemoryStore) -> None:
+        """The delivery-gap skip policy: force jumps over a hole, never back."""
+        await store.create_room(Room(id="r1"))
+        assert await store.advance_delivered_index("r1", 5, force=True) is True
+        room = await store.get_room("r1")
+        assert room is not None
+        assert room.delivered_index == 5
+        assert await store.advance_delivered_index("r1", 3, force=True) is False
+
+    async def test_advance_delivered_index_unknown_room(self, store: InMemoryStore) -> None:
+        assert await store.advance_delivered_index("nope", 0) is False
+
+    async def test_update_room_never_rewinds_delivered_index(self, store: InMemoryStore) -> None:
+        """A stale Room copy must not move the store-managed lane cursor."""
+        await store.create_room(Room(id="r1"))
+        stale = await store.get_room("r1")
+        assert stale is not None
+        await store.advance_delivered_index("r1", 0)
+        await store.update_room(stale.model_copy(update={"status": RoomStatus.CLOSED}))
+        room = await store.get_room("r1")
+        assert room is not None
+        assert room.status == RoomStatus.CLOSED
+        assert room.delivered_index == 0
+
     async def test_patch_room_metadata_merges(self, store: InMemoryStore) -> None:
         await store.create_room(Room(id="r1", metadata={"a": 1, "keep": "x"}))
         result = await store.patch_room_metadata("r1", {"a": 2, "b": 3})

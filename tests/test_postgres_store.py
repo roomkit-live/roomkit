@@ -125,6 +125,7 @@ def _room_row(room: Room) -> dict:
         "status": room.status.value,
         "event_count": room.event_count,
         "latest_index": room.latest_index,
+        "delivered_index": room.delivered_index,
         "metadata": room.metadata,
         "timers": room.timers.model_dump(mode="json"),
         "created_at": room.created_at,

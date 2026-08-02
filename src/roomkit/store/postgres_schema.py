@@ -101,12 +101,17 @@ CREATE TABLE IF NOT EXISTS rooms (
     status          TEXT NOT NULL DEFAULT 'active',
     event_count     INTEGER NOT NULL DEFAULT 0,
     latest_index    INTEGER NOT NULL DEFAULT 0,
+    delivered_index INTEGER NOT NULL DEFAULT -1,
     metadata        JSONB NOT NULL DEFAULT '{}',
     timers          JSONB NOT NULL DEFAULT '{}',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     closed_at       TIMESTAMPTZ
 );
+
+-- Additive migration for pre-existing deployments: the delivery-lane
+-- cursor (RFC §10.1 step 14). -1 = no delivery set executed yet.
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS delivered_index INTEGER NOT NULL DEFAULT -1;
 CREATE INDEX IF NOT EXISTS idx_rooms_org ON rooms(organization_id);
 CREATE INDEX IF NOT EXISTS idx_rooms_status ON rooms(status);
 CREATE INDEX IF NOT EXISTS idx_rooms_updated ON rooms(updated_at DESC);

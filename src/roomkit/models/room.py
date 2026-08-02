@@ -31,3 +31,8 @@ class Room(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     event_count: int = Field(default=0, ge=0)
     latest_index: int = Field(default=0, ge=0)
+    # Highest event index whose delivery set has executed (RFC §10.1 step 14);
+    # -1 = none yet. Store-managed: advanced only through
+    # ConversationStore.advance_delivered_index() — update_room() never
+    # rewinds it from a caller's stale copy.
+    delivered_index: int = Field(default=-1, ge=-1)
