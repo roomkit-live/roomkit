@@ -129,10 +129,11 @@ class RedisStatusBackend(StatusBackend):
         (bounded) for the server's subscribe confirmation so entries
         published after it returns are guaranteed to be observed.
         """
-        if self._closed:
-            raise RuntimeError("RedisStatusBackend is closed")
-
         async with self._lock:
+            # Checked under the lock: a subscribe racing close() must
+            # either complete before teardown or observe the closed flag.
+            if self._closed:
+                raise RuntimeError("RedisStatusBackend is closed")
             if self._reader_task is None:
                 if self._pubsub is None:
                     self._pubsub = self._client.pubsub()
@@ -176,12 +177,15 @@ class RedisStatusBackend(StatusBackend):
                 await self._reader_task
             self._reader_task = None
 
-        self._subscribers.clear()
+        # Teardown under the lock so an in-flight subscribe() cannot
+        # register a dangling subscriber after this.
+        async with self._lock:
+            self._subscribers.clear()
 
-        if self._pubsub is not None:
-            with contextlib.suppress(Exception):
-                await self._pubsub.aclose()
-            self._pubsub = None
+            if self._pubsub is not None:
+                with contextlib.suppress(Exception):
+                    await self._pubsub.aclose()
+                self._pubsub = None
 
         if self._owns_client:
             await self._client.aclose()

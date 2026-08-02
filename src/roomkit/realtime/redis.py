@@ -122,9 +122,6 @@ class RedisRealtimeBackend(RealtimeBackend):
         Returns:
             A subscription ID that can be used to unsubscribe.
         """
-        if self._closed:
-            raise RuntimeError("RedisRealtimeBackend is closed")
-
         sub_id = uuid4().hex
         sub = _Subscription(
             sub_id=sub_id,
@@ -134,6 +131,10 @@ class RedisRealtimeBackend(RealtimeBackend):
         )
 
         async with self._lock:
+            # Checked under the lock: a subscribe racing close() must
+            # either complete before teardown or observe the closed flag.
+            if self._closed:
+                raise RuntimeError("RedisRealtimeBackend is closed")
             if channel not in self._channels:
                 if self._pubsub is None:
                     self._pubsub = self._client.pubsub()
@@ -208,16 +209,19 @@ class RedisRealtimeBackend(RealtimeBackend):
                 await self._reader_task
             self._reader_task = None
 
-        for sub in list(self._subscriptions.values()):
-            await sub.stop()
-        self._subscriptions.clear()
-        self._channels.clear()
-        self._confirmations.clear()
+        # Teardown under the lock so an in-flight subscribe() cannot
+        # register a subscription (and leak its drain task) after this.
+        async with self._lock:
+            for sub in list(self._subscriptions.values()):
+                await sub.stop()
+            self._subscriptions.clear()
+            self._channels.clear()
+            self._confirmations.clear()
 
-        if self._pubsub is not None:
-            with contextlib.suppress(Exception):
-                await self._pubsub.aclose()
-            self._pubsub = None
+            if self._pubsub is not None:
+                with contextlib.suppress(Exception):
+                    await self._pubsub.aclose()
+                self._pubsub = None
 
         if self._owns_client:
             await self._client.aclose()

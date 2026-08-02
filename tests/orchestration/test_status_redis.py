@@ -11,44 +11,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from roomkit.orchestration.status_bus import StatusEntry, StatusLevel
+from tests.redis_fakes import FakePubSub
 
 # -- Fake Redis -----------------------------------------------------------
-
-
-class FakePubSub:
-    """Queue-backed PubSub fake (see tests/test_realtime_redis.py)."""
-
-    def __init__(self) -> None:
-        self._queue: asyncio.Queue[dict] = asyncio.Queue()
-        self.subscribed: list[str] = []
-        self.closed = False
-        self.confirm_subscribes = True
-
-    async def subscribe(self, channel: str) -> None:
-        self.subscribed.append(channel)
-        if self.confirm_subscribes:
-            self._queue.put_nowait(
-                {"type": "subscribe", "pattern": None, "channel": channel.encode(), "data": 1}
-            )
-
-    async def unsubscribe(self, channel: str) -> None:
-        pass
-
-    async def aclose(self) -> None:
-        self.closed = True
-
-    async def get_message(
-        self, ignore_subscribe_messages: bool = False, timeout: float = 0.0
-    ) -> dict | None:
-        try:
-            return await asyncio.wait_for(self._queue.get(), timeout=timeout)
-        except TimeoutError:
-            return None
-
-    def inject(self, channel: str | bytes, data: str | bytes) -> None:
-        self._queue.put_nowait(
-            {"type": "message", "pattern": None, "channel": channel, "data": data}
-        )
 
 
 class FakePipeline:
