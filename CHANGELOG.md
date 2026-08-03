@@ -55,6 +55,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ACPChannel(transport=...)` — the agent connection is injectable, so the
+  agent no longer has to be a subprocess of this process.** `ACPChannel` spoke
+  ACP only over the stdio of an agent it spawned itself, which rules out an
+  agent running anywhere else — on a user's own machine behind a relay, in
+  another container. The protocol never needed the process: the SDK builds its
+  connection from a plain reader/writer pair (`acp.connect_to_agent`), and the
+  update-to-RoomKit-event mapping never referenced the process at all. That
+  seam is now public. `ACPTransport` is the ABC — `open()` returns a live
+  connection, `close()` undoes it, `is_alive()` says whether it still stands —
+  and `StdioACPTransport` is the spawn, still built for you when you pass
+  `command=`. Exactly one of `command` / `transport` is required, and
+  `env`/`inherit_env` are refused alongside a transport rather than silently
+  ignored (they configure the spawn). Everything the *protocol* does —
+  `initialize`, version negotiation, `authenticate`, per-room sessions,
+  prompts, permissions, config options — stays on the channel, so a new
+  transport inherits it. `info["transport"]` reports the transport's name
+  instead of a hardcoded `"stdio"`. The channel now asks the transport whether
+  the connection is alive, which generalises "the subprocess died, respawn and
+  drop its sessions" to any transport that can tell. Nothing changes for
+  existing callers: `command` stays positional.
+
 - **`RoomKit(agent_response_policy=...)` / `create_room(...)` — a room says
   whether its agents answer each other (RFC §19.3.1).** `AGENT_CHAIN` (the
   default, unchanged) lets an agent's output solicit every eligible agent —

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 import sys
 from io import StringIO
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
+from uuid import uuid4
 
 import acp
 import pytest
@@ -23,12 +25,12 @@ from acp.schema import (
     SetSessionConfigOptionResponse,
 )
 
-from roomkit import ACPChannel, CLIChannel, RoomKit
+from roomkit import ACPChannel, ACPTransport, CLIChannel, RoomKit, StdioACPTransport
 from roomkit.channels._acp_client import (
     _config_labels,
     _config_values,
-    _resolve_spawn_env,
 )
+from roomkit.channels.acp_transport import _resolve_spawn_env
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -77,6 +79,52 @@ class EchoAgent(Agent):
 
 asyncio.run(run_agent(EchoAgent()))
 """
+
+
+class _InProcessEchoAgent(acp.Agent):
+    """The same echo agent as ``_ECHO_AGENT``, running in this process.
+
+    The subprocess copy above proves the stdio path; this one lets a test
+    drive the real protocol without spawning anything.
+    """
+
+    def on_connect(self, conn: Any) -> None:
+        self.conn = conn
+
+    async def initialize(self, protocol_version: int, **kwargs: Any) -> InitializeResponse:
+        return InitializeResponse(protocol_version=protocol_version)
+
+    async def new_session(self, cwd: str, **kwargs: Any) -> NewSessionResponse:
+        return NewSessionResponse(session_id=uuid4().hex)
+
+    async def prompt(self, session_id: str, prompt: list[Any], **kwargs: Any) -> PromptResponse:
+        await self.conn.session_update(
+            session_id=session_id,
+            update=acp.update_agent_message_text(prompt[0].text),
+        )
+        return PromptResponse(stop_reason="end_turn")
+
+
+class _SocketPairTransport(ACPTransport):
+    """Carry ACP over an already-connected socket pair.
+
+    Stands in for any transport handed a live pipe it did not create — a
+    WebSocket relay to an agent on another machine has this same shape.
+    """
+
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self._reader = reader
+        self._writer = writer
+
+    @property
+    def name(self) -> str:
+        return "socketpair"
+
+    async def open(self, client: Any, *, queue: Any) -> Any:
+        return acp.connect_to_agent(client, self._writer, self._reader, queue=queue)
+
+    async def close(self) -> None:
+        self._writer.close()
 
 
 class _RecordingToolHandler(ExternalToolHandler):
@@ -268,18 +316,34 @@ class _FakeACPConnection:
         self.closed_sessions.append(session_id)
 
 
-class _FakeProcessContext:
+class _FakeTransport(ACPTransport):
+    """Hands the channel a canned connection — no process, no wire.
+
+    The suite drives the channel through the public transport seam rather
+    than by patching internals, so every test here also exercises it.
+    """
+
     def __init__(self, connection: _FakeACPConnection) -> None:
         self.connection = connection
-        self.process = SimpleNamespace(returncode=None, stderr=None)
+        self.opened = 0
         self.exited = False
+        self.alive = True
 
-    async def __aenter__(self) -> tuple[_FakeACPConnection, Any]:
-        return self.connection, self.process
+    @property
+    def name(self) -> str:
+        return "fake"
 
-    async def __aexit__(self, *exc: object) -> None:
+    async def open(self, client: Any, *, queue: Any) -> Any:
+        self.opened += 1
+        self.alive = True
+        return self.connection
+
+    async def close(self) -> None:
         self.exited = True
-        self.process.returncode = 0
+        self.alive = False
+
+    def is_alive(self) -> bool:
+        return self.alive
 
 
 def _channel(
@@ -287,17 +351,17 @@ def _channel(
     *,
     handler: ExternalToolHandler | None = None,
     emit_updates: bool = True,
-) -> tuple[ACPChannel, _FakeACPConnection, _FakeProcessContext]:
+) -> tuple[ACPChannel, _FakeACPConnection, _FakeTransport]:
+    connection = _FakeACPConnection(None, emit_updates=emit_updates)
+    transport = _FakeTransport(connection)
     channel = ACPChannel(
         "acp-agent",
-        ["fake-agent", "--acp"],
+        transport=transport,
         cwd=tmp_path,
         external_tool_handler=handler,
     )
-    connection = _FakeACPConnection(channel._client, emit_updates=emit_updates)
-    process_context = _FakeProcessContext(connection)
-    channel._create_process_context = lambda sdk: process_context  # type: ignore[method-assign]
-    return channel, connection, process_context
+    connection.client = channel._client
+    return channel, connection, transport
 
 
 def _binding(room_id: str = "room-1") -> ChannelBinding:
@@ -322,8 +386,9 @@ class TestACPChannel:
         with pytest.raises(ValueError, match="inherit_env"):
             ACPChannel("acp", ["agent"], cwd=tmp_path, inherit_env=["SSH_AUTH_SOCK", ""])
         channel = ACPChannel("acp", ["agent"], cwd=tmp_path, inherit_env=["SSH_AUTH_SOCK"])
-        assert channel._inherit_env == ("SSH_AUTH_SOCK",)
-        assert ACPChannel("acp", ["agent"], cwd=tmp_path)._inherit_env == ()
+        assert channel._transport._inherit_env == ("SSH_AUTH_SOCK",)  # type: ignore[attr-defined]
+        default = ACPChannel("acp", ["agent"], cwd=tmp_path)
+        assert default._transport._inherit_env == ()  # type: ignore[attr-defined]
 
     def test_resolve_spawn_env(self) -> None:
         environ = {"SSH_AUTH_SOCK": "/run/agent.sock", "LANG": "fr_CA.UTF-8"}
@@ -340,7 +405,7 @@ class TestACPChannel:
         assert _resolve_spawn_env((), None, environ) is None
         assert _resolve_spawn_env(("MISSING",), None, environ) is None
 
-    def test_spawn_receives_resolved_env(self, tmp_path: Any) -> None:
+    async def test_spawn_receives_resolved_env(self, tmp_path: Any) -> None:
         channel = ACPChannel(
             "acp",
             ["agent"],
@@ -350,21 +415,94 @@ class TestACPChannel:
         )
         captured: dict[str, Any] = {}
 
+        class _Context:
+            async def __aenter__(self) -> tuple[Any, Any]:
+                return SimpleNamespace(), SimpleNamespace(returncode=None, stderr=None)
+
+            async def __aexit__(self, *exc: object) -> None:
+                return None
+
         def spawn(client: Any, *args: Any, **kwargs: Any) -> Any:
             captured.update(kwargs)
-            return SimpleNamespace()
+            return _Context()
 
         sdk = SimpleNamespace(
             acp=SimpleNamespace(spawn_agent_process=spawn),
             task=SimpleNamespace(InMemoryMessageQueue=lambda: None),
         )
-        with patch.dict("os.environ", {"SSH_AUTH_SOCK": "/run/agent.sock"}):
-            channel._create_process_context(sdk)  # type: ignore[arg-type]
+        with (
+            patch.dict("os.environ", {"SSH_AUTH_SOCK": "/run/agent.sock"}),
+            patch("roomkit.channels.acp_transport._load_sdk", return_value=sdk),
+        ):
+            await channel._transport.open(channel._client, queue=None)
 
         assert captured["env"] == {
             "SSH_AUTH_SOCK": "/run/agent.sock",
             "MAX_THINKING_TOKENS": "1024",
         }
+
+    def test_command_and_transport_are_mutually_exclusive(self, tmp_path: Any) -> None:
+        transport = _FakeTransport(_FakeACPConnection(None))
+        with pytest.raises(ValueError, match="not both"):
+            ACPChannel("acp", ["agent"], transport=transport, cwd=tmp_path)
+        with pytest.raises(ValueError, match="not both"):
+            ACPChannel("acp", cwd=tmp_path)
+
+    def test_spawn_only_options_are_rejected_with_a_transport(self, tmp_path: Any) -> None:
+        # env/inherit_env shape the subprocess spawn. Accepting them next to a
+        # transport that does its own connecting would silently drop them.
+        transport = _FakeTransport(_FakeACPConnection(None))
+        with pytest.raises(ValueError, match="env and inherit_env"):
+            ACPChannel("acp", transport=transport, cwd=tmp_path, env={"A": "1"})
+        with pytest.raises(ValueError, match="env and inherit_env"):
+            ACPChannel("acp", transport=transport, cwd=tmp_path, inherit_env=["PATH"])
+
+    def test_info_reports_the_transport_in_use(self, tmp_path: Any) -> None:
+        assert ACPChannel("acp", ["agent"], cwd=tmp_path).info["transport"] == "stdio"
+        channel, _connection, _transport = _channel(tmp_path)
+        assert channel.info["transport"] == "fake"
+
+    def test_stdio_transport_validates_its_own_arguments(self, tmp_path: Any) -> None:
+        # Reachable directly, not only through the channel that builds one.
+        with pytest.raises(ValueError, match="sequence"):
+            StdioACPTransport("agent --acp", cwd=tmp_path)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="absolute"):
+            StdioACPTransport(["agent"], cwd="relative")
+        assert StdioACPTransport(["agent"], cwd=tmp_path).name == "stdio"
+
+    async def test_a_dead_transport_reconnects_and_drops_sessions(self, tmp_path: Any) -> None:
+        """The pipe dying takes its sessions with it — a reconnect never resumes.
+
+        This is the process-death path (``returncode`` set) generalised: the
+        channel asks the transport, so any transport that can tell gets the
+        same recovery.
+        """
+        channel, _connection, transport = _channel(tmp_path)
+        await channel._ensure_connection()
+        session = await channel._session_for("room-1", await channel._ensure_connection())
+        assert transport.opened == 1
+
+        transport.alive = False
+        await channel._ensure_connection()
+
+        assert transport.opened == 2
+        assert transport.exited is True
+        assert channel.session_id("room-1") is None
+        assert session not in channel._session_rooms
+        await channel.close()
+
+    async def test_a_failed_handshake_closes_the_transport(self, tmp_path: Any) -> None:
+        channel, connection, transport = _channel(tmp_path)
+
+        async def _boom(*_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError("handshake refused")
+
+        connection.initialize = _boom  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError, match="handshake refused"):
+            await channel._ensure_connection()
+
+        assert transport.exited is True
+        assert channel._connection is None
 
     def test_config_values_reads_current_values(self) -> None:
         assert _config_values([_model_option("sonnet")]) == {"model": "sonnet"}
@@ -563,6 +701,45 @@ class TestACPChannel:
         assert [chunk async for chunk in output.response_stream] == ["wire works"]
         assert channel.info["sdk_version"].startswith("0.11.")
         await channel.close()
+
+    async def test_official_sdk_round_trip_over_a_custom_transport(self, tmp_path: Any) -> None:
+        """The whole protocol over a pipe the channel did not open itself.
+
+        Real SDK on both ends, real JSON-RPC over a socket pair — no
+        subprocess and no stdio anywhere. This is what a transport carrying
+        ACP across a network hop has to look like.
+        """
+        agent_sock, client_sock = socket.socketpair()
+        agent_reader, agent_writer = await asyncio.open_connection(sock=agent_sock)
+        client_reader, client_writer = await asyncio.open_connection(sock=client_sock)
+        serving = asyncio.create_task(
+            acp.run_agent(_InProcessEchoAgent(), agent_writer, agent_reader)
+        )
+
+        channel = ACPChannel(
+            "socket-agent",
+            transport=_SocketPairTransport(client_reader, client_writer),
+            cwd=tmp_path,
+        )
+        binding = ChannelBinding(
+            channel_id="socket-agent",
+            room_id="room-1",
+            channel_type=ChannelType.AI,
+            category=ChannelCategory.INTELLIGENCE,
+        )
+        output = await channel.on_event(
+            make_event(body="over a socket"),
+            binding,
+            RoomContext(room=Room(id="room-1")),
+        )
+
+        assert [chunk async for chunk in output.response_stream] == ["over a socket"]
+        assert channel.info["transport"] == "socketpair"
+        assert channel.session_id("room-1") is not None
+        await channel.close()
+        serving.cancel()
+        await asyncio.gather(serving, return_exceptions=True)
+        agent_writer.close()
 
     async def test_waits_for_deferred_update_before_ending_stream(self, tmp_path: Any) -> None:
         channel, connection, _ = _channel(tmp_path, emit_updates=False)

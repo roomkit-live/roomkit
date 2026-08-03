@@ -1,6 +1,6 @@
 # ACP Agent Channel and CLI Channel
 
-`ACPChannel` makes RoomKit an **Agent Client Protocol client**: an external coding agent (Claude Code, Codex CLI, Gemini CLI, any registry-listed ACP agent) runs as a subprocess speaking ACP v1 over stdio; each Room becomes one session of that agent. The reverse direction — exposing a RoomKit agent as an ACP *server* — is out of scope. `CLIChannel` is the interactive terminal transport playing the human side in local sessions.
+`ACPChannel` makes RoomKit an **Agent Client Protocol client**: an external coding agent (Claude Code, Codex CLI, Gemini CLI, any registry-listed ACP agent) speaks ACP v1 — spawned here as a subprocess over stdio by default, or reached through a caller-supplied `ACPTransport`; each Room becomes one session of that agent. The reverse direction — exposing a RoomKit agent as an ACP *server* — is out of scope. `CLIChannel` is the interactive terminal transport playing the human side in local sessions.
 
 ```bash
 pip install "roomkit[acp]"      # agent-client-protocol>=0.11.0,<0.12
@@ -17,7 +17,8 @@ from roomkit import ACPChannel
 agent = ACPChannel(
     "coding-agent",
     command=["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.61.0"],
-    cwd="/srv/workspaces/my-project",  # required, absolute
+    transport=None,                    # or an ACPTransport, instead of command
+    cwd="/srv/workspaces/my-project",  # required, absolute — on the AGENT's host
     additional_directories=None,       # extra absolute dirs for the session
     env=None,                          # added to the SDK's restricted env
     mcp_servers=None,                  # ACP MCP-server descriptors (SDK types)
@@ -26,13 +27,17 @@ agent = ACPChannel(
 )
 ```
 
-`command` is an argument vector executed directly, **no shell**; a bare string, empty/non-string args, or non-absolute `cwd`/`additional_directories` raise `ValueError`. Class attrs: `channel_type = ChannelType.AI`, `category = ChannelCategory.INTELLIGENCE`, `direction = BIDIRECTIONAL`; capabilities TEXT + RICH. `handle_inbound()` raises `NotImplementedError` — the channel reacts to Room events via `on_event()`.
+`command` is an argument vector executed directly, **no shell**; a bare string, empty/non-string args, or non-absolute `cwd`/`additional_directories` raise `ValueError`. Exactly one of `command` / `transport` is required (neither or both → `ValueError`), and `env`/`inherit_env` next to a `transport` raise rather than being ignored — they configure the spawn. Class attrs: `channel_type = ChannelType.AI`, `category = ChannelCategory.INTELLIGENCE`, `direction = BIDIRECTIONAL`; capabilities TEXT + RICH. `handle_inbound()` raises `NotImplementedError` — the channel reacts to Room events via `on_event()`.
+
+### Transports
+
+`ACPTransport` (ABC, `channels/acp_transport.py`) is the pipe, and nothing more: `open(client, *, queue) -> ClientSideConnection` (build it with `acp.connect_to_agent(client, writer, reader, queue=queue)` — the protocol only needs a reader/writer pair), `close()` (must not raise; called on teardown *and* on a failed handshake), `is_alive()` (default `True`), and a `name` property surfaced as `info["transport"]`. `StdioACPTransport(command, cwd=…, env=…, inherit_env=…)` is the default, constructed for you from `command=`, and owns the spawn: argument-vector validation, `_resolve_spawn_env`, the stderr drain, and `returncode`-based liveness. Everything protocol-level — `initialize`, version negotiation, `authenticate`, sessions, prompts, permissions, config options, event mapping — stays on the channel, so a transport inherits it.
 
 ### Process and session model
 
-One agent **process** per channel, started lazily on the first prompt; one ACP **session** per Room, created on demand and tagged with extension key `roomkit.live/roomId`. Prompts are serialized per Room (per-room lock); different Rooms progress concurrently through the same connection. If the subprocess dies, the next prompt respawns it and clears all session mappings. The client declares no fs/terminal capabilities: `fs/*`, `terminal/*`, and `session/request_input` (elicitation) requests get `method_not_found` — `ON_USER_INPUT_REQUIRED` never fires from ACP.
+One connection per channel, opened lazily on the first prompt; one ACP **session** per Room, created on demand and tagged with extension key `roomkit.live/roomId`. Prompts are serialized per Room (per-room lock); different Rooms progress concurrently through the same connection. When the transport reports the connection dead (for stdio: the subprocess exited), the next prompt reconnects and clears all session mappings — a reconnect never resumes sessions. The client declares no fs/terminal capabilities: `fs/*`, `terminal/*`, and `session/request_input` (elicitation) requests get `method_not_found` — `ON_USER_INPUT_REQUIRED` never fires from ACP.
 
-Methods: `session_id(room_id)` returns the process-local session id or `None`; `cancel(room_id)` cancels the active turn (`True` if a cancel was sent); `close_session(room_id)` closes and forgets one Room's session; `close()` cancels turns, closes sessions, stops the subprocess and handler. The `info` property reports `{transport, protocol_version, sdk_version, connected, agent, session_count}`.
+Methods: `session_id(room_id)` returns the process-local session id or `None`; `cancel(room_id)` cancels the active turn (`True` if a cancel was sent); `close_session(room_id)` closes and forgets one Room's session; `close()` cancels turns, closes sessions, closes the transport and stops the handler. The `info` property reports `{transport, protocol_version, sdk_version, connected, agent, session_count}`.
 
 ### How agent output enters the room
 

@@ -1,8 +1,11 @@
 """Agent Client Protocol intelligence channel.
 
 ``ACPChannel`` makes RoomKit an ACP client: every Room is mapped to a distinct
-session owned by an external coding-agent process.  The reverse integration
-(exposing a RoomKit agent as an ACP server) is intentionally out of scope.
+session owned by an external coding agent.  How that agent is reached is the
+transport's business — spawned here over stdio by default, or wherever a custom
+:class:`~roomkit.channels.acp_transport.ACPTransport` can carry the protocol.
+The reverse integration (exposing a RoomKit agent as an ACP server) is
+intentionally out of scope.
 
 The optional ``agent-client-protocol`` dependency is imported lazily so that
 ``import roomkit`` continues to work when the ``acp`` extra is not installed.
@@ -29,6 +32,7 @@ from roomkit.channels._acp_client import (
     _TurnState,
 )
 from roomkit.channels._acp_events import ACPEventsMixin
+from roomkit.channels.acp_transport import ACPTransport, StdioACPTransport
 from roomkit.channels.base import Channel
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -56,21 +60,32 @@ _SHUTDOWN_TIMEOUT = 5.0
 
 
 class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
-    """Connect a RoomKit Room to an external ACP coding agent over stdio.
+    """Connect a RoomKit Room to an external ACP coding agent.
 
-    One agent process is created lazily for the channel and one ACP session is
-    created per Room. Prompts are serialized inside each session, while
-    different Rooms can use the same agent process concurrently.
+    One connection to the agent is opened lazily for the channel and one ACP
+    session is created per Room. Prompts are serialized inside each session,
+    while different Rooms progress concurrently over the same connection.
+
+    Pass ``command`` for the usual case — the agent is spawned here as a
+    subprocess and spoken to over its stdio. Pass ``transport`` instead when
+    the agent runs somewhere this process cannot spawn it (another machine,
+    behind a relay); see :class:`~roomkit.channels.acp_transport.ACPTransport`.
+    Exactly one of the two is required.
 
     Args:
         channel_id: RoomKit channel identifier.
         command: Executable and arguments used to start the ACP agent. No shell
-            is involved.
-        cwd: Absolute working directory used for the process and ACP sessions.
+            is involved. Mutually exclusive with ``transport``.
+        transport: How to reach an agent this channel does not spawn. Mutually
+            exclusive with ``command`` (and with ``env`` / ``inherit_env``,
+            which configure the spawn).
+        cwd: Absolute working directory declared to the ACP session — and, for
+            a spawned agent, the process's own directory. With a custom
+            transport it names a directory on the *agent's* machine.
         additional_directories: Additional absolute directories exposed in the
             ACP session declaration.
         env: Environment variables added to the SDK's restricted inherited
-            environment.
+            environment. Spawned agents only.
         inherit_env: Names of parent-process environment variables to forward
             to the agent. The ACP SDK strips the environment down to
             ``HOME/LOGNAME/PATH/SHELL/TERM/USER`` (MCP practice), which
@@ -78,7 +93,8 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             ``SSH_AUTH_SOCK``, every git-over-SSH operation prompts for key
             passphrases on the controlling terminal. Values are read at each
             process spawn; unset names are skipped; explicit ``env`` entries
-            win over inherited ones. Nothing is forwarded by default.
+            win over inherited ones. Nothing is forwarded by default. Spawned
+            agents only.
         mcp_servers: ACP MCP-server descriptors accepted by the official SDK.
         authentication_method: Optional ACP authentication method identifier.
         external_tool_handler: Permission policy and tool observability bridge.
@@ -92,8 +108,9 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
     def __init__(
         self,
         channel_id: str,
-        command: Sequence[str],
+        command: Sequence[str] | None = None,
         *,
+        transport: ACPTransport | None = None,
         cwd: str | Path,
         additional_directories: Sequence[str | Path] | None = None,
         env: Mapping[str, str] | None = None,
@@ -103,28 +120,32 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         external_tool_handler: ExternalToolHandler | None = None,
     ) -> None:
         super().__init__(channel_id)
-        if isinstance(command, str) or not command:
-            raise ValueError("command must be a non-empty sequence of arguments")
-        if any(not isinstance(arg, str) or not arg for arg in command):
-            raise ValueError("every command argument must be a non-empty string")
-        if env is not None and any(
-            not isinstance(key, str) or not isinstance(value, str) for key, value in env.items()
-        ):
-            raise ValueError("env keys and values must be strings")
-        if inherit_env is not None and (
-            isinstance(inherit_env, str)
-            or any(not isinstance(name, str) or not name for name in inherit_env)
-        ):
-            raise ValueError("inherit_env must be a sequence of non-empty variable names")
-
-        self._command = tuple(command)
+        if (command is None) == (transport is None):
+            raise ValueError(
+                "pass either command (the agent is spawned locally) or transport "
+                "(it is reached some other way), not both"
+            )
+        # Validated here, not in the transport: ``cwd`` is a session/new field
+        # first — with a remote transport it names a directory on the agent's
+        # machine, which this process may not have at all.
         self._cwd = _absolute_path(cwd, field_name="cwd")
+        if command is not None:
+            self._transport: ACPTransport = StdioACPTransport(
+                command, cwd=self._cwd, env=env, inherit_env=inherit_env
+            )
+        else:
+            if env is not None or inherit_env is not None:
+                raise ValueError(
+                    "env and inherit_env configure the default subprocess spawn; "
+                    "a custom transport carries its own environment"
+                )
+            assert transport is not None  # narrowed by the exclusivity check above
+            self._transport = transport
+
         self._additional_directories = [
             _absolute_path(path, field_name="additional_directories")
             for path in (additional_directories or ())
         ]
-        self._env = dict(env) if env is not None else None
-        self._inherit_env = tuple(inherit_env or ())
         self._mcp_servers = list(mcp_servers or ())
         self._authentication_method = authentication_method
         self._external_tool_handler = external_tool_handler
@@ -132,10 +153,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         self._loaded_sdk: _SDK | None = None
         self._client = _ACPClient(self)
         self._connection: Any = None
-        self._process: Any = None
-        self._process_context: Any = None
         self._message_queue: Any = None
-        self._stderr_task: asyncio.Task[None] | None = None
         self._connect_lock = asyncio.Lock()
         self._room_locks: dict[str, asyncio.Lock] = {}
         self._sessions: dict[str, str] = {}
@@ -151,7 +169,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
     def info(self) -> dict[str, Any]:
         """Return ACP connection and agent metadata without exposing arguments."""
         return {
-            "transport": "stdio",
+            "transport": self._transport.name,
             "protocol_version": _STABLE_PROTOCOL_VERSION,
             "sdk_version": self._loaded_sdk.version if self._loaded_sdk else None,
             "connected": self._connection is not None,
@@ -200,7 +218,7 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
         Returns the full config mapping the agent reports back, so the caller
         sees the value it landed on (agents resolve aliases) plus any option
         the change invalidated. Opens the room's session if the first prompt
-        has not yet done so, which starts the agent process.
+        has not yet done so, which connects to the agent.
         """
         connection = await self._ensure_connection()
         session_id = self._sessions.get(room_id)
@@ -320,13 +338,13 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             return True
 
     async def close(self) -> None:
-        """Cancel turns, close sessions, and stop the ACP subprocess.
+        """Cancel turns, close sessions, and close the transport.
 
         Shutdown is bounded: the graceful ACP round trips share
-        ``_SHUTDOWN_TIMEOUT``, and the subprocess teardown runs even when
+        ``_SHUTDOWN_TIMEOUT``, and the transport teardown runs even when
         they time out, fail, or the caller is cancelled mid-close (a second
         Ctrl-C landing on ``close_session``). An agent that has stopped
-        answering must not outlive — or hang — the process that spawned it.
+        answering must not outlive — or hang — the process that started it.
         """
         if self._closed:
             return
@@ -361,12 +379,12 @@ class ACPChannel(ACPConnectionMixin, ACPEventsMixin, Channel):
             )
 
     async def _teardown(self) -> None:
-        """Stop the process and drop the session state. Never raises."""
+        """Close the transport and drop the session state. Never raises."""
         try:
             async with self._connect_lock:
-                await self._close_process()
+                await self._close_transport()
         except Exception:
-            logger.debug("ACP process teardown failed", exc_info=True)
+            logger.debug("ACP transport teardown failed", exc_info=True)
 
         if self._external_tool_handler is not None and self._handler_started:
             self._handler_started = False

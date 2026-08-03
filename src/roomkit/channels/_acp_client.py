@@ -1,13 +1,10 @@
-"""Internal ACP SDK loading, process lifecycle, callback adapter, and turn state."""
+"""Internal ACP SDK loading, connection lifecycle, callback adapter, and turn state."""
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
-import os
-import sys
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -20,30 +17,12 @@ from roomkit._version import __version__
 from roomkit.models.streaming import StreamDelta
 
 if TYPE_CHECKING:
+    from roomkit.channels.acp_transport import ACPTransport
     from roomkit.tools.external import ExternalToolHandler
 
 logger = logging.getLogger("roomkit.channels.acp")
 
 _STABLE_PROTOCOL_VERSION = 1
-
-
-def _resolve_spawn_env(
-    inherit_env: tuple[str, ...],
-    env: Mapping[str, str] | None,
-    environ: Mapping[str, str],
-) -> dict[str, str] | None:
-    """Build the env mapping handed to the ACP SDK's restricted spawn.
-
-    ``inherit_env`` names are read from *environ* at spawn time (so a
-    reconnect picks up a rotated value, e.g. a new SSH agent socket); unset
-    names are skipped. Explicit ``env`` entries override inherited ones.
-    Returns ``None`` when there is nothing to add — the SDK then uses its
-    trimmed default environment unchanged.
-    """
-    merged = {name: environ[name] for name in inherit_env if name in environ}
-    if env:
-        merged.update(env)
-    return merged or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,21 +257,15 @@ class _ACPClient:
 
 
 class ACPConnectionMixin:
-    """Own the ACP agent subprocess and the initialized stdio connection."""
+    """Own the initialized ACP connection, whatever transport carries it."""
 
     _client: _ACPClient
-    _command: tuple[str, ...]
-    _cwd: str
-    _env: dict[str, str] | None
-    _inherit_env: tuple[str, ...]
+    _transport: ACPTransport
     _authentication_method: str | None
     _external_tool_handler: ExternalToolHandler | None
     _loaded_sdk: _SDK | None
     _connection: Any
-    _process: Any
-    _process_context: Any
     _message_queue: Any
-    _stderr_task: asyncio.Task[None] | None
     _connect_lock: asyncio.Lock
     _sessions: dict[str, str]
     _session_rooms: dict[str, str]
@@ -306,17 +279,6 @@ class ACPConnectionMixin:
             self._loaded_sdk = _load_sdk()
         return self._loaded_sdk
 
-    def _create_process_context(self, sdk: _SDK) -> Any:
-        self._message_queue = sdk.task.InMemoryMessageQueue()
-        return sdk.acp.spawn_agent_process(
-            self._client,
-            self._command[0],
-            *self._command[1:],
-            env=_resolve_spawn_env(self._inherit_env, self._env, os.environ),
-            cwd=self._cwd,
-            queue=self._message_queue,
-        )
-
     async def _drain_session_updates(self, session_id: str) -> None:
         # A prompt response is resolved directly by the SDK receive loop, while
         # preceding notifications are dispatched through this queue. Joining it
@@ -328,20 +290,18 @@ class ACPConnectionMixin:
     async def _ensure_connection(self) -> Any:
         if self._closed:
             raise RuntimeError("ACPChannel is closed")
-        if self._connection is not None and (
-            self._process is None or self._process.returncode is None
-        ):
+        if self._connection is not None and self._transport.is_alive():
             return self._connection
 
         async with self._connect_lock:
             if self._closed:
                 raise RuntimeError("ACPChannel is closed")
-            if self._connection is not None and (
-                self._process is None or self._process.returncode is None
-            ):
+            if self._connection is not None and self._transport.is_alive():
                 return self._connection
-            if self._process_context is not None:
-                await self._close_process()
+            if self._connection is not None:
+                # The agent behind the old connection is gone, and its
+                # sessions with it — a reconnect never resumes them.
+                await self._close_transport()
                 self._sessions.clear()
                 self._session_rooms.clear()
                 self._session_options.clear()
@@ -353,10 +313,9 @@ class ACPConnectionMixin:
                     f"{sdk.acp.PROTOCOL_VERSION}; RoomKit supports stable ACP v1"
                 )
 
-            process_context = self._create_process_context(sdk)
+            self._message_queue = sdk.task.InMemoryMessageQueue()
             try:
-                connection, process = await process_context.__aenter__()
-                self._stderr_task = asyncio.create_task(self._drain_stderr(process))
+                connection = await self._transport.open(self._client, queue=self._message_queue)
                 response = await connection.initialize(
                     _STABLE_PROTOCOL_VERSION,
                     client_capabilities=sdk.schema.ClientCapabilities(
@@ -384,41 +343,17 @@ class ACPConnectionMixin:
                     await self._external_tool_handler.start()
                     self._handler_started = True
             except BaseException:
-                await process_context.__aexit__(*sys.exc_info())
-                await self._stop_stderr_task()
+                # Covers a transport that never opened as well as a handshake
+                # that failed on a live one: closing is defined to tolerate both.
+                await self._close_transport()
                 raise
 
-            self._process_context = process_context
             self._connection = connection
-            self._process = process
             agent_info = getattr(response, "agent_info", None)
             self._agent_info = _model_dump(agent_info) if agent_info is not None else None
             return connection
 
-    async def _close_process(self) -> None:
-        process_context = self._process_context
+    async def _close_transport(self) -> None:
         self._connection = None
-        self._process = None
-        self._process_context = None
-        if process_context is not None:
-            with contextlib.suppress(Exception):
-                await process_context.__aexit__(None, None, None)
         self._message_queue = None
-        await self._stop_stderr_task()
-
-    async def _stop_stderr_task(self) -> None:
-        task = self._stderr_task
-        self._stderr_task = None
-        if task is None:
-            return
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-
-    @staticmethod
-    async def _drain_stderr(process: Any) -> None:
-        stream = getattr(process, "stderr", None)
-        if stream is None:
-            return
-        while await stream.read(8192):
-            pass
+        await self._transport.close()

@@ -18,6 +18,7 @@ from roomkit.channels import (
 )
 from roomkit.channels._turn_config import AIChannelTurnConfig
 from roomkit.channels.acp import ACPChannel
+from roomkit.channels.acp_transport import ACPTransport, StdioACPTransport
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.av import AudioVideoChannel
@@ -236,6 +237,7 @@ __all__ = [
     "WaitForIdle",
     # Channels
     "ACPChannel",
+    "ACPTransport",
     "Agent",
     "AIChannel",
     "AIChannelTurnConfig",
@@ -253,6 +255,7 @@ __all__ = [
     "RealtimeAudioVideoChannel",
     "RealtimeVoiceChannel",
     "SMSChannel",
+    "StdioACPTransport",
     "TeamsChannel",
     "TelegramChannel",
     "TransportChannel",
